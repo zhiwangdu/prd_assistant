@@ -5,16 +5,17 @@
 | 组件 | 预估 |
 |------|------|
 | Chrome 插件 | 3~4 天 |
-| Native Agent | 2 天 |
-| Rust Server | 3~4 天 |
+| Native Agent | 2~3 天 |
+| Rust Server | 5~7 天 |
 | rg 分析器 | 7~10 天 |
 | Tool Runner | 2~3 天 |
-| Code Evidence | 3~5 天 |
-| Environment Collector | 3~5 天 |
-| LLM Agent | 2 天 |
-| Case 库 | 2~3 天 |
-| WebUI | 5 天 |
-| 合计 | 4~6 周 |
+| Code Evidence | 4~6 天 |
+| Environment Collector | 4~6 天 |
+| LLM Agent | 3~4 天 |
+| Case 库 | 3~4 天 |
+| WebUI | 5~7 天 |
+| 配置 / 接口 / 部署 / 测试补齐 | 3~5 天 |
+| 合计 | 5~8 周 |
 
 ## 第 1 阶段：手动上传闭环
 
@@ -27,6 +28,10 @@
 - 解压和 manifest
 - rg 检索
 - 外部工具白名单配置和手动调用
+- 统一 `logagent.yaml`
+- 基础 Case 确认、embedding 和 Top 5 召回
+- LLM Provider 配置和 token 预算裁剪
+- 核心 fixture 测试
 - LLM 输出结果
 - 任务详情页
 
@@ -42,6 +47,8 @@
 - `rg` / `git grep` 代码检索
 - `code_evidence.json`
 - LLM 输出中引用代码文件和行号
+- worktree 清理策略
+- 关键词提取规则
 
 ## 第 3 阶段：测试环境采集
 
@@ -55,6 +62,7 @@
 - 诊断命令白名单
 - `environment_evidence.json`
 - 采集结果接入统一分析流程
+- SSH 并发、超时和重试策略
 
 ## 第 4 阶段：浏览器和 Native Agent
 
@@ -63,7 +71,7 @@
 内容：
 
 - Native Agent 本地 HTTP Server
-- Chrome 插件监听下载
+- Chrome 插件通过 `chrome.downloads.onChanged` 监听下载完成
 - 下载完成后确认上传
 - 自动打开任务详情页
 
@@ -73,10 +81,10 @@
 
 内容：
 
-- Case 确认和编辑
-- embedding 生成
-- 相似 Case 召回
-- Agent 输入中加入历史 Case
+- Case 编辑体验
+- Case 禁用 / 删除
+- Case 检索优化
+- Agent 输入中的 Case 摘要质量优化
 
 ## 第 6 阶段：质量提升
 

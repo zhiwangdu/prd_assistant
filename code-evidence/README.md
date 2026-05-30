@@ -52,6 +52,42 @@ code_repos:
 6. 抽取相关文件、行号、函数名和上下文。
 7. 生成 `code_evidence.json`。
 
+## 关键词提取策略
+
+MVP 使用规则优先的关键词提取，不依赖 LLM 生成检索词。
+
+来源优先级：
+
+1. 工具结果中的 `symbol`、`rule`、`operator`、`error_code`。
+2. 日志上下文中的函数名、错误码、模块名。
+3. 用户问题中的产品领域词，例如 `query`、`planner`、`compaction`、`write`。
+4. 文件名、measurement、SQL/Flux 关键字。
+
+处理规则：
+
+- 去掉停用词和过短词。
+- 保留 snake_case、CamelCase、错误码和带点模块名。
+- 每个任务最多生成 20 个代码检索关键词。
+- 每个关键词最多保留 Top 10 命中。
+
+## Worktree 清理
+
+配置示例：
+
+```yaml
+code_evidence:
+  worktree_root: "/data/logagent/code_worktrees"
+  max_worktrees_per_repo: 5
+  cleanup_policy: "least_recently_used"
+```
+
+清理策略：
+
+- worktree 按 repo + ref 复用。
+- 超过上限时删除最近最少使用的 worktree。
+- 正在被任务使用的 worktree 不删除。
+- 启动时扫描孤儿 worktree 并记录告警。
+
 ## 输出结构
 
 ```json

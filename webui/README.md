@@ -10,6 +10,26 @@
 Rust -> C/C++ -> Go/Python/Java 等
 ```
 
+前端框架 MVP 推荐：
+
+- Vite
+- React
+- TypeScript
+
+如果希望更轻量，也可以使用 SvelteKit；但第一版需要固定一个选择，避免 UI 工程反复切换。
+
+## CORS
+
+开发环境允许配置 CORS：
+
+```yaml
+server:
+  cors_allowed_origins:
+    - "http://localhost:5173"
+```
+
+生产环境建议由 Rust Server 静态托管 WebUI 构建产物，减少跨域配置。
+
 ## 页面范围
 
 MVP 只做三个页面：

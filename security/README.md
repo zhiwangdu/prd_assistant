@@ -3,6 +3,9 @@
 ## API 和上传
 
 - 服务端 API 使用简单 API Key。
+- API Key 从 `logagent.yaml` 引用的环境变量读取。
+- 启动时检查 API Key 是否存在。
+- API Key 不写入任务日志，不进入 LLM Prompt。
 - Native Agent 只接受 `127.0.0.1` 请求。
 - Native Agent 校验文件路径，避免任意文件上传。
 - 不在日志或数据库中保存 Cookie、Authorization、session token。
@@ -14,6 +17,8 @@
 - LLM 输出必须保留原始证据引用。
 - LLM 不能直接执行任意命令。
 - SSH key、API Key、repo path 等敏感配置不进入 Prompt。
+- LLM Provider、model、base_url、token 预算必须配置化。
+- LLM 输入必须经过证据裁剪，不能直接塞入全部日志和工具输出。
 
 ## 外部工具
 
@@ -35,4 +40,3 @@
 - SSH 诊断命令必须使用白名单 argv 数组。
 - 不允许拼接用户输入作为远程命令。
 - 采集文件路径必须在配置白名单内。
-

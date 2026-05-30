@@ -42,6 +42,16 @@ Content-Type: application/json
 
 ## 服务端接口
 
+Native Agent 从本地配置读取服务端地址和 API Key。API Key 不写死在代码中。
+
+配置示例：
+
+```yaml
+native_agent:
+  server_base_url: "http://logagent:8080"
+  api_key_env: "LOGAGENT_NATIVE_API_KEY"
+```
+
 上传：
 
 ```http

@@ -2,7 +2,7 @@
 
 ## 1. 项目目标
 
-个人主导、业余时间开发一个可落地的日志分析助手 MVP。加入版本感知代码证据和测试环境采集后，第一版建议控制在 4~6 周。
+个人主导、业余时间开发一个可落地的日志分析助手 MVP。加入版本感知代码证据、测试环境采集、统一配置和测试策略后，第一版建议控制在 5~8 周。
 
 核心链路：
 
@@ -25,6 +25,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 - Log Analyzer、Tool Runner、Code Evidence、Environment Collector 优先使用 Rust。
 - 已有 C/C++ 编译工具直接复用，通过 Tool Runner 调用。
 - Go/Python/Java 只作为已有工具、历史代码或生态强依赖时的备选。
+- MVP 部署形态优先采用单一 Rust binary + 内部 crate/module 拆分，避免一开始拆成多个服务。
 
 ## 3. MVP 边界
 
@@ -34,7 +35,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 - Chrome 插件：识别日志下载，触发上传流程
 - Native Agent：本地接收文件、上传服务端、创建分析任务，优先 Rust 实现
-- Server：任务管理、日志解压、检索、分析、结果存储，优先 Rust 实现
+- Server：任务管理、状态流转、模块编排和 API，优先 Rust 实现
 - rg 检索器：从大日志中提取错误摘要和关键上下文
 - Tool Runner：按配置调用已有诊断工具，例如 `flux_query_analyzer`、`influxql_analyzer`
 - Code Evidence：根据用户输入的软件版本定位对应代码分支，检索实际代码形成证据链
@@ -42,6 +43,9 @@ Rust -> C/C++ -> Go/Python/Java 等
 - LLM Agent：基于用户问题、日志证据、工具输出、代码证据、环境证据、历史 Case 输出分析
 - Case 库：人工确认后沉淀经验，后续任务召回相似 Case
 - WebUI：任务列表、任务详情、Case 库
+- Config：单一 `logagent.yaml` 管理所有模块配置
+- Interfaces：定义模块边界、Rust trait 和状态机
+- Testing：fixture、集成测试和 LLM stub
 
 暂不做：
 
@@ -73,11 +77,11 @@ Server
 
 Server
   |
-  | 3. 解压 / manifest / rg 检索 / 工具调用 / 代码检索 / 环境采集
+  | 3. 编排任务状态和各执行模块
   v
-Log Analyzer
+Evidence Modules
   |
-  | 4. 摘要 / Top 错误 / 上下文块 / 工具结果 / 代码证据 / 环境证据 / 相似 Case
+  | 4. rg 摘要 / 工具结果 / 代码证据 / 环境证据 / 相似 Case
   v
 LLM Agent
   |
@@ -95,6 +99,8 @@ WebUI + Case Store
 - 外部工具调用第一版只做白名单配置和同步执行，不做复杂插件市场、远程执行和自动安装。
 - 代码证据第一版只做本地已有代码仓的只读检索，不做自动拉取陌生仓库、不做自动改代码。
 - 测试环境采集第一版只做白名单节点和白名单命令，不做通用远程运维平台。
+- LLM 提供商、embedding 模型、token 预算、API Key、关键词、环境采集并发都必须配置化。
+- Case 基础功能前移到第一阶段，至少支持确认、存储、embedding 和 Top 5 召回。
 
 ## 5. 模块设计
 
@@ -102,7 +108,7 @@ WebUI + Case Store
 
 职责：
 
-- 监听浏览器下载事件
+- 使用 `chrome.downloads.onChanged` 监听下载完成事件
 - 匹配日志下载 URL 或文件后缀
 - 弹出确认：是否交给 LogAgent 分析
 - 下载完成后把本地文件路径、文件名、来源 URL 发送给 Native Agent
@@ -127,7 +133,7 @@ const FILE_SUFFIXES = [
 第一版推荐流程：
 
 1. 浏览器正常下载文件。
-2. 插件识别下载完成事件。
+2. 插件通过 `chrome.downloads.onChanged` 识别 `state.current === "complete"`。
 3. 用户确认上传。
 4. 插件调用 `http://127.0.0.1:<port>/imports`。
 
@@ -210,9 +216,8 @@ Authorization: Bearer <api_key>
 
 - 上传管理
 - 任务状态流转
-- 日志解压和 manifest 生成
-- rg 检索和摘要生成
-- 外部分析工具调度和结果归档
+- 编排 Log Analyzer、Tool Runner、Code Evidence、Environment Collector、LLM Agent
+- 管理模块输出和任务失败原因
 - LLM 分析调用
 - Case 存储和召回
 - 提供 WebUI API
@@ -222,12 +227,24 @@ Authorization: Bearer <api_key>
 ```text
 CREATED
 UPLOADED
+COLLECTING
 EXTRACTING
 SEARCHING
+RUNNING_TOOLS
+COLLECTING_CODE
 ANALYZING
 DONE
 FAILED
 ```
+
+职责边界：
+
+- Server 只负责编排和状态管理。
+- Log Analyzer 执行解压、manifest、rg 检索和错误摘要。
+- Tool Runner 执行外部工具。
+- Code Evidence 执行代码检索。
+- Environment Collector 执行 SSH/SCP 采集。
+- LLM Agent 执行证据裁剪、Prompt 组装和模型调用。
 
 目录建议：
 
@@ -405,6 +422,14 @@ code_repos:
 6. 抽取命中的函数、文件、上下文行，生成 `code_evidence.json`。
 7. 将代码证据加入 LLM Agent 输入。
 
+关键词提取策略：
+
+- 优先使用工具结果中的 `symbol`、`rule`、`operator`、`error_code`。
+- 其次使用日志上下文中的函数名、错误码、模块名。
+- 再使用用户问题中的领域词，例如 `query`、`planner`、`compaction`、`write`。
+- 每个任务最多生成 20 个代码检索关键词。
+- 每个关键词最多保留 Top 10 命中。
+
 代码工作区建议：
 
 ```text
@@ -413,6 +438,14 @@ code_repos:
     v3.0.2/
     v3.0.1/
 ```
+
+worktree 清理策略：
+
+- 按 repo + ref 复用 worktree。
+- 每个 repo 默认最多保留 5 个 worktree。
+- 超过上限时删除最近最少使用的 worktree。
+- 正在被任务使用的 worktree 不删除。
+- 启动时扫描孤儿 worktree 并记录告警。
 
 代码证据结构：
 
@@ -478,7 +511,21 @@ environments:
           argv: ["df", "-h"]
         - name: ports
           argv: ["ss", "-lntp"]
+
+environment_collector:
+  max_parallel_nodes: 4
+  connect_timeout_seconds: 10
+  command_timeout_seconds: 30
+  retries: 1
 ```
+
+连接策略：
+
+- 多节点默认并行采集，最大并发由 `max_parallel_nodes` 控制。
+- 单节点内先拉文件，再执行诊断命令。
+- 单个节点失败不直接失败整个任务，但会写入 `environment_evidence.json`。
+- SSH 连接失败允许按配置重试。
+- 命令超时后终止并保留 stderr/timeout 信息。
 
 任务输入示例：
 
@@ -647,6 +694,25 @@ MVP 建议限制：
 
 不要直接把完整日志喂给 LLM。先用 `rg` 做压缩和证据提取。
 
+`rg` 是系统依赖，启动时需要检查 `rg_path` 是否存在并可执行。关键词必须配置化。
+
+```yaml
+log_analyzer:
+  rg_path: "rg"
+  context_lines: 50
+  keywords:
+    - error
+    - exception
+    - timeout
+    - fail
+    - failed
+    - panic
+    - fatal
+    - refused
+    - denied
+    - verify
+```
+
 第一步：关键词扫描。
 
 ```bash
@@ -779,6 +845,18 @@ environment source:
 
 第一版只做单 Agent，不做 Multi-Agent。
 
+LLM Provider 必须配置化。MVP 推荐使用 OpenAI-compatible 接口，方便切换 OpenAI、企业网关或本地兼容服务。
+
+```yaml
+llm:
+  provider: "openai_compatible"
+  base_url_env: "LOGAGENT_LLM_BASE_URL"
+  api_key_env: "LOGAGENT_LLM_API_KEY"
+  model: "gpt-4.1"
+  max_input_tokens: 64000
+  max_output_tokens: 4096
+```
+
 输入：
 
 - 用户问题
@@ -789,6 +867,27 @@ environment source:
 - 对应版本代码证据
 - 测试环境采集摘要
 - Top 5 相似历史 Case
+
+Token 预算建议：
+
+| 证据类型 | 上限 |
+|----------|------|
+| 用户问题和任务元信息 | 2k tokens |
+| manifest 摘要 | 2k tokens |
+| Top 错误模式 | 8k tokens |
+| 日志上下文 | 20k tokens |
+| 工具结果 | 8k tokens |
+| 代码证据 | 10k tokens |
+| 环境证据 | 6k tokens |
+| 相似 Case | 6k tokens |
+
+裁剪优先级：
+
+1. 用户问题和任务元信息必须保留。
+2. 有文件和行号的日志证据优先。
+3. 工具 finding 优先于 raw output。
+4. 与错误关键词命中的代码证据优先。
+5. Case 只保留 Top 5 的标题、现象、根因和解决方案摘要。
 
 输出结构：
 
@@ -935,22 +1034,26 @@ MVP 至少要处理以下问题：
 - SSH 诊断命令必须使用白名单 argv 数组，不允许拼接用户输入
 - 采集文件路径必须在配置白名单内，避免任意文件读取
 - SSH key、API Key、repo path 等敏感配置不进入 LLM Prompt
+- API Key 从 `logagent.yaml` 引用的环境变量读取，启动时校验存在性
+- LLM Provider、model、base_url 和 token 预算必须配置化
+- LLM 输入必须经过证据裁剪，不能直接塞入全部日志和工具输出
 
 ## 12. 工期预估
 
 | 组件 | 预估 |
 |------|------|
 | Chrome 插件 | 3~4 天 |
-| Native Agent | 2 天 |
-| Rust Server | 3~4 天 |
+| Native Agent | 2~3 天 |
+| Rust Server | 5~7 天 |
 | rg 分析器 | 7~10 天 |
 | Tool Runner | 2~3 天 |
-| Code Evidence | 3~5 天 |
-| Environment Collector | 3~5 天 |
-| LLM Agent | 2 天 |
-| Case 库 | 2~3 天 |
-| WebUI | 5 天 |
-| 合计 | 4~6 周 |
+| Code Evidence | 4~6 天 |
+| Environment Collector | 4~6 天 |
+| LLM Agent | 3~4 天 |
+| Case 库 | 3~4 天 |
+| WebUI | 5~7 天 |
+| 配置 / 接口 / 部署 / 测试补齐 | 3~5 天 |
+| 合计 | 5~8 周 |
 
 ## 13. 迭代顺序
 
@@ -965,6 +1068,10 @@ MVP 至少要处理以下问题：
 - 解压和 manifest
 - rg 检索
 - 外部工具白名单配置和手动调用
+- 统一 `logagent.yaml`
+- 基础 Case 确认、embedding 和 Top 5 召回
+- LLM Provider 配置和 token 预算裁剪
+- 核心 fixture 测试
 - LLM 输出结果
 - 任务详情页
 
@@ -980,6 +1087,8 @@ MVP 至少要处理以下问题：
 - `rg` / `git grep` 代码检索
 - `code_evidence.json`
 - LLM 输出中引用代码文件和行号
+- worktree 清理策略
+- 关键词提取规则
 
 ### 第 3 阶段：测试环境采集
 
@@ -993,6 +1102,7 @@ MVP 至少要处理以下问题：
 - 诊断命令白名单
 - `environment_evidence.json`
 - 采集结果接入统一分析流程
+- SSH 并发、超时和重试策略
 
 ### 第 4 阶段：浏览器和 Native Agent
 
@@ -1001,7 +1111,7 @@ MVP 至少要处理以下问题：
 内容：
 
 - Native Agent 本地 HTTP Server
-- Chrome 插件监听下载
+- Chrome 插件通过 `chrome.downloads.onChanged` 监听下载完成
 - 下载完成后确认上传
 - 自动打开任务详情页
 
@@ -1011,10 +1121,10 @@ MVP 至少要处理以下问题：
 
 内容：
 
-- Case 确认和编辑
-- embedding 生成
-- 相似 Case 召回
-- Agent 输入中加入历史 Case
+- Case 编辑体验
+- Case 禁用 / 删除
+- Case 检索优化
+- Agent 输入中的 Case 摘要质量优化
 
 ### 第 6 阶段：质量提升
 
@@ -1036,4 +1146,4 @@ MVP 至少要处理以下问题：
 
 该方案可行，但 MVP 重点应该放在 `rg 分析器 + 证据提取 + Case 反馈闭环`，而不是一开始建设完整日志平台。
 
-加入版本感知代码证据和测试环境采集后，建议第一版按 4~6 周规划。优先顺序应调整为：手动上传分析闭环 -> 版本代码证据 -> 测试环境采集 -> 浏览器/Native Agent 自动化 -> Case 库。这样可以先验证“日志现象 + 工具输出 + 代码实现 + 环境状态”的证据链质量，再补齐下载上传自动化。
+加入版本感知代码证据、测试环境采集、统一配置、接口契约和测试策略后，建议第一版按 5~8 周规划。优先顺序应调整为：手动上传分析闭环 + 基础 Case 召回 -> 版本代码证据 -> 测试环境采集 -> 浏览器/Native Agent 自动化 -> Case 管理增强。这样可以先验证“日志现象 + 工具输出 + 代码实现 + 环境状态 + 历史 Case”的证据链质量，再补齐下载上传自动化。

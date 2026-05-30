@@ -69,6 +69,26 @@ environments:
 6. 生成 `environment_evidence.json` 和 `manifest.json`。
 7. 后续进入 rg、Tool Runner、Code Evidence、LLM Agent。
 
+## 连接管理
+
+配置示例：
+
+```yaml
+environment_collector:
+  max_parallel_nodes: 4
+  connect_timeout_seconds: 10
+  command_timeout_seconds: 30
+  retries: 1
+```
+
+策略：
+
+- 多节点默认并行采集，最大并发由 `max_parallel_nodes` 控制。
+- 单节点内先拉文件，再执行诊断命令。
+- 单个节点失败不直接失败整个任务，但会写入 `environment_evidence.json`。
+- SSH 连接失败允许按配置重试。
+- 命令超时后终止并保留 stderr/timeout 信息。
+
 ## 输出目录
 
 ```text

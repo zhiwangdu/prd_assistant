@@ -7,7 +7,7 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 ## MVP 流程
 
 1. 浏览器正常下载文件。
-2. 插件监听下载完成事件。
+2. 插件通过 `chrome.downloads.onChanged` 监听下载完成事件。
 3. 根据 URL 前缀或文件后缀判断是否可能是日志。
 4. 弹出确认：是否交给 LogAgent 分析。
 5. 调用 Native Agent 的 `localhost` HTTP 接口。
@@ -29,6 +29,29 @@ const FILE_SUFFIXES = [
 ]
 ```
 
+## Chrome API
+
+MVP 使用 `chrome.downloads.onChanged` 判断下载完成，而不是 `onCreated`。
+
+原因：
+
+- `onCreated` 只表示下载任务创建，文件还不可用。
+- `onChanged` 可观察 `state.current === "complete"`，此时再提交给 Native Agent。
+
+示例：
+
+```js
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.state?.current !== "complete") {
+    return
+  }
+  chrome.downloads.search({ id: delta.id }, (items) => {
+    const item = items[0]
+    // 判断文件名、URL，然后弹窗确认
+  })
+})
+```
+
 ## Native Agent 接口
 
 ```http
@@ -47,4 +70,3 @@ Content-Type: application/json
 - 插件不把 Cookie、Authorization、session token 传给 Native Agent。
 - 第一版优先让浏览器完成下载，Native Agent 只处理已下载文件。
 - 用户必须确认后才上传。
-

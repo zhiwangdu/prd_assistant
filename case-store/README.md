@@ -10,6 +10,18 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 MVP 阶段可用 Rust 管理 JSONL/SQLite 存储和余弦相似度计算；后续再接 PostgreSQL + pgvector。
 
+## Embedding 配置
+
+embedding 模型必须配置化。
+
+```yaml
+embedding:
+  provider: "openai_compatible"
+  model: "text-embedding-3-small"
+  api_key_env: "LOGAGENT_EMBEDDING_API_KEY"
+  store: "sqlite"
+```
+
 ## 职责
 
 Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并在新任务中召回相似历史 Case。
@@ -48,6 +60,17 @@ title + symptom + root_cause + solution
 后续：
 
 - 迁移到 PostgreSQL + pgvector。
+
+## 迭代位置
+
+Case 基础功能应在第 1 阶段并行完成：
+
+- 人工确认
+- Case 存储
+- embedding 生成
+- Top 5 相似召回
+
+完整 Case 编辑和高级管理可以后续增强。
 
 ## 召回流程
 

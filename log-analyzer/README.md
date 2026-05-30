@@ -10,6 +10,31 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 日志解压、文件遍历、正则归一化、`rg` 调用和大文件处理都适合用 Rust 实现。已有 C/C++ 日志工具可以通过 Tool Runner 复用。
 
+## 系统依赖
+
+Log Analyzer 依赖 `rg`。启动时需要检查 `rg_path` 是否存在并可执行。
+
+配置示例：
+
+```yaml
+log_analyzer:
+  rg_path: "rg"
+  context_lines: 50
+  keywords:
+    - error
+    - exception
+    - timeout
+    - fail
+    - failed
+    - panic
+    - fatal
+    - refused
+    - denied
+    - verify
+```
+
+关键词必须配置化，不能写死在代码里。
+
 ## 职责
 
 Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
@@ -44,7 +69,7 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 
 ## rg 检索
 
-关键词扫描：
+关键词扫描由配置生成，例如：
 
 ```bash
 rg -i "error|exception|timeout|fail|failed|panic|fatal|refused|denied|verify" extracted/

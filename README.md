@@ -4,7 +4,7 @@
 
 ## 目标
 
-LogAgent 是一个个人主导、业余时间可落地的日志分析助手 MVP。第一版建议按 4~6 周规划，目标是把日志包或测试环境采集结果整理成高质量证据，并结合工具输出、对应版本代码实现和历史 Case，输出结构化故障分析结果。
+LogAgent 是一个个人主导、业余时间可落地的日志分析助手 MVP。加入版本感知代码证据、测试环境采集、统一配置和测试策略后，第一版建议按 5~8 周规划，目标是把日志包或测试环境采集结果整理成高质量证据，并结合工具输出、对应版本代码实现和历史 Case，输出结构化故障分析结果。
 
 ## 技术选型原则
 
@@ -59,6 +59,10 @@ Case 沉淀与召回
 | [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 |
 | [webui](./webui/README.md) | 任务列表、任务详情、Case 库 |
 | [security](./security/README.md) | 安全边界和执行约束 |
+| [config](./config/README.md) | 单一 `logagent.yaml` 配置结构 |
+| [interfaces](./interfaces/README.md) | 模块边界、Rust trait 和状态机 |
+| [deployment](./deployment/README.md) | 单二进制部署形态和系统依赖 |
+| [testing](./testing/README.md) | 测试 fixture、集成测试和 LLM stub |
 | [roadmap](./roadmap/README.md) | 工期预估和迭代顺序 |
 
 ## MVP 边界
@@ -72,3 +76,5 @@ Case 沉淀与召回
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。
 - pgvector 不是第一版硬依赖，Case embedding 可以先用本地文件或 SQLite。
+- MVP 部署形态采用单一 Rust binary + 内部 crate/module 拆分。
+- 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
