@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "native-agent",
+]
+resolver = "2"
+

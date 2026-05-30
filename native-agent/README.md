@@ -40,6 +40,25 @@ Content-Type: application/json
 }
 ```
 
+## 本地运行
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-native-agent -- --config examples/logagent.yaml
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:17321/health
+```
+
+返回：
+
+```json
+{"status":"ok"}
+```
+
 ## 服务端接口
 
 Native Agent 从本地配置读取服务端地址和 API Key。API Key 不写死在代码中。

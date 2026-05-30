@@ -1,0 +1,17 @@
+native_agent:
+  bind: "127.0.0.1:17321"
+  server_base_url: "http://127.0.0.1:8080"
+  api_key_env: "LOGAGENT_NATIVE_API_KEY"
+  allowed_dirs:
+    - "~/Downloads"
+  allowed_suffixes:
+    - ".log"
+    - ".txt"
+    - ".zip"
+    - ".tar.gz"
+    - ".tgz"
+  request_timeout_seconds: 300
+
+storage:
+  max_upload_bytes: 2147483648
+

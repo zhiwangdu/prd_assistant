@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "LogAgent",
+  "version": "0.1.0",
+  "description": "Send completed log downloads to the local LogAgent native agent.",
+  "permissions": [
+    "downloads",
+    "notifications",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:17321/*",
+    "http://localhost:17321/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "options_page": "src/options.html",
+  "action": {
+    "default_title": "LogAgent"
+  }
+}
+

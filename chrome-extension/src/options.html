@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>LogAgent Options</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main>
+      <h1>LogAgent</h1>
+      <label>
+        Native Agent URL
+        <input id="agentBaseUrl" type="url" placeholder="http://127.0.0.1:17321">
+      </label>
+      <label>
+        URL prefixes
+        <textarea id="urlPrefixes" rows="5"></textarea>
+      </label>
+      <label>
+        File suffixes
+        <textarea id="fileSuffixes" rows="5"></textarea>
+      </label>
+      <button id="save">Save</button>
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
+

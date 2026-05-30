@@ -12,6 +12,14 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 4. 弹出确认：是否交给 LogAgent 分析。
 5. 调用 Native Agent 的 `localhost` HTTP 接口。
 
+## 本地安装
+
+1. 打开 `chrome://extensions`。
+2. 开启 Developer mode。
+3. 点击 Load unpacked。
+4. 选择本目录 `chrome-extension`。
+5. 在扩展 Options 中确认 Native Agent URL，默认是 `http://127.0.0.1:17321`。
+
 ## 匹配规则
 
 ```js
