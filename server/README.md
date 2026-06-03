@@ -173,6 +173,7 @@ Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Nativ
 
 - Server 是否已更新到包含 `DefaultBodyLimit` 的版本。
 - `storage.max_upload_bytes` 是否大于上传文件大小。
+- 如果经过网关，优先让 Native Agent 使用分片上传，并让 `native_agent.upload_chunk_bytes` 小于网关单请求限制。
 - Native Agent 和 Server 是否使用同一份或等价的 `logagent.yaml` 限制。
 
 当前已实现接口：
@@ -180,6 +181,9 @@ Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Nativ
 ```http
 GET /health
 POST /api/uploads
+POST /api/uploads/init
+POST /api/uploads/:upload_id/chunks?offset=<bytes>
+POST /api/uploads/:upload_id/complete
 POST /api/tasks
 ```
 
@@ -188,6 +192,22 @@ POST /api/tasks
 - `file`: 上传文件
 - `filename`: 原始文件名
 - `source`: 可选来源标记
+
+大文件建议使用分片接口：
+
+1. `POST /api/uploads/init`
+
+```json
+{
+  "filename": "large.log",
+  "size": 10485760
+}
+```
+
+2. 多次 `POST /api/uploads/{upload_id}/chunks?offset=<bytes>`，body 为 `application/octet-stream`。
+3. `POST /api/uploads/{upload_id}/complete`。
+
+Native Agent 会按 `native_agent.upload_chunk_bytes` 自动选择是否分片。
 
 `POST /api/tasks` 请求：
 

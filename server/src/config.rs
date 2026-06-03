@@ -26,6 +26,7 @@ pub struct AuthSettings {
 pub struct StorageSettings {
     pub data_dir: PathBuf,
     pub max_upload_bytes: u64,
+    pub max_chunk_bytes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +70,8 @@ struct StorageConfig {
     data_dir: PathBuf,
     #[serde(default = "default_max_upload_bytes")]
     max_upload_bytes: u64,
+    #[serde(default = "default_max_chunk_bytes")]
+    max_chunk_bytes: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,6 +151,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         storage: StorageSettings {
             data_dir: storage.data_dir,
             max_upload_bytes: storage.max_upload_bytes,
+            max_chunk_bytes: storage.max_chunk_bytes,
         },
         log_analyzer: LogAnalyzerSettings {
             keywords: analyzer
@@ -175,6 +179,7 @@ fn default_storage_config() -> StorageConfig {
     StorageConfig {
         data_dir: default_data_dir(),
         max_upload_bytes: default_max_upload_bytes(),
+        max_chunk_bytes: default_max_chunk_bytes(),
     }
 }
 
@@ -199,6 +204,10 @@ fn default_data_dir() -> PathBuf {
 
 fn default_max_upload_bytes() -> u64 {
     2 * 1024 * 1024 * 1024
+}
+
+fn default_max_chunk_bytes() -> u64 {
+    512 * 1024
 }
 
 fn default_max_matches() -> usize {

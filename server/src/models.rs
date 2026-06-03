@@ -21,6 +21,25 @@ pub struct UploadResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InitUploadRequest {
+    pub filename: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChunkQuery {
+    pub offset: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkUploadResponse {
+    pub upload_id: String,
+    pub received_bytes: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTaskRequest {
     pub upload_id: String,
     pub source_url: Option<String>,

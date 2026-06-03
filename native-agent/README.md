@@ -106,6 +106,16 @@ LOGAGENT_NATIVE_API_KEY=<same-as-server> \
 - `native_agent.server_base_url` 指向 ECS 上的 Server 地址。
 - `native_agent.allowed_dirs` 包含浏览器下载目录。
 - `storage.max_upload_bytes` 与 Server 保持一致或更小。
+- `native_agent.upload_chunk_bytes` 控制分片上传大小，默认 512KB。
+
+大文件上传：
+
+- 小于等于 `native_agent.upload_chunk_bytes` 的文件走普通 multipart。
+- 大于该阈值的文件自动走分片上传：
+  - `POST /api/uploads/init`
+  - `POST /api/uploads/{upload_id}/chunks?offset=...`
+  - `POST /api/uploads/{upload_id}/complete`
+- 如果 ECS 前面有网关限制单请求大小，把 `upload_chunk_bytes` 配得小于网关限制，例如 `524288`。
 
 macOS 可用 launchd 自启动；Linux 可用 systemd user service。MVP 阶段也可以手动运行。
 

@@ -16,10 +16,12 @@ native_agent:
     - ".tar.gz"
     - ".tgz"
   request_timeout_seconds: 300
+  upload_chunk_bytes: 524288
 
 storage:
   data_dir: "./data/logagent"
   max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
 
 auth:
   api_keys:

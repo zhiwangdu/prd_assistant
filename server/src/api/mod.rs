@@ -18,6 +18,15 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         usize::try_from(state.config.storage.max_upload_bytes).unwrap_or(usize::MAX);
     let protected = Router::new()
         .route("/api/uploads", post(uploads::upload))
+        .route("/api/uploads/init", post(uploads::init_upload))
+        .route(
+            "/api/uploads/:upload_id/chunks",
+            post(uploads::upload_chunk),
+        )
+        .route(
+            "/api/uploads/:upload_id/complete",
+            post(uploads::complete_upload),
+        )
         .route("/api/tasks", post(tasks::create_task))
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .route_layer(middleware::from_fn_with_state(

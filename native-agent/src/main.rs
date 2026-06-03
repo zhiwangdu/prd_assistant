@@ -17,7 +17,7 @@ use axum::{
 use clap::Parser;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpListener;
+use tokio::{io::AsyncReadExt, net::TcpListener};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -51,6 +51,8 @@ struct NativeAgentConfig {
     allowed_suffixes: Vec<String>,
     #[serde(default = "default_request_timeout_seconds")]
     request_timeout_seconds: u64,
+    #[serde(default = "default_upload_chunk_bytes")]
+    upload_chunk_bytes: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,6 +70,7 @@ struct AppConfig {
     allowed_suffixes: Vec<String>,
     max_upload_bytes: u64,
     request_timeout_seconds: u64,
+    upload_chunk_bytes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +100,13 @@ struct ImportResponse {
 struct CreateTaskRequest {
     upload_id: String,
     source_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitUploadRequest {
+    filename: String,
+    size: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,6 +252,13 @@ async fn upload_file(
     file_path: &Path,
     req: &ImportRequest,
 ) -> Result<String, AppError> {
+    let metadata = tokio::fs::metadata(file_path)
+        .await
+        .map_err(|err| AppError::bad_request(format!("cannot read file metadata: {err}")))?;
+    if metadata.len() > state.config.upload_chunk_bytes {
+        return upload_file_chunked(state, file_path, req, metadata.len()).await;
+    }
+
     let part = multipart::Part::file(file_path)
         .await
         .map_err(|err| AppError::bad_request(format!("cannot open file for upload: {err}")))?;
@@ -287,6 +304,136 @@ async fn upload_file(
         .map_err(|err| AppError::bad_gateway(format!("invalid upload response JSON: {err}")))?;
     upload_id_from_value(&body)
         .ok_or_else(|| AppError::bad_gateway("server upload response missing uploadId/id"))
+}
+
+async fn upload_file_chunked(
+    state: &AppState,
+    file_path: &Path,
+    req: &ImportRequest,
+    size: u64,
+) -> Result<String, AppError> {
+    let filename = req
+        .filename
+        .clone()
+        .or_else(|| {
+            file_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "upload.bin".to_string());
+
+    let upload_id = init_chunked_upload(state, filename, size).await?;
+    let mut file = tokio::fs::File::open(file_path).await.map_err(|err| {
+        AppError::bad_request(format!("cannot open file for chunked upload: {err}"))
+    })?;
+    let mut offset = 0_u64;
+    let mut buffer = vec![0_u8; state.config.upload_chunk_bytes as usize];
+
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|err| AppError::bad_request(format!("cannot read file chunk: {err}")))?;
+        if read == 0 {
+            break;
+        }
+        upload_chunk(state, &upload_id, offset, &buffer[..read]).await?;
+        offset += read as u64;
+    }
+
+    complete_chunked_upload(state, &upload_id).await?;
+    Ok(upload_id)
+}
+
+async fn init_chunked_upload(
+    state: &AppState,
+    filename: String,
+    size: u64,
+) -> Result<String, AppError> {
+    let url = format!(
+        "{}/api/uploads/init",
+        state.config.server_base_url.trim_end_matches('/')
+    );
+    let response = state
+        .client
+        .post(url)
+        .bearer_auth(&state.config.api_key)
+        .json(&InitUploadRequest { filename, size })
+        .send()
+        .await
+        .map_err(|err| AppError::bad_gateway(format!("init upload request failed: {err}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::bad_gateway(format!(
+            "init upload failed with status {status}: {body}"
+        )));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|err| {
+        AppError::bad_gateway(format!("invalid init upload response JSON: {err}"))
+    })?;
+    upload_id_from_value(&body)
+        .ok_or_else(|| AppError::bad_gateway("server init upload response missing uploadId/id"))
+}
+
+async fn upload_chunk(
+    state: &AppState,
+    upload_id: &str,
+    offset: u64,
+    bytes: &[u8],
+) -> Result<(), AppError> {
+    let url = format!(
+        "{}/api/uploads/{}/chunks?offset={}",
+        state.config.server_base_url.trim_end_matches('/'),
+        upload_id,
+        offset
+    );
+    let response = state
+        .client
+        .post(url)
+        .bearer_auth(&state.config.api_key)
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(bytes.to_vec())
+        .send()
+        .await
+        .map_err(|err| AppError::bad_gateway(format!("upload chunk request failed: {err}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::bad_gateway(format!(
+            "upload chunk failed with status {status}: {body}"
+        )));
+    }
+    let _ = response.bytes().await;
+    Ok(())
+}
+
+async fn complete_chunked_upload(state: &AppState, upload_id: &str) -> Result<(), AppError> {
+    let url = format!(
+        "{}/api/uploads/{}/complete",
+        state.config.server_base_url.trim_end_matches('/'),
+        upload_id
+    );
+    let response = state
+        .client
+        .post(url)
+        .bearer_auth(&state.config.api_key)
+        .send()
+        .await
+        .map_err(|err| AppError::bad_gateway(format!("complete upload request failed: {err}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::bad_gateway(format!(
+            "complete upload failed with status {status}: {body}"
+        )));
+    }
+    let _ = response.bytes().await;
+    Ok(())
 }
 
 async fn create_task(
@@ -363,6 +510,7 @@ fn load_config(path: &Path) -> anyhow::Result<AppConfig> {
             .collect(),
         max_upload_bytes: storage.max_upload_bytes,
         request_timeout_seconds: native.request_timeout_seconds,
+        upload_chunk_bytes: native.upload_chunk_bytes,
     })
 }
 
@@ -374,6 +522,7 @@ fn default_native_agent_config() -> NativeAgentConfig {
         allowed_dirs: vec![],
         allowed_suffixes: default_file_suffixes(),
         request_timeout_seconds: default_request_timeout_seconds(),
+        upload_chunk_bytes: default_upload_chunk_bytes(),
     }
 }
 
@@ -397,6 +546,10 @@ fn default_api_key_env() -> String {
 
 fn default_request_timeout_seconds() -> u64 {
     300
+}
+
+fn default_upload_chunk_bytes() -> u64 {
+    512 * 1024
 }
 
 fn default_max_upload_bytes() -> u64 {

@@ -43,4 +43,11 @@ impl UploadStore {
     pub async fn get(&self, upload_id: &str) -> Option<UploadRecord> {
         self.inner.read().await.get(upload_id).cloned()
     }
+
+    pub async fn update_size(&self, upload_id: &str, size: u64) -> Option<UploadRecord> {
+        let mut uploads = self.inner.write().await;
+        let record = uploads.get_mut(upload_id)?;
+        record.size = size;
+        Some(record.clone())
+    }
 }
