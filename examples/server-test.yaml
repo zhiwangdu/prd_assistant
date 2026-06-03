@@ -1,0 +1,27 @@
+server:
+  bind: "127.0.0.1:50992"
+  public_base_url: "http://127.0.0.1:50992"
+
+storage:
+  data_dir: "/tmp/logagent-server-test"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+auth:
+  api_keys:
+    - name: "native-agent"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+log_analyzer:
+  max_matches: 200
+  keywords:
+    - error
+    - exception
+    - timeout
+    - fail
+    - failed
+    - panic
+    - fatal
+    - refused
+    - denied
+    - verify

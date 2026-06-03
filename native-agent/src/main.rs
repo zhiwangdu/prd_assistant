@@ -17,7 +17,7 @@ use axum::{
 use clap::Parser;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
-use tokio::{io::AsyncReadExt, net::TcpListener};
+use tokio::{io::AsyncReadExt, net::TcpListener, time::sleep};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -445,17 +445,39 @@ async fn create_task(
         "{}/api/tasks",
         state.config.server_base_url.trim_end_matches('/')
     );
-    let response = state
-        .client
-        .post(url)
-        .bearer_auth(&state.config.api_key)
-        .json(&CreateTaskRequest {
-            upload_id: upload_id.to_string(),
-            source_url,
-        })
-        .send()
-        .await
-        .map_err(|err| AppError::bad_gateway(format!("create task request failed: {err}")))?;
+    let payload = CreateTaskRequest {
+        upload_id: upload_id.to_string(),
+        source_url,
+    };
+    let mut last_error = None;
+    let mut response = None;
+    for attempt in 0..2 {
+        match state
+            .client
+            .post(&url)
+            .bearer_auth(&state.config.api_key)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(value) => {
+                response = Some(value);
+                break;
+            }
+            Err(err) => {
+                last_error = Some(err);
+                if attempt == 0 {
+                    sleep(Duration::from_millis(250)).await;
+                }
+            }
+        }
+    }
+    let response = response.ok_or_else(|| {
+        AppError::bad_gateway(format!(
+            "create task request failed after retry: {:?}",
+            last_error
+        ))
+    })?;
 
     let status = response.status();
     if !status.is_success() {
