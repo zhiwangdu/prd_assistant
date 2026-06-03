@@ -27,6 +27,7 @@ auth:
       value_env: "LOGAGENT_NATIVE_API_KEY"
 
 log_analyzer:
+  max_matches: 200
   keywords:
     - error
     - exception

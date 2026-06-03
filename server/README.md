@@ -35,11 +35,40 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 ## 职责边界
 
 - Server：任务状态、API、调度、错误汇总。
-- Log Analyzer：解压、manifest、rg 检索、日志摘要。
+- Log Analyzer：解压、manifest、简单 grep 检索、日志摘要。
 - Tool Runner：外部工具调用。
 - Code Evidence：版本代码检索。
 - Environment Collector：测试环境采集。
 - LLM Agent：证据裁剪、Prompt 组装、模型调用。
+
+## 代码结构
+
+当前 Server 已按框架拆分：
+
+```text
+server/src
+  main.rs              # 启动入口和 Axum app 装配
+  api/                 # HTTP 路由
+    health.rs
+    uploads.rs
+    tasks.rs
+  auth.rs              # API Key middleware
+  config.rs            # logagent.yaml 加载和默认值
+  error.rs             # API 错误响应
+  fs_utils.rs          # 文件名和路径安全工具
+  id.rs                # MVP ID 生成
+  log_analyzer.rs      # 解压、manifest 文件扫描、简单 grep
+  models.rs            # DTO / task context / evidence output
+  pipeline.rs          # upload 任务执行管线
+  state.rs             # AppState 和内存 UploadStore
+```
+
+后续新增 Tool Runner、Code Evidence、Environment Collector、LLM Agent 时，应保持这个模式：
+
+- API 层只做请求解析和响应。
+- Pipeline 负责任务编排。
+- 各模块只执行自己的能力。
+- 新模块的运行和部署方式同步写入对应 README。
 
 ## 任务来源
 
