@@ -123,3 +123,97 @@ MVP 要求：
 - 启动时检查 env 是否存在。
 - API Key 只存 hash 或只保存在进程内，不写入任务日志。
 - 后续再支持轮换和多用户权限。
+
+## MVP 运行
+
+本阶段 Server 先实现最小闭环：
+
+- `POST /api/uploads` 接收 Native Agent 上传的 multipart 文件。
+- `POST /api/tasks` 创建任务。
+- 同步解压 `.zip`、`.tar.gz`、`.tgz`，普通 `.log` / `.txt` 直接复制到 `extracted/`。
+- 递归扫描文本行，按配置关键词做简单 grep。
+- 写入 `manifest.json` 和 `grep_results.json`。
+
+当前已实现接口：
+
+```http
+GET /health
+POST /api/uploads
+POST /api/tasks
+```
+
+`POST /api/uploads` 使用 multipart：
+
+- `file`: 上传文件
+- `filename`: 原始文件名
+- `source`: 可选来源标记
+
+`POST /api/tasks` 请求：
+
+```json
+{
+  "uploadId": "upl_123",
+  "sourceUrl": "https://logs.example/export/123"
+}
+```
+
+本地启动：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-server -- --config examples/logagent.yaml
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+返回：
+
+```json
+{"status":"ok"}
+```
+
+本地端到端验证：
+
+1. 启动 Server。
+2. 启动 Native Agent。
+3. 调用 Native Agent 的 `/imports`：
+
+```bash
+curl -X POST http://127.0.0.1:17321/imports \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "filePath": "testing/fixtures/downloads/sample.log",
+    "filename": "sample.log",
+    "sourceUrl": "file://sample.log"
+  }'
+```
+
+验证输出文件：
+
+```bash
+find data/logagent -maxdepth 5 -type f | sort
+cat data/logagent/workspaces/<task_id>/manifest.json
+cat data/logagent/workspaces/<task_id>/grep_results.json
+```
+
+ECS 部署时：
+
+- 将 `server.bind` 改为 `0.0.0.0:8080`。
+- 将 `server.public_base_url` 改为 ECS 的访问地址。
+- 开放安全组入站端口，例如 `8080`。
+- 在 ECS 环境变量中设置 `LOGAGENT_NATIVE_API_KEY`。
+- Native Agent 配置中的 `server_base_url` 指向 ECS 地址。
+
+推荐生产运行方式：
+
+```bash
+cargo build --release -p logagent-server
+LOGAGENT_NATIVE_API_KEY=<secret> \
+  ./target/release/logagent-server --config /etc/logagent/logagent.yaml
+```
+
+systemd 可按上述命令封装为 `logagent-server.service`。

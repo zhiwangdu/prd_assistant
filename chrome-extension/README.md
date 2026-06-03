@@ -20,6 +20,48 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 4. 选择本目录 `chrome-extension`。
 5. 在扩展 Options 中确认 Native Agent URL，默认是 `http://127.0.0.1:17321`。
 
+## 运行前置条件
+
+- Native Agent 已在本机启动。
+- Native Agent 的 `allowed_dirs` 包含浏览器下载目录。
+- Server 已启动，或 Native Agent 的 `server_base_url` 指向 ECS Server。
+- Chrome 对下载文件路径可见。当前实现依赖 `chrome.downloads.search()` 返回的 `filename`。
+
+## 本地验证
+
+1. 启动 Server：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-server -- --config examples/logagent.yaml
+```
+
+2. 启动 Native Agent：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-native-agent -- --config examples/logagent.yaml
+```
+
+3. 在 Chrome 下载一个匹配后缀的文件，例如 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`。
+4. Chrome notification 弹出后点击 `Send to LogAgent`。
+5. 检查 Server 侧 workspace：
+
+```bash
+find data/logagent -maxdepth 5 -type f | sort
+```
+
+## 部署方式
+
+Chrome Extension 当前按开发者模式加载：
+
+- `chrome://extensions`
+- Developer mode
+- Load unpacked
+- 选择 `chrome-extension`
+
+如果后续要给多人使用，需要打包并发布到 Chrome Web Store 或企业内部分发；发布前需要固定 extension 权限、图标资源和版本号。
+
 ## 匹配规则
 
 ```js

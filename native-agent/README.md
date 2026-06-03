@@ -42,6 +42,8 @@ Content-Type: application/json
 
 ## 本地运行
 
+先启动 Server，再启动 Native Agent。
+
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-native-agent -- --config examples/logagent.yaml
@@ -58,6 +60,54 @@ curl http://127.0.0.1:17321/health
 ```json
 {"status":"ok"}
 ```
+
+本地导入测试：
+
+```bash
+curl -X POST http://127.0.0.1:17321/imports \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "filePath": "testing/fixtures/downloads/sample.log",
+    "filename": "sample.log",
+    "sourceUrl": "file://sample.log"
+  }'
+```
+
+成功时返回：
+
+```json
+{
+  "uploadId": "upl_...",
+  "taskId": "task_...",
+  "url": "http://127.0.0.1:8080/tasks/task_..."
+}
+```
+
+## 部署方式
+
+开发机或个人电脑上运行 Native Agent。
+
+构建 release：
+
+```bash
+cargo build --release -p logagent-native-agent
+```
+
+运行：
+
+```bash
+LOGAGENT_NATIVE_API_KEY=<same-as-server> \
+  ./target/release/logagent-native-agent --config /path/to/logagent.yaml
+```
+
+配置要求：
+
+- `native_agent.bind` 建议保持 `127.0.0.1:17321`。
+- `native_agent.server_base_url` 指向 ECS 上的 Server 地址。
+- `native_agent.allowed_dirs` 包含浏览器下载目录。
+- `storage.max_upload_bytes` 与 Server 保持一致或更小。
+
+macOS 可用 launchd 自启动；Linux 可用 systemd user service。MVP 阶段也可以手动运行。
 
 ## 服务端接口
 

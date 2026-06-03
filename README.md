@@ -78,3 +78,22 @@ Case 沉淀与召回
 - pgvector 不是第一版硬依赖，Case embedding 可以先用本地文件或 SQLite。
 - MVP 部署形态采用单一 Rust binary + 内部 crate/module 拆分。
 - 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
+
+## 开发约定
+
+后续每开发或修改一个组件，都必须同步更新该组件目录下的 `README.md`，至少包含：
+
+- 当前实现状态
+- 配置项
+- 本地运行方式
+- 部署方式
+- 健康检查或验证方式
+- 与上下游组件的接口约定
+
+已经写好的组件：
+
+- `chrome-extension`
+- `native-agent`
+- `server`
+
+这三个组件的 README 需要随着代码变化持续维护。

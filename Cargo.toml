@@ -1,6 +1,6 @@
 [workspace]
 members = [
   "native-agent",
+  "server",
 ]
 resolver = "2"
-
