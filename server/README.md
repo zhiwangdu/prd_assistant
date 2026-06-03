@@ -163,6 +163,18 @@ MVP 要求：
 - 递归扫描文本行，按配置关键词做简单 grep。
 - 写入 `manifest.json` 和 `grep_results.json`。
 
+Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Native Agent 上传稍大的文件时报：
+
+```text
+400 failed to read upload field: Error parsing multipart/form-data request
+```
+
+优先检查：
+
+- Server 是否已更新到包含 `DefaultBodyLimit` 的版本。
+- `storage.max_upload_bytes` 是否大于上传文件大小。
+- Native Agent 和 Server 是否使用同一份或等价的 `logagent.yaml` 限制。
+
 当前已实现接口：
 
 ```http
