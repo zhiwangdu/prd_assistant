@@ -46,24 +46,24 @@ Case 沉淀与召回
 
 ## 模块目录
 
-| 目录 | 模块 |
-|------|------|
-| [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 |
-| [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 |
-| [server](./server/README.md) | Rust 服务端，任务、上传、调度和 API |
-| [log-analyzer](./log-analyzer/README.md) | 日志解压、manifest、rg 检索和摘要 |
-| [tool-runner](./tool-runner/README.md) | 外部工具白名单调用 |
-| [code-evidence](./code-evidence/README.md) | 软件版本到代码分支映射和代码证据 |
-| [environment-collector](./environment-collector/README.md) | 测试环境 SSH/SCP 信息采集 |
-| [llm-agent](./llm-agent/README.md) | LLM 输入组织、Prompt 约束和输出结构 |
-| [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 |
-| [webui](./webui/README.md) | 任务列表、任务详情、Case 库 |
-| [security](./security/README.md) | 安全边界和执行约束 |
-| [config](./config/README.md) | 单一 `logagent.yaml` 配置结构 |
-| [interfaces](./interfaces/README.md) | 模块边界、Rust trait 和状态机 |
-| [deployment](./deployment/README.md) | 单二进制部署形态和系统依赖 |
-| [testing](./testing/README.md) | 测试 fixture、集成测试和 LLM stub |
-| [roadmap](./roadmap/README.md) | 工期预估和迭代顺序 |
+| 目录 | 模块 | Spec |
+|------|------|------|
+| [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
+| [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
+| [server](./server/README.md) | Rust 服务端，任务、上传、调度和 API | [SPEC](./server/SPEC.md) |
+| [log-analyzer](./log-analyzer/README.md) | 日志解压、manifest、rg 检索和摘要 | [SPEC](./log-analyzer/SPEC.md) |
+| [tool-runner](./tool-runner/README.md) | 外部工具白名单调用 | [SPEC](./tool-runner/SPEC.md) |
+| [code-evidence](./code-evidence/README.md) | 软件版本到代码分支映射和代码证据 | [SPEC](./code-evidence/SPEC.md) |
+| [environment-collector](./environment-collector/README.md) | 测试环境 SSH/SCP 信息采集 | [SPEC](./environment-collector/SPEC.md) |
+| [llm-agent](./llm-agent/README.md) | LLM 输入组织、Prompt 约束和输出结构 | [SPEC](./llm-agent/SPEC.md) |
+| [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 | [SPEC](./case-store/SPEC.md) |
+| [webui](./webui/README.md) | 任务列表、任务详情、Case 库 | [SPEC](./webui/SPEC.md) |
+| [security](./security/README.md) | 安全边界和执行约束 | [SPEC](./security/SPEC.md) |
+| [config](./config/README.md) | 单一 `logagent.yaml` 配置结构 | [SPEC](./config/SPEC.md) |
+| [interfaces](./interfaces/README.md) | 模块边界、Rust trait 和状态机 | [SPEC](./interfaces/SPEC.md) |
+| [deployment](./deployment/README.md) | 单二进制部署形态和系统依赖 | [SPEC](./deployment/SPEC.md) |
+| [testing](./testing/README.md) | 测试 fixture、集成测试和 LLM stub | [SPEC](./testing/SPEC.md) |
+| [roadmap](./roadmap/README.md) | 工期预估和迭代顺序 | [SPEC](./roadmap/SPEC.md) |
 
 ## MVP 边界
 
@@ -81,7 +81,9 @@ Case 沉淀与召回
 
 ## 开发约定
 
-后续每开发或修改一个组件，都必须同步更新该组件目录下的 `README.md`，至少包含：
+后续每开发或修改一个组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`。
+
+`README.md` 至少包含：
 
 - 当前实现状态
 - 配置项
@@ -89,6 +91,14 @@ Case 沉淀与召回
 - 部署方式
 - 健康检查或验证方式
 - 与上下游组件的接口约定
+
+`SPEC.md` 至少包含：
+
+- 目标和职责边界
+- 输入输出
+- API 或数据产物
+- 配置和安全约束
+- 验收标准
 
 已经写好的组件：
 
