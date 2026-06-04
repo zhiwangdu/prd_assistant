@@ -11,6 +11,7 @@ native_agent:
     - ".zip"
     - ".tar.gz"
     - ".tgz"
+    - ".tar"
   request_timeout_seconds: 300
   upload_chunk_bytes: 524288
 

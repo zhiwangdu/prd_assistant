@@ -9,7 +9,8 @@ const DEFAULT_OPTIONS = {
     ".txt",
     ".zip",
     ".tar.gz",
-    ".tgz"
+    ".tgz",
+    ".tar"
   ]
 }
 
@@ -46,4 +47,3 @@ function lines(value) {
     .map((line) => line.trim())
     .filter(Boolean)
 }
-

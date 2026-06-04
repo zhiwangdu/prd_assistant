@@ -43,7 +43,7 @@ export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-native-agent -- --config examples/logagent.yaml
 ```
 
-3. 在 Chrome 下载一个匹配后缀的文件，例如 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`。
+3. 在 Chrome 下载一个匹配后缀的文件，例如 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 4. Chrome notification 弹出后点击 `Send to LogAgent`。
 5. 检查 Server 侧 workspace：
 
@@ -75,7 +75,8 @@ const FILE_SUFFIXES = [
   ".txt",
   ".zip",
   ".tar.gz",
-  ".tgz"
+  ".tgz",
+  ".tar"
 ]
 ```
 

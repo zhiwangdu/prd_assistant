@@ -579,7 +579,7 @@ fn default_max_upload_bytes() -> u64 {
 }
 
 fn default_file_suffixes() -> Vec<String> {
-    [".log", ".txt", ".zip", ".tar.gz", ".tgz"]
+    [".log", ".txt", ".zip", ".tar.gz", ".tgz", ".tar"]
         .into_iter()
         .map(ToString::to_string)
         .collect()

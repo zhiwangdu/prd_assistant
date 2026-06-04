@@ -159,7 +159,7 @@ MVP 要求：
 
 - `POST /api/uploads` 接收 Native Agent 上传的 multipart 文件。
 - `POST /api/tasks` 创建任务。
-- 同步解压 `.zip`、`.tar.gz`、`.tgz`，普通 `.log` / `.txt` 直接复制到 `extracted/`。
+- 同步解压 `.zip`、`.tar.gz`、`.tgz`、`.tar`，普通 `.log` / `.txt` 直接复制到 `extracted/`。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - 写入 `manifest.json` 和 `grep_results.json`。
 

@@ -52,6 +52,7 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 - `.zip`
 - `.tar.gz`
 - `.tgz`
+- `.tar`
 
 ## manifest
 

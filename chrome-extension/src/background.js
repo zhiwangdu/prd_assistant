@@ -9,7 +9,8 @@ const DEFAULT_OPTIONS = {
     ".txt",
     ".zip",
     ".tar.gz",
-    ".tgz"
+    ".tgz",
+    ".tar"
   ]
 }
 

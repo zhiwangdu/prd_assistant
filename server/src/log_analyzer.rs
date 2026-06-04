@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::Path,
 };
 
@@ -32,16 +32,13 @@ impl LogAnalyzer {
         if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
             let file = fs::File::open(raw_path)?;
             let decoder = GzDecoder::new(file);
-            let mut archive = tar::Archive::new(decoder);
-            for entry in archive.entries()? {
-                let mut entry = entry?;
-                let entry_path = entry.path()?.to_path_buf();
-                let safe_path = safe_join(extracted_dir, &entry_path)?;
-                if let Some(parent) = safe_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                entry.unpack(safe_path)?;
-            }
+            unpack_tar_archive(decoder, extracted_dir)?;
+            return Ok(());
+        }
+
+        if name.ends_with(".tar") {
+            let file = fs::File::open(raw_path)?;
+            unpack_tar_archive(file, extracted_dir)?;
             return Ok(());
         }
 
@@ -104,6 +101,20 @@ impl LogAnalyzer {
     }
 }
 
+fn unpack_tar_archive<R: Read>(reader: R, extracted_dir: &Path) -> anyhow::Result<()> {
+    let mut archive = tar::Archive::new(reader);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.to_path_buf();
+        let safe_path = safe_join(extracted_dir, &entry_path)?;
+        if let Some(parent) = safe_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        entry.unpack(safe_path)?;
+    }
+    Ok(())
+}
+
 fn collect_manifest_files_inner(
     root: &Path,
     dir: &Path,
@@ -123,6 +134,117 @@ fn collect_manifest_files_inner(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use flate2::{write::GzEncoder, Compression};
+    use std::{
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn extracts_plain_tar_uploads() {
+        let fixture = Fixture::new("plain-tar");
+        fixture.write_source_log();
+        fixture.write_tar("logs.tar");
+
+        let analyzer = analyzer();
+        analyzer
+            .extract_upload(&fixture.root.join("logs.tar"), &fixture.extracted)
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(fixture.extracted.join("logs/app.log")).unwrap(),
+            "INFO boot\nERROR failed\n"
+        );
+    }
+
+    #[test]
+    fn extracts_gzip_tar_uploads() {
+        let fixture = Fixture::new("gzip-tar");
+        fixture.write_source_log();
+        fixture.write_tar_gz("logs.tar.gz");
+
+        let analyzer = analyzer();
+        analyzer
+            .extract_upload(&fixture.root.join("logs.tar.gz"), &fixture.extracted)
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(fixture.extracted.join("logs/app.log")).unwrap(),
+            "INFO boot\nERROR failed\n"
+        );
+    }
+
+    fn analyzer() -> LogAnalyzer {
+        LogAnalyzer::new(LogAnalyzerSettings {
+            keywords: vec!["error".to_string()],
+            max_matches: 20,
+        })
+    }
+
+    struct Fixture {
+        root: PathBuf,
+        source: PathBuf,
+        extracted: PathBuf,
+    }
+
+    impl Fixture {
+        fn new(name: &str) -> Self {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!("logagent-{name}-{now}"));
+            let source = root.join("source");
+            let extracted = root.join("extracted");
+            fs::create_dir_all(&source).unwrap();
+            fs::create_dir_all(&extracted).unwrap();
+            Self {
+                root,
+                source,
+                extracted,
+            }
+        }
+
+        fn write_source_log(&self) {
+            fs::create_dir_all(self.source.join("logs")).unwrap();
+            fs::write(
+                self.source.join("logs/app.log"),
+                "INFO boot\nERROR failed\n",
+            )
+            .unwrap();
+        }
+
+        fn write_tar(&self, filename: &str) {
+            let file = fs::File::create(self.root.join(filename)).unwrap();
+            append_logs_to_tar(file, &self.source);
+        }
+
+        fn write_tar_gz(&self, filename: &str) {
+            let file = fs::File::create(self.root.join(filename)).unwrap();
+            let encoder = GzEncoder::new(file, Compression::default());
+            let encoder = append_logs_to_tar(encoder, &self.source);
+            encoder.finish().unwrap();
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn append_logs_to_tar<W: std::io::Write>(writer: W, source: &Path) -> W {
+        let mut builder = tar::Builder::new(writer);
+        builder.append_dir_all("logs", source.join("logs")).unwrap();
+        builder.finish().unwrap();
+        builder.into_inner().unwrap()
+    }
 }
 
 fn grep_dir(
