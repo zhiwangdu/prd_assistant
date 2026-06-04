@@ -8,10 +8,10 @@
 
 - 检查 Server `/health`
 - 输入 API Key
-- 上传日志文件
+- 上传一个或多个日志文件
 - 大文件按 512 KiB 分片上传
 - 小文件直接 multipart 上传
-- 创建任务 `/api/tasks`
+- 使用 `uploadIds` 创建批量任务 `/api/tasks`
 - 查询任务产物 `/api/tasks/:task_id/artifacts`
 - 展示 `manifest.json` 文件清单
 - 展示 `grep_results.json` grep 命中
@@ -77,7 +77,7 @@ curl http://127.0.0.1:50992/health
 
 1. 打开 WEBUI。
 2. 输入 API Key。
-3. 选择 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz` 或 `.tar`。
+3. 选择一个或多个 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz` 或 `.tar`。
 4. 点击上传并创建任务。
 5. 查看证据链里的文件清单和 grep 命中。
 
@@ -92,6 +92,7 @@ Authorization: Bearer <api-key>
 接口：
 
 - `POST /api/uploads`
+- `POST /api/uploads/batch`
 - `POST /api/uploads/init`
 - `POST /api/uploads/:upload_id/chunks?offset=<bytes>`
 - `POST /api/uploads/:upload_id/complete`

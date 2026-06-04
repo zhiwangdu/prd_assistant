@@ -42,18 +42,19 @@ Rust -> C/C++ -> Go/Python/Java 等
 - `server/`
   - Rust/Axum 服务。
   - API Key middleware。
-  - multipart 上传、分片上传、task 创建、artifact 查询。
+  - multipart 上传、multipart 批量上传、分片上传、task 创建、artifact 查询。
   - 静态托管 `webui/`。
-  - 当前 task pipeline：copy raw -> extract -> manifest -> simple grep。
+  - 当前 task pipeline：copy raw -> per-upload extract -> manifest -> simple grep。
 
 - `log-analyzer/`
   - 作为 Server 内部模块实现。
   - 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
+  - `.tar.gz` / `.tgz` 失败后会 fallback 按 `.tar` 解包。
   - 生成 `manifest.json` 和 `grep_results.json`。
 
 - `webui/`
   - 静态页面。
-  - 支持健康检查、API Key、手动上传、小文件/分片上传、创建 task、查看 artifacts。
+  - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
   - 任务列表当前只保存在浏览器 localStorage。
 
 规划中组件：
@@ -115,6 +116,7 @@ GET /
 
 ```http
 POST /api/uploads
+POST /api/uploads/batch
 POST /api/uploads/init
 POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
@@ -146,7 +148,9 @@ data_dir/
   workspaces/
     task_xxx/
       raw/
+        upl_xxx/
       extracted/
+        package_name/
       manifest.json
       grep_results.json
 ```

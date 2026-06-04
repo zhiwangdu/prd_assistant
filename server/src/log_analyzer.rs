@@ -32,7 +32,13 @@ impl LogAnalyzer {
         if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
             let file = fs::File::open(raw_path)?;
             let decoder = GzDecoder::new(file);
-            unpack_tar_archive(decoder, extracted_dir)?;
+            if let Err(gzip_err) = unpack_tar_archive(decoder, extracted_dir) {
+                reset_dir(extracted_dir)?;
+                let file = fs::File::open(raw_path)?;
+                unpack_tar_archive(file, extracted_dir).with_context(|| {
+                    format!("failed to extract as gzip tar: {gzip_err}; fallback tar also failed")
+                })?;
+            }
             return Ok(());
         }
 
@@ -115,6 +121,14 @@ fn unpack_tar_archive<R: Read>(reader: R, extracted_dir: &Path) -> anyhow::Resul
     Ok(())
 }
 
+fn reset_dir(path: &Path) -> anyhow::Result<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)?;
+    }
+    fs::create_dir_all(path)?;
+    Ok(())
+}
+
 fn collect_manifest_files_inner(
     root: &Path,
     dir: &Path,
@@ -168,6 +182,23 @@ mod tests {
         let fixture = Fixture::new("gzip-tar");
         fixture.write_source_log();
         fixture.write_tar_gz("logs.tar.gz");
+
+        let analyzer = analyzer();
+        analyzer
+            .extract_upload(&fixture.root.join("logs.tar.gz"), &fixture.extracted)
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(fixture.extracted.join("logs/app.log")).unwrap(),
+            "INFO boot\nERROR failed\n"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_plain_tar_when_targz_is_not_gzipped() {
+        let fixture = Fixture::new("fallback-tar");
+        fixture.write_source_log();
+        fixture.write_tar("logs.tar.gz");
 
         let analyzer = analyzer();
         analyzer

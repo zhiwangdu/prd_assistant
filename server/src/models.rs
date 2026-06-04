@@ -19,6 +19,13 @@ pub struct UploadResponse {
     pub size: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchUploadResponse {
+    pub uploads: Vec<UploadResponse>,
+    pub total_size: u64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitUploadRequest {
@@ -41,7 +48,9 @@ pub struct ChunkUploadResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTaskRequest {
-    pub upload_id: String,
+    pub upload_id: Option<String>,
+    #[serde(default)]
+    pub upload_ids: Vec<String>,
     pub source_url: Option<String>,
 }
 
@@ -94,11 +103,23 @@ pub struct TaskContext {
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub upload_id: String,
+    pub upload_ids: Vec<String>,
+    pub uploads: Vec<ManifestUpload>,
     pub task_id: String,
     pub source: TaskSource,
     pub filename: String,
     pub source_url: Option<String>,
     pub files: Vec<ManifestFile>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestUpload {
+    pub upload_id: String,
+    pub filename: String,
+    pub size: u64,
+    pub raw_path: String,
+    pub extracted_dir: String,
 }
 
 #[derive(Debug, Serialize)]

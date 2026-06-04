@@ -54,6 +54,14 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 - `.tgz`
 - `.tar`
 
+`.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` 再尝试一次；两种方式都失败才返回异常。
+
+批量任务中，每个上传文件由 Server pipeline 解压到独立目录：
+
+```text
+extracted/<文件基名>/
+```
+
 ## manifest
 
 ```json

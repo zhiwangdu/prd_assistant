@@ -19,11 +19,16 @@ pub async fn create_task(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTaskRequest>,
 ) -> Result<Json<TaskResponse>, AppError> {
-    let upload = state
-        .uploads
-        .get(&req.upload_id)
-        .await
-        .ok_or_else(|| AppError::bad_request("unknown uploadId"))?;
+    let upload_ids = task_upload_ids(&req)?;
+    let mut uploads = Vec::with_capacity(upload_ids.len());
+    for upload_id in upload_ids {
+        let upload = state
+            .uploads
+            .get(&upload_id)
+            .await
+            .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
+        uploads.push(upload);
+    }
 
     let task_id = next_id("task");
     let workspace = state.config.storage.workspace_dir(&task_id);
@@ -34,7 +39,7 @@ pub async fn create_task(
         workspace,
     };
 
-    let output = run_upload_pipeline(state.config.clone(), upload, ctx.clone()).await?;
+    let output = run_upload_pipeline(state.config.clone(), uploads, ctx.clone()).await?;
     let url = format!(
         "{}/tasks/{}",
         state.config.server.public_base_url.trim_end_matches('/'),
@@ -48,6 +53,23 @@ pub async fn create_task(
         manifest_path: output.manifest_path.display().to_string(),
         grep_results_path: output.grep_results_path.display().to_string(),
     }))
+}
+
+fn task_upload_ids(req: &CreateTaskRequest) -> Result<Vec<String>, AppError> {
+    let mut upload_ids = Vec::new();
+    if let Some(upload_id) = req.upload_id.as_ref().filter(|value| !value.is_empty()) {
+        upload_ids.push(upload_id.clone());
+    }
+    for upload_id in req.upload_ids.iter().filter(|value| !value.is_empty()) {
+        if !upload_ids.iter().any(|value| value == upload_id) {
+            upload_ids.push(upload_id.clone());
+        }
+    }
+    if upload_ids.is_empty() {
+        Err(AppError::bad_request("missing uploadId or uploadIds"))
+    } else {
+        Ok(upload_ids)
+    }
 }
 
 pub async fn task_artifacts(

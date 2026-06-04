@@ -65,8 +65,8 @@ async function checkHealth() {
 }
 
 async function uploadAndRun() {
-  const file = els.fileInput.files[0]
-  if (!file) {
+  const files = Array.from(els.fileInput.files)
+  if (!files.length) {
     log("请选择文件")
     return
   }
@@ -76,17 +76,31 @@ async function uploadAndRun() {
   }
 
   setProgress(0)
-  log(`开始上传 ${file.name} (${formatBytes(file.size)})`)
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+  const progressTotal = Math.max(totalSize, 1)
+  let uploadedSize = 0
+  log(`开始上传 ${files.length} 个文件 (${formatBytes(totalSize)})`)
 
   try {
-    const upload = await uploadFile(file)
-    log(`上传完成: ${upload.uploadId}`)
-    const task = await createTask(upload.uploadId)
+    const uploads = []
+    for (const file of files) {
+      log(`上传 ${file.name} (${formatBytes(file.size)})`)
+      const upload = await uploadFile(file, (fileProgress) => {
+        const current = uploadedSize + Math.round(file.size * fileProgress)
+        setProgress(Math.round((current / progressTotal) * 100))
+      })
+      uploadedSize += file.size
+      setProgress(Math.round((uploadedSize / progressTotal) * 100))
+      uploads.push(upload)
+      log(`上传完成: ${upload.uploadId}`)
+    }
+    setProgress(100)
+    const task = await createTask(uploads.map((upload) => upload.uploadId))
     log(`任务完成: ${task.taskId}`)
     saveTask({
       taskId: task.taskId,
-      filename: upload.filename,
-      size: upload.size,
+      filename: uploads.map((upload) => upload.filename).join(", "),
+      size: uploads.reduce((sum, upload) => sum + upload.size, 0),
       createdAt: new Date().toISOString()
     })
     state.activeTaskId = task.taskId
@@ -98,7 +112,7 @@ async function uploadAndRun() {
   }
 }
 
-async function uploadFile(file) {
+async function uploadFile(file, onProgress = () => {}) {
   if (file.size <= CHUNK_BYTES) {
     const form = new FormData()
     form.append("filename", file.name)
@@ -108,7 +122,7 @@ async function uploadFile(file) {
       headers: authHeaders(),
       body: form
     })
-    setProgress(100)
+    onProgress(1)
     return res
   }
 
@@ -128,7 +142,7 @@ async function uploadFile(file) {
       body: chunk
     })
     offset = next
-    setProgress(Math.round((offset / file.size) * 100))
+    onProgress(offset / file.size)
   }
 
   return fetchJson(`/api/uploads/${encodeURIComponent(init.uploadId)}/complete`, {
@@ -137,13 +151,13 @@ async function uploadFile(file) {
   })
 }
 
-async function createTask(uploadId) {
+async function createTask(uploadIds) {
   const sourceUrl = els.sourceUrl.value.trim()
   return fetchJson("/api/tasks", {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify({
-      uploadId,
+      uploadIds,
       sourceUrl: sourceUrl || null
     })
   })
