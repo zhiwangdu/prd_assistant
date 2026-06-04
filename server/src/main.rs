@@ -17,6 +17,7 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{Any, CorsLayer},
+    services::ServeDir,
     trace::TraceLayer,
 };
 use tracing::info;
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(config);
     let app = Router::new()
         .merge(api::router(state.clone()))
+        .fallback_service(ServeDir::new("webui").append_index_html_on_directories(true))
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

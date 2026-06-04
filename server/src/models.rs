@@ -55,6 +55,16 @@ pub struct TaskResponse {
     pub grep_results_path: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArtifactsResponse {
+    pub task_id: String,
+    pub manifest_path: String,
+    pub grep_results_path: String,
+    pub manifest: serde_json::Value,
+    pub grep_results: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {

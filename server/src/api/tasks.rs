@@ -1,11 +1,16 @@
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 
 use crate::{
     error::AppError,
     id::next_id,
-    models::{CreateTaskRequest, TaskContext, TaskResponse, TaskSource, TaskStatus},
+    models::{
+        CreateTaskRequest, TaskArtifactsResponse, TaskContext, TaskResponse, TaskSource, TaskStatus,
+    },
     pipeline::run_upload_pipeline,
     state::AppState,
 };
@@ -43,4 +48,45 @@ pub async fn create_task(
         manifest_path: output.manifest_path.display().to_string(),
         grep_results_path: output.grep_results_path.display().to_string(),
     }))
+}
+
+pub async fn task_artifacts(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> Result<Json<TaskArtifactsResponse>, AppError> {
+    validate_task_id(&task_id)?;
+
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let manifest_path = workspace.join("manifest.json");
+    let grep_results_path = workspace.join("grep_results.json");
+    let manifest = read_json_file(&manifest_path).await?;
+    let grep_results = read_json_file(&grep_results_path).await?;
+
+    Ok(Json(TaskArtifactsResponse {
+        task_id,
+        manifest_path: manifest_path.display().to_string(),
+        grep_results_path: grep_results_path.display().to_string(),
+        manifest,
+        grep_results,
+    }))
+}
+
+async fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, AppError> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|err| AppError::bad_request(format!("artifact not found: {err}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|err| AppError::internal(format!("failed to parse artifact JSON: {err}")))
+}
+
+fn validate_task_id(task_id: &str) -> Result<(), AppError> {
+    let valid = task_id.starts_with("task_")
+        && task_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("invalid taskId"))
+    }
 }

@@ -1,80 +1,113 @@
-# WebUI 方案
+# WebUI
 
-## 实现建议
+## 当前实现状态
 
-前端仍按浏览器生态选择 TypeScript/JavaScript。后端 API、任务状态和证据查询优先由 Rust Server 提供。
+第一版 WEBUI 已实现为 Rust Server 静态托管的轻量页面，不需要单独 Node/Vite 构建。
 
-整体后端语言优先级：
+当前能力：
+
+- 检查 Server `/health`
+- 输入 API Key
+- 上传日志文件
+- 大文件按 512 KiB 分片上传
+- 小文件直接 multipart 上传
+- 创建任务 `/api/tasks`
+- 查询任务产物 `/api/tasks/:task_id/artifacts`
+- 展示 `manifest.json` 文件清单
+- 展示 `grep_results.json` grep 命中
+- 在浏览器 localStorage 中保留最近任务
+
+## 文件结构
 
 ```text
-Rust -> C/C++ -> Go/Python/Java 等
+webui/
+  index.html
+  styles.css
+  app.js
 ```
 
-前端框架 MVP 推荐：
+## 本地运行方式
 
-- Vite
-- React
-- TypeScript
+从项目根目录启动 Server：
 
-如果希望更轻量，也可以使用 SvelteKit；但第一版需要固定一个选择，避免 UI 工程反复切换。
-
-## CORS
-
-开发环境允许配置 CORS：
-
-```yaml
-server:
-  cors_allowed_origins:
-    - "http://localhost:5173"
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-server -- --config examples/server-test.yaml
 ```
 
-生产环境建议由 Rust Server 静态托管 WebUI 构建产物，减少跨域配置。
+浏览器打开：
 
-## 页面范围
+```text
+http://127.0.0.1:50992/
+```
 
-MVP 只做三个页面：
+如果使用 `examples/logagent.yaml`，默认地址是：
 
-- 任务列表
-- 任务详情
-- Case 库
+```text
+http://127.0.0.1:8080/
+```
 
-## 任务列表
+## 配置项
 
-展示：
+WEBUI 直接使用当前页面同源 Server API，不需要单独配置后端地址。
 
-- 任务名
-- 状态
-- 来源：上传 / 测试环境
-- 产品和版本
-- 上传文件
-- 创建时间
-- 简要结论
+需要在页面里输入 API Key，对应 Server 配置中的 `auth.api_keys[].value_env`，本地示例为：
 
-## 任务详情
+```bash
+LOGAGENT_NATIVE_API_KEY=dev-token
+```
 
-展示：
+## 部署方式
 
-- 日志基本信息
-- 来源信息：上传文件或测试环境节点
-- 产品、版本、代码 ref
-- 用户问题输入框
-- 任务状态和处理阶段
-- Top 错误模式
-- 关键上下文证据
-- 外部工具结果
-- 对应版本代码证据
-- 环境采集摘要
-- LLM 分析结果
-- Case 确认入口
+生产部署时把 `webui/` 目录放在 Server 进程工作目录下。Rust Server 会用 `ServeDir("webui")` 托管静态资源：
 
-## Case 库
+```text
+GET /              -> webui/index.html
+GET /styles.css    -> webui/styles.css
+GET /app.js        -> webui/app.js
+```
 
-展示：
+## 健康检查和验证方式
 
-- Case 搜索
-- Case 详情
-- 编辑标题、现象、根因、解决方案
-- 删除或禁用 Case
+```bash
+curl http://127.0.0.1:50992/health
+```
+
+页面验证：
+
+1. 打开 WEBUI。
+2. 输入 API Key。
+3. 选择 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz` 或 `.tar`。
+4. 点击上传并创建任务。
+5. 查看证据链里的文件清单和 grep 命中。
+
+## 接口约定
+
+WEBUI 调用的受保护接口都需要：
+
+```text
+Authorization: Bearer <api-key>
+```
+
+接口：
+
+- `POST /api/uploads`
+- `POST /api/uploads/init`
+- `POST /api/uploads/:upload_id/chunks?offset=<bytes>`
+- `POST /api/uploads/:upload_id/complete`
+- `POST /api/tasks`
+- `GET /api/tasks/:task_id/artifacts`
+
+## 后续范围
+
+下一步再补：
+
+- Server 持久化任务列表
+- 任务状态流转
+- 产品版本和代码 ref 输入
+- 测试环境采集入口
+- 外部工具结果展示
+- Case 库页面
 
 ## 交互原则
 

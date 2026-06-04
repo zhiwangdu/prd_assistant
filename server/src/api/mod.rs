@@ -28,6 +28,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             post(uploads::complete_upload),
         )
         .route("/api/tasks", post(tasks::create_task))
+        .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
