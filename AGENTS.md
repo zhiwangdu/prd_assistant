@@ -44,6 +44,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - Rust/Axum 服务。
   - API Key middleware。
   - multipart 上传、multipart 批量上传、分片上传、task 创建、artifact 查询。
+  - Metadata 查询、导入预览和确认。
   - 静态托管 `webui/`。
   - 当前 task pipeline：copy raw -> per-upload extract -> manifest -> simple grep。
 
@@ -56,14 +57,19 @@ Rust -> C/C++ -> Go/Python/Java 等
 - `webui/`
   - 静态页面。
   - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
+  - 支持 Metadata 查询、YAML/JSON 导入预览和确认。
   - 任务列表当前只保存在浏览器 localStorage。
+
+- `metadata/`
+  - 已实现基础 store/API/WEBUI。
+  - 管理实例 ID、集群节点和 YAML/JSON 模板导入。
+  - 数据持久化到 `storage.data_dir/metadata` 下的 JSON 文件。
 
 规划中组件：
 
 - `tool-runner/`：白名单调用外部工具，优先接入 `flux_query_analyzer`、`influxql_analyzer`。
 - `code-evidence/`：根据用户输入的软件版本定位代码分支/tag/ref，收集文件行号证据。
 - `environment-collector/`：测试环境通过 SSH/SCP 采集信息，不需要浏览器下载或本地上传。
-- `metadata/`：管理实例 ID、集群节点和模板导入，用于日志分析上下文和 WEBUI 展示。
 - `llm-agent/`：证据裁剪、Prompt 组装、结构化分析结果。
 - `case-store/`：人工确认后的 Case 沉淀和相似召回。
 
@@ -176,7 +182,7 @@ data_dir/
 ## 近期开发优先级
 
 1. Server 持久化任务列表和状态机，让 WEBUI 不只依赖 localStorage。
-2. Metadata 管理实例 ID、集群节点、模板导入，并在 WEBUI 展示。
+2. Metadata 接入 task context 并写入 `metadata_context.json`。
 3. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
 4. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
 5. Environment Collector 支持 SSH/SCP 测试环境采集。

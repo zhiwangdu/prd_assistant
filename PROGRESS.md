@@ -53,6 +53,12 @@ Chrome Extension or WEBUI
   - `POST /api/uploads/:upload_id/complete`
   - `POST /api/tasks`
   - `GET /api/tasks/:task_id/artifacts`
+  - `GET /api/metadata/instances/:instance_id`
+  - `GET /api/metadata/clusters/:cluster_id`
+  - `GET /api/metadata/clusters/:cluster_id/nodes`
+  - `POST /api/metadata/imports`
+  - `GET /api/metadata/imports/:import_id/preview`
+  - `POST /api/metadata/imports/:import_id/confirm`
 - Uses API Key middleware for protected APIs.
 - Statically serves `webui/`.
 - Creates Server-owned task IDs and workspaces.
@@ -105,6 +111,20 @@ workspaces/task_xxx/
   - task creation with `uploadIds`
   - artifact display
   - localStorage recent task list
+  - Metadata query
+  - Metadata YAML/JSON import preview and confirmation
+
+### Metadata
+
+- Implemented as Server internal Rust module.
+- Uses local JSON files under `storage.data_dir/metadata`.
+- Supports:
+  - instance lookup
+  - cluster lookup
+  - cluster node listing
+  - JSON/YAML import preview
+  - import confirmation and persistence
+- CSV import remains reserved but not implemented.
 
 ### Documentation
 
@@ -134,16 +154,13 @@ Recent HTTP smoke checks:
 - task creation with `uploadIds`
 - artifact read with `/api/tasks/:task_id/artifacts`
 - manifest paths include package-name prefixes for batch analysis
+- metadata YAML import preview and confirm
+- metadata instance and cluster query
 
 ## Planned Next
 
 1. Persist Server task list and task state machine so WEBUI does not depend only on localStorage.
-2. Implement Metadata Store:
-   - instance ID metadata
-   - cluster records
-   - node records
-   - template import preview and confirmation
-   - WEBUI metadata page
+2. Connect Metadata to task creation and write `metadata_context.json`.
 3. Implement Tool Runner for existing compiled tools:
    - `flux_query_analyzer`
    - `influxql_analyzer`

@@ -83,9 +83,9 @@ metadata:
   store: "json"
   data_dir: "/data/logagent/metadata"
   allowed_template_types:
-    - "csv"
     - "yaml"
     - "json"
+    - "csv" # reserved, not implemented yet
 ```
 
 ## 原则

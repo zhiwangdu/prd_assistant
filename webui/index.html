@@ -20,6 +20,7 @@
           <button class="nav-item active" type="button" data-view="import">导入</button>
           <button class="nav-item" type="button" data-view="tasks">任务</button>
           <button class="nav-item" type="button" data-view="evidence">证据</button>
+          <button class="nav-item" type="button" data-view="metadata">Metadata</button>
         </nav>
         <div class="side-status">
           <span id="healthDot" class="dot muted"></span>
@@ -99,6 +100,57 @@
             <summary>原始 JSON</summary>
             <pre id="rawArtifacts">{}</pre>
           </details>
+        </section>
+
+        <section class="panel hidden" data-panel="metadata">
+          <div class="panel-header">
+            <div>
+              <h3>Metadata</h3>
+              <p>实例、集群和节点元数据</p>
+            </div>
+          </div>
+          <div class="metadata-grid">
+            <div>
+              <h4>查询</h4>
+              <div class="form-grid compact">
+                <label>
+                  <span>Instance ID</span>
+                  <input id="metadataInstanceId" type="text" placeholder="i-123">
+                </label>
+                <label>
+                  <span>Cluster ID</span>
+                  <input id="metadataClusterId" type="text" placeholder="c-redis-prod-1">
+                </label>
+              </div>
+              <div class="actions">
+                <button id="queryInstance" class="button secondary" type="button">查询实例</button>
+                <button id="queryCluster" class="button secondary" type="button">查询集群</button>
+              </div>
+              <div id="metadataResult" class="table-like empty">暂无数据</div>
+            </div>
+            <div>
+              <h4>模板导入</h4>
+              <div class="form-grid compact">
+                <label>
+                  <span>模板类型</span>
+                  <input id="metadataTemplateType" type="text" value="yaml">
+                </label>
+                <label>
+                  <span>文件名</span>
+                  <input id="metadataFilename" type="text" value="metadata.yaml">
+                </label>
+                <label class="wide">
+                  <span>模板内容</span>
+                  <textarea id="metadataTemplate" rows="14"></textarea>
+                </label>
+              </div>
+              <div class="actions">
+                <button id="previewMetadataImport" class="button primary" type="button">预览导入</button>
+                <button id="confirmMetadataImport" class="button secondary" type="button">确认导入</button>
+              </div>
+              <div id="metadataImportResult" class="table-like empty">暂无预览</div>
+            </div>
+          </div>
         </section>
       </main>
     </div>

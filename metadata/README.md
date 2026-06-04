@@ -2,9 +2,23 @@
 
 ## 当前实现状态
 
-Metadata 模块先规划框架，暂未实现代码。
+Metadata 模块已完成基础 Rust Server 实现。
 
 模块目标是管理实例 ID 对应的业务和部署元数据、集群节点信息，并把这些信息提供给后续日志分析、环境采集、代码证据和 WEBUI 展示。
+
+已实现：
+
+- 本地 JSON 文件存储。
+- `instance` / `cluster` / `node` 查询。
+- JSON/YAML 模板导入预览。
+- 导入确认后写入 metadata store。
+- WEBUI Metadata 页面。
+
+暂未实现：
+
+- CSV 模板解析。
+- task 创建时关联 `instanceId` / `clusterId` / `nodeId`。
+- `metadata_context.json` 写入 workspace。
 
 ## 职责
 
@@ -58,13 +72,14 @@ Metadata 模块先规划框架，暂未实现代码。
 
 ## 模板导入
 
-模板格式暂定，第一版只先定义导入能力边界。
+当前支持：
 
-建议支持：
-
-- CSV
 - YAML
 - JSON
+
+预留但暂未实现：
+
+- CSV
 
 导入方式：
 
@@ -74,9 +89,9 @@ Metadata 模块先规划框架，暂未实现代码。
 - 生成导入预览。
 - 用户确认后写入 Metadata Store。
 
-## Server 接口规划
+## Server 接口
 
-后续接口建议：
+已实现接口：
 
 ```http
 GET /api/metadata/instances/:instance_id
@@ -95,13 +110,13 @@ Authorization: Bearer <api-key>
 
 ## WEBUI 规划
 
-新增 Metadata 页面：
+已新增 Metadata 页面：
 
 - 按实例 ID 查询。
 - 按集群 ID 查询。
 - 展示集群拓扑和节点角色。
 - 展示产品、版本、环境、标签。
-- 上传模板并预览导入结果。
+- 输入模板并预览导入结果。
 - 导入确认后显示成功/失败明细。
 
 任务创建时可选择或输入：
@@ -114,11 +129,11 @@ Authorization: Bearer <api-key>
 
 ## 本地运行方式
 
-当前未实现独立服务。后续作为 Rust Server 内部模块实现，随 Server 启动。
+Metadata 作为 Rust Server 内部模块实现，随 Server 启动。
 
 ## 部署方式
 
-Metadata Store 作为 Server 数据目录的一部分，MVP 可先使用本地 JSON/SQLite。
+Metadata Store 作为 Server 数据目录的一部分，当前使用本地 JSON 文件。
 
 建议目录：
 
@@ -132,13 +147,12 @@ data_dir/
 
 ## 验证方式
 
-第一版实现后至少验证：
+至少验证：
 
 - 单实例查询。
 - 集群节点查询。
-- 模板导入预览。
+- YAML/JSON 模板导入预览。
 - 导入确认。
-- task 创建时能关联 `instanceId` / `clusterId`。
 
 ## 上下游接口
 

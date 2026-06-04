@@ -86,6 +86,8 @@ impl AppConfig {
     pub fn prepare_dirs(&self) -> anyhow::Result<()> {
         fs::create_dir_all(self.storage.uploads_dir())?;
         fs::create_dir_all(self.storage.workspaces_dir())?;
+        fs::create_dir_all(self.storage.metadata_dir())?;
+        fs::create_dir_all(self.storage.metadata_imports_dir())?;
         Ok(())
     }
 }
@@ -105,6 +107,14 @@ impl StorageSettings {
 
     pub fn workspace_dir(&self, task_id: &str) -> PathBuf {
         self.workspaces_dir().join(task_id)
+    }
+
+    pub fn metadata_dir(&self) -> PathBuf {
+        self.data_dir.join("metadata")
+    }
+
+    pub fn metadata_imports_dir(&self) -> PathBuf {
+        self.metadata_dir().join("imports")
     }
 }
 

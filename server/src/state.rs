@@ -2,17 +2,19 @@ use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::RwLock;
 
-use crate::{config::AppConfig, models::UploadRecord};
+use crate::{config::AppConfig, metadata::MetadataStore, models::UploadRecord};
 
 #[derive(Debug)]
 pub struct AppState {
     pub config: Arc<AppConfig>,
     pub uploads: UploadStore,
+    pub metadata: MetadataStore,
 }
 
 impl AppState {
     pub fn new(config: Arc<AppConfig>) -> Arc<Self> {
         Arc::new(Self {
+            metadata: MetadataStore::new(config.clone()),
             config,
             uploads: UploadStore::default(),
         })

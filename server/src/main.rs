@@ -5,6 +5,7 @@ mod error;
 mod fs_utils;
 mod id;
 mod log_analyzer;
+mod metadata;
 mod models;
 mod pipeline;
 mod state;

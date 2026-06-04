@@ -54,7 +54,7 @@ server/src
     health.rs
     uploads.rs
     tasks.rs
-    metadata.rs          # 后续新增，实例/集群/节点元数据 API
+    metadata.rs          # 实例/集群/节点元数据 API
   auth.rs              # API Key middleware
   config.rs            # logagent.yaml 加载和默认值
   error.rs             # API 错误响应
@@ -197,11 +197,6 @@ POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
 POST /api/tasks
 GET /api/tasks/:task_id/artifacts
-```
-
-后续 Metadata 接口规划：
-
-```http
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes

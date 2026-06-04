@@ -4,7 +4,8 @@ const CHUNK_BYTES = 512 * 1024
 
 const state = {
   activeTaskId: null,
-  artifacts: null
+  artifacts: null,
+  metadataImportId: null
 }
 
 const els = {
@@ -19,7 +20,14 @@ const els = {
   manifestFiles: document.querySelector("#manifestFiles"),
   grepMatches: document.querySelector("#grepMatches"),
   rawArtifacts: document.querySelector("#rawArtifacts"),
-  activeTaskLabel: document.querySelector("#activeTaskLabel")
+  activeTaskLabel: document.querySelector("#activeTaskLabel"),
+  metadataInstanceId: document.querySelector("#metadataInstanceId"),
+  metadataClusterId: document.querySelector("#metadataClusterId"),
+  metadataResult: document.querySelector("#metadataResult"),
+  metadataTemplateType: document.querySelector("#metadataTemplateType"),
+  metadataFilename: document.querySelector("#metadataFilename"),
+  metadataTemplate: document.querySelector("#metadataTemplate"),
+  metadataImportResult: document.querySelector("#metadataImportResult")
 }
 
 els.apiKey.value = localStorage.getItem(API_KEY_STORAGE) || ""
@@ -37,6 +45,10 @@ document.querySelector("#clearTasks").addEventListener("click", () => {
   localStorage.setItem(STORAGE_KEY, "[]")
   renderTasks()
 })
+document.querySelector("#queryInstance").addEventListener("click", queryInstance)
+document.querySelector("#queryCluster").addEventListener("click", queryCluster)
+document.querySelector("#previewMetadataImport").addEventListener("click", previewMetadataImport)
+document.querySelector("#confirmMetadataImport").addEventListener("click", confirmMetadataImport)
 
 document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => showView(button.dataset.view))
@@ -45,6 +57,38 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 els.apiKey.addEventListener("change", () => {
   localStorage.setItem(API_KEY_STORAGE, els.apiKey.value.trim())
 })
+
+els.metadataTemplate.value = `instances:
+  - instanceId: i-123
+    clusterId: c-redis-prod-1
+    nodeId: node-1
+    product: redis
+    version: 7.2.4
+    environment: test
+    region: local
+    owner: team-a
+    tags:
+      service: cache
+clusters:
+  - clusterId: c-redis-prod-1
+    name: redis-prod-1
+    product: redis
+    version: 7.2.4
+    environment: test
+    nodes:
+      - node-1
+nodes:
+  - nodeId: node-1
+    instanceId: i-123
+    hostname: redis-1
+    host: 127.0.0.1
+    sshAlias: redis-prod-1-a
+    role: primary
+    zone: local-a
+    status: active
+    labels:
+      rack: r1
+`
 
 renderTasks()
 checkHealth()
@@ -174,6 +218,82 @@ async function loadArtifacts(taskId) {
   showView("evidence")
 }
 
+async function queryInstance() {
+  const instanceId = els.metadataInstanceId.value.trim()
+  if (!instanceId) {
+    renderMetadataResult("请输入 Instance ID")
+    return
+  }
+  try {
+    const body = await fetchJson(`/api/metadata/instances/${encodeURIComponent(instanceId)}`, {
+      headers: authHeaders()
+    })
+    renderMetadataResult(JSON.stringify(body, null, 2), true)
+  } catch (err) {
+    renderMetadataResult(`查询失败: ${err.message}`)
+  }
+}
+
+async function queryCluster() {
+  const clusterId = els.metadataClusterId.value.trim()
+  if (!clusterId) {
+    renderMetadataResult("请输入 Cluster ID")
+    return
+  }
+  try {
+    const cluster = await fetchJson(`/api/metadata/clusters/${encodeURIComponent(clusterId)}`, {
+      headers: authHeaders()
+    })
+    const nodes = await fetchJson(`/api/metadata/clusters/${encodeURIComponent(clusterId)}/nodes`, {
+      headers: authHeaders()
+    })
+    renderMetadataResult(JSON.stringify({ ...cluster, nodes: nodes.nodes }, null, 2), true)
+  } catch (err) {
+    renderMetadataResult(`查询失败: ${err.message}`)
+  }
+}
+
+async function previewMetadataImport() {
+  if (!apiKey()) {
+    renderMetadataImport("请填写 API Key")
+    return
+  }
+  try {
+    const preview = await fetchJson("/api/metadata/imports", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        templateType: els.metadataTemplateType.value.trim(),
+        filename: els.metadataFilename.value.trim() || null,
+        content: els.metadataTemplate.value
+      })
+    })
+    state.metadataImportId = preview.importId
+    renderMetadataImport(JSON.stringify(preview, null, 2), true)
+  } catch (err) {
+    renderMetadataImport(`预览失败: ${err.message}`)
+  }
+}
+
+async function confirmMetadataImport() {
+  if (!state.metadataImportId) {
+    renderMetadataImport("请先预览导入")
+    return
+  }
+  try {
+    const response = await fetchJson(
+      `/api/metadata/imports/${encodeURIComponent(state.metadataImportId)}/confirm`,
+      {
+        method: "POST",
+        headers: authHeaders()
+      }
+    )
+    renderMetadataImport(JSON.stringify(response, null, 2), true)
+  } catch (err) {
+    renderMetadataImport(`确认失败: ${err.message}`)
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const res = await fetch(url, options)
   const text = await res.text()
@@ -246,6 +366,20 @@ function renderTasks() {
   els.taskList.querySelectorAll("[data-task-id]").forEach((button) => {
     button.addEventListener("click", () => loadArtifacts(button.dataset.taskId))
   })
+}
+
+function renderMetadataResult(value, preformatted = false) {
+  els.metadataResult.className = "table-like"
+  els.metadataResult.innerHTML = preformatted
+    ? `<pre>${escapeHtml(value)}</pre>`
+    : `<div class="data-row">${escapeHtml(value)}</div>`
+}
+
+function renderMetadataImport(value, preformatted = false) {
+  els.metadataImportResult.className = "table-like"
+  els.metadataImportResult.innerHTML = preformatted
+    ? `<pre>${escapeHtml(value)}</pre>`
+    : `<div class="data-row">${escapeHtml(value)}</div>`
 }
 
 function saveTask(task) {
