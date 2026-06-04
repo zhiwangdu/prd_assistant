@@ -4,6 +4,7 @@
 
 - 这是 LogAgent MVP 仓库。开始任何开发前先读根目录 `README.md`、`SPEC.md`，再读相关组件目录下的 `README.md` 和 `SPEC.md`。
 - 后续每次修改或新增功能，必须同步更新对应组件的 `README.md` 和 `SPEC.md`。
+- 后续每次修改完文件，必须同步更新根目录 `PROGRESS.md`，记录项目进展、行为变化、验证结果或下一步变化。
 - 用户已明确要求：每次实现或修改完成后自动 `commit` 并 `push`。
 - 除非用户明确要求，避免提交临时 review 输入文件，例如 `review_context.md`。
 - 修改代码后优先跑能覆盖本次改动的检查；涉及 Rust 时至少跑 `cargo fmt --check`、`cargo check`，必要时跑 `cargo test`。
@@ -198,4 +199,5 @@ git push
 
 - 没有误提交临时文件、密钥、生成的大数据目录。
 - 对应组件 `README.md` 和 `SPEC.md` 已更新。
+- 根目录 `PROGRESS.md` 已更新。
 - 工作区最终应保持干净。
