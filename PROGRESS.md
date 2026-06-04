@@ -111,7 +111,8 @@ workspaces/task_xxx/
 - Root `README.md` and `SPEC.md` exist.
 - Root `PROGRESS.md` records development status and must be updated after file changes.
 - Every component has a `README.md` and `SPEC.md`.
-- `AGENT.md` records development conventions and current context.
+- `AGENTS.md` records development conventions and current context.
+- `AGENT.md` has been renamed to `AGENTS.md`.
 - `metadata/` module has planning docs for instance, cluster, node, and template import management.
 
 ## Verified
