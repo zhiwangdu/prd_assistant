@@ -41,6 +41,17 @@ POST /api/tasks
 GET /api/tasks/:task_id/artifacts
 ```
 
+规划中的 Metadata 接口：
+
+```http
+GET /api/metadata/instances/:instance_id
+GET /api/metadata/clusters/:cluster_id
+GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/imports
+GET /api/metadata/imports/:import_id/preview
+POST /api/metadata/imports/:import_id/confirm
+```
+
 受保护接口必须携带：
 
 ```text
@@ -91,6 +102,7 @@ UploadRecord[]
 
 - 任务持久化。
 - 完整任务状态机。
+- Metadata Store 和导入模板 API。
 - Tool Runner、Code Evidence、Environment Collector、LLM Agent 编排。
 - Case Store 写入和召回。
 

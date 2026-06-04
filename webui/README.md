@@ -17,6 +17,13 @@
 - 展示 `grep_results.json` grep 命中
 - 在浏览器 localStorage 中保留最近任务
 
+规划中的 Metadata 页面：
+
+- 按实例 ID 查询元数据。
+- 按集群 ID 展示节点列表。
+- 上传模板并预览导入结果。
+- task 创建时关联 `instanceId`、`clusterId`、`nodeId`。
+
 ## 文件结构
 
 ```text
@@ -99,12 +106,22 @@ Authorization: Bearer <api-key>
 - `POST /api/tasks`
 - `GET /api/tasks/:task_id/artifacts`
 
+规划中的 Metadata 接口：
+
+- `GET /api/metadata/instances/:instance_id`
+- `GET /api/metadata/clusters/:cluster_id`
+- `GET /api/metadata/clusters/:cluster_id/nodes`
+- `POST /api/metadata/imports`
+- `GET /api/metadata/imports/:import_id/preview`
+- `POST /api/metadata/imports/:import_id/confirm`
+
 ## 后续范围
 
 下一步再补：
 
 - Server 持久化任务列表
 - 任务状态流转
+- Metadata 页面和模板导入
 - 产品版本和代码 ref 输入
 - 测试环境采集入口
 - 外部工具结果展示

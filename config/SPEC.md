@@ -37,6 +37,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - tool runner 白名单
 - product/version 到代码仓 ref 映射
 - SSH/SCP 测试环境节点
+- metadata store 路径和模板导入限制
 - LLM provider 和模型
 - Case Store 存储路径
 

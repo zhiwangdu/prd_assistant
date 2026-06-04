@@ -24,6 +24,7 @@ grep_results.json
 tool_results/*.json
 code_evidence.json
 environment_evidence.json
+metadata_context.json
 result.json
 ```
 
@@ -50,6 +51,7 @@ FAILED
 - `ToolRunner`
 - `CodeEvidenceCollector`
 - `EnvironmentCollector`
+- `MetadataStore`
 - `LlmAnalyzer`
 - `CaseStore`
 

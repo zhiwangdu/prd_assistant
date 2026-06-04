@@ -30,6 +30,7 @@ Rust -> C/C++ -> Go/Python/Java 等
     v
 证据提取
   - rg 日志检索
+  - 实例和集群元数据
   - 外部工具调用
   - 对应版本代码检索
   - 环境状态采集
@@ -55,6 +56,7 @@ Case 沉淀与召回
 | [tool-runner](./tool-runner/README.md) | 外部工具白名单调用 | [SPEC](./tool-runner/SPEC.md) |
 | [code-evidence](./code-evidence/README.md) | 软件版本到代码分支映射和代码证据 | [SPEC](./code-evidence/SPEC.md) |
 | [environment-collector](./environment-collector/README.md) | 测试环境 SSH/SCP 信息采集 | [SPEC](./environment-collector/SPEC.md) |
+| [metadata](./metadata/README.md) | 实例 ID、集群节点和导入模板元数据管理 | [SPEC](./metadata/SPEC.md) |
 | [llm-agent](./llm-agent/README.md) | LLM 输入组织、Prompt 约束和输出结构 | [SPEC](./llm-agent/SPEC.md) |
 | [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 | [SPEC](./case-store/SPEC.md) |
 | [webui](./webui/README.md) | 任务列表、任务详情、Case 库 | [SPEC](./webui/SPEC.md) |

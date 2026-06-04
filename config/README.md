@@ -15,6 +15,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `tools`
 - `code_repos`
 - `environments`
+- `metadata`
 - `webui`
 
 ## 示例
@@ -77,6 +78,14 @@ environment_collector:
   connect_timeout_seconds: 10
   command_timeout_seconds: 30
   retries: 1
+
+metadata:
+  store: "json"
+  data_dir: "/data/logagent/metadata"
+  allowed_template_types:
+    - "csv"
+    - "yaml"
+    - "json"
 ```
 
 ## 原则
@@ -84,4 +93,3 @@ environment_collector:
 - 密钥不直接写入配置文件，只引用环境变量。
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
-

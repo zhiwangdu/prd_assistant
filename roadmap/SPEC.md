@@ -19,11 +19,12 @@
 ## 下一阶段优先级
 
 1. Server 持久化任务列表和状态机。
-2. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
-3. Code Evidence 版本到分支/ref 映射。
-4. Environment Collector SSH/SCP 测试环境采集。
-5. LLM Agent 结构化分析。
-6. Case Store 保存和召回。
+2. Metadata 框架：实例 ID、集群节点、模板导入、WEBUI 展示。
+3. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
+4. Code Evidence 版本到分支/ref 映射。
+5. Environment Collector SSH/SCP 测试环境采集。
+6. LLM Agent 结构化分析。
+7. Case Store 保存和召回。
 
 ## 验收标准
 

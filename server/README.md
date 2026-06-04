@@ -28,6 +28,7 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 - 任务创建和状态流转
 - 编排 Log Analyzer、Tool Runner、Code Evidence、Environment Collector、LLM Agent
 - 管理模块输出和任务失败原因
+- 查询和关联实例、集群、节点元数据
 - LLM 分析调用
 - Case 存储和召回
 - WebUI API
@@ -39,6 +40,7 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 - Tool Runner：外部工具调用。
 - Code Evidence：版本代码检索。
 - Environment Collector：测试环境采集。
+- Metadata：实例 ID、集群和节点元数据。
 - LLM Agent：证据裁剪、Prompt 组装、模型调用。
 
 ## 代码结构
@@ -52,6 +54,7 @@ server/src
     health.rs
     uploads.rs
     tasks.rs
+    metadata.rs          # 后续新增，实例/集群/节点元数据 API
   auth.rs              # API Key middleware
   config.rs            # logagent.yaml 加载和默认值
   error.rs             # API 错误响应
@@ -129,6 +132,9 @@ FAILED
 `task` 需要记录：
 
 - `source`: `upload` / `environment`
+- `instance_id`: 用户输入或从 Metadata 选择的实例 ID
+- `cluster_id`: 关联集群 ID
+- `node_id`: 关联节点 ID
 - `product`: 软件产品，例如 `influxdb`
 - `version`: 用户输入的软件版本
 - `question`: 用户问题
@@ -191,6 +197,17 @@ POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
 POST /api/tasks
 GET /api/tasks/:task_id/artifacts
+```
+
+后续 Metadata 接口规划：
+
+```http
+GET /api/metadata/instances/:instance_id
+GET /api/metadata/clusters/:cluster_id
+GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/imports
+GET /api/metadata/imports/:import_id/preview
+POST /api/metadata/imports/:import_id/confirm
 ```
 
 `POST /api/uploads` 使用 multipart：

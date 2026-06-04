@@ -40,6 +40,17 @@ POST /api/tasks
 GET /api/tasks/:task_id/artifacts
 ```
 
+规划中的 Metadata API：
+
+```http
+GET /api/metadata/instances/:instance_id
+GET /api/metadata/clusters/:cluster_id
+GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/imports
+GET /api/metadata/imports/:import_id/preview
+POST /api/metadata/imports/:import_id/confirm
+```
+
 受保护接口使用：
 
 ```text
@@ -51,6 +62,7 @@ Authorization: Bearer <api-key>
 - 导入：API Key、来源 URL、多文件选择、上传进度。
 - 任务：浏览器本地最近任务。
 - 证据：文件清单、grep 命中、原始 JSON。
+- Metadata：后续展示实例 ID、集群节点、模板导入和导入预览。
 
 ## 约束
 
@@ -63,4 +75,5 @@ Authorization: Bearer <api-key>
 - `GET /` 能返回页面。
 - `node --check webui/app.js` 通过。
 - 页面能上传一个或多个 sample.log、创建任务、显示 artifacts。
+- 后续 Metadata 页面需要支持按实例 ID 查询、按集群查看节点、模板导入预览。
 - README 和 SPEC 在页面、接口或部署方式变更时同步更新。

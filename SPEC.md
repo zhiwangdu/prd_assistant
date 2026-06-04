@@ -36,6 +36,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 | Tool Runner | [tool-runner/SPEC.md](./tool-runner/SPEC.md) |
 | Code Evidence | [code-evidence/SPEC.md](./code-evidence/SPEC.md) |
 | Environment Collector | [environment-collector/SPEC.md](./environment-collector/SPEC.md) |
+| Metadata | [metadata/SPEC.md](./metadata/SPEC.md) |
 | LLM Agent | [llm-agent/SPEC.md](./llm-agent/SPEC.md) |
 | Case Store | [case-store/SPEC.md](./case-store/SPEC.md) |
 | WebUI | [webui/SPEC.md](./webui/SPEC.md) |
@@ -64,7 +65,7 @@ WEBUI/Server task -> Environment Collector -> Server workspace -> Task pipeline
 证据处理：
 
 ```text
-raw file -> extracted files -> manifest.json -> grep_results.json -> tool/code/env evidence -> LLM result
+raw file -> extracted files -> manifest.json -> metadata context -> grep_results.json -> tool/code/env evidence -> LLM result
 ```
 
 ## 当前已实现
@@ -78,6 +79,7 @@ raw file -> extracted files -> manifest.json -> grep_results.json -> tool/code/e
 ## 待实现能力
 
 - 持久化任务列表和状态机。
+- Metadata 管理实例 ID、集群节点和导入模板，并在 WEBUI 展示。
 - Tool Runner 调用 `flux_query_analyzer`、`influxql_analyzer` 等已有工具。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。

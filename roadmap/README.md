@@ -11,6 +11,7 @@
 | Tool Runner | 2~3 天 |
 | Code Evidence | 4~6 天 |
 | Environment Collector | 4~6 天 |
+| Metadata | 2~4 天 |
 | LLM Agent | 3~4 天 |
 | Case 库 | 3~4 天 |
 | WebUI | 5~7 天 |
@@ -37,10 +38,12 @@
 
 ## 第 2 阶段：版本感知代码证据
 
-目标：让分析结论能结合用户输入的软件版本和实际代码。
+目标：让分析结论能结合实例/集群元数据、用户输入的软件版本和实际代码。
 
 内容：
 
+- 实例 ID、集群节点 Metadata 框架
+- Metadata 模板导入和 WEBUI 展示
 - 产品/版本输入
 - 版本到 tag/branch 映射配置
 - 本地代码仓 worktree 管理
