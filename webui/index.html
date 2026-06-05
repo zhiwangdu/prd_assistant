@@ -34,7 +34,13 @@
             <h2>故障日志分析</h2>
             <p id="serverHint">连接当前 Server</p>
           </div>
-          <button id="checkHealth" class="button secondary" type="button">检查健康</button>
+          <div class="connection-controls">
+            <label class="api-key-field">
+              <span>API Key</span>
+              <input id="apiKey" type="password" autocomplete="off" placeholder="dev-token">
+            </label>
+            <button id="checkHealth" class="button secondary" type="button">检查健康</button>
+          </div>
         </section>
 
         <section class="panel" data-panel="import">
@@ -45,10 +51,6 @@
             </div>
           </div>
           <div class="form-grid">
-            <label>
-              <span>API Key</span>
-              <input id="apiKey" type="password" autocomplete="off" placeholder="LOGAGENT_NATIVE_API_KEY">
-            </label>
             <label>
               <span>来源 URL</span>
               <input id="sourceUrl" type="url" placeholder="https://logs.example.com/download/...">

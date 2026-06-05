@@ -7,7 +7,7 @@
 当前能力：
 
 - 检查 Server `/health`
-- 输入 API Key
+- 在顶部固定连接区输入 API Key
 - 上传一个或多个日志文件
 - 大文件按 512 KiB 分片上传
 - 小文件直接 multipart 上传
@@ -82,7 +82,7 @@ curl http://127.0.0.1:50992/health
 页面验证：
 
 1. 打开 WEBUI。
-2. 输入 API Key。
+2. 在顶部固定连接区输入 API Key。
 3. 选择一个或多个 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz` 或 `.tar`。
 4. 点击上传并创建任务。
 5. 查看证据链里的文件清单和 grep 命中。

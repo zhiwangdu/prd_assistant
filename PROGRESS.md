@@ -106,7 +106,7 @@ workspaces/task_xxx/
 - Served by Server at `/`.
 - Supports:
   - health check
-  - API Key input
+  - fixed top-bar API Key input
   - one or more file uploads
   - chunked upload for large files
   - task creation with `uploadIds`

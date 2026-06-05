@@ -156,6 +156,17 @@ textarea {
   font-size: 22px;
 }
 
+.connection-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.api-key-field {
+  min-width: 0;
+}
+
 .panel {
   padding: 20px;
 }
@@ -401,6 +412,11 @@ textarea:focus {
   .panel-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .connection-controls {
+    width: 100%;
+    grid-template-columns: 1fr;
   }
 
   .task-row {
