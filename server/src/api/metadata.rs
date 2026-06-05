@@ -7,7 +7,10 @@ use axum::{
 
 use crate::{
     error::AppError,
-    metadata::{MetadataConfirmResponse, MetadataImportPreview, MetadataImportRequest},
+    metadata::{
+        MetadataConfirmResponse, MetadataFetchImportRequest, MetadataImportPreview,
+        MetadataImportRequest,
+    },
     state::AppState,
 };
 
@@ -50,6 +53,14 @@ pub async fn create_import(
     Json(req): Json<MetadataImportRequest>,
 ) -> Result<Json<MetadataImportPreview>, AppError> {
     let preview = state.metadata.create_import_preview(req).await?;
+    Ok(Json(preview))
+}
+
+pub async fn fetch_import(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<MetadataFetchImportRequest>,
+) -> Result<Json<MetadataImportPreview>, AppError> {
+    let preview = state.metadata.fetch_import_preview(req).await?;
     Ok(Json(preview))
 }
 

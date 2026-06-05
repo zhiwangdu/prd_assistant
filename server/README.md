@@ -201,6 +201,7 @@ GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/imports
+POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```

@@ -925,6 +925,7 @@ dependencies = [
  "axum",
  "clap",
  "flate2",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",

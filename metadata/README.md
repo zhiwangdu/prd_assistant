@@ -11,6 +11,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 本地 JSON 文件存储。
 - `instance` / `cluster` / `node` 查询。
 - JSON/YAML 模板导入预览。
+- openGemini `/getdata` 真实元数据解析。
+- Server 侧从真实元数据 URL 拉取并预览。
 - 导入确认后写入 metadata store。
 - WEBUI Metadata 页面。
 
@@ -76,6 +78,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 - YAML
 - JSON
+- openGemini `/getdata` JSON，`templateType` 使用 `opengemini`
 
 预留但暂未实现：
 
@@ -98,9 +101,29 @@ GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/imports
+POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
+
+真实 openGemini 元数据导入：
+
+```json
+{
+  "url": "http://127.0.0.1:8091/getdata",
+  "templateType": "opengemini",
+  "filename": "opengemini-getdata.json"
+}
+```
+
+解析规则：
+
+- `ClusterID` -> `clusterId`
+- `MetaNodes` -> `meta-*` 节点
+- `DataNodes` -> `data-*` 节点
+- `SqlNodes` -> `sql-*` 节点
+- `Databases`、`Term`、`Index`、`NumOfShards` 等写入 cluster labels
+- 节点的 `Host`、`RPCAddr`、`TCPHost`、`GossipAddr`、`Status`、`Az` 等写入 node fields/labels
 
 受保护接口继续使用：
 
@@ -116,6 +139,7 @@ Authorization: Bearer <api-key>
 - 按集群 ID 查询。
 - 展示集群拓扑和节点角色。
 - 展示产品、版本、环境、标签。
+- 从真实元数据 URL 拉取并预览。
 - 输入模板并预览导入结果。
 - 导入确认后显示成功/失败明细。
 

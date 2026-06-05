@@ -44,6 +44,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             get(metadata::list_cluster_nodes),
         )
         .route("/api/metadata/imports", post(metadata::create_import))
+        .route("/api/metadata/imports/fetch", post(metadata::fetch_import))
         .route(
             "/api/metadata/imports/:import_id/preview",
             get(metadata::get_import_preview),

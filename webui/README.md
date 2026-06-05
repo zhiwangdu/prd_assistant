@@ -18,6 +18,7 @@
 - 在浏览器 localStorage 中保留最近任务
 - 按实例 ID 查询元数据。
 - 按集群 ID 展示节点列表。
+- 从 `http://127.0.0.1:8091/getdata` 拉取真实 openGemini 元数据并预览。
 - 输入 YAML/JSON 模板并预览导入结果。
 - 确认导入后写入 Server metadata store。
 - task 创建时关联 `instanceId`、`clusterId`、`nodeId`。
@@ -108,6 +109,7 @@ Authorization: Bearer <api-key>
 - `GET /api/metadata/clusters/:cluster_id`
 - `GET /api/metadata/clusters/:cluster_id/nodes`
 - `POST /api/metadata/imports`
+- `POST /api/metadata/imports/fetch`
 - `GET /api/metadata/imports/:import_id/preview`
 - `POST /api/metadata/imports/:import_id/confirm`
 

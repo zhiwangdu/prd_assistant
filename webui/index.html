@@ -133,11 +133,15 @@
               <div class="form-grid compact">
                 <label>
                   <span>模板类型</span>
-                  <input id="metadataTemplateType" type="text" value="yaml">
+                  <input id="metadataTemplateType" type="text" value="opengemini">
                 </label>
                 <label>
                   <span>文件名</span>
-                  <input id="metadataFilename" type="text" value="metadata.yaml">
+                  <input id="metadataFilename" type="text" value="opengemini-getdata.json">
+                </label>
+                <label class="wide">
+                  <span>真实元数据 URL</span>
+                  <input id="metadataFetchUrl" type="url" value="http://127.0.0.1:8091/getdata">
                 </label>
                 <label class="wide">
                   <span>模板内容</span>
@@ -145,6 +149,7 @@
                 </label>
               </div>
               <div class="actions">
+                <button id="fetchMetadataImport" class="button secondary" type="button">拉取并预览</button>
                 <button id="previewMetadataImport" class="button primary" type="button">预览导入</button>
                 <button id="confirmMetadataImport" class="button secondary" type="button">确认导入</button>
               </div>

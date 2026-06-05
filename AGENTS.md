@@ -45,6 +45,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - API Key middleware。
   - multipart 上传、multipart 批量上传、分片上传、task 创建、artifact 查询。
   - Metadata 查询、导入预览和确认。
+  - 支持 openGemini `/getdata` 真实元数据 URL 拉取和归一化。
   - 静态托管 `webui/`。
   - 当前 task pipeline：copy raw -> per-upload extract -> manifest -> simple grep。
 
@@ -57,12 +58,12 @@ Rust -> C/C++ -> Go/Python/Java 等
 - `webui/`
   - 静态页面。
   - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
-  - 支持 Metadata 查询、YAML/JSON 导入预览和确认。
+  - 支持 Metadata 查询、YAML/JSON/openGemini 导入预览和确认。
   - 任务列表当前只保存在浏览器 localStorage。
 
 - `metadata/`
   - 已实现基础 store/API/WEBUI。
-  - 管理实例 ID、集群节点和 YAML/JSON 模板导入。
+  - 管理实例 ID、集群节点和 YAML/JSON/openGemini 模板导入。
   - 数据持久化到 `storage.data_dir/metadata` 下的 JSON 文件。
 
 规划中组件：

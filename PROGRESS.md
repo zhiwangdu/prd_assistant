@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Status Summary
 
@@ -57,6 +57,7 @@ Chrome Extension or WEBUI
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
   - `POST /api/metadata/imports`
+  - `POST /api/metadata/imports/fetch`
   - `GET /api/metadata/imports/:import_id/preview`
   - `POST /api/metadata/imports/:import_id/confirm`
 - Uses API Key middleware for protected APIs.
@@ -113,6 +114,7 @@ workspaces/task_xxx/
   - localStorage recent task list
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
+  - Metadata openGemini `/getdata` URL fetch preview
 
 ### Metadata
 
@@ -123,6 +125,8 @@ workspaces/task_xxx/
   - cluster lookup
   - cluster node listing
   - JSON/YAML import preview
+  - openGemini `/getdata` snapshot normalization
+  - server-side metadata URL fetch
   - import confirmation and persistence
 - CSV import remains reserved but not implemented.
 
@@ -156,6 +160,8 @@ Recent HTTP smoke checks:
 - manifest paths include package-name prefixes for batch analysis
 - metadata YAML import preview and confirm
 - metadata instance and cluster query
+- metadata `http://127.0.0.1:8091/getdata` parsing plan implemented for openGemini snapshot
+- metadata server-side fetch from `http://127.0.0.1:8091/getdata`, confirm, cluster query, node query, and instance query
 
 ## Planned Next
 

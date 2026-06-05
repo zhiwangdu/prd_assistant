@@ -26,6 +26,7 @@ const els = {
   metadataResult: document.querySelector("#metadataResult"),
   metadataTemplateType: document.querySelector("#metadataTemplateType"),
   metadataFilename: document.querySelector("#metadataFilename"),
+  metadataFetchUrl: document.querySelector("#metadataFetchUrl"),
   metadataTemplate: document.querySelector("#metadataTemplate"),
   metadataImportResult: document.querySelector("#metadataImportResult")
 }
@@ -47,6 +48,7 @@ document.querySelector("#clearTasks").addEventListener("click", () => {
 })
 document.querySelector("#queryInstance").addEventListener("click", queryInstance)
 document.querySelector("#queryCluster").addEventListener("click", queryCluster)
+document.querySelector("#fetchMetadataImport").addEventListener("click", fetchMetadataImport)
 document.querySelector("#previewMetadataImport").addEventListener("click", previewMetadataImport)
 document.querySelector("#confirmMetadataImport").addEventListener("click", confirmMetadataImport)
 
@@ -58,37 +60,37 @@ els.apiKey.addEventListener("change", () => {
   localStorage.setItem(API_KEY_STORAGE, els.apiKey.value.trim())
 })
 
-els.metadataTemplate.value = `instances:
-  - instanceId: i-123
-    clusterId: c-redis-prod-1
-    nodeId: node-1
-    product: redis
-    version: 7.2.4
-    environment: test
-    region: local
-    owner: team-a
-    tags:
-      service: cache
-clusters:
-  - clusterId: c-redis-prod-1
-    name: redis-prod-1
-    product: redis
-    version: 7.2.4
-    environment: test
-    nodes:
-      - node-1
-nodes:
-  - nodeId: node-1
-    instanceId: i-123
-    hostname: redis-1
-    host: 127.0.0.1
-    sshAlias: redis-prod-1-a
-    role: primary
-    zone: local-a
-    status: active
-    labels:
-      rack: r1
-`
+els.metadataTemplate.value = `{
+  "ClusterID": 6735497445922383781,
+  "MetaNodes": [
+    {
+      "ID": 1,
+      "Host": "127.0.0.1:8091",
+      "RPCAddr": "127.0.0.1:8092",
+      "TCPHost": "127.0.0.1:8088",
+      "Status": 0
+    }
+  ],
+  "DataNodes": [
+    {
+      "ID": 2,
+      "Host": "127.0.0.1:8400",
+      "TCPHost": "127.0.0.1:8401",
+      "Status": 1,
+      "Az": ""
+    }
+  ],
+  "SqlNodes": [
+    {
+      "ID": 3,
+      "TCPHost": ":8086",
+      "Status": 1
+    }
+  ],
+  "Databases": {
+    "mydb": { "Name": "mydb" }
+  }
+}`
 
 renderTasks()
 checkHealth()
@@ -269,9 +271,36 @@ async function previewMetadataImport() {
       })
     })
     state.metadataImportId = preview.importId
-    renderMetadataImport(JSON.stringify(preview, null, 2), true)
+    renderMetadataImport(renderMetadataPreview(preview), true)
   } catch (err) {
     renderMetadataImport(`预览失败: ${err.message}`)
+  }
+}
+
+async function fetchMetadataImport() {
+  if (!apiKey()) {
+    renderMetadataImport("请填写 API Key")
+    return
+  }
+  const url = els.metadataFetchUrl.value.trim()
+  if (!url) {
+    renderMetadataImport("请输入真实元数据 URL")
+    return
+  }
+  try {
+    const preview = await fetchJson("/api/metadata/imports/fetch", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        url,
+        templateType: els.metadataTemplateType.value.trim() || "opengemini",
+        filename: els.metadataFilename.value.trim() || url
+      })
+    })
+    state.metadataImportId = preview.importId
+    renderMetadataImport(renderMetadataPreview(preview), true)
+  } catch (err) {
+    renderMetadataImport(`拉取失败: ${err.message}`)
   }
 }
 
@@ -366,6 +395,37 @@ function renderTasks() {
   els.taskList.querySelectorAll("[data-task-id]").forEach((button) => {
     button.addEventListener("click", () => loadArtifacts(button.dataset.taskId))
   })
+}
+
+function renderMetadataPreview(preview) {
+  const lines = [
+    `importId: ${preview.importId}`,
+    `templateType: ${preview.templateType}`,
+    `instances: ${preview.summary.instances}`,
+    `clusters: ${preview.summary.clusters}`,
+    `nodes: ${preview.summary.nodes}`,
+    `warnings: ${preview.summary.warnings}`,
+    `errors: ${preview.summary.errors}`,
+    "",
+    "changes:"
+  ]
+  for (const change of preview.changes || []) {
+    lines.push(`- ${change.kind} ${change.id} ${change.action}: ${change.message}`)
+  }
+  if (preview.warnings?.length) {
+    lines.push("", "warnings:")
+    for (const warning of preview.warnings) {
+      lines.push(`- ${warning}`)
+    }
+  }
+  if (preview.errors?.length) {
+    lines.push("", "errors:")
+    for (const error of preview.errors) {
+      lines.push(`- ${error}`)
+    }
+  }
+  lines.push("", "raw:", JSON.stringify(preview, null, 2))
+  return lines.join("\n")
 }
 
 function renderMetadataResult(value, preformatted = false) {

@@ -85,6 +85,7 @@ metadata:
   allowed_template_types:
     - "yaml"
     - "json"
+    - "opengemini"
     - "csv" # reserved, not implemented yet
 ```
 
