@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(config);
     let app = Router::new()
         .merge(api::router(state.clone()))
-        .fallback_service(ServeDir::new("webui").append_index_html_on_directories(true))
+        .fallback_service(ServeDir::new("webui/out").append_index_html_on_directories(true))
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

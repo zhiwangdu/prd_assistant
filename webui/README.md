@@ -2,7 +2,7 @@
 
 ## 当前实现状态
 
-第一版 WEBUI 已实现为 Rust Server 静态托管的轻量页面，不需要单独 Node/Vite 构建。
+WEBUI 已重构为 React + Next.js + Tailwind CSS 应用，构建后由 Rust Server 静态托管 `webui/out`。
 
 当前能力：
 
@@ -27,12 +27,40 @@
 
 ```text
 webui/
-  index.html
-  styles.css
-  app.js
+  app/
+    layout.tsx
+    page.tsx
+    globals.css
+  package.json
+  package-lock.json
+  next.config.mjs
+  tailwind.config.ts
+  postcss.config.js
+  tsconfig.json
+  out/              # npm run build 生成，git 忽略
 ```
 
 ## 本地运行方式
+
+首次安装依赖：
+
+```bash
+cd webui
+npm install --omit=optional
+```
+
+项目级 `.npmrc` 已配置：
+
+```text
+registry=http://registry.npmmirror.com
+```
+
+构建静态页面：
+
+```bash
+cd webui
+npm run build
+```
 
 从项目根目录启动 Server：
 
@@ -65,18 +93,26 @@ LOGAGENT_NATIVE_API_KEY=dev-token
 
 ## 部署方式
 
-生产部署时把 `webui/` 目录放在 Server 进程工作目录下。Rust Server 会用 `ServeDir("webui")` 托管静态资源：
+生产部署时先执行 `npm run build` 生成 `webui/out`，再启动 Server。Rust Server 会用 `ServeDir("webui/out")` 托管静态资源：
 
 ```text
-GET /              -> webui/index.html
-GET /styles.css    -> webui/styles.css
-GET /app.js        -> webui/app.js
+GET /              -> webui/out/index.html
+GET /_next/*       -> webui/out/_next/*
 ```
 
 ## 健康检查和验证方式
 
 ```bash
 curl http://127.0.0.1:50992/health
+```
+
+代码验证：
+
+```bash
+cd webui
+npm run lint
+npm run typecheck
+npm run build
 ```
 
 页面验证：

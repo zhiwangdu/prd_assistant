@@ -281,11 +281,15 @@ workspaces/task_xxx/
 本地启动：
 
 ```bash
+cd webui
+npm install --omit=optional
+npm run build
+cd ..
 export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-server -- --config examples/logagent.yaml
 ```
 
-Server 会静态托管 `webui/`，本地访问：
+Server 会静态托管 Next.js 导出的 `webui/out`，本地访问：
 
 ```text
 http://127.0.0.1:8080/
@@ -329,6 +333,8 @@ cat data/logagent/workspaces/<task_id>/grep_results.json
 
 ECS 部署时：
 
+- 先在构建环境执行 `cd webui && npm install --omit=optional && npm run build`。
+- 将生成的 `webui/out` 随 Server 一起部署。
 - 将 `server.bind` 改为 `0.0.0.0:8080`。
 - 将 `server.public_base_url` 改为 ECS 的访问地址。
 - 开放安全组入站端口，例如 `8080`。

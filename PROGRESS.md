@@ -61,7 +61,7 @@ Chrome Extension or WEBUI
   - `GET /api/metadata/imports/:import_id/preview`
   - `POST /api/metadata/imports/:import_id/confirm`
 - Uses API Key middleware for protected APIs.
-- Statically serves `webui/`.
+- Statically serves Next.js export output from `webui/out`.
 - Creates Server-owned task IDs and workspaces.
 
 ### Upload And Workspace
@@ -102,8 +102,9 @@ workspaces/task_xxx/
 
 ### WEBUI
 
-- Static HTML/CSS/JS under `webui/`.
-- Served by Server at `/`.
+- React + Next.js + Tailwind CSS app under `webui/`.
+- Uses static export; `npm run build` writes `webui/out`.
+- Served by Server at `/` from `webui/out`.
 - Supports:
   - health check
   - fixed top-bar API Key input
@@ -150,7 +151,9 @@ Recent checks run successfully:
 cargo fmt --check
 cargo check
 cargo test
-node --check webui/app.js
+npm run lint
+npm run typecheck
+npm run build
 ```
 
 Recent HTTP smoke checks:

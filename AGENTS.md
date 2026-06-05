@@ -8,7 +8,7 @@
 - 用户已明确要求：每次实现或修改完成后自动 `commit` 并 `push`。
 - 除非用户明确要求，避免提交临时 review 输入文件，例如 `review_context.md`。
 - 修改代码后优先跑能覆盖本次改动的检查；涉及 Rust 时至少跑 `cargo fmt --check`、`cargo check`，必要时跑 `cargo test`。
-- 修改 WEBUI JS 后至少跑 `node --check webui/app.js`。
+- 修改 WEBUI 后至少在 `webui/` 下跑 `npm run lint`、`npm run typecheck`、`npm run build`。
 
 ## 技术原则
 
@@ -20,7 +20,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 ```
 
 - 已有编译工具可以直接复用，不强制重写；例如后续 Tool Runner 需要支持 `flux_query_analyzer`、`influxql_analyzer`。
-- 前端第一版不引入构建链，当前 WEBUI 是静态 HTML/CSS/JS，由 Rust Server 托管。
+- WEBUI 使用 React + Next.js + Tailwind CSS，`npm run build` 静态导出到 `webui/out`，由 Rust Server 托管。
 
 ## 当前实现状态
 
@@ -46,7 +46,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - multipart 上传、multipart 批量上传、分片上传、task 创建、artifact 查询。
   - Metadata 查询、导入预览和确认。
   - 支持 openGemini `/getdata` 真实元数据 URL 拉取和归一化。
-  - 静态托管 `webui/`。
+  - 静态托管 `webui/out`。
   - 当前 task pipeline：copy raw -> per-upload extract -> manifest -> simple grep。
 
 - `log-analyzer/`
@@ -56,7 +56,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - 生成 `manifest.json` 和 `grep_results.json`。
 
 - `webui/`
-  - 静态页面。
+  - React + Next.js + Tailwind CSS 静态导出应用。
   - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
   - 支持 Metadata 查询、YAML/JSON/openGemini 导入预览和确认。
   - 任务列表当前只保存在浏览器 localStorage。
@@ -109,7 +109,9 @@ cargo run -p logagent-native-agent -- --config examples/native-agent-remote-5099
 cargo fmt --check
 cargo check
 cargo test
-node --check webui/app.js
+cd webui && npm run lint
+cd webui && npm run typecheck
+cd webui && npm run build
 ```
 
 ## API 快速参考

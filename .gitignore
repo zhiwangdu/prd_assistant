@@ -1,3 +1,10 @@
 .DS_Store
 target/
 data/
+node_modules/
+.next/
+out/
+webui/.next/
+webui/out/
+webui/.npm-cache/
+webui/tsconfig.tsbuildinfo

@@ -2,15 +2,17 @@
 
 ## 目标
 
-WEBUI 提供手动上传、任务查看和证据浏览入口，第一版直接由 Rust Server 静态托管。
+WEBUI 提供手动上传、任务查看和证据浏览入口。前端使用 React + Next.js + Tailwind CSS，构建为静态文件后由 Rust Server 托管。
 
 ## 当前状态
 
-已实现无构建前端：
+已实现 Next.js 静态导出前端：
 
-- `webui/index.html`
-- `webui/styles.css`
-- `webui/app.js`
+- `webui/app/page.tsx`
+- `webui/app/layout.tsx`
+- `webui/app/globals.css`
+- `webui/package.json`
+- `webui/out` 构建产物，git 忽略
 
 ## 当前功能
 
@@ -66,14 +68,16 @@ Authorization: Bearer <api-key>
 
 ## 约束
 
-- 第一版不引入 Node 构建步骤。
+- 使用 `output: "export"`，Server 只托管静态产物，不在生产运行 Next.js server。
+- `webui/out` 和 `webui/.next` 不提交。
+- npm registry 使用项目级 `.npmrc` 指向 `http://registry.npmmirror.com`。
 - 不在前端持久化敏感分析结果，任务列表仅作为本机快速入口。
 - API Key 保存在 localStorage，仅用于本地 MVP。
 
 ## 验收标准
 
 - `GET /` 能返回页面。
-- `node --check webui/app.js` 通过。
+- `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 - 页面能上传一个或多个 sample.log、创建任务、显示 artifacts。
 - Metadata 页面支持按实例 ID 查询、按集群查看节点、模板导入预览和确认。
 - Metadata 页面支持通过 Server 拉取 `127.0.0.1:8091/getdata`，避免浏览器 CORS 限制。
