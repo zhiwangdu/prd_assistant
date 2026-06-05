@@ -17,7 +17,7 @@
 - 展示 `grep_results.json` grep 命中
 - 在浏览器 localStorage 中保留最近任务
 - 按实例 ID 查询元数据。
-- 按集群 ID 展示节点列表。
+- 按集群 ID 展示节点列表、`PtView` 分区状态和 `Databases` 库表/RP 摘要。
 - 从 `http://127.0.0.1:8091/getdata` 拉取真实 openGemini 元数据并预览。
 - 输入 YAML/JSON 模板并预览导入结果。
 - 确认导入后写入 Server metadata store。
@@ -86,6 +86,13 @@ curl http://127.0.0.1:50992/health
 3. 选择一个或多个 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz` 或 `.tar`。
 4. 点击上传并创建任务。
 5. 查看证据链里的文件清单和 grep 命中。
+
+Metadata 验证：
+
+1. 在顶部固定连接区输入 API Key。
+2. Metadata 页面点击“拉取并预览”，确认导入。
+3. 输入 cluster ID，例如 `6735497445922383781`。
+4. 查看 Nodes、PtView、Databases 三块摘要。
 
 ## 接口约定
 

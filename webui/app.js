@@ -230,7 +230,7 @@ async function queryInstance() {
     const body = await fetchJson(`/api/metadata/instances/${encodeURIComponent(instanceId)}`, {
       headers: authHeaders()
     })
-    renderMetadataResult(JSON.stringify(body, null, 2), true)
+    renderMetadataResult(`<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`, true)
   } catch (err) {
     renderMetadataResult(`查询失败: ${err.message}`)
   }
@@ -249,7 +249,7 @@ async function queryCluster() {
     const nodes = await fetchJson(`/api/metadata/clusters/${encodeURIComponent(clusterId)}/nodes`, {
       headers: authHeaders()
     })
-    renderMetadataResult(JSON.stringify({ ...cluster, nodes: nodes.nodes }, null, 2), true)
+    renderMetadataResult(renderClusterMetadata({ ...cluster, nodes: nodes.nodes }), true)
   } catch (err) {
     renderMetadataResult(`查询失败: ${err.message}`)
   }
@@ -404,6 +404,8 @@ function renderMetadataPreview(preview) {
     `instances: ${preview.summary.instances}`,
     `clusters: ${preview.summary.clusters}`,
     `nodes: ${preview.summary.nodes}`,
+    `databases: ${preview.summary.databases || 0}`,
+    `partitionViews: ${preview.summary.partitionViews || 0}`,
     `warnings: ${preview.summary.warnings}`,
     `errors: ${preview.summary.errors}`,
     "",
@@ -428,10 +430,135 @@ function renderMetadataPreview(preview) {
   return lines.join("\n")
 }
 
+function renderClusterMetadata(cluster) {
+  const nodes = cluster.nodes || []
+  const partitionViews = cluster.partitionViews || []
+  const databases = cluster.databases || []
+  return `
+    <div class="metadata-detail">
+      <section class="metadata-section">
+        <h4>Cluster</h4>
+        <div class="kv-grid">
+          ${kv("clusterId", cluster.clusterId)}
+          ${kv("name", cluster.name)}
+          ${kv("product", cluster.product)}
+          ${kv("databaseCount", databases.length)}
+          ${kv("partitionViewCount", partitionViews.length)}
+        </div>
+      </section>
+      <section class="metadata-section">
+        <h4>Nodes</h4>
+        ${nodes.length ? nodes.map(renderMetadataNode).join("") : emptyBlock("暂无节点")}
+      </section>
+      <section class="metadata-section">
+        <h4>PtView</h4>
+        ${partitionViews.length ? partitionViews.map(renderPartitionView).join("") : emptyBlock("暂无 PtView")}
+      </section>
+      <section class="metadata-section">
+        <h4>Databases</h4>
+        ${databases.length ? databases.map(renderDatabase).join("") : emptyBlock("暂无 Database")}
+      </section>
+      <details class="raw-json" open>
+        <summary>原始查询结果</summary>
+        <pre>${escapeHtml(JSON.stringify(cluster, null, 2))}</pre>
+      </details>
+    </div>
+  `
+}
+
+function renderMetadataNode(node) {
+  return `
+    <div class="data-row">
+      <strong>${escapeHtml(node.nodeId)}</strong>
+      <small>${escapeHtml(node.role || "-")} · ${escapeHtml(node.status || "-")} · ${escapeHtml(node.host || "-")}</small>
+    </div>
+  `
+}
+
+function renderPartitionView(partition) {
+  return `
+    <div class="data-row">
+      <strong>${escapeHtml(partition.database)} / pt-${escapeHtml(partition.ptId)}</strong>
+      <small>
+        owner data-${escapeHtml(partition.ownerNodeId ?? "-")}
+        · ${escapeHtml(partition.statusText || partition.status || "-")}
+        · ver ${escapeHtml(partition.version ?? "-")}
+        · rg ${escapeHtml(partition.replicaGroupId ?? "-")}
+      </small>
+    </div>
+  `
+}
+
+function renderDatabase(database) {
+  const policies = database.retentionPolicies || []
+  return `
+    <div class="metadata-card">
+      <div class="metadata-card-title">
+        <strong>${escapeHtml(database.name)}</strong>
+        <small>default RP: ${escapeHtml(database.defaultRetentionPolicy || "-")} · replicaN: ${escapeHtml(database.replicaN ?? "-")}</small>
+      </div>
+      ${policies.length ? policies.map(renderRetentionPolicy).join("") : emptyBlock("暂无保留策略")}
+    </div>
+  `
+}
+
+function renderRetentionPolicy(policy) {
+  const measurements = policy.measurements || []
+  const shardGroups = policy.shardGroups || []
+  return `
+    <div class="metadata-subcard">
+      <strong>RP ${escapeHtml(policy.name)}</strong>
+      <small>replicaN ${escapeHtml(policy.replicaN ?? "-")} · shardGroupDuration ${escapeHtml(policy.shardGroupDuration ?? "-")}</small>
+      <div class="metadata-columns">
+        <div>
+          <small>Measurements</small>
+          ${measurements.length ? measurements.map(renderMeasurement).join("") : emptyBlock("暂无 Measurement")}
+        </div>
+        <div>
+          <small>ShardGroups</small>
+          ${shardGroups.length ? shardGroups.map(renderShardGroup).join("") : emptyBlock("暂无 ShardGroup")}
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderMeasurement(measurement) {
+  const schema = measurement.schema || []
+  return `
+    <div class="mini-row">
+      <code>${escapeHtml(measurement.name)}</code>
+      <small>${escapeHtml(measurement.shardKeyType || "-")} · fields: ${schema.map((field) => escapeHtml(`${field.name}:${field.typ ?? "-"}`)).join(", ") || "-"}</small>
+    </div>
+  `
+}
+
+function renderShardGroup(group) {
+  return `
+    <div class="mini-row">
+      <code>sg-${escapeHtml(group.id)}</code>
+      <small>${escapeHtml(group.startTime || "-")} ~ ${escapeHtml(group.endTime || "-")} · shards: ${(group.shardIds || []).join(",") || "-"} · owners: ${(group.owners || []).join(",") || "-"}</small>
+    </div>
+  `
+}
+
+function kv(label, value) {
+  return `
+    <div>
+      <small>${escapeHtml(label)}</small>
+      <strong>${escapeHtml(value ?? "-")}</strong>
+    </div>
+  `
+}
+
+function emptyBlock(text) {
+  return `<div class="table-like empty">${escapeHtml(text)}</div>`
+}
+
 function renderMetadataResult(value, preformatted = false) {
   els.metadataResult.className = "table-like"
   els.metadataResult.innerHTML = preformatted
-    ? `<pre>${escapeHtml(value)}</pre>`
+    ? value
     : `<div class="data-row">${escapeHtml(value)}</div>`
 }
 

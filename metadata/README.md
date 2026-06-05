@@ -12,6 +12,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - `instance` / `cluster` / `node` 查询。
 - JSON/YAML 模板导入预览。
 - openGemini `/getdata` 真实元数据解析。
+- openGemini `PtView` 分区视图解析。
+- openGemini `Databases` 库、保留策略、表结构和 shard group 摘要解析。
 - Server 侧从真实元数据 URL 拉取并预览。
 - 导入确认后写入 metadata store。
 - WEBUI Metadata 页面。
@@ -59,6 +61,44 @@ Metadata 模块已完成基础 Rust Server 实现。
 - `version`
 - `environment`
 - `nodes`
+- `databases`
+- `partition_views`
+
+数据库：
+
+- `name`
+- `default_retention_policy`
+- `replica_n`
+- `mark_deleted`
+- `retention_policies`
+
+保留策略：
+
+- `name`
+- `replica_n`
+- `duration`
+- `shard_group_duration`
+- `measurements`
+- `shard_groups`
+
+表结构：
+
+- `name`
+- `version_name`
+- `shard_key_type`
+- `schema`
+- `mark_deleted`
+- `engine_type`
+
+分区视图：
+
+- `database`
+- `pt_id`
+- `owner_node_id`
+- `status`
+- `status_text`
+- `version`
+- `replica_group_id`
 
 节点：
 
@@ -123,6 +163,8 @@ POST /api/metadata/imports/:import_id/confirm
 - `DataNodes` -> `data-*` 节点
 - `SqlNodes` -> `sql-*` 节点
 - `Databases`、`Term`、`Index`、`NumOfShards` 等写入 cluster labels
+- `Databases` -> cluster `databases`，重点保留默认 RP、RP 参数、Measurements schema、ShardGroups
+- `PtView` -> cluster `partitionViews`，重点保留数据库、PT ID、owner data node、状态、版本和 RGID
 - 节点的 `Host`、`RPCAddr`、`TCPHost`、`GossipAddr`、`Status`、`Az` 等写入 node fields/labels
 
 受保护接口继续使用：
@@ -138,6 +180,8 @@ Authorization: Bearer <api-key>
 - 按实例 ID 查询。
 - 按集群 ID 查询。
 - 展示集群拓扑和节点角色。
+- 展示 `PtView` 分区归属和状态。
+- 展示 `Databases`、保留策略、表结构 schema 和 shard group 摘要。
 - 展示产品、版本、环境、标签。
 - 从真实元数据 URL 拉取并预览。
 - 输入模板并预览导入结果。

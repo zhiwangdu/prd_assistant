@@ -49,6 +49,11 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
+`GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
+
+- `databases`: openGemini `Databases` 的库、默认 RP、保留策略、Measurements schema 和 ShardGroups 摘要。
+- `partitionViews`: openGemini `PtView` 的 database partition owner、状态、版本和 RGID。
+
 受保护接口必须携带：
 
 ```text

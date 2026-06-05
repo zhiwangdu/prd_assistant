@@ -115,6 +115,7 @@ workspaces/task_xxx/
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
   - Metadata openGemini `/getdata` URL fetch preview
+  - Metadata cluster view for `PtView` partition state and `Databases` schema/RP/shard summary
 
 ### Metadata
 
@@ -126,6 +127,8 @@ workspaces/task_xxx/
   - cluster node listing
   - JSON/YAML import preview
   - openGemini `/getdata` snapshot normalization
+  - openGemini `PtView` normalization into cluster `partitionViews`
+  - openGemini `Databases` normalization into database/RP/measurement/shard summaries
   - server-side metadata URL fetch
   - import confirmation and persistence
 - CSV import remains reserved but not implemented.
@@ -162,6 +165,7 @@ Recent HTTP smoke checks:
 - metadata instance and cluster query
 - metadata `http://127.0.0.1:8091/getdata` parsing plan implemented for openGemini snapshot
 - metadata server-side fetch from `http://127.0.0.1:8091/getdata`, confirm, cluster query, node query, and instance query
+- metadata unit test covers openGemini `PtView` owner/status and `Databases` RP/schema/shard summary parsing
 
 ## Planned Next
 

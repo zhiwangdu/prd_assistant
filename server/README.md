@@ -206,6 +206,8 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
+`GET /api/metadata/clusters/:cluster_id` 会返回 cluster 基本信息、节点 ID 列表、labels，以及 openGemini 解析出的 `databases` 和 `partitionViews` 摘要。`databases` 包含默认保留策略、RP 参数、Measurements schema 和 ShardGroups；`partitionViews` 对应 `PtView`，用于查看 database partition 的 owner data node、状态、版本和 RGID。
+
 `POST /api/uploads` 使用 multipart：
 
 - `file`: 上传文件

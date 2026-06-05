@@ -387,6 +387,83 @@ textarea:focus {
   white-space: pre-wrap;
 }
 
+.metadata-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.metadata-section {
+  display: grid;
+  gap: 8px;
+}
+
+.metadata-section h4 {
+  margin: 0;
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.kv-grid div,
+.metadata-card,
+.metadata-subcard,
+.mini-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.kv-grid div,
+.metadata-card,
+.metadata-subcard {
+  padding: 10px;
+}
+
+.metadata-card,
+.metadata-subcard {
+  display: grid;
+  gap: 8px;
+}
+
+.metadata-card-title {
+  display: grid;
+  gap: 3px;
+}
+
+.metadata-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metadata-columns > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.mini-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+}
+
+.metadata-detail small,
+.metadata-card small,
+.metadata-subcard small,
+.mini-row small,
+.kv-grid small {
+  color: var(--muted);
+}
+
+.mini-row code,
+.metadata-card code {
+  overflow-wrap: anywhere;
+}
+
 .raw-json {
   margin-top: 16px;
 }
@@ -416,6 +493,11 @@ textarea:focus {
 
   .connection-controls {
     width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .kv-grid,
+  .metadata-columns {
     grid-template-columns: 1fr;
   }
 
