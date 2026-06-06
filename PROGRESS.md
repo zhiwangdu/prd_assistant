@@ -163,6 +163,7 @@ workspaces/task_xxx/
 - Defined planned analysis APIs for state reads, user messages, and action approval decisions.
 - Documented that safe read-only actions may run automatically while SSH/SCP collection requires approval by default.
 - Documented that hidden chain-of-thought is not stored; only auditable rationale summaries and evidence references are persisted.
+- Added Mermaid diagrams for the planned component architecture, execution trust boundary, Analysis Agent investigation loop, waiting states, and recovery path.
 
 ## Verified
 
@@ -217,6 +218,7 @@ For the Analysis Agent architecture update:
 - Reviewed all component README/SPEC documents.
 - Updated root architecture, original `plan.md`, interfaces, Server, WebUI, config, security, testing, deployment, evidence providers, Case Store, roadmap, and `AGENTS.md`.
 - No application code or runtime configuration was changed, so Rust and WebUI build checks were not required.
+- Added and syntax-reviewed the root Mermaid architecture and investigation-loop diagrams.
 
 ## Maintenance Rule
 

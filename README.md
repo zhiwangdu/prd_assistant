@@ -52,6 +52,82 @@ LLM Gateway
 Case 沉淀与召回
 ```
 
+## 规划架构图
+
+```mermaid
+flowchart LR
+    subgraph Inputs["用户与数据来源"]
+        User["用户 / WebUI"]
+        Chrome["Chrome Extension"]
+        TestEnv["测试环境"]
+    end
+
+    subgraph Local["用户本机"]
+        Native["Native Agent"]
+    end
+
+    subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
+        API["API / Auth / Task Manager"]
+        Orchestrator["Pipeline / Action Executor"]
+        Agent["Analysis Agent<br/>上下文、假设、缺口、预算"]
+        Gateway["LLM Gateway<br/>Prompt、裁剪、结构化响应"]
+
+        subgraph Evidence["受控证据能力"]
+            Log["Log Analyzer"]
+            Tool["Tool Runner"]
+            Code["Code Evidence"]
+            Env["Environment Collector"]
+            Meta["Metadata"]
+            Cases["Case Store"]
+        end
+
+        Store[("Task Store / Workspace<br/>state、events、evidence、result")]
+    end
+
+    Model["LLM Provider"]
+    Repos["已配置代码仓"]
+    Tools["白名单诊断工具"]
+
+    Chrome --> Native
+    Native -->|"上传日志 / 创建任务"| API
+    User -->|"上传、问题、回答、审批"| API
+    API --> Orchestrator
+    Orchestrator --> Agent
+    Agent -->|"结构化 action"| Orchestrator
+    Agent --> Gateway
+    Gateway --> Model
+    Model --> Gateway
+
+    Orchestrator --> Log
+    Orchestrator --> Tool
+    Orchestrator --> Code
+    Orchestrator -->|"批准后"| Env
+    Orchestrator --> Meta
+    Orchestrator --> Cases
+
+    Tool --> Tools
+    Code --> Repos
+    Env --> TestEnv
+
+    API <--> Store
+    Orchestrator <--> Store
+    Agent <--> Store
+    Evidence --> Store
+
+    Agent -->|"ask_user / approval_required"| API
+    API -->|"时间线、问题、审批、最终结果"| User
+    Agent -->|"final_answer"| Store
+    Store -->|"人工确认后沉淀"| Cases
+```
+
+关键控制边界：
+
+- Analysis Agent 和 LLM Gateway 都不能直接执行工具、读取任意路径或连接 SSH。
+- Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
+- 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
+- 所有任务上下文、事件、证据和结果都持久化到 Task Store / Workspace，支持重启恢复。
+- Case Store 只接收人工确认后的最终结果。
+
 ## 模块目录
 
 | 目录 | 模块 | Spec |

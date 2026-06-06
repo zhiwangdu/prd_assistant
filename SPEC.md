@@ -84,6 +84,55 @@ result.md
 
 模型只通过 LLM Gateway 返回结构化 action 或最终答案候选。Server 是日志搜索、工具、代码检索和远程采集的唯一执行者。
 
+## 调查循环图
+
+```mermaid
+flowchart TD
+    Start["任务已持久化<br/>QUEUED"] --> Initial["基础采集 / 解压 / 初始搜索"]
+    Initial --> Running["RUNNING<br/>加载 analysis state 与 evidence"]
+    Running --> Decide["Analysis Agent + LLM Gateway<br/>生成结构化决策"]
+
+    Decide --> Search["search_logs"]
+    Decide --> Tool["run_tool"]
+    Decide --> Code["collect_code_evidence"]
+    Decide --> Env["collect_environment"]
+    Decide --> Ask["ask_user"]
+    Decide --> Final["final_answer"]
+
+    Search --> Validate["Server 校验<br/>schema / 白名单 / 预算 / 幂等"]
+    Tool --> Validate
+    Code --> Validate
+    Env --> Approval{"需要批准？"}
+
+    Validate --> Execute["执行安全只读动作"]
+    Execute --> Persist["持久化 action 结果与事件"]
+    Persist --> Budget{"预算和终止条件"}
+
+    Approval -->|"是"| WaitingApproval["WAITING_FOR_APPROVAL"]
+    Approval -->|"否"| Validate
+    WaitingApproval -->|"批准"| Validate
+    WaitingApproval -->|"拒绝及原因"| Persist
+
+    Ask --> WaitingUser["WAITING_FOR_USER"]
+    WaitingUser -->|"用户补充消息"| Persist
+
+    Budget -->|"继续"| Running
+    Budget -->|"耗尽 / 重复 / 证据不足"| Limited["生成带不确定性的结果"]
+    Limited --> Final
+
+    Final --> Result["写入 result.json / result.md"]
+    Result --> Success["SUCCEEDED"]
+
+    Initial -->|"不可恢复系统错误"| Failed["FAILED"]
+    Validate -->|"不可恢复系统错误"| Failed
+```
+
+状态和阶段分离：
+
+- 稳定状态：`QUEUED`、`RUNNING`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL`、`SUCCEEDED`、`FAILED`。
+- 执行阶段：`COLLECT`、`EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`COLLECT_CODE`、`PLAN_ANALYSIS`、`EXECUTE_ACTION`、`GENERATE_RESULT` 等。
+- 预算耗尽或证据不足属于可解释的分析终止，通常生成低置信度结果并进入 `SUCCEEDED`；只有不可恢复系统错误进入 `FAILED`。
+
 ## 当前已实现
 
 - Chrome Extension 识别下载完成并调用 Native Agent。
