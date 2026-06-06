@@ -1547,6 +1547,7 @@ nodes:
                 server: ServerSettings {
                     bind: "127.0.0.1:0".to_string(),
                     public_base_url: "http://127.0.0.1:0".to_string(),
+                    max_concurrent_tasks: 2,
                 },
                 auth: AuthSettings { api_keys: vec![] },
                 storage: StorageSettings {

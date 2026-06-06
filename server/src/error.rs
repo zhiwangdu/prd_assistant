@@ -9,6 +9,7 @@ use tracing::error;
 pub struct AppError {
     status: StatusCode,
     message: String,
+    details: Option<serde_json::Value>,
 }
 
 impl AppError {
@@ -16,6 +17,23 @@ impl AppError {
         Self {
             status: StatusCode::BAD_REQUEST,
             message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn conflict(message: impl Into<String>, details: serde_json::Value) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: message.into(),
+            details: Some(details),
         }
     }
 
@@ -23,6 +41,7 @@ impl AppError {
         Self {
             status: StatusCode::UNAUTHORIZED,
             message: message.into(),
+            details: None,
         }
     }
 
@@ -30,9 +49,18 @@ impl AppError {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: message.into(),
+            details: None,
         }
     }
 }
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for AppError {}
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
@@ -42,7 +70,13 @@ impl IntoResponse for AppError {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        let body = Json(serde_json::json!({ "error": self.message }));
+        let mut body = serde_json::json!({ "error": self.message });
+        if let Some(details) = self.details {
+            if let (Some(target), Some(source)) = (body.as_object_mut(), details.as_object()) {
+                target.extend(source.clone());
+            }
+        }
+        let body = Json(body);
         (self.status, headers, body).into_response()
     }
 }

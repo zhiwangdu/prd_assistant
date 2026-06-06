@@ -29,7 +29,11 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/uploads/:upload_id/complete",
             post(uploads::complete_upload),
         )
-        .route("/api/tasks", post(tasks::create_task))
+        .route(
+            "/api/tasks",
+            post(tasks::create_task).get(tasks::list_tasks),
+        )
+        .route("/api/tasks/:task_id", get(tasks::get_task))
         .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
         .route(
             "/api/metadata/instances/:instance_id",

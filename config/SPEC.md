@@ -18,6 +18,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 
 - `server.bind`
 - `server.public_base_url`
+- `server.max_concurrent_tasks`
 - `native_agent.bind`
 - `native_agent.server_base_url`
 - `native_agent.api_key_env`
@@ -58,6 +59,7 @@ auth:
 
 - 缺少必要密钥环境变量时启动失败。
 - 配置有默认值，但示例文件必须展示推荐值。
+- `server.max_concurrent_tasks` 默认 2，并发下限为 1。
 - 预算字段必须大于零且有上限；未知 action 类型启动失败。
 - 用户输入不能修改预算、白名单和审批策略。
 - README 和 SPEC 在配置字段变更时同步更新。

@@ -25,6 +25,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 server:
   bind: "0.0.0.0:8080"
   public_base_url: "http://localhost:8080"
+  max_concurrent_tasks: 2
   cors_allowed_origins:
     - "http://localhost:5173"
 
@@ -108,4 +109,5 @@ metadata:
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
 - Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。
+- `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

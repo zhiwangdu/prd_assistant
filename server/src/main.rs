@@ -9,6 +9,8 @@ mod metadata;
 mod models;
 mod pipeline;
 mod state;
+mod task_executor;
+mod task_store;
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -48,7 +50,8 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid bind address '{}'", config.server.bind))?;
 
-    let state = AppState::new(config);
+    let state = AppState::new(config)?;
+    state.recover_tasks().await?;
     let app = Router::new()
         .merge(api::router(state.clone()))
         .fallback_service(ServeDir::new("webui/out").append_index_html_on_directories(true))

@@ -15,6 +15,7 @@ pub struct AppConfig {
 pub struct ServerSettings {
     pub bind: String,
     pub public_base_url: String,
+    pub max_concurrent_tasks: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,8 @@ struct ServerConfig {
     bind: String,
     #[serde(default = "default_public_base_url")]
     public_base_url: String,
+    #[serde(default = "default_max_concurrent_tasks")]
+    max_concurrent_tasks: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,6 +89,7 @@ impl AppConfig {
     pub fn prepare_dirs(&self) -> anyhow::Result<()> {
         fs::create_dir_all(self.storage.uploads_dir())?;
         fs::create_dir_all(self.storage.workspaces_dir())?;
+        fs::create_dir_all(self.storage.tasks_dir())?;
         fs::create_dir_all(self.storage.metadata_dir())?;
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
         Ok(())
@@ -107,6 +111,10 @@ impl StorageSettings {
 
     pub fn workspace_dir(&self, task_id: &str) -> PathBuf {
         self.workspaces_dir().join(task_id)
+    }
+
+    pub fn tasks_dir(&self) -> PathBuf {
+        self.data_dir.join("tasks")
     }
 
     pub fn metadata_dir(&self) -> PathBuf {
@@ -156,6 +164,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         server: ServerSettings {
             bind: server.bind,
             public_base_url: server.public_base_url,
+            max_concurrent_tasks: server.max_concurrent_tasks.max(1),
         },
         auth: AuthSettings { api_keys },
         storage: StorageSettings {
@@ -178,6 +187,7 @@ fn default_server_config() -> ServerConfig {
     ServerConfig {
         bind: default_bind(),
         public_base_url: default_public_base_url(),
+        max_concurrent_tasks: default_max_concurrent_tasks(),
     }
 }
 
@@ -206,6 +216,10 @@ fn default_bind() -> String {
 
 fn default_public_base_url() -> String {
     "http://127.0.0.1:8080".to_string()
+}
+
+fn default_max_concurrent_tasks() -> usize {
+    2
 }
 
 fn default_data_dir() -> PathBuf {

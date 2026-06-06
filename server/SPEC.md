@@ -16,6 +16,8 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - multipart 批量上传
 - 分片上传
 - task 创建
+- task JSON 持久化、列表、详情和重启恢复
+- semaphore 限制的后台执行
 - task artifact 查询
 - metadata 查询和导入确认
 - upload pipeline
@@ -40,6 +42,8 @@ POST /api/uploads/init
 POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
 POST /api/tasks
+GET /api/tasks
+GET /api/tasks/:task_id
 GET /api/tasks/:task_id/artifacts
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
@@ -78,6 +82,8 @@ Authorization: Bearer <api-key>
 
 ```text
 data_dir/
+  tasks/
+    task_xxx.json
   uploads/
     upl_xxx/
   workspaces/
@@ -94,18 +100,29 @@ data_dir/
       result.md
 ```
 
-## 当前 Pipeline
+## 当前任务模型与 Pipeline
+
+`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、状态、阶段、attempts、错误、artifact 路径和 RFC 3339 时间。
 
 ```text
-UploadRecord[]
+POST task
+  -> validate UploadRecord[]
   -> copy raw files into raw/<upload_id>/
+  -> persist QUEUED
+  -> return 202
+background executor
+  -> RUNNING / attempts + 1
+  -> clean derived artifacts
   -> extract/copy each upload into extracted/<package_name>/
   -> collect manifest files
   -> simple grep
   -> write manifest.json and grep_results.json
+  -> SUCCEEDED or FAILED
 ```
 
 `POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Batch uploads are analyzed in one workspace so later stages can run joint analysis across all logs.
+
+任务文件使用临时文件加 rename 原子替换。启动时损坏 JSON 必须失败；`QUEUED` 和被重置的 `RUNNING` 按创建时间恢复。任务派生产物可删除重建，raw 快照必须保留。
 
 ## 规划中的调查编排
 
@@ -126,6 +143,7 @@ persist task
 
 - `server.bind`
 - `server.public_base_url`
+- `server.max_concurrent_tasks`，默认 2
 - `auth.api_keys[].value_env`
 - `storage.data_dir`
 - `storage.max_upload_bytes`
@@ -135,8 +153,7 @@ persist task
 
 ## 待实现
 
-- 任务持久化。
-- 完整任务状态机。
+- `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - task context 关联 Metadata。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
 - Analysis Agent、LLM Gateway、message/approval API 和重启恢复。

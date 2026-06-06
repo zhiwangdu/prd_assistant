@@ -1,6 +1,7 @@
 server:
   bind: "127.0.0.1:50992"
   public_base_url: "http://127.0.0.1:50992"
+  max_concurrent_tasks: 2
 
 storage:
   data_dir: "/tmp/logagent-server-test"

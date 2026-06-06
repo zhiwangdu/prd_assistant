@@ -11,9 +11,9 @@ Current runnable loop:
 ```text
 Chrome Extension or WEBUI
   -> Native Agent or Server upload API
-  -> Server task workspace
-  -> archive extraction / manifest
-  -> simple grep evidence
+  -> persisted QUEUED task and raw snapshot
+  -> bounded background extraction / manifest
+  -> simple grep evidence and terminal state
   -> WEBUI artifact display
 ```
 
@@ -52,6 +52,8 @@ Chrome Extension or WEBUI
   - `POST /api/uploads/:upload_id/chunks?offset=<bytes>`
   - `POST /api/uploads/:upload_id/complete`
   - `POST /api/tasks`
+  - `GET /api/tasks`
+  - `GET /api/tasks/:task_id`
   - `GET /api/tasks/:task_id/artifacts`
   - `GET /api/metadata/instances/:instance_id`
   - `GET /api/metadata/clusters/:cluster_id`
@@ -64,6 +66,11 @@ Chrome Extension or WEBUI
 - Uses API Key middleware for protected APIs.
 - Statically serves Vite output from `webui/out`.
 - Creates Server-owned task IDs and workspaces.
+- Persists each task as `storage.data_dir/tasks/<task_id>.json` with atomic replacement.
+- Returns `202 Accepted` after raw snapshot creation and runs tasks in the background.
+- Limits concurrent tasks with `server.max_concurrent_tasks` (default 2).
+- Recovers `QUEUED` and interrupted `RUNNING` tasks after restart; successful and failed tasks remain terminal.
+- Rejects artifact reads before success with `409` and the current task status.
 
 ### Upload And Workspace
 
@@ -114,7 +121,10 @@ workspaces/task_xxx/
   - chunked upload for large files
   - task creation with `uploadIds`
   - artifact display
-  - localStorage recent task list
+  - Server-backed recent task list and task detail polling
+  - separate upload and task execution progress
+  - persisted task recovery after page refresh
+  - failed phase/message display and historical artifact selection
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
   - Metadata openGemini `/getdata` URL fetch preview
@@ -178,6 +188,14 @@ npm run typecheck
 npm run build
 ```
 
+Task persistence verification added:
+
+- 12 Rust tests pass.
+- Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
+- Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
+- Task API covers `202`, list/detail, `404`, and artifacts `409`.
+- Isolated HTTP smoke on port 50993 verified upload, `202 QUEUED`, polling to `SUCCEEDED`, persisted list/detail, `attempts=1`, and artifact reads.
+
 Recent HTTP smoke checks:
 
 - `GET /health`
@@ -195,21 +213,20 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Persist Server task list and task state machine so WEBUI does not depend only on localStorage.
-2. Connect Metadata to task creation and write `metadata_context.json`.
-3. Implement Tool Runner for existing compiled tools:
+1. Connect Metadata to task creation and write `metadata_context.json`.
+2. Implement Tool Runner for existing compiled tools:
    - `flux_query_analyzer`
    - `influxql_analyzer`
-4. Implement Code Evidence:
+3. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-5. Implement Environment Collector:
+4. Implement Environment Collector:
    - SSH/SCP test environment collection
    - whitelist nodes, paths, and commands
-6. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
-7. Implement LLM Gateway structured action/final-answer decisions.
-8. Implement Case Store save and recall from manually confirmed final results.
+5. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
+6. Implement LLM Gateway structured action/final-answer decisions.
+7. Implement Case Store save and recall from manually confirmed final results.
 
 ## Documentation Verification
 

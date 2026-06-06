@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,14 +55,22 @@ pub struct CreateTaskRequest {
     pub source_url: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskResponse {
     pub task_id: String,
     pub url: String,
     pub status: TaskStatus,
-    pub manifest_path: String,
-    pub grep_results_path: String,
+    pub phase: Option<TaskPhase>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub type TaskSummary = TaskResponse;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskListResponse {
+    pub tasks: Vec<TaskSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,10 +83,28 @@ pub struct TaskArtifactsResponse {
     pub grep_results: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
-    Done,
+    Queued,
+    Running,
+    WaitingForUser,
+    WaitingForApproval,
+    Succeeded,
+    Failed,
+}
+
+impl TaskStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TaskPhase {
+    Extract,
+    SearchLogs,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,18 +112,61 @@ pub struct HealthResponse {
     pub status: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskSource {
     Upload,
 }
 
-#[derive(Debug, Clone)]
-pub struct TaskContext {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInput {
+    pub upload_id: String,
+    pub filename: String,
+    pub size: u64,
+    pub raw_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskError {
+    pub phase: Option<TaskPhase>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRecord {
+    pub schema_version: u32,
     pub task_id: String,
     pub source: TaskSource,
+    pub upload_ids: Vec<String>,
+    pub inputs: Vec<TaskInput>,
     pub source_url: Option<String>,
-    pub workspace: PathBuf,
+    pub status: TaskStatus,
+    pub phase: Option<TaskPhase>,
+    pub attempts: u32,
+    pub error: Option<TaskError>,
+    pub manifest_path: Option<String>,
+    pub grep_results_path: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl TaskRecord {
+    pub fn summary(&self, public_base_url: &str) -> TaskSummary {
+        TaskSummary {
+            task_id: self.task_id.clone(),
+            url: format!(
+                "{}/tasks/{}",
+                public_base_url.trim_end_matches('/'),
+                self.task_id
+            ),
+            status: self.status,
+            phase: self.phase,
+            created_at: self.created_at,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

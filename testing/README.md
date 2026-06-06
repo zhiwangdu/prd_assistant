@@ -50,6 +50,13 @@ upload -> extract -> rg -> Agent -> action -> evidence -> LLM stub -> result
 environment approval -> collect stub -> Agent continuation -> result
 ```
 
+当前任务系统测试覆盖：
+
+- Task Store 创建、更新、重新加载、倒序列表、损坏 JSON 失败和终态保护。
+- `RUNNING -> QUEUED` 启动恢复与 attempt 保留。
+- raw 快照重复执行、派生产物清理和结果重建。
+- API `202` 创建、列表、详情、404 和 artifacts 409。
+
 ### LLM 测试策略
 
 开发和 CI 中默认使用 LLM stub，不直接调用真实模型。
