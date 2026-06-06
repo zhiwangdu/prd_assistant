@@ -11,13 +11,24 @@ type TaskSummary = {
   taskId: string;
   url: string;
   status: TaskStatus;
-  phase?: "EXTRACT" | "SEARCH_LOGS" | null;
+  phase?: "EXTRACT" | "SEARCH_LOGS" | "GENERATE_RESULT" | null;
   createdAt: string;
 };
 type TaskRecord = TaskSummary & {
-  attempts: number;
+  attempts?: number;
   error?: { phase?: string | null; message: string } | null;
 };
+type AnalysisResult = {
+  schemaVersion: number;
+  summary: string;
+  symptoms: string[];
+  likelyRootCauses: Array<{ cause: string; evidenceRefs: string[] }>;
+  nextChecks: string[];
+  fixSuggestions: string[];
+  missingInformation: string[];
+  confidence: "low" | "medium" | "high";
+};
+type TaskResult = { taskId: string; result: AnalysisResult };
 type Artifacts = {
   taskId?: string;
   manifest?: { files?: Array<{ path: string; size: number }> };
@@ -27,11 +38,13 @@ type Artifacts = {
 export function OperationsView({ apiKey }: { apiKey: string }) {
   const [files, setFiles] = useState<File[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
+  const [question, setQuestion] = useState("分析日志中的主要异常、可能原因和建议检查项。");
   const [uploadStatus, setUploadStatus] = useState("等待上传");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [artifacts, setArtifacts] = useState<Artifacts | null>(null);
+  const [taskResult, setTaskResult] = useState<TaskResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refreshTasks = useCallback(async () => {
@@ -51,15 +64,22 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     const task = await fetchJson<TaskRecord>(`/api/tasks/${encodeURIComponent(taskId)}`, { headers: authHeaders(apiKey) });
     setSelectedTask(task);
     if (task.status === "SUCCEEDED") {
-      setArtifacts(await fetchJson<Artifacts>(`/api/tasks/${encodeURIComponent(taskId)}/artifacts`, { headers: authHeaders(apiKey) }));
+      const [nextArtifacts, nextResult] = await Promise.all([
+        fetchJson<Artifacts>(`/api/tasks/${encodeURIComponent(taskId)}/artifacts`, { headers: authHeaders(apiKey) }),
+        fetchJson<TaskResult>(`/api/tasks/${encodeURIComponent(taskId)}/result`, { headers: authHeaders(apiKey) })
+      ]);
+      setArtifacts(nextArtifacts);
+      setTaskResult(nextResult);
     } else {
       setArtifacts(null);
+      setTaskResult(null);
     }
   }, [apiKey]);
 
   useEffect(() => {
     setSelectedTask(null);
     setArtifacts(null);
+    setTaskResult(null);
     void refreshTasks().catch((reason) => setUploadStatus(errorMessage(reason)));
   }, [refreshTasks]);
 
@@ -74,6 +94,12 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     return () => window.clearInterval(timer);
   }, [apiKey, refreshTasks, selectTask, selectedTask]);
 
+  useEffect(() => {
+    if (selectedTask && selectedTask.attempts === undefined) {
+      void selectTask(selectedTask.taskId).catch((reason) => setUploadStatus(errorMessage(reason)));
+    }
+  }, [selectTask, selectedTask]);
+
   async function run() {
     if (!files.length || !apiKey.trim()) {
       setUploadStatus(!files.length ? "请选择日志文件" : "请填写 API Key");
@@ -81,6 +107,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     }
     setLoading(true);
     setArtifacts(null);
+    setTaskResult(null);
     try {
       const uploads: UploadResponse[] = [];
       for (let index = 0; index < files.length; index += 1) {
@@ -91,7 +118,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       const task = await fetchJson<TaskSummary>("/api/tasks", {
         method: "POST",
         headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ uploadIds: uploads.map((upload) => upload.uploadId), sourceUrl: sourceUrl || null })
+        body: JSON.stringify({ uploadIds: uploads.map((upload) => upload.uploadId), sourceUrl: sourceUrl || null, question: question.trim() || null })
       });
       setUploadProgress(100);
       setUploadStatus(`已创建任务 ${task.taskId}`);
@@ -110,6 +137,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         <CardHeader><CardTitle>Log import and evidence</CardTitle><CardDescription>上传进度与 Server 后台任务执行状态独立展示</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
+          <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
           <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
             <UploadCloud className="mb-2 h-7 w-7" />
             {files.length ? `${files.length} file(s): ${files.map((file) => file.name).join(", ")}` : "选择 .log / .txt / .zip / .tar.gz / .tgz / .tar"}
@@ -151,13 +179,15 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         </Card>
       </div>
 
+      {taskResult ? <AnalysisResultView result={taskResult.result} /> : null}
+
       {artifacts ? (
         <div className="grid gap-5 xl:grid-cols-2">
           <Evidence title="Manifest" count={artifacts.manifest?.files?.length ?? 0}>
             {(artifacts.manifest?.files ?? []).map((file) => <DataLine key={file.path} title={file.path} detail={`${file.size.toLocaleString()} bytes`} />)}
           </Evidence>
           <Evidence title="Grep matches" count={artifacts.grepResults?.matches?.length ?? 0}>
-            {(artifacts.grepResults?.matches ?? []).map((match, index) => <DataLine key={`${match.file}:${match.line}:${index}`} title={`${match.file}:${match.line}`} detail={`${match.keyword} · ${match.text}`} />)}
+            {(artifacts.grepResults?.matches ?? []).map((match, index) => <DataLine id={`grep-match-${index}`} key={`${match.file}:${match.line}:${index}`} title={`${match.file}:${match.line}`} detail={`${match.keyword} · ${match.text}`} />)}
           </Evidence>
         </div>
       ) : <EmptyState>成功任务的 manifest 和 grep evidence 会显示在这里。</EmptyState>}
@@ -181,8 +211,37 @@ function Evidence({ title, count, children }: { title: string; count: number; ch
   return <Card><CardHeader><div className="flex items-center justify-between"><CardTitle>{title}</CardTitle><Badge variant="secondary">{count}</Badge></div></CardHeader><CardContent className="space-y-2">{count ? children : <EmptyState>暂无数据</EmptyState>}</CardContent></Card>;
 }
 
-function DataLine({ title, detail }: { title: string; detail: string }) {
-  return <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-2 text-sm font-medium"><FileArchive className="h-4 w-4 text-slate-400" />{title}</div><p className="mt-1 break-words text-xs text-muted-foreground">{detail}</p></div>;
+function AnalysisResultView({ result }: { result: AnalysisResult }) {
+  return (
+    <Card>
+      <CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>LLM analysis result</CardTitle><Badge variant="secondary">confidence: {result.confidence}</Badge></div><CardDescription>{result.summary}</CardDescription></CardHeader>
+      <CardContent className="grid gap-5 lg:grid-cols-2">
+        <ResultList title="Symptoms" items={result.symptoms} />
+        <div><h3 className="mb-2 text-sm font-semibold">Likely root causes</h3>{result.likelyRootCauses.length ? result.likelyRootCauses.map((cause, index) => (
+          <div className="mb-2 rounded-lg border border-border p-3" key={`${cause.cause}:${index}`}>
+            <p className="text-sm">{cause.cause}</p>
+            <div className="mt-2 flex flex-wrap gap-2">{cause.evidenceRefs.map((reference) => <button className="font-mono text-xs text-primary underline" key={reference} onClick={() => scrollToEvidence(reference)}>{reference}</button>)}</div>
+          </div>
+        )) : <p className="text-sm text-muted-foreground">当前证据不足以提出根因。</p>}</div>
+        <ResultList title="Next checks" items={result.nextChecks} />
+        <ResultList title="Fix suggestions" items={result.fixSuggestions} />
+        <ResultList title="Missing information" items={result.missingInformation} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResultList({ title, items }: { title: string; items: string[] }) {
+  return <div><h3 className="mb-2 text-sm font-semibold">{title}</h3>{items.length ? <ul className="space-y-2 text-sm text-muted-foreground">{items.map((item, index) => <li className="rounded-lg border border-border p-3" key={`${item}:${index}`}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground">暂无</p>}</div>;
+}
+
+function scrollToEvidence(reference: string) {
+  const index = reference.match(/^grep_results\.json#matches\/(\d+)$/)?.[1];
+  if (index) document.getElementById(`grep-match-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function DataLine({ id, title, detail }: { id?: string; title: string; detail: string }) {
+  return <div id={id} className="rounded-lg border border-border p-3"><div className="flex items-center gap-2 text-sm font-medium"><FileArchive className="h-4 w-4 text-slate-400" />{title}</div><p className="mt-1 break-words text-xs text-muted-foreground">{detail}</p></div>;
 }
 
 async function uploadFile(file: File, apiKey: string, onProgress: (value: number) => void) {

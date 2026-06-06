@@ -45,6 +45,7 @@ POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
 GET /api/tasks/:task_id/artifacts
+GET /api/tasks/:task_id/result
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
@@ -102,7 +103,7 @@ data_dir/
 
 ## 当前任务模型与 Pipeline
 
-`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、状态、阶段、attempts、错误、artifact 路径和 RFC 3339 时间。
+`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、状态、阶段、attempts、错误、artifact/result 路径和 RFC 3339 时间。
 
 ```text
 POST task
@@ -117,10 +118,15 @@ background executor
   -> collect manifest files
   -> simple grep
   -> write manifest.json and grep_results.json
+  -> GENERATE_RESULT
+  -> one LLM Gateway call
+  -> write result.json and result.md
   -> SUCCEEDED or FAILED
 ```
 
 `POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Batch uploads are analyzed in one workspace so later stages can run joint analysis across all logs.
+
+`question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
 任务文件使用临时文件加 rename 原子替换。启动时损坏 JSON 必须失败；`QUEUED` 和被重置的 `RUNNING` 按创建时间恢复。任务派生产物可删除重建，raw 快照必须保留。
 
@@ -150,13 +156,20 @@ persist task
 - `storage.max_chunk_bytes`
 - `log_analyzer.keywords`
 - `log_analyzer.max_matches`
+- `llm.provider`: `stub` / `openai_compatible`
+- `llm.base_url_env`
+- `llm.api_key_env`
+- `llm.model`
+- `llm.request_timeout_seconds`
+- `llm.max_input_chars`
+- `llm.max_output_tokens`
 
 ## 待实现
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - task context 关联 Metadata。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
-- Analysis Agent、LLM Gateway、message/approval API 和重启恢复。
+- 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
 
 ## 验收标准
@@ -166,6 +179,7 @@ persist task
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
+- stub 模式能单次生成结构化结果并通过 result API 读取。
 - 批量任务的 manifest `files[].path` 必须带包名目录前缀。
 - 受保护接口无 API Key 时返回 401。
 - 等待用户或审批的任务可恢复，重复 message/decision/action 不产生重复执行。

@@ -2,13 +2,15 @@ use std::{fs, path::Path, sync::Arc};
 
 use tokio::task;
 
+use crate::llm_gateway::LlmGateway;
 use crate::{
     config::AppConfig,
     error::AppError,
     fs_utils::relative_string,
     log_analyzer::LogAnalyzer,
     models::{
-        GrepResults, Manifest, ManifestUpload, PipelineOutput, TaskInput, TaskRecord, UploadRecord,
+        AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, PipelineOutput,
+        ResultOutput, TaskInput, TaskRecord, UploadRecord,
     },
 };
 
@@ -58,7 +60,12 @@ pub async fn prepare_pipeline_run(workspace: &Path) -> Result<(), AppError> {
             )))
         }
     }
-    for name in ["manifest.json", "grep_results.json"] {
+    for name in [
+        "manifest.json",
+        "grep_results.json",
+        "result.json",
+        "result.md",
+    ] {
         match tokio::fs::remove_file(workspace.join(name)).await {
             Ok(()) => {}
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -141,6 +148,88 @@ pub async fn search_task(
     })
 }
 
+pub async fn generate_task_result(
+    config: Arc<AppConfig>,
+    gateway: LlmGateway,
+    task: TaskRecord,
+) -> Result<ResultOutput, AppError> {
+    let workspace = config.storage.workspace_dir(&task.task_id);
+    let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
+    let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
+    let result = gateway
+        .generate_result(&task.question, &manifest, &grep)
+        .await
+        .map_err(|err| AppError::internal(format!("LLM result generation failed: {err}")))?;
+    let result_json_path = workspace.join("result.json");
+    let result_markdown_path = workspace.join("result.md");
+    let json_path = result_json_path.clone();
+    let markdown_path = result_markdown_path.clone();
+    task::spawn_blocking(move || {
+        write_json(&json_path, &result)?;
+        fs::write(&markdown_path, render_result_markdown(&result))?;
+        anyhow::Ok(())
+    })
+    .await
+    .map_err(|err| AppError::internal(format!("result writer panicked: {err}")))?
+    .map_err(|err| AppError::internal(format!("failed to persist LLM result: {err}")))?;
+    Ok(ResultOutput {
+        result_json_path,
+        result_markdown_path,
+    })
+}
+
+async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
+    serde_json::from_str(&raw)
+        .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
+}
+
+fn render_result_markdown(result: &AnalysisResult) -> String {
+    let confidence = match result.confidence {
+        Confidence::Low => "low",
+        Confidence::Medium => "medium",
+        Confidence::High => "high",
+    };
+    let mut output = format!(
+        "# Log Analysis Result\n\n## Summary\n\n{}\n\n**Confidence:** `{confidence}`\n",
+        result.summary
+    );
+    append_list(&mut output, "Symptoms", &result.symptoms);
+    output.push_str("\n## Likely Root Causes\n");
+    if result.likely_root_causes.is_empty() {
+        output.push_str("\n- None identified from current evidence.\n");
+    } else {
+        for cause in &result.likely_root_causes {
+            output.push_str(&format!("\n- {}\n", cause.cause));
+            for evidence_ref in &cause.evidence_refs {
+                output.push_str(&format!("  - Evidence: `{evidence_ref}`\n"));
+            }
+        }
+    }
+    append_list(&mut output, "Next Checks", &result.next_checks);
+    append_list(&mut output, "Fix Suggestions", &result.fix_suggestions);
+    append_list(
+        &mut output,
+        "Missing Information",
+        &result.missing_information,
+    );
+    output
+}
+
+fn append_list(output: &mut String, title: &str, items: &[String]) {
+    output.push_str(&format!("\n## {title}\n"));
+    if items.is_empty() {
+        output.push_str("\n- None.\n");
+    } else {
+        for item in items {
+            output.push_str(&format!("\n- {item}"));
+        }
+        output.push('\n');
+    }
+}
+
 fn safe_raw_path(raw_path: &str) -> anyhow::Result<&Path> {
     let path = Path::new(raw_path);
     let safe = !path.is_absolute()
@@ -212,7 +301,10 @@ mod tests {
     };
 
     use crate::{
-        config::{AuthSettings, LogAnalyzerSettings, ServerSettings, StorageSettings},
+        config::{
+            AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
+            StorageSettings,
+        },
         models::{TaskSource, TaskStatus},
     };
 
@@ -234,12 +326,16 @@ mod tests {
         extract_task(config.clone(), record.clone()).await.unwrap();
         search_task(config.clone(), "task_batch").await.unwrap();
         fs::write(workspace.join("extracted/stale.log"), "stale").unwrap();
+        fs::write(workspace.join("result.json"), "{}").unwrap();
+        fs::write(workspace.join("result.md"), "stale").unwrap();
 
         prepare_pipeline_run(&workspace).await.unwrap();
         extract_task(config.clone(), record).await.unwrap();
         search_task(config, "task_batch").await.unwrap();
 
         assert!(!workspace.join("extracted/stale.log").exists());
+        assert!(!workspace.join("result.json").exists());
+        assert!(!workspace.join("result.md").exists());
         let manifest: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(workspace.join("manifest.json")).unwrap())
                 .unwrap();
@@ -267,12 +363,15 @@ mod tests {
             upload_ids: inputs.iter().map(|input| input.upload_id.clone()).collect(),
             inputs,
             source_url: Some("batch-test".to_string()),
+            question: "analyze".to_string(),
             status: TaskStatus::Running,
             phase: None,
             attempts: 1,
             error: None,
             manifest_path: None,
             grep_results_path: None,
+            result_json_path: None,
+            result_markdown_path: None,
             created_at: now,
             updated_at: now,
         }
@@ -311,6 +410,15 @@ mod tests {
                 log_analyzer: LogAnalyzerSettings {
                     keywords: vec!["error".to_string(), "timeout".to_string()],
                     max_matches: 20,
+                },
+                llm: LlmSettings {
+                    provider: LlmProvider::Stub,
+                    base_url: None,
+                    api_key: None,
+                    model: "stub".to_string(),
+                    request_timeout_seconds: 1,
+                    max_input_chars: 60_000,
+                    max_output_tokens: 100,
                 },
             })
         }

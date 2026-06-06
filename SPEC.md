@@ -138,18 +138,19 @@ flowchart TD
 - Chrome Extension 识别下载完成并调用 Native Agent。
 - Native Agent 接收本地导入请求，校验路径、后缀和大小，上传 Server。
 - Server 支持 multipart 上传、分片上传、任务创建、任务产物读取。
+- Server 持久化任务并在后台执行，支持重启恢复。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
-- WEBUI 使用 React + Vite，支持上传、任务证据、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
+- LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep 单次生成结构化结果。
+- WEBUI 使用 React + Vite，支持上传、任务证据、单次 LLM 结果、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 
-- 持久化任务列表和状态机。
 - Metadata 接入 task context 并写入 `metadata_context.json`。
 - Tool Runner 调用 `flux_query_analyzer`、`influxql_analyzer` 等已有工具。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
 - Analysis Agent 持久化上下文，执行多轮调查、用户追问、动作审批和预算终止。
-- LLM Gateway 组织 Prompt、裁剪证据、调用模型并解析结构化决策。
+- LLM Gateway 扩展为多轮 action/final-answer 协议、用量审计和有限重试。
 - Case Store 沉淀和召回历史 Case。
 
 ## 全局验收

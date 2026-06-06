@@ -4,7 +4,7 @@ Last updated: 2026-06-06
 
 ## Status Summary
 
-LogAgent MVP has a working upload-to-evidence loop and a documented Analysis Agent architecture.
+LogAgent MVP has a working upload-to-single-LLM-result loop and a documented multi-round Analysis Agent architecture.
 
 Current runnable loop:
 
@@ -13,8 +13,9 @@ Chrome Extension or WEBUI
   -> Native Agent or Server upload API
   -> persisted QUEUED task and raw snapshot
   -> bounded background extraction / manifest
-  -> simple grep evidence and terminal state
-  -> WEBUI artifact display
+  -> simple grep evidence
+  -> one stub or OpenAI-compatible LLM call
+  -> persisted result and WEBUI display
 ```
 
 ## Implemented
@@ -55,6 +56,7 @@ Chrome Extension or WEBUI
   - `GET /api/tasks`
   - `GET /api/tasks/:task_id`
   - `GET /api/tasks/:task_id/artifacts`
+  - `GET /api/tasks/:task_id/result`
   - `GET /api/metadata/instances/:instance_id`
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
@@ -71,6 +73,7 @@ Chrome Extension or WEBUI
 - Limits concurrent tasks with `server.max_concurrent_tasks` (default 2).
 - Recovers `QUEUED` and interrupted `RUNNING` tasks after restart; successful and failed tasks remain terminal.
 - Rejects artifact reads before success with `409` and the current task status.
+- Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 
 ### Upload And Workspace
 
@@ -125,6 +128,8 @@ workspaces/task_xxx/
   - separate upload and task execution progress
   - persisted task recovery after page refresh
   - failed phase/message display and historical artifact selection
+  - user question input and structured LLM result display
+  - grep evidence reference navigation
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
   - Metadata openGemini `/getdata` URL fetch preview
@@ -151,6 +156,15 @@ workspaces/task_xxx/
 - CSV import remains reserved but not implemented.
 - Raw openGemini snapshots are preserved.
 - Shard and Index owners are modeled as PT IDs and resolved through PtView to DataNodes.
+
+### LLM Gateway
+
+- Implemented as a Server-internal Rust module.
+- Supports deterministic `stub` and OpenAI-compatible Chat Completions.
+- Builds a bounded prompt from question, manifest summary, and indexed grep matches.
+- Validates result schema, confidence, and task-local grep evidence references.
+- Performs exactly one model request per task attempt with no automatic retry.
+- Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
 
 ### Documentation
 
@@ -188,13 +202,17 @@ npm run typecheck
 npm run build
 ```
 
-Task persistence verification added:
+Task and LLM verification:
 
-- 12 Rust tests pass.
+- 19 Rust tests pass.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
+- Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
+- Prompt truncation, Chat Completions parsing, Provider error classification, and evidence refs are tested.
+- LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
 - Isolated HTTP smoke on port 50993 verified upload, `202 QUEUED`, polling to `SUCCEEDED`, persisted list/detail, `attempts=1`, and artifact reads.
+- Isolated stub LLM HTTP smoke on port 50995 verified question persistence, `GENERATE_RESULT`, `result.json` / `result.md`, result API, and grep evidence references.
 
 Recent HTTP smoke checks:
 
@@ -213,20 +231,21 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Connect Metadata to task creation and write `metadata_context.json`.
-2. Implement Tool Runner for existing compiled tools:
+1. Run one manual smoke against the configured real OpenAI-compatible Provider.
+2. Connect Metadata to task creation and write `metadata_context.json`.
+3. Implement Tool Runner for existing compiled tools:
    - `flux_query_analyzer`
    - `influxql_analyzer`
-3. Implement Code Evidence:
+4. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-4. Implement Environment Collector:
+5. Implement Environment Collector:
    - SSH/SCP test environment collection
    - whitelist nodes, paths, and commands
-5. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
-6. Implement LLM Gateway structured action/final-answer decisions.
-7. Implement Case Store save and recall from manually confirmed final results.
+6. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
+7. Extend LLM Gateway to structured action/final-answer decisions, usage auditing, and bounded retries.
+8. Implement Case Store save and recall from manually confirmed final results.
 
 ## Documentation Verification
 

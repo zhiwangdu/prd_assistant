@@ -22,6 +22,20 @@ LLM Gateway 不负责：
 - 执行动作或审批
 - 保存隐藏思维链
 
+## 当前实现
+
+当前作为 Server 内部 Rust 模块实现了单次最终结果生成：
+
+```text
+question + manifest.json + grep_results.json
+  -> Prompt 裁剪
+  -> stub 或 OpenAI-compatible Chat Completions
+  -> schema / evidence ref 校验
+  -> result.json / result.md
+```
+
+当前不返回 action、不重试、不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。
+
 ## 配置
 
 ```yaml
@@ -30,10 +44,9 @@ llm:
   base_url_env: "LOGAGENT_LLM_BASE_URL"
   api_key_env: "LOGAGENT_LLM_API_KEY"
   model: "gpt-4.1"
-  max_input_tokens: 64000
+  max_input_chars: 60000
   max_output_tokens: 4096
   request_timeout_seconds: 120
-  max_retries: 2
 ```
 
 模型名只是配置示例，不作为固定依赖。
@@ -62,10 +75,7 @@ llm:
 
 ## 结构化响应
 
-每次调用只返回以下之一：
-
-- `action`：Analysis Agent 可请求的结构化动作。
-- `final_answer`：符合最终结果 schema 的候选结论。
+当前每次任务只调用一次并返回最终结果 JSON；后续再扩展为 `action | final_answer`。
 
 响应必须区分：
 

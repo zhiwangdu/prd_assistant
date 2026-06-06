@@ -4,8 +4,8 @@ use tokio::sync::RwLock;
 use tracing::warn;
 
 use crate::{
-    config::AppConfig, metadata::MetadataStore, models::UploadRecord, task_executor::TaskExecutor,
-    task_store::TaskStore,
+    config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore, models::UploadRecord,
+    task_executor::TaskExecutor, task_store::TaskStore,
 };
 
 #[derive(Debug)]
@@ -15,6 +15,7 @@ pub struct AppState {
     pub metadata: MetadataStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
+    pub llm: LlmGateway,
 }
 
 impl AppState {
@@ -23,6 +24,7 @@ impl AppState {
         Ok(Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
+            llm: LlmGateway::new(config.llm.clone())?,
             config,
             uploads: UploadStore::default(),
             tasks,

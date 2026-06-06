@@ -1257,7 +1257,10 @@ mod tests {
 
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::config::{AuthSettings, LogAnalyzerSettings, ServerSettings, StorageSettings};
+    use crate::config::{
+        AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
+        StorageSettings,
+    };
 
     #[tokio::test]
     async fn previews_confirms_and_queries_metadata_import() {
@@ -1558,6 +1561,15 @@ nodes:
                 log_analyzer: LogAnalyzerSettings {
                     keywords: vec!["error".to_string()],
                     max_matches: 20,
+                },
+                llm: LlmSettings {
+                    provider: LlmProvider::Stub,
+                    base_url: None,
+                    api_key: None,
+                    model: "stub".to_string(),
+                    request_timeout_seconds: 1,
+                    max_input_chars: 60_000,
+                    max_output_tokens: 100,
                 },
             })
         }

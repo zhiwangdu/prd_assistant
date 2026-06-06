@@ -110,6 +110,8 @@ impl TaskStore {
         task_id: &str,
         manifest_path: String,
         grep_results_path: String,
+        result_json_path: String,
+        result_markdown_path: String,
     ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             ensure_running(task)?;
@@ -118,6 +120,8 @@ impl TaskStore {
             task.error = None;
             task.manifest_path = Some(manifest_path);
             task.grep_results_path = Some(grep_results_path);
+            task.result_json_path = Some(result_json_path);
+            task.result_markdown_path = Some(result_markdown_path);
             Ok(())
         })
         .await
@@ -195,12 +199,15 @@ mod tests {
                 raw_path: "raw/upl_1/sample.log".to_string(),
             }],
             source_url: None,
+            question: crate::models::default_task_question(),
             status: TaskStatus::Queued,
             phase: None,
             attempts: 0,
             error: None,
             manifest_path: None,
             grep_results_path: None,
+            result_json_path: None,
+            result_markdown_path: None,
             created_at,
             updated_at: created_at,
         }
@@ -247,7 +254,9 @@ mod tests {
             .succeed(
                 "task_new",
                 "manifest.json".to_string(),
-                "grep_results.json".to_string()
+                "grep_results.json".to_string(),
+                "result.json".to_string(),
+                "result.md".to_string()
             )
             .await
             .is_err());

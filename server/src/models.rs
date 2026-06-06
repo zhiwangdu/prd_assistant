@@ -53,6 +53,7 @@ pub struct CreateTaskRequest {
     #[serde(default)]
     pub upload_ids: Vec<String>,
     pub source_url: Option<String>,
+    pub question: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,6 +84,15 @@ pub struct TaskArtifactsResponse {
     pub grep_results: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskResultResponse {
+    pub task_id: String,
+    pub result_json_path: String,
+    pub result_markdown_path: String,
+    pub result: AnalysisResult,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
@@ -105,6 +115,7 @@ impl TaskStatus {
 pub enum TaskPhase {
     Extract,
     SearchLogs,
+    GenerateResult,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,12 +154,18 @@ pub struct TaskRecord {
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
     pub source_url: Option<String>,
+    #[serde(default = "default_task_question")]
+    pub question: String,
     pub status: TaskStatus,
     pub phase: Option<TaskPhase>,
     pub attempts: u32,
     pub error: Option<TaskError>,
     pub manifest_path: Option<String>,
     pub grep_results_path: Option<String>,
+    #[serde(default)]
+    pub result_json_path: Option<String>,
+    #[serde(default)]
+    pub result_markdown_path: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -169,7 +186,11 @@ impl TaskRecord {
     }
 }
 
-#[derive(Debug, Serialize)]
+pub fn default_task_question() -> String {
+    "分析日志中的主要异常、可能原因和建议检查项。".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub upload_id: String,
@@ -182,7 +203,7 @@ pub struct Manifest {
     pub files: Vec<ManifestFile>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestUpload {
     pub upload_id: String,
@@ -192,14 +213,14 @@ pub struct ManifestUpload {
     pub extracted_dir: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestFile {
     pub path: String,
     pub size: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrepResults {
     pub keywords: Vec<String>,
@@ -207,7 +228,7 @@ pub struct GrepResults {
     pub matches: Vec<GrepMatch>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrepMatch {
     pub file: String,
@@ -220,4 +241,38 @@ pub struct GrepMatch {
 pub struct PipelineOutput {
     pub manifest_path: PathBuf,
     pub grep_results_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootCause {
+    pub cause: String,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Confidence {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisResult {
+    pub schema_version: u32,
+    pub summary: String,
+    pub symptoms: Vec<String>,
+    pub likely_root_causes: Vec<RootCause>,
+    pub next_checks: Vec<String>,
+    pub fix_suggestions: Vec<String>,
+    pub missing_information: Vec<String>,
+    pub confidence: Confidence,
+}
+
+#[derive(Debug)]
+pub struct ResultOutput {
+    pub result_json_path: PathBuf,
+    pub result_markdown_path: PathBuf,
 }

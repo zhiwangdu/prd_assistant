@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub auth: AuthSettings,
     pub storage: StorageSettings,
     pub log_analyzer: LogAnalyzerSettings,
+    pub llm: LlmSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -36,12 +37,45 @@ pub struct LogAnalyzerSettings {
     pub max_matches: usize,
 }
 
+#[derive(Clone)]
+pub struct LlmSettings {
+    pub provider: LlmProvider,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub request_timeout_seconds: u64,
+    pub max_input_chars: usize,
+    pub max_output_tokens: u32,
+}
+
+impl std::fmt::Debug for LlmSettings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LlmSettings")
+            .field("provider", &self.provider)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("model", &self.model)
+            .field("request_timeout_seconds", &self.request_timeout_seconds)
+            .field("max_input_chars", &self.max_input_chars)
+            .field("max_output_tokens", &self.max_output_tokens)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmProvider {
+    Stub,
+    OpenAiCompatible,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigFile {
     server: Option<ServerConfig>,
     auth: Option<AuthConfig>,
     storage: Option<StorageConfig>,
     log_analyzer: Option<LogAnalyzerConfig>,
+    llm: Option<LlmConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,6 +117,22 @@ struct LogAnalyzerConfig {
     keywords: Vec<String>,
     #[serde(default = "default_max_matches")]
     max_matches: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LlmConfig {
+    #[serde(default = "default_llm_provider")]
+    provider: String,
+    base_url_env: Option<String>,
+    api_key_env: Option<String>,
+    #[serde(default = "default_llm_model")]
+    model: String,
+    #[serde(default = "default_llm_timeout")]
+    request_timeout_seconds: u64,
+    #[serde(default = "default_llm_max_input_chars")]
+    max_input_chars: usize,
+    #[serde(default = "default_llm_max_output_tokens")]
+    max_output_tokens: u32,
 }
 
 impl AppConfig {
@@ -134,6 +184,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             auth: None,
             storage: None,
             log_analyzer: None,
+            llm: None,
         }
     } else {
         serde_yaml::from_str(&raw).context("invalid YAML")?
@@ -145,6 +196,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     let analyzer = parsed
         .log_analyzer
         .unwrap_or_else(default_log_analyzer_config);
+    let llm = parsed.llm.unwrap_or_else(default_llm_config);
 
     let mut api_keys = Vec::new();
     for api_key in auth.api_keys {
@@ -159,6 +211,35 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
                 .context("missing API key config and fallback env var LOGAGENT_NATIVE_API_KEY")?,
         );
     }
+
+    let provider = match llm.provider.as_str() {
+        "stub" => LlmProvider::Stub,
+        "openai_compatible" => LlmProvider::OpenAiCompatible,
+        value => anyhow::bail!("unsupported llm.provider {value}"),
+    };
+    let (base_url, api_key) = match provider {
+        LlmProvider::Stub => (None, None),
+        LlmProvider::OpenAiCompatible => {
+            let base_url_env = llm
+                .base_url_env
+                .as_deref()
+                .context("llm.base_url_env is required for openai_compatible")?;
+            let api_key_env = llm
+                .api_key_env
+                .as_deref()
+                .context("llm.api_key_env is required for openai_compatible")?;
+            (
+                Some(
+                    env::var(base_url_env)
+                        .with_context(|| format!("missing LLM base URL env var {base_url_env}"))?,
+                ),
+                Some(
+                    env::var(api_key_env)
+                        .with_context(|| format!("missing LLM API key env var {api_key_env}"))?,
+                ),
+            )
+        }
+    };
 
     Ok(Arc::new(AppConfig {
         server: ServerSettings {
@@ -179,6 +260,15 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
                 .map(|keyword| keyword.to_ascii_lowercase())
                 .collect(),
             max_matches: analyzer.max_matches,
+        },
+        llm: LlmSettings {
+            provider,
+            base_url,
+            api_key,
+            model: llm.model,
+            request_timeout_seconds: llm.request_timeout_seconds.max(1),
+            max_input_chars: llm.max_input_chars.max(1024),
+            max_output_tokens: llm.max_output_tokens.max(1),
         },
     }))
 }
@@ -207,6 +297,18 @@ fn default_log_analyzer_config() -> LogAnalyzerConfig {
     LogAnalyzerConfig {
         keywords: default_keywords(),
         max_matches: default_max_matches(),
+    }
+}
+
+fn default_llm_config() -> LlmConfig {
+    LlmConfig {
+        provider: default_llm_provider(),
+        base_url_env: None,
+        api_key_env: None,
+        model: default_llm_model(),
+        request_timeout_seconds: default_llm_timeout(),
+        max_input_chars: default_llm_max_input_chars(),
+        max_output_tokens: default_llm_max_output_tokens(),
     }
 }
 
@@ -254,4 +356,24 @@ fn default_keywords() -> Vec<String> {
     .into_iter()
     .map(ToString::to_string)
     .collect()
+}
+
+fn default_llm_provider() -> String {
+    "stub".to_string()
+}
+
+fn default_llm_model() -> String {
+    "configured-model".to_string()
+}
+
+fn default_llm_timeout() -> u64 {
+    120
+}
+
+fn default_llm_max_input_chars() -> usize {
+    60_000
+}
+
+fn default_llm_max_output_tokens() -> u32 {
+    4096
 }

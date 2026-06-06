@@ -56,6 +56,8 @@ environment approval -> collect stub -> Agent continuation -> result
 - `RUNNING -> QUEUED` 启动恢复与 attempt 保留。
 - raw 快照重复执行、派生产物清理和结果重建。
 - API `202` 创建、列表、详情、404 和 artifacts 409。
+- stub LLM 单次任务闭环和 result API。
+- Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
 
 ### LLM 测试策略
 
@@ -75,6 +77,7 @@ Stub 必须支持脚本化多轮响应：
 - 固定问题
 - 固定期望证据
 - 检查输出是否引用日志、工具、代码和环境证据
+- 当前使用 `examples/server-llm-openai-compatible.yaml` 验证单次日志结果；不要在自动测试中使用真实模型。
 
 ## 验收标准
 
