@@ -176,6 +176,7 @@ persist task
 ## 验收标准
 
 - `cargo fmt --check`、`cargo check`、`cargo test` 通过。
+- `scripts/start-local.sh` 能校验环境变量、构建 Server、后台启动并等待健康检查；支持真实 LLM、stub 和前台模式。
 - WEBUI `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。

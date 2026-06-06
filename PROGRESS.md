@@ -168,6 +168,13 @@ workspaces/task_xxx/
 - Performs exactly one model request per task attempt with no automatic retry.
 - Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
 
+### Local startup
+
+- Added `scripts/start-local.sh` for one-command local Server startup.
+- Defaults to the real OpenAI-compatible configuration on port 50994 and supports `--stub` and `--foreground`.
+- Builds the WebUI only when `webui/out/index.html` is missing, builds the Rust Server, writes PID/log files under `/tmp`, and waits for the health endpoint without exposing secrets.
+- Shell syntax/help checks passed; a real-LLM foreground launch reached `http://127.0.0.1:50994/health` with a healthy response and an active listener.
+
 ### Documentation
 
 - Root `README.md` and `SPEC.md` exist.

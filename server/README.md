@@ -345,6 +345,18 @@ export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-server -- --config examples/logagent.yaml
 ```
 
+快速后台启动真实 LLM 配置：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+export LOGAGENT_LLM_BASE_URL=https://example.invalid/v1
+export LOGAGENT_LLM_API_KEY=replace-me
+export LOGAGENT_LLM_MODEL=gpt-4.1
+./scripts/start-local.sh
+```
+
+脚本默认使用 `examples/server-llm-openai-compatible.yaml` 和端口 `50994`，将 PID 写入 `/tmp/logagent-server-llm.pid`，日志写入 `/tmp/logagent-server-llm.log`，并等待 `/health` 成功。`--stub` 使用端口 `50992`，`--foreground` 不进入后台。脚本只读取环境变量，不打印或持久化密钥。
+
 Server 会静态托管 Vite 构建的 `webui/out`，本地访问：
 
 ```text
