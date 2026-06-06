@@ -28,7 +28,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - 测试环境 SSH/SCP 采集
     |
     v
-证据提取
+基础证据提取
   - rg 日志检索
   - 实例和集群元数据
   - 外部工具调用
@@ -36,7 +36,14 @@ Rust -> C/C++ -> Go/Python/Java 等
   - 环境状态采集
     |
     v
-LLM Agent 分析
+Analysis Agent 调查循环
+  - 维护任务级上下文、事实、假设和信息缺口
+  - 请求日志搜索、工具、代码、环境或用户补充
+  - 控制轮次、动作和 token 预算
+    |
+    v
+LLM Gateway
+  - Prompt、证据裁剪、模型调用和结构化响应
     |
     v
 人工确认
@@ -57,7 +64,8 @@ Case 沉淀与召回
 | [code-evidence](./code-evidence/README.md) | 软件版本到代码分支映射和代码证据 | [SPEC](./code-evidence/SPEC.md) |
 | [environment-collector](./environment-collector/README.md) | 测试环境 SSH/SCP 信息采集 | [SPEC](./environment-collector/SPEC.md) |
 | [metadata](./metadata/README.md) | 实例 ID、集群节点和导入模板元数据管理 | [SPEC](./metadata/SPEC.md) |
-| [llm-agent](./llm-agent/README.md) | LLM 输入组织、Prompt 约束和输出结构 | [SPEC](./llm-agent/SPEC.md) |
+| [analysis-agent](./analysis-agent/README.md) | 多轮调查编排、任务上下文、用户追问和终止控制 | [SPEC](./analysis-agent/SPEC.md) |
+| [llm-agent](./llm-agent/README.md) | LLM Gateway，负责模型适配和结构化推理调用 | [SPEC](./llm-agent/SPEC.md) |
 | [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 | [SPEC](./case-store/SPEC.md) |
 | [webui](./webui/README.md) | Vite WebUI、任务证据和 Metadata 可视化 | [SPEC](./webui/SPEC.md) |
 | [security](./security/README.md) | 安全边界和执行约束 | [SPEC](./security/SPEC.md) |
@@ -75,10 +83,13 @@ Case 沉淀与召回
 
 - 外部工具只允许白名单配置调用。
 - LLM 不能直接执行任意命令。
+- Analysis Agent 只产生结构化动作意图，所有动作由 Server 校验和执行。
+- 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。
 - pgvector 不是第一版硬依赖，Case embedding 可以先用本地文件或 SQLite。
 - MVP 部署形态采用单一 Rust binary + 内部 crate/module 拆分。
+- Agent 上下文只在当前任务内持久化；跨任务知识只来自人工确认后的 Case。
 - 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
 
 ## 开发约定

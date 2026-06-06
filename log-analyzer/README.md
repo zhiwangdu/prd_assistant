@@ -39,11 +39,14 @@ log_analyzer:
 
 Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 
+它同时是 Analysis Agent 的日志证据提供方。除初始关键词扫描外，还必须支持 Server 根据 `search_logs` action 发起受限的后续检索；检索范围只能位于当前 task workspace。
+
 核心产物：
 
 - `manifest.json`
 - `error_summary.json`
 - `contexts.jsonl`
+- `log_searches/<action_id>.json`
 
 ## 支持格式
 

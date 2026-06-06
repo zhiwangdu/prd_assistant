@@ -4,103 +4,68 @@
 
 | 组件 | 预估 |
 |------|------|
-| Chrome 插件 | 3~4 天 |
-| Native Agent | 2~3 天 |
-| Rust Server | 5~7 天 |
-| rg 分析器 | 7~10 天 |
+| 已有上传、Metadata 和 WebUI 闭环 | 已完成 MVP |
+| Server 持久化与可恢复状态机 | 4~6 天 |
 | Tool Runner | 2~3 天 |
 | Code Evidence | 4~6 天 |
 | Environment Collector | 4~6 天 |
-| Metadata | 2~4 天 |
-| LLM Agent | 3~4 天 |
-| Case 库 | 3~4 天 |
-| WebUI | 5~7 天 |
-| 配置 / 接口 / 部署 / 测试补齐 | 3~5 天 |
-| 合计 | 5~8 周 |
+| Analysis Agent | 6~9 天 |
+| LLM Gateway | 3~4 天 |
+| Case Store | 3~4 天 |
+| WebUI 调查交互 | 4~6 天 |
+| 集成、安全和恢复测试 | 4~6 天 |
 
-## 第 1 阶段：手动上传闭环
+## 第 1 阶段：持久化任务基础
 
-目标：不依赖浏览器插件，先跑通核心分析。
+- Server 持久化任务列表、稳定状态和执行阶段。
+- Metadata 接入 task context，生成 `metadata_context.json`。
+- WebUI 从 Server 读取任务列表，不再只依赖 localStorage。
+- 定义 analysis state/event store 和 schema version。
 
-内容：
+## 第 2 阶段：证据能力
 
-- Server 上传接口
-- 任务创建
-- 解压和 manifest
-- rg 检索
-- 外部工具白名单配置和手动调用
-- 统一 `logagent.yaml`
-- 基础 Case 确认、embedding 和 Top 5 召回
-- LLM Provider 配置和 token 预算裁剪
-- 核心 fixture 测试
-- LLM 输出结果
-- 任务详情页
+- Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
+- Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
+- Environment Collector 完成白名单 SSH/SCP 采集。
+- 所有结果关联 `actionId` 并使用稳定证据引用。
 
-## 第 2 阶段：版本感知代码证据
+## 第 3 阶段：Analysis Agent 闭环
 
-目标：让分析结论能结合实例/集群元数据、用户输入的软件版本和实际代码。
+- 实现任务级 `analysis_state.json` 和 `analysis_events.jsonl`。
+- 实现 facts、hypotheses、information gaps 和 action fingerprint。
+- 实现 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
+- 安全只读动作自动执行；远程采集默认等待批准。
+- 实现最大轮数、模型调用数、动作数、重复动作、token 和运行时间预算。
+- 实现重启恢复、幂等和预算终止。
 
-内容：
+## 第 4 阶段：LLM Gateway
 
-- 实例 ID、集群节点 Metadata 框架
-- Metadata 模板导入和 WEBUI 展示
-- 产品/版本输入
-- 版本到 tag/branch 映射配置
-- 本地代码仓 worktree 管理
-- `rg` / `git grep` 代码检索
-- `code_evidence.json`
-- LLM 输出中引用代码文件和行号
-- worktree 清理策略
-- 关键词提取规则
+- Provider 配置和错误分类。
+- Prompt 组装、证据裁剪和 token 预算。
+- action/final answer 结构化输出校验。
+- LLM stub 和有限重试。
+- 不保存隐藏思维链。
 
-## 第 3 阶段：测试环境采集
+## 第 5 阶段：WebUI 调查交互
 
-目标：支持测试环境直接 SSH/SCP 采集信息。
+- 调查时间线、事实/假设/缺口和预算展示。
+- 待补充问题卡片和 message 提交。
+- 待审批动作卡片、风险说明和批准/拒绝。
+- 任务恢复、最终结果和证据跳转。
 
-内容：
+## 第 6 阶段：Case Store
 
-- 测试环境配置
-- 节点白名单
-- 文件采集白名单
-- 诊断命令白名单
-- `environment_evidence.json`
-- 采集结果接入统一分析流程
-- SSH 并发、超时和重试策略
+- 仅保存人工确认后的最终结果。
+- embedding 和 Top 5 相似召回。
+- Case 编辑、禁用和检索。
+- 不沉淀中间假设、隐藏推理或未验证结论。
 
-## 第 4 阶段：浏览器和 Native Agent
+## 后续质量提升
 
-目标：把“下载日志 -> 上传分析”自动化。
+- 更好的日志模式归一化。
+- 版本间 diff / commit 对比。
+- 更多测试环境采集模板。
+- 失败任务诊断和观测指标。
+- pgvector 迁移。
 
-内容：
-
-- Native Agent 本地 HTTP Server
-- Chrome 插件通过 `chrome.downloads.onChanged` 监听下载完成
-- 下载完成后确认上传
-- 自动打开任务详情页
-
-## 第 5 阶段：Case 库
-
-目标：让人工确认结果沉淀为可复用经验。
-
-内容：
-
-- Case 编辑体验
-- Case 禁用 / 删除
-- Case 检索优化
-- Agent 输入中的 Case 摘要质量优化
-
-## 第 6 阶段：质量提升
-
-目标：提高分析稳定性。
-
-内容：
-
-- 更好的日志模式归一化
-- 更多关键词和规则配置
-- 失败任务诊断
-- 大文件上传优化或分片上传
-- Agent 建议触发外部工具，再由服务端审批执行
-- 工具结果 JSON schema 标准化
-- 版本间 diff / commit 对比
-- 更多测试环境采集模板
-- pgvector 迁移
+MVP 保持单 Agent、任务级上下文和单 Rust Server，不引入 Multi-Agent、长期用户记忆、独立队列或 Worker。

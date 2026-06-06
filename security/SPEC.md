@@ -21,6 +21,9 @@
 - Tool Runner 只能执行白名单工具。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
+- Analysis Agent 只能产生结构化意图，Server 是唯一执行者。
+- 远程采集默认需要显式批准。
+- 不持久化隐藏思维链。
 
 ## 密钥
 
@@ -32,4 +35,7 @@
 - 无 API Key 访问受保护接口返回 401。
 - 非白名单文件路径导入失败。
 - 压缩包路径逃逸失败。
+- 未知 action、越权参数和重复 action 被拒绝。
+- 未批准的远程采集不执行。
+- Prompt injection 不能改变工具、路径、仓库或环境白名单。
 - README 和 SPEC 在安全策略变更时同步更新。

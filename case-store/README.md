@@ -76,5 +76,7 @@ Case 基础功能应在第 1 阶段并行完成：
 
 1. 新任务开始分析前，根据用户问题、日志摘要和错误模式生成查询向量。
 2. 召回 Top 5 相似 Case。
-3. 将相似 Case 加入 LLM Agent 输入。
+3. 将相似 Case 加入 Analysis Agent evidence bundle，由 LLM Gateway 作为参考输入。
 4. 分析结果中标明历史 Case 只是参考，不替代当前任务证据。
+
+Case Store 只接收 Analysis Agent 最终结果且必须经过人工确认。中间假设、待验证信息、隐藏推理和被用户否定的结论不得沉淀为 Case。

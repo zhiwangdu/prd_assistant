@@ -2,19 +2,9 @@
 
 ## 目标
 
-MVP 采用单一 Rust binary + 内部 crate/module 拆分。Server 负责编排，各分析模块负责执行。
+MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Agent 持有调查策略，证据模块只执行受约束能力，LLM Gateway 只提供模型推理。
 
-边界：
-
-- Server：任务状态、API、调度、错误汇总。
-- Log Analyzer：解压、manifest、rg 检索、日志摘要。
-- Tool Runner：外部工具调用。
-- Code Evidence：版本代码检索。
-- Environment Collector：测试环境采集。
-- Metadata Store：实例 ID、集群节点和元数据导入。
-- LLM Agent：证据裁剪、Prompt 组装、模型调用。
-
-## 核心数据类型
+## 核心数据
 
 ```rust
 pub struct TaskContext {
@@ -29,18 +19,21 @@ pub struct TaskContext {
     pub workspace: PathBuf,
 }
 
-pub enum TaskSource {
-    Upload,
-    Environment,
+pub struct AnalysisContext {
+    pub revision: u64,
+    pub facts: Vec<Fact>,
+    pub hypotheses: Vec<Hypothesis>,
+    pub gaps: Vec<InformationGap>,
+    pub pending_requests: Vec<PendingRequest>,
+    pub budget: AnalysisBudget,
 }
 
 pub struct EvidenceBundle {
     pub manifest_path: Option<PathBuf>,
-    pub error_summary_path: Option<PathBuf>,
-    pub contexts_path: Option<PathBuf>,
+    pub log_evidence_paths: Vec<PathBuf>,
     pub tool_results_dir: Option<PathBuf>,
-    pub code_evidence_path: Option<PathBuf>,
-    pub environment_evidence_path: Option<PathBuf>,
+    pub code_evidence_paths: Vec<PathBuf>,
+    pub environment_evidence_paths: Vec<PathBuf>,
     pub metadata_context_path: Option<PathBuf>,
     pub similar_cases: Vec<CaseRef>,
 }
@@ -49,54 +42,82 @@ pub struct EvidenceBundle {
 ## 模块接口
 
 ```rust
+pub trait AnalysisAgent {
+    async fn next_step(
+        &self,
+        task: &TaskContext,
+        analysis: &AnalysisContext,
+        evidence: &EvidenceBundle,
+    ) -> anyhow::Result<AgentDecision>;
+}
+
+pub trait LlmGateway {
+    async fn decide(&self, input: AnalysisPromptInput) -> anyhow::Result<LlmDecision>;
+}
+
 pub trait LogAnalyzer {
     async fn analyze(&self, ctx: &TaskContext) -> anyhow::Result<LogAnalysisOutput>;
+    async fn search(&self, request: LogSearchRequest) -> anyhow::Result<LogSearchOutput>;
 }
 
 pub trait ToolRunner {
-    async fn run_tools(
-        &self,
-        ctx: &TaskContext,
-        log_output: &LogAnalysisOutput,
-    ) -> anyhow::Result<ToolRunOutput>;
+    async fn run(&self, request: ToolRequest) -> anyhow::Result<ToolRunOutput>;
 }
 
 pub trait CodeEvidenceProvider {
-    async fn collect_code_evidence(
-        &self,
-        ctx: &TaskContext,
-        evidence: &EvidenceBundle,
-    ) -> anyhow::Result<Option<CodeEvidenceOutput>>;
+    async fn collect(&self, request: CodeEvidenceRequest)
+        -> anyhow::Result<CodeEvidenceOutput>;
 }
 
 pub trait EnvironmentCollector {
-    async fn collect_environment(&self, ctx: &TaskContext) -> anyhow::Result<EnvironmentOutput>;
-}
-
-pub trait MetadataStore {
-    async fn get_instance(&self, instance_id: &str) -> anyhow::Result<Option<InstanceMetadata>>;
-    async fn get_cluster(&self, cluster_id: &str) -> anyhow::Result<Option<ClusterMetadata>>;
-    async fn list_cluster_nodes(&self, cluster_id: &str) -> anyhow::Result<Vec<NodeMetadata>>;
-}
-
-pub trait LlmAgent {
-    async fn analyze(&self, ctx: &TaskContext, evidence: &EvidenceBundle) -> anyhow::Result<LlmResult>;
+    async fn collect(&self, request: EnvironmentRequest)
+        -> anyhow::Result<EnvironmentOutput>;
 }
 ```
 
-## 状态机
+`AgentDecision` 只能是受支持的结构化 action 或 `final_answer`。Server 将 action 映射到对应模块，模块不能反向控制任务状态。
+
+## 状态与阶段
+
+稳定状态：
 
 ```text
-CREATED
-UPLOADED
-COLLECTING
-EXTRACTING
-SEARCHING
-RUNNING_TOOLS
-COLLECTING_CODE
-ANALYZING
-DONE
+QUEUED
+RUNNING
+WAITING_FOR_USER
+WAITING_FOR_APPROVAL
+SUCCEEDED
 FAILED
 ```
 
-`COLLECTING` 只用于 environment 来源任务；upload 来源任务从 `UPLOADED` 进入 `EXTRACTING`。
+执行阶段单独记录：
+
+```text
+UPLOAD
+COLLECT
+EXTRACT
+SEARCH_LOGS
+RUN_TOOL
+COLLECT_CODE
+PLAN_ANALYSIS
+EXECUTE_ACTION
+ANALYZE_RESULT
+GENERATE_RESULT
+```
+
+稳定状态供 API、恢复和终态判断使用；执行阶段供进度和审计使用。不得把每个内部步骤扩展为无法恢复的任务状态。
+
+## Action
+
+```rust
+pub enum AgentActionKind {
+    SearchLogs,
+    RunTool,
+    CollectCodeEvidence,
+    CollectEnvironment,
+    AskUser,
+    FinalAnswer,
+}
+```
+
+所有 action 包含 id、reason、evidence refs、typed input、risk 和 fingerprint。Server 在执行前检查 schema、预算、白名单、幂等和审批要求。

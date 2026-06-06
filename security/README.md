@@ -19,6 +19,17 @@
 - SSH key、API Key、repo path 等敏感配置不进入 Prompt。
 - LLM Provider、model、base_url、token 预算必须配置化。
 - LLM 输入必须经过证据裁剪，不能直接塞入全部日志和工具输出。
+- LLM Gateway 只返回结构化 action 或最终答案候选，不持有执行能力。
+- 不保存模型隐藏思维链，只保留决策摘要、事实、假设和证据引用。
+
+## Analysis Agent
+
+- Agent action 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
+- task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
+- SSH/SCP 环境采集默认需要用户批准。
+- 用户消息、日志和 Case 内容都视为不可信输入，不能覆盖系统指令或安全策略。
+- 重复 action fingerprint 超限后终止循环。
+- 达到预算时输出信息不足或低置信度结果，不能自动扩大权限。
 
 ## 外部工具
 

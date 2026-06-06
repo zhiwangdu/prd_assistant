@@ -2,7 +2,7 @@
 
 ## 目标
 
-LogAgent 把日志包或测试环境采集结果转换成可审计证据链，并结合外部工具、对应版本代码和历史 Case 输出结构化故障分析。
+LogAgent 把用户问题、日志包或测试环境采集结果转换成可审计证据链，由 Analysis Agent 在受限预算内多轮识别信息缺口、请求补充证据并输出结构化故障分析。
 
 第一阶段目标是跑通：
 
@@ -37,7 +37,8 @@ Rust -> C/C++ -> Go/Python/Java 等
 | Code Evidence | [code-evidence/SPEC.md](./code-evidence/SPEC.md) |
 | Environment Collector | [environment-collector/SPEC.md](./environment-collector/SPEC.md) |
 | Metadata | [metadata/SPEC.md](./metadata/SPEC.md) |
-| LLM Agent | [llm-agent/SPEC.md](./llm-agent/SPEC.md) |
+| Analysis Agent | [analysis-agent/SPEC.md](./analysis-agent/SPEC.md) |
+| LLM Gateway | [llm-agent/SPEC.md](./llm-agent/SPEC.md) |
 | Case Store | [case-store/SPEC.md](./case-store/SPEC.md) |
 | WebUI | [webui/SPEC.md](./webui/SPEC.md) |
 | Config | [config/SPEC.md](./config/SPEC.md) |
@@ -65,8 +66,23 @@ WEBUI/Server task -> Environment Collector -> Server workspace -> Task pipeline
 证据处理：
 
 ```text
-raw file -> extracted files -> manifest.json -> metadata context -> grep_results.json -> tool/code/env evidence -> LLM result
+raw file -> extracted files -> initial evidence
+  -> Analysis Agent context
+  -> action -> Server validation/execution -> new evidence
+  -> ask user / request approval / next round
+  -> final result
 ```
+
+Analysis Agent 使用任务级持久化上下文：
+
+```text
+analysis_state.json
+analysis_events.jsonl
+result.json
+result.md
+```
+
+模型只通过 LLM Gateway 返回结构化 action 或最终答案候选。Server 是日志搜索、工具、代码检索和远程采集的唯一执行者。
 
 ## 当前已实现
 
@@ -83,7 +99,8 @@ raw file -> extracted files -> manifest.json -> metadata context -> grep_results
 - Tool Runner 调用 `flux_query_analyzer`、`influxql_analyzer` 等已有工具。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
-- LLM Agent 组织证据、调用模型并输出结构化结论。
+- Analysis Agent 持久化上下文，执行多轮调查、用户追问、动作审批和预算终止。
+- LLM Gateway 组织 Prompt、裁剪证据、调用模型并解析结构化决策。
 - Case Store 沉淀和召回历史 Case。
 
 ## 全局验收
@@ -92,4 +109,6 @@ raw file -> extracted files -> manifest.json -> metadata context -> grep_results
 - WEBUI 能完成上传、创建任务、读取证据。
 - API 受 API Key 保护，密钥不写入日志或产物。
 - 压缩包解压不能逃逸 workspace。
+- Agent 动作必须经过 schema、白名单、预算和审批校验。
+- 任务能从 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 接收输入并恢复。
 - 后续每个功能变更必须同步更新对应模块 `README.md` 和 `SPEC.md`。

@@ -39,6 +39,8 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - SSH/SCP 测试环境节点
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
 - LLM provider 和模型
+- Analysis Agent 轮数、调用、动作、重复动作、追问和运行时间预算
+- action 审批策略
 - Case Store 存储路径
 
 ## 密钥规则
@@ -56,4 +58,6 @@ auth:
 
 - 缺少必要密钥环境变量时启动失败。
 - 配置有默认值，但示例文件必须展示推荐值。
+- 预算字段必须大于零且有上限；未知 action 类型启动失败。
+- 用户输入不能修改预算、白名单和审批策略。
 - README 和 SPEC 在配置字段变更时同步更新。

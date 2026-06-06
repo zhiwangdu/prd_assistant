@@ -71,7 +71,8 @@ Rust -> C/C++ -> Go/Python/Java 等
 - `tool-runner/`：白名单调用外部工具，优先接入 `flux_query_analyzer`、`influxql_analyzer`。
 - `code-evidence/`：根据用户输入的软件版本定位代码分支/tag/ref，收集文件行号证据。
 - `environment-collector/`：测试环境通过 SSH/SCP 采集信息，不需要浏览器下载或本地上传。
-- `llm-agent/`：证据裁剪、Prompt 组装、结构化分析结果。
+- `analysis-agent/`：任务级上下文、多轮调查、用户追问、动作审批、预算和终止条件。
+- `llm-agent/`：目录保留，职责调整为 LLM Gateway，负责模型适配、Prompt、证据裁剪和结构化响应。
 - `case-store/`：人工确认后的 Case 沉淀和相似召回。
 
 ## 常用运行命令
@@ -180,7 +181,10 @@ data_dir/
 - Server 解压压缩包必须防止路径逃逸。
 - Tool Runner 后续只能调用配置白名单中的工具。
 - Environment Collector 后续只能访问配置中的测试环境节点和白名单路径/命令。
-- LLM Agent 不能直接执行命令，只能基于已有证据分析。
+- Analysis Agent 只能产生结构化动作意图，Server 负责校验和执行。
+- LLM Gateway 不能直接执行命令、访问 SSH 或控制任务状态。
+- 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
+- 不保存模型隐藏思维链，只保存简短决策摘要和证据引用。
 
 ## 近期开发优先级
 
@@ -189,8 +193,9 @@ data_dir/
 3. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
 4. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
 5. Environment Collector 支持 SSH/SCP 测试环境采集。
-6. LLM Agent 结构化输出。
-7. Case Store 保存和召回。
+6. Analysis Agent 持久化上下文、多轮动作、追问、审批和预算终止。
+7. LLM Gateway 结构化 action / final answer。
+8. Case Store 保存和召回。
 
 ## 提交流程
 

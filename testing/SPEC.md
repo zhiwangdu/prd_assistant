@@ -18,7 +18,9 @@
 cargo fmt --check
 cargo check
 cargo test
-node --check webui/app.js
+cd webui && npm run lint
+cd webui && npm run typecheck
+cd webui && npm run build
 ```
 
 ## 集成验证
@@ -37,10 +39,13 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - `POST /api/uploads`
 - `POST /api/tasks`
 - `GET /api/tasks/:task_id/artifacts`
+- `GET /api/tasks/:task_id/analysis`（实现后）
+- task message 和 action decision 的恢复/幂等（实现后）
 
 ## 验收标准
 
 - 新增归档格式必须有解压测试。
 - 新增 API 必须有 smoke 验证方式。
-- WEBUI JS 修改至少跑 `node --check`。
+- WEBUI 修改至少跑 lint、typecheck 和 build。
+- Analysis Agent 必须覆盖多轮、追问、审批、预算、重复动作和重启恢复。
 - README 和 SPEC 在测试策略或 fixture 变更时同步更新。

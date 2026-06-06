@@ -34,6 +34,7 @@ WEBUI -> Server 同源 API
 - `webui/`
 - `logagent.yaml`
 - 环境变量密钥
+- 持久化 tasks、analysis state/events 和 workspaces 的数据目录
 
 ## 验收标准
 
@@ -41,3 +42,4 @@ WEBUI -> Server 同源 API
 - Native Agent `/health` 可访问。
 - 远端 Server 监听 `0.0.0.0` 时 Native Agent 可上传。
 - README 和 SPEC 在部署方式或端口变更时同步更新。
+- Server 重启后能恢复等待中的任务，并安全处理执行中断的 action。

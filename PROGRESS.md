@@ -4,7 +4,7 @@ Last updated: 2026-06-06
 
 ## Status Summary
 
-LogAgent MVP has a working upload-to-evidence loop and a documented module plan.
+LogAgent MVP has a working upload-to-evidence loop and a documented Analysis Agent architecture.
 
 Current runnable loop:
 
@@ -150,6 +150,19 @@ workspaces/task_xxx/
 - `AGENTS.md` records development conventions and current context.
 - `AGENT.md` has been renamed to `AGENTS.md`.
 - `metadata/` module has planning docs for instance, cluster, node, and template import management.
+- Added independent `analysis-agent/` documentation for task-scoped context, multi-round investigation, user questions, action approvals, budgets, termination, and recovery.
+- Repositioned `llm-agent/` as an LLM Gateway instead of the task orchestrator.
+- Unified task planning around stable states plus execution phases:
+  - `QUEUED`
+  - `RUNNING`
+  - `WAITING_FOR_USER`
+  - `WAITING_FOR_APPROVAL`
+  - `SUCCEEDED`
+  - `FAILED`
+- Defined Agent actions: `search_logs`, `run_tool`, `collect_code_evidence`, `collect_environment`, `ask_user`, and `final_answer`.
+- Defined planned analysis APIs for state reads, user messages, and action approval decisions.
+- Documented that safe read-only actions may run automatically while SSH/SCP collection requires approval by default.
+- Documented that hidden chain-of-thought is not stored; only auditable rationale summaries and evidence references are persisted.
 
 ## Verified
 
@@ -193,8 +206,17 @@ Recent HTTP smoke checks:
 5. Implement Environment Collector:
    - SSH/SCP test environment collection
    - whitelist nodes, paths, and commands
-6. Implement LLM Agent structured analysis.
-7. Implement Case Store save and recall.
+6. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
+7. Implement LLM Gateway structured action/final-answer decisions.
+8. Implement Case Store save and recall from manually confirmed final results.
+
+## Documentation Verification
+
+For the Analysis Agent architecture update:
+
+- Reviewed all component README/SPEC documents.
+- Updated root architecture, original `plan.md`, interfaces, Server, WebUI, config, security, testing, deployment, evidence providers, Case Store, roadmap, and `AGENTS.md`.
+- No application code or runtime configuration was changed, so Rust and WebUI build checks were not required.
 
 ## Maintenance Rule
 

@@ -26,10 +26,12 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 
 - 上传管理
 - 任务创建和状态流转
-- 编排 Log Analyzer、Tool Runner、Code Evidence、Environment Collector、LLM Agent
+- 编排 Log Analyzer、Tool Runner、Code Evidence、Environment Collector、Analysis Agent 和 LLM Gateway
+- 持久化分析上下文、事件、预算、待回答问题和待审批动作
+- 校验并执行 Analysis Agent 的结构化动作
 - 管理模块输出和任务失败原因
 - 查询和关联实例、集群、节点元数据
-- LLM 分析调用
+- 用户消息、动作批准/拒绝和任务恢复
 - Case 存储和召回
 - WebUI API
 
@@ -41,7 +43,8 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 - Code Evidence：版本代码检索。
 - Environment Collector：测试环境采集。
 - Metadata：实例 ID、集群和节点元数据。
-- LLM Agent：证据裁剪、Prompt 组装、模型调用。
+- Analysis Agent：调查策略、事实/假设/缺口、多轮动作和终止判断。
+- LLM Gateway：证据裁剪、Prompt 组装、模型调用和结构化响应解析。
 
 ## 代码结构
 
@@ -66,7 +69,7 @@ server/src
   state.rs             # AppState 和内存 UploadStore
 ```
 
-后续新增 Tool Runner、Code Evidence、Environment Collector、LLM Agent 时，应保持这个模式：
+后续新增 Tool Runner、Code Evidence、Environment Collector、Analysis Agent 和 LLM Gateway 时，应保持这个模式：
 
 - API 层只做请求解析和响应。
 - Pipeline 负责任务编排。
@@ -76,29 +79,26 @@ server/src
 ## 任务来源
 
 ```text
-upload:
-  upload -> extract -> manifest -> rg -> tools -> code evidence -> LLM
-
-environment:
-  ssh/scp collect -> manifest -> rg -> tools -> code evidence -> LLM
+upload/environment
+  -> 基础采集、解压和初始日志证据
+  -> Analysis Agent 调查循环
+  -> Server 执行安全动作或进入等待状态
+  -> 新证据回填并继续分析
+  -> final result
 ```
 
 ## 状态流转
 
 ```text
-CREATED
-UPLOADED
-COLLECTING
-EXTRACTING
-SEARCHING
-RUNNING_TOOLS
-COLLECTING_CODE
-ANALYZING
-DONE
+QUEUED
+RUNNING
+WAITING_FOR_USER
+WAITING_FOR_APPROVAL
+SUCCEEDED
 FAILED
 ```
 
-`COLLECTING` 只用于 environment 来源任务；upload 来源任务从 `UPLOADED` 进入 `EXTRACTING`。
+`RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
 ## 数据目录
 
@@ -124,6 +124,9 @@ FAILED
   tool_results/
   code_evidence.json
   environment_evidence.json
+  analysis_state.json
+  analysis_events.jsonl
+  result.json
   result.md
 ```
 
@@ -139,6 +142,8 @@ FAILED
 - `version`: 用户输入的软件版本
 - `question`: 用户问题
 - `status`: 当前任务状态
+- `phase`: 当前执行阶段
+- `analysis_revision`: 当前分析 revision
 
 ## API Key
 
@@ -197,6 +202,9 @@ POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
 POST /api/tasks
 GET /api/tasks/:task_id/artifacts
+GET /api/tasks/:task_id/analysis
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
@@ -206,6 +214,14 @@ POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
+
+后三个 Analysis API 为规划接口，尚未实现：
+
+- `GET .../analysis` 返回状态、阶段、预算摘要、事件摘要和待处理请求。
+- `POST .../messages` 提交用户补充信息，关闭对应问题并恢复任务。
+- `POST .../decision` 批准或拒绝待审批动作；拒绝原因进入下一轮上下文。
+
+Server 必须保证 message 和 decision 幂等，禁止客户端直接把任务状态改成 `RUNNING`。
 
 `GET /api/metadata/clusters/:cluster_id` 会返回 cluster 基本信息、节点 ID 列表、labels，以及 openGemini 解析出的 `databases` 和 `partitionViews` 摘要。`databases` 包含默认保留策略、RP 参数、Measurements schema 和 ShardGroups；`partitionViews` 对应 `PtView`，用于查看 database partition 的 owner data node、状态、版本和 RGID。
 

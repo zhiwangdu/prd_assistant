@@ -37,7 +37,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 不负责：
 
 - 不直接采集测试环境信息；采集由 Environment Collector 负责。
-- 不直接分析日志；分析由 Log Analyzer、Tool Runner 和 LLM Agent 负责。
+- 不直接分析日志；调查由 Analysis Agent 编排，模型调用由 LLM Gateway 负责。
 - 不直接管理代码仓；代码版本证据由 Code Evidence 负责。
 
 ## 核心对象
@@ -240,4 +240,4 @@ data_dir/
 - Server task context。
 - Environment Collector 节点采集。
 - Code Evidence 产品版本定位。
-- LLM Agent 证据上下文。
+- Analysis Agent 的只读事实上下文。

@@ -16,6 +16,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `code_repos`
 - `environments`
 - `metadata`
+- `analysis_agent`
 - `webui`
 
 ## 示例
@@ -46,6 +47,18 @@ llm:
   model: "gpt-4.1"
   max_input_tokens: 64000
   max_output_tokens: 4096
+  request_timeout_seconds: 120
+  max_retries: 2
+
+analysis_agent:
+  max_rounds: 12
+  max_llm_calls: 12
+  max_actions: 20
+  max_repeated_action: 2
+  max_questions_per_round: 3
+  max_running_seconds: 900
+  approval_required_actions:
+    - collect_environment
 
 embedding:
   provider: "openai_compatible"
@@ -94,3 +107,5 @@ metadata:
 - 密钥不直接写入配置文件，只引用环境变量。
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
+- Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。
+- 等待用户和等待审批时间不计入 `max_running_seconds`。

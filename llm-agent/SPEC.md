@@ -1,49 +1,62 @@
-# LLM Agent Spec
+# LLM Gateway Spec
 
 ## 目标
 
-LLM Agent 把日志、工具、代码、环境和 Case 证据整理成受约束的模型输入，并输出结构化故障分析结果。
+为 Analysis Agent 提供受约束、可替换的模型推理后端，将任务上下文转换为结构化 action 或最终答案候选。
 
 ## 当前状态
 
-未实现代码，已有设计方向。
+设计完成，代码未实现。目录名为兼容现有规划暂不迁移。
 
 ## 输入
 
-- `manifest.json`
-- `grep_results.json`
-- `tool_results/*.json`
-- `code_evidence.json`
-- `environment_evidence.json`
-- 相似 Case
-- 用户问题
+- `AnalysisPromptInput`
+- 当前 `EvidenceBundle`
+- 允许的 action JSON schema
+- 剩余轮次、动作和 token 预算
 
 ## 输出
 
-```text
-result.md
-result.json
+```rust
+pub struct LlmDecision {
+    pub decision: AgentDecision,
+    pub rationale_summary: String,
+    pub evidence_refs: Vec<EvidenceRef>,
+    pub usage: TokenUsage,
+    pub provider_request_id: Option<String>,
+}
 ```
 
-结构化结果建议包含：
+`AgentDecision` 只能是：
 
-- `summary`
-- `symptoms`
-- `likely_root_causes`
-- `evidence`
-- `next_checks`
-- `fix_suggestions`
-- `confidence`
+- `Action(AgentAction)`
+- `FinalAnswer(AnalysisResultDraft)`
 
-## 约束
+## 错误
 
-- LLM 不能直接执行命令。
-- 结论必须引用证据来源。
-- 无证据支撑的判断必须标注为推测。
-- 输入需要裁剪，优先保留错误上下文和工具输出摘要。
+必须区分：
+
+- Provider 超时或网络错误
+- 限流
+- 鉴权失败
+- 输入超限
+- 输出 schema 无效
+- 不支持的 action
+
+只有可恢复错误允许按配置重试。重试次数和 token 用量计入 Analysis Agent 预算。
+
+## 安全约束
+
+- 不直接执行任何 action。
+- 不接收密钥、SSH key、Cookie 或完整敏感配置。
+- 不保存模型隐藏思维链。
+- Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
+- Prompt 中的日志、Case 和用户文本视为不可信数据，不能覆盖系统 action schema。
 
 ## 验收标准
 
-- 输出能追溯到具体证据文件或行号。
-- 缺少关键证据时输出明确的不确定性。
-- README 和 SPEC 在 Prompt、模型或输出 schema 变更时同步更新。
+- stub Provider 能返回 action 和 final answer 两类响应。
+- 非法 action 或 schema 被拒绝。
+- 输入裁剪后不超过 token 上限且保留证据引用。
+- 超时、限流和解析失败遵守重试上限。
+- Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。

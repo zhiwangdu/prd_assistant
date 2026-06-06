@@ -14,10 +14,13 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 Code Evidence 根据用户输入的软件产品和版本，定位对应代码分支或 tag，并结合实际代码生成证据链。
 
+Analysis Agent 可通过 `collect_code_evidence` action 请求新的关键词或符号检索。Server 必须把请求限制到 task 已确定的 product/version、配置仓库和 search roots。
+
 ## 输入示例
 
 ```json
 {
+  "actionId": "act_123",
   "product": "influxdb",
   "version": "3.0.2",
   "question": "为什么这个 Flux 查询在该版本上变慢？"
@@ -115,3 +118,4 @@ code_evidence:
 - 第一版只做代码检索和证据引用。
 - 不自动拉取陌生仓库，不自动修改代码。
 - 后续可增加版本间 diff / commit 对比，用于定位回归。
+- Agent 不能通过 action 改写 repo、ref、search root 或执行构建脚本。
