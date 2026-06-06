@@ -17,7 +17,10 @@ Metadata 能力：
 - Overview：ClusterID、Term、Index、节点/DB/PT/Shard 数量、功能开关和全部 MaxID。
 - Nodes：MetaNode、DataNode、SqlNode 完整地址、状态、连接和 AZ 字段。
 - Partitions：Database、PtId、Owner DataNode、Status、Ver、RGID。
-- Topology：React Flow 展示 `DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index`。
+- Topology：DataNode 大容器分栏，内部按 `Database -> DBPT` 分组展示 ShardGroup/Shard 和 IndexGroup/Index。
+- Topology 支持 Database、DataNode、时间范围、仅异常、Shard/Index 显隐筛选。
+- 点击拓扑实体时在右侧展示完整字段和关联对象。
+- 缺失 DataNode 或缺失 PT 使用红色虚拟容器/lane 展示，不会从拓扑中消失。
 - Databases：RP duration、ShardGroup、Shard、IndexGroup 和 Index 明细。
 - Schemas：通过 MstVersions 展示逻辑表和物理表映射及 Schema。
 - Diagnostics：检查节点离线、连接状态、PT/Shard owner、默认 RP、ShardGroup、Schema 和 Index 引用。

@@ -124,6 +124,35 @@ export type Diagnostic = {
   entityId: string;
 };
 
+export type TopologyFilters = {
+  database: string;
+  dataNodeId: string;
+  startTime: string;
+  endTime: string;
+  onlyAbnormal: boolean;
+  showShards: boolean;
+  showIndexes: boolean;
+};
+
+export type TopologyEntityKind =
+  | "dataNode"
+  | "database"
+  | "dbpt"
+  | "shardGroup"
+  | "shard"
+  | "indexGroup"
+  | "index";
+
+export type TopologyEntity = {
+  id: string;
+  kind: TopologyEntityKind;
+  title: string;
+  subtitle?: string;
+  abnormal: boolean;
+  fields: Record<string, unknown>;
+  relations: Array<{ type: string; target: string }>;
+};
+
 export type MetadataViewModel = MetadataSnapshotResponse & {
   counts: {
     databases: number;

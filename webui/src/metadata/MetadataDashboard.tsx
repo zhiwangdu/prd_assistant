@@ -18,7 +18,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import { formatDuration, valueOrDash } from "../lib/utils";
 import { confirmImport, fetchSnapshot, fetchStoredCluster, previewImport, type ImportPreview } from "./api";
 import { buildTopology } from "./topology";
-import type { DatabaseDto, Diagnostic, MetadataViewModel, NodeDto, RetentionPolicyDto } from "./types";
+import type { DatabaseDto, Diagnostic, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters } from "./types";
 import { buildViewModel } from "./view-model";
 
 type Props = { apiKey: string };
@@ -209,21 +209,86 @@ function PartitionsView({ vm }: { vm: MetadataViewModel }) {
 }
 
 function TopologyView({ vm }: { vm: MetadataViewModel }) {
-  const graph = useMemo(() => buildTopology(vm), [vm]);
+  const [filters, setFilters] = useState<TopologyFilters>({
+    database: "",
+    dataNodeId: "",
+    startTime: "",
+    endTime: "",
+    onlyAbnormal: false,
+    showShards: true,
+    showIndexes: true
+  });
+  const [selected, setSelected] = useState<TopologyEntity | null>(null);
+  const graph = useMemo(() => buildTopology(vm, filters), [vm, filters]);
+  const databases = vm.cluster.databases ?? [];
+  const dataNodes = vm.nodes.filter((node) => node.kind === "data");
+
+  function patchFilter<K extends keyof TopologyFilters>(key: K, value: TopologyFilters[K]) {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setSelected(null);
+  }
+
   return (
     <Card>
-      <CardHeader><CardTitle>Cluster topology</CardTitle><CardDescription>DataNode → Database/PT → ShardGroup → Shard → IndexGroup → Index</CardDescription></CardHeader>
+      <CardHeader><CardTitle>DataNode-centric DBPT topology</CardTitle><CardDescription>DataNode 容器内按 Database / PT 展示 Shard 和 Index 分配；Owners 数字均为 PT ID</CardDescription></CardHeader>
       <CardContent>
-        <div className="h-[680px] overflow-hidden rounded-lg border border-border bg-slate-50">
-          <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.2} maxZoom={1.8}>
-            <Background color="#cbd5e1" gap={20} />
-            <MiniMap pannable zoomable />
-            <Controls />
-          </ReactFlow>
+        <div className="mb-4 grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-4">
+          <FilterSelect label="Database" value={filters.database} onChange={(value) => patchFilter("database", value)} options={databases.map((database) => ({ value: database.name, label: database.name }))} />
+          <FilterSelect label="DataNode" value={filters.dataNodeId} onChange={(value) => patchFilter("dataNodeId", value)} options={dataNodes.map((node) => ({ value: String(node.rawNodeId), label: `DataNode ${node.rawNodeId} · ${node.host ?? "-"}` }))} />
+          <FilterInput label="Start time" type="datetime-local" value={filters.startTime} onChange={(value) => patchFilter("startTime", value)} />
+          <FilterInput label="End time" type="datetime-local" value={filters.endTime} onChange={(value) => patchFilter("endTime", value)} />
+          <FilterCheck label="Only abnormal" checked={filters.onlyAbnormal} onChange={(value) => patchFilter("onlyAbnormal", value)} />
+          <FilterCheck label="Show shards" checked={filters.showShards} onChange={(value) => patchFilter("showShards", value)} />
+          <FilterCheck label="Show indexes" checked={filters.showIndexes} onChange={(value) => patchFilter("showIndexes", value)} />
+          <div className="flex items-end"><Button className="w-full" variant="outline" onClick={() => setFilters({ database: "", dataNodeId: "", startTime: "", endTime: "", onlyAbnormal: false, showShards: true, showIndexes: true })}>Reset filters</Button></div>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="h-[760px] overflow-hidden rounded-lg border border-border bg-slate-50">
+            <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.15} maxZoom={1.8} nodesDraggable onNodeClick={(_, node) => setSelected(graph.entities.get(node.id) ?? null)}>
+              <Background color="#cbd5e1" gap={20} />
+              <MiniMap pannable zoomable />
+              <Controls />
+            </ReactFlow>
+          </div>
+          <TopologyDetails entity={selected} />
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  return <label className="grid gap-1 text-xs font-medium text-muted-foreground">{label}<select className="h-10 rounded-md border border-border bg-white px-3 text-sm text-foreground" value={value} onChange={(event) => onChange(event.target.value)}><option value="">All</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+}
+
+function FilterInput({ label, value, type, onChange }: { label: string; value: string; type: string; onChange: (value: string) => void }) {
+  return <label className="grid gap-1 text-xs font-medium text-muted-foreground">{label}<Input type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function FilterCheck({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return <label className="flex h-10 items-center gap-2 self-end rounded-md border border-border bg-white px-3 text-sm"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
+}
+
+function TopologyDetails({ entity }: { entity: TopologyEntity | null }) {
+  if (!entity) {
+    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">点击 DataNode、Database、DBPT、ShardGroup、Shard、IndexGroup 或 Index 查看完整字段和关联对象。</aside>;
+  }
+  return (
+    <aside className="max-h-[760px] overflow-auto rounded-lg border border-border bg-white">
+      <div className="sticky top-0 border-b border-border bg-white p-4">
+        <div className="flex items-center justify-between gap-2"><strong>{entity.title}</strong>{entity.abnormal && <Badge variant="destructive">Abnormal</Badge>}</div>
+        <p className="mt-1 text-xs text-muted-foreground">{entity.kind} · {entity.subtitle ?? entity.id}</p>
+      </div>
+      <div className="space-y-5 p-4">
+        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fields</h4><KeyValueList value={entity.fields} /></section>
+        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Relations</h4>{entity.relations.length ? <div className="space-y-2">{entity.relations.map((relation, index) => <div key={`${relation.type}:${relation.target}:${index}`} className="rounded-md border border-border p-2 text-xs"><Badge variant="outline">{relation.type}</Badge><code className="mt-1 block break-all">{relation.target}</code></div>)}</div> : <p className="text-sm text-muted-foreground">No relations</p>}</section>
+      </div>
+    </aside>
+  );
+}
+
+function KeyValueList({ value }: { value: Record<string, unknown> }) {
+  return <div className="space-y-2">{Object.entries(value).map(([key, item]) => <div key={key} className="grid gap-1 rounded-md bg-slate-50 p-2"><span className="text-xs text-muted-foreground">{key}</span><code className="whitespace-pre-wrap break-all text-xs">{typeof item === "object" ? JSON.stringify(item, null, 2) : valueOrDash(item)}</code></div>)}</div>;
 }
 
 function DatabasesView({ databases }: { databases: DatabaseDto[] }) {

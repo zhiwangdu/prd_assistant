@@ -3,6 +3,7 @@ import type { Diagnostic, MetadataSnapshotResponse } from "./types";
 export function diagnose(snapshot: MetadataSnapshotResponse): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const dataNodeIds = new Set(snapshot.nodes.filter((node) => node.kind === "data").map((node) => node.rawNodeId));
+  const dataNodes = snapshot.nodes.filter((node) => node.kind === "data");
   const partitionsByDatabase = new Map<string, Set<number>>();
 
   for (const node of snapshot.nodes) {
@@ -24,6 +25,12 @@ export function diagnose(snapshot: MetadataSnapshotResponse): Diagnostic[] {
     }
   }
 
+  for (const node of dataNodes) {
+    if (!(snapshot.cluster.partitionViews ?? []).some((pt) => pt.ownerNodeId === node.rawNodeId)) {
+      diagnostics.push(issue("DATANODE_WITHOUT_PT", "warning", `DataNode ${node.rawNodeId} has no PT`, node.host ?? node.nodeId, node.nodeId));
+    }
+  }
+
   for (const database of snapshot.cluster.databases ?? []) {
     const policies = database.retentionPolicies ?? [];
     if (!database.defaultRetentionPolicy || !policies.some((rp) => rp.name === database.defaultRetentionPolicy)) {
@@ -36,9 +43,12 @@ export function diagnose(snapshot: MetadataSnapshotResponse): Diagnostic[] {
       const indexes = new Set((rp.indexGroups ?? []).flatMap((group) => group.indexes ?? []).map((index) => index.id));
       const referencedIndexes = new Set<number>();
       const ptIds = partitionsByDatabase.get(database.name) ?? new Set<number>();
+      const shardOwnerPtIds = new Set<number>();
+      const indexOwnerPtIds = new Set<number>();
       for (const group of rp.shardGroups ?? []) {
         for (const shard of group.shards ?? []) {
           for (const ownerPtId of shard.owners ?? []) {
+            shardOwnerPtIds.add(ownerPtId);
             if (!ptIds.has(ownerPtId)) {
               diagnostics.push(issue("SHARD_OWNER_MISSING_PT", "error", `Shard ${shard.id} owner PT missing`, `${ownerPtId} is a PT ID, but is absent from PtView.${database.name}`, `shard:${database.name}:${rp.name}:${shard.id}`));
             }
@@ -49,6 +59,31 @@ export function diagnose(snapshot: MetadataSnapshotResponse): Diagnostic[] {
               diagnostics.push(issue("SHARD_INDEX_MISSING", "error", `Shard ${shard.id} index missing`, `Index ${shard.indexId} does not exist`, `shard:${database.name}:${rp.name}:${shard.id}`));
             }
           }
+        }
+      }
+      for (const group of rp.indexGroups ?? []) {
+        for (const index of group.indexes ?? []) {
+          for (const ownerPtId of index.owners ?? []) {
+            indexOwnerPtIds.add(ownerPtId);
+            if (!ptIds.has(ownerPtId)) {
+              diagnostics.push(issue("INDEX_OWNER_MISSING_PT", "error", `Index ${index.id} owner PT missing`, `${ownerPtId} is a PT ID, but is absent from PtView.${database.name}`, `index:${database.name}:${rp.name}:${index.id}`));
+            }
+          }
+        }
+      }
+      for (const ptId of ptIds) {
+        if (!shardOwnerPtIds.has(ptId)) {
+          diagnostics.push(issue("PT_WITHOUT_SHARD", "warning", `${database.name}/PT ${ptId} has no Shard`, rp.name, `pt:${database.name}:${ptId}`));
+        }
+        if (!indexOwnerPtIds.has(ptId)) {
+          diagnostics.push(issue("PT_WITHOUT_INDEX", "warning", `${database.name}/PT ${ptId} has no Index`, rp.name, `pt:${database.name}:${ptId}`));
+        }
+      }
+      const shardRanges = new Set((rp.shardGroups ?? []).map((group) => `${group.startTime ?? ""}|${group.endTime ?? ""}`));
+      const indexRanges = new Set((rp.indexGroups ?? []).map((group) => `${group.startTime ?? ""}|${group.endTime ?? ""}`));
+      for (const range of new Set([...shardRanges, ...indexRanges])) {
+        if (!shardRanges.has(range) || !indexRanges.has(range)) {
+          diagnostics.push(issue("GROUP_TIME_RANGE_MISMATCH", "warning", `${database.name}/${rp.name} group time range mismatch`, range.replace("|", " -> "), `rp:${database.name}:${rp.name}`));
         }
       }
       for (const index of indexes) {

@@ -122,6 +122,7 @@ workspaces/task_xxx/
   - Metadata Overview, Nodes, Partitions, Topology, Databases, Schemas, Diagnostics, and Raw JSON
   - complete Shard, IndexGroup, Index, and MstVersions logical/physical table views
   - topology follows DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index
+  - DataNode container lanes, topology filters, abnormal highlighting, missing-owner lanes, and entity detail panel
 
 ### Metadata
 
