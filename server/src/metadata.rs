@@ -36,19 +36,30 @@ pub struct ClusterMetadata {
     pub databases: Vec<DatabaseMetadata>,
     #[serde(default)]
     pub partition_views: Vec<PartitionViewMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_snapshot: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeMetadata {
     pub node_id: String,
+    pub raw_node_id: Option<u64>,
+    pub kind: Option<String>,
     pub instance_id: Option<String>,
     pub hostname: Option<String>,
     pub host: Option<String>,
+    pub tcp_host: Option<String>,
+    pub rpc_addr: Option<String>,
+    pub gossip_addr: Option<String>,
     pub ssh_alias: Option<String>,
     pub role: Option<String>,
     pub zone: Option<String>,
     pub status: Option<String>,
+    pub status_code: Option<i64>,
+    pub conn_id: Option<u64>,
+    pub alive_conn_id: Option<u64>,
+    pub index: Option<u64>,
     #[serde(default)]
     pub labels: HashMap<String, String>,
 }
@@ -71,17 +82,23 @@ pub struct RetentionPolicyMetadata {
     pub replica_n: Option<u64>,
     pub duration: Option<u64>,
     pub shard_group_duration: Option<u64>,
+    pub index_group_duration: Option<u64>,
+    pub mark_deleted: Option<bool>,
     #[serde(default)]
     pub measurements: Vec<MeasurementMetadata>,
     #[serde(default)]
     pub shard_groups: Vec<ShardGroupMetadata>,
+    #[serde(default)]
+    pub index_groups: Vec<IndexGroupMetadata>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MeasurementMetadata {
     pub name: String,
+    pub logical_name: Option<String>,
     pub version_name: Option<String>,
+    pub version: Option<u64>,
     pub shard_key_type: Option<String>,
     #[serde(default)]
     pub schema: Vec<FieldSchemaMetadata>,
@@ -107,8 +124,50 @@ pub struct ShardGroupMetadata {
     pub shard_ids: Vec<u64>,
     #[serde(default)]
     pub owners: Vec<u64>,
+    #[serde(default)]
+    pub shards: Vec<ShardMetadata>,
+    pub deleted_at: Option<String>,
+    pub truncated_at: Option<String>,
     pub engine_type: Option<u64>,
     pub version: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShardMetadata {
+    pub id: u64,
+    #[serde(default)]
+    pub owners: Vec<u64>,
+    pub min: Option<String>,
+    pub max: Option<String>,
+    pub tier: Option<u64>,
+    pub index_id: Option<u64>,
+    pub downsample_id: Option<u64>,
+    pub downsample_level: Option<u64>,
+    pub read_only: Option<bool>,
+    pub mark_delete: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexGroupMetadata {
+    pub id: u64,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub deleted_at: Option<String>,
+    pub engine_type: Option<u64>,
+    #[serde(default)]
+    pub indexes: Vec<IndexMetadata>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexMetadata {
+    pub id: u64,
+    pub tier: Option<u64>,
+    #[serde(default)]
+    pub owners: Vec<u64>,
+    pub mark_delete: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -148,6 +207,13 @@ pub struct MetadataFetchImportRequest {
     pub url: String,
     pub template_type: Option<String>,
     pub filename: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSnapshotResponse {
+    pub cluster: ClusterMetadata,
+    pub nodes: Vec<NodeMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -290,23 +356,7 @@ impl MetadataStore {
         &self,
         req: MetadataFetchImportRequest,
     ) -> Result<MetadataImportPreview, AppError> {
-        if !req.url.starts_with("http://") && !req.url.starts_with("https://") {
-            return Err(AppError::bad_request(
-                "metadata fetch url must start with http:// or https://",
-            ));
-        }
-        let content = reqwest::get(&req.url)
-            .await
-            .map_err(|err| AppError::bad_request(format!("failed to fetch metadata: {err}")))?
-            .error_for_status()
-            .map_err(|err| {
-                AppError::bad_request(format!("metadata endpoint returned error: {err}"))
-            })?
-            .text()
-            .await
-            .map_err(|err| {
-                AppError::bad_request(format!("failed to read metadata response: {err}"))
-            })?;
+        let content = fetch_metadata_content(&req.url).await?;
         self.create_import_preview(MetadataImportRequest {
             template_type: req
                 .template_type
@@ -315,6 +365,26 @@ impl MetadataStore {
             content,
         })
         .await
+    }
+
+    pub async fn fetch_snapshot(
+        &self,
+        req: MetadataFetchImportRequest,
+    ) -> Result<MetadataSnapshotResponse, AppError> {
+        let content = fetch_metadata_content(&req.url).await?;
+        let template = parse_template(
+            req.template_type.as_deref().unwrap_or("opengemini"),
+            &content,
+        )?;
+        let cluster = template
+            .clusters
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::bad_request("metadata snapshot has no cluster"))?;
+        Ok(MetadataSnapshotResponse {
+            cluster,
+            nodes: template.nodes,
+        })
     }
 
     pub async fn get_import_preview(&self, import_id: &str) -> Option<MetadataImportPreview> {
@@ -360,6 +430,22 @@ impl MetadataStore {
             summary: pending.preview.summary,
         })
     }
+}
+
+async fn fetch_metadata_content(url: &str) -> Result<String, AppError> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(AppError::bad_request(
+            "metadata fetch url must start with http:// or https://",
+        ));
+    }
+    reqwest::get(url)
+        .await
+        .map_err(|err| AppError::bad_request(format!("failed to fetch metadata: {err}")))?
+        .error_for_status()
+        .map_err(|err| AppError::bad_request(format!("metadata endpoint returned error: {err}")))?
+        .text()
+        .await
+        .map_err(|err| AppError::bad_request(format!("failed to read metadata response: {err}")))
 }
 
 fn parse_template(template_type: &str, content: &str) -> Result<MetadataTemplate, AppError> {
@@ -444,6 +530,7 @@ fn normalize_opengemini_value(value: serde_json::Value) -> Result<MetadataTempla
             labels,
             databases,
             partition_views,
+            raw_snapshot: Some(value.clone()),
         }],
         ..MetadataTemplate::default()
     };
@@ -512,8 +599,15 @@ fn normalize_opengemini_retention_policies(
             shard_group_duration: policy
                 .get("ShardGroupDuration")
                 .and_then(serde_json::Value::as_u64),
+            index_group_duration: policy
+                .get("IndexGroupDuration")
+                .and_then(serde_json::Value::as_u64),
+            mark_deleted: policy
+                .get("MarkDeleted")
+                .and_then(serde_json::Value::as_bool),
             measurements: normalize_opengemini_measurements(policy),
             shard_groups: normalize_opengemini_shard_groups(policy.get("ShardGroups")),
+            index_groups: normalize_opengemini_index_groups(policy.get("IndexGroups")),
         })
         .collect::<Vec<_>>();
     result.sort_by(|left, right| left.name.cmp(&right.name));
@@ -539,7 +633,9 @@ fn normalize_opengemini_measurements(policy: &serde_json::Value) -> Vec<Measurem
                 .filter(|value| !value.is_empty())
                 .unwrap_or(name)
                 .to_string(),
+            logical_name: measurement_logical_name(versions, name),
             version_name: measurement_version_name(versions, name),
+            version: measurement_version(versions, name),
             shard_key_type: measurement
                 .get("ShardKeys")
                 .and_then(serde_json::Value::as_array)
@@ -561,24 +657,60 @@ fn normalize_opengemini_measurements(policy: &serde_json::Value) -> Vec<Measurem
     result
 }
 
+fn measurement_version_entry<'a>(
+    versions: Option<&'a serde_json::Map<String, serde_json::Value>>,
+    measurement_name: &str,
+) -> Option<(&'a str, &'a serde_json::Value)> {
+    versions.and_then(|versions| {
+        versions
+            .iter()
+            .find(|(_, version)| {
+                version
+                    .get("NameWithVersion")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(measurement_name)
+            })
+            .map(|(name, version)| (name.as_str(), version))
+            .or_else(|| {
+                versions
+                    .get_key_value(measurement_name)
+                    .map(|(name, value)| (name.as_str(), value))
+            })
+    })
+}
+
+fn measurement_logical_name(
+    versions: Option<&serde_json::Map<String, serde_json::Value>>,
+    measurement_name: &str,
+) -> Option<String> {
+    measurement_version_entry(versions, measurement_name)
+        .map(|(name, _)| name.to_string())
+        .or_else(|| {
+            measurement_name
+                .rsplit_once('_')
+                .map(|(base, _)| base.to_string())
+        })
+}
+
 fn measurement_version_name(
     versions: Option<&serde_json::Map<String, serde_json::Value>>,
     measurement_name: &str,
 ) -> Option<String> {
-    let version_prefix = measurement_name
-        .rsplit_once('_')
-        .map(|(base, _)| base)
-        .unwrap_or(measurement_name);
-    versions
-        .and_then(|versions| {
-            versions
-                .get(version_prefix)
-                .or_else(|| versions.get(measurement_name))
-        })
+    measurement_version_entry(versions, measurement_name)
+        .map(|(_, version)| version)
         .and_then(|version| version.get("NameWithVersion"))
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn measurement_version(
+    versions: Option<&serde_json::Map<String, serde_json::Value>>,
+    measurement_name: &str,
+) -> Option<u64> {
+    measurement_version_entry(versions, measurement_name)
+        .and_then(|(_, version)| version.get("Version"))
+        .and_then(serde_json::Value::as_u64)
 }
 
 fn normalize_opengemini_schema(value: Option<&serde_json::Value>) -> Vec<FieldSchemaMetadata> {
@@ -607,15 +739,40 @@ fn normalize_opengemini_shard_groups(value: Option<&serde_json::Value>) -> Vec<S
             let id = group.get("ID").and_then(serde_json::Value::as_u64)?;
             let mut shard_ids = Vec::new();
             let mut owners = Vec::new();
+            let mut normalized_shards = Vec::new();
             if let Some(shards) = group.get("Shards").and_then(serde_json::Value::as_array) {
                 for shard in shards {
                     if let Some(shard_id) = shard.get("ID").and_then(serde_json::Value::as_u64) {
                         shard_ids.push(shard_id);
-                    }
-                    if let Some(shard_owners) =
-                        shard.get("Owners").and_then(serde_json::Value::as_array)
-                    {
-                        owners.extend(shard_owners.iter().filter_map(serde_json::Value::as_u64));
+                        let shard_owners = shard
+                            .get("Owners")
+                            .and_then(serde_json::Value::as_array)
+                            .map(|owners| {
+                                owners
+                                    .iter()
+                                    .filter_map(serde_json::Value::as_u64)
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        owners.extend(shard_owners.iter().copied());
+                        normalized_shards.push(ShardMetadata {
+                            id: shard_id,
+                            owners: shard_owners,
+                            min: json_string(shard.get("Min")),
+                            max: json_string(shard.get("Max")),
+                            tier: shard.get("Tier").and_then(serde_json::Value::as_u64),
+                            index_id: shard.get("IndexID").and_then(serde_json::Value::as_u64),
+                            downsample_id: shard
+                                .get("DownSampleID")
+                                .and_then(serde_json::Value::as_u64),
+                            downsample_level: shard
+                                .get("DownSampleLevel")
+                                .and_then(serde_json::Value::as_u64),
+                            read_only: shard.get("ReadOnly").and_then(serde_json::Value::as_bool),
+                            mark_delete: shard
+                                .get("MarkDelete")
+                                .and_then(serde_json::Value::as_bool),
+                        });
                     }
                 }
             }
@@ -629,8 +786,61 @@ fn normalize_opengemini_shard_groups(value: Option<&serde_json::Value>) -> Vec<S
                 end_time: json_string(group.get("EndTime")),
                 shard_ids,
                 owners,
+                shards: normalized_shards,
+                deleted_at: json_string(group.get("DeletedAt")),
+                truncated_at: json_string(group.get("TruncatedAt")),
                 engine_type: group.get("EngineType").and_then(serde_json::Value::as_u64),
                 version: group.get("Version").and_then(serde_json::Value::as_u64),
+            })
+        })
+        .collect::<Vec<_>>();
+    result.sort_by_key(|group| group.id);
+    result
+}
+
+fn normalize_opengemini_index_groups(value: Option<&serde_json::Value>) -> Vec<IndexGroupMetadata> {
+    let Some(groups) = value.and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    let mut result = groups
+        .iter()
+        .filter_map(|group| {
+            let id = group.get("ID").and_then(serde_json::Value::as_u64)?;
+            let indexes = group
+                .get("Indexes")
+                .and_then(serde_json::Value::as_array)
+                .map(|indexes| {
+                    indexes
+                        .iter()
+                        .filter_map(|index| {
+                            Some(IndexMetadata {
+                                id: index.get("ID").and_then(serde_json::Value::as_u64)?,
+                                tier: index.get("Tier").and_then(serde_json::Value::as_u64),
+                                owners: index
+                                    .get("Owners")
+                                    .and_then(serde_json::Value::as_array)
+                                    .map(|owners| {
+                                        owners
+                                            .iter()
+                                            .filter_map(serde_json::Value::as_u64)
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                                mark_delete: index
+                                    .get("MarkDelete")
+                                    .and_then(serde_json::Value::as_bool),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(IndexGroupMetadata {
+                id,
+                start_time: json_string(group.get("StartTime")),
+                end_time: json_string(group.get("EndTime")),
+                deleted_at: json_string(group.get("DeletedAt")),
+                engine_type: group.get("EngineType").and_then(serde_json::Value::as_u64),
+                indexes,
             })
         })
         .collect::<Vec<_>>();
@@ -729,9 +939,14 @@ fn append_opengemini_nodes(
         });
         template.nodes.push(NodeMetadata {
             node_id: node_id.clone(),
+            raw_node_id: node.get("ID").and_then(serde_json::Value::as_u64),
+            kind: Some(node_kind.to_string()),
             instance_id: Some(node_id),
             hostname: host.as_deref().map(hostname_from_addr),
             host,
+            tcp_host: optional_string(node.get("TCPHost")),
+            rpc_addr: optional_string(node.get("RPCAddr")),
+            gossip_addr: optional_string(node.get("GossipAddr")),
             ssh_alias: None,
             role: Some(role),
             zone: node
@@ -740,9 +955,19 @@ fn append_opengemini_nodes(
                 .filter(|value| !value.is_empty())
                 .map(ToString::to_string),
             status: Some(status_text(node.get("Status"))),
+            status_code: node.get("Status").and_then(serde_json::Value::as_i64),
+            conn_id: node.get("ConnID").and_then(serde_json::Value::as_u64),
+            alive_conn_id: node.get("AliveConnID").and_then(serde_json::Value::as_u64),
+            index: node.get("Index").and_then(serde_json::Value::as_u64),
             labels,
         });
     }
+}
+
+fn optional_string(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
 }
 
 fn first_non_empty_str(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -1160,6 +1385,7 @@ nodes:
                                     "ReplicaN": 1,
                                     "Duration": 0_u64,
                                     "ShardGroupDuration": 604800000000000_u64,
+                                    "IndexGroupDuration": 604800000000000_u64,
                                     "Measurements": {
                                         "testmst_0000": {
                                             "Name": "testmst_0000",
@@ -1190,6 +1416,17 @@ nodes:
                                             ],
                                             "EngineType": 0,
                                             "Version": 0
+                                        }
+                                    ],
+                                    "IndexGroups": [
+                                        {
+                                            "ID": 1,
+                                            "StartTime": "2026-06-01T00:00:00Z",
+                                            "EndTime": "2026-06-08T00:00:00Z",
+                                            "Indexes": [
+                                                { "ID": 1, "Owners": [0], "Tier": 0, "MarkDelete": false }
+                                            ],
+                                            "EngineType": 0
                                         }
                                     ]
                                 }
@@ -1258,6 +1495,21 @@ nodes:
             database.retention_policies[0].shard_groups[0].shard_ids,
             vec![1]
         );
+        assert_eq!(
+            database.retention_policies[0].shard_groups[0].shards[0].owners,
+            vec![0]
+        );
+        assert_eq!(
+            database.retention_policies[0].measurements[0]
+                .logical_name
+                .as_deref(),
+            Some("testmst")
+        );
+        assert_eq!(
+            database.retention_policies[0].index_groups[0].indexes[0].id,
+            1
+        );
+        assert!(cluster.raw_snapshot.is_some());
 
         let data_node = store
             .list_cluster_nodes("6735497445922383781")
@@ -1267,6 +1519,8 @@ nodes:
             .unwrap();
         assert_eq!(data_node.role.as_deref(), Some("data"));
         assert_eq!(data_node.status.as_deref(), Some("active"));
+        assert_eq!(data_node.raw_node_id, Some(2));
+        assert_eq!(data_node.conn_id, Some(1));
         assert_eq!(
             data_node.labels.get("tcpHost").map(String::as_str),
             Some("127.0.0.1:8401")

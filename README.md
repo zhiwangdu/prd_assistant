@@ -59,7 +59,7 @@ Case 沉淀与召回
 | [metadata](./metadata/README.md) | 实例 ID、集群节点和导入模板元数据管理 | [SPEC](./metadata/SPEC.md) |
 | [llm-agent](./llm-agent/README.md) | LLM 输入组织、Prompt 约束和输出结构 | [SPEC](./llm-agent/SPEC.md) |
 | [case-store](./case-store/README.md) | Case 沉淀、embedding 和相似召回 | [SPEC](./case-store/SPEC.md) |
-| [webui](./webui/README.md) | 任务列表、任务详情、Case 库 | [SPEC](./webui/SPEC.md) |
+| [webui](./webui/README.md) | Vite WebUI、任务证据和 Metadata 可视化 | [SPEC](./webui/SPEC.md) |
 | [security](./security/README.md) | 安全边界和执行约束 | [SPEC](./security/SPEC.md) |
 | [config](./config/README.md) | 单一 `logagent.yaml` 配置结构 | [SPEC](./config/SPEC.md) |
 | [interfaces](./interfaces/README.md) | 模块边界、Rust trait 和状态机 | [SPEC](./interfaces/SPEC.md) |

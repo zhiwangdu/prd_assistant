@@ -171,6 +171,7 @@ API 层保留 `templateType` 字段。
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/snapshots/fetch
 POST /api/metadata/imports
 POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
@@ -262,6 +263,8 @@ metadata_context.json
 ## WEBUI
 
 - Metadata 页面已实现。
+- Metadata 页面包含 Overview、Nodes、Partitions、Topology、Databases、Schemas、Diagnostics 和 Raw JSON。
+- Shard/Index Owners 按 PT ID 解析，经 PtView 关联 DataNode。
 - 实例查询。
 - 集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
 - 真实元数据 URL 拉取和预览。

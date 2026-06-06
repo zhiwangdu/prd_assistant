@@ -2,84 +2,70 @@
 
 ## 目标
 
-WEBUI 提供手动上传、任务查看和证据浏览入口。前端使用 React + Next.js + Tailwind CSS，构建为静态文件后由 Rust Server 托管。
+提供日志上传/证据查看和 openGemini Metadata 可视化。前端使用 React + Vite + TypeScript + Tailwind CSS，shadcn/ui 负责基础交互组件，React Flow 负责拓扑图。
 
-## 当前状态
+## Metadata ViewModel
 
-已实现 Next.js 静态导出前端：
+输入为 Server 归一化快照：
 
-- `webui/app/page.tsx`
-- `webui/app/layout.tsx`
-- `webui/app/globals.css`
-- `webui/package.json`
-- `webui/out` 构建产物，git 忽略
+- `cluster`
+- `nodes`
+- `cluster.rawSnapshot`
+- `databases[].retentionPolicies[]`
+- `partitionViews[]`
+- `measurements[]`
+- `shardGroups[].shards[]`
+- `indexGroups[].indexes[]`
 
-## 当前功能
+前端派生：
 
-- 健康检查。
-- 顶部固定 API Key 输入和 localStorage 保存。
-- 一个或多个文件上传。
-- 小文件 multipart 上传。
-- 大文件 512 KiB 分片上传。
-- 使用 `uploadIds` 创建批量任务。
-- localStorage 记录最近任务。
-- 查询 `/api/tasks/:task_id/artifacts`。
-- 展示 manifest 文件清单。
-- 展示 grep 命中。
-- Metadata 查询、导入预览和确认。
-- openGemini `/getdata` URL 拉取和归一化预览。
-- 集群查询重点展示 `PtView` 分区状态和 `Databases` 库表/RP/shard 摘要。
+- 节点、DB、RP、PT、Shard、Measurement、Index 数量。
+- Duration 的可读格式。
+- MstVersions 逻辑表/物理表映射。
+- Shard -> PT -> DataNode 拓扑。
+- Diagnostics。
 
-## API
-
-WEBUI 同源调用 Server：
-
-```http
-GET /health
-POST /api/uploads
-POST /api/uploads/batch
-POST /api/uploads/init
-POST /api/uploads/:upload_id/chunks?offset=<bytes>
-POST /api/uploads/:upload_id/complete
-POST /api/tasks
-GET /api/tasks/:task_id/artifacts
-GET /api/metadata/instances/:instance_id
-GET /api/metadata/clusters/:cluster_id
-GET /api/metadata/clusters/:cluster_id/nodes
-POST /api/metadata/imports
-POST /api/metadata/imports/fetch
-GET /api/metadata/imports/:import_id/preview
-POST /api/metadata/imports/:import_id/confirm
-```
-
-受保护接口使用：
-
-```text
-Authorization: Bearer <api-key>
-```
+`Shard.Owners` 和 `Index.Owners` 必须解释为 PT ID，禁止直接当作 NodeID。
 
 ## 页面
 
-- 顶部连接区：API Key、健康检查。
-- 导入：来源 URL、多文件选择、上传进度。
-- 任务：浏览器本地最近任务。
-- 证据：文件清单、grep 命中、原始 JSON。
-- Metadata：展示实例 ID、集群节点、`PtView`、`Databases`、真实元数据拉取、模板导入预览和确认。
+- Overview
+- Nodes
+- Partitions
+- Topology
+- Databases
+- Schemas
+- Diagnostics
+- Raw JSON
+- Log analysis
 
-## 约束
+## Diagnostics
 
-- 使用 `output: "export"`，Server 只托管静态产物，不在生产运行 Next.js server。
-- `webui/out` 和 `webui/.next` 不提交。
-- npm registry 使用项目级 `.npmrc` 指向 `http://registry.npmmirror.com`。
-- 不在前端持久化敏感分析结果，任务列表仅作为本机快速入口。
-- API Key 保存在 localStorage，仅用于本地 MVP。
+- Data/SQL 节点离线。
+- `ConnID != AliveConnID`。
+- PT Owner 找不到 DataNode。
+- Shard Owner PT 在同 Database 的 PtView 中不存在。
+- Database 默认 RP 为空或不存在。
+- RP 无 ShardGroup。
+- Measurement 无 Schema。
+- Shard IndexID 找不到 Index。
+- 未被 Shard 引用的 Index。
 
-## 验收标准
+MetaNode 的 `Status=0` 不直接判定为离线；状态码必须按节点类型解释。
 
-- `GET /` 能返回页面。
+## 构建和部署
+
+- Vite 输出目录固定为 `webui/out`。
+- Rust Server 使用 `ServeDir("webui/out")` 托管。
+- API Key 保存在本机 localStorage。
+- Raw JSON 来自 Server 返回的原始快照，不在浏览器执行任何内容。
+
+## 验收
+
 - `npm run lint`、`npm run typecheck`、`npm run build` 通过。
-- 页面能上传一个或多个 sample.log、创建任务、显示 artifacts。
-- Metadata 页面支持按实例 ID 查询、按集群查看节点、模板导入预览和确认。
-- Metadata 页面支持通过 Server 拉取 `127.0.0.1:8091/getdata`，避免浏览器 CORS 限制。
-- Metadata 页面能直接展示 openGemini `PtView` 的 PT owner/status 和 `Databases` 的 RP、schema、ShardGroups。
-- README 和 SPEC 在页面、接口或部署方式变更时同步更新。
+- `/` 返回 Vite 构建页面。
+- 能从 `127.0.0.1:8091/getdata` 加载真实数据。
+- `Owners:[0]` 显示为 PT 0，并经 PtView 映射到 DataNode。
+- `testmst` 映射到 `testmst_0000` 并展示 Schema。
+- React Flow 拓扑、Diagnostics 和 Raw JSON 可用。
+- 原有日志上传和 evidence 查看能力保持可用。

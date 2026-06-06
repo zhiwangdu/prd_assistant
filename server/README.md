@@ -200,6 +200,7 @@ GET /api/tasks/:task_id/artifacts
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/snapshots/fetch
 POST /api/metadata/imports
 POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
@@ -207,6 +208,8 @@ POST /api/metadata/imports/:import_id/confirm
 ```
 
 `GET /api/metadata/clusters/:cluster_id` 会返回 cluster 基本信息、节点 ID 列表、labels，以及 openGemini 解析出的 `databases` 和 `partitionViews` 摘要。`databases` 包含默认保留策略、RP 参数、Measurements schema 和 ShardGroups；`partitionViews` 对应 `PtView`，用于查看 database partition 的 owner data node、状态、版本和 RGID。
+
+`POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，返回完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
 
 `POST /api/uploads` 使用 multipart：
 
@@ -289,7 +292,7 @@ export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-server -- --config examples/logagent.yaml
 ```
 
-Server 会静态托管 Next.js 导出的 `webui/out`，本地访问：
+Server 会静态托管 Vite 构建的 `webui/out`，本地访问：
 
 ```text
 http://127.0.0.1:8080/

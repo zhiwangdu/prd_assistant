@@ -46,6 +46,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/metadata/imports", post(metadata::create_import))
         .route("/api/metadata/imports/fetch", post(metadata::fetch_import))
         .route(
+            "/api/metadata/snapshots/fetch",
+            post(metadata::fetch_snapshot),
+        )
+        .route(
             "/api/metadata/imports/:import_id/preview",
             get(metadata::get_import_preview),
         )

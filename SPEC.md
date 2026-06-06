@@ -74,12 +74,12 @@ raw file -> extracted files -> manifest.json -> metadata context -> grep_results
 - Native Agent 接收本地导入请求，校验路径、后缀和大小，上传 Server。
 - Server 支持 multipart 上传、分片上传、任务创建、任务产物读取。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
-- WEBUI 支持手动上传、分片上传、创建任务、展示 manifest 和 grep 结果。
+- WEBUI 使用 React + Vite，支持上传、任务证据、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 
 - 持久化任务列表和状态机。
-- Metadata 管理实例 ID、集群节点和导入模板，并在 WEBUI 展示。
+- Metadata 接入 task context 并写入 `metadata_context.json`。
 - Tool Runner 调用 `flux_query_analyzer`、`influxql_analyzer` 等已有工具。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。

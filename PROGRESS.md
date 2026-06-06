@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Status Summary
 
@@ -56,12 +56,13 @@ Chrome Extension or WEBUI
   - `GET /api/metadata/instances/:instance_id`
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
+  - `POST /api/metadata/snapshots/fetch`
   - `POST /api/metadata/imports`
   - `POST /api/metadata/imports/fetch`
   - `GET /api/metadata/imports/:import_id/preview`
   - `POST /api/metadata/imports/:import_id/confirm`
 - Uses API Key middleware for protected APIs.
-- Statically serves Next.js export output from `webui/out`.
+- Statically serves Vite output from `webui/out`.
 - Creates Server-owned task IDs and workspaces.
 
 ### Upload And Workspace
@@ -102,8 +103,9 @@ workspaces/task_xxx/
 
 ### WEBUI
 
-- React + Next.js + Tailwind CSS app under `webui/`.
-- Uses static export; `npm run build` writes `webui/out`.
+- React + Vite + TypeScript + Tailwind CSS app under `webui/`.
+- Uses shadcn/ui composition primitives and React Flow.
+- `npm run build` writes `webui/out`.
 - Served by Server at `/` from `webui/out`.
 - Supports:
   - health check
@@ -117,6 +119,8 @@ workspaces/task_xxx/
   - Metadata YAML/JSON import preview and confirmation
   - Metadata openGemini `/getdata` URL fetch preview
   - Metadata cluster view for `PtView` partition state and `Databases` schema/RP/shard summary
+  - Metadata Overview, Nodes, Partitions, Topology, Databases, Schemas, Diagnostics, and Raw JSON
+  - complete Shard, IndexGroup, Index, and MstVersions logical/physical table views
 
 ### Metadata
 
@@ -133,6 +137,8 @@ workspaces/task_xxx/
   - server-side metadata URL fetch
   - import confirmation and persistence
 - CSV import remains reserved but not implemented.
+- Raw openGemini snapshots are preserved.
+- Shard and Index owners are modeled as PT IDs and resolved through PtView to DataNodes.
 
 ### Documentation
 
@@ -169,6 +175,7 @@ Recent HTTP smoke checks:
 - metadata `http://127.0.0.1:8091/getdata` parsing plan implemented for openGemini snapshot
 - metadata server-side fetch from `http://127.0.0.1:8091/getdata`, confirm, cluster query, node query, and instance query
 - metadata unit test covers openGemini `PtView` owner/status and `Databases` RP/schema/shard summary parsing
+- live `127.0.0.1:8091/getdata` smoke test verified PT 0 -> DataNode 2, Shard/Index 1, and `testmst -> testmst_0000`
 
 ## Planned Next
 

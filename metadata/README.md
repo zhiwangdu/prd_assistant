@@ -140,6 +140,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
+POST /api/metadata/snapshots/fetch
 POST /api/metadata/imports
 POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
@@ -166,6 +167,10 @@ POST /api/metadata/imports/:import_id/confirm
 - `Databases` -> cluster `databases`，重点保留默认 RP、RP 参数、Measurements schema、ShardGroups
 - `PtView` -> cluster `partitionViews`，重点保留数据库、PT ID、owner data node、状态、版本和 RGID
 - 节点的 `Host`、`RPCAddr`、`TCPHost`、`GossipAddr`、`Status`、`Az` 等写入 node fields/labels
+- `Shard.Owners` 和 `Index.Owners` -> PT ID
+- `MstVersions` -> 逻辑表名到物理表名映射
+- `IndexGroups` -> IndexGroup 和 Index 明细
+- 原始 `/getdata` -> `rawSnapshot`
 
 受保护接口继续使用：
 

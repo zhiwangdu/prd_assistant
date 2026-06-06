@@ -9,7 +9,7 @@ use crate::{
     error::AppError,
     metadata::{
         MetadataConfirmResponse, MetadataFetchImportRequest, MetadataImportPreview,
-        MetadataImportRequest,
+        MetadataImportRequest, MetadataSnapshotResponse,
     },
     state::AppState,
 };
@@ -24,6 +24,13 @@ pub async fn get_instance(
         .await
         .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
     Ok(Json(serde_json::json!({ "instance": instance })))
+}
+
+pub async fn fetch_snapshot(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<MetadataFetchImportRequest>,
+) -> Result<Json<MetadataSnapshotResponse>, AppError> {
+    Ok(Json(state.metadata.fetch_snapshot(req).await?))
 }
 
 pub async fn get_cluster(
