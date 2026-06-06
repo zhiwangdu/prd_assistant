@@ -125,6 +125,7 @@ struct LlmConfig {
     provider: String,
     base_url_env: Option<String>,
     api_key_env: Option<String>,
+    model_env: Option<String>,
     #[serde(default = "default_llm_model")]
     model: String,
     #[serde(default = "default_llm_timeout")]
@@ -217,6 +218,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         "openai_compatible" => LlmProvider::OpenAiCompatible,
         value => anyhow::bail!("unsupported llm.provider {value}"),
     };
+    let model = resolve_llm_model(&llm)?;
     let (base_url, api_key) = match provider {
         LlmProvider::Stub => (None, None),
         LlmProvider::OpenAiCompatible => {
@@ -265,7 +267,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             provider,
             base_url,
             api_key,
-            model: llm.model,
+            model,
             request_timeout_seconds: llm.request_timeout_seconds.max(1),
             max_input_chars: llm.max_input_chars.max(1024),
             max_output_tokens: llm.max_output_tokens.max(1),
@@ -305,6 +307,7 @@ fn default_llm_config() -> LlmConfig {
         provider: default_llm_provider(),
         base_url_env: None,
         api_key_env: None,
+        model_env: None,
         model: default_llm_model(),
         request_timeout_seconds: default_llm_timeout(),
         max_input_chars: default_llm_max_input_chars(),
@@ -366,6 +369,31 @@ fn default_llm_model() -> String {
     "configured-model".to_string()
 }
 
+fn resolve_llm_model(llm: &LlmConfig) -> anyhow::Result<String> {
+    resolve_llm_model_with(llm, |name| env::var(name))
+}
+
+fn resolve_llm_model_with(
+    llm: &LlmConfig,
+    read_env: impl Fn(&str) -> Result<String, env::VarError>,
+) -> anyhow::Result<String> {
+    let model = match llm.model_env.as_deref() {
+        Some(model_env) => {
+            let model_env = model_env.trim();
+            if model_env.is_empty() {
+                anyhow::bail!("llm.model_env must not be empty");
+            }
+            read_env(model_env).with_context(|| format!("missing LLM model env var {model_env}"))?
+        }
+        None => llm.model.clone(),
+    };
+    let model = model.trim();
+    if model.is_empty() {
+        anyhow::bail!("LLM model must not be empty");
+    }
+    Ok(model.to_string())
+}
+
 fn default_llm_timeout() -> u64 {
     120
 }
@@ -376,4 +404,59 @@ fn default_llm_max_input_chars() -> usize {
 
 fn default_llm_max_output_tokens() -> u32 {
     4096
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn llm_config(model: &str, model_env: Option<&str>) -> LlmConfig {
+        LlmConfig {
+            provider: "openai_compatible".to_string(),
+            base_url_env: Some("BASE_URL".to_string()),
+            api_key_env: Some("API_KEY".to_string()),
+            model_env: model_env.map(ToString::to_string),
+            model: model.to_string(),
+            request_timeout_seconds: 120,
+            max_input_chars: 60_000,
+            max_output_tokens: 4096,
+        }
+    }
+
+    #[test]
+    fn resolves_static_llm_model_when_model_env_is_not_configured() {
+        let config = llm_config(" static-model ", None);
+
+        let model = resolve_llm_model_with(&config, |_| unreachable!()).unwrap();
+
+        assert_eq!(model, "static-model");
+    }
+
+    #[test]
+    fn model_env_overrides_static_llm_model() {
+        let config = llm_config("static-model", Some("LOGAGENT_LLM_MODEL"));
+
+        let model = resolve_llm_model_with(&config, |name| {
+            assert_eq!(name, "LOGAGENT_LLM_MODEL");
+            Ok(" env-model ".to_string())
+        })
+        .unwrap();
+
+        assert_eq!(model, "env-model");
+    }
+
+    #[test]
+    fn missing_or_empty_model_env_value_is_rejected() {
+        let missing = llm_config("static-model", Some("LOGAGENT_LLM_MODEL"));
+        let error = resolve_llm_model_with(&missing, |_| Err(env::VarError::NotPresent))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("missing LLM model env var LOGAGENT_LLM_MODEL"));
+
+        let empty = llm_config("static-model", Some("LOGAGENT_LLM_MODEL"));
+        let error = resolve_llm_model_with(&empty, |_| Ok("  ".to_string()))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("LLM model must not be empty"));
+    }
 }

@@ -161,6 +161,7 @@ workspaces/task_xxx/
 
 - Implemented as a Server-internal Rust module.
 - Supports deterministic `stub` and OpenAI-compatible Chat Completions.
+- Supports `llm.model_env` for environment-provided model names while retaining static `llm.model` compatibility.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.
 - Validates result schema, confidence, and task-local grep evidence references.
 - Performs exactly one model request per task attempt with no automatic retry.
@@ -204,12 +205,13 @@ npm run build
 
 Task and LLM verification:
 
-- 19 Rust tests pass.
+- 22 Rust tests pass.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
 - Prompt truncation, Chat Completions parsing, Provider error classification, and evidence refs are tested.
+- LLM model configuration tests cover static values, `model_env` precedence, and missing or empty environment values.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
 - Isolated HTTP smoke on port 50993 verified upload, `202 QUEUED`, polling to `SUCCEEDED`, persisted list/detail, `attempts=1`, and artifact reads.
 - Isolated stub LLM HTTP smoke on port 50995 verified question persistence, `GENERATE_RESULT`, `result.json` / `result.md`, result API, and grep evidence references.

@@ -43,13 +43,13 @@ llm:
   provider: "openai_compatible"
   base_url_env: "LOGAGENT_LLM_BASE_URL"
   api_key_env: "LOGAGENT_LLM_API_KEY"
-  model: "gpt-4.1"
+  model_env: "LOGAGENT_LLM_MODEL"
   max_input_chars: 60000
   max_output_tokens: 4096
   request_timeout_seconds: 120
 ```
 
-模型名只是配置示例，不作为固定依赖。
+模型名不作为固定依赖。`model_env` 配置后从环境变量读取模型名并优先于兼容用的静态 `model`；变量缺失或值为空时 Server 启动失败。
 
 ## 输入
 

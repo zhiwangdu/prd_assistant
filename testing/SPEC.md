@@ -12,6 +12,7 @@
 - Server 单测覆盖 `.tar` 和 `.tar.gz` 解压。
 - Server 单测覆盖 Task Store 持久化/恢复、幂等 pipeline 和任务 API 状态码。
 - Server 单测覆盖 stub LLM 端到端结果、Prompt 裁剪、响应解析和 evidence ref 校验。
+- Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - 手工 smoke 验证过 WEBUI 上传、任务创建和 artifacts 查询。
 
 ## 必跑检查

@@ -159,6 +159,7 @@ persist task
 - `llm.provider`: `stub` / `openai_compatible`
 - `llm.base_url_env`
 - `llm.api_key_env`
+- `llm.model_env`，可选，配置后从环境变量读取模型名并优先于 `llm.model`
 - `llm.model`
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
@@ -180,6 +181,7 @@ persist task
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
 - stub 模式能单次生成结构化结果并通过 result API 读取。
+- 真实 Provider 配置 `llm.model_env` 时，环境变量缺失或模型名为空必须启动失败。
 - 批量任务的 manifest `files[].path` 必须带包名目录前缀。
 - 受保护接口无 API Key 时返回 401。
 - 等待用户或审批的任务可恢复，重复 message/decision/action 不产生重复执行。

@@ -10,6 +10,7 @@
 
 - `stub` Provider。
 - OpenAI-compatible `/chat/completions` Provider。
+- 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - manifest/grep Prompt 和字符数裁剪。
 - 最终结果 schema、confidence 和 grep evidence ref 校验。
 - `result.json` / `result.md` 持久化。
@@ -43,6 +44,7 @@
 - 不接收密钥、SSH key、Cookie 或完整敏感配置。
 - 不保存模型隐藏思维链。
 - Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
+- 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
 - Prompt 中的日志、Case 和用户文本视为不可信数据，不能覆盖系统 action schema。
 
 ## 验收标准

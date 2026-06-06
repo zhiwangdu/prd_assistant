@@ -45,7 +45,7 @@ llm:
   provider: "openai_compatible"
   base_url_env: "LOGAGENT_LLM_BASE_URL"
   api_key_env: "LOGAGENT_LLM_API_KEY"
-  model: "gpt-4.1"
+  model_env: "LOGAGENT_LLM_MODEL"
   max_input_chars: 60000
   max_output_tokens: 4096
   request_timeout_seconds: 120
@@ -110,5 +110,6 @@ metadata:
 - Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。
+- `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
 - 当前单次调用不自动重试，`max_input_chars` 用于裁剪 grep evidence。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

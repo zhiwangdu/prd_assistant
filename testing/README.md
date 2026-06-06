@@ -78,6 +78,7 @@ Stub 必须支持脚本化多轮响应：
 - 固定期望证据
 - 检查输出是否引用日志、工具、代码和环境证据
 - 当前使用 `examples/server-llm-openai-compatible.yaml` 验证单次日志结果；不要在自动测试中使用真实模型。
+- 手工真实模型验收需要设置 `LOGAGENT_LLM_BASE_URL`、`LOGAGENT_LLM_API_KEY` 和 `LOGAGENT_LLM_MODEL`。
 
 ## 验收标准
 

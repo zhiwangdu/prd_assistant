@@ -31,7 +31,7 @@ llm:
   provider: "openai_compatible"
   base_url_env: "LOGAGENT_LLM_BASE_URL"
   api_key_env: "LOGAGENT_LLM_API_KEY"
-  model: "configured-model"
+  model_env: "LOGAGENT_LLM_MODEL"
   request_timeout_seconds: 120
   max_input_chars: 60000
   max_output_tokens: 4096
