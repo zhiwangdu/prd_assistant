@@ -121,6 +121,7 @@ workspaces/task_xxx/
   - Metadata cluster view for `PtView` partition state and `Databases` schema/RP/shard summary
   - Metadata Overview, Nodes, Partitions, Topology, Databases, Schemas, Diagnostics, and Raw JSON
   - complete Shard, IndexGroup, Index, and MstVersions logical/physical table views
+  - topology follows DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index
 
 ### Metadata
 

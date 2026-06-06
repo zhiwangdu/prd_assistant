@@ -31,12 +31,9 @@ button, input { font: inherit; }
 }
 .topology-node strong, .topology-node small { display: block; }
 .topology-node small { margin-top: 3px; color: #64748b; }
-.topology-sql { border-left: 4px solid #8b5cf6 !important; }
-.topology-database { border-left: 4px solid #0f766e !important; }
-.topology-rp { border-left: 4px solid #14b8a6 !important; }
-.topology-pt { border-left: 4px solid #f59e0b !important; }
+.topology-dbpt { border-left: 4px solid #0f766e !important; }
 .topology-shardGroup { border-left: 4px solid #f97316 !important; }
 .topology-shard { border-left: 4px solid #ef4444 !important; }
+.topology-indexGroup { border-left: 4px solid #8b5cf6 !important; }
 .topology-index { border-left: 4px solid #2563eb !important; }
 .topology-data { border-left: 4px solid #16a34a !important; }
-.topology-measurement { border-left: 4px solid #64748b !important; }

@@ -184,7 +184,7 @@ Authorization: Bearer <api-key>
 
 - 按实例 ID 查询。
 - 按集群 ID 查询。
-- 展示集群拓扑和节点角色。
+- 展示 `DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index` 集群拓扑。
 - 展示 `PtView` 分区归属和状态。
 - 展示 `Databases`、保留策略、表结构 schema 和 shard group 摘要。
 - 展示产品、版本、环境、标签。

@@ -22,7 +22,7 @@
 - 节点、DB、RP、PT、Shard、Measurement、Index 数量。
 - Duration 的可读格式。
 - MstVersions 逻辑表/物理表映射。
-- Shard -> PT -> DataNode 拓扑。
+- `DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index` 拓扑。
 - Diagnostics。
 
 `Shard.Owners` 和 `Index.Owners` 必须解释为 PT ID，禁止直接当作 NodeID。

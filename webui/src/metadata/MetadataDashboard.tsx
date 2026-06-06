@@ -212,7 +212,7 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
   const graph = useMemo(() => buildTopology(vm), [vm]);
   return (
     <Card>
-      <CardHeader><CardTitle>Cluster topology</CardTitle><CardDescription>Shard Owners 按 PT ID 解析：Shard → PT → DataNode</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Cluster topology</CardTitle><CardDescription>DataNode → Database/PT → ShardGroup → Shard → IndexGroup → Index</CardDescription></CardHeader>
       <CardContent>
         <div className="h-[680px] overflow-hidden rounded-lg border border-border bg-slate-50">
           <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.2} maxZoom={1.8}>

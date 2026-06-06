@@ -265,6 +265,7 @@ metadata_context.json
 - Metadata 页面已实现。
 - Metadata 页面包含 Overview、Nodes、Partitions、Topology、Databases、Schemas、Diagnostics 和 Raw JSON。
 - Shard/Index Owners 按 PT ID 解析，经 PtView 关联 DataNode。
+- Topology 主链固定为 `DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index`。
 - 实例查询。
 - 集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
 - 真实元数据 URL 拉取和预览。
