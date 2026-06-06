@@ -192,6 +192,7 @@ MVP 要求：
 - `SEARCH_LOGS` 后单次调用 LLM Gateway，写入 `result.json` 和 `result.md`；调用失败时任务进入 `FAILED / GENERATE_RESULT`。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
+- OpenAI-compatible 响应可为纯 JSON 或完整 JSON Markdown 代码围栏；包含额外自然语言时按协议错误处理。
 
 Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Native Agent 上传稍大的文件时报：
 

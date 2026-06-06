@@ -36,6 +36,8 @@ question + manifest.json + grep_results.json
 
 当前不返回 action、不重试、不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。
 
+响应解析接受纯 JSON，或整个响应为单个 `json`/无语言标记 Markdown 代码围栏。不会从附带自然语言说明的响应中猜测提取 JSON。
+
 ## 配置
 
 ```yaml

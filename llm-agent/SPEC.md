@@ -13,6 +13,7 @@
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - manifest/grep Prompt 和字符数裁剪。
 - 最终结果 schema、confidence 和 grep evidence ref 校验。
+- 响应解析接受纯 JSON 或单个 JSON Markdown 代码围栏，拒绝混有额外自然语言的内容。
 - `result.json` / `result.md` 持久化。
 
 ## 当前输入
@@ -51,6 +52,7 @@
 
 - stub Provider 能返回最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
+- 纯 JSON 和完整 JSON 代码围栏可解析，附带额外自然语言的响应被拒绝。
 - 输入裁剪后不超过字符上限且保留证据引用。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。

@@ -102,7 +102,24 @@ fn parse_chat_response(response: ChatResponse) -> anyhow::Result<ResultDraft> {
         .map(|choice| choice.message.content.trim())
         .filter(|content| !content.is_empty())
         .context("LLM response did not contain content")?;
+    let content = strip_json_code_fence(content);
     serde_json::from_str(content).context("LLM content is not valid result JSON")
+}
+
+fn strip_json_code_fence(content: &str) -> &str {
+    let Some(rest) = content.strip_prefix("```") else {
+        return content;
+    };
+    let Some((language, body)) = rest.split_once('\n') else {
+        return content;
+    };
+    if !language.trim().is_empty() && !language.trim().eq_ignore_ascii_case("json") {
+        return content;
+    }
+    let Some(body) = body.strip_suffix("```") else {
+        return content;
+    };
+    body.trim()
 }
 
 fn build_prompt(
@@ -322,28 +339,26 @@ mod tests {
 
     #[test]
     fn parses_chat_completions_content() {
-        let response = ChatResponse {
-            choices: vec![ChatChoice {
-                message: ChatResponseMessage {
-                    content: serde_json::json!({
-                        "summary": "mock summary",
-                        "symptoms": ["timeout"],
-                        "likelyRootCauses": [{
-                            "cause": "network",
-                            "evidenceRefs": ["grep_results.json#matches/0"]
-                        }],
-                        "nextChecks": ["check network"],
-                        "fixSuggestions": ["fix network"],
-                        "missingInformation": [],
-                        "confidence": "high"
-                    })
-                    .to_string(),
-                },
-            }],
-        };
+        let response = chat_response(valid_result_json());
         let draft = parse_chat_response(response).unwrap();
         assert_eq!(draft.summary, "mock summary");
         assert!(matches!(draft.confidence, Confidence::High));
+    }
+
+    #[test]
+    fn parses_json_code_fenced_chat_completions_content() {
+        let response = chat_response(format!("```json\n{}\n```", valid_result_json()));
+
+        let draft = parse_chat_response(response).unwrap();
+
+        assert_eq!(draft.summary, "mock summary");
+    }
+
+    #[test]
+    fn rejects_json_embedded_in_natural_language() {
+        let response = chat_response(format!("Here is the result:\n{}", valid_result_json()));
+
+        assert!(parse_chat_response(response).is_err());
     }
 
     #[test]
@@ -373,6 +388,30 @@ mod tests {
                 size: 10,
             }],
         }
+    }
+
+    fn chat_response(content: String) -> ChatResponse {
+        ChatResponse {
+            choices: vec![ChatChoice {
+                message: ChatResponseMessage { content },
+            }],
+        }
+    }
+
+    fn valid_result_json() -> String {
+        serde_json::json!({
+            "summary": "mock summary",
+            "symptoms": ["timeout"],
+            "likelyRootCauses": [{
+                "cause": "network",
+                "evidenceRefs": ["grep_results.json#matches/0"]
+            }],
+            "nextChecks": ["check network"],
+            "fixSuggestions": ["fix network"],
+            "missingInformation": [],
+            "confidence": "high"
+        })
+        .to_string()
     }
 
     fn grep_match(text: &str) -> GrepMatch {

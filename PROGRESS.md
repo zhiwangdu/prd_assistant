@@ -162,6 +162,7 @@ workspaces/task_xxx/
 - Implemented as a Server-internal Rust module.
 - Supports deterministic `stub` and OpenAI-compatible Chat Completions.
 - Supports `llm.model_env` for environment-provided model names while retaining static `llm.model` compatibility.
+- Accepts pure JSON and whole-response JSON Markdown fences while rejecting responses mixed with natural-language commentary.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.
 - Validates result schema, confidence, and task-local grep evidence references.
 - Performs exactly one model request per task attempt with no automatic retry.
@@ -205,16 +206,20 @@ npm run build
 
 Task and LLM verification:
 
-- 22 Rust tests pass.
+- 24 Rust tests pass.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
 - Prompt truncation, Chat Completions parsing, Provider error classification, and evidence refs are tested.
 - LLM model configuration tests cover static values, `model_env` precedence, and missing or empty environment values.
+- Chat Completions parsing tests cover pure JSON, JSON code fences, and rejection of extra natural-language text.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
 - Isolated HTTP smoke on port 50993 verified upload, `202 QUEUED`, polling to `SUCCEEDED`, persisted list/detail, `attempts=1`, and artifact reads.
 - Isolated stub LLM HTTP smoke on port 50995 verified question persistence, `GENERATE_RESULT`, `result.json` / `result.md`, result API, and grep evidence references.
+- Real OpenAI-compatible smoke on port 50994 reached the configured `deepseek-v4-flash` model and completed task `task_1780762062871_3` as `SUCCEEDED`.
+- The successful real-model result persisted `result.json` / `result.md`, returned through the result API, and cited both task-local grep matches.
+- Two preceding real-model attempts returned content that failed the strict result JSON parser, while an equivalent direct request and the third task returned valid JSON. This confirms the end-to-end protocol but leaves output-format stability, JSON response-format enforcement, and bounded schema retry as follow-up work.
 
 Recent HTTP smoke checks:
 

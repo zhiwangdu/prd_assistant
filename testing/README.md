@@ -58,6 +58,7 @@ environment approval -> collect stub -> Agent continuation -> result
 - API `202` 创建、列表、详情、404 和 artifacts 409。
 - stub LLM 单次任务闭环和 result API。
 - Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
+- Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏和混入自然语言的拒绝路径。
 
 ### LLM 测试策略
 
