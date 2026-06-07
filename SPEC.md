@@ -141,6 +141,7 @@ flowchart TD
 - Server 持久化任务并在后台执行，支持重启恢复。
 - Upload session 持久化并支持重启续传。
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
+- Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep 单次生成结构化结果。
 - WEBUI 使用 React + Vite，支持上传、任务证据、单次 LLM 结果、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。

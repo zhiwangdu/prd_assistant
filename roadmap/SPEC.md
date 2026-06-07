@@ -10,13 +10,12 @@
 
 ## 下一阶段优先级
 
-1. Executor dispatcher、Action 协议、Evidence artifact 和恢复语义。
-2. Tool Runner。
-3. Code Evidence。
-4. Analysis state/event store、LLM 结构化决策和预算控制。
-5. Analysis Agent 及 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API。
-6. Environment Collector。
-7. Case Store 保存和召回。
+1. Tool Runner，消费已落地的 Action/Evidence 契约和 `RUN_TOOL` phase。
+2. Code Evidence。
+3. Analysis state/event store、LLM 结构化决策和预算控制。
+4. Analysis Agent 及 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API。
+5. Environment Collector。
+6. Case Store 保存和召回。
 
 ## 阶段门槛
 

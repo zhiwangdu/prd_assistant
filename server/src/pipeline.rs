@@ -10,8 +10,8 @@ use crate::{
     log_analyzer::LogAnalyzer,
     metadata::TaskMetadataContext,
     models::{
-        AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, PipelineOutput,
-        ResultOutput, TaskInput, TaskRecord, UploadRecord,
+        AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, ResultOutput, TaskInput,
+        TaskRecord, UploadRecord,
     },
 };
 
@@ -146,13 +146,9 @@ pub async fn extract_task(config: Arc<AppConfig>, task_record: TaskRecord) -> Re
     .map_err(|err| AppError::internal(format!("task extraction failed: {err}")))
 }
 
-pub async fn search_task(
-    config: Arc<AppConfig>,
-    task_id: &str,
-) -> Result<PipelineOutput, AppError> {
+pub async fn search_task(config: Arc<AppConfig>, task_id: &str) -> Result<(), AppError> {
     let workspace = config.storage.workspace_dir(task_id);
     let extracted_dir = workspace.join("extracted");
-    let manifest_path = workspace.join("manifest.json");
     let grep_results_path = workspace.join("grep_results.json");
     let grep_path = grep_results_path.clone();
     task::spawn_blocking(move || {
@@ -163,10 +159,7 @@ pub async fn search_task(
     .await
     .map_err(|err| AppError::internal(format!("task worker panicked: {err}")))?
     .map_err(|err| AppError::internal(format!("task search failed: {err}")))?;
-    Ok(PipelineOutput {
-        manifest_path,
-        grep_results_path,
-    })
+    Ok(())
 }
 
 pub async fn generate_task_result(

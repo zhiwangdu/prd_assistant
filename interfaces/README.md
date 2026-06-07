@@ -4,6 +4,18 @@
 
 MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Agent 持有调查策略，证据模块只执行受约束能力，LLM Gateway 只提供模型推理。
 
+## 当前实现
+
+Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
+
+- `TaskContext`
+- `AgentAction` / `ActionKind` / `ActionRisk`
+- `EvidenceRef`
+- `EvidenceArtifact` / `EvidenceType` / `EvidenceSummary`
+- `EvidenceProvider`
+
+Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。当前基础日志 pipeline 尚未通过 Action 驱动；Tool Runner 将成为第一个消费该契约的模块。
+
 ## 核心数据
 
 ```rust
@@ -121,3 +133,5 @@ pub enum AgentActionKind {
 ```
 
 所有 action 包含 id、reason、evidence refs、typed input、risk 和 fingerprint。Server 在执行前检查 schema、预算、白名单、幂等和审批要求。
+
+当前 Executor 已按持久化 phase 循环分派 handler，并在推进阶段时校验 expected phase。重启恢复保留中断 phase，为后续 `RUN_TOOL` 和 `PLAN_ANALYSIS` 分支提供基础。

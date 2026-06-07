@@ -54,7 +54,7 @@ pub async fn create_task(
     let question = normalize_question(req.question, state.config.llm.max_input_chars / 2)?;
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 3,
+        schema_version: 4,
         task_id: task_id.clone(),
         source: TaskSource::Upload,
         upload_ids,

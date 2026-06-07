@@ -72,6 +72,10 @@ Chrome Extension or WEBUI
 - Returns `202 Accepted` after raw snapshot creation and runs tasks in the background.
 - Limits concurrent tasks with `server.max_concurrent_tasks` (default 2).
 - Recovers `QUEUED` and interrupted `RUNNING` tasks after restart; successful and failed tasks remain terminal.
+- Uses a phase-driven Executor dispatcher instead of a hard-coded linear executor.
+- Preserves the interrupted phase across restart, increments attempts on resume, and reruns only that idempotent phase.
+- Rejects stale phase advancement and inconsistent persisted `RUNNING`/`SUCCEEDED` state.
+- Defines shared `TaskContext`, Action, EvidenceArtifact, and EvidenceProvider contracts for Tool Runner and later evidence modules.
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 
@@ -222,13 +226,14 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 34 Rust tests pass.
+- 38 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
 - Task API rejects `UPLOADING` records until completion.
 - Metadata context tests cover node/instance/cluster derivation, conflict rejection, workspace persistence, artifacts, prompt inclusion, and rerun preservation.
 - Isolated HTTP smoke on port 50997 created a task with only `nodeId`, derived its instance/cluster IDs, reached `SUCCEEDED`, and returned the immutable Metadata artifact without `rawSnapshot`.
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
+- Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
@@ -259,18 +264,17 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Refactor the Executor dispatcher and define the shared Action/Evidence contracts.
-2. Implement Tool Runner for existing compiled tools:
+1. Implement Tool Runner for existing compiled tools using the shared Action/Evidence contracts:
    - `flux_query_analyzer`
    - `influxql_analyzer`
-3. Implement Code Evidence:
+2. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-4. Implement Analysis Agent state/events and extend LLM Gateway to structured action/final-answer decisions.
-5. Implement user questions, approvals, budgets, idempotency, and restart recovery.
-6. Implement Environment Collector with SSH/SCP whitelists and approval.
-7. Implement Case Store save and recall from manually confirmed final results.
+3. Implement Analysis Agent state/events and extend LLM Gateway to structured action/final-answer decisions.
+4. Implement user questions, approvals, budgets, idempotency, and restart recovery.
+5. Implement Environment Collector with SSH/SCP whitelists and approval.
+6. Implement Case Store save and recall from manually confirmed final results.
 
 ## Documentation Verification
 

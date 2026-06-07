@@ -23,6 +23,8 @@ impl TaskStore {
             let raw = fs::read_to_string(&path)?;
             let task: TaskRecord = serde_json::from_str(&raw)
                 .map_err(|err| anyhow::anyhow!("invalid task record {}: {err}", path.display()))?;
+            validate_loaded_task(&task)
+                .map_err(|err| anyhow::anyhow!("invalid task record {}: {err}", path.display()))?;
             if tasks.insert(task.task_id.clone(), task).is_some() {
                 anyhow::bail!("duplicate task record in {}", path.display());
             }
@@ -79,14 +81,14 @@ impl TaskStore {
     pub async fn start_attempt(
         &self,
         task_id: &str,
-        phase: TaskPhase,
+        initial_phase: TaskPhase,
     ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             if task.status != TaskStatus::Queued {
                 anyhow::bail!("task {task_id} is not queued");
             }
             task.status = TaskStatus::Running;
-            task.phase = Some(phase);
+            task.phase = Some(task.phase.unwrap_or(initial_phase));
             task.attempts += 1;
             task.error = None;
             Ok(())
@@ -94,12 +96,23 @@ impl TaskStore {
         .await
     }
 
-    pub async fn set_phase(&self, task_id: &str, phase: TaskPhase) -> anyhow::Result<TaskRecord> {
+    pub async fn advance_phase(
+        &self,
+        task_id: &str,
+        expected: TaskPhase,
+        next: TaskPhase,
+    ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             if task.status != TaskStatus::Running {
                 anyhow::bail!("task {task_id} is not running");
             }
-            task.phase = Some(phase);
+            if task.phase != Some(expected) {
+                anyhow::bail!(
+                    "task {task_id} phase changed while executing: expected {expected:?}, found {:?}",
+                    task.phase
+                );
+            }
+            task.phase = Some(next);
             Ok(())
         })
         .await
@@ -108,6 +121,7 @@ impl TaskStore {
     pub async fn succeed(
         &self,
         task_id: &str,
+        expected: TaskPhase,
         manifest_path: String,
         grep_results_path: String,
         result_json_path: String,
@@ -115,6 +129,7 @@ impl TaskStore {
     ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             ensure_running(task)?;
+            ensure_phase(task, expected)?;
             task.status = TaskStatus::Succeeded;
             task.phase = None;
             task.error = None;
@@ -135,6 +150,9 @@ impl TaskStore {
     ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             ensure_running(task)?;
+            if let Some(phase) = phase {
+                ensure_phase(task, phase)?;
+            }
             task.status = TaskStatus::Failed;
             task.phase = phase;
             task.error = Some(TaskError { phase, message });
@@ -149,7 +167,6 @@ impl TaskStore {
         for task in tasks.values_mut() {
             if task.status == TaskStatus::Running {
                 task.status = TaskStatus::Queued;
-                task.phase = None;
                 task.error = None;
                 task.updated_at = Utc::now();
                 self.persist(task)?;
@@ -177,6 +194,27 @@ fn ensure_running(task: &TaskRecord) -> anyhow::Result<()> {
     }
     if task.status != TaskStatus::Running {
         anyhow::bail!("task {} is not running", task.task_id);
+    }
+    Ok(())
+}
+
+fn ensure_phase(task: &TaskRecord, expected: TaskPhase) -> anyhow::Result<()> {
+    if task.phase != Some(expected) {
+        anyhow::bail!(
+            "task {} phase changed while executing: expected {expected:?}, found {:?}",
+            task.task_id,
+            task.phase
+        );
+    }
+    Ok(())
+}
+
+fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
+    if task.status == TaskStatus::Running && task.phase.is_none() {
+        anyhow::bail!("RUNNING task {} is missing phase", task.task_id);
+    }
+    if task.status == TaskStatus::Succeeded && task.phase.is_some() {
+        anyhow::bail!("SUCCEEDED task {} must not retain phase", task.task_id);
     }
     Ok(())
 }
@@ -230,6 +268,10 @@ mod tests {
             .start_attempt("task_old", TaskPhase::Extract)
             .await
             .unwrap();
+        store
+            .advance_phase("task_old", TaskPhase::Extract, TaskPhase::SearchLogs)
+            .await
+            .unwrap();
 
         let reloaded = TaskStore::load(dir.clone()).unwrap();
         assert_eq!(reloaded.list().await[0].task_id, "task_new");
@@ -241,7 +283,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["task_old", "task_new"]
         );
-        assert_eq!(reloaded.get("task_old").await.unwrap().attempts, 1);
+        let task_old = reloaded.get("task_old").await.unwrap();
+        assert_eq!(task_old.attempts, 1);
+        assert_eq!(task_old.phase, Some(TaskPhase::SearchLogs));
+        let resumed = reloaded
+            .start_attempt("task_old", TaskPhase::Extract)
+            .await
+            .unwrap();
+        assert_eq!(resumed.attempts, 2);
+        assert_eq!(resumed.phase, Some(TaskPhase::SearchLogs));
         reloaded
             .start_attempt("task_new", TaskPhase::Extract)
             .await
@@ -257,6 +307,7 @@ mod tests {
         assert!(reloaded
             .succeed(
                 "task_new",
+                TaskPhase::Extract,
                 "manifest.json".to_string(),
                 "grep_results.json".to_string(),
                 "result.json".to_string(),
@@ -267,10 +318,65 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn phase_advancement_rejects_stale_dispatchers() {
+        let dir = temp_dir("task-store-phase");
+        let store = TaskStore::load(dir.clone()).unwrap();
+        store.create(task("task_1", Utc::now())).await.unwrap();
+        store
+            .start_attempt("task_1", TaskPhase::Extract)
+            .await
+            .unwrap();
+
+        assert!(store
+            .advance_phase("task_1", TaskPhase::SearchLogs, TaskPhase::GenerateResult)
+            .await
+            .is_err());
+        assert!(store
+            .fail(
+                "task_1",
+                Some(TaskPhase::SearchLogs),
+                "stale failure".to_string()
+            )
+            .await
+            .is_err());
+        assert!(store
+            .succeed(
+                "task_1",
+                TaskPhase::SearchLogs,
+                "manifest.json".to_string(),
+                "grep_results.json".to_string(),
+                "result.json".to_string(),
+                "result.md".to_string()
+            )
+            .await
+            .is_err());
+        assert_eq!(
+            store.get("task_1").await.unwrap().phase,
+            Some(TaskPhase::Extract)
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn corrupt_task_json_fails_loading() {
         let dir = temp_dir("task-store-corrupt");
         fs::write(dir.join("task_bad.json"), b"{bad").unwrap();
+        assert!(TaskStore::load(dir.clone()).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn inconsistent_task_state_fails_loading() {
+        let dir = temp_dir("task-store-inconsistent");
+        let mut record = task("task_bad_state", Utc::now());
+        record.status = TaskStatus::Running;
+        record.phase = None;
+        fs::write(
+            dir.join("task_bad_state.json"),
+            serde_json::to_vec_pretty(&record).unwrap(),
+        )
+        .unwrap();
         assert!(TaskStore::load(dir.clone()).is_err());
         let _ = fs::remove_dir_all(dir);
     }

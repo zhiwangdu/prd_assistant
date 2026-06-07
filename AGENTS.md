@@ -191,13 +191,12 @@ data_dir/
 
 ## 近期开发优先级
 
-1. Executor dispatcher、Action/Evidence 协议和恢复语义重构。
-2. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
-3. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
-4. Analysis Agent State Store 和 LLM Gateway 结构化 action / final answer。
-5. Analysis Agent 多轮动作、追问、审批和预算终止。
-6. Environment Collector 支持 SSH/SCP 测试环境采集。
-7. Case Store 保存和召回。
+1. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`，消费现有 Action/Evidence 契约。
+2. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
+3. Analysis Agent State Store 和 LLM Gateway 结构化 action / final answer。
+4. Analysis Agent 多轮动作、追问、审批和预算终止。
+5. Environment Collector 支持 SSH/SCP 测试环境采集。
+6. Case Store 保存和召回。
 
 ## 提交流程
 

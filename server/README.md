@@ -60,15 +60,16 @@ server/src
     metadata.rs          # 实例/集群/节点元数据 API
   auth.rs              # API Key middleware
   config.rs            # logagent.yaml 加载和默认值
+  contracts.rs         # TaskContext、Action、Evidence 和 Provider 公共契约
   error.rs             # API 错误响应
   fs_utils.rs          # 文件名和路径安全工具
   id.rs                # MVP ID 生成
   log_analyzer.rs      # 解压、manifest 文件扫描、简单 grep
   models.rs            # DTO / task context / evidence output
-  pipeline.rs          # upload 任务执行管线
+  pipeline.rs          # 各执行阶段的幂等处理函数
   state.rs             # AppState 组装和任务启动恢复
   task_store.rs        # 持久化 TaskRecord、状态转换和原子 JSON 更新
-  task_executor.rs     # Tokio semaphore 后台任务执行器
+  task_executor.rs     # Tokio semaphore 和可恢复 phase dispatcher
   upload_store.rs      # 持久化 UploadRecord、分片进度和启动恢复
 ```
 
@@ -103,7 +104,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，阶段为 `EXTRACT`、`SEARCH_LOGS` 和 `GENERATE_RESULT`。`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已保留在模型中供后续 Analysis Agent 使用。
+当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS` 和 `GENERATE_RESULT`。`RUN_TOOL`、`PLAN_ANALYSIS`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
 
 ## 数据目录
 
@@ -188,8 +189,10 @@ MVP 要求：
 - `.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` fallback 再尝试一次。
 - 创建任务支持 `uploadId` 单文件和 `uploadIds` 批量文件；请求验证上传后先复制到 workspace raw 快照、持久化 `QUEUED`，以 `202 Accepted` 立即返回。
 - 后台执行器使用 `server.max_concurrent_tasks` 控制并发，默认 2。
-- Server 重启时将 `RUNNING` 重置为 `QUEUED`，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
-- 每次执行先清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`，只从 raw 快照重建派生产物。
+- 后台执行器按持久化 phase 循环分派单个幂等 handler；每个 handler 成功后使用期望 phase 校验原子推进到下一阶段。
+- Server 重启时将 `RUNNING` 重置为 `QUEUED` 但保留 phase，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
+- 仅从 `EXTRACT` 恢复时清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`；从后续阶段恢复时复用已完成的前置产物。
+- `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。

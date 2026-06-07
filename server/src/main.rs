@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod config;
+mod contracts;
 mod error;
 mod fs_utils;
 mod id;

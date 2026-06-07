@@ -19,6 +19,8 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - task 创建
 - task JSON 持久化、列表、详情和重启恢复
 - semaphore 限制的后台执行
+- phase 驱动的可恢复 Executor dispatcher
+- TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - task artifact 查询
 - metadata 查询和导入确认
 - upload pipeline
@@ -132,14 +134,13 @@ POST task
   -> return 202
 background executor
   -> RUNNING / attempts + 1
-  -> clean derived artifacts
-  -> extract/copy each upload into extracted/<package_name>/
-  -> collect manifest files
-  -> simple grep
-  -> write manifest.json and grep_results.json
-  -> GENERATE_RESULT
-  -> one LLM Gateway call
-  -> write result.json and result.md
+  -> dispatch persisted phase
+  -> EXTRACT: clean/rebuild extracted + manifest
+  -> persist SEARCH_LOGS
+  -> SEARCH_LOGS: rebuild grep evidence
+  -> persist GENERATE_RESULT
+  -> GENERATE_RESULT: one LLM Gateway call
+  -> write result.json/result.md
   -> SUCCEEDED or FAILED
 ```
 
@@ -147,7 +148,18 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-任务文件使用临时文件加 rename 原子替换。启动时损坏 JSON 必须失败；`QUEUED` 和被重置的 `RUNNING` 按创建时间恢复。任务派生产物可删除重建，raw 快照必须保留。
+任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
+
+启动时损坏 JSON、未知 phase、`RUNNING` 无 phase 或 `SUCCEEDED` 仍有 phase 必须失败。`RUNNING` 恢复为 `QUEUED` 时保留 phase，重新获得执行许可后 attempts 加一并从该 phase 幂等重跑。全新 `QUEUED` 任务从 `EXTRACT` 开始；终态不恢复。
+
+公共契约包括：
+
+- `TaskContext`
+- `AgentAction`：`actionId`、`type`、`reason`、`evidenceRefs`、typed `input`、`risk`、`fingerprint`
+- `EvidenceArtifact`：`actionId`、`evidenceType`、workspace 相对路径和裁剪摘要
+- `EvidenceProvider`：后续 Tool Runner、Code Evidence 和 Environment Collector 的统一执行接口
+
+证据 artifact 路径必须是 workspace 相对安全路径。
 
 ## 规划中的调查编排
 
@@ -187,7 +199,6 @@ persist task
 ## 待实现
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
-- task context 关联 Metadata。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
 - 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
@@ -202,6 +213,8 @@ persist task
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
 - Metadata ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
 - pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
+- Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
+- phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - 非顺序 chunk、大小超过预期和未达到预期大小的 complete 必须失败。
 - 损坏上传 JSON、非法 payload 路径或完成记录大小不一致必须阻止启动。

@@ -132,6 +132,8 @@ impl TaskStatus {
 pub enum TaskPhase {
     Extract,
     SearchLogs,
+    RunTool,
+    PlanAnalysis,
     GenerateResult,
 }
 
@@ -260,12 +262,6 @@ pub struct GrepMatch {
     pub line: usize,
     pub keyword: String,
     pub text: String,
-}
-
-#[derive(Debug)]
-pub struct PipelineOutput {
-    pub manifest_path: PathBuf,
-    pub grep_results_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

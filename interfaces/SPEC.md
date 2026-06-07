@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已有 Server DTO 和 Pipeline 内部模型；本文件定义待实现的调查闭环接口。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Analysis Agent、Action Store 和证据 Provider 注册表尚未实现。
 
 ## 公共产物
 
@@ -49,6 +49,13 @@ result.md
 
 每个 action 必须有 `actionId`、`type`、`reason`、`evidenceRefs`、`input`、`risk` 和 `fingerprint`。模块输出必须关联 `actionId`，保证审计和幂等。
 
+第一版 Rust/JSON 契约要求：
+
+- Action type 使用 snake_case。
+- risk 使用稳定大写枚举。
+- Evidence artifact 使用 workspace 相对路径，拒绝绝对路径和 `..`。
+- Provider 返回的 artifact 在持久化前必须通过路径校验。
+
 ## Rust 接口
 
 优先定义：
@@ -69,4 +76,6 @@ result.md
 - 等待状态可通过 message 或 decision 恢复。
 - 重复 action 不产生重复副作用。
 - 公共 JSON schema 可版本化。
+- `RUNNING` 任务重启后保留 phase，并从该 phase 幂等恢复。
+- phase 推进带 expected phase 校验，陈旧执行器不能覆盖状态。
 - README 和 SPEC 在接口、状态或 action 变更时同步更新。
