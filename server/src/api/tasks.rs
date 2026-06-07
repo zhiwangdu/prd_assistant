@@ -8,6 +8,7 @@ use axum::{
 use chrono::Utc;
 
 use crate::{
+    analysis_state::{self, AnalysisSnapshotResponse},
     error::AppError,
     id::next_id,
     models::{
@@ -145,6 +146,22 @@ pub async fn get_task(
         .await
         .map(Json)
         .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))
+}
+
+pub async fn task_analysis(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> Result<Json<AnalysisSnapshotResponse>, AppError> {
+    validate_task_id(&task_id)?;
+    state
+        .tasks
+        .get(&task_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))?;
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    analysis_state::read_snapshot(&workspace)
+        .map(Json)
+        .map_err(|err| AppError::not_found(format!("analysis state not found: {err}")))
 }
 
 pub async fn task_artifacts(
@@ -401,6 +418,7 @@ mod tests {
         assert_eq!(terminal["question"], "Why did the sample fail?");
 
         let result = app
+            .clone()
             .oneshot(
                 Request::get(format!("/api/tasks/{task_id}/result"))
                     .header("authorization", "Bearer test-key")
@@ -417,6 +435,27 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Why did the sample fail?"));
+
+        let analysis = app
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/analysis"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(analysis.status(), StatusCode::OK);
+        let body = to_bytes(analysis.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["state"]["taskId"], task_id);
+        assert_eq!(body["state"]["status"], "SUCCEEDED");
+        assert!(body["state"]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["evidenceType"] == "log_search"));
+        assert!(body["events"].as_array().unwrap().len() >= 3);
         let _ = std::fs::remove_dir_all(root);
     }
 

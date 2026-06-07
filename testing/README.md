@@ -60,6 +60,7 @@ environment approval -> collect stub -> Agent continuation -> result
 - Task Store 创建、更新、重新加载、倒序列表、损坏 JSON 失败和终态保护。
 - `RUNNING -> QUEUED` 启动恢复、phase/attempt 保留和阶段级幂等继续执行。
 - expected phase 推进校验和损坏状态启动失败。
+- Analysis State Store 覆盖 state/event 持久化、pipeline 写入和 `/api/tasks/:task_id/analysis` 读取。
 - raw 快照重复执行、派生产物清理和结果重建。
 - API `202` 创建、列表、详情、404 和 artifacts 409。
 - stub LLM 单次任务闭环和 result API。

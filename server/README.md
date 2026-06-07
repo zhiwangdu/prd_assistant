@@ -200,6 +200,7 @@ MVP 要求：
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
+- Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
@@ -238,6 +239,7 @@ POST /api/uploads/:upload_id/complete
 POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
+GET /api/tasks/:task_id/analysis
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
 GET /api/metadata/instances/:instance_id
@@ -250,11 +252,10 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。
 
 以下 Analysis API 为规划接口，尚未实现：
 
-- `GET /api/tasks/:task_id/analysis`
 - `POST /api/tasks/:task_id/messages`
 - `POST /api/tasks/:task_id/actions/:action_id/decision`
 

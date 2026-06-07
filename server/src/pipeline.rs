@@ -4,6 +4,7 @@ use tokio::task;
 
 use crate::llm_gateway::LlmGateway;
 use crate::{
+    analysis_state,
     config::AppConfig,
     error::AppError,
     fs_utils::relative_string,
@@ -198,6 +199,7 @@ pub async fn generate_task_result(
     let result_markdown_path = workspace.join("result.md");
     let json_path = result_json_path.clone();
     let markdown_path = result_markdown_path.clone();
+    let result_for_state = result.clone();
     task::spawn_blocking(move || {
         write_json(&json_path, &result)?;
         fs::write(&markdown_path, render_result_markdown(&result))?;
@@ -206,6 +208,8 @@ pub async fn generate_task_result(
     .await
     .map_err(|err| AppError::internal(format!("result writer panicked: {err}")))?
     .map_err(|err| AppError::internal(format!("failed to persist LLM result: {err}")))?;
+    analysis_state::record_final_result(&workspace, &result_json_path, &result_for_state)
+        .map_err(|err| AppError::internal(format!("failed to persist analysis state: {err}")))?;
     Ok(ResultOutput {
         result_json_path,
         result_markdown_path,

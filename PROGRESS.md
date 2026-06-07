@@ -15,6 +15,7 @@ Chrome Extension or WEBUI
   -> bounded background extraction / manifest
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
+  -> analysis_state.json / analysis_events.jsonl audit snapshot
   -> one stub or OpenAI-compatible LLM call
   -> persisted result and WEBUI display
 ```
@@ -81,6 +82,7 @@ Chrome Extension or WEBUI
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 - `GENERATE_RESULT` now reads `tool_results/*/result.json` and passes Tool Runner summary/findings into LLM Gateway as citeable evidence.
+- Persists Analysis State Store MVP files, `analysis_state.json` and `analysis_events.jsonl`, and serves them through `GET /api/tasks/:task_id/analysis`.
 
 ### Upload And Workspace
 
@@ -218,6 +220,14 @@ tool_results/<action_id>/
 - Retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors if both attempts fail.
 - Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
 
+### Analysis Agent
+
+- Analysis State Store MVP is implemented as a Server internal module.
+- Current fixed pipeline records analysis initialization, manifest evidence, grep evidence, Tool Runner action/evidence, final result, and failure events.
+- Workspaces now include `analysis_state.json` and append-only `analysis_events.jsonl`.
+- `GET /api/tasks/:task_id/analysis` returns the current state snapshot and event list.
+- Full LLM-driven action loop, user questions, approvals, and budget termination remain planned.
+
 ### Local startup
 
 - Added `scripts/start-local.sh` for one-command local Server startup.
@@ -272,7 +282,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner and LLM tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
+- Tool Runner, LLM, and Analysis State tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

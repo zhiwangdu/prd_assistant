@@ -4,6 +4,7 @@ use tokio::sync::Semaphore;
 use tracing::{error, warn};
 
 use crate::{
+    analysis_state,
     contracts::{EvidenceProvider, TaskContext},
     models::{GrepResults, Manifest, TaskPhase, TaskRecord},
     pipeline::{extract_task, generate_task_result, prepare_pipeline_run, search_task},
@@ -57,6 +58,12 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
             Ok(DispatchOutcome::Continue(task)) => task,
             Ok(DispatchOutcome::Complete) => return Ok(()),
             Err(err) => {
+                let workspace = state.config.storage.workspace_dir(task_id);
+                if let Err(record_err) =
+                    analysis_state::record_failure(&workspace, Some(phase), err.to_string())
+                {
+                    warn!(task_id, "failed to record analysis failure: {record_err}");
+                }
                 state
                     .tasks
                     .fail(task_id, Some(phase), err.to_string())
@@ -81,7 +88,9 @@ async fn dispatch_phase(
         TaskPhase::Extract => {
             let workspace = state.config.storage.workspace_dir(&task.task_id);
             prepare_pipeline_run(&workspace).await?;
+            analysis_state::initialize(&workspace, &task)?;
             extract_task(state.config.clone(), task.clone()).await?;
+            analysis_state::record_manifest(&workspace, &task.task_id)?;
             continue_with(
                 &state,
                 &task.task_id,
@@ -91,7 +100,11 @@ async fn dispatch_phase(
             .await
         }
         TaskPhase::SearchLogs => {
+            let workspace = state.config.storage.workspace_dir(&task.task_id);
+            analysis_state::ensure_initialized(&workspace, &task)?;
             search_task(state.config.clone(), &task.task_id).await?;
+            let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+            analysis_state::record_log_search(&workspace, &grep)?;
             continue_with(
                 &state,
                 &task.task_id,
@@ -101,6 +114,8 @@ async fn dispatch_phase(
             .await
         }
         TaskPhase::RunTool => {
+            let workspace = state.config.storage.workspace_dir(&task.task_id);
+            analysis_state::ensure_initialized(&workspace, &task)?;
             run_tool_phase(state.clone(), &task).await?;
             continue_with(
                 &state,
@@ -111,9 +126,10 @@ async fn dispatch_phase(
             .await
         }
         TaskPhase::GenerateResult => {
+            let workspace = state.config.storage.workspace_dir(&task.task_id);
+            analysis_state::ensure_initialized(&workspace, &task)?;
             let result =
                 generate_task_result(state.config.clone(), state.llm.clone(), task.clone()).await?;
-            let workspace = state.config.storage.workspace_dir(&task.task_id);
             state
                 .tasks
                 .succeed(
@@ -139,7 +155,8 @@ async fn run_tool_phase(state: Arc<AppState>, task: &TaskRecord) -> anyhow::Resu
     let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
     let context = TaskContext::from_record(task, workspace, None);
     for action in state.tool_runner.rule_based_actions(&manifest, &grep) {
-        state.tool_runner.execute(&context, &action).await?;
+        let artifact = state.tool_runner.execute(&context, &action).await?;
+        analysis_state::record_tool_artifact(&context.workspace, &action, &artifact)?;
     }
     Ok(())
 }

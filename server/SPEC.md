@@ -22,6 +22,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
+- Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
 - task artifact 查询
 - metadata 查询和导入确认
 - upload pipeline
@@ -48,6 +49,7 @@ POST /api/uploads/:upload_id/complete
 POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
+GET /api/tasks/:task_id/analysis
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
 GET /api/metadata/instances/:instance_id
@@ -63,7 +65,6 @@ POST /api/metadata/imports/:import_id/confirm
 规划新增：
 
 ```http
-GET /api/tasks/:task_id/analysis
 POST /api/tasks/:task_id/messages
 POST /api/tasks/:task_id/actions/:action_id/decision
 ```
@@ -150,6 +151,7 @@ background executor
   -> RUN_TOOL: rule-based configured tool actions, writes tool_results
   -> persist GENERATE_RESULT
   -> GENERATE_RESULT: LLM Gateway call using grep/metadata/tool evidence, with one correction retry for result schema errors
+  -> append analysis state/events
   -> write result.json/result.md
   -> SUCCEEDED or FAILED
 ```
@@ -185,6 +187,15 @@ tool_results/<action_id>/
 工具路径可来自固定 `path` 或 `path_env` 环境变量；启用工具必须解析为绝对路径，禁用工具不读取 `path_env`。工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
 
 当工具 stdout 是 JSON 时，Server 会解析 `summary` 和 `findings` 并写入 `tool_results/<action_id>/result.json`。`findings` 条目包含可选 `severity`、`file`、`line` 和必填 `message`。stdout 不是 JSON 或字段不匹配时不改变工具执行状态，仍保留 stdout/stderr 并使用通用 summary。
+
+Analysis State Store 当前记录固定 pipeline 的审计状态，不驱动多轮 action loop。Server 会写入：
+
+```text
+analysis_state.json
+analysis_events.jsonl
+```
+
+已记录事件包括初始化、manifest evidence、grep evidence、Tool Runner action/evidence、final result 和 failure。`GET /api/tasks/:task_id/analysis` 返回 state 快照和事件列表。
 
 ## 规划中的调查编排
 
@@ -254,6 +265,7 @@ persist task
 - `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
+- `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - multipart 小文件和批量上传不能在 payload 未 flush 时持久化 `COMPLETE` 记录。

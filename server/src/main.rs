@@ -1,3 +1,4 @@
+mod analysis_state;
 mod api;
 mod auth;
 mod config;

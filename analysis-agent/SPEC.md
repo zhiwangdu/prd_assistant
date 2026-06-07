@@ -6,7 +6,23 @@
 
 ## 当前状态
 
-设计完成，代码未实现。
+已实现 Analysis State Store MVP。当前仍使用固定 pipeline，不启用 LLM 多轮 action loop。
+
+已落地：
+
+- `analysis_state.json`
+- `analysis_events.jsonl`
+- `GET /api/tasks/:task_id/analysis`
+- grep/tool/final result/failure 的基础事件记录
+- 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
+
+尚未实现：
+
+- LLM `ActionDecision`
+- 多轮 action loop
+- `WAITING_FOR_USER`
+- `WAITING_FOR_APPROVAL`
+- 预算终止和重复 action 防护
 
 ## 输入
 
@@ -23,6 +39,13 @@
 - 追加的 `analysis_events.jsonl`
 - 一个待 Server 处理的结构化 action
 - 终态时的 `result.json` 和 `result.md`
+
+当前 `/analysis` 响应包含：
+
+- `statePath`
+- `eventsPath`
+- `state`
+- `events`
 
 ## 状态模型
 

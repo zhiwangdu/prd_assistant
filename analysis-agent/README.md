@@ -26,6 +26,26 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 
 初始日志提取不是固定的一次性前置流水线。Agent 可以在后续轮次继续请求更精确的日志搜索、工具分析、代码检索或环境采集。
 
+## 当前实现状态
+
+已实现 Analysis State Store MVP，暂不启用 LLM 多轮 action loop。
+
+当前 Server 会在现有固定 pipeline 中持久化：
+
+- `analysis_state.json`
+- `analysis_events.jsonl`
+
+已记录的事件和状态包括：
+
+- analysis 初始化。
+- manifest 证据。
+- grep evidence。
+- Tool Runner action 和 tool evidence。
+- final result。
+- failure 事件。
+
+`GET /api/tasks/:task_id/analysis` 可读取当前 state 和事件流。真实 `flux_query_analyzer` / `influxql_analyzer` 尚未完成时，Tool Runner 继续使用配置中的 mock/stub 工具替代，保证 action/event/evidence 链路先稳定。
+
 ## 上下文产物
 
 每个 task workspace 持久化：

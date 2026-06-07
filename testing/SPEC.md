@@ -22,6 +22,7 @@
 - Server 单测覆盖单字符串形式 `missingInformation` 规范化为字符串数组。
 - Server 单测覆盖 LLM schema 修正重试提示和字段级解析错误消息。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
+- Server 单测覆盖 Analysis State Store state/event 持久化和 `/api/tasks/:task_id/analysis`。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。
 - Server 单测覆盖 Tool Runner 配置校验、规则版多输入文件选择、稳定 action id、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
