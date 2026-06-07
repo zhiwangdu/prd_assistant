@@ -17,9 +17,10 @@
 
 ## 第 1 阶段：持久化任务基础
 
-- Server 持久化任务列表、稳定状态和执行阶段。
-- Metadata 接入 task context，生成 `metadata_context.json`。
-- WebUI 从 Server 读取任务列表，不再只依赖 localStorage。
+- Server 持久化任务列表、Upload session、稳定状态和执行阶段。（已完成）
+- Metadata 接入 task context，生成 `metadata_context.json`。（已完成）
+- WebUI 从 Server 读取任务列表，不再只依赖 localStorage。（已完成）
+- 将线性 Pipeline 重构为可恢复 Executor dispatcher，并定义 Action/Evidence 协议。
 - 定义 analysis state/event store 和 schema version。
 
 ## 第 2 阶段：证据能力

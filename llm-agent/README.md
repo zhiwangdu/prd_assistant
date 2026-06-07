@@ -27,7 +27,7 @@ LLM Gateway 不负责：
 当前作为 Server 内部 Rust 模块实现了单次最终结果生成：
 
 ```text
-question + manifest.json + grep_results.json
+question + manifest.json + grep_results.json + metadata_context.json
   -> Prompt 裁剪
   -> stub 或 OpenAI-compatible Chat Completions
   -> schema / evidence ref 校验
@@ -37,6 +37,8 @@ question + manifest.json + grep_results.json
 当前不返回 action、不重试、不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。
 
 响应解析接受纯 JSON，或整个响应为单个 `json`/无语言标记 Markdown 代码围栏。不会从附带自然语言说明的响应中猜测提取 JSON。
+
+Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
 
 ## 配置
 

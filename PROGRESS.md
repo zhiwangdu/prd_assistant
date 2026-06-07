@@ -162,6 +162,9 @@ workspaces/task_xxx/
 - CSV import remains reserved but not implemented.
 - Raw openGemini snapshots are preserved.
 - Shard and Index owners are modeled as PT IDs and resolved through PtView to DataNodes.
+- Task creation accepts optional instance, cluster, and node IDs, resolves related IDs, and rejects unknown or conflicting relationships.
+- Persists an immutable normalized task snapshot as `metadata_context.json` without duplicating the raw Metadata snapshot.
+- LLM prompts include bounded product, version, environment, node, database, and partition summaries.
 
 ### LLM Gateway
 
@@ -219,9 +222,11 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 31 Rust tests pass.
+- 34 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
 - Task API rejects `UPLOADING` records until completion.
+- Metadata context tests cover node/instance/cluster derivation, conflict rejection, workspace persistence, artifacts, prompt inclusion, and rerun preservation.
+- Isolated HTTP smoke on port 50997 created a task with only `nodeId`, derived its instance/cluster IDs, reached `SUCCEEDED`, and returned the immutable Metadata artifact without `rawSnapshot`.
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
@@ -254,21 +259,18 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Run one manual smoke against the configured real OpenAI-compatible Provider.
-2. Connect Metadata to task creation and write `metadata_context.json`.
-3. Implement Tool Runner for existing compiled tools:
+1. Refactor the Executor dispatcher and define the shared Action/Evidence contracts.
+2. Implement Tool Runner for existing compiled tools:
    - `flux_query_analyzer`
    - `influxql_analyzer`
-4. Implement Code Evidence:
+3. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-5. Implement Environment Collector:
-   - SSH/SCP test environment collection
-   - whitelist nodes, paths, and commands
-6. Implement Analysis Agent state/events, action executor, user questions, approvals, budgets, idempotency, and restart recovery.
-7. Extend LLM Gateway to structured action/final-answer decisions, usage auditing, and bounded retries.
-8. Implement Case Store save and recall from manually confirmed final results.
+4. Implement Analysis Agent state/events and extend LLM Gateway to structured action/final-answer decisions.
+5. Implement user questions, approvals, budgets, idempotency, and restart recovery.
+6. Implement Environment Collector with SSH/SCP whitelists and approval.
+7. Implement Case Store save and recall from manually confirmed final results.
 
 ## Documentation Verification
 

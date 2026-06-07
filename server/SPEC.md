@@ -98,6 +98,7 @@ data_dir/
         package_name/
       manifest.json
       grep_results.json
+      metadata_context.json
       analysis_state.json
       analysis_events.jsonl
       result.json
@@ -121,7 +122,7 @@ storage.data_dir/uploads/<upload_id>/<filename>
 
 ## 当前任务模型与 Pipeline
 
-`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、状态、阶段、attempts、错误、artifact/result 路径和 RFC 3339 时间。
+`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、状态、阶段、attempts、错误、metadata/artifact/result 路径和 RFC 3339 时间。
 
 ```text
 POST task
@@ -142,7 +143,7 @@ background executor
   -> SUCCEEDED or FAILED
 ```
 
-`POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Batch uploads are analyzed in one workspace so later stages can run joint analysis across all logs.
+`POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Optional `instanceId` / `clusterId` / `nodeId` are resolved against Metadata before persistence.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
@@ -199,6 +200,8 @@ persist task
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
+- Metadata ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
+- pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - 非顺序 chunk、大小超过预期和未达到预期大小的 complete 必须失败。
 - 损坏上传 JSON、非法 payload 路径或完成记录大小不一致必须阻止启动。

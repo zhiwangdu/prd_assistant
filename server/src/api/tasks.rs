@@ -15,7 +15,7 @@ use crate::{
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
-    pipeline::prepare_raw_snapshot,
+    pipeline::{prepare_raw_snapshot, write_metadata_context},
     state::AppState,
 };
 
@@ -39,18 +39,30 @@ pub async fn create_task(
         uploads.push(upload);
     }
 
+    let metadata_context = state
+        .metadata
+        .resolve_task_context(
+            normalize_optional_id(req.instance_id),
+            normalize_optional_id(req.cluster_id),
+            normalize_optional_id(req.node_id),
+        )
+        .await?;
     let task_id = next_id("task");
     let workspace = state.config.storage.workspace_dir(&task_id);
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
+    let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
     let question = normalize_question(req.question, state.config.llm.max_input_chars / 2)?;
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 2,
+        schema_version: 3,
         task_id: task_id.clone(),
         source: TaskSource::Upload,
         upload_ids,
         inputs,
         source_url: req.source_url,
+        instance_id: metadata_context.instance_id.clone(),
+        cluster_id: metadata_context.cluster_id.clone(),
+        node_id: metadata_context.node_id.clone(),
         question,
         status: TaskStatus::Queued,
         phase: None,
@@ -58,6 +70,7 @@ pub async fn create_task(
         error: None,
         manifest_path: None,
         grep_results_path: None,
+        metadata_context_path: Some(metadata_context_path.display().to_string()),
         result_json_path: None,
         result_markdown_path: None,
         created_at: now,
@@ -160,6 +173,27 @@ pub async fn task_artifacts(
         .ok_or_else(|| AppError::internal("successful task is missing grepResultsPath"))?;
     let manifest = read_json_file(&manifest_path).await?;
     let grep_results = read_json_file(&grep_results_path).await?;
+    let metadata_context_path = match task.metadata_context_path {
+        Some(path) => {
+            let path = std::path::PathBuf::from(path);
+            let expected = state
+                .config
+                .storage
+                .workspace_dir(&task_id)
+                .join("metadata_context.json");
+            if path != expected {
+                return Err(AppError::internal(
+                    "task contains invalid metadataContextPath",
+                ));
+            }
+            Some(path)
+        }
+        None => None,
+    };
+    let metadata_context = match metadata_context_path.as_deref() {
+        Some(path) => Some(read_json_file(path).await?),
+        None => None,
+    };
 
     Ok(Json(TaskArtifactsResponse {
         task_id,
@@ -167,6 +201,8 @@ pub async fn task_artifacts(
         grep_results_path: grep_results_path.display().to_string(),
         manifest,
         grep_results,
+        metadata_context_path: metadata_context_path.map(|path| path.display().to_string()),
+        metadata_context,
     }))
 }
 
@@ -198,6 +234,12 @@ fn normalize_question(question: Option<String>, max_chars: usize) -> Result<Stri
         )));
     }
     Ok(question)
+}
+
+fn normalize_optional_id(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 async fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, AppError> {
@@ -245,6 +287,7 @@ mod tests {
             AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
             StorageSettings,
         },
+        metadata::MetadataImportRequest,
         models::{UploadRecord, UploadStatus},
     };
 
@@ -355,6 +398,9 @@ mod tests {
                 upload_ids: vec!["upl_test".to_string()],
                 inputs: vec![],
                 source_url: None,
+                instance_id: None,
+                cluster_id: None,
+                node_id: None,
                 question: default_task_question(),
                 status: TaskStatus::Queued,
                 phase: None,
@@ -362,6 +408,7 @@ mod tests {
                 error: None,
                 manifest_path: None,
                 grep_results_path: None,
+                metadata_context_path: None,
                 result_json_path: None,
                 result_markdown_path: None,
                 created_at: now,
@@ -483,6 +530,108 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert!(String::from_utf8_lossy(&body).contains("is not complete"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn task_api_persists_and_serves_metadata_context() {
+        let (state, root) = test_state();
+        create_test_upload(&state, "upl_metadata", UploadStatus::Complete).await;
+        let preview = state
+            .metadata
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                content: r#"
+instances:
+  - instanceId: i-1
+    clusterId: c-1
+    nodeId: n-1
+    product: opengemini
+    version: 1.3.0
+    environment: test
+clusters:
+  - clusterId: c-1
+    product: opengemini
+    nodes: [n-1]
+nodes:
+  - nodeId: n-1
+    instanceId: i-1
+    role: data
+    status: active
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        state
+            .metadata
+            .confirm_import(&preview.import_id)
+            .await
+            .unwrap();
+        let app = api::router(state.clone()).with_state(state);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadId":"upl_metadata","instanceId":"i-1"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+
+        let mut terminal = None;
+        for _ in 0..100 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/api/tasks/{task_id}"))
+                        .header("authorization", "Bearer test-key")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            if body["status"] == "SUCCEEDED" {
+                terminal = Some(body);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let terminal = terminal.expect("task did not succeed");
+        assert_eq!(terminal["instanceId"], "i-1");
+        assert_eq!(terminal["clusterId"], "c-1");
+        assert_eq!(terminal["nodeId"], "n-1");
+
+        let artifacts = app
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/artifacts"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(artifacts.status(), StatusCode::OK);
+        let body = to_bytes(artifacts.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["metadataContext"]["product"], "opengemini");
+        assert_eq!(body["metadataContext"]["version"], "1.3.0");
+        assert_eq!(body["metadataContext"]["clusterNodes"][0]["nodeId"], "n-1");
+        assert!(body["metadataContextPath"]
+            .as_str()
+            .unwrap()
+            .ends_with("metadata_context.json"));
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -8,6 +8,7 @@ use crate::{
     error::AppError,
     fs_utils::relative_string,
     log_analyzer::LogAnalyzer,
+    metadata::TaskMetadataContext,
     models::{
         AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, PipelineOutput,
         ResultOutput, TaskInput, TaskRecord, UploadRecord,
@@ -47,6 +48,26 @@ pub async fn prepare_raw_snapshot(
         });
     }
     Ok(inputs)
+}
+
+pub async fn write_metadata_context(
+    workspace: &Path,
+    context: &TaskMetadataContext,
+) -> Result<std::path::PathBuf, AppError> {
+    tokio::fs::create_dir_all(workspace)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
+    let path = workspace.join("metadata_context.json");
+    let temp = workspace.join(".metadata_context.json.tmp");
+    let encoded = serde_json::to_vec_pretty(context)
+        .map_err(|err| AppError::internal(format!("failed to encode metadata context: {err}")))?;
+    tokio::fs::write(&temp, encoded)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to write metadata context: {err}")))?;
+    tokio::fs::rename(&temp, &path)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist metadata context: {err}")))?;
+    Ok(path)
 }
 
 pub async fn prepare_pipeline_run(workspace: &Path) -> Result<(), AppError> {
@@ -156,8 +177,20 @@ pub async fn generate_task_result(
     let workspace = config.storage.workspace_dir(&task.task_id);
     let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
     let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
+    let metadata_context = match task.metadata_context_path.as_deref() {
+        Some(path) => {
+            let expected = workspace.join("metadata_context.json");
+            if Path::new(path) != expected {
+                return Err(AppError::internal(
+                    "task contains invalid metadataContextPath",
+                ));
+            }
+            Some(read_json(&expected).await?)
+        }
+        None => None,
+    };
     let result = gateway
-        .generate_result(&task.question, &manifest, &grep)
+        .generate_result(&task.question, &manifest, &grep, metadata_context.as_ref())
         .await
         .map_err(|err| AppError::internal(format!("LLM result generation failed: {err}")))?;
     let result_json_path = workspace.join("result.json");
@@ -325,6 +358,7 @@ mod tests {
         prepare_pipeline_run(&workspace).await.unwrap();
         extract_task(config.clone(), record.clone()).await.unwrap();
         search_task(config.clone(), "task_batch").await.unwrap();
+        fs::write(workspace.join("metadata_context.json"), "{}").unwrap();
         fs::write(workspace.join("extracted/stale.log"), "stale").unwrap();
         fs::write(workspace.join("result.json"), "{}").unwrap();
         fs::write(workspace.join("result.md"), "stale").unwrap();
@@ -334,6 +368,7 @@ mod tests {
         search_task(config, "task_batch").await.unwrap();
 
         assert!(!workspace.join("extracted/stale.log").exists());
+        assert!(workspace.join("metadata_context.json").exists());
         assert!(!workspace.join("result.json").exists());
         assert!(!workspace.join("result.md").exists());
         let manifest: serde_json::Value =
@@ -363,6 +398,9 @@ mod tests {
             upload_ids: inputs.iter().map(|input| input.upload_id.clone()).collect(),
             inputs,
             source_url: Some("batch-test".to_string()),
+            instance_id: None,
+            cluster_id: None,
+            node_id: None,
             question: "analyze".to_string(),
             status: TaskStatus::Running,
             phase: None,
@@ -370,6 +408,7 @@ mod tests {
             error: None,
             manifest_path: None,
             grep_results_path: None,
+            metadata_context_path: None,
             result_json_path: None,
             result_markdown_path: None,
             created_at: now,

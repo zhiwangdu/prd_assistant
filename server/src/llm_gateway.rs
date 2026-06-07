@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{LlmProvider, LlmSettings},
+    metadata::TaskMetadataContext,
     models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause},
 };
 
@@ -30,8 +31,15 @@ impl LlmGateway {
         question: &str,
         manifest: &Manifest,
         grep: &GrepResults,
+        metadata: Option<&TaskMetadataContext>,
     ) -> anyhow::Result<AnalysisResult> {
-        let prompt = build_prompt(question, manifest, grep, self.settings.max_input_chars);
+        let prompt = build_prompt(
+            question,
+            manifest,
+            grep,
+            metadata,
+            self.settings.max_input_chars,
+        );
         let draft = match self.settings.provider {
             LlmProvider::Stub => stub_result(question, grep),
             LlmProvider::OpenAiCompatible => self.call_chat_completions(&prompt).await?,
@@ -126,6 +134,7 @@ fn build_prompt(
     question: &str,
     manifest: &Manifest,
     grep: &GrepResults,
+    metadata: Option<&TaskMetadataContext>,
     max_input_chars: usize,
 ) -> String {
     const OMITTED_NOTE_RESERVE: usize = 64;
@@ -147,6 +156,10 @@ fn build_prompt(
         question,
         truncate_chars(&manifest_summary, max_input_chars / 3)
     );
+    if let Some(metadata) = metadata {
+        prompt.push_str("\nMetadata 上下文:\n");
+        prompt.push_str(&metadata_prompt_summary(metadata));
+    }
     prompt = truncate_chars(&prompt, evidence_limit).to_string();
     prompt.push_str("\nGrep 证据:\n");
     prompt = truncate_chars(&prompt, evidence_limit).to_string();
@@ -168,6 +181,56 @@ fn build_prompt(
         prompt.push_str(&note);
     }
     prompt
+}
+
+fn metadata_prompt_summary(metadata: &TaskMetadataContext) -> String {
+    let cluster = metadata.cluster.as_ref();
+    let databases = cluster
+        .map(|cluster| {
+            cluster
+                .databases
+                .iter()
+                .map(|database| database.name.as_str())
+                .take(20)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let partitions = cluster
+        .map(|cluster| {
+            let abnormal = cluster
+                .partition_views
+                .iter()
+                .filter(|partition| partition.status_text != "online")
+                .count();
+            format!(
+                "{} total, {} non-online",
+                cluster.partition_views.len(),
+                abnormal
+            )
+        })
+        .unwrap_or_else(|| "0 total".to_string());
+    let node = metadata.node.as_ref();
+    format!(
+        "instanceId: {}\nclusterId: {}\nnodeId: {}\nproduct: {}\nversion: {}\nenvironment: {}\nselectedNode: kind={}, host={}, role={}, status={}\nclusterNodes: {}\ndatabases: {}\npartitions: {}\n",
+        metadata.instance_id.as_deref().unwrap_or("not selected"),
+        metadata.cluster_id.as_deref().unwrap_or("not selected"),
+        metadata.node_id.as_deref().unwrap_or("not selected"),
+        metadata.product.as_deref().unwrap_or("unknown"),
+        metadata.version.as_deref().unwrap_or("unknown"),
+        metadata.environment.as_deref().unwrap_or("unknown"),
+        node.and_then(|node| node.kind.as_deref()).unwrap_or("unknown"),
+        node.and_then(|node| node.host.as_deref()).unwrap_or("unknown"),
+        node.and_then(|node| node.role.as_deref()).unwrap_or("unknown"),
+        node.and_then(|node| node.status.as_deref()).unwrap_or("unknown"),
+        metadata.cluster_nodes.len(),
+        if databases.is_empty() {
+            "none"
+        } else {
+            databases.as_str()
+        },
+        partitions,
+    )
 }
 
 fn truncate_chars(value: &str, limit: usize) -> &str {
@@ -286,7 +349,9 @@ struct ResultDraft {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metadata::{ClusterMetadata, NodeMetadata, TaskMetadataContext};
     use crate::models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource};
+    use chrono::Utc;
 
     #[test]
     fn prompt_keeps_refs_and_reports_omitted_matches() {
@@ -299,7 +364,7 @@ mod tests {
                 grep_match("second evidence that should be omitted"),
             ],
         };
-        let prompt = build_prompt("why", &manifest, &grep, 220);
+        let prompt = build_prompt("why", &manifest, &grep, None, 220);
         assert!(prompt.chars().count() <= 220);
         assert!(prompt.contains("grep_results.json#matches/0"));
         assert!(prompt.contains("省略"));
@@ -332,9 +397,60 @@ mod tests {
                 total_matches: 0,
                 matches: vec![],
             },
+            None,
             1024,
         );
         assert!(prompt.chars().count() <= 1024);
+    }
+
+    #[test]
+    fn prompt_includes_metadata_context_summary() {
+        let metadata = TaskMetadataContext {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            instance_id: Some("i-1".to_string()),
+            cluster_id: Some("c-1".to_string()),
+            node_id: Some("n-1".to_string()),
+            product: Some("opengemini".to_string()),
+            version: Some("1.3.0".to_string()),
+            environment: Some("test".to_string()),
+            instance: None,
+            cluster: Some(ClusterMetadata {
+                cluster_id: "c-1".to_string(),
+                databases: vec![crate::metadata::DatabaseMetadata {
+                    name: "db0".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            node: Some(NodeMetadata {
+                node_id: "n-1".to_string(),
+                kind: Some("data".to_string()),
+                status: Some("active".to_string()),
+                ..Default::default()
+            }),
+            cluster_nodes: vec![NodeMetadata {
+                node_id: "n-1".to_string(),
+                ..Default::default()
+            }],
+        };
+
+        let prompt = build_prompt(
+            "why",
+            &fixture_manifest(),
+            &GrepResults {
+                keywords: vec![],
+                total_matches: 0,
+                matches: vec![],
+            },
+            Some(&metadata),
+            2048,
+        );
+
+        assert!(prompt.contains("Metadata 上下文"));
+        assert!(prompt.contains("product: opengemini"));
+        assert!(prompt.contains("version: 1.3.0"));
+        assert!(prompt.contains("databases: db0"));
     }
 
     #[test]

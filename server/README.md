@@ -127,6 +127,7 @@ FAILED
   collected/
   manifest.json
   error_summary.json
+  metadata_context.json
   contexts.jsonl
   tool_results/
   code_evidence.json
@@ -189,6 +190,7 @@ MVP 要求：
 - 后台执行器使用 `server.max_concurrent_tasks` 控制并发，默认 2。
 - Server 重启时将 `RUNNING` 重置为 `QUEUED`，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
 - 每次执行先清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`，只从 raw 快照重建派生产物。
+- task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `SEARCH_LOGS` 后单次调用 LLM Gateway，写入 `result.json` 和 `result.md`；调用失败时任务进入 `FAILED / GENERATE_RESULT`。
@@ -302,6 +304,9 @@ UPLOADING -> COMPLETE
 {
   "uploadId": "upl_123",
   "question": "请分析连接超时的可能原因",
+  "instanceId": "i-123",
+  "clusterId": "c-1",
+  "nodeId": "n-1",
   "sourceUrl": "https://logs.example/export/123"
 }
 ```
@@ -309,6 +314,8 @@ UPLOADING -> COMPLETE
 响应为 `202 Accepted`，包含 `taskId`、`url`、`status`、`phase` 和 `createdAt`。Native Agent 继续使用原有 `taskId`、`url` 字段。
 
 `question` 可选；未提供时使用默认日志分析问题。长度上限为 `llm.max_input_chars / 2`。
+
+Metadata ID 均可选。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应包含 `metadataContextPath` 和 `metadataContext`。
 
 `GET /api/tasks/:task_id/artifacts` 仅允许 `SUCCEEDED`；其他状态返回 `409 Conflict`，JSON 中包含当前 `status`。未知任务返回 `404 Not Found`。
 

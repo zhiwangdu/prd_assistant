@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -182,6 +183,23 @@ pub struct PartitionViewMetadata {
     pub replica_group_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskMetadataContext {
+    pub schema_version: u32,
+    pub resolved_at: DateTime<Utc>,
+    pub instance_id: Option<String>,
+    pub cluster_id: Option<String>,
+    pub node_id: Option<String>,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub instance: Option<InstanceMetadata>,
+    pub cluster: Option<ClusterMetadata>,
+    pub node: Option<NodeMetadata>,
+    pub cluster_nodes: Vec<NodeMetadata>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataTemplate {
@@ -313,25 +331,142 @@ impl MetadataStore {
 
     pub async fn list_cluster_nodes(&self, cluster_id: &str) -> Vec<NodeMetadata> {
         let records = self.records.read().await;
-        records
-            .nodes
-            .values()
-            .filter(|node| {
-                records
-                    .clusters
-                    .get(cluster_id)
-                    .map(|cluster| cluster.nodes.iter().any(|node_id| node_id == &node.node_id))
-                    .unwrap_or(false)
-                    || node
-                        .instance_id
-                        .as_ref()
-                        .and_then(|instance_id| records.instances.get(instance_id))
-                        .and_then(|instance| instance.cluster_id.as_ref())
-                        .map(|node_cluster_id| node_cluster_id == cluster_id)
-                        .unwrap_or(false)
+        cluster_nodes(&records, cluster_id)
+    }
+
+    pub async fn resolve_task_context(
+        &self,
+        requested_instance_id: Option<String>,
+        requested_cluster_id: Option<String>,
+        requested_node_id: Option<String>,
+    ) -> Result<TaskMetadataContext, AppError> {
+        let records = self.records.read().await;
+        let requested_instance = requested_instance_id
+            .as_ref()
+            .map(|instance_id| {
+                records.instances.get(instance_id).cloned().ok_or_else(|| {
+                    AppError::bad_request(format!("unknown instanceId {instance_id}"))
+                })
             })
-            .cloned()
-            .collect()
+            .transpose()?;
+        let node_id = merge_related_id(
+            "nodeId",
+            requested_node_id,
+            requested_instance
+                .as_ref()
+                .and_then(|value| value.node_id.clone()),
+        )?;
+        let node = node_id
+            .as_ref()
+            .map(|node_id| {
+                records
+                    .nodes
+                    .get(node_id)
+                    .cloned()
+                    .ok_or_else(|| AppError::bad_request(format!("unknown nodeId {node_id}")))
+            })
+            .transpose()?;
+        let instance_id = merge_related_id(
+            "instanceId",
+            requested_instance_id,
+            node.as_ref().and_then(|value| value.instance_id.clone()),
+        )?;
+        let instance = instance_id
+            .as_ref()
+            .map(|instance_id| {
+                records.instances.get(instance_id).cloned().ok_or_else(|| {
+                    AppError::bad_request(format!("unknown instanceId {instance_id}"))
+                })
+            })
+            .transpose()?;
+        let node_cluster_id = node.as_ref().and_then(|node| {
+            let matches = records
+                .clusters
+                .values()
+                .filter(|cluster| cluster.nodes.iter().any(|value| value == &node.node_id))
+                .map(|cluster| cluster.cluster_id.clone())
+                .collect::<Vec<_>>();
+            (matches.len() == 1).then(|| matches[0].clone())
+        });
+        let derived_cluster_id = instance
+            .as_ref()
+            .and_then(|value| value.cluster_id.clone())
+            .or(node_cluster_id);
+        let cluster_id = merge_related_id("clusterId", requested_cluster_id, derived_cluster_id)?;
+        let cluster =
+            cluster_id
+                .as_ref()
+                .map(|cluster_id| {
+                    records.clusters.get(cluster_id).cloned().ok_or_else(|| {
+                        AppError::bad_request(format!("unknown clusterId {cluster_id}"))
+                    })
+                })
+                .transpose()?;
+
+        if let (Some(instance), Some(node)) = (&instance, &node) {
+            if let Some(node_instance_id) = node.instance_id.as_ref() {
+                if node_instance_id != &instance.instance_id {
+                    return Err(AppError::bad_request(format!(
+                        "nodeId {} belongs to instanceId {}, not {}",
+                        node.node_id, node_instance_id, instance.instance_id
+                    )));
+                }
+            }
+        }
+        if let (Some(cluster_id), Some(node)) = (&cluster_id, &node) {
+            let belongs = cluster
+                .as_ref()
+                .map(|cluster| cluster.nodes.iter().any(|value| value == &node.node_id))
+                .unwrap_or(false)
+                || node
+                    .instance_id
+                    .as_ref()
+                    .and_then(|instance_id| records.instances.get(instance_id))
+                    .and_then(|instance| instance.cluster_id.as_ref())
+                    == Some(cluster_id);
+            if !belongs {
+                return Err(AppError::bad_request(format!(
+                    "nodeId {} does not belong to clusterId {}",
+                    node.node_id, cluster_id
+                )));
+            }
+        }
+
+        let mut cluster = cluster;
+        if let Some(cluster) = cluster.as_mut() {
+            cluster.raw_snapshot = None;
+        }
+        let cluster_nodes = cluster_id
+            .as_deref()
+            .map(|cluster_id| cluster_nodes(&records, cluster_id))
+            .unwrap_or_default();
+        let product = instance
+            .as_ref()
+            .and_then(|value| value.product.clone())
+            .or_else(|| cluster.as_ref().and_then(|value| value.product.clone()));
+        let version = instance
+            .as_ref()
+            .and_then(|value| value.version.clone())
+            .or_else(|| cluster.as_ref().and_then(|value| value.version.clone()));
+        let environment = instance
+            .as_ref()
+            .and_then(|value| value.environment.clone())
+            .or_else(|| cluster.as_ref().and_then(|value| value.environment.clone()));
+
+        Ok(TaskMetadataContext {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            instance_id,
+            cluster_id,
+            node_id,
+            product,
+            version,
+            environment,
+            instance,
+            cluster,
+            node,
+            cluster_nodes,
+        })
     }
 
     pub async fn create_import_preview(
@@ -430,6 +565,44 @@ impl MetadataStore {
             summary: pending.preview.summary,
         })
     }
+}
+
+fn merge_related_id(
+    name: &str,
+    requested: Option<String>,
+    derived: Option<String>,
+) -> Result<Option<String>, AppError> {
+    match (requested, derived) {
+        (Some(requested), Some(derived)) if requested != derived => Err(AppError::bad_request(
+            format!("{name} {requested} conflicts with instance metadata value {derived}"),
+        )),
+        (Some(requested), _) => Ok(Some(requested)),
+        (None, derived) => Ok(derived),
+    }
+}
+
+fn cluster_nodes(records: &MetadataRecords, cluster_id: &str) -> Vec<NodeMetadata> {
+    let mut nodes = records
+        .nodes
+        .values()
+        .filter(|node| {
+            records
+                .clusters
+                .get(cluster_id)
+                .map(|cluster| cluster.nodes.iter().any(|node_id| node_id == &node.node_id))
+                .unwrap_or(false)
+                || node
+                    .instance_id
+                    .as_ref()
+                    .and_then(|instance_id| records.instances.get(instance_id))
+                    .and_then(|instance| instance.cluster_id.as_ref())
+                    .map(|node_cluster_id| node_cluster_id == cluster_id)
+                    .unwrap_or(false)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+    nodes
 }
 
 async fn fetch_metadata_content(url: &str) -> Result<String, AppError> {
@@ -1309,7 +1482,51 @@ nodes:
         );
         assert_eq!(store.get_cluster("c-1").await.unwrap().nodes, vec!["n-1"]);
         assert_eq!(store.list_cluster_nodes("c-1").await.len(), 1);
+        let context = store
+            .resolve_task_context(None, None, Some("n-1".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(context.instance_id.as_deref(), Some("i-123"));
+        assert_eq!(context.cluster_id.as_deref(), Some("c-1"));
+        assert_eq!(context.node_id.as_deref(), Some("n-1"));
+        assert_eq!(context.product.as_deref(), Some("redis"));
+        assert_eq!(context.cluster_nodes.len(), 1);
+        assert!(context
+            .cluster
+            .as_ref()
+            .and_then(|cluster| cluster.raw_snapshot.as_ref())
+            .is_none());
         assert!(fixture.root.join("metadata/instances.json").exists());
+    }
+
+    #[tokio::test]
+    async fn rejects_conflicting_task_metadata_selection() {
+        let fixture = Fixture::new("metadata-task-conflict");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                content: r#"
+instances:
+  - instanceId: i-1
+    clusterId: c-1
+clusters:
+  - clusterId: c-1
+  - clusterId: c-2
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+
+        let error = store
+            .resolve_task_context(Some("i-1".to_string()), Some("c-2".to_string()), None)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("conflicts"));
     }
 
     #[tokio::test]

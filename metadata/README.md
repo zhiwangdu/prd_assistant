@@ -17,12 +17,13 @@ Metadata 模块已完成基础 Rust Server 实现。
 - Server 侧从真实元数据 URL 拉取并预览。
 - 导入确认后写入 metadata store。
 - WEBUI Metadata 页面。
+- task 创建时关联 `instanceId` / `clusterId` / `nodeId`。
+- 在 task workspace 原子写入 `metadata_context.json`。
+- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 LLM Gateway。
 
 暂未实现：
 
 - CSV 模板解析。
-- task 创建时关联 `instanceId` / `clusterId` / `nodeId`。
-- `metadata_context.json` 写入 workspace。
 
 ## 职责
 
@@ -199,7 +200,9 @@ Authorization: Bearer <api-key>
 - `clusterId`
 - `nodeId`
 
-这些字段进入 task context，后续用于日志分析和证据关联。
+这些字段进入 task context，后续用于日志分析和证据关联。只填写 `instanceId` 或 `nodeId` 时，Server 会从已确认 Metadata 自动推导关联 ID；显式 ID 与元数据关系冲突时拒绝创建任务。
+
+任务创建时固化 `workspaces/<task_id>/metadata_context.json`。快照包含归一化 instance、cluster、node、cluster nodes、产品、版本和环境。为控制大小和避免重复，cluster `rawSnapshot` 不写入任务快照。
 
 ## 本地运行方式
 

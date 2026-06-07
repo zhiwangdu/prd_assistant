@@ -44,10 +44,13 @@ Rust -> C/C++ -> Go/Python/Java 等
   - Rust/Axum 服务。
   - API Key middleware。
   - multipart 上传、multipart 批量上传、分片上传、task 创建、artifact 查询。
+  - Upload session JSON 持久化和重启续传。
+  - task JSON 持久化、后台状态机、任务列表和重启恢复。
   - Metadata 查询、导入预览和确认。
+  - Metadata task context、`metadata_context.json` 和 LLM Prompt 摘要。
   - 支持 openGemini `/getdata` 真实元数据 URL 拉取和归一化。
   - 静态托管 `webui/out`。
-  - 当前 task pipeline：copy raw -> per-upload extract -> manifest -> simple grep。
+  - 当前 task pipeline：copy raw -> metadata context -> per-upload extract -> manifest -> simple grep -> single LLM result。
 
 - `log-analyzer/`
   - 作为 Server 内部模块实现。
@@ -56,10 +59,10 @@ Rust -> C/C++ -> Go/Python/Java 等
   - 生成 `manifest.json` 和 `grep_results.json`。
 
 - `webui/`
-  - React + Next.js + Tailwind CSS 静态导出应用。
+  - React + Vite + Tailwind CSS 静态导出应用。
   - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
   - 支持 Metadata 查询、YAML/JSON/openGemini 导入预览和确认。
-  - 任务列表当前只保存在浏览器 localStorage。
+  - 从 Server 读取持久化任务列表，支持状态轮询、历史任务、LLM 结果和 Metadata context 展示。
 
 - `metadata/`
   - 已实现基础 store/API/WEBUI。
@@ -188,14 +191,13 @@ data_dir/
 
 ## 近期开发优先级
 
-1. Server 持久化任务列表和状态机，让 WEBUI 不只依赖 localStorage。
-2. Metadata 接入 task context 并写入 `metadata_context.json`。
-3. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
-4. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
-5. Environment Collector 支持 SSH/SCP 测试环境采集。
-6. Analysis Agent 持久化上下文、多轮动作、追问、审批和预算终止。
-7. LLM Gateway 结构化 action / final answer。
-8. Case Store 保存和召回。
+1. Executor dispatcher、Action/Evidence 协议和恢复语义重构。
+2. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
+3. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
+4. Analysis Agent State Store 和 LLM Gateway 结构化 action / final answer。
+5. Analysis Agent 多轮动作、追问、审批和预算终止。
+6. Environment Collector 支持 SSH/SCP 测试环境采集。
+7. Case Store 保存和召回。
 
 ## 提交流程
 

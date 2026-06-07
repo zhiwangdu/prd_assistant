@@ -66,6 +66,9 @@ pub struct CreateTaskRequest {
     pub upload_ids: Vec<String>,
     pub source_url: Option<String>,
     pub question: Option<String>,
+    pub instance_id: Option<String>,
+    pub cluster_id: Option<String>,
+    pub node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -94,6 +97,8 @@ pub struct TaskArtifactsResponse {
     pub grep_results_path: String,
     pub manifest: serde_json::Value,
     pub grep_results: serde_json::Value,
+    pub metadata_context_path: Option<String>,
+    pub metadata_context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,6 +171,12 @@ pub struct TaskRecord {
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
     pub source_url: Option<String>,
+    #[serde(default)]
+    pub instance_id: Option<String>,
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+    #[serde(default)]
+    pub node_id: Option<String>,
     #[serde(default = "default_task_question")]
     pub question: String,
     pub status: TaskStatus,
@@ -174,6 +185,8 @@ pub struct TaskRecord {
     pub error: Option<TaskError>,
     pub manifest_path: Option<String>,
     pub grep_results_path: Option<String>,
+    #[serde(default)]
+    pub metadata_context_path: Option<String>,
     #[serde(default)]
     pub result_json_path: Option<String>,
     #[serde(default)]

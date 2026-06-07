@@ -6,16 +6,16 @@
 
 ## 当前进度
 
-已完成上传、解压、初始 grep、Metadata API/WebUI 和静态 WebUI 托管。Analysis Agent、LLM Gateway 和相关恢复 API 尚未实现。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、单次 LLM Gateway 和静态 WebUI 托管。Analysis Agent 和相关恢复 API 尚未实现。
 
 ## 下一阶段优先级
 
-1. Server 持久化任务列表、稳定状态和执行阶段。
-2. Metadata 接入 task context 并写入 `metadata_context.json`。
-3. Tool Runner、Code Evidence 和 Environment Collector。
-4. Analysis state/event store、action executor 和预算控制。
-5. LLM Gateway 和结构化决策。
-6. `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API 与 WebUI。
+1. Executor dispatcher、Action 协议、Evidence artifact 和恢复语义。
+2. Tool Runner。
+3. Code Evidence。
+4. Analysis state/event store、LLM 结构化决策和预算控制。
+5. Analysis Agent 及 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API。
+6. Environment Collector。
 7. Case Store 保存和召回。
 
 ## 阶段门槛

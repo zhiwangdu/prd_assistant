@@ -17,6 +17,9 @@ type TaskSummary = {
 type TaskRecord = TaskSummary & {
   attempts?: number;
   error?: { phase?: string | null; message: string } | null;
+  instanceId?: string | null;
+  clusterId?: string | null;
+  nodeId?: string | null;
 };
 type AnalysisResult = {
   schemaVersion: number;
@@ -33,12 +36,27 @@ type Artifacts = {
   taskId?: string;
   manifest?: { files?: Array<{ path: string; size: number }> };
   grepResults?: { matches?: Array<{ file: string; line: number; keyword: string; text: string }> };
+  metadataContext?: MetadataContext | null;
+};
+type MetadataContext = {
+  instanceId?: string | null;
+  clusterId?: string | null;
+  nodeId?: string | null;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  node?: { kind?: string | null; host?: string | null; role?: string | null; status?: string | null } | null;
+  clusterNodes?: Array<{ nodeId: string }>;
+  cluster?: { databases?: Array<{ name: string }>; partitionViews?: Array<{ statusText?: string | null }> } | null;
 };
 
 export function OperationsView({ apiKey }: { apiKey: string }) {
   const [files, setFiles] = useState<File[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
   const [question, setQuestion] = useState("分析日志中的主要异常、可能原因和建议检查项。");
+  const [instanceId, setInstanceId] = useState("");
+  const [clusterId, setClusterId] = useState("");
+  const [nodeId, setNodeId] = useState("");
   const [uploadStatus, setUploadStatus] = useState("等待上传");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
@@ -118,7 +136,14 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       const task = await fetchJson<TaskSummary>("/api/tasks", {
         method: "POST",
         headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ uploadIds: uploads.map((upload) => upload.uploadId), sourceUrl: sourceUrl || null, question: question.trim() || null })
+        body: JSON.stringify({
+          uploadIds: uploads.map((upload) => upload.uploadId),
+          sourceUrl: sourceUrl || null,
+          question: question.trim() || null,
+          instanceId: instanceId.trim() || null,
+          clusterId: clusterId.trim() || null,
+          nodeId: nodeId.trim() || null
+        })
       });
       setUploadProgress(100);
       setUploadStatus(`已创建任务 ${task.taskId}`);
@@ -137,6 +162,11 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         <CardHeader><CardTitle>Log import and evidence</CardTitle><CardDescription>上传进度与 Server 后台任务执行状态独立展示</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID (optional)" />
+            <Input value={clusterId} onChange={(event) => setClusterId(event.target.value)} placeholder="Cluster ID (optional)" />
+            <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
+          </div>
           <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
           <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
             <UploadCloud className="mb-2 h-7 w-7" />
@@ -170,6 +200,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
             {selectedTask ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2"><StatusBadge status={selectedTask.status} /><span className="text-sm text-muted-foreground">{selectedTask.phase ?? "No active phase"}</span></div>
+                {selectedTask.instanceId || selectedTask.clusterId || selectedTask.nodeId ? (
+                  <p className="text-xs text-muted-foreground">Metadata: instance={selectedTask.instanceId ?? "-"} · cluster={selectedTask.clusterId ?? "-"} · node={selectedTask.nodeId ?? "-"}</p>
+                ) : null}
                 {selectedTask.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedTask.error?.phase ? `${selectedTask.error.phase}: ` : ""}{selectedTask.error?.message ?? "Task failed"}</div> : null}
                 {!isTerminal(selectedTask.status) ? <p className="text-sm text-muted-foreground">任务由 Server 后台执行，每秒自动刷新。</p> : null}
                 {selectedTask.status === "SUCCEEDED" && !artifacts ? <Button onClick={() => void selectTask(selectedTask.taskId)}>加载 artifacts</Button> : null}
@@ -180,6 +213,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       </div>
 
       {taskResult ? <AnalysisResultView result={taskResult.result} /> : null}
+
+      {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
 
       {artifacts ? (
         <div className="grid gap-5 xl:grid-cols-2">
@@ -226,6 +261,31 @@ function AnalysisResultView({ result }: { result: AnalysisResult }) {
         <ResultList title="Next checks" items={result.nextChecks} />
         <ResultList title="Fix suggestions" items={result.fixSuggestions} />
         <ResultList title="Missing information" items={result.missingInformation} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetadataContextView({ context }: { context: MetadataContext }) {
+  const partitions = context.cluster?.partitionViews ?? [];
+  const abnormalPartitions = partitions.filter((partition) => partition.statusText && partition.statusText !== "online").length;
+  const rows = [
+    ["Instance", context.instanceId],
+    ["Cluster", context.clusterId],
+    ["Node", context.nodeId],
+    ["Product", context.product],
+    ["Version", context.version],
+    ["Environment", context.environment],
+    ["Node status", context.node?.status],
+    ["Cluster nodes", String(context.clusterNodes?.length ?? 0)],
+    ["Databases", (context.cluster?.databases ?? []).map((database) => database.name).join(", ") || "0"],
+    ["Partitions", `${partitions.length} total, ${abnormalPartitions} non-online`]
+  ];
+  return (
+    <Card>
+      <CardHeader><CardTitle>Metadata context</CardTitle><CardDescription>任务创建时固化的 Metadata 快照</CardDescription></CardHeader>
+      <CardContent className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {rows.map(([label, value]) => <div className="rounded-lg border border-border p-3" key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value || "-"}</p></div>)}
       </CardContent>
     </Card>
   );
