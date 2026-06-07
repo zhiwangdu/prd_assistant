@@ -80,6 +80,7 @@ Chrome Extension or WEBUI
 - Runs optional rule-based Tool Runner actions during `RUN_TOOL` and exposes `toolResults` in artifacts.
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
+- `GENERATE_RESULT` now reads `tool_results/*/result.json` and passes Tool Runner summary/findings into LLM Gateway as citeable evidence.
 
 ### Upload And Workspace
 
@@ -146,6 +147,7 @@ tool_results/<action_id>/
 
 - `GET /api/tasks/:task_id/artifacts` returns `toolResults`.
 - WebUI displays tool result status, exit code, duration, summary, structured findings, stdout path, and stderr path.
+- Tool findings can be cited by final LLM results as `tool_results/<action_id>/result.json#findings/<index>`.
 - Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
 
@@ -206,7 +208,9 @@ tool_results/<action_id>/
 - Supports `llm.model_env` for environment-provided model names while retaining static `llm.model` compatibility.
 - Accepts pure JSON, whole-response JSON Markdown fences, and natural-language responses containing exactly one top-level JSON object.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.
+- Adds bounded Tool Runner summary/findings to the prompt after grep evidence; stdout/stderr raw output is not sent.
 - Validates result schema, confidence, and task-local grep evidence references.
+- Validates task-local Tool Runner finding evidence references.
 - Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
 - Normalizes real-model schema drift for string root causes with embedded evidence refs and single-string list fields.
 - Retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors if both attempts fail.
@@ -266,7 +270,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner tests cover config validation, rule-based action selection, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, and artifacts API `toolResults`.
+- Tool Runner and LLM tests cover config validation, rule-based action selection, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

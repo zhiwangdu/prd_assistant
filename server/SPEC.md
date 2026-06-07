@@ -149,7 +149,7 @@ background executor
   -> persist RUN_TOOL
   -> RUN_TOOL: rule-based configured tool actions, writes tool_results
   -> persist GENERATE_RESULT
-  -> GENERATE_RESULT: LLM Gateway call, with one correction retry for result schema errors
+  -> GENERATE_RESULT: LLM Gateway call using grep/metadata/tool evidence, with one correction retry for result schema errors
   -> write result.json/result.md
   -> SUCCEEDED or FAILED
 ```
@@ -158,7 +158,7 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。解析/schema 错误会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入 `FAILED / GENERATE_RESULT`。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会拒绝。解析/schema 错误会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入 `FAILED / GENERATE_RESULT`。
 
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 
@@ -251,6 +251,7 @@ persist task
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
 - `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
+- LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - multipart 小文件和批量上传不能在 payload 未 flush 时持久化 `COMPLETE` 记录。

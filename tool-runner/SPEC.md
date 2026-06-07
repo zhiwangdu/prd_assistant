@@ -63,6 +63,12 @@ tool_results/
 
 stdout 不是 JSON 或字段不匹配时，不判定为工具失败，只保留 stdout/stderr 并生成通用 summary。
 
+LLM Gateway 会读取 result artifact 中的 summary/findings。finding 的最终答案引用格式固定为：
+
+```text
+tool_results/<action_id>/result.json#findings/<index>
+```
+
 ## 安全约束
 
 - 只能调用配置白名单里的工具。
@@ -79,6 +85,7 @@ stdout 不是 JSON 或字段不匹配时，不判定为工具失败，只保留 
 - 工具超时后任务记录失败原因。
 - stdout/stderr 可追溯。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
+- Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。
 - 重复 action id 幂等，结果可回填到同一分析 revision。
 - 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 LLM 结果。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

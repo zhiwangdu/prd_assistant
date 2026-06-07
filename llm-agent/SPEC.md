@@ -12,7 +12,8 @@
 - OpenAI-compatible `/chat/completions` Provider。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - manifest/grep/metadata Prompt 和字符数裁剪。
-- 最终结果 schema、confidence 和 grep evidence ref 校验。
+- tool result summary/findings Prompt 和字符数裁剪。
+- 最终结果 schema、confidence、grep evidence ref 和 tool finding evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
@@ -24,10 +25,17 @@
 - manifest 文件摘要。
 - grep match 索引、文件、行号、关键词和文本。
 - task 创建时固化的 Metadata 摘要，包括产品、版本、环境、节点状态、数据库和 PT 统计。
+- Tool Runner 的工具名、状态、退出码、耗时、summary 和 findings。
 
 ## 当前输出
 
-结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 `grep_results.json#matches/<index>`。Gateway 可接受并规范化以下可追踪别名：
+结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 grep match 或 tool finding 引用。
+
+Tool finding evidence ref 使用 canonical 格式：
+
+- `tool_results/<action_id>/result.json#findings/<index>`
+
+Gateway 可接受并规范化以下 grep 可追踪别名：
 
 - `12`：映射到原始日志行号 12 对应的 grep match。
 - `12-14`：映射到原始日志行号 12 到 14 对应的 grep matches。
@@ -35,6 +43,8 @@
 - `matches/0` 或 `matches/0-7`：映射到 grep match 索引或索引范围。
 
 无法映射的行号或越界索引必须拒绝。
+
+未知 tool action、越界 finding index 或非 canonical tool ref 必须拒绝。
 
 真实模型如果把 `likelyRootCauses` 写成字符串数组，且字符串中包含 `evidenceRefs: [...]`，Gateway 会抽取字符串正文作为 `cause`，抽取引用列表作为 `evidenceRefs`。字符串根因没有可追踪 evidence refs 时必须拒绝。
 
@@ -71,7 +81,8 @@
 - 可追踪的字符串形式 root cause 会规范化为对象形式。
 - 单字符串形式的列表字段会规范化为字符串数组。
 - 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。
-- 输入裁剪后不超过字符上限且保留证据引用。
+- 输入裁剪后不超过字符上限且保留 grep 和 tool 证据引用。
 - Metadata `rawSnapshot` 不进入 Prompt。
+- Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。

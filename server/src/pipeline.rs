@@ -13,6 +13,7 @@ use crate::{
         AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, ResultOutput, TaskInput,
         TaskRecord, UploadRecord,
     },
+    tool_runner::ToolRunRecord,
 };
 
 pub async fn prepare_raw_snapshot(
@@ -170,6 +171,7 @@ pub async fn generate_task_result(
     let workspace = config.storage.workspace_dir(&task.task_id);
     let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
     let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
+    let tool_results = read_tool_results(&workspace).await?;
     let metadata_context = match task.metadata_context_path.as_deref() {
         Some(path) => {
             let expected = workspace.join("metadata_context.json");
@@ -183,7 +185,13 @@ pub async fn generate_task_result(
         None => None,
     };
     let result = gateway
-        .generate_result(&task.question, &manifest, &grep, metadata_context.as_ref())
+        .generate_result(
+            &task.question,
+            &manifest,
+            &grep,
+            metadata_context.as_ref(),
+            &tool_results,
+        )
         .await
         .map_err(|err| AppError::internal(format!("LLM result generation failed: {err}")))?;
     let result_json_path = workspace.join("result.json");
@@ -210,6 +218,36 @@ async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, App
         .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
     serde_json::from_str(&raw)
         .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
+}
+
+async fn read_tool_results(workspace: &Path) -> Result<Vec<ToolRunRecord>, AppError> {
+    let root = workspace.join("tool_results");
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => {
+            return Err(AppError::internal(format!(
+                "failed to read tool results: {err}"
+            )))
+        }
+    };
+    let mut paths = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|err| AppError::internal(format!("failed to list tool results: {err}")))?
+    {
+        let path = entry.path().join("result.json");
+        if path.exists() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    let mut results = Vec::with_capacity(paths.len());
+    for path in paths {
+        results.push(read_json(&path).await?);
+    }
+    Ok(results)
 }
 
 fn render_result_markdown(result: &AnalysisResult) -> String {

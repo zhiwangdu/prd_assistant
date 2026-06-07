@@ -27,7 +27,7 @@ LLM Gateway 不负责：
 当前作为 Server 内部 Rust 模块实现了单次最终结果生成：
 
 ```text
-question + manifest.json + grep_results.json + metadata_context.json
+question + manifest.json + grep_results.json + metadata_context.json + tool_results
   -> Prompt 裁剪
   -> stub 或 OpenAI-compatible Chat Completions
   -> schema / evidence ref 校验与可追踪别名规范化
@@ -42,7 +42,9 @@ question + manifest.json + grep_results.json + metadata_context.json
 
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
 
-evidence ref 的 canonical 形式仍是 `grep_results.json#matches/<index>`。真实模型偶尔返回裸日志行号或范围，例如 `12-14`，或索引范围 `#0-#7`；Gateway 会在能唯一映射到当前 grep evidence 时规范化为 canonical refs。无法映射到 grep evidence 的引用仍会拒绝，任务进入 `FAILED / GENERATE_RESULT`。
+Tool Runner Prompt 摘要包含工具名、执行状态、退出码、耗时、summary 和结构化 findings。工具 finding 的 canonical evidence ref 是 `tool_results/<action_id>/result.json#findings/<index>`。
+
+grep evidence ref 的 canonical 形式是 `grep_results.json#matches/<index>`。真实模型偶尔返回裸日志行号或范围，例如 `12-14`，或索引范围 `#0-#7`；Gateway 会在能唯一映射到当前 grep evidence 时规范化为 canonical refs。无法映射到 grep evidence 或 tool finding 的引用仍会拒绝，任务进入 `FAILED / GENERATE_RESULT`。
 
 真实模型偶尔把 `likelyRootCauses` 写成字符串数组，并把 `evidenceRefs` 嵌在字符串中，例如 `原因（evidenceRefs: [matches/0, matches/1]）`。Gateway 会把这种可追踪字符串规范化为 `{ cause, evidenceRefs }`，并支持 `matches/<index>` / `matches/<start>-<end>` 别名；没有证据引用的根因仍会被拒绝。
 

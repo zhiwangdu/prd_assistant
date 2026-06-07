@@ -202,8 +202,9 @@ MVP 要求：
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `SEARCH_LOGS` 后调用 LLM Gateway，写入 `result.json` 和 `result.md`；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。
+- `RUN_TOOL` 后调用 LLM Gateway，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings，写入 `result.json` 和 `result.md`；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
+- LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
 - LLM Gateway 会把真实模型返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
