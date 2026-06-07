@@ -66,9 +66,10 @@ server/src
   log_analyzer.rs      # 解压、manifest 文件扫描、简单 grep
   models.rs            # DTO / task context / evidence output
   pipeline.rs          # upload 任务执行管线
-  state.rs             # AppState、内存 UploadStore 和启动恢复
+  state.rs             # AppState 组装和任务启动恢复
   task_store.rs        # 持久化 TaskRecord、状态转换和原子 JSON 更新
   task_executor.rs     # Tokio semaphore 后台任务执行器
+  upload_store.rs      # 持久化 UploadRecord、分片进度和启动恢复
 ```
 
 后续新增 Tool Runner、Code Evidence、Environment Collector、Analysis Agent 和 LLM Gateway 时，应保持这个模式：
@@ -176,6 +177,7 @@ MVP 要求：
 
 - `POST /api/uploads` 接收 Native Agent 上传的 multipart 文件。
 - `POST /api/uploads/batch` 接收多个 multipart 文件并返回多个 upload id。
+- 每个上传记录原子持久化到 `storage.data_dir/uploads/<upload_id>.json`，Server 重启后可继续使用已完成上传或续传未完成的分片上传。
 - `POST /api/tasks` 创建任务。
 - `GET /api/tasks` 返回按创建时间倒序的持久化任务列表。
 - `GET /api/tasks/:task_id` 返回完整 `TaskRecord`。
@@ -280,6 +282,19 @@ Server 必须保证 message 和 decision 幂等，禁止客户端直接把任务
 3. `POST /api/uploads/{upload_id}/complete`。
 
 Native Agent 会按 `native_agent.upload_chunk_bytes` 自动选择是否分片。
+
+分片上传状态：
+
+```text
+UPLOADING -> COMPLETE
+```
+
+- init 记录 `expectedSize`，chunk 记录当前 `size`。
+- chunk 的 `offset` 必须等于 Server 已持久化的 `size`，不允许覆盖或跳过字节。
+- complete 时 payload 实际大小必须等于 `expectedSize`。
+- 只有 `COMPLETE` 上传可以创建 task。
+- 启动时损坏的上传 JSON、缺失 payload、完成记录大小不一致会使 Server 明确启动失败。
+- 如果进程在 payload 写入后、进度 JSON 更新前中断，启动恢复会以 payload 实际大小修正 `UPLOADING` 记录。
 
 `POST /api/tasks` 请求：
 

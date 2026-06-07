@@ -15,6 +15,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - multipart 上传
 - multipart 批量上传
 - 分片上传
+- upload JSON 持久化和重启续传
 - task 创建
 - task JSON 持久化、列表、详情和重启恢复
 - semaphore 限制的后台执行
@@ -83,10 +84,12 @@ Authorization: Bearer <api-key>
 
 ```text
 data_dir/
+  uploads/
+    upl_xxx.json
+    upl_xxx/
+      filename.log
   tasks/
     task_xxx.json
-  uploads/
-    upl_xxx/
   workspaces/
     task_xxx/
       raw/
@@ -100,6 +103,21 @@ data_dir/
       result.json
       result.md
 ```
+
+## Upload Store
+
+`UploadRecord` 包含 `schemaVersion`、upload ID、文件名、已接收大小、预期大小、`UPLOADING`/`COMPLETE` 状态、payload 路径和 RFC 3339 时间。
+
+记录使用同目录临时文件加 rename 原子更新：
+
+```text
+storage.data_dir/uploads/<upload_id>.json
+storage.data_dir/uploads/<upload_id>/<filename>
+```
+
+启动时加载全部上传 JSON。损坏 JSON、非法路径、缺失 payload、完成记录大小不一致必须启动失败。未关联记录的孤儿上传目录只记录告警，不自动删除。
+
+分片只支持顺序追加，chunk offset 必须等于当前已接收大小。完成时实际大小必须等于 init 声明的预期大小。重启时 `UPLOADING` 记录以 payload 实际长度校正进度，可继续从该 offset 上传。
 
 ## 当前任务模型与 Pipeline
 
@@ -181,6 +199,9 @@ persist task
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
+- multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
+- 非顺序 chunk、大小超过预期和未达到预期大小的 complete 必须失败。
+- 损坏上传 JSON、非法 payload 路径或完成记录大小不一致必须阻止启动。
 - stub 模式能单次生成结构化结果并通过 result API 读取。
 - 真实 Provider 配置 `llm.model_env` 时，环境变量缺失或模型名为空必须启动失败。
 - 真实 Provider 返回纯 JSON 或完整 JSON 代码围栏时可解析，额外自然语言不能被静默忽略。

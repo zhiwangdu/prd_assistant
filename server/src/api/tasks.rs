@@ -13,6 +13,7 @@ use crate::{
     models::{
         default_task_question, AnalysisResult, CreateTaskRequest, TaskArtifactsResponse,
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
+        UploadStatus,
     },
     pipeline::prepare_raw_snapshot,
     state::AppState,
@@ -30,6 +31,11 @@ pub async fn create_task(
             .get(upload_id)
             .await
             .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
+        if upload.status != UploadStatus::Complete {
+            return Err(AppError::bad_request(format!(
+                "uploadId {upload_id} is not complete"
+            )));
+        }
         uploads.push(upload);
     }
 
@@ -239,7 +245,7 @@ mod tests {
             AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
             StorageSettings,
         },
-        models::UploadRecord,
+        models::{UploadRecord, UploadStatus},
     };
 
     #[test]
@@ -254,17 +260,7 @@ mod tests {
     #[tokio::test]
     async fn task_api_creates_lists_and_reads_details() {
         let (state, root) = test_state();
-        let upload_path = root.join("sample.log");
-        std::fs::write(&upload_path, "ERROR sample\n").unwrap();
-        state
-            .uploads
-            .insert(UploadRecord {
-                upload_id: "upl_test".to_string(),
-                filename: "sample.log".to_string(),
-                size: 13,
-                path: upload_path,
-            })
-            .await;
+        create_test_upload(&state, "upl_test", UploadStatus::Complete).await;
         let app = api::router(state.clone()).with_state(state);
         let response = app
             .clone()
@@ -426,17 +422,7 @@ mod tests {
             max_input_chars: 60_000,
             max_output_tokens: 100,
         });
-        let upload_path = root.join("sample.log");
-        std::fs::write(&upload_path, "ERROR sample\n").unwrap();
-        state
-            .uploads
-            .insert(UploadRecord {
-                upload_id: "upl_failure".to_string(),
-                filename: "sample.log".to_string(),
-                size: 13,
-                path: upload_path,
-            })
-            .await;
+        create_test_upload(&state, "upl_failure", UploadStatus::Complete).await;
         let app = api::router(state.clone()).with_state(state);
         let response = app
             .clone()
@@ -475,6 +461,28 @@ mod tests {
         let terminal = terminal.expect("task did not fail");
         assert_eq!(terminal["phase"], "GENERATE_RESULT");
         assert_eq!(terminal["error"]["phase"], "GENERATE_RESULT");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn task_api_rejects_incomplete_uploads() {
+        let (state, root) = test_state();
+        create_test_upload(&state, "upl_incomplete", UploadStatus::Uploading).await;
+        let app = api::router(state.clone()).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"uploadId":"upl_incomplete"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("is not complete"));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -517,5 +525,28 @@ mod tests {
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
+    }
+
+    async fn create_test_upload(state: &Arc<AppState>, upload_id: &str, status: UploadStatus) {
+        let upload_dir = state.config.storage.upload_dir(upload_id);
+        std::fs::create_dir_all(&upload_dir).unwrap();
+        let path = upload_dir.join("sample.log");
+        std::fs::write(&path, "ERROR sample\n").unwrap();
+        let now = Utc::now();
+        state
+            .uploads
+            .create(UploadRecord {
+                schema_version: 1,
+                upload_id: upload_id.to_string(),
+                filename: "sample.log".to_string(),
+                size: 13,
+                expected_size: Some(13),
+                status,
+                path,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .unwrap();
     }
 }

@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 ## Status Summary
 
@@ -78,6 +78,12 @@ Chrome Extension or WEBUI
 ### Upload And Workspace
 
 - Server owns `upload_id`, `task_id`, and workspace location.
+- Persists each upload as `storage.data_dir/uploads/<upload_id>.json` with atomic replacement.
+- Restores completed and in-progress uploads after restart.
+- Tracks `UPLOADING` / `COMPLETE`, expected size, received size, payload path, and timestamps.
+- Enforces sequential chunk offsets and exact expected size at completion; incomplete uploads cannot create tasks.
+- Reconciles an interrupted `UPLOADING` record from the payload file length on startup.
+- Corrupt records, unsafe paths, missing payloads, and inconsistent completed sizes fail startup; orphan upload directories are only warned.
 - Single task can now reference one upload or many uploads.
 - Batch task workspace layout:
 
@@ -211,9 +217,12 @@ npm run typecheck
 npm run build
 ```
 
-Task and LLM verification:
+Task, upload, and LLM verification:
 
-- 24 Rust tests pass.
+- 31 Rust tests pass.
+- Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
+- Task API rejects `UPLOADING` records until completion.
+- Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.

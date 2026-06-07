@@ -1,11 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use tokio::sync::RwLock;
+use std::sync::Arc;
 use tracing::warn;
 
 use crate::{
-    config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore, models::UploadRecord,
-    task_executor::TaskExecutor, task_store::TaskStore,
+    config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore,
+    task_executor::TaskExecutor, task_store::TaskStore, upload_store::UploadStore,
 };
 
 #[derive(Debug)]
@@ -21,12 +19,13 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: Arc<AppConfig>) -> anyhow::Result<Arc<Self>> {
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
+        let uploads = UploadStore::load(config.storage.uploads_dir())?;
         Ok(Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
             config,
-            uploads: UploadStore::default(),
+            uploads,
             tasks,
         }))
     }
@@ -52,38 +51,5 @@ impl AppState {
             self.executor.enqueue(self.clone(), task.task_id);
         }
         Ok(())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct UploadStore {
-    inner: Arc<RwLock<HashMap<String, UploadRecord>>>,
-}
-
-impl Clone for UploadStore {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl UploadStore {
-    pub async fn insert(&self, record: UploadRecord) {
-        self.inner
-            .write()
-            .await
-            .insert(record.upload_id.clone(), record);
-    }
-
-    pub async fn get(&self, upload_id: &str) -> Option<UploadRecord> {
-        self.inner.read().await.get(upload_id).cloned()
-    }
-
-    pub async fn update_size(&self, upload_id: &str, size: u64) -> Option<UploadRecord> {
-        let mut uploads = self.inner.write().await;
-        let record = uploads.get_mut(upload_id)?;
-        record.size = size;
-        Some(record.clone())
     }
 }

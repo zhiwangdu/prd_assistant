@@ -305,7 +305,7 @@ mod tests {
             AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
             StorageSettings,
         },
-        models::{TaskSource, TaskStatus},
+        models::{TaskSource, TaskStatus, UploadStatus},
     };
 
     #[tokio::test]
@@ -428,11 +428,18 @@ mod tests {
         }
 
         fn upload_record(&self, upload_id: &str, filename: &str) -> UploadRecord {
+            let size = fs::metadata(self.uploads.join(filename)).unwrap().len();
+            let now = Utc::now();
             UploadRecord {
+                schema_version: 1,
                 upload_id: upload_id.to_string(),
                 filename: filename.to_string(),
-                size: fs::metadata(self.uploads.join(filename)).unwrap().len(),
+                size,
+                expected_size: Some(size),
+                status: UploadStatus::Complete,
                 path: self.uploads.join(filename),
+                created_at: now,
+                updated_at: now,
             }
         }
     }

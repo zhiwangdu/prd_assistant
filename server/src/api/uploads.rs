@@ -3,8 +3,9 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 use crate::{
     error::AppError,
@@ -12,7 +13,7 @@ use crate::{
     id::next_id,
     models::{
         BatchUploadResponse, ChunkQuery, ChunkUploadResponse, InitUploadRequest, UploadRecord,
-        UploadResponse,
+        UploadResponse, UploadStatus,
     },
     state::AppState,
 };
@@ -76,15 +77,29 @@ pub async fn upload(
         file_path = Some(path);
     }
 
-    let filename = filename.ok_or_else(|| AppError::bad_request("missing filename"))?;
     let path = file_path.ok_or_else(|| AppError::bad_request("missing file field"))?;
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| AppError::internal("upload path is missing filename"))?
+        .to_string();
+    let now = Utc::now();
     let record = UploadRecord {
+        schema_version: 1,
         upload_id: upload_id.clone(),
         filename: filename.clone(),
         size,
+        expected_size: Some(size),
+        status: UploadStatus::Complete,
         path,
+        created_at: now,
+        updated_at: now,
     };
-    state.uploads.insert(record.clone()).await;
+    state
+        .uploads
+        .create(record)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
     Ok(Json(UploadResponse {
         upload_id,
@@ -147,13 +162,23 @@ pub async fn init_upload(
         .await
         .map_err(|err| AppError::internal(format!("failed to create upload file: {err}")))?;
 
+    let now = Utc::now();
     let record = UploadRecord {
+        schema_version: 1,
         upload_id: upload_id.clone(),
         filename: filename.clone(),
         size: 0,
+        expected_size: Some(req.size),
+        status: UploadStatus::Uploading,
         path,
+        created_at: now,
+        updated_at: now,
     };
-    state.uploads.insert(record).await;
+    state
+        .uploads
+        .create(record)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
     Ok(Json(UploadResponse {
         upload_id,
@@ -196,13 +221,23 @@ async fn receive_upload_field(
             .map_err(|err| AppError::internal(format!("failed to write upload file: {err}")))?;
     }
 
+    let now = Utc::now();
     let record = UploadRecord {
+        schema_version: 1,
         upload_id: upload_id.clone(),
         filename: filename.clone(),
         size,
+        expected_size: Some(size),
+        status: UploadStatus::Complete,
         path,
+        created_at: now,
+        updated_at: now,
     };
-    state.uploads.insert(record).await;
+    state
+        .uploads
+        .create(record)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
     Ok(UploadResponse {
         upload_id,
@@ -227,37 +262,18 @@ pub async fn upload_chunk(
 
     let upload = state
         .uploads
-        .get(&upload_id)
+        .append_chunk(
+            &upload_id,
+            query.offset,
+            &body,
+            state.config.storage.max_upload_bytes,
+        )
         .await
-        .ok_or_else(|| AppError::bad_request("unknown uploadId"))?;
-    let received_bytes = query.offset + body.len() as u64;
-    if received_bytes > state.config.storage.max_upload_bytes {
-        return Err(AppError::bad_request(format!(
-            "upload size {received_bytes} exceeds max_upload_bytes {}",
-            state.config.storage.max_upload_bytes
-        )));
-    }
-
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .open(&upload.path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to open upload file: {err}")))?;
-    file.seek(std::io::SeekFrom::Start(query.offset))
-        .await
-        .map_err(|err| AppError::internal(format!("failed to seek upload file: {err}")))?;
-    file.write_all(&body)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write upload chunk: {err}")))?;
-    file.flush()
-        .await
-        .map_err(|err| AppError::internal(format!("failed to flush upload chunk: {err}")))?;
-
-    state.uploads.update_size(&upload_id, received_bytes).await;
+        .map_err(|err| AppError::bad_request(err.to_string()))?;
 
     Ok(Json(ChunkUploadResponse {
         upload_id,
-        received_bytes,
+        received_bytes: upload.size,
     }))
 }
 
@@ -267,17 +283,9 @@ pub async fn complete_upload(
 ) -> Result<Json<UploadResponse>, AppError> {
     let upload = state
         .uploads
-        .get(&upload_id)
+        .complete(&upload_id)
         .await
-        .ok_or_else(|| AppError::bad_request("unknown uploadId"))?;
-    let metadata = tokio::fs::metadata(&upload.path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to stat upload file: {err}")))?;
-    let upload = state
-        .uploads
-        .update_size(&upload_id, metadata.len())
-        .await
-        .ok_or_else(|| AppError::bad_request("unknown uploadId"))?;
+        .map_err(|err| AppError::bad_request(err.to_string()))?;
 
     Ok(Json(UploadResponse {
         upload_id: upload.upload_id,

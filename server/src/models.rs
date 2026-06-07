@@ -3,13 +3,25 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
+    pub schema_version: u32,
     pub upload_id: String,
     pub filename: String,
     pub size: u64,
+    pub expected_size: Option<u64>,
+    pub status: UploadStatus,
     pub path: PathBuf,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum UploadStatus {
+    Uploading,
+    Complete,
 }
 
 #[derive(Debug, Serialize)]

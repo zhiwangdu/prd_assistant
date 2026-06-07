@@ -12,6 +12,7 @@ mod pipeline;
 mod state;
 mod task_executor;
 mod task_store;
+mod upload_store;
 
 use std::{net::SocketAddr, path::PathBuf};
 

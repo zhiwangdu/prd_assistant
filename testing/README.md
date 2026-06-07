@@ -52,6 +52,8 @@ environment approval -> collect stub -> Agent continuation -> result
 
 当前任务系统测试覆盖：
 
+- Upload Store 创建、原子持久化、重新加载、损坏 JSON 启动失败和中断进度校正。
+- 分片 offset、预期大小、完成状态以及未完成上传创建任务的拒绝路径。
 - Task Store 创建、更新、重新加载、倒序列表、损坏 JSON 失败和终态保护。
 - `RUNNING -> QUEUED` 启动恢复与 attempt 保留。
 - raw 快照重复执行、派生产物清理和结果重建。
