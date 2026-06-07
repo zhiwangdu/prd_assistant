@@ -50,6 +50,7 @@ pub struct ToolSettings {
     pub path: PathBuf,
     pub timeout_seconds: u64,
     pub max_output_bytes: usize,
+    pub max_input_files: usize,
     pub args: Vec<String>,
     pub match_settings: ToolMatchSettings,
 }
@@ -154,6 +155,8 @@ struct ToolConfig {
     timeout_seconds: u64,
     #[serde(default = "default_tool_max_output_bytes")]
     max_output_bytes: usize,
+    #[serde(default = "default_tool_max_input_files")]
+    max_input_files: usize,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -346,6 +349,7 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
                 path,
                 timeout_seconds: tool.timeout_seconds.max(1),
                 max_output_bytes: tool.max_output_bytes.max(1024),
+                max_input_files: tool.max_input_files.max(1),
                 args: tool.args,
                 match_settings: ToolMatchSettings {
                     file_patterns: tool
@@ -448,6 +452,10 @@ fn default_tool_timeout() -> u64 {
 
 fn default_tool_max_output_bytes() -> usize {
     1024 * 1024
+}
+
+fn default_tool_max_input_files() -> usize {
+    1
 }
 
 fn default_bind() -> String {
@@ -604,6 +612,7 @@ tools:
     path: /opt/logagent/tools/flux_query_analyzer
     timeout_seconds: 5
     max_output_bytes: 2048
+    max_input_files: 3
     args: ["--input", "{input_file}"]
     match:
       file_patterns: ["*.log"]
@@ -616,6 +625,7 @@ tools:
         assert!(tool.enabled);
         assert_eq!(tool.timeout_seconds, 5);
         assert_eq!(tool.max_output_bytes, 2048);
+        assert_eq!(tool.max_input_files, 3);
         assert_eq!(tool.match_settings.keywords, vec!["flux"]);
 
         let relative = serde_yaml::from_str::<ConfigFile>(

@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     future::Future,
     path::{Component, Path},
@@ -84,32 +85,35 @@ impl ToolRunner {
     pub fn rule_based_actions(&self, manifest: &Manifest, grep: &GrepResults) -> Vec<AgentAction> {
         let mut actions = Vec::new();
         for tool in self.settings.tools.values().filter(|tool| tool.enabled) {
-            let Some(input_file) = select_input_file(tool, manifest, grep) else {
-                continue;
-            };
-            let action_id = format!("act_tool_{}", safe_action_suffix(&tool.name));
-            actions.push(AgentAction {
-                schema_version: 1,
-                action_id,
-                kind: ActionKind::RunTool,
-                reason: format!("rule matched configured tool {}", tool.name),
-                evidence_refs: vec![
-                    EvidenceRef {
-                        artifact_path: "manifest.json".to_string(),
-                        selector: None,
-                    },
-                    EvidenceRef {
-                        artifact_path: "grep_results.json".to_string(),
-                        selector: None,
-                    },
-                ],
-                input: serde_json::json!({
-                    "tool": tool.name,
-                    "inputFile": input_file,
-                }),
-                risk: ActionRisk::SafeReadOnly,
-                fingerprint: format!("run_tool:{}:{input_file}", tool.name),
-            });
+            for input_file in select_input_files(tool, manifest, grep) {
+                let action_id = format!(
+                    "act_tool_{}_{}",
+                    safe_action_suffix(&tool.name),
+                    stable_input_hash(&input_file)
+                );
+                actions.push(AgentAction {
+                    schema_version: 1,
+                    action_id,
+                    kind: ActionKind::RunTool,
+                    reason: format!("rule matched configured tool {}", tool.name),
+                    evidence_refs: vec![
+                        EvidenceRef {
+                            artifact_path: "manifest.json".to_string(),
+                            selector: None,
+                        },
+                        EvidenceRef {
+                            artifact_path: "grep_results.json".to_string(),
+                            selector: None,
+                        },
+                    ],
+                    input: serde_json::json!({
+                        "tool": tool.name,
+                        "inputFile": input_file,
+                    }),
+                    risk: ActionRisk::SafeReadOnly,
+                    fingerprint: format!("run_tool:{}:{input_file}", tool.name),
+                });
+            }
         }
         actions
     }
@@ -239,35 +243,61 @@ impl EvidenceProvider for ToolRunner {
     }
 }
 
-fn select_input_file(
-    tool: &ToolSettings,
-    manifest: &Manifest,
-    grep: &GrepResults,
-) -> Option<String> {
-    let matched_file = manifest.files.iter().find(|file| {
-        tool.match_settings
+fn select_input_files(tool: &ToolSettings, manifest: &Manifest, grep: &GrepResults) -> Vec<String> {
+    let limit = tool.max_input_files.max(1);
+    let mut selected = Vec::new();
+
+    for file in &manifest.files {
+        if selected.len() >= limit {
+            return selected;
+        }
+        if tool
+            .match_settings
             .file_patterns
             .iter()
             .any(|pattern| matches_pattern(pattern, &file.path.to_ascii_lowercase()))
-    });
-    if let Some(file) = matched_file {
-        return Some(format!("extracted/{}", file.path));
+        {
+            push_selected(&mut selected, &file.path);
+        }
     }
 
-    let keyword_match = grep.matches.iter().any(|entry| {
+    if selected.len() >= limit || tool.match_settings.keywords.is_empty() {
+        selected.truncate(limit);
+        return selected;
+    }
+
+    let manifest_paths = manifest
+        .files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect::<BTreeSet<_>>();
+    for entry in &grep.matches {
+        if selected.len() >= limit {
+            break;
+        }
+        if !manifest_paths.contains(entry.file.as_str()) {
+            continue;
+        }
         let text = entry.text.to_ascii_lowercase();
-        tool.match_settings
+        if tool
+            .match_settings
             .keywords
             .iter()
             .any(|keyword| text.contains(keyword))
-    });
-    if keyword_match {
-        return manifest
-            .files
-            .first()
-            .map(|file| format!("extracted/{}", file.path));
+        {
+            push_selected(&mut selected, &entry.file);
+        }
     }
-    None
+
+    selected.truncate(limit);
+    selected
+}
+
+fn push_selected(selected: &mut Vec<String>, manifest_path: &str) {
+    let input_file = format!("extracted/{manifest_path}");
+    if !selected.iter().any(|value| value == &input_file) {
+        selected.push(input_file);
+    }
 }
 
 fn matches_pattern(pattern: &str, value: &str) -> bool {
@@ -566,6 +596,15 @@ fn safe_action_suffix(value: &str) -> String {
         .collect()
 }
 
+fn stable_input_hash(value: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
 #[cfg(test)]
 mod tests {
     use std::{os::unix::fs::PermissionsExt, path::PathBuf};
@@ -683,9 +722,90 @@ JSON
         let runner = ToolRunner::new(settings(PathBuf::from("/bin/echo"), 5));
         let actions = runner.rule_based_actions(&manifest(), &grep());
         assert_eq!(actions.len(), 1);
+        assert_eq!(
+            actions[0].action_id,
+            format!(
+                "act_tool_fake_{}",
+                stable_input_hash("extracted/sample.log")
+            )
+        );
         let input = actions[0].decode_input::<ToolActionInput>().unwrap();
         assert_eq!(input.tool, "fake");
         assert_eq!(input.input_file.as_deref(), Some("extracted/sample.log"));
+    }
+
+    #[test]
+    fn rule_based_actions_select_multiple_inputs_with_stable_ids() {
+        let mut tool_settings = settings(PathBuf::from("/bin/echo"), 5);
+        let tool = tool_settings.tools.get_mut("fake").unwrap();
+        tool.max_input_files = 2;
+        tool.match_settings.file_patterns = vec!["*.flux".to_string()];
+        tool.match_settings.keywords = vec!["select".to_string()];
+        let runner = ToolRunner::new(tool_settings);
+        let manifest = Manifest {
+            files: vec![
+                ManifestFile {
+                    path: "queries/one.flux".to_string(),
+                    size: 1,
+                },
+                ManifestFile {
+                    path: "queries/two.sql".to_string(),
+                    size: 1,
+                },
+                ManifestFile {
+                    path: "queries/three.sql".to_string(),
+                    size: 1,
+                },
+            ],
+            ..manifest()
+        };
+        let grep = GrepResults {
+            keywords: vec!["select".to_string()],
+            total_matches: 2,
+            matches: vec![
+                GrepMatch {
+                    file: "queries/two.sql".to_string(),
+                    line: 1,
+                    keyword: "select".to_string(),
+                    text: "select * from cpu".to_string(),
+                },
+                GrepMatch {
+                    file: "queries/three.sql".to_string(),
+                    line: 1,
+                    keyword: "select".to_string(),
+                    text: "select * from mem".to_string(),
+                },
+            ],
+        };
+
+        let actions = runner.rule_based_actions(&manifest, &grep);
+
+        assert_eq!(actions.len(), 2);
+        let inputs = actions
+            .iter()
+            .map(|action| action.decode_input::<ToolActionInput>().unwrap().input_file)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            inputs,
+            vec![
+                Some("extracted/queries/one.flux".to_string()),
+                Some("extracted/queries/two.sql".to_string()),
+            ]
+        );
+        assert_eq!(
+            actions[0].action_id,
+            format!(
+                "act_tool_fake_{}",
+                stable_input_hash("extracted/queries/one.flux")
+            )
+        );
+        assert_eq!(
+            actions[1].action_id,
+            format!(
+                "act_tool_fake_{}",
+                stable_input_hash("extracted/queries/two.sql")
+            )
+        );
     }
 
     fn settings(path: PathBuf, timeout_seconds: u64) -> ToolsSettings {
@@ -698,6 +818,7 @@ JSON
                     path,
                     timeout_seconds,
                     max_output_bytes: 1024,
+                    max_input_files: 1,
                     args: vec!["{input_file}".to_string()],
                     match_settings: ToolMatchSettings {
                         file_patterns: vec!["*.log".to_string()],

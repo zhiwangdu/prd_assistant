@@ -20,6 +20,7 @@ Server 已实现 Tool Runner MVP：配置白名单、规则版 `run_tool` action
 - `action_id`
 - 工具参数模板
 - 工具路径，来自固定 `path` 或 `path_env` 环境变量
+- `max_input_files`，单个工具在同一任务中最多自动选择的输入文件数量，默认 1
 - 日志片段、查询文本或 manifest 文件
 
 ## 输出
@@ -86,6 +87,8 @@ tool_results/<action_id>/result.json#findings/<index>
 - stdout/stderr 可追溯。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
 - Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。
+- 规则版 action 选择必须先使用 manifest file pattern，再使用 grep keyword 补充候选；同一工具最多生成 `max_input_files` 个 action。
+- 同一工具的不同输入文件必须生成不同稳定 action id。
 - 重复 action id 幂等，结果可回填到同一分析 revision。
 - 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 LLM 结果。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

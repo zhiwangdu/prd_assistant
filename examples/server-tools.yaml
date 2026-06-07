@@ -38,6 +38,7 @@ tools:
     path_env: "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"
     timeout_seconds: 30
     max_output_bytes: 1048576
+    max_input_files: 3
     args:
       - "--input"
       - "{input_file}"
@@ -55,6 +56,7 @@ tools:
     path_env: "LOGAGENT_TOOL_INFLUXQL_ANALYZER"
     timeout_seconds: 30
     max_output_bytes: 1048576
+    max_input_files: 3
     args:
       - "--input"
       - "{input_file}"

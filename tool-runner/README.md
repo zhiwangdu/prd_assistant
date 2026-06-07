@@ -31,6 +31,7 @@ tools:
     enabled: true
     path_env: LOGAGENT_TOOL_FLUX_QUERY_ANALYZER
     timeout_seconds: 30
+    max_input_files: 3
     match:
       file_patterns:
         - "*.flux"
@@ -49,6 +50,7 @@ tools:
     enabled: true
     path_env: LOGAGENT_TOOL_INFLUXQL_ANALYZER
     timeout_seconds: 30
+    max_input_files: 3
     match:
       file_patterns:
         - "*.sql"
@@ -80,6 +82,8 @@ tools:
 - 已支持配置解析、绝对路径校验、timeout、stdout/stderr 捕获、输出截断和幂等复用。
 - 已支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - 已支持固定 `path` 或环境变量 `path_env` 指定工具路径；启用工具时最终路径必须是绝对路径。
+- 已支持 `max_input_files` 控制单个工具在同一任务中最多处理的匹配输入文件数量，默认 1。
+- 规则版 action 先按 manifest 文件模式匹配，再用 grep keyword 补充候选；每个 action id 包含工具名和输入文件稳定哈希，避免批量任务结果目录冲突。
 - 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、`stderr.txt`。
 - 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。

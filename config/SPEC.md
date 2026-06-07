@@ -45,6 +45,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `tools.<name>.path_env`
 - `tools.<name>.timeout_seconds`
 - `tools.<name>.max_output_bytes`
+- `tools.<name>.max_input_files`
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
@@ -78,6 +79,7 @@ auth:
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL 或 API Key 环境变量时启动失败。
 - `llm.model_env` 配置后优先于 `llm.model`；对应环境变量缺失或模型名为空时启动失败。
 - 启用的 tool path 或 path_env 解析结果必须是绝对路径；非法工具名、相对路径、缺失/空 path_env 启动失败。
+- `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
 - 预算字段必须大于零且有上限；未知 action 类型启动失败。

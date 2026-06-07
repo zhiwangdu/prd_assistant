@@ -227,6 +227,7 @@ mod tests {
                     path: tool_path,
                     timeout_seconds: 5,
                     max_output_bytes: 1024,
+                    max_input_files: 1,
                     args: vec!["{input_file}".to_string()],
                     match_settings: ToolMatchSettings {
                         file_patterns: vec!["*.log".to_string()],
@@ -247,16 +248,14 @@ mod tests {
 
         let completed = state.tasks.get(&task.task_id).await.unwrap();
         assert_eq!(completed.status, TaskStatus::Succeeded);
-        assert!(fixture
-            .workspace
-            .join("tool_results/act_tool_fake/result.json")
-            .exists());
-        let stdout = fs::read_to_string(
-            fixture
-                .workspace
-                .join("tool_results/act_tool_fake/stdout.txt"),
-        )
-        .unwrap();
+        let tool_results_dir = fixture.workspace.join("tool_results");
+        let result_dirs = fs::read_dir(&tool_results_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(result_dirs.len(), 1);
+        assert!(result_dirs[0].join("result.json").exists());
+        let stdout = fs::read_to_string(result_dirs[0].join("stdout.txt")).unwrap();
         assert!(stdout.contains("extracted/sample/sample.log"));
     }
 

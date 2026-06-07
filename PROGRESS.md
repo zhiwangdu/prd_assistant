@@ -131,7 +131,9 @@ workspaces/task_xxx/
 - Reads `tools` whitelist configuration.
 - Validates enabled tool paths are absolute.
 - Supports `tools.<name>.path_env` for environment-provided tool paths; disabled tools do not read their env vars.
-- Generates rule-based `run_tool` actions from manifest file patterns or grep keywords.
+- Supports `tools.<name>.max_input_files` to bound automatic per-tool input selection; default is 1.
+- Generates rule-based `run_tool` actions from manifest file patterns first, then grep keywords as fallback candidates.
+- Uses stable action ids derived from tool name and input file hash, so one tool can process multiple files in the same task without result directory collisions.
 - Executes configured tools through `tokio::process::Command` without shell string concatenation.
 - Supports timeout, stdout/stderr capture, output truncation, non-zero exit recording, spawn failure recording, and idempotent result reuse.
 - Parses JSON stdout into structured `summary` and `findings`; non-JSON stdout keeps the old fallback summary and does not fail the task.
@@ -270,7 +272,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner and LLM tests cover config validation, rule-based action selection, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
+- Tool Runner and LLM tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

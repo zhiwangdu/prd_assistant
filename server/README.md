@@ -195,8 +195,9 @@ MVP 要求：
 - 仅从 `EXTRACT` 恢复时清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`；从后续阶段恢复时复用已完成的前置产物。
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
-- `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；未匹配或未配置工具时直接进入 `GENERATE_RESULT`。
+- `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `GENERATE_RESULT`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。

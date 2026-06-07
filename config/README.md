@@ -56,6 +56,7 @@ tools:
     path_env: LOGAGENT_TOOL_FLUX_QUERY_ANALYZER
     timeout_seconds: 30
     max_output_bytes: 1048576
+    max_input_files: 3
     args:
       - "--input"
       - "{input_file}"
@@ -132,6 +133,7 @@ metadata:
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
 - 当前单次结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
+- `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

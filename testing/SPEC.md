@@ -24,8 +24,8 @@
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。
-- Server 单测覆盖 Tool Runner 配置校验、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
-- Server 单测覆盖 Tool Runner `path_env` 解析、缺失/空 env 拒绝以及禁用工具不读取 env。
+- Server 单测覆盖 Tool Runner 配置校验、规则版多输入文件选择、稳定 action id、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
+- Server 单测覆盖 Tool Runner `path_env`、`max_input_files` 解析、缺失/空 env 拒绝以及禁用工具不读取 env。
 - 手工 smoke 验证过 WEBUI 上传、任务创建和 artifacts 查询。
 
 ## 必跑检查

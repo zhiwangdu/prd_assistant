@@ -173,7 +173,7 @@ LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或
 
 证据 artifact 路径必须是 workspace 相对安全路径。
 
-`RUN_TOOL` 当前使用 Server 规则选择工具。规则输入是 `manifest.json` 和 `grep_results.json`，输出与未来 LLM action 相同的 `AgentAction`。每个工具 action 结果写入：
+`RUN_TOOL` 当前使用 Server 规则选择工具。规则输入是 `manifest.json` 和 `grep_results.json`，输出与未来 LLM action 相同的 `AgentAction`。规则先按 manifest file pattern 选择输入文件，再按 grep keyword 补充候选；每个工具最多生成 `max_input_files` 个 action。action id 包含工具名和输入文件稳定哈希，保证批量任务中同一工具的不同输入文件写入不同结果目录。每个工具 action 结果写入：
 
 ```text
 tool_results/<action_id>/
@@ -225,6 +225,7 @@ persist task
 - `tools.<name>.path_env`
 - `tools.<name>.timeout_seconds`
 - `tools.<name>.max_output_bytes`
+- `tools.<name>.max_input_files`
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
@@ -249,6 +250,7 @@ persist task
 - pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
+- 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。
 - `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。

@@ -70,8 +70,8 @@ environment approval -> collect stub -> Agent continuation -> result
 - LLM 列表字段解析覆盖真实模型返回的单字符串 `missingInformation` 并规范化为数组。
 - Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏、自然语言包裹的唯一 JSON object，以及多个 JSON object 的拒绝路径。
 - LLM Gateway 测试覆盖 schema 修正重试提示，以及解析错误中包含具体字段/类型原因。
-- Tool Runner 覆盖配置校验、规则 action、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
-- Tool Runner 配置测试覆盖 `path_env`、禁用工具不读取 env、缺失/空 env 启动失败。
+- Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
+- Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 
 ### LLM 测试策略
 
