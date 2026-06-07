@@ -53,7 +53,27 @@ pub struct ToolRunRecord {
     pub stdout_path: String,
     pub stderr_path: String,
     pub summary: String,
+    #[serde(default)]
+    pub findings: Vec<ToolFinding>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolFinding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ParsedToolOutput {
+    summary: Option<String>,
+    findings: Vec<ToolFinding>,
 }
 
 impl ToolRunner {
@@ -133,13 +153,21 @@ impl ToolRunner {
                 let stderr = truncate_bytes(&output.stderr, tool.max_output_bytes);
                 fs::write(&stdout_path, stdout)?;
                 fs::write(&stderr_path, stderr)?;
+                let parsed = parse_tool_stdout(stdout);
                 let status = if output.status.success() {
                     ToolRunStatus::Ok
                 } else {
                     ToolRunStatus::Failed
                 };
+                let fallback_summary = match status {
+                    ToolRunStatus::Ok => format!("tool {} completed successfully", tool.name),
+                    ToolRunStatus::Failed => {
+                        format!("tool {} exited with non-zero status", tool.name)
+                    }
+                    ToolRunStatus::TimedOut => unreachable!(),
+                };
                 ToolRunRecord {
-                    schema_version: 1,
+                    schema_version: 2,
                     tool: tool.name.clone(),
                     action_id: action.action_id.clone(),
                     status,
@@ -149,13 +177,8 @@ impl ToolRunner {
                     input_file,
                     stdout_path: relative_string(&context.workspace, &stdout_path)?,
                     stderr_path: relative_string(&context.workspace, &stderr_path)?,
-                    summary: match status {
-                        ToolRunStatus::Ok => format!("tool {} completed successfully", tool.name),
-                        ToolRunStatus::Failed => {
-                            format!("tool {} exited with non-zero status", tool.name)
-                        }
-                        ToolRunStatus::TimedOut => unreachable!(),
-                    },
+                    summary: parsed.summary.unwrap_or(fallback_summary),
+                    findings: parsed.findings,
                     error: None,
                 }
             }
@@ -163,7 +186,7 @@ impl ToolRunner {
                 fs::write(&stdout_path, b"")?;
                 fs::write(&stderr_path, b"tool timed out")?;
                 ToolRunRecord {
-                    schema_version: 1,
+                    schema_version: 2,
                     tool: tool.name.clone(),
                     action_id: action.action_id.clone(),
                     status: ToolRunStatus::TimedOut,
@@ -177,6 +200,7 @@ impl ToolRunner {
                         "tool {} timed out after {} seconds",
                         tool.name, tool.timeout_seconds
                     ),
+                    findings: Vec::new(),
                     error: Some("tool timed out".to_string()),
                 }
             }
@@ -184,7 +208,7 @@ impl ToolRunner {
                 fs::write(&stdout_path, b"")?;
                 fs::write(&stderr_path, message.as_bytes())?;
                 ToolRunRecord {
-                    schema_version: 1,
+                    schema_version: 2,
                     tool: tool.name.clone(),
                     action_id: action.action_id.clone(),
                     status: ToolRunStatus::Failed,
@@ -195,6 +219,7 @@ impl ToolRunner {
                     stdout_path: relative_string(&context.workspace, &stdout_path)?,
                     stderr_path: relative_string(&context.workspace, &stderr_path)?,
                     summary: format!("tool {} could not be started", tool.name),
+                    findings: Vec::new(),
                     error: Some(message),
                 }
             }
@@ -350,6 +375,14 @@ fn artifact_from_record(
     result_path: &Path,
     record: ToolRunRecord,
 ) -> anyhow::Result<EvidenceArtifact> {
+    let mut details = vec![record.summary.clone()];
+    details.extend(
+        record
+            .findings
+            .iter()
+            .take(5)
+            .map(|finding| finding_detail(finding)),
+    );
     let artifact = EvidenceArtifact {
         schema_version: 1,
         action_id: Some(record.action_id),
@@ -357,11 +390,122 @@ fn artifact_from_record(
         artifact_path: relative_string(workspace, result_path)?,
         summary: EvidenceSummary {
             title: format!("{} {:?}", record.tool, record.status),
-            details: vec![record.summary],
+            details,
         },
     };
     artifact.validate()?;
     Ok(artifact)
+}
+
+fn parse_tool_stdout(stdout: &[u8]) -> ParsedToolOutput {
+    let text = String::from_utf8_lossy(stdout);
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return ParsedToolOutput::default();
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return ParsedToolOutput::default();
+    };
+    parse_tool_output_value(&value)
+}
+
+fn parse_tool_output_value(value: &serde_json::Value) -> ParsedToolOutput {
+    match value {
+        serde_json::Value::Object(object) => {
+            let summary = string_field(object, &["summary", "message", "title"]);
+            let findings = object
+                .get("findings")
+                .or_else(|| object.get("issues"))
+                .or_else(|| object.get("diagnostics"))
+                .map(parse_findings_value)
+                .unwrap_or_default();
+            ParsedToolOutput { summary, findings }
+        }
+        serde_json::Value::Array(_) => ParsedToolOutput {
+            summary: None,
+            findings: parse_findings_value(value),
+        },
+        serde_json::Value::String(message) => ParsedToolOutput {
+            summary: Some(message.clone()),
+            findings: Vec::new(),
+        },
+        _ => ParsedToolOutput::default(),
+    }
+}
+
+fn parse_findings_value(value: &serde_json::Value) -> Vec<ToolFinding> {
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    items.iter().filter_map(parse_finding_value).collect()
+}
+
+fn parse_finding_value(value: &serde_json::Value) -> Option<ToolFinding> {
+    match value {
+        serde_json::Value::String(message) => non_empty(message).map(|message| ToolFinding {
+            severity: None,
+            file: None,
+            line: None,
+            message,
+        }),
+        serde_json::Value::Object(object) => {
+            let message = string_field(
+                object,
+                &[
+                    "message",
+                    "summary",
+                    "description",
+                    "detail",
+                    "title",
+                    "cause",
+                ],
+            )?;
+            Some(ToolFinding {
+                severity: string_field(object, &["severity", "level", "status"]),
+                file: string_field(object, &["file", "path", "filename"]),
+                line: number_field(object, &["line", "lineNumber", "startLine"]),
+                message,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter().find_map(|key| match object.get(*key)? {
+        serde_json::Value::String(value) => non_empty(value),
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    })
+}
+
+fn number_field(object: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<u64> {
+    keys.iter().find_map(|key| match object.get(*key)? {
+        serde_json::Value::Number(value) => value.as_u64(),
+        serde_json::Value::String(value) => value.trim().parse().ok(),
+        _ => None,
+    })
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn finding_detail(finding: &ToolFinding) -> String {
+    let location = match (&finding.file, finding.line) {
+        (Some(file), Some(line)) => format!("{file}:{line}"),
+        (Some(file), None) => file.clone(),
+        (None, Some(line)) => format!("line {line}"),
+        (None, None) => "-".to_string(),
+    };
+    match &finding.severity {
+        Some(severity) => format!("{severity} {location}: {}", finding.message),
+        None => format!("{location}: {}", finding.message),
+    }
 }
 
 fn read_record(path: &Path) -> anyhow::Result<ToolRunRecord> {
@@ -462,6 +606,65 @@ mod tests {
         std::fs::remove_file(&tool_path).unwrap();
         let reused = runner.execute(&fixture.context(), &action).await.unwrap();
         assert_eq!(reused.artifact_path, artifact.artifact_path);
+    }
+
+    #[tokio::test]
+    async fn parses_json_summary_and_findings_from_stdout() {
+        let fixture = Fixture::new("tool-runner-json");
+        let tool_path = fixture.write_tool(
+            "json_tool.sh",
+            r#"#!/usr/bin/env bash
+cat <<'JSON'
+{"summary":"found planner issue","findings":[{"severity":"medium","file":"query.flux","line":12,"message":"filter pushdown failed"}]}
+JSON
+"#,
+        );
+        let runner = ToolRunner::new(settings(tool_path, 5));
+        let action = action("act_tool_json", "fake", Some("extracted/sample.log"));
+        let artifact = runner.execute(&fixture.context(), &action).await.unwrap();
+        let record = read_record(&fixture.workspace.join(&artifact.artifact_path)).unwrap();
+
+        assert_eq!(record.schema_version, 2);
+        assert_eq!(record.summary, "found planner issue");
+        assert_eq!(
+            record.findings,
+            vec![ToolFinding {
+                severity: Some("medium".to_string()),
+                file: Some("query.flux".to_string()),
+                line: Some(12),
+                message: "filter pushdown failed".to_string(),
+            }]
+        );
+        assert_eq!(
+            artifact.summary.details,
+            vec![
+                "found planner issue".to_string(),
+                "medium query.flux:12: filter pushdown failed".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_array_and_alternate_finding_fields() {
+        let parsed = parse_tool_stdout(
+            br#"[{"level":"high","path":"query.sql","lineNumber":"7","description":"full scan"},{"message":"missing retention policy"}]"#,
+        );
+
+        assert_eq!(parsed.summary, None);
+        assert_eq!(parsed.findings.len(), 2);
+        assert_eq!(parsed.findings[0].severity.as_deref(), Some("high"));
+        assert_eq!(parsed.findings[0].file.as_deref(), Some("query.sql"));
+        assert_eq!(parsed.findings[0].line, Some(7));
+        assert_eq!(parsed.findings[0].message, "full scan");
+        assert_eq!(parsed.findings[1].message, "missing retention policy");
+    }
+
+    #[test]
+    fn ignores_non_json_stdout_for_structured_fields() {
+        let parsed = parse_tool_stdout(b"plain text output\n");
+
+        assert_eq!(parsed.summary, None);
+        assert!(parsed.findings.is_empty());
     }
 
     #[tokio::test]

@@ -81,7 +81,8 @@ tools:
 - 已支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - 已支持固定 `path` 或环境变量 `path_env` 指定工具路径；启用工具时最终路径必须是绝对路径。
 - 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、`stderr.txt`。
-- artifacts API 和 WebUI 能展示 tool result。
+- 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
+- artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
 
 ## 本地真实工具 smoke
@@ -97,8 +98,36 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
 
 ## 输出结构
 
+工具 stdout 若为 JSON，Server 会尝试解析以下形态：
+
 ```json
 {
+  "summary": "发现 2 个可能导致慢查询的问题",
+  "findings": [
+    {
+      "severity": "medium",
+      "file": "query.log",
+      "line": 120,
+      "message": "filter 下推失败，可能导致扫描数据量过大"
+    }
+  ]
+}
+```
+
+兼容字段：
+
+- summary 可来自 `summary`、`message` 或 `title`。
+- findings 数组可来自 `findings`、`issues` 或 `diagnostics`。
+- finding 消息可来自 `message`、`summary`、`description`、`detail`、`title` 或 `cause`。
+- severity 可来自 `severity`、`level` 或 `status`。
+- file 可来自 `file`、`path` 或 `filename`。
+- line 可来自 `line`、`lineNumber` 或 `startLine`。
+
+`result.json` 标准化后结构：
+
+```json
+{
+  "schemaVersion": 2,
   "tool": "flux_query_analyzer",
   "actionId": "act_123",
   "status": "OK",
@@ -113,6 +142,7 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
       "message": "filter 下推失败，可能导致扫描数据量过大"
     }
   ],
-  "rawOutputPath": "tool_results/flux_query_analyzer.raw.json"
+  "stdoutPath": "tool_results/act_123/stdout.txt",
+  "stderrPath": "tool_results/act_123/stderr.txt"
 }
 ```

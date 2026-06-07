@@ -11,7 +11,7 @@ type TaskSummary = {
   taskId: string;
   url: string;
   status: TaskStatus;
-  phase?: "EXTRACT" | "SEARCH_LOGS" | "GENERATE_RESULT" | null;
+  phase?: "EXTRACT" | "SEARCH_LOGS" | "RUN_TOOL" | "PLAN_ANALYSIS" | "GENERATE_RESULT" | null;
   createdAt: string;
 };
 type TaskRecord = TaskSummary & {
@@ -46,8 +46,15 @@ type ToolResult = {
   exitCode?: number | null;
   durationMs: number;
   summary: string;
+  findings?: ToolFinding[];
   stdoutPath: string;
   stderrPath: string;
+};
+type ToolFinding = {
+  severity?: string;
+  file?: string;
+  line?: number;
+  message: string;
 };
 type MetadataContext = {
   instanceId?: string | null;
@@ -230,11 +237,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       {artifacts?.toolResults?.length ? (
         <Evidence title="Tool results" count={artifacts.toolResults.length}>
           {artifacts.toolResults.map((result) => (
-            <DataLine
-              key={result.actionId}
-              title={`${result.tool} · ${result.status}`}
-              detail={`exit=${result.exitCode ?? "-"} · ${result.durationMs}ms · ${result.summary} · stdout=${result.stdoutPath} · stderr=${result.stderrPath}`}
-            />
+            <ToolResultLine key={result.actionId} result={result} />
           ))}
         </Evidence>
       ) : null}
@@ -311,6 +314,26 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
         {rows.map(([label, value]) => <div className="rounded-lg border border-border p-3" key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value || "-"}</p></div>)}
       </CardContent>
     </Card>
+  );
+}
+
+function ToolResultLine({ result }: { result: ToolResult }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-center gap-2 text-sm font-medium"><FileArchive className="h-4 w-4 text-slate-400" />{result.tool} · {result.status}</div>
+      <p className="mt-1 break-words text-xs text-muted-foreground">exit={result.exitCode ?? "-"} · {result.durationMs}ms · {result.summary} · stdout={result.stdoutPath} · stderr={result.stderrPath}</p>
+      {result.findings?.length ? (
+        <ul className="mt-3 space-y-2">
+          {result.findings.map((finding, index) => (
+            <li className="rounded-md bg-slate-50 p-2 text-xs" key={`${finding.message}:${index}`}>
+              <span className="font-medium">{finding.severity ?? "finding"}</span>
+              <span className="text-muted-foreground"> · {finding.file ?? "-"}{finding.line ? `:${finding.line}` : ""}</span>
+              <p className="mt-1 text-slate-700">{finding.message}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

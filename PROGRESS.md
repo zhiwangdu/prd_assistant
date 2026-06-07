@@ -133,6 +133,8 @@ workspaces/task_xxx/
 - Generates rule-based `run_tool` actions from manifest file patterns or grep keywords.
 - Executes configured tools through `tokio::process::Command` without shell string concatenation.
 - Supports timeout, stdout/stderr capture, output truncation, non-zero exit recording, spawn failure recording, and idempotent result reuse.
+- Parses JSON stdout into structured `summary` and `findings`; non-JSON stdout keeps the old fallback summary and does not fail the task.
+- `ToolRunRecord` schema version 2 adds `findings[]` with optional `severity`, `file`, `line` and required `message`.
 - Writes:
 
 ```text
@@ -143,7 +145,7 @@ tool_results/<action_id>/
 ```
 
 - `GET /api/tasks/:task_id/artifacts` returns `toolResults`.
-- WebUI displays tool result status, exit code, duration, summary, stdout path, and stderr path.
+- WebUI displays tool result status, exit code, duration, summary, structured findings, stdout path, and stderr path.
 - Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
 
@@ -264,7 +266,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner tests cover config validation, rule-based action selection, fake tool execution, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, and artifacts API `toolResults`.
+- Tool Runner tests cover config validation, rule-based action selection, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, and artifacts API `toolResults`.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

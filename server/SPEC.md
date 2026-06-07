@@ -184,6 +184,8 @@ tool_results/<action_id>/
 
 工具路径可来自固定 `path` 或 `path_env` 环境变量；启用工具必须解析为绝对路径，禁用工具不读取 `path_env`。工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
 
+当工具 stdout 是 JSON 时，Server 会解析 `summary` 和 `findings` 并写入 `tool_results/<action_id>/result.json`。`findings` 条目包含可选 `severity`、`file`、`line` 和必填 `message`。stdout 不是 JSON 或字段不匹配时不改变工具执行状态，仍保留 stdout/stderr 并使用通用 summary。
+
 ## 规划中的调查编排
 
 ```text
@@ -231,7 +233,7 @@ persist task
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
-- 更精确的 `flux_query_analyzer`、`influxql_analyzer` 规则和真实工具输出摘要解析。
+- 更精确的 `flux_query_analyzer`、`influxql_analyzer` 规则和真实工具输出字段映射。
 - 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
 
@@ -248,6 +250,7 @@ persist task
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
 - `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
+- Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - multipart 小文件和批量上传不能在 payload 未 flush 时持久化 `COMPLETE` 记录。
