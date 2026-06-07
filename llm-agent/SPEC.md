@@ -13,6 +13,7 @@
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - manifest/grep/metadata Prompt 和字符数裁剪。
 - 最终结果 schema、confidence 和 grep evidence ref 校验。
+- 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON 或单个 JSON Markdown 代码围栏，拒绝混有额外自然语言的内容。
 - `result.json` / `result.md` 持久化。
 
@@ -25,7 +26,13 @@
 
 ## 当前输出
 
-结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据只能引用有效的 `grep_results.json#matches/<index>`。
+结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 `grep_results.json#matches/<index>`。Gateway 可接受并规范化以下可追踪别名：
+
+- `12`：映射到原始日志行号 12 对应的 grep match。
+- `12-14`：映射到原始日志行号 12 到 14 对应的 grep matches。
+- `#0-#7`：映射到 grep match 索引 0 到 7。
+
+无法映射的行号或越界索引必须拒绝。
 
 ## 错误
 
@@ -53,6 +60,7 @@
 
 - stub Provider 能返回最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
+- 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
 - 纯 JSON 和完整 JSON 代码围栏可解析，附带额外自然语言的响应被拒绝。
 - 输入裁剪后不超过字符上限且保留证据引用。
 - Metadata `rawSnapshot` 不进入 Prompt。

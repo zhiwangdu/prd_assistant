@@ -201,6 +201,7 @@ MVP 要求：
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `SEARCH_LOGS` 后单次调用 LLM Gateway，写入 `result.json` 和 `result.md`；调用失败时任务进入 `FAILED / GENERATE_RESULT`。
+- LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - OpenAI-compatible 响应可为纯 JSON 或完整 JSON Markdown 代码围栏；包含额外自然语言时按协议错误处理。

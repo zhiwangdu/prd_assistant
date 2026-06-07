@@ -246,6 +246,7 @@ persist task
 - stub 模式能单次生成结构化结果并通过 result API 读取。
 - 真实 Provider 配置 `llm.model_env` 时，环境变量缺失或模型名为空必须启动失败。
 - 真实 Provider 返回纯 JSON 或完整 JSON 代码围栏时可解析，额外自然语言不能被静默忽略。
+- 真实 Provider 返回可映射的行号/范围或 `#start-#end` evidence ref 时应规范化为 canonical grep match refs；无法映射时必须失败。
 - 批量任务的 manifest `files[].path` 必须带包名目录前缀。
 - 受保护接口无 API Key 时返回 401。
 - 等待用户或审批的任务可恢复，重复 message/decision/action 不产生重复执行。

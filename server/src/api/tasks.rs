@@ -313,6 +313,7 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
+    use std::sync::atomic::{AtomicU64, Ordering};
     use tower::ServiceExt;
 
     use crate::{
@@ -757,9 +758,11 @@ nodes:
     }
 
     fn test_state_with_llm(llm: LlmSettings) -> (Arc<AppState>, std::path::PathBuf) {
+        static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
         let root = std::env::temp_dir().join(format!(
-            "logagent-task-api-{}",
-            Utc::now().timestamp_nanos_opt().unwrap()
+            "logagent-task-api-{}-{}",
+            std::process::id(),
+            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         let config = Arc::new(AppConfig {
             server: ServerSettings {

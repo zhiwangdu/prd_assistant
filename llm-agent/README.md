@@ -30,7 +30,7 @@ LLM Gateway 不负责：
 question + manifest.json + grep_results.json + metadata_context.json
   -> Prompt 裁剪
   -> stub 或 OpenAI-compatible Chat Completions
-  -> schema / evidence ref 校验
+  -> schema / evidence ref 校验与可追踪别名规范化
   -> result.json / result.md
 ```
 
@@ -39,6 +39,8 @@ question + manifest.json + grep_results.json + metadata_context.json
 响应解析接受纯 JSON，或整个响应为单个 `json`/无语言标记 Markdown 代码围栏。不会从附带自然语言说明的响应中猜测提取 JSON。
 
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
+
+evidence ref 的 canonical 形式仍是 `grep_results.json#matches/<index>`。真实模型偶尔返回裸日志行号或范围，例如 `12-14`，或索引范围 `#0-#7`；Gateway 会在能唯一映射到当前 grep evidence 时规范化为 canonical refs。无法映射到 grep evidence 的引用仍会拒绝，任务进入 `FAILED / GENERATE_RESULT`。
 
 ## 配置
 

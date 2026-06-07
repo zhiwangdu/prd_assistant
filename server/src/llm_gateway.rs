@@ -44,7 +44,7 @@ impl LlmGateway {
             LlmProvider::Stub => stub_result(question, grep),
             LlmProvider::OpenAiCompatible => self.call_chat_completions(&prompt).await?,
         };
-        validate_result(draft, grep.matches.len())
+        validate_result_with_grep(draft, Some(grep), grep.matches.len())
     }
 
     async fn call_chat_completions(&self, prompt: &str) -> anyhow::Result<ResultDraft> {
@@ -272,26 +272,32 @@ fn stub_result(question: &str, grep: &GrepResults) -> ResultDraft {
     }
 }
 
-fn validate_result(draft: ResultDraft, match_count: usize) -> anyhow::Result<AnalysisResult> {
+fn validate_result_with_grep(
+    mut draft: ResultDraft,
+    grep: Option<&GrepResults>,
+    match_count: usize,
+) -> anyhow::Result<AnalysisResult> {
     if draft.summary.trim().is_empty() {
         anyhow::bail!("LLM result summary is empty");
     }
-    for cause in &draft.likely_root_causes {
+    for cause in &mut draft.likely_root_causes {
         if cause.cause.trim().is_empty() {
             anyhow::bail!("LLM result contains an empty root cause");
         }
         if cause.evidence_refs.is_empty() {
             anyhow::bail!("LLM root cause is missing evidence refs");
         }
+        let mut normalized_refs = Vec::new();
         for evidence_ref in &cause.evidence_refs {
-            let index = evidence_ref
-                .strip_prefix("grep_results.json#matches/")
-                .and_then(|value| value.parse::<usize>().ok())
+            let refs = normalize_evidence_ref(evidence_ref, grep, match_count)
                 .with_context(|| format!("invalid evidence ref {evidence_ref}"))?;
-            if index >= match_count {
-                anyhow::bail!("evidence ref {evidence_ref} is out of range");
+            for normalized_ref in refs {
+                if !normalized_refs.contains(&normalized_ref) {
+                    normalized_refs.push(normalized_ref);
+                }
             }
         }
+        cause.evidence_refs = normalized_refs;
     }
     Ok(AnalysisResult {
         schema_version: 1,
@@ -303,6 +309,88 @@ fn validate_result(draft: ResultDraft, match_count: usize) -> anyhow::Result<Ana
         missing_information: draft.missing_information,
         confidence: draft.confidence,
     })
+}
+
+fn normalize_evidence_ref(
+    evidence_ref: &str,
+    grep: Option<&GrepResults>,
+    match_count: usize,
+) -> anyhow::Result<Vec<String>> {
+    let value = evidence_ref.trim();
+    if let Some(index) = parse_canonical_match_ref(value) {
+        ensure_match_index(index, match_count)?;
+        return Ok(vec![canonical_match_ref(index)]);
+    }
+    if let Some((start, end)) = parse_match_index_range(value) {
+        if start > end {
+            anyhow::bail!("range start is greater than end");
+        }
+        let mut refs = Vec::new();
+        for index in start..=end {
+            ensure_match_index(index, match_count)?;
+            refs.push(canonical_match_ref(index));
+        }
+        return Ok(refs);
+    }
+    if let Some((start, end)) = parse_line_range(value) {
+        let grep = grep.context("line-based evidence refs require grep context")?;
+        if start > end {
+            anyhow::bail!("line range start is greater than end");
+        }
+        let refs = grep
+            .matches
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.line >= start && item.line <= end)
+            .map(|(index, _)| canonical_match_ref(index))
+            .collect::<Vec<_>>();
+        if refs.is_empty() {
+            anyhow::bail!("line range does not match any grep evidence");
+        }
+        return Ok(refs);
+    }
+    anyhow::bail!("unsupported evidence ref format");
+}
+
+fn parse_canonical_match_ref(value: &str) -> Option<usize> {
+    value
+        .strip_prefix("grep_results.json#matches/")
+        .and_then(|value| value.parse::<usize>().ok())
+}
+
+fn parse_match_index_range(value: &str) -> Option<(usize, usize)> {
+    let value = value.strip_prefix('#')?;
+    let (start, end) = value.split_once("-#")?;
+    Some((start.parse().ok()?, end.parse().ok()?))
+}
+
+fn parse_line_range(value: &str) -> Option<(usize, usize)> {
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b'-')
+    {
+        return None;
+    }
+    if let Some((start, end)) = value.split_once('-') {
+        Some((start.parse().ok()?, end.parse().ok()?))
+    } else {
+        let line = value.parse().ok()?;
+        Some((line, line))
+    }
+}
+
+fn ensure_match_index(index: usize, match_count: usize) -> anyhow::Result<()> {
+    if index >= match_count {
+        anyhow::bail!(
+            "evidence ref {} is out of range",
+            canonical_match_ref(index)
+        );
+    }
+    Ok(())
+}
+
+fn canonical_match_ref(index: usize) -> String {
+    format!("grep_results.json#matches/{index}")
 }
 
 #[derive(Debug, Serialize)]
@@ -384,7 +472,77 @@ mod tests {
             missing_information: vec![],
             confidence: Confidence::Low,
         };
-        assert!(validate_result(draft, 1).is_err());
+        assert!(validate_result_with_grep(draft, None, 1).is_err());
+    }
+
+    #[test]
+    fn normalizes_line_and_index_range_evidence_refs() {
+        let grep = GrepResults {
+            keywords: vec!["error".to_string()],
+            total_matches: 4,
+            matches: vec![
+                grep_match_at_line(10, "first"),
+                grep_match_at_line(12, "line 12"),
+                grep_match_at_line(13, "line 13"),
+                grep_match_at_line(14, "line 14"),
+            ],
+        };
+        let draft = ResultDraft {
+            summary: "summary".to_string(),
+            symptoms: vec![],
+            likely_root_causes: vec![
+                RootCause {
+                    cause: "line range".to_string(),
+                    evidence_refs: vec!["12-14".to_string()],
+                },
+                RootCause {
+                    cause: "index range".to_string(),
+                    evidence_refs: vec!["#0-#1".to_string()],
+                },
+            ],
+            next_checks: vec![],
+            fix_suggestions: vec![],
+            missing_information: vec![],
+            confidence: Confidence::Low,
+        };
+
+        let result = validate_result_with_grep(draft, Some(&grep), grep.matches.len()).unwrap();
+
+        assert_eq!(
+            result.likely_root_causes[0].evidence_refs,
+            vec![
+                "grep_results.json#matches/1",
+                "grep_results.json#matches/2",
+                "grep_results.json#matches/3"
+            ]
+        );
+        assert_eq!(
+            result.likely_root_causes[1].evidence_refs,
+            vec!["grep_results.json#matches/0", "grep_results.json#matches/1"]
+        );
+    }
+
+    #[test]
+    fn rejects_line_refs_that_do_not_map_to_grep_evidence() {
+        let grep = GrepResults {
+            keywords: vec!["error".to_string()],
+            total_matches: 1,
+            matches: vec![grep_match_at_line(10, "first")],
+        };
+        let draft = ResultDraft {
+            summary: "summary".to_string(),
+            symptoms: vec![],
+            likely_root_causes: vec![RootCause {
+                cause: "missing line".to_string(),
+                evidence_refs: vec!["12-14".to_string()],
+            }],
+            next_checks: vec![],
+            fix_suggestions: vec![],
+            missing_information: vec![],
+            confidence: Confidence::Low,
+        };
+
+        assert!(validate_result_with_grep(draft, Some(&grep), grep.matches.len()).is_err());
     }
 
     #[test]
@@ -531,9 +689,13 @@ mod tests {
     }
 
     fn grep_match(text: &str) -> GrepMatch {
+        grep_match_at_line(1, text)
+    }
+
+    fn grep_match_at_line(line: usize, text: &str) -> GrepMatch {
         GrepMatch {
             file: "sample/sample.log".to_string(),
-            line: 1,
+            line,
             keyword: "error".to_string(),
             text: text.to_string(),
         }

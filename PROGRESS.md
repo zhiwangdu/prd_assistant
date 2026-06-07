@@ -203,6 +203,7 @@ tool_results/<action_id>/
 - Accepts pure JSON and whole-response JSON Markdown fences while rejecting responses mixed with natural-language commentary.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.
 - Validates result schema, confidence, and task-local grep evidence references.
+- Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14` and index ranges such as `#0-#7`, into canonical `grep_results.json#matches/<index>` refs.
 - Performs exactly one model request per task attempt with no automatic retry.
 - Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
 
@@ -251,7 +252,7 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 46 Rust tests pass.
+- 48 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
 - Upload API tests cover single and batch multipart upload flush-before-persist behavior.
 - Task API rejects `UPLOADING` records until completion.
@@ -264,7 +265,8 @@ Task, upload, and LLM verification:
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
-- Prompt truncation, Chat Completions parsing, Provider error classification, and evidence refs are tested.
+- Prompt truncation, Chat Completions parsing, Provider error classification, evidence refs, and evidence ref alias normalization are tested.
+- Task API tests use per-process atomic temp roots so concurrent test cleanup cannot remove another task workspace.
 - LLM model configuration tests cover static values, `model_env` precedence, and missing or empty environment values.
 - Chat Completions parsing tests cover pure JSON, JSON code fences, and rejection of extra natural-language text.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
@@ -273,6 +275,7 @@ Task, upload, and LLM verification:
 - Real OpenAI-compatible smoke on port 50994 reached the configured `deepseek-v4-flash` model and completed task `task_1780762062871_3` as `SUCCEEDED`.
 - The successful real-model result persisted `result.json` / `result.md`, returned through the result API, and cited both task-local grep matches.
 - Two preceding real-model attempts returned content that failed the strict result JSON parser, while an equivalent direct request and the third task returned valid JSON. This confirms the end-to-end protocol but leaves output-format stability, JSON response-format enforcement, and bounded schema retry as follow-up work.
+- After evidence ref alias normalization, two real-model smoke tasks on port 50994 still failed earlier at strict JSON parsing (`LLM content is not valid result JSON`), so the exact `12-14` normalization path is covered by unit tests rather than real-model completion.
 
 Recent HTTP smoke checks:
 

@@ -16,6 +16,8 @@
 - Server 单测覆盖 Task Store 持久化/恢复、幂等 pipeline 和任务 API 状态码。
 - Server 单测覆盖 Action/Evidence JSON 契约、安全 artifact 路径、expected phase 推进以及从 `SEARCH_LOGS` / `GENERATE_RESULT` 恢复。
 - Server 单测覆盖 stub LLM 端到端结果、Prompt 裁剪、响应解析和 evidence ref 校验。
+- Server 单测覆盖 LLM evidence ref 行号/索引范围规范化和无法映射引用拒绝。
+- Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏和附带自然语言的 LLM 响应。
 - Server 单测覆盖 Tool Runner 配置校验、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
@@ -64,6 +66,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - 上传持久化变更必须覆盖 payload/记录不一致、未完成上传和重启后的续传 offset。
 - multipart 上传变更必须覆盖单文件和批量路径，防止 `COMPLETE` 记录先于 payload flush。
 - LLM 自动测试必须使用 stub 或纯解析测试，不依赖外网、真实密钥或付费请求。
+- LLM evidence ref 变更必须保证最终结果只保存 canonical `grep_results.json#matches/<index>`。
 - WEBUI 修改至少跑 lint、typecheck 和 build。
 - Analysis Agent 必须覆盖多轮、追问、审批、预算、重复动作和重启恢复。
 - README 和 SPEC 在测试策略或 fixture 变更时同步更新。
