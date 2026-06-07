@@ -50,7 +50,8 @@ Rust -> C/C++ -> Go/Python/Java 等
   - Metadata task context、`metadata_context.json` 和 LLM Prompt 摘要。
   - 支持 openGemini `/getdata` 真实元数据 URL 拉取和归一化。
   - 静态托管 `webui/out`。
-  - 当前 task pipeline：copy raw -> metadata context -> per-upload extract -> manifest -> simple grep -> single LLM result。
+  - Tool Runner MVP：白名单配置、规则版 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact。
+  - 当前 task pipeline：copy raw -> metadata context -> per-upload extract -> manifest -> simple grep -> optional tool results -> single LLM result。
 
 - `log-analyzer/`
   - 作为 Server 内部模块实现。
@@ -62,7 +63,7 @@ Rust -> C/C++ -> Go/Python/Java 等
   - React + Vite + Tailwind CSS 静态导出应用。
   - 支持健康检查、API Key、手动批量上传、小文件/分片上传、创建 task、查看 artifacts。
   - 支持 Metadata 查询、YAML/JSON/openGemini 导入预览和确认。
-  - 从 Server 读取持久化任务列表，支持状态轮询、历史任务、LLM 结果和 Metadata context 展示。
+  - 从 Server 读取持久化任务列表，支持状态轮询、历史任务、LLM 结果、Metadata context 和 Tool Runner result 展示。
 
 - `metadata/`
   - 已实现基础 store/API/WEBUI。
@@ -71,7 +72,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 规划中组件：
 
-- `tool-runner/`：白名单调用外部工具，优先接入 `flux_query_analyzer`、`influxql_analyzer`。
+- `tool-runner/`：MVP 已在 Server 内实现，下一步配置并验证真实 `flux_query_analyzer`、`influxql_analyzer`。
 - `code-evidence/`：根据用户输入的软件版本定位代码分支/tag/ref，收集文件行号证据。
 - `environment-collector/`：测试环境通过 SSH/SCP 采集信息，不需要浏览器下载或本地上传。
 - `analysis-agent/`：任务级上下文、多轮调查、用户追问、动作审批、预算和终止条件。
@@ -191,7 +192,7 @@ data_dir/
 
 ## 近期开发优先级
 
-1. Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`，消费现有 Action/Evidence 契约。
+1. 配置并 smoke-test 真实 `flux_query_analyzer` 和 `influxql_analyzer`。
 2. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
 3. Analysis Agent State Store 和 LLM Gateway 结构化 action / final answer。
 4. Analysis Agent 多轮动作、追问、审批和预算终止。

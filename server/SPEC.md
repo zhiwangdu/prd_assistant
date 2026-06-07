@@ -21,6 +21,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - semaphore 限制的后台执行
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
+- Tool Runner MVP 和 `RUN_TOOL` phase
 - task artifact 查询
 - metadata 查询和导入确认
 - upload pipeline
@@ -101,6 +102,11 @@ data_dir/
       manifest.json
       grep_results.json
       metadata_context.json
+      tool_results/
+        act_tool_xxx/
+          result.json
+          stdout.txt
+          stderr.txt
       analysis_state.json
       analysis_events.jsonl
       result.json
@@ -140,6 +146,8 @@ background executor
   -> EXTRACT: clean/rebuild extracted + manifest
   -> persist SEARCH_LOGS
   -> SEARCH_LOGS: rebuild grep evidence
+  -> persist RUN_TOOL
+  -> RUN_TOOL: rule-based configured tool actions, writes tool_results
   -> persist GENERATE_RESULT
   -> GENERATE_RESULT: one LLM Gateway call
   -> write result.json/result.md
@@ -162,6 +170,17 @@ background executor
 - `EvidenceProvider`：后续 Tool Runner、Code Evidence 和 Environment Collector 的统一执行接口
 
 证据 artifact 路径必须是 workspace 相对安全路径。
+
+`RUN_TOOL` 当前使用 Server 规则选择工具。规则输入是 `manifest.json` 和 `grep_results.json`，输出与未来 LLM action 相同的 `AgentAction`。每个工具 action 结果写入：
+
+```text
+tool_results/<action_id>/
+  result.json
+  stdout.txt
+  stderr.txt
+```
+
+工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
 
 ## 规划中的调查编排
 
@@ -202,6 +221,7 @@ persist task
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
+- 真实 `flux_query_analyzer`、`influxql_analyzer` 工具配置和更精确的规则。
 - 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
 
@@ -216,6 +236,8 @@ persist task
 - Metadata ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
 - pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
+- `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
+- `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - multipart 小文件和批量上传不能在 payload 未 flush 时持久化 `COMPLETE` 记录。

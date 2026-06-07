@@ -3,7 +3,8 @@ use tracing::warn;
 
 use crate::{
     config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore,
-    task_executor::TaskExecutor, task_store::TaskStore, upload_store::UploadStore,
+    task_executor::TaskExecutor, task_store::TaskStore, tool_runner::ToolRunner,
+    upload_store::UploadStore,
 };
 
 #[derive(Debug)]
@@ -14,6 +15,7 @@ pub struct AppState {
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub llm: LlmGateway,
+    pub tool_runner: ToolRunner,
 }
 
 impl AppState {
@@ -24,6 +26,7 @@ impl AppState {
             metadata: MetadataStore::new(config.clone()),
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
+            tool_runner: ToolRunner::new(config.tools.clone()),
             config,
             uploads,
             tasks,

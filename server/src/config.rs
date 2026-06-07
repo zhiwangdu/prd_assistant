@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
 use serde::Deserialize;
@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub auth: AuthSettings,
     pub storage: StorageSettings,
     pub log_analyzer: LogAnalyzerSettings,
+    pub tools: ToolsSettings,
     pub llm: LlmSettings,
 }
 
@@ -35,6 +36,28 @@ pub struct StorageSettings {
 pub struct LogAnalyzerSettings {
     pub keywords: Vec<String>,
     pub max_matches: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ToolsSettings {
+    pub tools: BTreeMap<String, ToolSettings>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolSettings {
+    pub name: String,
+    pub enabled: bool,
+    pub path: PathBuf,
+    pub timeout_seconds: u64,
+    pub max_output_bytes: usize,
+    pub args: Vec<String>,
+    pub match_settings: ToolMatchSettings,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ToolMatchSettings {
+    pub file_patterns: Vec<String>,
+    pub keywords: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -75,6 +98,8 @@ struct ConfigFile {
     auth: Option<AuthConfig>,
     storage: Option<StorageConfig>,
     log_analyzer: Option<LogAnalyzerConfig>,
+    #[serde(default)]
+    tools: BTreeMap<String, ToolConfig>,
     llm: Option<LlmConfig>,
 }
 
@@ -117,6 +142,30 @@ struct LogAnalyzerConfig {
     keywords: Vec<String>,
     #[serde(default = "default_max_matches")]
     max_matches: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ToolConfig {
+    #[serde(default = "default_tool_enabled")]
+    enabled: bool,
+    path: Option<PathBuf>,
+    #[serde(default = "default_tool_timeout")]
+    timeout_seconds: u64,
+    #[serde(default = "default_tool_max_output_bytes")]
+    max_output_bytes: usize,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    #[serde(rename = "match")]
+    match_settings: ToolMatchConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ToolMatchConfig {
+    #[serde(default)]
+    file_patterns: Vec<String>,
+    #[serde(default)]
+    keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -185,6 +234,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             auth: None,
             storage: None,
             log_analyzer: None,
+            tools: BTreeMap::new(),
             llm: None,
         }
     } else {
@@ -197,6 +247,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     let analyzer = parsed
         .log_analyzer
         .unwrap_or_else(default_log_analyzer_config);
+    let tools = resolve_tools(parsed.tools)?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
 
     let mut api_keys = Vec::new();
@@ -263,6 +314,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
                 .collect(),
             max_matches: analyzer.max_matches,
         },
+        tools,
         llm: LlmSettings {
             provider,
             base_url,
@@ -273,6 +325,61 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_output_tokens: llm.max_output_tokens.max(1),
         },
     }))
+}
+
+fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSettings> {
+    let mut tools = BTreeMap::new();
+    for (name, tool) in raw {
+        validate_tool_name(&name)?;
+        if tool.enabled {
+            let path = tool
+                .path
+                .clone()
+                .with_context(|| format!("tools.{name}.path is required when enabled"))?;
+            if !path.is_absolute() {
+                anyhow::bail!("tools.{name}.path must be absolute");
+            }
+        }
+        let path = tool.path.unwrap_or_default();
+        tools.insert(
+            name.clone(),
+            ToolSettings {
+                name,
+                enabled: tool.enabled,
+                path,
+                timeout_seconds: tool.timeout_seconds.max(1),
+                max_output_bytes: tool.max_output_bytes.max(1024),
+                args: tool.args,
+                match_settings: ToolMatchSettings {
+                    file_patterns: tool
+                        .match_settings
+                        .file_patterns
+                        .into_iter()
+                        .map(|pattern| pattern.to_ascii_lowercase())
+                        .collect(),
+                    keywords: tool
+                        .match_settings
+                        .keywords
+                        .into_iter()
+                        .map(|keyword| keyword.to_ascii_lowercase())
+                        .collect(),
+                },
+            },
+        );
+    }
+    Ok(ToolsSettings { tools })
+}
+
+fn validate_tool_name(name: &str) -> anyhow::Result<()> {
+    let valid = !name.is_empty()
+        && name
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        anyhow::bail!("invalid tool name {name}")
+    }
 }
 
 fn default_server_config() -> ServerConfig {
@@ -313,6 +420,18 @@ fn default_llm_config() -> LlmConfig {
         max_input_chars: default_llm_max_input_chars(),
         max_output_tokens: default_llm_max_output_tokens(),
     }
+}
+
+fn default_tool_enabled() -> bool {
+    true
+}
+
+fn default_tool_timeout() -> u64 {
+    30
+}
+
+fn default_tool_max_output_bytes() -> usize {
+    1024 * 1024
 }
 
 fn default_bind() -> String {
@@ -458,5 +577,55 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("LLM model must not be empty"));
+    }
+
+    #[test]
+    fn resolves_tool_config_and_rejects_unsafe_values() {
+        let valid = serde_yaml::from_str::<ConfigFile>(
+            r#"
+tools:
+  flux_query_analyzer:
+    path: /opt/logagent/tools/flux_query_analyzer
+    timeout_seconds: 5
+    max_output_bytes: 2048
+    args: ["--input", "{input_file}"]
+    match:
+      file_patterns: ["*.log"]
+      keywords: ["Flux"]
+"#,
+        )
+        .unwrap();
+        let tools = resolve_tools(valid.tools).unwrap();
+        let tool = tools.tools.get("flux_query_analyzer").unwrap();
+        assert!(tool.enabled);
+        assert_eq!(tool.timeout_seconds, 5);
+        assert_eq!(tool.max_output_bytes, 2048);
+        assert_eq!(tool.match_settings.keywords, vec!["flux"]);
+
+        let relative = serde_yaml::from_str::<ConfigFile>(
+            r#"
+tools:
+  bad:
+    path: relative/tool
+"#,
+        )
+        .unwrap();
+        assert!(resolve_tools(relative.tools)
+            .unwrap_err()
+            .to_string()
+            .contains("must be absolute"));
+
+        let invalid_name = serde_yaml::from_str::<ConfigFile>(
+            r#"
+tools:
+  "bad/tool":
+    path: /tmp/tool
+"#,
+        )
+        .unwrap();
+        assert!(resolve_tools(invalid_name.tools)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid tool name"));
     }
 }

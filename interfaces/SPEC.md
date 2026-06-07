@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Analysis Agent、Action Store 和证据 Provider 注册表尚未实现。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Analysis Agent、Action Store 和 Provider 注册表尚未实现。
 
 ## 公共产物
 

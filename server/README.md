@@ -70,6 +70,7 @@ server/src
   state.rs             # AppState 组装和任务启动恢复
   task_store.rs        # 持久化 TaskRecord、状态转换和原子 JSON 更新
   task_executor.rs     # Tokio semaphore 和可恢复 phase dispatcher
+  tool_runner.rs       # 白名单工具执行、规则 action 和 tool result artifact
   upload_store.rs      # 持久化 UploadRecord、分片进度和启动恢复
 ```
 
@@ -104,7 +105,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS` 和 `GENERATE_RESULT`。`RUN_TOOL`、`PLAN_ANALYSIS`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
+当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
 
 ## 数据目录
 
@@ -194,6 +195,8 @@ MVP 要求：
 - 仅从 `EXTRACT` 恢复时清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`；从后续阶段恢复时复用已完成的前置产物。
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
+- `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；未匹配或未配置工具时直接进入 `GENERATE_RESULT`。
+- Tool Runner 只执行 `tools` 白名单中的绝对路径工具，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
@@ -238,6 +241,8 @@ POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
+
+artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。
 
 以下 Analysis API 为规划接口，尚未实现：
 

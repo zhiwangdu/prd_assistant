@@ -6,7 +6,7 @@
 |------|------|
 | 已有上传、Metadata 和 WebUI 闭环 | 已完成 MVP |
 | Server 持久化与可恢复状态机 | 4~6 天 |
-| Tool Runner | 2~3 天 |
+| Tool Runner MVP | 已完成 |
 | Code Evidence | 4~6 天 |
 | Environment Collector | 4~6 天 |
 | Analysis Agent | 6~9 天 |
@@ -25,7 +25,7 @@
 
 ## 第 2 阶段：证据能力
 
-- Tool Runner 接入 `flux_query_analyzer` 和 `influxql_analyzer`。
+- Tool Runner MVP 已接入 Server；下一步配置并 smoke-test 真实 `flux_query_analyzer` 和 `influxql_analyzer`。
 - Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
 - Environment Collector 完成白名单 SSH/SCP 采集。
 - 所有结果关联 `actionId` 并使用稳定证据引用。

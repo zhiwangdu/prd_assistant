@@ -194,6 +194,7 @@ pub async fn task_artifacts(
         Some(path) => Some(read_json_file(path).await?),
         None => None,
     };
+    let tool_results = read_tool_results(&state.config.storage.workspace_dir(&task_id)).await?;
 
     Ok(Json(TaskArtifactsResponse {
         task_id,
@@ -203,6 +204,7 @@ pub async fn task_artifacts(
         grep_results,
         metadata_context_path: metadata_context_path.map(|path| path.display().to_string()),
         metadata_context,
+        tool_results,
     }))
 }
 
@@ -260,6 +262,38 @@ async fn read_typed_json_file<T: serde::de::DeserializeOwned>(
         .map_err(|err| AppError::internal(format!("failed to parse result JSON: {err}")))
 }
 
+async fn read_tool_results(
+    workspace: &std::path::Path,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let root = workspace.join("tool_results");
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => {
+            return Err(AppError::internal(format!(
+                "failed to read tool results: {err}"
+            )))
+        }
+    };
+    let mut paths = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|err| AppError::internal(format!("failed to list tool results: {err}")))?
+    {
+        let result_path = entry.path().join("result.json");
+        if result_path.exists() {
+            paths.push(result_path);
+        }
+    }
+    paths.sort();
+    let mut results = Vec::with_capacity(paths.len());
+    for path in paths {
+        results.push(read_json_file(&path).await?);
+    }
+    Ok(results)
+}
+
 fn validate_task_id(task_id: &str) -> Result<(), AppError> {
     let valid = task_id.starts_with("task_")
         && task_id
@@ -285,10 +319,10 @@ mod tests {
         api,
         config::{
             AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings,
+            StorageSettings, ToolsSettings,
         },
         metadata::MetadataImportRequest,
-        models::{UploadRecord, UploadStatus},
+        models::{TaskInput, UploadRecord, UploadStatus},
     };
 
     #[test]
@@ -455,6 +489,81 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result_conflict.status(), StatusCode::CONFLICT);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn task_artifacts_include_tool_results() {
+        let (state, root) = test_state();
+        let task_id = "task_tool_artifacts";
+        let workspace = state.config.storage.workspace_dir(task_id);
+        std::fs::create_dir_all(workspace.join("tool_results/act_tool_fake")).unwrap();
+        let manifest_path = workspace.join("manifest.json");
+        let grep_path = workspace.join("grep_results.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{"uploadId":"upl_1","uploadIds":["upl_1"],"uploads":[],"taskId":"task_tool_artifacts","source":"upload","filename":"sample.log","sourceUrl":null,"files":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &grep_path,
+            r#"{"keywords":[],"totalMatches":0,"matches":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("tool_results/act_tool_fake/result.json"),
+            r#"{"schemaVersion":1,"tool":"fake","actionId":"act_tool_fake","status":"OK","exitCode":0,"durationMs":1,"command":["/bin/echo"],"inputFile":"extracted/sample.log","stdoutPath":"tool_results/act_tool_fake/stdout.txt","stderrPath":"tool_results/act_tool_fake/stderr.txt","summary":"tool completed","error":null}"#,
+        )
+        .unwrap();
+        let now = Utc::now();
+        state
+            .tasks
+            .create(TaskRecord {
+                schema_version: 4,
+                task_id: task_id.to_string(),
+                source: TaskSource::Upload,
+                upload_ids: vec!["upl_1".to_string()],
+                inputs: vec![TaskInput {
+                    upload_id: "upl_1".to_string(),
+                    filename: "sample.log".to_string(),
+                    size: 1,
+                    raw_path: "raw/upl_1/sample.log".to_string(),
+                }],
+                source_url: None,
+                instance_id: None,
+                cluster_id: None,
+                node_id: None,
+                question: default_task_question(),
+                status: TaskStatus::Succeeded,
+                phase: None,
+                attempts: 1,
+                error: None,
+                manifest_path: Some(manifest_path.display().to_string()),
+                grep_results_path: Some(grep_path.display().to_string()),
+                metadata_context_path: None,
+                result_json_path: None,
+                result_markdown_path: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .unwrap();
+        let app = api::router(state.clone()).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/artifacts"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["toolResults"][0]["tool"], "fake");
+        assert_eq!(body["toolResults"][0]["status"], "OK");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -670,6 +779,7 @@ nodes:
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
             },
+            tools: ToolsSettings::default(),
             llm,
         });
         config.prepare_dirs().unwrap();

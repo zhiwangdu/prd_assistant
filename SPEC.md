@@ -142,13 +142,14 @@ flowchart TD
 - Upload session 持久化并支持重启续传。
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
+- Tool Runner MVP 支持白名单工具配置、规则版 `run_tool` action、`RUN_TOOL` phase 和 `tool_results` artifact。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep 单次生成结构化结果。
 - WEBUI 使用 React + Vite，支持上传、任务证据、单次 LLM 结果、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 
-- Tool Runner 调用 `flux_query_analyzer`、`influxql_analyzer` 等已有工具。
+- 接入真实 `flux_query_analyzer`、`influxql_analyzer` 工具路径和规则。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
 - Analysis Agent 持久化上下文，执行多轮调查、用户追问、动作审批和预算终止。

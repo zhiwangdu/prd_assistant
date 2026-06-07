@@ -40,10 +40,16 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
 - `llm.max_output_tokens`
+- `tools.<name>.enabled`
+- `tools.<name>.path`
+- `tools.<name>.timeout_seconds`
+- `tools.<name>.max_output_bytes`
+- `tools.<name>.args`
+- `tools.<name>.match.file_patterns`
+- `tools.<name>.match.keywords`
 
 待扩展：
 
-- tool runner 白名单
 - product/version 到代码仓 ref 映射
 - SSH/SCP 测试环境节点
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
@@ -70,6 +76,8 @@ auth:
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL 或 API Key 环境变量时启动失败。
 - `llm.model_env` 配置后优先于 `llm.model`；对应环境变量缺失或模型名为空时启动失败。
+- 启用的 tool path 必须是绝对路径；非法工具名或相对路径启动失败。
+- 用户输入不能覆盖 tool path 或自由 argv。
 - 预算字段必须大于零且有上限；未知 action 类型启动失败。
 - 用户输入不能修改预算、白名单和审批策略。
 - README 和 SPEC 在配置字段变更时同步更新。

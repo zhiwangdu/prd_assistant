@@ -14,7 +14,7 @@ Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
 - `EvidenceArtifact` / `EvidenceType` / `EvidenceSummary`
 - `EvidenceProvider`
 
-Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。当前基础日志 pipeline 尚未通过 Action 驱动；Tool Runner 将成为第一个消费该契约的模块。
+Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版 `run_tool` action 和未来 LLM action 走同一执行接口。
 
 ## 核心数据
 

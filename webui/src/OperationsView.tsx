@@ -37,6 +37,17 @@ type Artifacts = {
   manifest?: { files?: Array<{ path: string; size: number }> };
   grepResults?: { matches?: Array<{ file: string; line: number; keyword: string; text: string }> };
   metadataContext?: MetadataContext | null;
+  toolResults?: ToolResult[];
+};
+type ToolResult = {
+  tool: string;
+  actionId: string;
+  status: string;
+  exitCode?: number | null;
+  durationMs: number;
+  summary: string;
+  stdoutPath: string;
+  stderrPath: string;
 };
 type MetadataContext = {
   instanceId?: string | null;
@@ -215,6 +226,18 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       {taskResult ? <AnalysisResultView result={taskResult.result} /> : null}
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
+
+      {artifacts?.toolResults?.length ? (
+        <Evidence title="Tool results" count={artifacts.toolResults.length}>
+          {artifacts.toolResults.map((result) => (
+            <DataLine
+              key={result.actionId}
+              title={`${result.tool} · ${result.status}`}
+              detail={`exit=${result.exitCode ?? "-"} · ${result.durationMs}ms · ${result.summary} · stdout=${result.stdoutPath} · stderr=${result.stderrPath}`}
+            />
+          ))}
+        </Evidence>
+      ) : null}
 
       {artifacts ? (
         <div className="grid gap-5 xl:grid-cols-2">

@@ -18,6 +18,7 @@
 - Server 单测覆盖 stub LLM 端到端结果、Prompt 裁剪、响应解析和 evidence ref 校验。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏和附带自然语言的 LLM 响应。
+- Server 单测覆盖 Tool Runner 配置校验、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
 - 手工 smoke 验证过 WEBUI 上传、任务创建和 artifacts 查询。
 
 ## 必跑检查
@@ -59,6 +60,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - 新增 API 必须有 smoke 验证方式。
 - 任务持久化变更必须覆盖损坏 JSON、启动恢复、终态保护和 artifacts 状态约束。
 - Executor 变更必须覆盖每个已实现 phase 的中断恢复和陈旧 phase 推进拒绝。
+- Tool Runner 变更必须覆盖白名单、timeout、stdout/stderr、幂等和 artifacts 暴露。
 - 上传持久化变更必须覆盖 payload/记录不一致、未完成上传和重启后的续传 offset。
 - multipart 上传变更必须覆盖单文件和批量路径，防止 `COMPLETE` 记录先于 payload flush。
 - LLM 自动测试必须使用 stub 或纯解析测试，不依赖外网、真实密钥或付费请求。

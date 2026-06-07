@@ -6,11 +6,11 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、单次 LLM Gateway 和静态 WebUI 托管。Analysis Agent 和相关恢复 API 尚未实现。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、单次 LLM Gateway 和静态 WebUI 托管。Analysis Agent 和相关恢复 API 尚未实现。
 
 ## 下一阶段优先级
 
-1. Tool Runner，消费已落地的 Action/Evidence 契约和 `RUN_TOOL` phase。
+1. 配置并 smoke-test 真实 `flux_query_analyzer` 和 `influxql_analyzer`。
 2. Code Evidence。
 3. Analysis state/event store、LLM 结构化决策和预算控制。
 4. Analysis Agent 及 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API。

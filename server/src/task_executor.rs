@@ -4,7 +4,8 @@ use tokio::sync::Semaphore;
 use tracing::{error, warn};
 
 use crate::{
-    models::{TaskPhase, TaskRecord},
+    contracts::{EvidenceProvider, TaskContext},
+    models::{GrepResults, Manifest, TaskPhase, TaskRecord},
     pipeline::{extract_task, generate_task_result, prepare_pipeline_run, search_task},
     state::AppState,
 };
@@ -95,6 +96,16 @@ async fn dispatch_phase(
                 &state,
                 &task.task_id,
                 TaskPhase::SearchLogs,
+                TaskPhase::RunTool,
+            )
+            .await
+        }
+        TaskPhase::RunTool => {
+            run_tool_phase(state.clone(), &task).await?;
+            continue_with(
+                &state,
+                &task.task_id,
+                TaskPhase::RunTool,
                 TaskPhase::GenerateResult,
             )
             .await
@@ -116,10 +127,26 @@ async fn dispatch_phase(
                 .await?;
             Ok(DispatchOutcome::Complete)
         }
-        TaskPhase::RunTool | TaskPhase::PlanAnalysis => {
+        TaskPhase::PlanAnalysis => {
             anyhow::bail!("task phase {phase:?} is not executable in this release")
         }
     }
+}
+
+async fn run_tool_phase(state: Arc<AppState>, task: &TaskRecord) -> anyhow::Result<()> {
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
+    let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+    let context = TaskContext::from_record(task, workspace, None);
+    for action in state.tool_runner.rule_based_actions(&manifest, &grep) {
+        state.tool_runner.execute(&context, &action).await?;
+    }
+    Ok(())
+}
+
+async fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> anyhow::Result<T> {
+    let raw = tokio::fs::read_to_string(path).await?;
+    Ok(serde_json::from_str(&raw)?)
 }
 
 async fn continue_with(
@@ -136,6 +163,7 @@ async fn continue_with(
 mod tests {
     use std::{
         fs,
+        os::unix::fs::PermissionsExt,
         path::PathBuf,
         sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
@@ -147,7 +175,7 @@ mod tests {
     use crate::{
         config::{
             AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings,
+            StorageSettings, ToolMatchSettings, ToolSettings, ToolsSettings,
         },
         models::{TaskInput, TaskSource, TaskStatus},
         pipeline::{extract_task, prepare_pipeline_run, search_task},
@@ -183,6 +211,55 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn dispatcher_runs_configured_tools_before_generating_result() {
+        let fixture = Fixture::new(TaskPhase::Extract);
+        let tool_path = fixture.write_tool(
+            "fake_tool.sh",
+            "#!/usr/bin/env bash\nprintf 'input=%s' \"$1\"\n",
+        );
+        let state = fixture.state_with_tools(ToolsSettings {
+            tools: [(
+                "fake".to_string(),
+                ToolSettings {
+                    name: "fake".to_string(),
+                    enabled: true,
+                    path: tool_path,
+                    timeout_seconds: 5,
+                    max_output_bytes: 1024,
+                    args: vec!["{input_file}".to_string()],
+                    match_settings: ToolMatchSettings {
+                        file_patterns: vec!["*.log".to_string()],
+                        keywords: vec![],
+                    },
+                },
+            )]
+            .into_iter()
+            .collect(),
+        });
+        let mut task = fixture.task(TaskPhase::Extract);
+        task.status = TaskStatus::Queued;
+        task.phase = None;
+        task.attempts = 0;
+        state.tasks.create(task.clone()).await.unwrap();
+
+        execute(state.clone(), &task.task_id).await.unwrap();
+
+        let completed = state.tasks.get(&task.task_id).await.unwrap();
+        assert_eq!(completed.status, TaskStatus::Succeeded);
+        assert!(fixture
+            .workspace
+            .join("tool_results/act_tool_fake/result.json")
+            .exists());
+        let stdout = fs::read_to_string(
+            fixture
+                .workspace
+                .join("tool_results/act_tool_fake/stdout.txt"),
+        )
+        .unwrap();
+        assert!(stdout.contains("extracted/sample/sample.log"));
+    }
+
     struct Fixture {
         root: PathBuf,
         workspace: PathBuf,
@@ -210,6 +287,10 @@ mod tests {
         }
 
         fn state(&self) -> Arc<AppState> {
+            self.state_with_tools(ToolsSettings::default())
+        }
+
+        fn state_with_tools(&self, tools: ToolsSettings) -> Arc<AppState> {
             let config = Arc::new(AppConfig {
                 server: ServerSettings {
                     bind: "127.0.0.1:0".to_string(),
@@ -226,6 +307,7 @@ mod tests {
                     keywords: vec!["error".to_string()],
                     max_matches: 20,
                 },
+                tools,
                 llm: LlmSettings {
                     provider: LlmProvider::Stub,
                     base_url: None,
@@ -238,6 +320,15 @@ mod tests {
             });
             config.prepare_dirs().unwrap();
             AppState::new(config).unwrap()
+        }
+
+        fn write_tool(&self, filename: &str, content: &str) -> PathBuf {
+            let path = self.root.join(filename);
+            fs::write(&path, content).unwrap();
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).unwrap();
+            path
         }
 
         fn task(&self, phase: TaskPhase) -> TaskRecord {

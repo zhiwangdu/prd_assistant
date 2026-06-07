@@ -1432,7 +1432,7 @@ mod tests {
 
     use crate::config::{
         AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-        StorageSettings,
+        StorageSettings, ToolsSettings,
     };
 
     #[tokio::test]
@@ -1779,6 +1779,7 @@ clusters:
                     keywords: vec!["error".to_string()],
                     max_matches: 20,
                 },
+                tools: ToolsSettings::default(),
                 llm: LlmSettings {
                     provider: LlmProvider::Stub,
                     base_url: None,

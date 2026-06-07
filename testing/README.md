@@ -64,6 +64,7 @@ environment approval -> collect stub -> Agent continuation -> result
 - stub LLM 单次任务闭环和 result API。
 - Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
 - Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏和混入自然语言的拒绝路径。
+- Tool Runner 覆盖配置校验、规则 action、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 
 ### LLM 测试策略
 

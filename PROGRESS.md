@@ -14,6 +14,7 @@ Chrome Extension or WEBUI
   -> persisted QUEUED task and raw snapshot
   -> bounded background extraction / manifest
   -> simple grep evidence
+  -> optional rule-based Tool Runner evidence
   -> one stub or OpenAI-compatible LLM call
   -> persisted result and WEBUI display
 ```
@@ -76,6 +77,7 @@ Chrome Extension or WEBUI
 - Preserves the interrupted phase across restart, increments attempts on resume, and reruns only that idempotent phase.
 - Rejects stale phase advancement and inconsistent persisted `RUNNING`/`SUCCEEDED` state.
 - Defines shared `TaskContext`, Action, EvidenceArtifact, and EvidenceProvider contracts for Tool Runner and later evidence modules.
+- Runs optional rule-based Tool Runner actions during `RUN_TOOL` and exposes `toolResults` in artifacts.
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 
@@ -122,6 +124,27 @@ workspaces/task_xxx/
 - Archive extraction uses safe path joining to prevent workspace escape.
 - Produces `manifest.json` and `grep_results.json`.
 
+### Tool Runner
+
+- Implemented as a Server internal Rust module.
+- Reads `tools` whitelist configuration.
+- Validates enabled tool paths are absolute.
+- Generates rule-based `run_tool` actions from manifest file patterns or grep keywords.
+- Executes configured tools through `tokio::process::Command` without shell string concatenation.
+- Supports timeout, stdout/stderr capture, output truncation, non-zero exit recording, spawn failure recording, and idempotent result reuse.
+- Writes:
+
+```text
+tool_results/<action_id>/
+  result.json
+  stdout.txt
+  stderr.txt
+```
+
+- `GET /api/tasks/:task_id/artifacts` returns `toolResults`.
+- WebUI displays tool result status, exit code, duration, summary, stdout path, and stderr path.
+- Real `flux_query_analyzer` / `influxql_analyzer` paths are not yet configured by default.
+
 ### WEBUI
 
 - React + Vite + TypeScript + Tailwind CSS app under `webui/`.
@@ -139,6 +162,7 @@ workspaces/task_xxx/
   - separate upload and task execution progress
   - persisted task recovery after page refresh
   - failed phase/message display and historical artifact selection
+  - Tool Runner result display
   - user question input and structured LLM result display
   - grep evidence reference navigation
   - Metadata query
@@ -227,7 +251,7 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 40 Rust tests pass.
+- 46 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
 - Upload API tests cover single and batch multipart upload flush-before-persist behavior.
 - Task API rejects `UPLOADING` records until completion.
@@ -236,6 +260,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
+- Tool Runner tests cover config validation, rule-based action selection, fake tool execution, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, and artifacts API `toolResults`.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
@@ -263,10 +288,11 @@ Recent HTTP smoke checks:
 - metadata server-side fetch from `http://127.0.0.1:8091/getdata`, confirm, cluster query, node query, and instance query
 - metadata unit test covers openGemini `PtView` owner/status and `Databases` RP/schema/shard summary parsing
 - live `127.0.0.1:8091/getdata` smoke test verified PT 0 -> DataNode 2, Shard/Index 1, and `testmst -> testmst_0000`
+- isolated Tool Runner smoke on port 50998 configured `/bin/echo` as a fake tool, uploaded sample.log, completed a task as `SUCCEEDED`, and returned `toolResults[0].status=OK`
 
 ## Planned Next
 
-1. Implement Tool Runner for existing compiled tools using the shared Action/Evidence contracts:
+1. Configure and smoke-test real compiled tools through Tool Runner:
    - `flux_query_analyzer`
    - `influxql_analyzer`
 2. Implement Code Evidence:

@@ -317,7 +317,7 @@ mod tests {
         api,
         config::{
             AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings,
+            StorageSettings, ToolsSettings,
         },
         state::AppState,
     };
@@ -441,6 +441,7 @@ mod tests {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
             },
+            tools: ToolsSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,
                 base_url: None,
