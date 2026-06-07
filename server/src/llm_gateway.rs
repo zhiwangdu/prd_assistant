@@ -497,13 +497,46 @@ struct ChatResponseMessage {
 #[serde(rename_all = "camelCase")]
 struct ResultDraft {
     summary: String,
+    #[serde(deserialize_with = "deserialize_string_list")]
     symptoms: Vec<String>,
     #[serde(deserialize_with = "deserialize_root_causes")]
     likely_root_causes: Vec<RootCause>,
+    #[serde(deserialize_with = "deserialize_string_list")]
     next_checks: Vec<String>,
+    #[serde(deserialize_with = "deserialize_string_list")]
     fix_suggestions: Vec<String>,
+    #[serde(deserialize_with = "deserialize_string_list")]
     missing_information: Vec<String>,
     confidence: Confidence,
+}
+
+fn deserialize_string_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .map(|item| match item {
+                serde_json::Value::String(item) => Ok(item),
+                item => Err(D::Error::custom(format!(
+                    "expected string list item, got {item}"
+                ))),
+            })
+            .collect(),
+        serde_json::Value::String(item) => {
+            let item = item.trim();
+            if item.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![item.to_string()])
+            }
+        }
+        value => Err(D::Error::custom(format!(
+            "expected string or string list, got {value}"
+        ))),
+    }
 }
 
 fn deserialize_root_causes<'de, D>(deserializer: D) -> Result<Vec<RootCause>, D::Error>
@@ -699,6 +732,32 @@ mod tests {
         assert_eq!(
             result.likely_root_causes[1].evidence_refs,
             vec!["grep_results.json#matches/2", "grep_results.json#matches/3"]
+        );
+    }
+
+    #[test]
+    fn parses_single_string_missing_information() {
+        let response = chat_response(
+            serde_json::json!({
+                "summary": "mock summary",
+                "symptoms": ["dial failed"],
+                "likelyRootCauses": [{
+                    "cause": "node is unavailable",
+                    "evidenceRefs": ["grep_results.json#matches/0"]
+                }],
+                "nextChecks": ["check node"],
+                "fixSuggestions": ["restart node"],
+                "missingInformation": "cluster deployment details are missing",
+                "confidence": "medium"
+            })
+            .to_string(),
+        );
+
+        let draft = parse_chat_response(response).unwrap();
+
+        assert_eq!(
+            draft.missing_information,
+            vec!["cluster deployment details are missing"]
         );
     }
 

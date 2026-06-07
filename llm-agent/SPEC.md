@@ -37,6 +37,8 @@
 
 真实模型如果把 `likelyRootCauses` 写成字符串数组，且字符串中包含 `evidenceRefs: [...]`，Gateway 会抽取字符串正文作为 `cause`，抽取引用列表作为 `evidenceRefs`。字符串根因没有可追踪 evidence refs 时必须拒绝。
 
+`symptoms`、`nextChecks`、`fixSuggestions` 和 `missingInformation` 必须以字符串数组保存。真实模型返回单个字符串时会规范化为单元素数组；空字符串规范化为空数组；数组内非字符串值必须拒绝。
+
 ## 错误
 
 必须区分：
@@ -65,6 +67,7 @@
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
 - 可追踪的字符串形式 root cause 会规范化为对象形式。
+- 单字符串形式的列表字段会规范化为字符串数组。
 - 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。
 - 输入裁剪后不超过字符上限且保留证据引用。
 - Metadata `rawSnapshot` 不进入 Prompt。

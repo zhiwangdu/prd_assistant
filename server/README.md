@@ -203,6 +203,7 @@ MVP 要求：
 - `SEARCH_LOGS` 后单次调用 LLM Gateway，写入 `result.json` 和 `result.md`；调用失败时任务进入 `FAILED / GENERATE_RESULT`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
+- LLM Gateway 会把真实模型返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。
