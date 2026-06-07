@@ -53,7 +53,7 @@ llm:
 tools:
   flux_query_analyzer:
     enabled: true
-    path: /opt/logagent/tools/flux_query_analyzer
+    path_env: LOGAGENT_TOOL_FLUX_QUERY_ANALYZER
     timeout_seconds: 30
     max_output_bytes: 1048576
     args:
@@ -130,7 +130,8 @@ metadata:
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
-- 当前单次调用不自动重试，`max_input_chars` 用于裁剪 grep evidence。
-- `tools.<name>.path` 启用时必须是绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
+- 当前单次结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
+- `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
+- 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

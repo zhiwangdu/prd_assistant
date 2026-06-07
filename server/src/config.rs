@@ -149,6 +149,7 @@ struct ToolConfig {
     #[serde(default = "default_tool_enabled")]
     enabled: bool,
     path: Option<PathBuf>,
+    path_env: Option<String>,
     #[serde(default = "default_tool_timeout")]
     timeout_seconds: u64,
     #[serde(default = "default_tool_max_output_bytes")]
@@ -331,16 +332,12 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
     let mut tools = BTreeMap::new();
     for (name, tool) in raw {
         validate_tool_name(&name)?;
+        let path = resolve_tool_path(&name, &tool)?;
         if tool.enabled {
-            let path = tool
-                .path
-                .clone()
-                .with_context(|| format!("tools.{name}.path is required when enabled"))?;
             if !path.is_absolute() {
                 anyhow::bail!("tools.{name}.path must be absolute");
             }
         }
-        let path = tool.path.unwrap_or_default();
         tools.insert(
             name.clone(),
             ToolSettings {
@@ -368,6 +365,25 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
         );
     }
     Ok(ToolsSettings { tools })
+}
+
+fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
+    if let Some(path) = &tool.path {
+        return Ok(path.clone());
+    }
+    if !tool.enabled {
+        return Ok(PathBuf::new());
+    }
+    if let Some(path_env) = tool.path_env.as_deref() {
+        let value = env::var(path_env)
+            .with_context(|| format!("missing tool path env var {path_env} for tools.{name}"))?;
+        let value = value.trim();
+        if value.is_empty() {
+            anyhow::bail!("tool path env var {path_env} for tools.{name} must not be empty");
+        }
+        return Ok(PathBuf::from(value));
+    }
+    anyhow::bail!("tools.{name}.path or tools.{name}.path_env is required when enabled")
 }
 
 fn validate_tool_name(name: &str) -> anyhow::Result<()> {
@@ -627,5 +643,89 @@ tools:
             .unwrap_err()
             .to_string()
             .contains("invalid tool name"));
+    }
+
+    #[test]
+    fn resolves_tool_path_env_and_ignores_disabled_tool_env() {
+        let env_name = "LOGAGENT_TEST_TOOL_PATH_ENV";
+        temp_env_set(env_name, "/opt/logagent/tools/influxql_analyzer", || {
+            let valid = serde_yaml::from_str::<ConfigFile>(
+                r#"
+tools:
+  influxql_analyzer:
+    path_env: LOGAGENT_TEST_TOOL_PATH_ENV
+    args: ["--input", "{input_file}"]
+"#,
+            )
+            .unwrap();
+            let tools = resolve_tools(valid.tools).unwrap();
+            let tool = tools.tools.get("influxql_analyzer").unwrap();
+            assert_eq!(
+                tool.path,
+                PathBuf::from("/opt/logagent/tools/influxql_analyzer")
+            );
+        });
+
+        let disabled = serde_yaml::from_str::<ConfigFile>(
+            r#"
+tools:
+  flux_query_analyzer:
+    enabled: false
+    path_env: LOGAGENT_TEST_MISSING_TOOL_PATH_ENV
+"#,
+        )
+        .unwrap();
+        let tools = resolve_tools(disabled.tools).unwrap();
+        let tool = tools.tools.get("flux_query_analyzer").unwrap();
+        assert!(!tool.enabled);
+        assert_eq!(tool.path, PathBuf::new());
+    }
+
+    #[test]
+    fn rejects_missing_or_empty_tool_path_env_when_enabled() {
+        let missing = serde_yaml::from_str::<ConfigFile>(
+            r#"
+tools:
+  influxql_analyzer:
+    path_env: LOGAGENT_TEST_MISSING_TOOL_PATH_ENV
+"#,
+        )
+        .unwrap();
+        assert!(resolve_tools(missing.tools)
+            .unwrap_err()
+            .to_string()
+            .contains("missing tool path env var LOGAGENT_TEST_MISSING_TOOL_PATH_ENV"));
+
+        temp_env_set("LOGAGENT_TEST_EMPTY_TOOL_PATH_ENV", "  ", || {
+            let empty = serde_yaml::from_str::<ConfigFile>(
+                r#"
+tools:
+  influxql_analyzer:
+    path_env: LOGAGENT_TEST_EMPTY_TOOL_PATH_ENV
+"#,
+            )
+            .unwrap();
+            assert!(resolve_tools(empty.tools)
+                .unwrap_err()
+                .to_string()
+                .contains("must not be empty"));
+        });
+    }
+
+    fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {
+        let previous = env::var(name).ok();
+        // SAFETY: these unit tests use unique environment variable names and restore them
+        // immediately after the closure. They do not share these names with runtime code.
+        unsafe {
+            env::set_var(name, value);
+        }
+        test();
+        unsafe {
+            if let Some(previous) = previous {
+                env::set_var(name, previous);
+            } else {
+                env::remove_var(name);
+            }
+        }
     }
 }

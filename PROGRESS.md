@@ -129,6 +129,7 @@ workspaces/task_xxx/
 - Implemented as a Server internal Rust module.
 - Reads `tools` whitelist configuration.
 - Validates enabled tool paths are absolute.
+- Supports `tools.<name>.path_env` for environment-provided tool paths; disabled tools do not read their env vars.
 - Generates rule-based `run_tool` actions from manifest file patterns or grep keywords.
 - Executes configured tools through `tokio::process::Command` without shell string concatenation.
 - Supports timeout, stdout/stderr capture, output truncation, non-zero exit recording, spawn failure recording, and idempotent result reuse.
@@ -143,7 +144,8 @@ tool_results/<action_id>/
 
 - `GET /api/tasks/:task_id/artifacts` returns `toolResults`.
 - WebUI displays tool result status, exit code, duration, summary, stdout path, and stderr path.
-- Real `flux_query_analyzer` / `influxql_analyzer` paths are not yet configured by default.
+- Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
+- Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
 
 ### WEBUI
 
@@ -200,11 +202,12 @@ tool_results/<action_id>/
 - Implemented as a Server-internal Rust module.
 - Supports deterministic `stub` and OpenAI-compatible Chat Completions.
 - Supports `llm.model_env` for environment-provided model names while retaining static `llm.model` compatibility.
-- Accepts pure JSON and whole-response JSON Markdown fences while rejecting responses mixed with natural-language commentary.
+- Accepts pure JSON, whole-response JSON Markdown fences, and natural-language responses containing exactly one top-level JSON object.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.
 - Validates result schema, confidence, and task-local grep evidence references.
-- Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14` and index ranges such as `#0-#7`, into canonical `grep_results.json#matches/<index>` refs.
-- Performs exactly one model request per task attempt with no automatic retry.
+- Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
+- Normalizes real-model schema drift for string root causes with embedded evidence refs and single-string list fields.
+- Retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors if both attempts fail.
 - Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
 
 ### Local startup

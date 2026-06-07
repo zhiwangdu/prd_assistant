@@ -182,7 +182,7 @@ tool_results/<action_id>/
   stderr.txt
 ```
 
-工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
+工具路径可来自固定 `path` 或 `path_env` 环境变量；启用工具必须解析为绝对路径，禁用工具不读取 `path_env`。工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
 
 ## 规划中的调查编排
 
@@ -218,12 +218,20 @@ persist task
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
 - `llm.max_output_tokens`
+- `tools.<name>.enabled`
+- `tools.<name>.path`
+- `tools.<name>.path_env`
+- `tools.<name>.timeout_seconds`
+- `tools.<name>.max_output_bytes`
+- `tools.<name>.args`
+- `tools.<name>.match.file_patterns`
+- `tools.<name>.match.keywords`
 
 ## 待实现
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
-- 真实 `flux_query_analyzer`、`influxql_analyzer` 工具配置和更精确的规则。
+- 更精确的 `flux_query_analyzer`、`influxql_analyzer` 规则和真实工具输出摘要解析。
 - 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
 

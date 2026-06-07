@@ -196,7 +196,8 @@ MVP 要求：
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；未匹配或未配置工具时直接进入 `GENERATE_RESULT`。
-- Tool Runner 只执行 `tools` 白名单中的绝对路径工具，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
