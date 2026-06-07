@@ -158,6 +158,8 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时任务进入 `FAILED / GENERATE_RESULT`。可追踪的字符串形式 root cause 和 `matches/<index>` / `matches/<start>-<end>` 引用别名会规范化为正式结果结构。
+
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 
 启动时损坏 JSON、未知 phase、`RUNNING` 无 phase 或 `SUCCEEDED` 仍有 phase 必须失败。`RUNNING` 恢复为 `QUEUED` 时保留 phase，重新获得执行许可后 attempts 加一并从该 phase 幂等重跑。全新 `QUEUED` 任务从 `EXTRACT` 开始；终态不恢复。

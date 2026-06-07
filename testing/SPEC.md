@@ -17,9 +17,10 @@
 - Server 单测覆盖 Action/Evidence JSON 契约、安全 artifact 路径、expected phase 推进以及从 `SEARCH_LOGS` / `GENERATE_RESULT` 恢复。
 - Server 单测覆盖 stub LLM 端到端结果、Prompt 裁剪、响应解析和 evidence ref 校验。
 - Server 单测覆盖 LLM evidence ref 行号/索引范围规范化和无法映射引用拒绝。
+- Server 单测覆盖字符串形式 root cause 的内嵌 `evidenceRefs` 抽取和规范化。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
-- Server 单测覆盖纯 JSON、JSON 代码围栏和附带自然语言的 LLM 响应。
+- Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。
 - Server 单测覆盖 Tool Runner 配置校验、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
 - 手工 smoke 验证过 WEBUI 上传、任务创建和 artifacts 查询。
 

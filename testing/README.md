@@ -65,7 +65,8 @@ environment approval -> collect stub -> Agent continuation -> result
 - Task API 并发测试使用进程内原子序号隔离临时数据目录，避免目录碰撞导致后台任务误删数据。
 - Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
 - LLM evidence ref 覆盖 canonical refs、裸日志行号/范围、索引范围和无法映射引用的拒绝路径。
-- Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏和混入自然语言的拒绝路径。
+- LLM root cause 解析覆盖真实模型返回的字符串数组形态，并抽取内嵌 `evidenceRefs`。
+- Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏、自然语言包裹的唯一 JSON object，以及多个 JSON object 的拒绝路径。
 - Tool Runner 覆盖配置校验、规则 action、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 
 ### LLM 测试策略

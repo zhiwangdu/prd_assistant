@@ -14,7 +14,7 @@
 - manifest/grep/metadata Prompt 和字符数裁剪。
 - 最终结果 schema、confidence 和 grep evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
-- 响应解析接受纯 JSON 或单个 JSON Markdown 代码围栏，拒绝混有额外自然语言的内容。
+- 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - `result.json` / `result.md` 持久化。
 
 ## 当前输入
@@ -31,8 +31,11 @@
 - `12`：映射到原始日志行号 12 对应的 grep match。
 - `12-14`：映射到原始日志行号 12 到 14 对应的 grep matches。
 - `#0-#7`：映射到 grep match 索引 0 到 7。
+- `matches/0` 或 `matches/0-7`：映射到 grep match 索引或索引范围。
 
 无法映射的行号或越界索引必须拒绝。
+
+真实模型如果把 `likelyRootCauses` 写成字符串数组，且字符串中包含 `evidenceRefs: [...]`，Gateway 会抽取字符串正文作为 `cause`，抽取引用列表作为 `evidenceRefs`。字符串根因没有可追踪 evidence refs 时必须拒绝。
 
 ## 错误
 
@@ -61,7 +64,8 @@
 - stub Provider 能返回最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
-- 纯 JSON 和完整 JSON 代码围栏可解析，附带额外自然语言的响应被拒绝。
+- 可追踪的字符串形式 root cause 会规范化为对象形式。
+- 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。
 - 输入裁剪后不超过字符上限且保留证据引用。
 - Metadata `rawSnapshot` 不进入 Prompt。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。

@@ -268,7 +268,8 @@ Task, upload, and LLM verification:
 - Prompt truncation, Chat Completions parsing, Provider error classification, evidence refs, and evidence ref alias normalization are tested.
 - Task API tests use per-process atomic temp roots so concurrent test cleanup cannot remove another task workspace.
 - LLM model configuration tests cover static values, `model_env` precedence, and missing or empty environment values.
-- Chat Completions parsing tests cover pure JSON, JSON code fences, and rejection of extra natural-language text.
+- Chat Completions parsing tests cover pure JSON, JSON code fences, natural-language wrappers around a single JSON object, and rejection of multiple JSON objects.
+- LLM Gateway now normalizes real-model string root causes with embedded `evidenceRefs`, including `matches/<index>` and `matches/<start>-<end>` aliases, into canonical result objects.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
 - Isolated HTTP smoke on port 50993 verified upload, `202 QUEUED`, polling to `SUCCEEDED`, persisted list/detail, `attempts=1`, and artifact reads.
 - Isolated stub LLM HTTP smoke on port 50995 verified question persistence, `GENERATE_RESULT`, `result.json` / `result.md`, result API, and grep evidence references.
