@@ -73,6 +73,10 @@ pub async fn upload(
                 .await
                 .map_err(|err| AppError::internal(format!("failed to write upload file: {err}")))?;
         }
+        out.flush()
+            .await
+            .map_err(|err| AppError::internal(format!("failed to flush upload file: {err}")))?;
+        drop(out);
         filename = Some(safe_name);
         file_path = Some(path);
     }
@@ -220,6 +224,10 @@ async fn receive_upload_field(
             .await
             .map_err(|err| AppError::internal(format!("failed to write upload file: {err}")))?;
     }
+    out.flush()
+        .await
+        .map_err(|err| AppError::internal(format!("failed to flush upload file: {err}")))?;
+    drop(out);
 
     let now = Utc::now();
     let record = UploadRecord {
@@ -292,4 +300,158 @@ pub async fn complete_upload(
         filename: upload.filename,
         size: upload.size,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use chrono::Utc;
+    use tower::ServiceExt;
+
+    use crate::{
+        api,
+        config::{
+            AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
+            StorageSettings,
+        },
+        state::AppState,
+    };
+
+    #[tokio::test]
+    async fn multipart_upload_flushes_payload_before_persisting_record() {
+        let (state, root) = test_state();
+        let app = api::router(state.clone()).with_state(state.clone());
+        let response = app
+            .oneshot(multipart_request(
+                "/api/uploads",
+                "upload-boundary",
+                vec![
+                    text_part("filename", "sample.log"),
+                    file_part("file", "browser-name.log", "ERROR sample\n"),
+                ],
+            ))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected response: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let upload_id = body["uploadId"].as_str().unwrap();
+        let record = state.uploads.get(upload_id).await.unwrap();
+        assert_eq!(record.filename, "sample.log");
+        assert_eq!(record.size, 13);
+        assert_eq!(std::fs::metadata(record.path).unwrap().len(), 13);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn batch_upload_flushes_each_payload_before_persisting_records() {
+        let (state, root) = test_state();
+        let app = api::router(state.clone()).with_state(state.clone());
+        let response = app
+            .oneshot(multipart_request(
+                "/api/uploads/batch",
+                "batch-boundary",
+                vec![
+                    file_part("files", "one.log", "ERROR one\n"),
+                    file_part("files", "two.log", "TIMEOUT two\n"),
+                ],
+            ))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected response: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let uploads = body["uploads"].as_array().unwrap();
+        assert_eq!(uploads.len(), 2);
+        for upload in uploads {
+            let upload_id = upload["uploadId"].as_str().unwrap();
+            let record = state.uploads.get(upload_id).await.unwrap();
+            assert_eq!(std::fs::metadata(record.path).unwrap().len(), record.size);
+            assert!(record.size > 0);
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn multipart_request(path: &str, boundary: &str, parts: Vec<String>) -> Request<Body> {
+        let body = format!(
+            "{}--{boundary}--\r\n",
+            parts
+                .into_iter()
+                .map(|part| format!("--{boundary}\r\n{part}"))
+                .collect::<String>()
+        );
+        Request::post(path)
+            .header("authorization", "Bearer test-key")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .header("content-length", body.len().to_string())
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    fn text_part(name: &str, value: &str) -> String {
+        format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+    }
+
+    fn file_part(name: &str, filename: &str, value: &str) -> String {
+        format!(
+            "Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: text/plain\r\n\r\n{value}\r\n"
+        )
+    }
+
+    fn test_state() -> (Arc<AppState>, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "logagent-upload-api-{}",
+            Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        let config = Arc::new(AppConfig {
+            server: ServerSettings {
+                bind: "127.0.0.1:0".to_string(),
+                public_base_url: "http://127.0.0.1:0".to_string(),
+                max_concurrent_tasks: 2,
+            },
+            auth: AuthSettings {
+                api_keys: vec!["test-key".to_string()],
+            },
+            storage: StorageSettings {
+                data_dir: root.join("data"),
+                max_upload_bytes: 1024 * 1024,
+                max_chunk_bytes: 512 * 1024,
+            },
+            log_analyzer: LogAnalyzerSettings {
+                keywords: vec!["error".to_string()],
+                max_matches: 20,
+            },
+            llm: LlmSettings {
+                provider: LlmProvider::Stub,
+                base_url: None,
+                api_key: None,
+                model: "stub".to_string(),
+                request_timeout_seconds: 1,
+                max_input_chars: 60_000,
+                max_output_tokens: 100,
+            },
+        });
+        config.prepare_dirs().unwrap();
+        (AppState::new(config).unwrap(), root)
+    }
 }

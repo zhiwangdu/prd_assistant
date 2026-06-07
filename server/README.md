@@ -193,6 +193,7 @@ MVP 要求：
 - Server 重启时将 `RUNNING` 重置为 `QUEUED` 但保留 phase，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
 - 仅从 `EXTRACT` 恢复时清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`；从后续阶段恢复时复用已完成的前置产物。
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
+- 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
@@ -255,6 +256,8 @@ Server 必须保证 message 和 decision 幂等，禁止客户端直接把任务
 - `file`: 上传文件
 - `filename`: 原始文件名
 - `source`: 可选来源标记
+
+Server 会以最终保存的安全文件名为准，并在返回 upload id 前完成 payload flush 和记录持久化。
 
 `POST /api/uploads/batch` 使用 multipart：
 

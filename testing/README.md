@@ -54,6 +54,7 @@ environment approval -> collect stub -> Agent continuation -> result
 
 - Upload Store 创建、原子持久化、重新加载、损坏 JSON 启动失败和中断进度校正。
 - 分片 offset、预期大小、完成状态以及未完成上传创建任务的拒绝路径。
+- `/api/uploads` 和 `/api/uploads/batch` multipart 路径覆盖 payload flush 后再持久化记录。
 - Metadata task context 的 ID 推导、冲突拒绝、workspace 快照、artifact API 和 Prompt 摘要。
 - Task Store 创建、更新、重新加载、倒序列表、损坏 JSON 失败和终态保护。
 - `RUNNING -> QUEUED` 启动恢复、phase/attempt 保留和阶段级幂等继续执行。

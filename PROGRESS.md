@@ -85,6 +85,7 @@ Chrome Extension or WEBUI
 - Persists each upload as `storage.data_dir/uploads/<upload_id>.json` with atomic replacement.
 - Restores completed and in-progress uploads after restart.
 - Tracks `UPLOADING` / `COMPLETE`, expected size, received size, payload path, and timestamps.
+- Flushes small-file and batch multipart payloads before persisting `COMPLETE` upload records.
 - Enforces sequential chunk offsets and exact expected size at completion; incomplete uploads cannot create tasks.
 - Reconciles an interrupted `UPLOADING` record from the payload file length on startup.
 - Corrupt records, unsafe paths, missing payloads, and inconsistent completed sizes fail startup; orphan upload directories are only warned.
@@ -226,8 +227,9 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 38 Rust tests pass.
+- 40 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
+- Upload API tests cover single and batch multipart upload flush-before-persist behavior.
 - Task API rejects `UPLOADING` records until completion.
 - Metadata context tests cover node/instance/cluster derivation, conflict rejection, workspace persistence, artifacts, prompt inclusion, and rerun preservation.
 - Isolated HTTP smoke on port 50997 created a task with only `nodeId`, derived its instance/cluster IDs, reached `SUCCEEDED`, and returned the immutable Metadata artifact without `rawSnapshot`.
