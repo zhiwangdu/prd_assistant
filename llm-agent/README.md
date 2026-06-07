@@ -34,9 +34,11 @@ question + manifest.json + grep_results.json + metadata_context.json
   -> result.json / result.md
 ```
 
-当前不返回 action、不重试、不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。
+当前不返回 action，不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。当前会对最终结果的解析/schema 错误做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。多个 JSON object、无 JSON object 或 schema 不合法仍会拒绝。
+
+重试时 Gateway 只把解析/schema 错误摘要和结果 schema 要求追加给模型，不保存原始响应，不暴露 API Key。两次都失败时，错误信息包含最新解析失败原因和上一次失败原因。
 
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
 

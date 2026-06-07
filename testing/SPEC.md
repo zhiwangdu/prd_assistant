@@ -15,10 +15,12 @@
 - Server 单测覆盖 Metadata task context 推导、冲突校验、artifact 持久化和 LLM Prompt。
 - Server 单测覆盖 Task Store 持久化/恢复、幂等 pipeline 和任务 API 状态码。
 - Server 单测覆盖 Action/Evidence JSON 契约、安全 artifact 路径、expected phase 推进以及从 `SEARCH_LOGS` / `GENERATE_RESULT` 恢复。
+- Server Upload API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 payload。
 - Server 单测覆盖 stub LLM 端到端结果、Prompt 裁剪、响应解析和 evidence ref 校验。
 - Server 单测覆盖 LLM evidence ref 行号/索引范围规范化和无法映射引用拒绝。
 - Server 单测覆盖字符串形式 root cause 的内嵌 `evidenceRefs` 抽取和规范化。
 - Server 单测覆盖单字符串形式 `missingInformation` 规范化为字符串数组。
+- Server 单测覆盖 LLM schema 修正重试提示和字段级解析错误消息。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。

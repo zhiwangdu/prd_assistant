@@ -15,6 +15,7 @@
 - 最终结果 schema、confidence 和 grep evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
+- 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
 - `result.json` / `result.md` 持久化。
 
 ## 当前输入
@@ -50,7 +51,7 @@
 - 输出 schema 无效
 - 不支持的 action
 
-当前版本每个任务只调用一次，不自动重试；任何 Provider 或 schema 错误使任务进入 `FAILED / GENERATE_RESULT`。
+当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。
 
 ## 安全约束
 
@@ -65,6 +66,7 @@
 
 - stub Provider 能返回最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
+- schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
 - 可追踪的字符串形式 root cause 会规范化为对象形式。
 - 单字符串形式的列表字段会规范化为字符串数组。

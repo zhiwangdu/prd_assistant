@@ -149,7 +149,7 @@ background executor
   -> persist RUN_TOOL
   -> RUN_TOOL: rule-based configured tool actions, writes tool_results
   -> persist GENERATE_RESULT
-  -> GENERATE_RESULT: one LLM Gateway call
+  -> GENERATE_RESULT: LLM Gateway call, with one correction retry for result schema errors
   -> write result.json/result.md
   -> SUCCEEDED or FAILED
 ```
@@ -158,7 +158,7 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时任务进入 `FAILED / GENERATE_RESULT`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。解析/schema 错误会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入 `FAILED / GENERATE_RESULT`。
 
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 

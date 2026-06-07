@@ -304,13 +304,15 @@ pub async fn complete_upload(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    };
 
     use axum::{
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
-    use chrono::Utc;
     use tower::ServiceExt;
 
     use crate::{
@@ -419,9 +421,11 @@ mod tests {
     }
 
     fn test_state() -> (Arc<AppState>, std::path::PathBuf) {
+        static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
         let root = std::env::temp_dir().join(format!(
-            "logagent-upload-api-{}",
-            Utc::now().timestamp_nanos_opt().unwrap()
+            "logagent-upload-api-{}-{}",
+            std::process::id(),
+            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         let config = Arc::new(AppConfig {
             server: ServerSettings {
