@@ -59,7 +59,7 @@ DataNode
 - `WAITING_FOR_USER` 按 `questionId` 提交回答，重复提交使用幂等 key。
 - `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因。
 - 时间线来自服务端事件摘要，不渲染隐藏思维链或未经清洗的 Provider 原始响应。
-- `Task execution` 必须实时轮询 `/api/tasks/:task_id/analysis`，展示 loop revision、预算、最近事件、model decision、action 和 evidence 摘要。
+- `Task execution` 必须实时轮询 `/api/tasks/:task_id/analysis`，展示 loop revision、预算、最近事件、LLM callId/attempt/schema retry、model decision、action 和 evidence 摘要。
 - 最终结果按 evidence ref 跳转到对应 artifact。
 - 页面初始化从 `GET /api/tasks` 读取最近任务，不以 localStorage 作为任务真源。
 - 创建任务后每秒读取任务详情，终态停止；`SUCCEEDED` 再读取 artifacts，`FAILED` 展示失败阶段和消息。

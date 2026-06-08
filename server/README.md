@@ -201,7 +201,7 @@ MVP 要求：
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
-- Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
+- Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
@@ -217,6 +217,7 @@ MVP 要求：
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。
 - LLM 解析/schema 错误会返回最新失败原因和上一轮失败原因；Provider HTTP、鉴权、限流和超时错误不重试。
+- `PLAN_ANALYSIS` 的真实模型调用会生成 `llmcall_*` callId；Task error、debug 日志和 analysis events 都会带上该 callId，便于定位失败轮次。
 - LLM 输出日志 debug 开关默认关闭、只保存在 Server 进程内。开启后仅把模型 response content 打印到 Server stderr，不打印 prompt 或 API Key。
 
 Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Native Agent 上传稍大的文件时报：
@@ -259,7 +260,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。
 
 以下 Analysis API 为规划接口，尚未实现：
 

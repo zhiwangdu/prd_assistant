@@ -7,7 +7,7 @@ use crate::{
     analysis_state,
     config::{AnalysisSettings, LogAnalyzerSettings},
     contracts::{ActionKind, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
-    llm_gateway::{ActionDecision, AgentDecision},
+    llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
     models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskPhase, TaskRecord},
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
@@ -175,12 +175,13 @@ async fn plan_analysis_phase(
         };
         let decision = state
             .llm
-            .decide_next_action(
+            .decide_next_action_with_events(
                 &task.question,
                 &manifest,
                 &grep,
                 metadata_context.as_ref(),
                 &tool_results,
+                |event| record_llm_call_event(&workspace, event),
             )
             .await?;
         record_model_decision(&workspace, &decision)?;
@@ -213,6 +214,41 @@ async fn plan_analysis_phase(
                 return Ok(DispatchOutcome::Complete);
             }
         }
+    }
+}
+
+fn record_llm_call_event(workspace: &std::path::Path, event: LlmCallEvent) {
+    let result = match event.event_type {
+        LlmCallEventType::Started => analysis_state::record_llm_call_started(
+            workspace,
+            TaskPhase::PlanAnalysis,
+            event.call_id,
+            event.call_kind.to_string(),
+            event.attempt,
+            event.model,
+        ),
+        LlmCallEventType::Completed => analysis_state::record_llm_call_completed(
+            workspace,
+            TaskPhase::PlanAnalysis,
+            event.call_id,
+            event.call_kind.to_string(),
+            event.attempt,
+            event.model,
+        ),
+        LlmCallEventType::SchemaRetry => analysis_state::record_llm_call_schema_retry(
+            workspace,
+            TaskPhase::PlanAnalysis,
+            event.call_id,
+            event.call_kind.to_string(),
+            event.attempt,
+            event.model,
+            event
+                .error
+                .unwrap_or_else(|| "unknown schema error".to_string()),
+        ),
+    };
+    if let Err(err) = result {
+        warn!("failed to record LLM call event: {err}");
     }
 }
 
@@ -604,7 +640,8 @@ mod tests {
         let stdout = fs::read_to_string(result_dirs[0].join("stdout.txt")).unwrap();
         assert!(stdout.contains("extracted/sample/sample.log"));
         let snapshot = analysis_state::read_snapshot(&fixture.workspace).unwrap();
-        assert_eq!(snapshot.state.budget.llm_calls, 1);
+        assert_eq!(snapshot.state.budget.rounds, 1);
+        assert_eq!(snapshot.state.budget.llm_calls, 0);
     }
 
     #[tokio::test]

@@ -356,6 +356,12 @@ function EventDetails({ event }: { event: AnalysisEvent }) {
 
 function summarizeEventDetails(event: AnalysisEvent) {
   const details = event.details ?? {};
+  if (typeof details.callId === "string") {
+    const attempt = typeof details.attempt === "number" ? `attempt=${details.attempt}` : "";
+    const model = typeof details.model === "string" ? `model=${details.model}` : "";
+    const error = typeof details.error === "string" ? ` · error=${details.error}` : "";
+    return [details.callId, attempt, model].filter(Boolean).join(" · ") + error;
+  }
   if (typeof details.totalMatches === "number") {
     const keywords = Array.isArray(details.keywords) ? details.keywords.filter((item): item is string => typeof item === "string").slice(0, 6).join(", ") : "";
     return `matches=${details.totalMatches}${keywords ? ` · keywords=${keywords}` : ""}`;

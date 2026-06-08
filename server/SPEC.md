@@ -208,7 +208,15 @@ analysis_state.json
 analysis_events.jsonl
 ```
 
-已记录事件包括初始化、manifest evidence、grep evidence、Tool Runner action/evidence、model decision、final result 和 failure。`GET /api/tasks/:task_id/analysis` 返回 state 快照和事件列表。
+已记录事件包括初始化、manifest evidence、grep evidence、Tool Runner action/evidence、LLM call lifecycle、model decision、final result 和 failure。`GET /api/tasks/:task_id/analysis` 返回 state 快照和事件列表。
+
+`PLAN_ANALYSIS` 的真实模型调用必须生成稳定 `llmcall_*` callId，并记录：
+
+- `llm_call_started`
+- `llm_call_completed`
+- `llm_call_schema_retry`
+
+事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。Provider 或 schema 最终失败时，task error 必须包含可关联的 callId。
 
 ## 规划中的调查编排
 

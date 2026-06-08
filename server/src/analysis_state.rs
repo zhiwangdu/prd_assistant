@@ -107,6 +107,9 @@ pub struct AnalysisEvent {
 pub enum AnalysisEventType {
     AnalysisStarted,
     ModelDecision,
+    LlmCallStarted,
+    LlmCallCompleted,
+    LlmCallSchemaRetry,
     EvidenceRecorded,
     ActionCompleted,
     FinalResultGenerated,
@@ -394,7 +397,96 @@ pub fn record_model_decision(
         |state| {
             state.current_phase = Some(phase);
             state.budget.rounds = state.budget.rounds.saturating_add(1);
+            Ok(())
+        },
+    )
+}
+
+pub fn record_llm_call_started(
+    workspace: &Path,
+    phase: TaskPhase,
+    call_id: String,
+    call_kind: String,
+    attempt: usize,
+    model: String,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::LlmCallStarted,
+        Some(phase),
+        Some(call_id.clone()),
+        format!("LLM {call_kind} call {call_id} attempt {attempt} started"),
+        Vec::new(),
+        None,
+        serde_json::json!({
+            "callId": call_id,
+            "callKind": call_kind,
+            "attempt": attempt,
+            "model": model,
+        }),
+        |state| {
+            state.current_phase = Some(phase);
             state.budget.llm_calls = state.budget.llm_calls.saturating_add(1);
+            Ok(())
+        },
+    )
+}
+
+pub fn record_llm_call_completed(
+    workspace: &Path,
+    phase: TaskPhase,
+    call_id: String,
+    call_kind: String,
+    attempt: usize,
+    model: String,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::LlmCallCompleted,
+        Some(phase),
+        Some(call_id.clone()),
+        format!("LLM {call_kind} call {call_id} attempt {attempt} completed"),
+        Vec::new(),
+        None,
+        serde_json::json!({
+            "callId": call_id,
+            "callKind": call_kind,
+            "attempt": attempt,
+            "model": model,
+        }),
+        |state| {
+            state.current_phase = Some(phase);
+            Ok(())
+        },
+    )
+}
+
+pub fn record_llm_call_schema_retry(
+    workspace: &Path,
+    phase: TaskPhase,
+    call_id: String,
+    call_kind: String,
+    attempt: usize,
+    model: String,
+    error: String,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::LlmCallSchemaRetry,
+        Some(phase),
+        Some(call_id.clone()),
+        format!("LLM {call_kind} call {call_id} attempt {attempt} needs schema retry"),
+        Vec::new(),
+        None,
+        serde_json::json!({
+            "callId": call_id,
+            "callKind": call_kind,
+            "attempt": attempt,
+            "model": model,
+            "error": error,
+        }),
+        |state| {
+            state.current_phase = Some(phase);
             Ok(())
         },
     )
@@ -635,6 +727,61 @@ mod tests {
             snapshot.state.evidence[0].evidence_refs,
             vec!["grep_results.json#matches/0"]
         );
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn records_llm_call_lifecycle_events() {
+        let workspace = temp_workspace("analysis-llm-call");
+        let task = task_record("task_analysis_llm");
+        initialize(&workspace, &task).unwrap();
+        record_llm_call_started(
+            &workspace,
+            TaskPhase::PlanAnalysis,
+            "llmcall_1".to_string(),
+            "action_decision".to_string(),
+            1,
+            "test-model".to_string(),
+        )
+        .unwrap();
+        record_llm_call_schema_retry(
+            &workspace,
+            TaskPhase::PlanAnalysis,
+            "llmcall_1".to_string(),
+            "action_decision".to_string(),
+            1,
+            "test-model".to_string(),
+            "missing field `type`".to_string(),
+        )
+        .unwrap();
+        record_llm_call_completed(
+            &workspace,
+            TaskPhase::PlanAnalysis,
+            "llmcall_1".to_string(),
+            "action_decision".to_string(),
+            2,
+            "test-model".to_string(),
+        )
+        .unwrap();
+
+        let snapshot = read_snapshot(&workspace).unwrap();
+
+        assert_eq!(snapshot.state.budget.llm_calls, 1);
+        assert!(snapshot
+            .events
+            .iter()
+            .any(|event| event.event_type == AnalysisEventType::LlmCallStarted));
+        let retry = snapshot
+            .events
+            .iter()
+            .find(|event| event.event_type == AnalysisEventType::LlmCallSchemaRetry)
+            .unwrap();
+        assert_eq!(retry.action_id.as_deref(), Some("llmcall_1"));
+        assert_eq!(retry.details["error"], "missing field `type`");
+        assert!(snapshot
+            .events
+            .iter()
+            .any(|event| event.event_type == AnalysisEventType::LlmCallCompleted));
         let _ = fs::remove_dir_all(workspace);
     }
 

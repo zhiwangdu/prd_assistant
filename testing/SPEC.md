@@ -26,6 +26,7 @@
 - Server 单测覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 驱动的 grep 重建、重复 fingerprint 防护和预算终止结果。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖 Analysis State Store state/event 持久化和 `/api/tasks/:task_id/analysis`。
+- Server 单测覆盖 LLM call lifecycle event、callId 和 schema retry error details。
 - Server 单测覆盖 LLM Gateway runtime response logging debug 开关的默认关闭和切换。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。
 - Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。
@@ -70,7 +71,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 
 - 新增归档格式必须有解压测试。
 - 新增 API 必须有 smoke 验证方式。
-- WebUI 新增交互必须通过 lint、typecheck 和 build；Task execution loop 摘要和 LLM debug 开关属于 WebUI 回归检查范围。
+- WebUI 新增交互必须通过 lint、typecheck 和 build；Task execution loop 摘要、LLM callId/schema retry 展示和 LLM debug 开关属于 WebUI 回归检查范围。
 - 任务持久化变更必须覆盖损坏 JSON、启动恢复、终态保护和 artifacts 状态约束。
 - Executor 变更必须覆盖每个已实现 phase 的中断恢复和陈旧 phase 推进拒绝。
 - Tool Runner 变更必须覆盖白名单、timeout、stdout/stderr、幂等和 artifacts 暴露。

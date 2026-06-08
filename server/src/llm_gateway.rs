@@ -12,6 +12,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use crate::{
     config::{LlmProvider, LlmSettings},
     contracts::{ActionKind, ActionRisk},
+    id::next_id,
     metadata::TaskMetadataContext,
     models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause},
     tool_runner::ToolRunRecord,
@@ -27,6 +28,23 @@ pub struct LlmGateway {
     settings: LlmSettings,
     client: reqwest::Client,
     debug_log_responses: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LlmCallEvent {
+    pub call_id: String,
+    pub call_kind: &'static str,
+    pub attempt: usize,
+    pub model: String,
+    pub event_type: LlmCallEventType,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmCallEventType {
+    Started,
+    Completed,
+    SchemaRetry,
 }
 
 impl LlmGateway {
@@ -82,6 +100,26 @@ impl LlmGateway {
         metadata: Option<&TaskMetadataContext>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AgentDecision> {
+        self.decide_next_action_with_events(
+            question,
+            manifest,
+            grep,
+            metadata,
+            tool_results,
+            |_| {},
+        )
+        .await
+    }
+
+    pub async fn decide_next_action_with_events(
+        &self,
+        question: &str,
+        manifest: &Manifest,
+        grep: &GrepResults,
+        metadata: Option<&TaskMetadataContext>,
+        tool_results: &[ToolRunRecord],
+        on_event: impl FnMut(LlmCallEvent),
+    ) -> anyhow::Result<AgentDecision> {
         let prompt = build_action_prompt(
             question,
             manifest,
@@ -92,7 +130,7 @@ impl LlmGateway {
         );
         let decision = match self.settings.provider {
             LlmProvider::Stub => stub_action_decision(question, grep),
-            LlmProvider::OpenAiCompatible => self.call_action_decision(&prompt).await?,
+            LlmProvider::OpenAiCompatible => self.call_action_decision(&prompt, on_event).await?,
         };
         validate_agent_decision_with_evidence(&decision, grep, tool_results)?;
         Ok(decision)
@@ -149,7 +187,11 @@ impl LlmGateway {
         unreachable!("result attempts loop always returns or bails")
     }
 
-    async fn call_action_decision(&self, prompt: &str) -> anyhow::Result<AgentDecision> {
+    async fn call_action_decision(
+        &self,
+        prompt: &str,
+        mut on_event: impl FnMut(LlmCallEvent),
+    ) -> anyhow::Result<AgentDecision> {
         let base_url = self
             .settings
             .base_url
@@ -172,22 +214,51 @@ impl LlmGateway {
             },
         ];
         let mut last_parse_error = None;
+        let call_id = next_id("llmcall");
+        let call_kind = "action_decision";
 
         for attempt in 1..=MAX_ACTION_DECISION_ATTEMPTS {
+            self.emit_llm_call_event(
+                &mut on_event,
+                &call_id,
+                call_kind,
+                attempt,
+                LlmCallEventType::Started,
+                None,
+            );
             let response = self
                 .send_chat_completion_messages(base_url, api_key, &messages)
-                .await?;
+                .await
+                .with_context(|| format!("LLM call {call_id} failed"))?;
             self.log_debug_response("action_decision", attempt, &response);
             match parse_action_decision_response(response) {
-                Ok(decision) => return Ok(decision),
+                Ok(decision) => {
+                    self.emit_llm_call_event(
+                        &mut on_event,
+                        &call_id,
+                        call_kind,
+                        attempt,
+                        LlmCallEventType::Completed,
+                        None,
+                    );
+                    return Ok(decision);
+                }
                 Err(error) => {
                     let message = error.to_string();
                     if attempt == MAX_ACTION_DECISION_ATTEMPTS {
                         let previous = last_parse_error.as_deref().unwrap_or("none");
                         anyhow::bail!(
-                            "LLM content is not valid action decision JSON after {attempt} attempts: latest error: {message}; previous error: {previous}"
+                            "LLM call {call_id} content is not valid action decision JSON after {attempt} attempts: latest error: {message}; previous error: {previous}"
                         );
                     }
+                    self.emit_llm_call_event(
+                        &mut on_event,
+                        &call_id,
+                        call_kind,
+                        attempt,
+                        LlmCallEventType::SchemaRetry,
+                        Some(message.clone()),
+                    );
                     messages.push(ChatMessage {
                         role: "user",
                         content: build_action_decision_retry_prompt(&message),
@@ -239,6 +310,25 @@ impl LlmGateway {
             .await
             .context("failed to decode LLM response")?;
         Ok(response)
+    }
+
+    fn emit_llm_call_event(
+        &self,
+        on_event: &mut impl FnMut(LlmCallEvent),
+        call_id: &str,
+        call_kind: &'static str,
+        attempt: usize,
+        event_type: LlmCallEventType,
+        error: Option<String>,
+    ) {
+        on_event(LlmCallEvent {
+            call_id: call_id.to_string(),
+            call_kind,
+            attempt,
+            model: self.settings.model.clone(),
+            event_type,
+            error,
+        });
     }
 
     fn log_debug_response(&self, call: &str, attempt: usize, response: &ChatResponse) {

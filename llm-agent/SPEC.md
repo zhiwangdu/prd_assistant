@@ -98,3 +98,4 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。
 - `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。
+- `PLAN_ANALYSIS` 的真实 action decision 调用必须带 `llmcall_*` callId，并记录 started/completed/schema_retry 事件；schema retry 和最终错误必须能关联该 callId。
