@@ -250,11 +250,24 @@ fn parse_action_decision_response(response: ChatResponse) -> anyhow::Result<Agen
         .filter(|content| !content.is_empty())
         .context("LLM response did not contain content")?;
     let content = extract_result_json(content)?;
-    let decision = serde_json::from_str::<AgentDecision>(content).map_err(|error| {
-        anyhow::anyhow!("LLM content is not valid action decision JSON: {error}")
-    })?;
+    let decision = parse_agent_decision_json(content)?;
     validate_agent_decision(&decision)?;
     Ok(decision)
+}
+
+fn parse_agent_decision_json(content: &str) -> anyhow::Result<AgentDecision> {
+    match serde_json::from_str::<AgentDecision>(content) {
+        Ok(decision) => Ok(decision),
+        Err(decision_error) => {
+            let final_answer = serde_json::from_str::<FinalAnswerDecision>(content);
+            match final_answer {
+                Ok(result) => Ok(AgentDecision::FinalAnswer { result }),
+                Err(final_error) => Err(anyhow::anyhow!(
+                    "LLM content is not valid action decision JSON: {decision_error}; also failed to parse as bare final_answer: {final_error}"
+                )),
+            }
+        }
+    }
 }
 
 fn extract_result_json(content: &str) -> anyhow::Result<&str> {
@@ -1483,6 +1496,35 @@ mod tests {
                 assert!(matches!(result.confidence, Confidence::High));
             }
             AgentDecision::Action { .. } => panic!("expected final answer decision"),
+        }
+    }
+
+    #[test]
+    fn parses_bare_final_answer_as_action_decision() {
+        let response = chat_response(
+            serde_json::json!({
+                "summary": "mock summary",
+                "symptoms": ["timeout"],
+                "likelyRootCauses": [{
+                    "cause": "query exceeded timeout",
+                    "evidenceRefs": ["grep_results.json#matches/0"]
+                }],
+                "nextChecks": ["check query stats"],
+                "fixSuggestions": ["narrow query window"],
+                "missingInformation": [],
+                "confidence": "medium"
+            })
+            .to_string(),
+        );
+
+        let decision = parse_action_decision_response(response).unwrap();
+
+        match decision {
+            AgentDecision::FinalAnswer { result } => {
+                assert_eq!(result.summary, "mock summary");
+                assert!(matches!(result.confidence, Confidence::Medium));
+            }
+            AgentDecision::Action { .. } => panic!("expected bare final answer to be wrapped"),
         }
     }
 

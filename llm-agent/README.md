@@ -36,7 +36,7 @@ question + manifest.json + grep_results.json + metadata_context.json + tool_resu
 
 Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAnswer 双模式入口。`final_answer` 直接持久化结果，`search_logs` 和 `run_tool` 执行动作后回到下一轮，直到最终答案、预算耗尽或重复 fingerprint 被阻止。当前不记录 Provider request id；该能力留给后续审计阶段。当前会对最终结果的解析/schema 错误做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
-响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。多个 JSON object、无 JSON object 或 schema 不合法仍会拒绝。
+响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。`PLAN_ANALYSIS` 期望双模式 `action | final_answer` 外层结构；如果真实模型直接返回裸最终结果 JSON，Gateway 会将其包装为 `final_answer` 并继续执行同一套 evidence 校验。多个 JSON object、无 JSON object 或 schema 不合法仍会拒绝。
 
 重试时 Gateway 只把解析/schema 错误摘要和结果 schema 要求追加给模型，不保存原始响应，不暴露 API Key。两次都失败时，错误信息包含最新解析失败原因和上一次失败原因。
 
