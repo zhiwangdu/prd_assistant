@@ -257,10 +257,9 @@ fn parse_action_decision_response(response: ChatResponse) -> anyhow::Result<Agen
 
 fn parse_agent_decision_json(content: &str) -> anyhow::Result<AgentDecision> {
     match serde_json::from_str::<AgentDecision>(content) {
-        Ok(decision) => Ok(decision),
+        Ok(decision) => normalize_agent_decision(decision),
         Err(decision_error) => {
-            let final_answer = serde_json::from_str::<FinalAnswerDecision>(content);
-            match final_answer {
+            match parse_final_answer_decision_variant(content) {
                 Ok(result) => Ok(AgentDecision::FinalAnswer { result }),
                 Err(final_error) => Err(anyhow::anyhow!(
                     "LLM content is not valid action decision JSON: {decision_error}; also failed to parse as bare final_answer: {final_error}"
@@ -268,6 +267,92 @@ fn parse_agent_decision_json(content: &str) -> anyhow::Result<AgentDecision> {
             }
         }
     }
+}
+
+fn normalize_agent_decision(decision: AgentDecision) -> anyhow::Result<AgentDecision> {
+    let AgentDecision::Action { decision } = decision else {
+        return Ok(decision);
+    };
+    if decision.kind != ActionKind::FinalAnswer {
+        return Ok(AgentDecision::Action { decision });
+    }
+    let result = find_final_answer_value(&decision.input)
+        .ok_or_else(|| anyhow::anyhow!("final_answer action is missing result schema"))?;
+    let result = serde_json::from_value::<FinalAnswerDecision>(result.clone())
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    Ok(AgentDecision::FinalAnswer { result })
+}
+
+fn parse_final_answer_decision_variant(content: &str) -> anyhow::Result<FinalAnswerDecision> {
+    let value =
+        serde_json::from_str::<serde_json::Value>(content).context("content is not valid JSON")?;
+    let candidate = find_final_answer_value(&value)
+        .ok_or_else(|| anyhow::anyhow!("missing final_answer result object"))?;
+    serde_json::from_value::<FinalAnswerDecision>(candidate.clone())
+        .map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+fn find_final_answer_value(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    find_final_answer_value_at_depth(value, 0)
+}
+
+fn find_final_answer_value_at_depth(
+    value: &serde_json::Value,
+    depth: usize,
+) -> Option<&serde_json::Value> {
+    if depth > 4 {
+        return None;
+    }
+    let object = value.as_object()?;
+    if object.contains_key("summary") {
+        return Some(value);
+    }
+
+    match object.get("type").and_then(|value| value.as_str()) {
+        Some("final_answer") => find_nested_final_answer_value(object, depth),
+        Some("action") => object
+            .get("decision")
+            .and_then(|value| find_action_final_answer_value(value, depth + 1)),
+        Some(_) => None,
+        None => find_nested_final_answer_value(object, depth),
+    }
+}
+
+fn find_action_final_answer_value(
+    value: &serde_json::Value,
+    depth: usize,
+) -> Option<&serde_json::Value> {
+    let object = value.as_object()?;
+    if object.get("type").and_then(|value| value.as_str()) != Some("final_answer") {
+        return None;
+    }
+    find_nested_final_answer_value(object, depth)
+}
+
+fn find_nested_final_answer_value<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    depth: usize,
+) -> Option<&'a serde_json::Value> {
+    const FINAL_ANSWER_WRAPPER_KEYS: &[&str] = &[
+        "result",
+        "finalAnswer",
+        "final_answer",
+        "answer",
+        "analysisResult",
+        "analysis_result",
+        "output",
+        "data",
+        "input",
+    ];
+
+    for key in FINAL_ANSWER_WRAPPER_KEYS {
+        if let Some(value) = object.get(*key) {
+            if let Some(candidate) = find_final_answer_value_at_depth(value, depth + 1) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn extract_result_json(content: &str) -> anyhow::Result<&str> {
@@ -890,7 +975,9 @@ fn validate_action_decision(decision: &ActionDecision) -> anyhow::Result<()> {
     match decision.kind {
         ActionKind::SearchLogs => validate_search_logs_input(&decision.input),
         ActionKind::RunTool => validate_run_tool_input(&decision.input),
-        ActionKind::FinalAnswer => Ok(()),
+        ActionKind::FinalAnswer => {
+            anyhow::bail!("final_answer must use the top-level final_answer result schema")
+        }
         _ => unreachable!("unsupported action was checked above"),
     }
 }
@@ -1525,6 +1612,107 @@ mod tests {
                 assert!(matches!(result.confidence, Confidence::Medium));
             }
             AgentDecision::Action { .. } => panic!("expected bare final answer to be wrapped"),
+        }
+    }
+
+    #[test]
+    fn parses_nested_final_answer_result_variant() {
+        let response = chat_response(
+            serde_json::json!({
+                "type": "final_answer",
+                "result": {
+                    "result": {
+                        "summary": "nested summary",
+                        "symptoms": ["timeout"],
+                        "likelyRootCauses": [{
+                            "cause": "query exceeded timeout",
+                            "evidenceRefs": ["grep_results.json#matches/0"]
+                        }],
+                        "nextChecks": ["check query stats"],
+                        "fixSuggestions": ["narrow query window"],
+                        "missingInformation": [],
+                        "confidence": "medium"
+                    }
+                }
+            })
+            .to_string(),
+        );
+
+        let decision = parse_action_decision_response(response).unwrap();
+
+        match decision {
+            AgentDecision::FinalAnswer { result } => {
+                assert_eq!(result.summary, "nested summary");
+                assert!(matches!(result.confidence, Confidence::Medium));
+            }
+            AgentDecision::Action { .. } => panic!("expected nested final answer to be wrapped"),
+        }
+    }
+
+    #[test]
+    fn parses_top_level_final_answer_fields_variant() {
+        let response = chat_response(
+            serde_json::json!({
+                "type": "final_answer",
+                "summary": "top-level summary",
+                "symptoms": ["timeout"],
+                "likelyRootCauses": [{
+                    "cause": "query exceeded timeout",
+                    "evidenceRefs": ["grep_results.json#matches/0"]
+                }],
+                "nextChecks": ["check query stats"],
+                "fixSuggestions": ["narrow query window"],
+                "missingInformation": [],
+                "confidence": "medium"
+            })
+            .to_string(),
+        );
+
+        let decision = parse_action_decision_response(response).unwrap();
+
+        match decision {
+            AgentDecision::FinalAnswer { result } => {
+                assert_eq!(result.summary, "top-level summary");
+                assert!(matches!(result.confidence, Confidence::Medium));
+            }
+            AgentDecision::Action { .. } => panic!("expected top-level final answer to be wrapped"),
+        }
+    }
+
+    #[test]
+    fn parses_action_final_answer_variant() {
+        let response = chat_response(
+            serde_json::json!({
+                "type": "action",
+                "decision": {
+                    "type": "final_answer",
+                    "reason": "evidence is sufficient",
+                    "risk": "SAFE_READ_ONLY",
+                    "input": {
+                        "summary": "action final summary",
+                        "symptoms": ["timeout"],
+                        "likelyRootCauses": [{
+                            "cause": "query exceeded timeout",
+                            "evidenceRefs": ["grep_results.json#matches/0"]
+                        }],
+                        "nextChecks": ["check query stats"],
+                        "fixSuggestions": ["narrow query window"],
+                        "missingInformation": [],
+                        "confidence": "medium"
+                    }
+                }
+            })
+            .to_string(),
+        );
+
+        let decision = parse_action_decision_response(response).unwrap();
+
+        match decision {
+            AgentDecision::FinalAnswer { result } => {
+                assert_eq!(result.summary, "action final summary");
+                assert!(matches!(result.confidence, Confidence::Medium));
+            }
+            AgentDecision::Action { .. } => panic!("expected action final answer to be wrapped"),
         }
     }
 

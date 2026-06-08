@@ -211,6 +211,7 @@ MVP 要求：
 - LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
 - LLM Gateway 会把真实模型返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
+- LLM Gateway 会把 `PLAN_ANALYSIS` 中真实模型返回的裸最终结果 JSON，或多包一层的 `final_answer.result.result` / `answer` / `finalAnswer`，规范化为真正的 `final_answer`；缺少 `summary` 等核心字段的结果仍会拒绝。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。

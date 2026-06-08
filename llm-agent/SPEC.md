@@ -16,7 +16,7 @@
 - 最终结果 schema、confidence、grep evidence ref 和 tool finding evidence ref 校验。
 - ActionDecision / FinalAnswer 双模式 schema 和 parser。
 - ActionDecision 当前只允许 `search_logs`、`run_tool`、`final_answer`，并校验 action input 的基础结构。
-- `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON 时，会包装为 `final_answer` 并继续做 evidence ref 校验。
+- `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
@@ -67,7 +67,7 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 
 当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。如果 `PLAN_ANALYSIS` 的 action decision 调用或 schema 校验失败，任务进入 `FAILED / PLAN_ANALYSIS`。
 
-ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。裸最终结果 JSON 会作为 `final_answer` 兼容；其他缺失外层 `type` 且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 会多轮调用 action decision，但等待状态尚未实现。
+ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。裸最终结果 JSON 和常见最终结果包裹变体会作为 `final_answer` 兼容；其他缺失外层 `type` 且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 会多轮调用 action decision，但等待状态尚未实现。
 
 ## 安全约束
 
@@ -82,7 +82,7 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 
 - stub Provider 能返回最终结果。
 - stub action decision 能在 grep 为空时返回 `search_logs`，有 grep evidence 时返回 `final_answer`。
-- ActionDecision parser 接受合法 `search_logs` / `run_tool` / `final_answer`，并兼容裸最终结果 JSON；拒绝尚未开放的 action。
+- ActionDecision parser 接受合法 `search_logs` / `run_tool` / `final_answer`，并兼容裸最终结果 JSON 与常见最终结果包裹变体；拒绝尚未开放的 action。
 - `PLAN_ANALYSIS` 能多轮消费 `search_logs`、`run_tool` 或 `final_answer` 决策。
 - 预算耗尽或重复 fingerprint 被阻止时能生成低置信度最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
