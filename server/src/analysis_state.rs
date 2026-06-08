@@ -26,6 +26,12 @@ pub struct AnalysisState {
     pub current_phase: Option<TaskPhase>,
     pub evidence: Vec<AnalysisEvidenceRecord>,
     pub actions: Vec<AnalysisActionRecord>,
+    #[serde(default)]
+    pub user_messages: Vec<UserMessageRecord>,
+    #[serde(default)]
+    pub pending_user_prompts: Vec<PendingUserPrompt>,
+    #[serde(default)]
+    pub pending_approvals: Vec<PendingApproval>,
     pub budget: AnalysisBudgetSnapshot,
     pub final_result_path: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -36,6 +42,8 @@ pub struct AnalysisState {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AnalysisStatus {
     Running,
+    WaitingForUser,
+    WaitingForApproval,
     Succeeded,
     Failed,
 }
@@ -57,6 +65,7 @@ pub enum AnalysisEvidenceType {
     Manifest,
     LogSearch,
     ToolOutput,
+    EnvironmentEvidence,
     FinalResult,
 }
 
@@ -74,8 +83,44 @@ pub struct AnalysisActionRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AnalysisActionStatus {
+    WaitingForUser,
+    WaitingForApproval,
     Succeeded,
     Failed,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMessageRecord {
+    pub message_id: String,
+    pub question_id: Option<String>,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingUserPrompt {
+    pub question_id: String,
+    pub action_id: String,
+    pub question: String,
+    pub reason: String,
+    pub required: bool,
+    pub answer_format: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingApproval {
+    pub action_id: String,
+    pub action_type: String,
+    pub reason: String,
+    pub risk: String,
+    pub input: serde_json::Value,
+    pub evidence_refs: Vec<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +156,10 @@ pub enum AnalysisEventType {
     LlmCallCompleted,
     LlmCallSchemaRetry,
     EvidenceRecorded,
+    UserPromptRequested,
+    UserMessageReceived,
+    ApprovalRequested,
+    ApprovalDecisionRecorded,
     ActionCompleted,
     FinalResultGenerated,
     AnalysisFailed,
@@ -138,6 +187,9 @@ pub fn initialize(workspace: &Path, task: &TaskRecord) -> anyhow::Result<()> {
         current_phase: task.phase,
         evidence: Vec::new(),
         actions: Vec::new(),
+        user_messages: Vec::new(),
+        pending_user_prompts: Vec::new(),
+        pending_approvals: Vec::new(),
         budget: AnalysisBudgetSnapshot {
             rounds: 0,
             llm_calls: 0,
@@ -165,6 +217,266 @@ pub fn initialize(workspace: &Path, task: &TaskRecord) -> anyhow::Result<()> {
             state.current_phase = task.phase;
             Ok(())
         },
+    )
+}
+
+pub fn record_pending_user_prompt(
+    workspace: &Path,
+    action: &crate::contracts::AgentAction,
+    question_id: String,
+    question: String,
+    required: bool,
+    answer_format: Option<String>,
+) -> anyhow::Result<()> {
+    let evidence_refs = action
+        .evidence_refs
+        .iter()
+        .map(|reference| match &reference.selector {
+            Some(selector) => format!("{}#{selector}", reference.artifact_path),
+            None => reference.artifact_path.clone(),
+        })
+        .collect::<Vec<_>>();
+    let prompt = PendingUserPrompt {
+        question_id: question_id.clone(),
+        action_id: action.action_id.clone(),
+        question,
+        reason: action.reason.clone(),
+        required,
+        answer_format,
+        created_at: Utc::now(),
+    };
+    append_event(
+        workspace,
+        AnalysisEventType::UserPromptRequested,
+        Some(TaskPhase::PlanAnalysis),
+        Some(action.action_id.clone()),
+        format!("waiting for user answer to {question_id}"),
+        evidence_refs.clone(),
+        None,
+        serde_json::json!({
+            "prompt": prompt,
+            "action": action,
+        }),
+        |state| {
+            state.status = AnalysisStatus::WaitingForUser;
+            state.current_phase = Some(TaskPhase::PlanAnalysis);
+            state.budget.actions = state.budget.actions.saturating_add(1);
+            upsert_action(
+                &mut state.actions,
+                AnalysisActionRecord {
+                    action_id: action.action_id.clone(),
+                    action_type: "ask_user".to_string(),
+                    fingerprint: action.fingerprint.clone(),
+                    status: AnalysisActionStatus::WaitingForUser,
+                    summary: format!("waiting for user answer to {question_id}"),
+                    created_at: Utc::now(),
+                },
+            );
+            state
+                .pending_user_prompts
+                .retain(|item| item.question_id != question_id);
+            state.pending_user_prompts.push(prompt);
+            Ok(())
+        },
+    )
+}
+
+pub fn record_user_message(
+    workspace: &Path,
+    message_id: String,
+    question_id: Option<String>,
+    content: String,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::UserMessageReceived,
+        Some(TaskPhase::PlanAnalysis),
+        question_id.clone(),
+        match &question_id {
+            Some(question_id) => format!("user answered {question_id}"),
+            None => "user added message".to_string(),
+        },
+        Vec::new(),
+        None,
+        serde_json::json!({
+            "messageId": message_id,
+            "questionId": question_id,
+            "content": content,
+        }),
+        |state| {
+            state.status = AnalysisStatus::Running;
+            state.current_phase = Some(TaskPhase::PlanAnalysis);
+            if let Some(question_id) = &question_id {
+                let action_id = state
+                    .pending_user_prompts
+                    .iter()
+                    .find(|item| item.question_id == *question_id)
+                    .map(|item| item.action_id.clone());
+                state
+                    .pending_user_prompts
+                    .retain(|item| item.question_id != *question_id);
+                if let Some(action_id) = action_id {
+                    if let Some(action) = state
+                        .actions
+                        .iter_mut()
+                        .find(|action| action.action_id == action_id)
+                    {
+                        action.status = AnalysisActionStatus::Succeeded;
+                        action.summary = "user answered prompt".to_string();
+                    }
+                }
+            } else {
+                state.pending_user_prompts.clear();
+            }
+            if !state
+                .user_messages
+                .iter()
+                .any(|message| message.message_id == message_id)
+            {
+                state.user_messages.push(UserMessageRecord {
+                    message_id,
+                    question_id,
+                    content,
+                    created_at: Utc::now(),
+                });
+            }
+            Ok(())
+        },
+    )
+}
+
+pub fn record_pending_approval(
+    workspace: &Path,
+    action: &crate::contracts::AgentAction,
+) -> anyhow::Result<()> {
+    let evidence_refs = action
+        .evidence_refs
+        .iter()
+        .map(|reference| match &reference.selector {
+            Some(selector) => format!("{}#{selector}", reference.artifact_path),
+            None => reference.artifact_path.clone(),
+        })
+        .collect::<Vec<_>>();
+    let approval = PendingApproval {
+        action_id: action.action_id.clone(),
+        action_type: format!("{:?}", action.kind),
+        reason: action.reason.clone(),
+        risk: format!("{:?}", action.risk),
+        input: action.input.clone(),
+        evidence_refs: evidence_refs.clone(),
+        created_at: Utc::now(),
+    };
+    append_event(
+        workspace,
+        AnalysisEventType::ApprovalRequested,
+        Some(TaskPhase::PlanAnalysis),
+        Some(action.action_id.clone()),
+        format!("approval required for {}", action.action_id),
+        evidence_refs,
+        None,
+        serde_json::json!({
+            "approval": approval,
+            "action": action,
+        }),
+        |state| {
+            state.status = AnalysisStatus::WaitingForApproval;
+            state.current_phase = Some(TaskPhase::PlanAnalysis);
+            state.budget.actions = state.budget.actions.saturating_add(1);
+            upsert_action(
+                &mut state.actions,
+                AnalysisActionRecord {
+                    action_id: action.action_id.clone(),
+                    action_type: format!("{:?}", action.kind),
+                    fingerprint: action.fingerprint.clone(),
+                    status: AnalysisActionStatus::WaitingForApproval,
+                    summary: format!("approval required: {}", action.reason),
+                    created_at: Utc::now(),
+                },
+            );
+            state
+                .pending_approvals
+                .retain(|item| item.action_id != action.action_id);
+            state.pending_approvals.push(approval);
+            Ok(())
+        },
+    )
+}
+
+pub fn record_approval_decision(
+    workspace: &Path,
+    action_id: &str,
+    approved: bool,
+    reason: Option<String>,
+    idempotency_key: Option<String>,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::ApprovalDecisionRecorded,
+        Some(TaskPhase::PlanAnalysis),
+        Some(action_id.to_string()),
+        if approved {
+            format!("approved action {action_id}")
+        } else {
+            format!("rejected action {action_id}")
+        },
+        Vec::new(),
+        None,
+        serde_json::json!({
+            "actionId": action_id,
+            "approved": approved,
+            "reason": reason,
+            "idempotencyKey": idempotency_key,
+        }),
+        |state| {
+            state.status = AnalysisStatus::Running;
+            state.current_phase = Some(TaskPhase::PlanAnalysis);
+            state
+                .pending_approvals
+                .retain(|item| item.action_id != action_id);
+            if let Some(action) = state
+                .actions
+                .iter_mut()
+                .find(|action| action.action_id == action_id)
+            {
+                action.status = if approved {
+                    AnalysisActionStatus::Succeeded
+                } else {
+                    AnalysisActionStatus::Rejected
+                };
+                action.summary = reason.unwrap_or_else(|| {
+                    if approved {
+                        "action approved".to_string()
+                    } else {
+                        "action rejected".to_string()
+                    }
+                });
+            }
+            Ok(())
+        },
+    )
+}
+
+pub fn record_environment_artifact(
+    workspace: &Path,
+    action_id: &str,
+    artifact_path: String,
+    summary: String,
+) -> anyhow::Result<()> {
+    let evidence = AnalysisEvidenceRecord {
+        evidence_type: AnalysisEvidenceType::EnvironmentEvidence,
+        artifact_path: artifact_path.clone(),
+        action_id: Some(action_id.to_string()),
+        summary,
+        evidence_refs: vec![artifact_path],
+        created_at: Utc::now(),
+    };
+    append_evidence_event(
+        workspace,
+        "",
+        TaskPhase::PlanAnalysis,
+        format!("environment evidence recorded for {action_id}"),
+        evidence,
+        serde_json::json!({}),
     )
 }
 

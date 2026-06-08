@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP 和 `PLAN_ANALYSIS` 多轮 action loop。当前仍未启用用户追问和审批。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。
 
 已落地：
 
@@ -18,6 +18,8 @@
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
 - 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
+- `ask_user` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
+- `collect_environment` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务；批准后当前写入 mock environment evidence
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
 - `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions`
 - 重复 action fingerprint 防护
@@ -25,8 +27,7 @@
 
 尚未实现：
 
-- `WAITING_FOR_USER`
-- `WAITING_FOR_APPROVAL`
+- 真实 Environment Collector 执行器
 - token、运行时间和每轮追问预算
 
 ## 输入

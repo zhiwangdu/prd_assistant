@@ -6,7 +6,7 @@ use tracing::{error, warn};
 use crate::{
     analysis_state,
     config::{AnalysisSettings, LogAnalyzerSettings},
-    contracts::{ActionKind, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
+    contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
     llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
     models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskPhase, TaskRecord},
     pipeline::{
@@ -173,10 +173,12 @@ async fn plan_analysis_phase(
             Some(_) => anyhow::bail!("task contains invalid metadataContextPath"),
             None => None,
         };
+        let snapshot = analysis_state::read_snapshot(&workspace)?;
+        let question_context = question_with_analysis_context(&task.question, &snapshot.state);
         let decision = state
             .llm
             .decide_next_action_with_events(
-                &task.question,
+                &question_context,
                 &manifest,
                 &grep,
                 metadata_context.as_ref(),
@@ -194,6 +196,13 @@ async fn plan_analysis_phase(
                     let grep =
                         read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
                     return complete_with_budget_limited_result(state, &task, &grep, reason).await;
+                }
+                if matches!(
+                    action.kind,
+                    ActionKind::AskUser | ActionKind::CollectEnvironment
+                ) || action.risk == ActionRisk::RequiresApproval
+                {
+                    return wait_for_agent_action(state.clone(), &task, action).await;
                 }
                 execute_agent_action(state.clone(), &task, action).await?;
             }
@@ -271,6 +280,67 @@ async fn execute_agent_action(
         }
         ActionKind::FinalAnswer => Ok(()),
         _ => anyhow::bail!("unsupported action decision type {:?}", action.kind),
+    }
+}
+
+async fn wait_for_agent_action(
+    state: Arc<AppState>,
+    task: &TaskRecord,
+    action: AgentAction,
+) -> anyhow::Result<DispatchOutcome> {
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    match action.kind {
+        ActionKind::AskUser => {
+            let question = action
+                .input
+                .get("question")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("ask_user action is missing question"))?
+                .to_string();
+            let required = action
+                .input
+                .get("required")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
+            let answer_format = action
+                .input
+                .get("answerFormat")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+            let question_id = action
+                .input
+                .get("questionId")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| action.action_id.clone());
+            analysis_state::record_pending_user_prompt(
+                &workspace,
+                &action,
+                question_id,
+                question,
+                required,
+                answer_format,
+            )?;
+            state.tasks.wait_for_user(&task.task_id).await?;
+            Ok(DispatchOutcome::Complete)
+        }
+        ActionKind::CollectEnvironment if action.risk == ActionRisk::RequiresApproval => {
+            analysis_state::record_pending_approval(&workspace, &action)?;
+            state.tasks.wait_for_approval(&task.task_id).await?;
+            Ok(DispatchOutcome::Complete)
+        }
+        _ if action.risk == ActionRisk::RequiresApproval => {
+            analysis_state::record_pending_approval(&workspace, &action)?;
+            state.tasks.wait_for_approval(&task.task_id).await?;
+            Ok(DispatchOutcome::Complete)
+        }
+        _ => anyhow::bail!("action {:?} cannot enter waiting state", action.kind),
     }
 }
 
@@ -446,6 +516,40 @@ fn action_from_decision(task: &TaskRecord, decision: ActionDecision) -> AgentAct
         risk: decision.risk,
         fingerprint: format!("task:{}:{fingerprint}", task.task_id),
     }
+}
+
+fn question_with_analysis_context(question: &str, state: &analysis_state::AnalysisState) -> String {
+    let mut value = question.to_string();
+    if !state.user_messages.is_empty() {
+        value.push_str("\n\nUser messages:\n");
+        for message in state.user_messages.iter().rev().take(5).rev() {
+            value.push_str(&format!(
+                "- {}: {}\n",
+                message.question_id.as_deref().unwrap_or("message"),
+                message.content
+            ));
+        }
+    }
+    let extra_evidence = state
+        .evidence
+        .iter()
+        .filter(|evidence| {
+            matches!(
+                evidence.evidence_type,
+                analysis_state::AnalysisEvidenceType::EnvironmentEvidence
+            )
+        })
+        .collect::<Vec<_>>();
+    if !extra_evidence.is_empty() {
+        value.push_str("\nEnvironment evidence:\n");
+        for evidence in extra_evidence.iter().rev().take(5).rev() {
+            value.push_str(&format!(
+                "- {}: {}\n",
+                evidence.artifact_path, evidence.summary
+            ));
+        }
+    }
+    value
 }
 
 fn record_model_decision(

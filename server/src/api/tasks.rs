@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use serde::Deserialize;
 
 use crate::{
     analysis_state::{self, AnalysisSnapshotResponse},
@@ -19,6 +20,29 @@ use crate::{
     pipeline::{prepare_raw_snapshot, write_metadata_context},
     state::AppState,
 };
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskMessageRequest {
+    pub question_id: Option<String>,
+    pub message: String,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionDecisionRequest {
+    pub decision: ApprovalDecision,
+    pub reason: Option<String>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    Approved,
+    Rejected,
+}
 
 pub async fn create_task(
     State(state): State<Arc<AppState>>,
@@ -162,6 +186,168 @@ pub async fn task_analysis(
     analysis_state::read_snapshot(&workspace)
         .map(Json)
         .map_err(|err| AppError::not_found(format!("analysis state not found: {err}")))
+}
+
+pub async fn post_task_message(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+    Json(req): Json<TaskMessageRequest>,
+) -> Result<Json<TaskResponse>, AppError> {
+    validate_task_id(&task_id)?;
+    let message = req.message.trim().to_string();
+    if message.is_empty() {
+        return Err(AppError::bad_request("message must not be empty"));
+    }
+    if message.chars().count() > state.config.llm.max_input_chars / 2 {
+        return Err(AppError::bad_request("message is too long"));
+    }
+    let task = state
+        .tasks
+        .get(&task_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))?;
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let snapshot = analysis_state::read_snapshot(&workspace).map_err(|err| {
+        AppError::conflict(
+            "analysis state is not available",
+            serde_json::json!({"errorDetail": err.to_string()}),
+        )
+    })?;
+
+    if let Some(key) = req
+        .idempotency_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        if snapshot
+            .state
+            .user_messages
+            .iter()
+            .any(|record| record.message_id == key)
+        {
+            return Ok(Json(task.summary(&state.config.server.public_base_url)));
+        }
+    }
+
+    if task.status != TaskStatus::WaitingForUser {
+        return Err(AppError::conflict(
+            "task is not waiting for user input",
+            serde_json::json!({ "status": task.status }),
+        ));
+    }
+
+    let question_id = normalize_optional_id(req.question_id);
+    if let Some(question_id) = &question_id {
+        if !snapshot
+            .state
+            .pending_user_prompts
+            .iter()
+            .any(|prompt| prompt.question_id == *question_id)
+        {
+            return Err(AppError::bad_request(format!(
+                "unknown pending questionId {question_id}"
+            )));
+        }
+    }
+    let message_id = req
+        .idempotency_key
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| next_id("msg"));
+    analysis_state::record_user_message(&workspace, message_id, question_id, message)
+        .map_err(|err| AppError::internal(format!("failed to record user message: {err}")))?;
+    let resumed = state
+        .tasks
+        .resume_waiting(&task_id, TaskStatus::WaitingForUser)
+        .await
+        .map_err(|err| {
+            AppError::conflict(
+                "failed to resume task",
+                serde_json::json!({"errorDetail": err.to_string()}),
+            )
+        })?;
+    state.executor.enqueue(state.clone(), task_id);
+    Ok(Json(resumed.summary(&state.config.server.public_base_url)))
+}
+
+pub async fn post_action_decision(
+    State(state): State<Arc<AppState>>,
+    Path((task_id, action_id)): Path<(String, String)>,
+    Json(req): Json<ActionDecisionRequest>,
+) -> Result<Json<TaskResponse>, AppError> {
+    validate_task_id(&task_id)?;
+    validate_action_id(&action_id)?;
+    let task = state
+        .tasks
+        .get(&task_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))?;
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let snapshot = analysis_state::read_snapshot(&workspace).map_err(|err| {
+        AppError::conflict(
+            "analysis state is not available",
+            serde_json::json!({"errorDetail": err.to_string()}),
+        )
+    })?;
+    let idempotency_key = req
+        .idempotency_key
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(key) = idempotency_key.as_deref() {
+        if snapshot.events.iter().any(|event| {
+            event.event_type == analysis_state::AnalysisEventType::ApprovalDecisionRecorded
+                && event
+                    .details
+                    .get("idempotencyKey")
+                    .and_then(|value| value.as_str())
+                    == Some(key)
+        }) {
+            return Ok(Json(task.summary(&state.config.server.public_base_url)));
+        }
+    }
+
+    if task.status != TaskStatus::WaitingForApproval {
+        return Err(AppError::conflict(
+            "task is not waiting for approval",
+            serde_json::json!({ "status": task.status }),
+        ));
+    }
+    let pending = snapshot
+        .state
+        .pending_approvals
+        .iter()
+        .find(|approval| approval.action_id == action_id)
+        .cloned()
+        .ok_or_else(|| AppError::bad_request(format!("unknown pending actionId {action_id}")))?;
+    let approved = req.decision == ApprovalDecision::Approved;
+    if approved {
+        write_mock_environment_evidence(&workspace, &pending).map_err(|err| {
+            AppError::internal(format!("failed to write environment evidence: {err}"))
+        })?;
+    }
+    analysis_state::record_approval_decision(
+        &workspace,
+        &action_id,
+        approved,
+        req.reason
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        idempotency_key,
+    )
+    .map_err(|err| AppError::internal(format!("failed to record approval decision: {err}")))?;
+    let resumed = state
+        .tasks
+        .resume_waiting(&task_id, TaskStatus::WaitingForApproval)
+        .await
+        .map_err(|err| {
+            AppError::conflict(
+                "failed to resume task",
+                serde_json::json!({"errorDetail": err.to_string()}),
+            )
+        })?;
+    state.executor.enqueue(state.clone(), task_id);
+    Ok(Json(resumed.summary(&state.config.server.public_base_url)))
 }
 
 pub async fn task_artifacts(
@@ -321,6 +507,47 @@ fn validate_task_id(task_id: &str) -> Result<(), AppError> {
     } else {
         Err(AppError::bad_request("invalid taskId"))
     }
+}
+
+fn validate_action_id(action_id: &str) -> Result<(), AppError> {
+    let valid = action_id.starts_with("act_")
+        && action_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("invalid actionId"))
+    }
+}
+
+fn write_mock_environment_evidence(
+    workspace: &std::path::Path,
+    pending: &analysis_state::PendingApproval,
+) -> anyhow::Result<()> {
+    let result_dir = workspace
+        .join("environment_evidence")
+        .join(&pending.action_id);
+    std::fs::create_dir_all(&result_dir)?;
+    let artifact_path = format!("environment_evidence/{}/result.json", pending.action_id);
+    let result = serde_json::json!({
+        "schemaVersion": 1,
+        "actionId": pending.action_id,
+        "status": "MOCK",
+        "summary": "mock environment evidence captured after user approval",
+        "input": pending.input,
+        "createdAt": Utc::now(),
+    });
+    std::fs::write(
+        result_dir.join("result.json"),
+        serde_json::to_vec_pretty(&result)?,
+    )?;
+    analysis_state::record_environment_artifact(
+        workspace,
+        &pending.action_id,
+        artifact_path,
+        "mock environment evidence captured after user approval".to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -608,6 +835,129 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn task_message_resumes_waiting_for_user_task() {
+        let (state, root) = test_state();
+        create_test_upload(&state, "upl_ask_user", UploadStatus::Complete).await;
+        let app = api::router(state.clone()).with_state(state);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadId":"upl_ask_user","question":"ASK_USER_MVP 请先追问"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+
+        let waiting = wait_for_task_status(&app, task_id, "WAITING_FOR_USER").await;
+        assert_eq!(waiting["phase"], "PLAN_ANALYSIS");
+        let analysis = get_analysis_json(&app, task_id).await;
+        let question_id = analysis["state"]["pendingUserPrompts"][0]["questionId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/tasks/{task_id}/messages"))
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"questionId":"{question_id}","message":"异常发生在 10:00-10:30","idempotencyKey":"msg-test-1"}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let terminal = wait_for_task_status(&app, task_id, "SUCCEEDED").await;
+        assert_eq!(terminal["status"], "SUCCEEDED");
+        let analysis = get_analysis_json(&app, task_id).await;
+        assert_eq!(
+            analysis["state"]["userMessages"][0]["messageId"],
+            "msg-test-1"
+        );
+        assert!(analysis["state"]["pendingUserPrompts"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn approval_decision_resumes_waiting_for_approval_task() {
+        let (state, root) = test_state();
+        create_test_upload(&state, "upl_approval", UploadStatus::Complete).await;
+        let app = api::router(state.clone()).with_state(state);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadId":"upl_approval","question":"APPROVAL_MVP 请请求环境采集审批"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+
+        let waiting = wait_for_task_status(&app, task_id, "WAITING_FOR_APPROVAL").await;
+        assert_eq!(waiting["phase"], "PLAN_ANALYSIS");
+        let analysis = get_analysis_json(&app, task_id).await;
+        let action_id = analysis["state"]["pendingApprovals"][0]["actionId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/api/tasks/{task_id}/actions/{action_id}/decision"
+                ))
+                .header("authorization", "Bearer test-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"decision":"approved","reason":"允许 mock 环境采集","idempotencyKey":"approval-test-1"}"#,
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let terminal = wait_for_task_status(&app, task_id, "SUCCEEDED").await;
+        assert_eq!(terminal["status"], "SUCCEEDED");
+        let analysis = get_analysis_json(&app, task_id).await;
+        assert!(analysis["state"]["pendingApprovals"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(analysis["state"]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["evidenceType"] == "environment_evidence"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn llm_failure_marks_plan_analysis_phase() {
         let (state, root) = test_state_with_llm(LlmSettings {
             provider: LlmProvider::OpenAiCompatible,
@@ -859,5 +1209,47 @@ nodes:
             })
             .await
             .unwrap();
+    }
+
+    async fn wait_for_task_status(
+        app: &axum::Router,
+        task_id: &str,
+        expected_status: &str,
+    ) -> serde_json::Value {
+        for _ in 0..150 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/api/tasks/{task_id}"))
+                        .header("authorization", "Bearer test-key")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            if body["status"] == expected_status {
+                return body;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("task {task_id} did not reach {expected_status}");
+    }
+
+    async fn get_analysis_json(app: &axum::Router, task_id: &str) -> serde_json::Value {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/analysis"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&body).unwrap()
     }
 }

@@ -24,6 +24,7 @@
 - Server 单测覆盖 LLM Gateway ActionDecision / FinalAnswer 双模式解析、裸最终结果 JSON 和常见最终结果包裹变体包装、stub action decision 和未开放 action 拒绝。
 - Server 单测覆盖 action decision schema 修正重试提示，防止真实模型首轮缺少顶层 `type` 时直接失败。
 - Server 单测覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 驱动的 grep 重建、重复 fingerprint 防护和预算终止结果。
+- Server 单测覆盖 `WAITING_FOR_USER` message API 恢复任务，以及 `WAITING_FOR_APPROVAL` approval API 写入 mock environment evidence 后恢复任务。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖 Analysis State Store state/event 持久化和 `/api/tasks/:task_id/analysis`。
 - Server 单测覆盖 LLM call lifecycle event、callId 和 schema retry error details。
@@ -65,8 +66,9 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - `GET /api/tasks/:task_id`
 - `GET /api/tasks/:task_id/artifacts`
 - `GET /api/tasks/:task_id/result`
-- `GET /api/tasks/:task_id/analysis`（实现后）
-- task message 和 action decision 的恢复/幂等（实现后）
+- `GET /api/tasks/:task_id/analysis`
+- `POST /api/tasks/:task_id/messages`
+- `POST /api/tasks/:task_id/actions/:action_id/decision`
 
 ## 验收标准
 

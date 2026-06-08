@@ -27,6 +27,7 @@
 - Agent action 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
 - SSH/SCP 环境采集默认需要用户批准。
+- 当前 `collect_environment` 在批准前只写入 pending approval，不执行采集；批准后的 MVP 路径只写入 mock evidence，真实 SSH/SCP 执行器后续仍必须受白名单约束。
 - 用户消息、日志和 Case 内容都视为不可信输入，不能覆盖系统指令或安全策略。
 - 重复 action fingerprint 超限后终止循环。
 - 达到预算时输出信息不足或低置信度结果，不能自动扩大权限。

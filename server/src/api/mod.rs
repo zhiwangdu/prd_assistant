@@ -36,6 +36,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .route("/api/tasks/:task_id", get(tasks::get_task))
         .route("/api/tasks/:task_id/analysis", get(tasks::task_analysis))
+        .route(
+            "/api/tasks/:task_id/messages",
+            post(tasks::post_task_message),
+        )
+        .route(
+            "/api/tasks/:task_id/actions/:action_id/decision",
+            post(tasks::post_action_decision),
+        )
         .route("/api/tasks/:task_id/result", get(tasks::task_result))
         .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
         .route(

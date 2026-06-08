@@ -35,6 +35,7 @@
 - 实现任务级 `analysis_state.json` 和 `analysis_events.jsonl`。
 - 实现 facts、hypotheses、information gaps 和 action fingerprint。
 - 实现 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
+- `ask_user` 和 `collect_environment` 的等待/恢复 API 已完成；`collect_environment` 当前批准后写入 mock evidence。
 - 安全只读动作自动执行；远程采集默认等待批准。
 - 实现最大轮数、模型调用数、动作数、重复动作、token 和运行时间预算。
 - 实现重启恢复、幂等和预算终止。
@@ -66,6 +67,7 @@
 - 更好的日志模式归一化。
 - 版本间 diff / commit 对比。
 - 更多测试环境采集模板。
+- 将审批后的 mock environment evidence 替换为真实 SSH/SCP Environment Collector。
 - 失败任务诊断和观测指标。
 - pgvector 迁移。
 

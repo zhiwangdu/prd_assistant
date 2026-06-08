@@ -23,6 +23,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
 - `PLAN_ANALYSIS` 多轮 LLM action loop、预算和重复 fingerprint 防护
+- `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复 API
 - Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema
 - runtime LLM output debug 开关和 `/api/debug/llm`
@@ -53,6 +54,8 @@ POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
 GET /api/tasks/:task_id/analysis
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
 GET /api/debug/llm
@@ -65,13 +68,6 @@ POST /api/metadata/imports
 POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
-```
-
-规划新增：
-
-```http
-POST /api/tasks/:task_id/messages
-POST /api/tasks/:task_id/actions/:action_id/decision
 ```
 
 `GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
@@ -159,6 +155,8 @@ background executor
       - final_answer: persist result.json/result.md and SUCCEEDED
       - search_logs: rebuild grep_results.json from action keywords, then next round
       - run_tool: execute whitelisted tool action, then next round
+      - ask_user: persist pendingUserPrompts and WAITING_FOR_USER
+      - collect_environment: persist pendingApprovals and WAITING_FOR_APPROVAL
       - budget/repeated fingerprint: persist low-confidence result and SUCCEEDED
   -> persist GENERATE_RESULT
   -> GENERATE_RESULT: LLM Gateway call using grep/metadata/tool evidence, with one correction retry for result schema errors
@@ -171,7 +169,31 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`PLAN_ANALYSIS` 的 ActionDecision 当前只开放 `search_logs`、`run_tool` 和 `final_answer`；暂不开放 `ask_user`、`collect_environment`、`collect_code_evidence`。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`PLAN_ANALYSIS` 的 ActionDecision 当前开放 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`；暂不开放 `collect_code_evidence`。`collect_environment` 必须使用 `REQUIRES_APPROVAL` risk。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
+
+`POST /api/tasks/:task_id/messages` 请求：
+
+```json
+{
+  "questionId": "act_ask_user_xxx",
+  "message": "异常发生在 10:00-10:30",
+  "idempotencyKey": "client-generated-key"
+}
+```
+
+仅 `WAITING_FOR_USER` 任务可调用。Server 记录 `user_message_received` event，清理对应 pending prompt，将任务恢复为 `QUEUED / PLAN_ANALYSIS` 并重新入队。
+
+`POST /api/tasks/:task_id/actions/:action_id/decision` 请求：
+
+```json
+{
+  "decision": "approved",
+  "reason": "允许只读采集",
+  "idempotencyKey": "client-generated-key"
+}
+```
+
+`decision` 可为 `approved` 或 `rejected`。仅 `WAITING_FOR_APPROVAL` 任务可调用。当前 `approved` 会写入 mock `environment_evidence/<action_id>/result.json`，记录 `approval_decision_recorded` event，将任务恢复为 `QUEUED / PLAN_ANALYSIS` 并重新入队；真实 SSH/SCP 采集在 Environment Collector 阶段替换该 mock 产物。
 
 `GET /api/debug/llm` 和 `PUT /api/debug/llm` 控制当前 Server 进程内的 LLM 输出日志开关。开关默认关闭，重启后不保留。开启后只打印模型 response content 到 Server stderr，不打印 prompt、API Key 或 HTTP headers。
 
@@ -276,7 +298,7 @@ persist task
 
 ## 待实现
 
-- `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
+- 真实 Environment Collector 执行器替换当前 approval 后的 mock `environment_evidence`。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 更丰富的 delta 字段映射。

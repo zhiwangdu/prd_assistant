@@ -161,6 +161,46 @@ impl TaskStore {
         .await
     }
 
+    pub async fn wait_for_user(&self, task_id: &str) -> anyhow::Result<TaskRecord> {
+        self.wait(task_id, TaskStatus::WaitingForUser).await
+    }
+
+    pub async fn wait_for_approval(&self, task_id: &str) -> anyhow::Result<TaskRecord> {
+        self.wait(task_id, TaskStatus::WaitingForApproval).await
+    }
+
+    async fn wait(&self, task_id: &str, status: TaskStatus) -> anyhow::Result<TaskRecord> {
+        self.update(task_id, |task| {
+            ensure_running(task)?;
+            ensure_phase(task, TaskPhase::PlanAnalysis)?;
+            task.status = status;
+            task.phase = Some(TaskPhase::PlanAnalysis);
+            task.error = None;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn resume_waiting(
+        &self,
+        task_id: &str,
+        expected: TaskStatus,
+    ) -> anyhow::Result<TaskRecord> {
+        self.update(task_id, |task| {
+            if task.status != expected {
+                anyhow::bail!(
+                    "task {task_id} is not in expected waiting status: expected {expected:?}, found {:?}",
+                    task.status
+                );
+            }
+            task.status = TaskStatus::Queued;
+            task.phase = Some(TaskPhase::PlanAnalysis);
+            task.error = None;
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn recover_incomplete(&self) -> anyhow::Result<Vec<TaskRecord>> {
         let mut tasks = self.inner.write().await;
         let mut recovered = Vec::new();
@@ -212,6 +252,16 @@ fn ensure_phase(task: &TaskRecord, expected: TaskPhase) -> anyhow::Result<()> {
 fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
     if task.status == TaskStatus::Running && task.phase.is_none() {
         anyhow::bail!("RUNNING task {} is missing phase", task.task_id);
+    }
+    if matches!(
+        task.status,
+        TaskStatus::WaitingForUser | TaskStatus::WaitingForApproval
+    ) && task.phase != Some(TaskPhase::PlanAnalysis)
+    {
+        anyhow::bail!(
+            "waiting task {} must retain PLAN_ANALYSIS phase",
+            task.task_id
+        );
     }
     if task.status == TaskStatus::Succeeded && task.phase.is_some() {
         anyhow::bail!("SUCCEEDED task {} must not retain phase", task.task_id);

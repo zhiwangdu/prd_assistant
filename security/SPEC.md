@@ -23,6 +23,7 @@
 - LLM 不能直接执行命令。
 - Analysis Agent 只能产生结构化意图，Server 是唯一执行者。
 - 远程采集默认需要显式批准。
+- `collect_environment` 必须使用 `REQUIRES_APPROVAL` risk；未批准前不执行。当前 MVP 批准后仅生成 mock evidence，真实 SSH/SCP 接入时仍需配置节点、路径和命令白名单。
 - 不持久化隐藏思维链。
 
 ## 密钥

@@ -18,6 +18,7 @@ Chrome Extension or WEBUI
   -> analysis_state.json / analysis_events.jsonl audit snapshot
   -> PLAN_ANALYSIS bounded multi-round LLM action/final-answer loop
   -> optional action-driven search_logs or run_tool, with repeated fingerprint protection
+  -> optional ask_user / approval wait and resume
   -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
 ```
@@ -61,6 +62,8 @@ Chrome Extension or WEBUI
   - `GET /api/tasks/:task_id`
   - `GET /api/tasks/:task_id/artifacts`
   - `GET /api/tasks/:task_id/result`
+  - `POST /api/tasks/:task_id/messages`
+  - `POST /api/tasks/:task_id/actions/:action_id/decision`
   - `GET /api/metadata/instances/:instance_id`
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
@@ -84,6 +87,9 @@ Chrome Extension or WEBUI
 - Runs `PLAN_ANALYSIS` after rule-based tools and consumes bounded multi-round LLM `action | final_answer` decisions.
 - Executes `search_logs` action by rebuilding `grep_results.json` with model-provided keywords, then continues to the next analysis round.
 - Executes LLM-selected `run_tool` action through the same whitelist Tool Runner channel, then continues to the next analysis round.
+- Enters `WAITING_FOR_USER` for `ask_user`, persists `pendingUserPrompts`, accepts `POST /api/tasks/:task_id/messages`, records the user message, and resumes the same task from `PLAN_ANALYSIS`.
+- Enters `WAITING_FOR_APPROVAL` for `collect_environment` / `REQUIRES_APPROVAL`, persists `pendingApprovals`, accepts approval or rejection through `POST /api/tasks/:task_id/actions/:action_id/decision`, and resumes the same task from `PLAN_ANALYSIS`.
+- Approved environment collection currently writes mock `environment_evidence/<action_id>/result.json`; real SSH/SCP execution remains planned for Environment Collector.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
@@ -187,6 +193,8 @@ tool_results/<action_id>/
   - Tool Runner result display
   - user question input and structured LLM result display
   - live Task execution loop summary from `/api/tasks/:task_id/analysis`
+  - `WAITING_FOR_USER` prompt answer form
+  - `WAITING_FOR_APPROVAL` action approval/rejection form
   - top-bar LLM debug switch backed by `/api/debug/llm`
   - grep evidence reference navigation
   - Metadata query
@@ -231,7 +239,7 @@ tool_results/<action_id>/
 - Validates task-local Tool Runner finding evidence references.
 - Provides ActionDecision / FinalAnswer dual-mode schema and parser for the multi-round action loop.
 - `PLAN_ANALYSIS` now calls the dual-mode action decision entrypoint until final answer, budget exhaustion, or repeated fingerprint termination.
-- ActionDecision currently accepts `search_logs`, `run_tool`, and `final_answer`; unopened actions such as environment collection are rejected.
+- ActionDecision currently accepts `search_logs`, `run_tool`, `ask_user`, `collect_environment`, and `final_answer`; `collect_environment` requires approval and `collect_code_evidence` remains closed.
 - If a real model returns a bare final-result JSON during `PLAN_ANALYSIS` without the outer `type` field, or returns common nested final-answer wrappers such as `final_answer.result.result`, `answer`, or `finalAnswer`, LLM Gateway wraps it as `final_answer` and still validates evidence refs.
 - Action decision parsing/schema failures in `PLAN_ANALYSIS` now get one corrective retry with the latest schema error, so a first response missing top-level `type` no longer fails the task immediately.
 - Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
@@ -348,7 +356,7 @@ Recent HTTP smoke checks:
 ## Planned Next
 
 1. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
-2. Implement `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API for the Analysis Agent loop.
+2. Replace mock approved environment evidence with the real Environment Collector SSH/SCP executor.
 3. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache

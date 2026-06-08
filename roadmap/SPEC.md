@@ -6,14 +6,13 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、真实 `influxql_analyzer` smoke、单次 LLM Gateway 和静态 WebUI 托管。Analysis Agent 用户追问/审批和相关恢复 API 尚未实现。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、真实 `influxql_analyzer` smoke、单次 LLM Gateway、Analysis Agent 用户追问/审批恢复 API 和静态 WebUI 托管。真实 Environment Collector 尚未实现。
 
 ## 下一阶段优先级
 
 1. 接入真实 `flux_query_analyzer`，并扩展 `influxql_analyzer` compare mode delta 字段映射。
-2. Analysis Agent `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API。
+2. Environment Collector，将当前 approval 后的 mock evidence 替换为真实 SSH/SCP 采集。
 3. Code Evidence。
-4. Environment Collector。
 5. Case Store 保存和召回。
 
 ## 阶段门槛

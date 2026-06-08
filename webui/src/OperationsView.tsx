@@ -36,13 +36,34 @@ type AnalysisSnapshot = {
   taskId: string;
   state: {
     revision: number;
-    status: "RUNNING" | "SUCCEEDED" | "FAILED";
+    status: "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
     currentPhase?: TaskSummary["phase"];
     budget: { rounds: number; llmCalls: number; actions: number };
     evidence: Array<{ evidenceType: string; artifactPath: string; summary: string; evidenceRefs: string[]; createdAt: string }>;
     actions: Array<{ actionId: string; actionType: string; status: string; summary: string; createdAt: string }>;
+    userMessages: Array<{ messageId: string; questionId?: string | null; content: string; createdAt: string }>;
+    pendingUserPrompts: PendingUserPrompt[];
+    pendingApprovals: PendingApproval[];
   };
   events: AnalysisEvent[];
+};
+type PendingUserPrompt = {
+  questionId: string;
+  actionId: string;
+  question: string;
+  reason: string;
+  required: boolean;
+  answerFormat?: string | null;
+  createdAt: string;
+};
+type PendingApproval = {
+  actionId: string;
+  actionType: string;
+  reason: string;
+  risk: string;
+  input: unknown;
+  evidenceRefs: string[];
+  createdAt: string;
 };
 type AnalysisEvent = {
   revision: number;
@@ -106,6 +127,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [taskResult, setTaskResult] = useState<TaskResult | null>(null);
   const [analysisSnapshot, setAnalysisSnapshot] = useState<AnalysisSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [userAnswer, setUserAnswer] = useState("");
+  const [approvalReason, setApprovalReason] = useState("");
 
   const refreshTasks = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -202,6 +225,57 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function submitUserMessage(prompt: PendingUserPrompt) {
+    if (!selectedTask) return;
+    const message = userAnswer.trim();
+    if (!message) {
+      setUploadStatus("请填写回答内容");
+      return;
+    }
+    setLoading(true);
+    try {
+      await fetchJson<TaskSummary>(`/api/tasks/${encodeURIComponent(selectedTask.taskId)}/messages`, {
+        method: "POST",
+        headers: jsonHeaders(apiKey),
+        body: JSON.stringify({
+          questionId: prompt.questionId,
+          message,
+          idempotencyKey: `webui-${prompt.questionId}-${Date.now()}`
+        })
+      });
+      setUserAnswer("");
+      setUploadStatus("回答已提交，任务继续执行");
+      await selectTask(selectedTask.taskId);
+    } catch (reason) {
+      setUploadStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitApproval(approval: PendingApproval, decision: "approved" | "rejected") {
+    if (!selectedTask) return;
+    setLoading(true);
+    try {
+      await fetchJson<TaskSummary>(`/api/tasks/${encodeURIComponent(selectedTask.taskId)}/actions/${encodeURIComponent(approval.actionId)}/decision`, {
+        method: "POST",
+        headers: jsonHeaders(apiKey),
+        body: JSON.stringify({
+          decision,
+          reason: approvalReason.trim() || null,
+          idempotencyKey: `webui-${approval.actionId}-${decision}-${Date.now()}`
+        })
+      });
+      setApprovalReason("");
+      setUploadStatus(decision === "approved" ? "审批已批准，任务继续执行" : "审批已拒绝，任务继续执行");
+      await selectTask(selectedTask.taskId);
+    } catch (reason) {
+      setUploadStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Card>
@@ -250,6 +324,17 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                   <p className="text-xs text-muted-foreground">Metadata: instance={selectedTask.instanceId ?? "-"} · cluster={selectedTask.clusterId ?? "-"} · node={selectedTask.nodeId ?? "-"}</p>
                 ) : null}
                 {selectedTask.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedTask.error?.phase ? `${selectedTask.error.phase}: ` : ""}{selectedTask.error?.message ?? "Task failed"}</div> : null}
+                <WaitingInteraction
+                  answer={userAnswer}
+                  approvalReason={approvalReason}
+                  loading={loading}
+                  snapshot={analysisSnapshot}
+                  status={selectedTask.status}
+                  onAnswerChange={setUserAnswer}
+                  onApprovalReasonChange={setApprovalReason}
+                  onSubmitAnswer={(prompt) => void submitUserMessage(prompt)}
+                  onSubmitApproval={(approval, decision) => void submitApproval(approval, decision)}
+                />
                 {!isTerminal(selectedTask.status) ? <p className="text-sm text-muted-foreground">任务由 Server 后台执行，每秒自动刷新。</p> : null}
                 {selectedTask.status === "SUCCEEDED" && !artifacts ? <Button onClick={() => void selectTask(selectedTask.taskId)}>加载 artifacts</Button> : null}
                 <ExecutionTimeline snapshot={analysisSnapshot} />
@@ -283,6 +368,68 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       ) : <EmptyState>成功任务的 manifest 和 grep evidence 会显示在这里。</EmptyState>}
     </div>
   );
+}
+
+function WaitingInteraction({
+  answer,
+  approvalReason,
+  loading,
+  snapshot,
+  status,
+  onAnswerChange,
+  onApprovalReasonChange,
+  onSubmitAnswer,
+  onSubmitApproval
+}: {
+  answer: string;
+  approvalReason: string;
+  loading: boolean;
+  snapshot: AnalysisSnapshot | null;
+  status: TaskStatus;
+  onAnswerChange: (value: string) => void;
+  onApprovalReasonChange: (value: string) => void;
+  onSubmitAnswer: (prompt: PendingUserPrompt) => void;
+  onSubmitApproval: (approval: PendingApproval, decision: "approved" | "rejected") => void;
+}) {
+  if (status === "WAITING_FOR_USER") {
+    const prompt = snapshot?.state.pendingUserPrompts[0];
+    if (!prompt) {
+      return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">任务正在等待用户输入，但 analysis state 中暂无 pending prompt。</div>;
+    }
+    return (
+      <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div>
+          <p className="text-sm font-medium text-amber-900">需要补充信息</p>
+          <p className="mt-1 text-sm text-amber-800">{prompt.question}</p>
+          <p className="mt-1 text-xs text-amber-700">reason: {prompt.reason} · format: {prompt.answerFormat ?? "free text"} · required: {prompt.required ? "yes" : "no"}</p>
+        </div>
+        <textarea className="min-h-20 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm" value={answer} onChange={(event) => onAnswerChange(event.target.value)} placeholder="填写补充信息后继续分析" />
+        <Button disabled={loading} onClick={() => onSubmitAnswer(prompt)}>提交回答并继续</Button>
+      </div>
+    );
+  }
+  if (status === "WAITING_FOR_APPROVAL") {
+    const approval = snapshot?.state.pendingApprovals[0];
+    if (!approval) {
+      return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">任务正在等待审批，但 analysis state 中暂无 pending approval。</div>;
+    }
+    return (
+      <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div>
+          <p className="text-sm font-medium text-amber-900">需要审批动作</p>
+          <p className="mt-1 text-sm text-amber-800">{approval.actionType} · {approval.actionId}</p>
+          <p className="mt-1 text-xs text-amber-700">risk: {approval.risk} · reason: {approval.reason}</p>
+          <pre className="mt-2 max-h-32 overflow-auto rounded bg-white p-2 text-xs text-slate-700">{JSON.stringify(approval.input, null, 2)}</pre>
+        </div>
+        <Input value={approvalReason} onChange={(event) => onApprovalReasonChange(event.target.value)} placeholder="审批备注或拒绝原因（可选）" />
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={loading} onClick={() => onSubmitApproval(approval, "approved")}>批准并继续</Button>
+          <Button disabled={loading} variant="outline" onClick={() => onSubmitApproval(approval, "rejected")}>拒绝并继续</Button>
+        </div>
+      </div>
+    );
+  }
+  return null;
 }
 
 function StatusBadge({ status }: { status: TaskStatus }) {

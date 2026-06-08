@@ -105,7 +105,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 已启用多轮 LLM action loop，受轮数、LLM 调用、action 数和重复 fingerprint 预算限制；`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 已启用多轮 LLM action loop，受轮数、LLM 调用、action 数和重复 fingerprint 预算限制；`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 或 `REQUIRES_APPROVAL` 动作会进入 `WAITING_FOR_APPROVAL`。
 
 ## 数据目录
 
@@ -186,6 +186,8 @@ MVP 要求：
 - `GET /api/tasks/:task_id` 返回完整 `TaskRecord`。
 - `GET /api/tasks/:task_id/artifacts` 读取任务产物。
 - `GET /api/tasks/:task_id/result` 读取结构化 LLM 分析结果。
+- `POST /api/tasks/:task_id/messages` 接收等待中的用户回答，追加 analysis event，并将任务从 `WAITING_FOR_USER` 恢复为 `QUEUED / PLAN_ANALYSIS`。
+- `POST /api/tasks/:task_id/actions/:action_id/decision` 接收等待中的审批批准或拒绝，追加 analysis event，并将任务从 `WAITING_FOR_APPROVAL` 恢复为 `QUEUED / PLAN_ANALYSIS`。
 - `GET /api/debug/llm` / `PUT /api/debug/llm` 读取或修改当前进程内的 LLM 输出日志开关。
 - 同步解压 `.zip`、`.tar.gz`、`.tgz`、`.tar`，普通 `.log` / `.txt` 直接复制到 `extracted/<文件基名>/`。
 - `.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` fallback 再尝试一次。
@@ -208,6 +210,7 @@ MVP 要求：
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，循环调用 LLM Gateway 生成 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
+- `PLAN_ANALYSIS` 支持 `ask_user` 和 `collect_environment`：前者写入 `pendingUserPrompts` 并等待用户回答，后者写入 `pendingApprovals` 并等待批准/拒绝。当前批准环境采集后写入 mock `environment_evidence/<action_id>/result.json`，真实 SSH/SCP 执行器后续替换。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 action decision 解析/schema 错误也会追加修正提示并重试一次，仍失败时任务进入 `FAILED / PLAN_ANALYSIS`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
@@ -248,6 +251,8 @@ POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
 GET /api/tasks/:task_id/analysis
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
 GET /api/debug/llm
@@ -262,14 +267,9 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
 
-以下 Analysis API 为规划接口，尚未实现：
-
-- `POST /api/tasks/:task_id/messages`
-- `POST /api/tasks/:task_id/actions/:action_id/decision`
-
-Server 必须保证 message 和 decision 幂等，禁止客户端直接把任务状态改成 `RUNNING`。
+message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
 `GET /api/metadata/clusters/:cluster_id` 会返回 cluster 基本信息、节点 ID 列表、labels，以及 openGemini 解析出的 `databases` 和 `partitionViews` 摘要。`databases` 包含默认保留策略、RP 参数、Measurements schema 和 ShardGroups；`partitionViews` 对应 `PtView`，用于查看 database partition 的 owner data node、状态、版本和 RGID。
 
