@@ -112,6 +112,14 @@ Stub 必须支持脚本化多轮响应：
 - 手工真实工具验收需要为 `examples/server-tools.yaml` 设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`；如临时改回环境变量路径，再设置 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 
+完整产品闭环 smoke：
+
+```bash
+scripts/smoke-product-loop.sh
+```
+
+该脚本会临时启动 `examples/server-influxql-tool.yaml` 对应的 50999 Server，生成 InfluxQL JSONL fixture，验证上传、真实 `/usr/bin/influxql-analyzer` Tool Runner、任务成功、Case 保存，以及第二个任务的 `caseContext` 召回。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、`cargo` 和 `/usr/bin/influxql-analyzer`。
+
 ## 验收标准
 
 - 任务失败时有明确错误原因。

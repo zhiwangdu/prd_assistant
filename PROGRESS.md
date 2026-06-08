@@ -343,6 +343,7 @@ Task, upload, and LLM verification:
 - WebUI top bar now includes an LLM debug switch that controls the Server-side response logging flag.
 - WebUI Log analysis now shows a Case confirmation panel for successful tasks and a local Case search/disable panel.
 - WebUI successful task artifacts now show task-local Case context captured at task creation.
+- Added `scripts/smoke-product-loop.sh` for repeatable local product-loop smoke with real `/usr/bin/influxql-analyzer`, Case save, and Case recall.
 - Upload API tests now use per-process atomic temp roots so concurrent cleanup cannot remove another upload payload.
 - Real OpenAI-compatible smoke on port 50994 with clusterId `8343121086559132311` completed task `task_1780843631402_1` as `SUCCEEDED` after the LLM retry/error-detail change.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
@@ -373,10 +374,11 @@ Current product-loop Case Store slice verification:
 
 - `cargo fmt --check`
 - `cargo check`
-- `cargo test` (83 Rust tests pass)
+- `cargo test` (84 Rust tests pass)
 - `npm run lint`
 - `npm run typecheck`
 - `npm run build`
+- `scripts/smoke-product-loop.sh` passed with upload `upl_1780939967830_1`, task `task_1780939967836_2`, case `case_1780939968869_3`, and recall task `task_1780939968874_4`.
 
 ## Planned Next
 
