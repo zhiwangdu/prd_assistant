@@ -88,7 +88,7 @@ auth:
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
-- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地 smoke；真实工具路径来自 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
+- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地 smoke；当前真实工具路径固定为 `/usr/bin/influxql-analyzer`。
 - Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。

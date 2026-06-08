@@ -78,7 +78,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - 任务持久化变更必须覆盖损坏 JSON、启动恢复、终态保护和 artifacts 状态约束。
 - Executor 变更必须覆盖每个已实现 phase 的中断恢复和陈旧 phase 推进拒绝。
 - Tool Runner 变更必须覆盖白名单、timeout、stdout/stderr、幂等和 artifacts 暴露。
-- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；只验证 InfluxQL 工具时使用 `examples/server-influxql-tool.yaml` 和 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。自动测试不得依赖真实工具二进制。
+- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；只验证 InfluxQL 工具时使用 `examples/server-influxql-tool.yaml`，当前直接调用 `/usr/bin/influxql-analyzer`。自动测试不得依赖真实工具二进制。
 - 上传持久化变更必须覆盖 payload/记录不一致、未完成上传和重启后的续传 offset。
 - multipart 上传变更必须覆盖单文件和批量路径，防止 `COMPLETE` 记录先于 payload flush。
 - LLM 自动测试必须使用 stub 或纯解析测试，不依赖外网、真实密钥或付费请求。

@@ -72,7 +72,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 规划中组件：
 
-- `tool-runner/`：MVP 已在 Server 内实现，下一步配置并验证真实 `flux_query_analyzer`、`influxql_analyzer`。
+- `tool-runner/`：MVP 已在 Server 内实现，`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用；下一步配置并验证真实 `flux_query_analyzer`，并扩展 InfluxQL compare mode delta 映射。
 - `code-evidence/`：根据用户输入的软件版本定位代码分支/tag/ref，收集文件行号证据。
 - `environment-collector/`：测试环境通过 SSH/SCP 采集信息，不需要浏览器下载或本地上传。
 - `analysis-agent/`：任务级上下文、多轮调查、用户追问、动作审批、预算和终止条件。
@@ -192,12 +192,12 @@ data_dir/
 
 ## 近期开发优先级
 
-1. 配置并 smoke-test 真实 `flux_query_analyzer` 和 `influxql_analyzer`。
-2. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
-3. Analysis Agent State Store 和 LLM Gateway 结构化 action / final answer。
-4. Analysis Agent 多轮动作、追问、审批和预算终止。
-5. Environment Collector 支持 SSH/SCP 测试环境采集。
-6. Case Store 保存和召回。
+1. 按当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环。
+2. 配置并 smoke-test 真实 `flux_query_analyzer`，扩展 `influxql_analyzer` compare mode delta 映射。
+3. 完善 Analysis Agent 多轮动作、追问、审批、预算终止、恢复幂等和产品化交互。
+4. Case Store 保存和召回人工确认后的结果。
+5. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
+6. Environment Collector 支持 SSH/SCP 测试环境采集，并替换当前 mock `environment_evidence`。
 
 ## 提交流程
 

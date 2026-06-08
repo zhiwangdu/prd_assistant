@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-09
+Last updated: 2026-06-08
 
 ## Status Summary
 
@@ -170,9 +170,10 @@ tool_results/<action_id>/
 - WebUI displays tool result status, exit code, duration, summary, structured findings, stdout path, and stderr path.
 - Tool findings can be cited by final LLM results as `tool_results/<action_id>/result.json#findings/<index>`.
 - Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
-- Added `examples/server-influxql-tool.yaml` for single-tool real InfluxQL smoke with `LOGAGENT_TOOL_INFLUXQL_ANALYZER`.
+- Added `examples/server-influxql-tool.yaml` for single-tool real InfluxQL smoke; it now uses `/usr/bin/influxql-analyzer` directly.
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
-- Real InfluxQL Tool Runner smoke on port 50999 used `/Users/duzhiwang/workspace/goWorkspace/influxql/influxql-analyzer`; task `task_1780932701757_2` reached `SUCCEEDED` and artifacts contained `toolResults[0].findings` for `no_time_filter`, `large_limit`, `group_by_high_cardinality_risk`, `has_wildcard`, and `meta_query`.
+- Real InfluxQL Tool Runner smoke on port 50999 previously used a local analyzer path; current local setup exposes the analyzer as `/usr/bin/influxql-analyzer`, a symlink to `/home/duzhiwang/workspace/influxql/influxql-analyzer`. Analyzer docs and code live under `/home/duzhiwang/workspace/influxql`.
+- The prior real InfluxQL smoke task `task_1780932701757_2` reached `SUCCEEDED` and artifacts contained `toolResults[0].findings` for `no_time_filter`, `large_limit`, `group_by_high_cardinality_risk`, `has_wildcard`, and `meta_query`.
 
 ### WEBUI
 
@@ -356,14 +357,19 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
-2. Replace mock approved environment evidence with the real Environment Collector SSH/SCP executor.
-3. Implement Code Evidence:
+1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:
+   - stable task creation and polling
+   - user question and approval interactions
+   - evidence display and navigation
+   - final result confirmation
+   - repeatable local smoke with `/usr/bin/influxql-analyzer`
+2. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
+3. Implement Case Store save and recall from manually confirmed final results.
+4. Implement Code Evidence after the product loop is stable:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-4. Implement Environment Collector with SSH/SCP whitelists and approval.
-5. Implement Case Store save and recall from manually confirmed final results.
+5. Replace mock approved environment evidence with the real Environment Collector SSH/SCP executor after Code Evidence.
 
 ## Documentation Verification
 

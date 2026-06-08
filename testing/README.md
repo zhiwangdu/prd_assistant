@@ -108,8 +108,8 @@ Stub 必须支持脚本化多轮响应：
 真实工具调用只做手动验收：
 
 - 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
-- 单独验证真实 InfluxQL 工具可使用 `examples/server-influxql-tool.yaml`。
-- 手工真实工具验收需要设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 和 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
+- 单独验证真实 InfluxQL 工具可使用 `examples/server-influxql-tool.yaml`，当前会直接调用 `/usr/bin/influxql-analyzer`。
+- 手工真实工具验收需要为 `examples/server-tools.yaml` 设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`；如临时改回环境变量路径，再设置 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 
 ## 验收标准

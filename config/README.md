@@ -153,7 +153,7 @@ metadata:
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
-- 真实 `influxql_analyzer` 推荐使用 `examples/server-influxql-tool.yaml` 验证，输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`。
+- 真实 `influxql_analyzer` 推荐使用 `examples/server-influxql-tool.yaml` 验证；当前本机路径为 `/usr/bin/influxql-analyzer`，输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

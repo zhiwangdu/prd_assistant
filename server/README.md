@@ -203,7 +203,7 @@ MVP 要求：
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
-- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
+- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；当前固定调用 `/usr/bin/influxql-analyzer`，真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。

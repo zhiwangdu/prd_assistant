@@ -169,6 +169,12 @@ flowchart LR
 - Agent 上下文只在当前任务内持久化；跨任务知识只来自人工确认后的 Case。
 - 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
 
+## 当前优先级
+
+当前阶段优先沿着已落地的上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定创建任务、展示证据、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。
+
+Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
+
 ## 开发约定
 
 后续每开发或修改一个组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`。

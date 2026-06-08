@@ -91,8 +91,9 @@ tools:
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。
 - 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
-- 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置，避免本地未安装 flux 工具时阻塞 smoke。
+- 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置；当前本机推荐直接调用 `/usr/bin/influxql-analyzer`。
 - 已适配真实 `influxql-analyzer` Report stdout：`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`。
+- 当前 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，该路径是指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer` 的符号链接；相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
 
 ## 本地真实工具 smoke
 
@@ -109,9 +110,10 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-export LOGAGENT_TOOL_INFLUXQL_ANALYZER=/Users/duzhiwang/workspace/goWorkspace/influxql/influxql-analyzer
 cargo run -p logagent-server -- --config examples/server-influxql-tool.yaml
 ```
+
+`examples/server-influxql-tool.yaml` 当前使用固定路径 `/usr/bin/influxql-analyzer`。如需验证其他构建产物，可临时改用 `path_env: LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
 
 `influxql-analyzer` 输入应是 JSONL，每行至少包含 `query` 字段，可选 `timestamp` 或 `time`。CLI 参数使用真实工具协议：
 

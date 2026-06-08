@@ -142,7 +142,7 @@ flowchart TD
 - Upload session 持久化并支持重启续传。
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
-- Tool Runner MVP 支持白名单工具配置、规则版多输入 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 `influxql-analyzer` Report stdout 已适配为结构化 findings 并通过本地 smoke。
+- Tool Runner MVP 支持白名单工具配置、规则版多输入 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 `influxql-analyzer` Report stdout 已适配为结构化 findings 并通过本地 smoke，当前本机路径为 `/usr/bin/influxql-analyzer`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 真实 LLM 调用会记录 callId、attempt 和 schema retry 事件。
 - Analysis Agent 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Agent 已支持 `collect_environment` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；当前批准后生成 mock `environment_evidence`，真实 SSH/SCP 采集后续接入。
@@ -152,13 +152,14 @@ flowchart TD
 
 ## 待实现能力
 
+- 按当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环。
 - 接入真实 `flux_query_analyzer` 工具路径和规则。
 - 扩展 `influxql_analyzer` compare mode delta 字段映射。
+- Analysis Agent 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。
+- LLM Gateway 补齐用量审计、Provider request id 和稳定结构化协议。
+- Case Store 沉淀和召回人工确认后的历史 Case。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
-- Analysis Agent 更完整的用户追问/审批策略、真实环境采集执行器和恢复幂等审计。
-- LLM Gateway 扩展为多轮 action/final-answer 协议、用量审计和有限重试。
-- Case Store 沉淀和召回历史 Case。
 
 ## 全局验收
 

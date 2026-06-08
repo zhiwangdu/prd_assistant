@@ -23,11 +23,11 @@
 - 将线性 Pipeline 重构为可恢复 Executor dispatcher，并定义 Action/Evidence 协议。（已完成）
 - 定义 analysis state/event store 和 schema version。
 
-## 第 2 阶段：证据能力
+## 第 2 阶段：当前产品闭环
 
-- Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已完成本地 smoke，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
-- Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
-- Environment Collector 完成白名单 SSH/SCP 采集。
+- Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已配置到 `/usr/bin/influxql-analyzer` 并可直接调用，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
+- 围绕现有上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 流程补齐端到端产品闭环。
+- 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
 - 所有结果关联 `actionId` 并使用稳定证据引用。
 
 ## 第 3 阶段：Analysis Agent 闭环
@@ -62,12 +62,17 @@
 - Case 编辑、禁用和检索。
 - 不沉淀中间假设、隐藏推理或未验证结论。
 
+## 最后阶段：远程和代码证据
+
+- Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
+- Environment Collector 完成白名单 SSH/SCP 采集。
+- 将审批后的 mock environment evidence 替换为真实 SSH/SCP Environment Collector。
+
 ## 后续质量提升
 
 - 更好的日志模式归一化。
 - 版本间 diff / commit 对比。
 - 更多测试环境采集模板。
-- 将审批后的 mock environment evidence 替换为真实 SSH/SCP Environment Collector。
 - 失败任务诊断和观测指标。
 - pgvector 迁移。
 

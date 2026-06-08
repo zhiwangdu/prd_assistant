@@ -37,7 +37,7 @@ log_analyzer:
 tools:
   influxql_analyzer:
     enabled: true
-    path_env: "LOGAGENT_TOOL_INFLUXQL_ANALYZER"
+    path: "/usr/bin/influxql-analyzer"
     timeout_seconds: 30
     max_output_bytes: 1048576
     max_input_files: 3

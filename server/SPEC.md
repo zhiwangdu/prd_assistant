@@ -225,7 +225,7 @@ tool_results/<action_id>/
 
 真实 `influxql_analyzer` 适配：
 
-- `examples/server-influxql-tool.yaml` 只启用该工具，路径来自 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
+- `examples/server-influxql-tool.yaml` 只启用该工具，当前固定路径为 `/usr/bin/influxql-analyzer`；该路径指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer`。
 - CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
 - 输入文件应为 JSONL 查询日志，每行至少包含 `query`，可选 `timestamp` 或 `time`。
 - Report stdout 的 `special_rules` 会生成结构化 findings，例如 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`。
@@ -298,12 +298,12 @@ persist task
 
 ## 待实现
 
-- 真实 Environment Collector 执行器替换当前 approval 后的 mock `environment_evidence`。
-- Tool Runner、Code Evidence 和 Environment Collector 编排。
+- 围绕当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环，包括稳定任务创建、证据展示、追问/审批交互、结果确认和可复用的本地 smoke 流程。
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 更丰富的 delta 字段映射。
-- 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
+- 多轮 Analysis Agent 的产品化策略、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
+- Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
 
 ## 验收标准
 
