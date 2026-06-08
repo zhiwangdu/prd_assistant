@@ -97,6 +97,7 @@ Chrome Extension or WEBUI
 - Approved environment collection currently writes mock `environment_evidence/<action_id>/result.json`; real SSH/SCP execution remains planned for Environment Collector.
 - Successful tasks can now be manually confirmed into the local Case Store through `POST /api/tasks/:task_id/case`.
 - Case Store records are persisted as JSON under `storage.data_dir/cases`, loaded at startup, searchable through `GET /api/cases`, and can be disabled through `PATCH /api/cases/:case_id`.
+- New tasks now recall up to 5 enabled Cases by question, persist `case_context.json`, expose `caseContext` in artifacts, and include historical Case references in the LLM prompt as non-authoritative context.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
@@ -323,6 +324,7 @@ Task, upload, and LLM verification:
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
 - Tool Runner, LLM, and Analysis State tests cover config validation, analysis budget defaults, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, multi-round `PLAN_ANALYSIS`, repeated fingerprint termination, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, bare final-result JSON and nested final-answer wrapper normalization, and tool finding evidence ref validation.
 - Case Store tests cover local JSON persistence, task final-result confirmation, keyword recall, duplicate task confirmation protection, and disabling cases from default recall.
+- LLM Gateway tests cover Case context prompt inclusion and the task API test verifies recalled Case context appears in artifacts.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
@@ -340,6 +342,7 @@ Task, upload, and LLM verification:
 - WebUI Task execution now shows live analysis loop revision, budget counters, recent events, LLM callId/attempt/schema retry details, model decisions, actions, artifacts, and evidence refs.
 - WebUI top bar now includes an LLM debug switch that controls the Server-side response logging flag.
 - WebUI Log analysis now shows a Case confirmation panel for successful tasks and a local Case search/disable panel.
+- WebUI successful task artifacts now show task-local Case context captured at task creation.
 - Upload API tests now use per-process atomic temp roots so concurrent cleanup cannot remove another upload payload.
 - Real OpenAI-compatible smoke on port 50994 with clusterId `8343121086559132311` completed task `task_1780843631402_1` as `SUCCEEDED` after the LLM retry/error-detail change.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
@@ -384,7 +387,7 @@ Current product-loop Case Store slice verification:
    - broader final result confirmation polish after the Case Store MVP
    - repeatable local smoke with `/usr/bin/influxql-analyzer`
 2. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
-3. Extend Case Store with embedding recall and Analysis Agent evidence injection after the product loop is stable.
+3. Extend Case Store with embedding recall and a formal Analysis Agent evidence bundle after the product loop is stable.
 4. Implement Code Evidence after the product loop is stable:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache

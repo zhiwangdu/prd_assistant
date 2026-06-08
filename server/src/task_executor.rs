@@ -11,7 +11,8 @@ use crate::{
     models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskPhase, TaskRecord},
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
-        prepare_pipeline_run, read_tool_results, search_task, search_task_with_settings,
+        prepare_pipeline_run, read_optional_json, read_tool_results, search_task,
+        search_task_with_settings,
     },
     state::AppState,
 };
@@ -163,6 +164,8 @@ async fn plan_analysis_phase(
         let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
         let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
         let tool_results = read_tool_results(&workspace).await?;
+        let case_context =
+            read_optional_json::<serde_json::Value>(&workspace.join("case_context.json")).await?;
         if let Some(reason) = analysis_budget_exhausted(&workspace, &state.config.analysis)? {
             return complete_with_budget_limited_result(state, &task, &grep, reason).await;
         }
@@ -182,6 +185,7 @@ async fn plan_analysis_phase(
                 &manifest,
                 &grep,
                 metadata_context.as_ref(),
+                case_context.as_ref(),
                 &tool_results,
                 |event| record_llm_call_event(&workspace, event),
             )

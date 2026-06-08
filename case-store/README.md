@@ -35,6 +35,8 @@ Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并
 
 存储目录为 `storage.data_dir/cases/`，每个 Case 一个 JSON 文件。Server 启动时加载到内存，保存和更新使用临时文件 rename。
 
+新任务创建时会按用户问题召回最多 5 个启用 Case，并把结果固化到 workspace 的 `case_context.json`。Artifacts API 返回 `caseContext`，LLM Gateway 会把该上下文加入 prompt 的“历史 Case 参考”段落，并明确要求历史 Case 只能作为参考，最终结论仍必须引用当前任务证据。
+
 ## 人工确认
 
 任务分析完成后，WebUI 提供：
@@ -76,12 +78,13 @@ title + symptom + root_cause + solution
 - Case 写入本地 JSON 文件。
 - 服务端内存加载后做关键词重叠评分。
 - WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表。
+- 新任务保存 `case_context.json` 并在分析 prompt 中提供历史 Case 参考。
 - Case 可禁用，不做硬删除。
 
 后续：
 
 - 生成 embedding。
-- 相似召回接入 Analysis Agent evidence bundle。
+- 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
 - 迁移到 PostgreSQL + pgvector。
 
 ## 迭代位置

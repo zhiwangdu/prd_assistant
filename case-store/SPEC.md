@@ -18,7 +18,8 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 未实现：
 
 - embedding 生成。
-- 将相似 Case 自动注入 Analysis Agent evidence bundle。
+- embedding 召回。
+- 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
 - Case 高级编辑、合并和批量管理。
 
 ## 输入
@@ -44,6 +45,14 @@ PATCH /api/cases/:case_id
 ```
 
 `POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。
+
+新任务创建时会写入：
+
+```text
+workspaces/<task_id>/case_context.json
+```
+
+`GET /api/tasks/:task_id/artifacts` 返回 `caseContextPath` 和 `caseContext`。LLM Gateway 会读取该上下文并加入 prompt，但历史 Case 只作为参考，不替代当前任务证据。
 
 ## 存储
 
@@ -77,6 +86,7 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 - 检索字段包括 title、symptom、rootCause、solution、product、version 和 environment。
 - 未提供 query 时按创建时间返回最近启用 Case。
 - 禁用 Case 默认不返回，除非 `includeDisabled=true`。
+- 新任务创建使用用户问题作为 query，召回最多 5 个启用 Case。
 
 ## 验收标准
 
@@ -85,4 +95,5 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 - Case 可禁用而不是硬删除。
 - 未完成、未确认或仅包含中间假设的分析不可保存为 Case。
 - 重复确认同一 task 时返回已有 Case，不创建重复记录。
+- 新任务 artifacts 能返回 `caseContext`，LLM prompt 包含历史 Case 参考段落。
 - README 和 SPEC 在存储结构或召回策略变更时同步更新。

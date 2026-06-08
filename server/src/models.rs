@@ -99,6 +99,8 @@ pub struct TaskArtifactsResponse {
     pub grep_results: serde_json::Value,
     pub metadata_context_path: Option<String>,
     pub metadata_context: Option<serde_json::Value>,
+    pub case_context_path: Option<String>,
+    pub case_context: Option<serde_json::Value>,
     pub tool_results: Vec<serde_json::Value>,
 }
 

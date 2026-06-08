@@ -211,6 +211,7 @@ MVP 要求：
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
+- task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，循环调用 LLM Gateway 生成 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
@@ -275,7 +276,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功任务中包含 `caseContext` 和 `toolResults`；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 

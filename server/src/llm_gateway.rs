@@ -74,6 +74,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AnalysisResult> {
         let prompt = build_prompt(
@@ -81,6 +82,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            case_context,
             tool_results,
             self.settings.max_input_chars,
         );
@@ -98,6 +100,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AgentDecision> {
         self.decide_next_action_with_events(
@@ -105,6 +108,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            case_context,
             tool_results,
             |_| {},
         )
@@ -117,6 +121,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
         on_event: impl FnMut(LlmCallEvent),
     ) -> anyhow::Result<AgentDecision> {
@@ -125,6 +130,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            case_context,
             tool_results,
             self.settings.max_input_chars,
         );
@@ -573,6 +579,7 @@ fn build_prompt(
     manifest: &Manifest,
     grep: &GrepResults,
     metadata: Option<&TaskMetadataContext>,
+    case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
     max_input_chars: usize,
 ) -> String {
@@ -598,6 +605,10 @@ fn build_prompt(
     if let Some(metadata) = metadata {
         prompt.push_str("\nMetadata 上下文:\n");
         prompt.push_str(&metadata_prompt_summary(metadata));
+    }
+    if let Some(case_context) = case_context {
+        prompt.push_str("\n历史 Case 参考（仅供参考，不能替代当前任务证据）:\n");
+        prompt.push_str(&case_context_prompt_summary(case_context));
     }
     prompt = truncate_chars(&prompt, evidence_limit).to_string();
     prompt.push_str("\nGrep 证据:\n");
@@ -669,6 +680,7 @@ fn build_action_prompt(
     manifest: &Manifest,
     grep: &GrepResults,
     metadata: Option<&TaskMetadataContext>,
+    case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
     max_input_chars: usize,
 ) -> String {
@@ -677,6 +689,7 @@ fn build_action_prompt(
         manifest,
         grep,
         metadata,
+        case_context,
         tool_results,
         max_input_chars,
     );
@@ -753,6 +766,54 @@ fn metadata_prompt_summary(metadata: &TaskMetadataContext) -> String {
         },
         partitions,
     )
+}
+
+fn case_context_prompt_summary(case_context: &serde_json::Value) -> String {
+    let Some(cases) = case_context.get("cases").and_then(|value| value.as_array()) else {
+        return "no similar confirmed cases\n".to_string();
+    };
+    if cases.is_empty() {
+        return "no similar confirmed cases\n".to_string();
+    }
+    let mut lines = Vec::new();
+    for item in cases.iter().take(5) {
+        let case_id = item
+            .get("caseId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let title = item
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("untitled");
+        let score = item
+            .get("score")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0);
+        let root_cause = item
+            .get("rootCause")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let solution = item
+            .get("solution")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let product = item
+            .get("product")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let version = item
+            .get("version")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        lines.push(format!(
+            "- {case_id} score={score:.2} product={product} version={version} title={title} rootCause={root_cause} solution={solution}"
+        ));
+    }
+    lines.push(
+        "historical cases are references only; cite current task evidence for final conclusions"
+            .to_string(),
+    );
+    lines.join("\n") + "\n"
 }
 
 fn truncate_chars(value: &str, limit: usize) -> &str {
@@ -1398,7 +1459,7 @@ mod tests {
                 grep_match("second evidence that should be omitted"),
             ],
         };
-        let prompt = build_prompt("why", &manifest, &grep, None, &[], 220);
+        let prompt = build_prompt("why", &manifest, &grep, None, None, &[], 220);
         assert!(prompt.chars().count() <= 220);
         assert!(prompt.contains("grep_results.json#matches/0"));
         assert!(prompt.contains("省略"));
@@ -1639,6 +1700,7 @@ mod tests {
                 matches: vec![],
             },
             None,
+            None,
             &[],
             1024,
         );
@@ -1686,6 +1748,7 @@ mod tests {
                 matches: vec![],
             },
             Some(&metadata),
+            None,
             &[],
             2048,
         );
@@ -1694,6 +1757,44 @@ mod tests {
         assert!(prompt.contains("product: opengemini"));
         assert!(prompt.contains("version: 1.3.0"));
         assert!(prompt.contains("databases: db0"));
+    }
+
+    #[test]
+    fn prompt_includes_case_context_summary() {
+        let case_context = serde_json::json!({
+            "schemaVersion": 1,
+            "query": "slow query",
+            "cases": [
+                {
+                    "caseId": "case_1",
+                    "score": 0.75,
+                    "product": "opengemini",
+                    "version": "1.3.0",
+                    "title": "No time filter",
+                    "rootCause": "missing time filter",
+                    "solution": "add bounded time predicate"
+                }
+            ]
+        });
+
+        let prompt = build_prompt(
+            "why",
+            &fixture_manifest(),
+            &GrepResults {
+                keywords: vec![],
+                total_matches: 0,
+                matches: vec![],
+            },
+            None,
+            Some(&case_context),
+            &[],
+            4096,
+        );
+
+        assert!(prompt.contains("历史 Case 参考"));
+        assert!(prompt.contains("case_1"));
+        assert!(prompt.contains("missing time filter"));
+        assert!(prompt.contains("不能替代当前任务证据"));
     }
 
     #[test]
@@ -1708,6 +1809,7 @@ mod tests {
                 total_matches: 0,
                 matches: vec![],
             },
+            None,
             None,
             &tool_results,
             4096,

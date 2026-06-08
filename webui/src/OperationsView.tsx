@@ -81,6 +81,7 @@ type Artifacts = {
   manifest?: { files?: Array<{ path: string; size: number }> };
   grepResults?: { matches?: Array<{ file: string; line: number; keyword: string; text: string }> };
   metadataContext?: MetadataContext | null;
+  caseContext?: CaseContext | null;
   toolResults?: ToolResult[];
 };
 type ToolResult = {
@@ -126,6 +127,11 @@ type CaseRecord = {
   createdAt: string;
 };
 type CaseHit = CaseRecord & { score: number };
+type CaseContext = {
+  schemaVersion: number;
+  query: string;
+  cases: CaseHit[];
+};
 type CaseDraft = {
   title: string;
   symptom: string;
@@ -458,6 +464,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
 
+      {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
+
       {artifacts?.toolResults?.length ? (
         <Evidence title="Tool results" count={artifacts.toolResults.length}>
           {artifacts.toolResults.map((result) => (
@@ -761,6 +769,30 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
       <CardHeader><CardTitle>Metadata context</CardTitle><CardDescription>任务创建时固化的 Metadata 快照</CardDescription></CardHeader>
       <CardContent className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
         {rows.map(([label, value]) => <div className="rounded-lg border border-border p-3" key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value || "-"}</p></div>)}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TaskCaseContextView({ context }: { context: CaseContext }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Case context</CardTitle>
+        <CardDescription>任务创建时按问题召回的历史 Case，仅作为分析参考</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">query: {context.query || "-"}</p>
+        {context.cases.length ? context.cases.map((item) => (
+          <div className="rounded-lg border border-border p-3" key={item.caseId}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{item.title}</span>
+              <Badge variant="secondary">score {item.score.toFixed(2)}</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.product ?? "unknown"} {item.version ?? ""}</p>
+            <p className="mt-2 text-sm">{item.rootCause}</p>
+          </div>
+        )) : <EmptyState>任务创建时未召回相似 Case。</EmptyState>}
       </CardContent>
     </Card>
   );

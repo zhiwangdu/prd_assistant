@@ -17,7 +17,7 @@ use crate::{
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
-    pipeline::{prepare_raw_snapshot, write_metadata_context},
+    pipeline::{prepare_raw_snapshot, write_case_context, write_metadata_context},
     state::AppState,
 };
 
@@ -77,6 +77,8 @@ pub async fn create_task(
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
     let question = normalize_question(req.question, state.config.llm.max_input_chars / 2)?;
+    let recalled_cases = state.cases.search(Some(&question), 5, false).await;
+    write_case_context(&workspace, &question, &recalled_cases).await?;
     let now = Utc::now();
     let record = TaskRecord {
         schema_version: 4,
@@ -397,6 +399,26 @@ pub async fn task_artifacts(
         Some(path) => Some(read_json_file(path).await?),
         None => None,
     };
+    let case_context_path = state
+        .config
+        .storage
+        .workspace_dir(&task_id)
+        .join("case_context.json");
+    let (case_context_path, case_context) =
+        match tokio::fs::read_to_string(&case_context_path).await {
+            Ok(raw) => {
+                let value = serde_json::from_str(&raw).map_err(|err| {
+                    AppError::internal(format!("failed to parse case context JSON: {err}"))
+                })?;
+                (Some(case_context_path.display().to_string()), Some(value))
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => (None, None),
+            Err(err) => {
+                return Err(AppError::internal(format!(
+                    "failed to read case context: {err}"
+                )))
+            }
+        };
     let tool_results = read_tool_results(&state.config.storage.workspace_dir(&task_id)).await?;
 
     Ok(Json(TaskArtifactsResponse {
@@ -407,6 +429,8 @@ pub async fn task_artifacts(
         grep_results,
         metadata_context_path: metadata_context_path.map(|path| path.display().to_string()),
         metadata_context,
+        case_context_path,
+        case_context,
         tool_results,
     }))
 }
@@ -583,7 +607,7 @@ mod tests {
     async fn task_api_creates_lists_and_reads_details() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_test", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = api::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -763,7 +787,7 @@ mod tests {
     async fn successful_task_can_be_confirmed_as_case_and_recalled() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_case", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = api::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -818,6 +842,40 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["cases"][0]["caseId"], case_id);
         assert!(body["cases"][0]["score"].as_f64().unwrap() > 0.0);
+
+        create_test_upload(&state, "upl_case_recall", UploadStatus::Complete).await;
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadId":"upl_case_recall","question":"time filter regression"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let recall_task_id = created["taskId"].as_str().unwrap();
+        wait_for_task_status(&app, recall_task_id, "SUCCEEDED").await;
+        let artifacts = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tasks/{recall_task_id}/artifacts"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(artifacts.status(), StatusCode::OK);
+        let body = to_bytes(artifacts.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["caseContext"]["cases"][0]["caseId"], case_id);
 
         let disabled = app
             .clone()

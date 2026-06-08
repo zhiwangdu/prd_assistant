@@ -5,6 +5,7 @@ use tokio::task;
 use crate::llm_gateway::LlmGateway;
 use crate::{
     analysis_state,
+    case_store::CaseSearchHit,
     config::{AppConfig, LogAnalyzerSettings},
     error::AppError,
     fs_utils::relative_string,
@@ -69,6 +70,32 @@ pub async fn write_metadata_context(
     tokio::fs::rename(&temp, &path)
         .await
         .map_err(|err| AppError::internal(format!("failed to persist metadata context: {err}")))?;
+    Ok(path)
+}
+
+pub async fn write_case_context(
+    workspace: &Path,
+    query: &str,
+    cases: &[CaseSearchHit],
+) -> Result<std::path::PathBuf, AppError> {
+    tokio::fs::create_dir_all(workspace)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
+    let path = workspace.join("case_context.json");
+    let temp = workspace.join(".case_context.json.tmp");
+    let context = serde_json::json!({
+        "schemaVersion": 1,
+        "query": query,
+        "cases": cases,
+    });
+    let encoded = serde_json::to_vec_pretty(&context)
+        .map_err(|err| AppError::internal(format!("failed to encode case context: {err}")))?;
+    tokio::fs::write(&temp, encoded)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to write case context: {err}")))?;
+    tokio::fs::rename(&temp, &path)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist case context: {err}")))?;
     Ok(path)
 }
 
@@ -181,6 +208,7 @@ pub async fn generate_task_result(
     let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
     let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
     let tool_results = read_tool_results(&workspace).await?;
+    let case_context = read_optional_json(&workspace.join("case_context.json")).await?;
     let metadata_context = match task.metadata_context_path.as_deref() {
         Some(path) => {
             let expected = workspace.join("metadata_context.json");
@@ -199,6 +227,7 @@ pub async fn generate_task_result(
             &manifest,
             &grep,
             metadata_context.as_ref(),
+            case_context.as_ref(),
             &tool_results,
         )
         .await
@@ -212,6 +241,21 @@ async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, App
         .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
     serde_json::from_str(&raw)
         .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
+}
+
+pub async fn read_optional_json<T: serde::de::DeserializeOwned>(
+    path: &Path,
+) -> Result<Option<T>, AppError> {
+    match tokio::fs::read_to_string(path).await {
+        Ok(raw) => serde_json::from_str(&raw).map(Some).map_err(|err| {
+            AppError::internal(format!("failed to parse {}: {err}", path.display()))
+        }),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(AppError::internal(format!(
+            "failed to read {}: {err}",
+            path.display()
+        ))),
+    }
 }
 
 pub async fn persist_task_result(
