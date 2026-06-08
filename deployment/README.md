@@ -38,6 +38,14 @@ logagent/
 logagentd --config ./logagent.yaml
 ```
 
+仓库内本地快速启动可使用：
+
+```bash
+./scripts/start-local.sh --llm
+```
+
+该脚本会构建 Server、后台启动、写入 `/tmp/logagent-server-llm.pid` 和 `/tmp/logagent-server-llm.log`，并等待 `/health` 成功；`--stub` 使用本地 stub provider，`--foreground` 用于调试启动日志。
+
 生产或测试环境：
 
 - systemd 管理 `logagentd`

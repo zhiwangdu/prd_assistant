@@ -94,6 +94,7 @@ printf 'Starting LogAgent: mode=%s url=%s log=%s\n' "$MODE" "$URL" "$LOG_FILE"
 nohup target/debug/logagent-server --config "$CONFIG" >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 printf '%s\n' "$SERVER_PID" >"$PID_FILE"
+disown "$SERVER_PID" 2>/dev/null || true
 
 for _ in {1..30}; do
   if curl --max-time 1 --silent --fail "$URL/health" >/dev/null; then

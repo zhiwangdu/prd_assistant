@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-08
+Last updated: 2026-06-09
 
 ## Status Summary
 
@@ -98,6 +98,7 @@ Chrome Extension or WEBUI
 - Persists Analysis State Store MVP files, `analysis_state.json` and `analysis_events.jsonl`, and serves them through `GET /api/tasks/:task_id/analysis`.
 - Records LLM call lifecycle events for `PLAN_ANALYSIS` action decisions, including `llm_call_started`, `llm_call_completed`, `llm_call_schema_retry`, `llmcall_*` callId, attempt, model, and schema error details.
 - Exposes `/api/debug/llm` for runtime LLM response-content logging control; the flag is in-memory, defaults off, and does not print prompts or API keys.
+- `scripts/start-local.sh` background mode now disowns the server job after `nohup`, so local quick-start remains available after non-interactive zsh exits.
 
 ### Upload And Workspace
 

@@ -9,6 +9,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 已支持：
 
 - Server 从项目根目录启动并托管 `webui/`。
+- `scripts/start-local.sh` 支持真实 LLM、stub 和前台调试模式；后台模式必须在非交互 shell 中保持 Server 进程存活。
 - Native Agent 本机启动并连接远端 Server。
 - 示例配置支持 50992 测试端口。
 
