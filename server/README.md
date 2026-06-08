@@ -206,7 +206,7 @@ MVP 要求：
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，循环调用 LLM Gateway 生成 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
-- `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。如果 `PLAN_ANALYSIS` 的模型决策调用失败，任务进入 `FAILED / PLAN_ANALYSIS`。
+- `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 action decision 解析/schema 错误也会追加修正提示并重试一次，仍失败时任务进入 `FAILED / PLAN_ANALYSIS`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
 - LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。

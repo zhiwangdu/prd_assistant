@@ -19,7 +19,7 @@
 - `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
-- 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
+- 最终结果和 action decision 解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
 - `result.json` / `result.md` 持久化。
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已循环调用双模式 action decision，并由 Analysis 预算和重复 fingerprint 防护终止。
 
@@ -65,7 +65,7 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 - 输出 schema 无效
 - 不支持的 action
 
-当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。如果 `PLAN_ANALYSIS` 的 action decision 调用或 schema 校验失败，任务进入 `FAILED / PLAN_ANALYSIS`。
+当前版本对最终结果和 action decision 解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入对应失败阶段。最终结果失败进入 `FAILED / GENERATE_RESULT`；`PLAN_ANALYSIS` 的 action decision 失败进入 `FAILED / PLAN_ANALYSIS`。
 
 ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。裸最终结果 JSON 和常见最终结果包裹变体会作为 `final_answer` 兼容；其他缺失外层 `type` 且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 会多轮调用 action decision，但等待状态尚未实现。
 
@@ -86,7 +86,7 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 - `PLAN_ANALYSIS` 能多轮消费 `search_logs`、`run_tool` 或 `final_answer` 决策。
 - 预算耗尽或重复 fingerprint 被阻止时能生成低置信度最终结果。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
-- schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
+- 最终结果和 action decision schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
 - 可追踪的字符串形式 root cause 会规范化为对象形式。
 - 单字符串形式的列表字段会规范化为字符串数组。
