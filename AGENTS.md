@@ -137,7 +137,17 @@ POST /api/uploads/init
 POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
 POST /api/tasks
+GET /api/tasks
+GET /api/tasks/:task_id
 GET /api/tasks/:task_id/artifacts
+GET /api/tasks/:task_id/result
+GET /api/tasks/:task_id/analysis
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
+POST /api/tasks/:task_id/case
+GET /api/cases
+GET /api/cases/:case_id
+PATCH /api/cases/:case_id
 ```
 
 受保护接口必须携带：
@@ -195,7 +205,7 @@ data_dir/
 1. 按当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环。
 2. 配置并 smoke-test 真实 `flux_query_analyzer`，扩展 `influxql_analyzer` compare mode delta 映射。
 3. 完善 Analysis Agent 多轮动作、追问、审批、预算终止、恢复幂等和产品化交互。
-4. Case Store 保存和召回人工确认后的结果。
+4. Case Store embedding 召回和 Analysis Agent evidence 注入。
 5. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。
 6. Environment Collector 支持 SSH/SCP 测试环境采集，并替换当前 mock `environment_evidence`。
 

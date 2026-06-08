@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tracing::warn;
 
 use crate::{
-    config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore,
+    case_store::CaseStore, config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore,
     task_executor::TaskExecutor, task_store::TaskStore, tool_runner::ToolRunner,
     upload_store::UploadStore,
 };
@@ -12,6 +12,7 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub uploads: UploadStore,
     pub metadata: MetadataStore,
+    pub cases: CaseStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub llm: LlmGateway,
@@ -22,8 +23,10 @@ impl AppState {
     pub fn new(config: Arc<AppConfig>) -> anyhow::Result<Arc<Self>> {
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
+        let cases = CaseStore::load(config.storage.cases_dir())?;
         Ok(Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
+            cases,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
             tool_runner: ToolRunner::new(config.tools.clone()),

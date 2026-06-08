@@ -6,7 +6,20 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 
 ## 当前状态
 
-未实现代码，已有设计方向。
+已实现 MVP：
+
+- Server 内部模块 `server/src/case_store.rs`。
+- 本地 JSON 文件存储，目录为 `storage.data_dir/cases/`。
+- 成功任务可通过 `POST /api/tasks/:task_id/case` 人工确认保存为 Case。
+- `GET /api/cases` 支持关键词召回，默认只返回 `enabled=true` 的 Case。
+- `PATCH /api/cases/:case_id` 支持编辑字段和禁用 Case。
+- WebUI 在成功任务最终结果下方提供确认表单、相似 Case 列表和禁用操作。
+
+未实现：
+
+- embedding 生成。
+- 将相似 Case 自动注入 Analysis Agent evidence bundle。
+- Case 高级编辑、合并和批量管理。
 
 ## 输入
 
@@ -21,23 +34,49 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 - Case 详情
 - 可编辑 Case 记录
 
+## API
+
+```http
+POST /api/tasks/:task_id/case
+GET /api/cases?query=<text>&limit=5&includeDisabled=false
+GET /api/cases/:case_id
+PATCH /api/cases/:case_id
+```
+
+`POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。
+
 ## 存储
 
-MVP 可先用本地文件或 SQLite。pgvector 不是第一版硬依赖。
+MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 
 建议字段：
 
 - `case_id`
+- `task_id`
 - `product`
-- `versions`
+- `version`
+- `environment`
+- `instance_id`
+- `cluster_id`
+- `node_id`
 - `title`
 - `symptom`
 - `root_cause`
 - `solution`
 - `evidence_refs`
+- `source_result_path`
 - `created_at`
 - `updated_at`
 - `enabled`
+
+## 召回策略
+
+当前召回策略为关键词重叠评分：
+
+- 查询文本按空白、逗号和分号切分。
+- 检索字段包括 title、symptom、rootCause、solution、product、version 和 environment。
+- 未提供 query 时按创建时间返回最近启用 Case。
+- 禁用 Case 默认不返回，除非 `includeDisabled=true`。
 
 ## 验收标准
 
@@ -45,4 +84,5 @@ MVP 可先用本地文件或 SQLite。pgvector 不是第一版硬依赖。
 - 新任务可按产品、关键词和相似度召回 Case。
 - Case 可禁用而不是硬删除。
 - 未完成、未确认或仅包含中间假设的分析不可保存为 Case。
+- 重复确认同一 task 时返回已有 Case，不创建重复记录。
 - README 和 SPEC 在存储结构或召回策略变更时同步更新。

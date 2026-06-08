@@ -21,6 +21,7 @@ Chrome Extension or WEBUI
   -> optional ask_user / approval wait and resume
   -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
+  -> optional human confirmation into local Case Store
 ```
 
 ## Implemented
@@ -64,6 +65,10 @@ Chrome Extension or WEBUI
   - `GET /api/tasks/:task_id/result`
   - `POST /api/tasks/:task_id/messages`
   - `POST /api/tasks/:task_id/actions/:action_id/decision`
+  - `POST /api/tasks/:task_id/case`
+  - `GET /api/cases`
+  - `GET /api/cases/:case_id`
+  - `PATCH /api/cases/:case_id`
   - `GET /api/metadata/instances/:instance_id`
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
@@ -90,6 +95,8 @@ Chrome Extension or WEBUI
 - Enters `WAITING_FOR_USER` for `ask_user`, persists `pendingUserPrompts`, accepts `POST /api/tasks/:task_id/messages`, records the user message, and resumes the same task from `PLAN_ANALYSIS`.
 - Enters `WAITING_FOR_APPROVAL` for `collect_environment` / `REQUIRES_APPROVAL`, persists `pendingApprovals`, accepts approval or rejection through `POST /api/tasks/:task_id/actions/:action_id/decision`, and resumes the same task from `PLAN_ANALYSIS`.
 - Approved environment collection currently writes mock `environment_evidence/<action_id>/result.json`; real SSH/SCP execution remains planned for Environment Collector.
+- Successful tasks can now be manually confirmed into the local Case Store through `POST /api/tasks/:task_id/case`.
+- Case Store records are persisted as JSON under `storage.data_dir/cases`, loaded at startup, searchable through `GET /api/cases`, and can be disabled through `PATCH /api/cases/:case_id`.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
@@ -198,6 +205,8 @@ tool_results/<action_id>/
   - `WAITING_FOR_USER` prompt answer form
   - `WAITING_FOR_APPROVAL` action approval/rejection form
   - top-bar LLM debug switch backed by `/api/debug/llm`
+  - successful task confirmation into Case Store with editable title/symptom/root cause/solution
+  - Case Store keyword search and disabling cases from the Log analysis view
   - grep evidence reference navigation
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
@@ -313,6 +322,7 @@ Task, upload, and LLM verification:
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
 - Tool Runner, LLM, and Analysis State tests cover config validation, analysis budget defaults, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, multi-round `PLAN_ANALYSIS`, repeated fingerprint termination, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, bare final-result JSON and nested final-answer wrapper normalization, and tool finding evidence ref validation.
+- Case Store tests cover local JSON persistence, task final-result confirmation, keyword recall, duplicate task confirmation protection, and disabling cases from default recall.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
@@ -329,6 +339,7 @@ Task, upload, and LLM verification:
 - LLM Gateway now assigns `llmcall_*` callIds to real `PLAN_ANALYSIS` action-decision calls and propagates the callId into started/completed/schema retry events and final provider/schema errors.
 - WebUI Task execution now shows live analysis loop revision, budget counters, recent events, LLM callId/attempt/schema retry details, model decisions, actions, artifacts, and evidence refs.
 - WebUI top bar now includes an LLM debug switch that controls the Server-side response logging flag.
+- WebUI Log analysis now shows a Case confirmation panel for successful tasks and a local Case search/disable panel.
 - Upload API tests now use per-process atomic temp roots so concurrent cleanup cannot remove another upload payload.
 - Real OpenAI-compatible smoke on port 50994 with clusterId `8343121086559132311` completed task `task_1780843631402_1` as `SUCCEEDED` after the LLM retry/error-detail change.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.
@@ -355,16 +366,25 @@ Recent HTTP smoke checks:
 - live `127.0.0.1:8091/getdata` smoke test verified PT 0 -> DataNode 2, Shard/Index 1, and `testmst -> testmst_0000`
 - isolated Tool Runner smoke on port 50998 configured `/bin/echo` as a fake tool, uploaded sample.log, completed a task as `SUCCEEDED`, and returned `toolResults[0].status=OK`
 
+Current product-loop Case Store slice verification:
+
+- `cargo fmt --check`
+- `cargo check`
+- `cargo test` (83 Rust tests pass)
+- `npm run lint`
+- `npm run typecheck`
+- `npm run build`
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:
    - stable task creation and polling
    - user question and approval interactions
    - evidence display and navigation
-   - final result confirmation
+   - broader final result confirmation polish after the Case Store MVP
    - repeatable local smoke with `/usr/bin/influxql-analyzer`
 2. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
-3. Implement Case Store save and recall from manually confirmed final results.
+3. Extend Case Store with embedding recall and Analysis Agent evidence injection after the product loop is stable.
 4. Implement Code Evidence after the product loop is stable:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache

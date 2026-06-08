@@ -760,6 +760,109 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn successful_task_can_be_confirmed_as_case_and_recalled() {
+        let (state, root) = test_state();
+        create_test_upload(&state, "upl_case", UploadStatus::Complete).await;
+        let app = api::router(state.clone()).with_state(state);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadId":"upl_case","question":"slow query has no time filter"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+        wait_for_task_status(&app, task_id, "SUCCEEDED").await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/tasks/{task_id}/case"))
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"title":"No time filter case","rootCause":"missing time filter","solution":"add bounded time predicate"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let case_id = body["case"]["caseId"].as_str().unwrap();
+        assert_eq!(body["case"]["taskId"], task_id);
+        assert_eq!(body["case"]["rootCause"], "missing time filter");
+
+        let list = app
+            .clone()
+            .oneshot(
+                Request::get("/api/cases?query=time%20filter")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list.status(), StatusCode::OK);
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["cases"][0]["caseId"], case_id);
+        assert!(body["cases"][0]["score"].as_f64().unwrap() > 0.0);
+
+        let disabled = app
+            .clone()
+            .oneshot(
+                Request::patch(format!("/api/cases/{case_id}"))
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(disabled.status(), StatusCode::OK);
+
+        let list = app
+            .clone()
+            .oneshot(
+                Request::get("/api/cases?query=time%20filter")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["cases"].as_array().unwrap().is_empty());
+
+        let list = app
+            .oneshot(
+                Request::get("/api/cases?query=time%20filter&includeDisabled=true")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["cases"][0]["caseId"], case_id);
+        assert_eq!(body["cases"][0]["enabled"], false);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn task_artifacts_include_tool_results() {
         let (state, root) = test_state();
         let task_id = "task_tool_artifacts";

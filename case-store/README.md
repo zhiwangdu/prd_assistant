@@ -8,7 +8,7 @@
 Rust -> C/C++ -> Go/Python/Java 等
 ```
 
-MVP 阶段可用 Rust 管理 JSONL/SQLite 存储和余弦相似度计算；后续再接 PostgreSQL + pgvector。
+当前 MVP 已用 Rust Server 内部模块实现本地 JSON 存储和关键词重叠召回；后续再接 embedding、SQLite 或 PostgreSQL + pgvector。
 
 ## Embedding 配置
 
@@ -26,6 +26,15 @@ embedding:
 
 Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并在新任务中召回相似历史 Case。
 
+当前实现位于 `server/src/case_store.rs`，通过受保护 API 暴露：
+
+- `POST /api/tasks/:task_id/case`：成功任务人工确认后保存为 Case。
+- `GET /api/cases?query=<text>&limit=5`：按关键词召回启用 Case。
+- `GET /api/cases/:case_id`：读取 Case 详情。
+- `PATCH /api/cases/:case_id`：编辑 Case 字段或设置 `enabled=false` 禁用。
+
+存储目录为 `storage.data_dir/cases/`，每个 Case 一个 JSON 文件。Server 启动时加载到内存，保存和更新使用临时文件 rename。
+
 ## 人工确认
 
 任务分析完成后，WebUI 提供：
@@ -36,13 +45,23 @@ Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并
 
 ## Case 字段
 
-- `id`
+- `case_id`
+- `task_id`
+- `product`
+- `version`
+- `environment`
+- `instance_id`
+- `cluster_id`
+- `node_id`
 - `title`
 - `symptom`
 - `root_cause`
 - `solution`
-- `confirmed`
+- `evidence_refs`
+- `source_result_path`
+- `enabled`
 - `created_at`
+- `updated_at`
 
 ## embedding 文本
 
@@ -54,21 +73,25 @@ title + symptom + root_cause + solution
 
 第一版：
 
-- embedding 写入本地 JSONL 或 SQLite。
-- 服务端内存加载后做余弦相似度。
+- Case 写入本地 JSON 文件。
+- 服务端内存加载后做关键词重叠评分。
+- WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表。
+- Case 可禁用，不做硬删除。
 
 后续：
 
+- 生成 embedding。
+- 相似召回接入 Analysis Agent evidence bundle。
 - 迁移到 PostgreSQL + pgvector。
 
 ## 迭代位置
 
-Case 基础功能应在第 1 阶段并行完成：
+Case 基础功能当前状态：
 
-- 人工确认
-- Case 存储
-- embedding 生成
-- Top 5 相似召回
+- 人工确认：已实现。
+- Case 存储：已实现本地 JSON。
+- Top N 相似召回：已实现关键词重叠评分。
+- embedding 生成：后续实现。
 
 完整 Case 编辑和高级管理可以后续增强。
 

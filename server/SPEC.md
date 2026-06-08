@@ -302,7 +302,7 @@ persist task
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 更丰富的 delta 字段映射。
 - 多轮 Analysis Agent 的产品化策略、模型用量和 Provider request id 审计。
-- Case Store 写入和召回。
+- Case Store 已完成本地 JSON MVP，后续补 embedding 和 Analysis Agent 召回注入。
 - Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
 
 ## 验收标准
@@ -323,6 +323,8 @@ persist task
 - 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
+- `POST /api/tasks/:task_id/case` 只能保存 `SUCCEEDED` 任务，重复确认同一任务不能生成重复 Case。
+- `GET /api/cases` 必须能按关键词召回启用 Case，禁用 Case 默认不返回。
 - LLM Gateway 必须能解析合法 `search_logs`、`run_tool`、`final_answer` decision，并拒绝当前未开放 action。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。

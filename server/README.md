@@ -186,6 +186,10 @@ MVP 要求：
 - `GET /api/tasks/:task_id` 返回完整 `TaskRecord`。
 - `GET /api/tasks/:task_id/artifacts` 读取任务产物。
 - `GET /api/tasks/:task_id/result` 读取结构化 LLM 分析结果。
+- `POST /api/tasks/:task_id/case` 将成功任务的最终结果人工确认保存为 Case。
+- `GET /api/cases` 按关键词召回本地 Case。
+- `GET /api/cases/:case_id` 读取 Case 详情。
+- `PATCH /api/cases/:case_id` 编辑或禁用 Case。
 - `POST /api/tasks/:task_id/messages` 接收等待中的用户回答，追加 analysis event，并将任务从 `WAITING_FOR_USER` 恢复为 `QUEUED / PLAN_ANALYSIS`。
 - `POST /api/tasks/:task_id/actions/:action_id/decision` 接收等待中的审批批准或拒绝，追加 analysis event，并将任务从 `WAITING_FOR_APPROVAL` 恢复为 `QUEUED / PLAN_ANALYSIS`。
 - `GET /api/debug/llm` / `PUT /api/debug/llm` 读取或修改当前进程内的 LLM 输出日志开关。
@@ -253,8 +257,12 @@ GET /api/tasks/:task_id
 GET /api/tasks/:task_id/analysis
 POST /api/tasks/:task_id/messages
 POST /api/tasks/:task_id/actions/:action_id/decision
+POST /api/tasks/:task_id/case
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+GET /api/cases
+GET /api/cases/:case_id
+PATCH /api/cases/:case_id
 GET /api/debug/llm
 PUT /api/debug/llm
 GET /api/metadata/instances/:instance_id

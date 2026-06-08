@@ -1,6 +1,7 @@
 mod analysis_state;
 mod api;
 mod auth;
+mod case_store;
 mod config;
 mod contracts;
 mod error;

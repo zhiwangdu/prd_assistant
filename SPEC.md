@@ -146,6 +146,7 @@ flowchart TD
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 真实 LLM 调用会记录 callId、attempt 和 schema retry 事件。
 - Analysis Agent 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Agent 已支持 `collect_environment` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；当前批准后生成 mock `environment_evidence`，真实 SSH/SCP 采集后续接入。
+- Case Store MVP 已支持成功任务人工确认、JSON 持久化、关键词召回和禁用。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
 - WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
@@ -157,7 +158,7 @@ flowchart TD
 - 扩展 `influxql_analyzer` compare mode delta 字段映射。
 - Analysis Agent 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。
 - LLM Gateway 补齐用量审计、Provider request id 和稳定结构化协议。
-- Case Store 沉淀和召回人工确认后的历史 Case。
+- Case Store embedding 召回和自动注入 Analysis Agent evidence bundle。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
 

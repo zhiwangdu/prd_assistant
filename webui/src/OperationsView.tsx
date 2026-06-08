@@ -1,4 +1,4 @@
-import { FileArchive, RefreshCw, UploadCloud } from "lucide-react";
+import { BookOpenCheck, FileArchive, RefreshCw, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
@@ -111,6 +111,27 @@ type MetadataContext = {
   clusterNodes?: Array<{ nodeId: string }>;
   cluster?: { databases?: Array<{ name: string }>; partitionViews?: Array<{ statusText?: string | null }> } | null;
 };
+type CaseRecord = {
+  caseId: string;
+  taskId: string;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  title: string;
+  symptom: string;
+  rootCause: string;
+  solution: string;
+  evidenceRefs: string[];
+  enabled: boolean;
+  createdAt: string;
+};
+type CaseHit = CaseRecord & { score: number };
+type CaseDraft = {
+  title: string;
+  symptom: string;
+  rootCause: string;
+  solution: string;
+};
 
 export function OperationsView({ apiKey }: { apiKey: string }) {
   const [files, setFiles] = useState<File[]>([]);
@@ -126,6 +147,10 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [artifacts, setArtifacts] = useState<Artifacts | null>(null);
   const [taskResult, setTaskResult] = useState<TaskResult | null>(null);
   const [analysisSnapshot, setAnalysisSnapshot] = useState<AnalysisSnapshot | null>(null);
+  const [cases, setCases] = useState<CaseHit[]>([]);
+  const [caseQuery, setCaseQuery] = useState("");
+  const [caseStatus, setCaseStatus] = useState("Case Store ready");
+  const [caseDraft, setCaseDraft] = useState<CaseDraft>({ title: "", symptom: "", rootCause: "", solution: "" });
   const [loading, setLoading] = useState(false);
   const [userAnswer, setUserAnswer] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
@@ -141,6 +166,20 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       if (current || !result.tasks.length) return current;
       return result.tasks[0] as TaskRecord;
     });
+  }, [apiKey]);
+
+  const refreshCases = useCallback(async (queryText: string) => {
+    if (!apiKey.trim()) {
+      setCases([]);
+      return;
+    }
+    const params = new URLSearchParams();
+    if (queryText.trim()) params.set("query", queryText.trim());
+    params.set("limit", "8");
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const result = await fetchJson<{ cases: CaseHit[] }>(`/api/cases${suffix}`, { headers: authHeaders(apiKey) });
+    setCases(result.cases);
+    setCaseStatus(`${result.cases.length} case(s) loaded`);
   }, [apiKey]);
 
   const selectTask = useCallback(async (taskId: string) => {
@@ -166,8 +205,18 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setArtifacts(null);
     setTaskResult(null);
     setAnalysisSnapshot(null);
+    setCases([]);
     void refreshTasks().catch((reason) => setUploadStatus(errorMessage(reason)));
-  }, [refreshTasks]);
+    void refreshCases("").catch((reason) => setCaseStatus(errorMessage(reason)));
+  }, [refreshCases, refreshTasks]);
+
+  useEffect(() => {
+    if (!taskResult) {
+      setCaseDraft({ title: "", symptom: "", rootCause: "", solution: "" });
+      return;
+    }
+    setCaseDraft(defaultCaseDraft(taskResult.result));
+  }, [taskResult]);
 
   useEffect(() => {
     if (!apiKey.trim()) return;
@@ -276,6 +325,51 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function confirmCase() {
+    if (!selectedTask || !taskResult) return;
+    setLoading(true);
+    try {
+      const evidenceRefs = uniqueEvidenceRefs(taskResult.result);
+      const response = await fetchJson<{ case: CaseRecord }>(`/api/tasks/${encodeURIComponent(selectedTask.taskId)}/case`, {
+        method: "POST",
+        headers: jsonHeaders(apiKey),
+        body: JSON.stringify({
+          title: caseDraft.title,
+          symptom: caseDraft.symptom,
+          rootCause: caseDraft.rootCause,
+          solution: caseDraft.solution,
+          evidenceRefs,
+          product: artifacts?.metadataContext?.product ?? null,
+          version: artifacts?.metadataContext?.version ?? null,
+          environment: artifacts?.metadataContext?.environment ?? null
+        })
+      });
+      setCaseStatus(`Saved ${response.case.caseId}`);
+      await refreshCases(caseQuery || response.case.title);
+    } catch (reason) {
+      setCaseStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function disableCase(caseId: string) {
+    setLoading(true);
+    try {
+      await fetchJson<{ case: CaseRecord }>(`/api/cases/${encodeURIComponent(caseId)}`, {
+        method: "PATCH",
+        headers: jsonHeaders(apiKey),
+        body: JSON.stringify({ enabled: false })
+      });
+      setCaseStatus(`Disabled ${caseId}`);
+      await refreshCases(caseQuery);
+    } catch (reason) {
+      setCaseStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Card>
@@ -345,6 +439,22 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       </div>
 
       {taskResult ? <AnalysisResultView result={taskResult.result} /> : null}
+
+      {taskResult && selectedTask ? (
+        <CaseClosurePanel
+          cases={cases}
+          caseDraft={caseDraft}
+          caseQuery={caseQuery}
+          caseStatus={caseStatus}
+          loading={loading}
+          taskId={selectedTask.taskId}
+          onDraftChange={setCaseDraft}
+          onQueryChange={setCaseQuery}
+          onRefreshCases={() => void refreshCases(caseQuery)}
+          onConfirmCase={() => void confirmCase()}
+          onDisableCase={(caseId) => void disableCase(caseId)}
+        />
+      ) : null}
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
 
@@ -430,6 +540,84 @@ function WaitingInteraction({
     );
   }
   return null;
+}
+
+function CaseClosurePanel({
+  cases,
+  caseDraft,
+  caseQuery,
+  caseStatus,
+  loading,
+  taskId,
+  onDraftChange,
+  onQueryChange,
+  onRefreshCases,
+  onConfirmCase,
+  onDisableCase
+}: {
+  cases: CaseHit[];
+  caseDraft: CaseDraft;
+  caseQuery: string;
+  caseStatus: string;
+  loading: boolean;
+  taskId: string;
+  onDraftChange: (draft: CaseDraft) => void;
+  onQueryChange: (value: string) => void;
+  onRefreshCases: () => void;
+  onConfirmCase: () => void;
+  onDisableCase: (caseId: string) => void;
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <BookOpenCheck className="h-5 w-5 text-primary" />
+            <CardTitle>Confirm as Case</CardTitle>
+          </div>
+          <CardDescription>{taskId} 的最终结果可人工确认后沉淀为可召回 Case</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input value={caseDraft.title} onChange={(event) => onDraftChange({ ...caseDraft, title: event.target.value })} placeholder="Case title" />
+          <textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.symptom} onChange={(event) => onDraftChange({ ...caseDraft, symptom: event.target.value })} placeholder="Symptom" />
+          <textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.rootCause} onChange={(event) => onDraftChange({ ...caseDraft, rootCause: event.target.value })} placeholder="Root cause" />
+          <textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.solution} onChange={(event) => onDraftChange({ ...caseDraft, solution: event.target.value })} placeholder="Solution" />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-muted-foreground">{caseStatus}</span>
+            <Button disabled={loading || !caseDraft.title.trim()} onClick={onConfirmCase}>保存 Case</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Similar cases</CardTitle>
+            <Button className="h-8 px-3" variant="outline" onClick={onRefreshCases}><RefreshCw className="h-4 w-4" /></Button>
+          </div>
+          <CardDescription>本地 JSON Case Store 关键词召回</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input value={caseQuery} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onRefreshCases(); }} placeholder="Search cases" />
+          {cases.length ? cases.map((item) => (
+            <div className="rounded-lg border border-border p-3" key={item.caseId}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{item.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · score {item.score.toFixed(2)} · {new Date(item.createdAt).toLocaleDateString()}</p>
+                </div>
+                <Badge variant={item.enabled ? "secondary" : "destructive"}>{item.enabled ? "enabled" : "disabled"}</Badge>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{item.rootCause}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button className="h-8 px-3" disabled={loading || !item.enabled} variant="outline" onClick={() => onDisableCase(item.caseId)}>禁用</Button>
+              </div>
+            </div>
+          )) : <EmptyState>暂无匹配 Case。</EmptyState>}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function StatusBadge({ status }: { status: TaskStatus }) {
@@ -605,6 +793,25 @@ function ResultList({ title, items }: { title: string; items: string[] }) {
 function scrollToEvidence(reference: string) {
   const index = reference.match(/^grep_results\.json#matches\/(\d+)$/)?.[1];
   if (index) document.getElementById(`grep-match-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function defaultCaseDraft(result: AnalysisResult): CaseDraft {
+  return {
+    title: result.summary.slice(0, 140),
+    symptom: result.symptoms.join("\n"),
+    rootCause: result.likelyRootCauses[0]?.cause ?? "",
+    solution: result.fixSuggestions.length ? result.fixSuggestions.join("\n") : result.nextChecks.join("\n")
+  };
+}
+
+function uniqueEvidenceRefs(result: AnalysisResult) {
+  const refs: string[] = [];
+  for (const cause of result.likelyRootCauses) {
+    for (const reference of cause.evidenceRefs) {
+      if (!refs.includes(reference)) refs.push(reference);
+    }
+  }
+  return refs;
 }
 
 function DataLine({ id, title, detail }: { id?: string; title: string; detail: string }) {
