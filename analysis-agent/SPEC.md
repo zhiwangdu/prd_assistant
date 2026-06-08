@@ -15,10 +15,10 @@
 - `GET /api/tasks/:task_id/analysis`
 - grep/tool/final result/failure 的基础事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
+- LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
 
 尚未实现：
 
-- LLM `ActionDecision`
 - 多轮 action loop
 - `WAITING_FOR_USER`
 - `WAITING_FOR_APPROVAL`

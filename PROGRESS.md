@@ -215,6 +215,8 @@ tool_results/<action_id>/
 - Adds bounded Tool Runner summary/findings to the prompt after grep evidence; stdout/stderr raw output is not sent.
 - Validates result schema, confidence, and task-local grep evidence references.
 - Validates task-local Tool Runner finding evidence references.
+- Provides ActionDecision / FinalAnswer dual-mode schema and parser for the upcoming action loop.
+- ActionDecision currently accepts `search_logs`, `run_tool`, and `final_answer`; unopened actions such as environment collection are rejected.
 - Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
 - Normalizes real-model schema drift for string root causes with embedded evidence refs and single-string list fields.
 - Retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors if both attempts fail.
@@ -226,6 +228,7 @@ tool_results/<action_id>/
 - Current fixed pipeline records analysis initialization, manifest evidence, grep evidence, Tool Runner action/evidence, final result, and failure events.
 - Workspaces now include `analysis_state.json` and append-only `analysis_events.jsonl`.
 - `GET /api/tasks/:task_id/analysis` returns the current state snapshot and event list.
+- LLM Gateway dual-mode decisions are ready for the next Action Loop MVP, but the fixed pipeline still calls final result generation only.
 - Full LLM-driven action loop, user questions, approvals, and budget termination remain planned.
 
 ### Local startup
@@ -282,7 +285,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner, LLM, and Analysis State tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, and tool finding evidence ref validation.
+- Tool Runner, LLM, and Analysis State tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, and tool finding evidence ref validation.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

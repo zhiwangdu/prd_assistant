@@ -14,6 +14,8 @@
 - manifest/grep/metadata Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
 - 最终结果 schema、confidence、grep evidence ref 和 tool finding evidence ref 校验。
+- ActionDecision / FinalAnswer 双模式 schema 和 parser。
+- ActionDecision 当前只允许 `search_logs`、`run_tool`、`final_answer`，并校验 action input 的基础结构。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
@@ -63,6 +65,8 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 
 当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。
 
+ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。当前固定 pipeline 尚未调用 action decision。
+
 ## 安全约束
 
 - 不直接执行任何 action。
@@ -75,6 +79,8 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 ## 验收标准
 
 - stub Provider 能返回最终结果。
+- stub action decision 能在 grep 为空时返回 `search_logs`，有 grep evidence 时返回 `final_answer`。
+- ActionDecision parser 接受合法 `search_logs` / `run_tool` / `final_answer`，拒绝尚未开放的 action。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。

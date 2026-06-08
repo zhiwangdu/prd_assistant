@@ -23,6 +23,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
 - Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
+- LLM Gateway ActionDecision / FinalAnswer 双模式 schema
 - task artifact 查询
 - metadata 查询和导入确认
 - upload pipeline
@@ -266,6 +267,7 @@ persist task
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
+- LLM Gateway 必须能解析合法 `search_logs`、`run_tool`、`final_answer` decision，并拒绝当前未开放 action。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。
 - multipart 和分片上传记录在重启后可恢复；未完成上传不能创建 task。
 - multipart 小文件和批量上传不能在 payload 未 flush 时持久化 `COMPLETE` 记录。
