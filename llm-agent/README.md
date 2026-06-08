@@ -40,6 +40,8 @@ Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAn
 
 重试时 Gateway 只把解析/schema 错误摘要和结果 schema 要求追加给模型，不保存原始响应，不暴露 API Key。两次都失败时，错误信息包含最新解析失败原因和上一次失败原因。
 
+Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调用 `/api/debug/llm` 开启或关闭。开启后 Gateway 只把模型 response content 打印到 Server stderr，便于定位 schema 漂移；不会打印 prompt、API Key 或 HTTP headers。该开关默认关闭，Server 重启后恢复关闭。
+
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
 
 Tool Runner Prompt 摘要包含工具名、执行状态、退出码、耗时、summary 和结构化 findings。工具 finding 的 canonical evidence ref 是 `tool_results/<action_id>/result.json#findings/<index>`。

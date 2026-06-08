@@ -90,6 +90,7 @@ Chrome Extension or WEBUI
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 - `GENERATE_RESULT` now reads `tool_results/*/result.json` and passes Tool Runner summary/findings into LLM Gateway as citeable evidence.
 - Persists Analysis State Store MVP files, `analysis_state.json` and `analysis_events.jsonl`, and serves them through `GET /api/tasks/:task_id/analysis`.
+- Exposes `/api/debug/llm` for runtime LLM response-content logging control; the flag is in-memory, defaults off, and does not print prompts or API keys.
 
 ### Upload And Workspace
 
@@ -181,6 +182,8 @@ tool_results/<action_id>/
   - failed phase/message display and historical artifact selection
   - Tool Runner result display
   - user question input and structured LLM result display
+  - live Task execution loop summary from `/api/tasks/:task_id/analysis`
+  - top-bar LLM debug switch backed by `/api/debug/llm`
   - grep evidence reference navigation
   - Metadata query
   - Metadata YAML/JSON import preview and confirmation
@@ -308,6 +311,9 @@ Task, upload, and LLM verification:
 - LLM Gateway now retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors when both attempts fail.
 - LLM Gateway now normalizes observed real-model `PLAN_ANALYSIS` final-answer wrapper variants, including nested `result.result` and `action.decision.type=final_answer` with a result in `input`, into true `FinalAnswer` decisions while preserving strict final-result schema checks.
 - LLM Gateway now applies the same bounded schema-correction pattern to action decisions that final-result generation already used; after two invalid action decision responses, the final error includes latest and previous parse reasons.
+- LLM Gateway now supports a runtime debug switch for printing raw model response content to Server stderr when manually enabled.
+- WebUI Task execution now shows live analysis loop revision, budget counters, recent events, model decisions, actions, artifacts, and evidence refs.
+- WebUI top bar now includes an LLM debug switch that controls the Server-side response logging flag.
 - Upload API tests now use per-process atomic temp roots so concurrent cleanup cannot remove another upload payload.
 - Real OpenAI-compatible smoke on port 50994 with clusterId `8343121086559132311` completed task `task_1780843631402_1` as `SUCCEEDED` after the LLM retry/error-detail change.
 - LLM request failure is verified to persist `FAILED / GENERATE_RESULT`.

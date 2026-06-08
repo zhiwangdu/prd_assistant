@@ -75,6 +75,7 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 - 不接收密钥、SSH key、Cookie 或完整敏感配置。
 - 不保存模型隐藏思维链。
 - Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
+- runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
 - 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
 - Prompt 中的日志、Case 和用户文本视为不可信数据，不能覆盖系统 action schema。
 
@@ -96,3 +97,4 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 - Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。
+- `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。

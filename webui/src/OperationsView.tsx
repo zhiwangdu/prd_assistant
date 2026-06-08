@@ -32,6 +32,29 @@ type AnalysisResult = {
   confidence: "low" | "medium" | "high";
 };
 type TaskResult = { taskId: string; result: AnalysisResult };
+type AnalysisSnapshot = {
+  taskId: string;
+  state: {
+    revision: number;
+    status: "RUNNING" | "SUCCEEDED" | "FAILED";
+    currentPhase?: TaskSummary["phase"];
+    budget: { rounds: number; llmCalls: number; actions: number };
+    evidence: Array<{ evidenceType: string; artifactPath: string; summary: string; evidenceRefs: string[]; createdAt: string }>;
+    actions: Array<{ actionId: string; actionType: string; status: string; summary: string; createdAt: string }>;
+  };
+  events: AnalysisEvent[];
+};
+type AnalysisEvent = {
+  revision: number;
+  eventType: string;
+  phase?: TaskSummary["phase"];
+  actionId?: string | null;
+  message: string;
+  evidenceRefs: string[];
+  artifactPath?: string | null;
+  details?: Record<string, unknown>;
+  createdAt: string;
+};
 type Artifacts = {
   taskId?: string;
   manifest?: { files?: Array<{ path: string; size: number }> };
@@ -81,6 +104,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [artifacts, setArtifacts] = useState<Artifacts | null>(null);
   const [taskResult, setTaskResult] = useState<TaskResult | null>(null);
+  const [analysisSnapshot, setAnalysisSnapshot] = useState<AnalysisSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refreshTasks = useCallback(async () => {
@@ -99,6 +123,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const selectTask = useCallback(async (taskId: string) => {
     const task = await fetchJson<TaskRecord>(`/api/tasks/${encodeURIComponent(taskId)}`, { headers: authHeaders(apiKey) });
     setSelectedTask(task);
+    const nextAnalysis = await fetchTaskAnalysis(taskId, apiKey);
+    setAnalysisSnapshot(nextAnalysis);
     if (task.status === "SUCCEEDED") {
       const [nextArtifacts, nextResult] = await Promise.all([
         fetchJson<Artifacts>(`/api/tasks/${encodeURIComponent(taskId)}/artifacts`, { headers: authHeaders(apiKey) }),
@@ -116,6 +142,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setSelectedTask(null);
     setArtifacts(null);
     setTaskResult(null);
+    setAnalysisSnapshot(null);
     void refreshTasks().catch((reason) => setUploadStatus(errorMessage(reason)));
   }, [refreshTasks]);
 
@@ -144,6 +171,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setLoading(true);
     setArtifacts(null);
     setTaskResult(null);
+    setAnalysisSnapshot(null);
     try {
       const uploads: UploadResponse[] = [];
       for (let index = 0; index < files.length; index += 1) {
@@ -224,6 +252,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                 {selectedTask.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedTask.error?.phase ? `${selectedTask.error.phase}: ` : ""}{selectedTask.error?.message ?? "Task failed"}</div> : null}
                 {!isTerminal(selectedTask.status) ? <p className="text-sm text-muted-foreground">任务由 Server 后台执行，每秒自动刷新。</p> : null}
                 {selectedTask.status === "SUCCEEDED" && !artifacts ? <Button onClick={() => void selectTask(selectedTask.taskId)}>加载 artifacts</Button> : null}
+                <ExecutionTimeline snapshot={analysisSnapshot} />
               </div>
             ) : <EmptyState>选择或创建任务后查看执行状态。</EmptyState>}
           </CardContent>
@@ -270,6 +299,85 @@ function errorMessage(reason: unknown) {
 
 function Evidence({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return <Card><CardHeader><div className="flex items-center justify-between"><CardTitle>{title}</CardTitle><Badge variant="secondary">{count}</Badge></div></CardHeader><CardContent className="space-y-2">{count ? children : <EmptyState>暂无数据</EmptyState>}</CardContent></Card>;
+}
+
+function ExecutionTimeline({ snapshot }: { snapshot: AnalysisSnapshot | null }) {
+  if (!snapshot) {
+    return <EmptyState>Analysis loop 事件会在任务开始执行后实时显示。</EmptyState>;
+  }
+  const events = snapshot.events.slice(-12).reverse();
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Analysis loop summary</p>
+          <p className="text-xs text-muted-foreground">revision {snapshot.state.revision} · {snapshot.state.status} · phase {snapshot.state.currentPhase ?? "none"}</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Badge variant="secondary">rounds {snapshot.state.budget.rounds}</Badge>
+          <Badge variant="secondary">LLM {snapshot.state.budget.llmCalls}</Badge>
+          <Badge variant="secondary">actions {snapshot.state.budget.actions}</Badge>
+          <Badge variant="secondary">evidence {snapshot.state.evidence.length}</Badge>
+        </div>
+      </div>
+      {events.length ? (
+        <ol className="space-y-2">
+          {events.map((event) => (
+            <li className="rounded-md border border-border bg-white p-3" key={`${event.revision}:${event.eventType}:${event.createdAt}`}>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant={event.eventType === "analysis_failed" ? "destructive" : event.eventType === "model_decision" ? "warning" : "outline"}>{event.eventType}</Badge>
+                <span>rev {event.revision}</span>
+                <span>{event.phase ?? "no phase"}</span>
+                {event.actionId ? <span className="font-mono">{event.actionId}</span> : null}
+                <span>{new Date(event.createdAt).toLocaleTimeString()}</span>
+              </div>
+              <p className="mt-2 text-sm">{event.message}</p>
+              <EventDetails event={event} />
+            </li>
+          ))}
+        </ol>
+      ) : <EmptyState>暂无 loop 事件。</EmptyState>}
+    </div>
+  );
+}
+
+function EventDetails({ event }: { event: AnalysisEvent }) {
+  const detail = summarizeEventDetails(event);
+  const refs = event.evidenceRefs.slice(0, 4);
+  if (!detail && !event.artifactPath && refs.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+      {detail ? <p>{detail}</p> : null}
+      {event.artifactPath ? <p>artifact: <span className="font-mono">{event.artifactPath}</span></p> : null}
+      {refs.length ? <p>refs: {refs.map((reference) => <span className="mr-2 font-mono" key={reference}>{reference}</span>)}{event.evidenceRefs.length > refs.length ? `+${event.evidenceRefs.length - refs.length}` : ""}</p> : null}
+    </div>
+  );
+}
+
+function summarizeEventDetails(event: AnalysisEvent) {
+  const details = event.details ?? {};
+  if (typeof details.totalMatches === "number") {
+    const keywords = Array.isArray(details.keywords) ? details.keywords.filter((item): item is string => typeof item === "string").slice(0, 6).join(", ") : "";
+    return `matches=${details.totalMatches}${keywords ? ` · keywords=${keywords}` : ""}`;
+  }
+  const decision = details.decision;
+  if (isRecord(decision)) {
+    const type = typeof decision.type === "string" ? decision.type : "action";
+    const reason = typeof decision.reason === "string" ? decision.reason : "";
+    return `decision=${type}${reason ? ` · ${reason}` : ""}`;
+  }
+  const result = details.result;
+  if (isRecord(result) && typeof result.summary === "string") {
+    return `final_answer · ${result.summary}`;
+  }
+  if (typeof details.error === "string") {
+    return details.error;
+  }
+  return "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function AnalysisResultView({ result }: { result: AnalysisResult }) {
@@ -374,4 +482,12 @@ async function uploadFile(file: File, apiKey: string, onProgress: (value: number
     onProgress(next / file.size);
   }
   return fetchJson<UploadResponse>(`/api/uploads/${encodeURIComponent(upload.uploadId)}/complete`, { method: "POST", headers: authHeaders(apiKey) });
+}
+
+async function fetchTaskAnalysis(taskId: string, apiKey: string) {
+  try {
+    return await fetchJson<AnalysisSnapshot>(`/api/tasks/${encodeURIComponent(taskId)}/analysis`, { headers: authHeaders(apiKey) });
+  } catch {
+    return null;
+  }
 }

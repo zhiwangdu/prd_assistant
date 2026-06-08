@@ -186,6 +186,7 @@ MVP 要求：
 - `GET /api/tasks/:task_id` 返回完整 `TaskRecord`。
 - `GET /api/tasks/:task_id/artifacts` 读取任务产物。
 - `GET /api/tasks/:task_id/result` 读取结构化 LLM 分析结果。
+- `GET /api/debug/llm` / `PUT /api/debug/llm` 读取或修改当前进程内的 LLM 输出日志开关。
 - 同步解压 `.zip`、`.tar.gz`、`.tgz`、`.tar`，普通 `.log` / `.txt` 直接复制到 `extracted/<文件基名>/`。
 - `.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` fallback 再尝试一次。
 - 创建任务支持 `uploadId` 单文件和 `uploadIds` 批量文件；请求验证上传后先复制到 workspace raw 快照、持久化 `QUEUED`，以 `202 Accepted` 立即返回。
@@ -216,6 +217,7 @@ MVP 要求：
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。
 - LLM 解析/schema 错误会返回最新失败原因和上一轮失败原因；Provider HTTP、鉴权、限流和超时错误不重试。
+- LLM 输出日志 debug 开关默认关闭、只保存在 Server 进程内。开启后仅把模型 response content 打印到 Server stderr，不打印 prompt 或 API Key。
 
 Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Native Agent 上传稍大的文件时报：
 
@@ -245,6 +247,8 @@ GET /api/tasks/:task_id
 GET /api/tasks/:task_id/analysis
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+GET /api/debug/llm
+PUT /api/debug/llm
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes

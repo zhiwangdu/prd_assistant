@@ -9,6 +9,7 @@ use axum::{
 
 use crate::{auth::require_api_key, state::AppState};
 
+mod debug;
 mod health;
 mod metadata;
 mod tasks;
@@ -37,6 +38,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/tasks/:task_id/analysis", get(tasks::task_analysis))
         .route("/api/tasks/:task_id/result", get(tasks::task_result))
         .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
+        .route(
+            "/api/debug/llm",
+            get(debug::get_llm_debug).put(debug::update_llm_debug),
+        )
         .route(
             "/api/metadata/instances/:instance_id",
             get(metadata::get_instance),

@@ -146,7 +146,7 @@ flowchart TD
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
-- WEBUI 使用 React + Vite，支持上传、任务证据、单次 LLM 结果、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 

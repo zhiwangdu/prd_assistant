@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::Context;
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
@@ -20,6 +26,7 @@ const MAX_ACTION_DECISION_ATTEMPTS: usize = 2;
 pub struct LlmGateway {
     settings: LlmSettings,
     client: reqwest::Client,
+    debug_log_responses: Arc<AtomicBool>,
 }
 
 impl LlmGateway {
@@ -28,7 +35,19 @@ impl LlmGateway {
             .timeout(Duration::from_secs(settings.request_timeout_seconds))
             .build()
             .context("failed to build LLM HTTP client")?;
-        Ok(Self { settings, client })
+        Ok(Self {
+            settings,
+            client,
+            debug_log_responses: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    pub fn debug_log_responses(&self) -> bool {
+        self.debug_log_responses.load(Ordering::Relaxed)
+    }
+
+    pub fn set_debug_log_responses(&self, enabled: bool) {
+        self.debug_log_responses.store(enabled, Ordering::Relaxed);
     }
 
     pub async fn generate_result(
@@ -107,6 +126,7 @@ impl LlmGateway {
             let response = self
                 .send_chat_completion(base_url, api_key, &messages)
                 .await?;
+            self.log_debug_response("generate_result", attempt, &response);
             match parse_chat_response(response) {
                 Ok(draft) => return Ok(draft),
                 Err(error) => {
@@ -157,6 +177,7 @@ impl LlmGateway {
             let response = self
                 .send_chat_completion_messages(base_url, api_key, &messages)
                 .await?;
+            self.log_debug_response("action_decision", attempt, &response);
             match parse_action_decision_response(response) {
                 Ok(decision) => return Ok(decision),
                 Err(error) => {
@@ -218,6 +239,18 @@ impl LlmGateway {
             .await
             .context("failed to decode LLM response")?;
         Ok(response)
+    }
+
+    fn log_debug_response(&self, call: &str, attempt: usize, response: &ChatResponse) {
+        if !self.debug_log_responses() {
+            return;
+        }
+        for (index, choice) in response.choices.iter().enumerate() {
+            eprintln!(
+                "[logagent][llm-debug] call={call} attempt={attempt} choice={index} model={} content:\n{}",
+                self.settings.model, choice.message.content
+            );
+        }
     }
 }
 
@@ -1375,6 +1408,26 @@ mod tests {
         assert!(prompt.contains("\"type\":\"final_answer\""));
         assert!(prompt.contains("顶层必须包含 type"));
         assert!(prompt.contains("不要输出 ask_user"));
+    }
+
+    #[test]
+    fn llm_debug_response_logging_is_runtime_switchable() {
+        let gateway = LlmGateway::new(LlmSettings {
+            provider: LlmProvider::Stub,
+            base_url: None,
+            api_key: None,
+            model: "stub".to_string(),
+            request_timeout_seconds: 1,
+            max_input_chars: 1024,
+            max_output_tokens: 256,
+        })
+        .unwrap();
+
+        assert!(!gateway.debug_log_responses());
+        gateway.set_debug_log_responses(true);
+        assert!(gateway.debug_log_responses());
+        gateway.set_debug_log_responses(false);
+        assert!(!gateway.debug_log_responses());
     }
 
     #[test]

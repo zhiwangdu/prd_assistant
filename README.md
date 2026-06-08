@@ -126,6 +126,7 @@ flowchart LR
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
 - 所有任务上下文、事件、证据和结果都持久化到 Task Store / Workspace，支持重启恢复。
+- WebUI 可实时展示 Task execution loop 摘要；LLM response content 日志只能通过顶部 debug 开关手动开启。
 - Case Store 只接收人工确认后的最终结果。
 
 ## 模块目录
