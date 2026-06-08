@@ -201,6 +201,14 @@ tool_results/<action_id>/
 
 当工具 stdout 是 JSON 时，Server 会解析 `summary` 和 `findings` 并写入 `tool_results/<action_id>/result.json`。`findings` 条目包含可选 `severity`、`file`、`line` 和必填 `message`。stdout 不是 JSON 或字段不匹配时不改变工具执行状态，仍保留 stdout/stderr 并使用通用 summary。
 
+真实 `influxql_analyzer` 适配：
+
+- `examples/server-influxql-tool.yaml` 只启用该工具，路径来自 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
+- CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
+- 输入文件应为 JSONL 查询日志，每行至少包含 `query`，可选 `timestamp` 或 `time`。
+- Report stdout 的 `special_rules` 会生成结构化 findings，例如 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`。
+- `parse_errors` 和 `realtime_query` 会生成可引用 findings。
+
 Analysis State Store 当前记录 pipeline 和多轮 `PLAN_ANALYSIS` 决策的审计状态。Server 会写入：
 
 ```text
@@ -270,7 +278,8 @@ persist task
 
 - `WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 的恢复 API 和完整 Analysis Agent 状态机。
 - Tool Runner、Code Evidence 和 Environment Collector 编排。
-- 更精确的 `flux_query_analyzer`、`influxql_analyzer` 规则和真实工具输出字段映射。
+- 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
+- `influxql_analyzer` compare mode 更丰富的 delta 字段映射。
 - 多轮 Analysis Agent、message/approval API、模型用量和 Provider request id 审计。
 - Case Store 写入和召回。
 
@@ -289,6 +298,7 @@ persist task
 - 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。
 - `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
+- 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
 - LLM Gateway 必须能解析合法 `search_logs`、`run_tool`、`final_answer` decision，并拒绝当前未开放 action。

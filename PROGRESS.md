@@ -148,6 +148,7 @@ workspaces/task_xxx/
 - Executes configured tools through `tokio::process::Command` without shell string concatenation.
 - Supports timeout, stdout/stderr capture, output truncation, non-zero exit recording, spawn failure recording, and idempotent result reuse.
 - Parses JSON stdout into structured `summary` and `findings`; non-JSON stdout keeps the old fallback summary and does not fail the task.
+- Adapts real `influxql-analyzer` Report stdout into LogAgent `summary` and structured findings, including `large_limit`, `no_time_filter`, `group_by_high_cardinality_risk`, `meta_query`, parse errors, realtime classification, and query fingerprint statistics.
 - `ToolRunRecord` schema version 2 adds `findings[]` with optional `severity`, `file`, `line` and required `message`.
 - Writes:
 
@@ -162,7 +163,9 @@ tool_results/<action_id>/
 - WebUI displays tool result status, exit code, duration, summary, structured findings, stdout path, and stderr path.
 - Tool findings can be cited by final LLM results as `tool_results/<action_id>/result.json#findings/<index>`.
 - Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
+- Added `examples/server-influxql-tool.yaml` for single-tool real InfluxQL smoke with `LOGAGENT_TOOL_INFLUXQL_ANALYZER`.
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
+- Real InfluxQL Tool Runner smoke on port 50999 used `/Users/duzhiwang/workspace/goWorkspace/influxql/influxql-analyzer`; task `task_1780932701757_2` reached `SUCCEEDED` and artifacts contained `toolResults[0].findings` for `no_time_filter`, `large_limit`, `group_by_high_cardinality_risk`, `has_wildcard`, and `meta_query`.
 
 ### WEBUI
 
@@ -344,17 +347,14 @@ Recent HTTP smoke checks:
 
 ## Planned Next
 
-1. Configure and smoke-test real compiled tools through Tool Runner:
-   - `flux_query_analyzer`
-   - `influxql_analyzer`
-2. Implement Code Evidence:
+1. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
+2. Implement `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` API for the Analysis Agent loop.
+3. Implement Code Evidence:
    - map product/version to branch/tag/ref
    - prepare read-only worktree/cache
    - collect code file/line evidence
-3. Implement Analysis Agent state/events and extend LLM Gateway to structured action/final-answer decisions.
-4. Implement user questions, approvals, budgets, idempotency, and restart recovery.
-5. Implement Environment Collector with SSH/SCP whitelists and approval.
-6. Implement Case Store save and recall from manually confirmed final results.
+4. Implement Environment Collector with SSH/SCP whitelists and approval.
+5. Implement Case Store save and recall from manually confirmed final results.
 
 ## Documentation Verification
 

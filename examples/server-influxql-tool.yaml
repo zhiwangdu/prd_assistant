@@ -1,10 +1,10 @@
 server:
-  bind: "127.0.0.1:50998"
-  public_base_url: "http://127.0.0.1:50998"
+  bind: "127.0.0.1:50999"
+  public_base_url: "http://127.0.0.1:50999"
   max_concurrent_tasks: 2
 
 storage:
-  data_dir: "/tmp/logagent-server-tools"
+  data_dir: "/tmp/logagent-server-influxql-tool"
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
@@ -26,31 +26,15 @@ log_analyzer:
     - refused
     - denied
     - verify
-    - flux
     - influxql
+    - "\"query\""
     - select
     - show
     - query
+    - large_limit
+    - no_time_filter
 
 tools:
-  flux_query_analyzer:
-    enabled: true
-    path_env: "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"
-    timeout_seconds: 30
-    max_output_bytes: 1048576
-    max_input_files: 3
-    args:
-      - "--input"
-      - "{input_file}"
-      - "--format"
-      - "json"
-    match:
-      file_patterns:
-        - "*.flux"
-      keywords:
-        - "flux"
-        - "planner"
-
   influxql_analyzer:
     enabled: true
     path_env: "LOGAGENT_TOOL_INFLUXQL_ANALYZER"

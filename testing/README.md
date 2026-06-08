@@ -79,6 +79,7 @@ environment approval -> collect stub -> Agent continuation -> result
 - Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 - Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
+- Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换，以及 compare report 的基础 delta findings。
 
 ### LLM 测试策略
 
@@ -104,6 +105,7 @@ Stub 必须支持脚本化多轮响应：
 真实工具调用只做手动验收：
 
 - 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
+- 单独验证真实 InfluxQL 工具可使用 `examples/server-influxql-tool.yaml`。
 - 手工真实工具验收需要设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 和 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 

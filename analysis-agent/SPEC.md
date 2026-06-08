@@ -18,6 +18,7 @@
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
 - 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
+- `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
 - `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions`
 - 重复 action fingerprint 防护
 - 预算或重复动作终止时生成低置信度最终结果并进入 `SUCCEEDED`

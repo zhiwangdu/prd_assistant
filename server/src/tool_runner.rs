@@ -442,6 +442,12 @@ fn parse_tool_stdout(stdout: &[u8]) -> ParsedToolOutput {
 fn parse_tool_output_value(value: &serde_json::Value) -> ParsedToolOutput {
     match value {
         serde_json::Value::Object(object) => {
+            if is_influxql_report(object) {
+                return parse_influxql_report(object);
+            }
+            if is_influxql_compare_report(object) {
+                return parse_influxql_compare_report(object);
+            }
             let summary = string_field(object, &["summary", "message", "title"]);
             let findings = object
                 .get("findings")
@@ -460,6 +466,284 @@ fn parse_tool_output_value(value: &serde_json::Value) -> ParsedToolOutput {
             findings: Vec::new(),
         },
         _ => ParsedToolOutput::default(),
+    }
+}
+
+fn is_influxql_report(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    object.contains_key("total_records")
+        && object.contains_key("total_statements")
+        && object.contains_key("fingerprints")
+}
+
+fn is_influxql_compare_report(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    object.contains_key("batch_a")
+        && object.contains_key("batch_b")
+        && object.contains_key("statement_delta")
+}
+
+fn parse_influxql_report(object: &serde_json::Map<String, serde_json::Value>) -> ParsedToolOutput {
+    let total_records = u64_field(object, "total_records").unwrap_or_default();
+    let records_in_window = u64_field(object, "records_in_window").unwrap_or_default();
+    let total_statements = u64_field(object, "total_statements").unwrap_or_default();
+    let parse_error_count = u64_field(object, "parse_error_count").unwrap_or_default();
+    let rule_summary = influxql_rule_summary(object);
+    let mut summary = format!(
+        "influxql report: records={total_records}, recordsInWindow={records_in_window}, statements={total_statements}, parseErrors={parse_error_count}"
+    );
+    if !rule_summary.is_empty() {
+        summary.push_str(&format!(", specialRules={rule_summary}"));
+    }
+
+    let mut findings = Vec::new();
+    findings.extend(influxql_special_rule_findings(object));
+    findings.extend(influxql_parse_error_findings(object));
+    findings.extend(influxql_realtime_findings(object));
+    findings.extend(influxql_fingerprint_findings(object));
+
+    ParsedToolOutput {
+        summary: Some(summary),
+        findings,
+    }
+}
+
+fn parse_influxql_compare_report(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> ParsedToolOutput {
+    let statement_delta = number_to_string(object.get("statement_delta")).unwrap_or_default();
+    let qps_delta = number_to_string(object.get("qps_delta")).unwrap_or_default();
+    let summary =
+        format!("influxql compare report: statementDelta={statement_delta}, qpsDelta={qps_delta}");
+    let mut findings = Vec::new();
+    for (key, label) in [
+        ("new_fingerprints", "new fingerprint"),
+        ("removed_fingerprints", "removed fingerprint"),
+        ("changed_fingerprints", "changed fingerprint"),
+        ("rule_deltas", "rule delta"),
+    ] {
+        if let Some(items) = object.get(key).and_then(|value| value.as_array()) {
+            for item in items.iter().take(5) {
+                findings.push(ToolFinding {
+                    severity: Some("medium".to_string()),
+                    file: None,
+                    line: None,
+                    message: format!("{label}: {}", compact_json(item)),
+                });
+            }
+        }
+    }
+
+    ParsedToolOutput {
+        summary: Some(summary),
+        findings,
+    }
+}
+
+fn influxql_rule_summary(object: &serde_json::Map<String, serde_json::Value>) -> String {
+    object
+        .get("special_rules")
+        .and_then(|value| value.as_array())
+        .map(|rules| {
+            rules
+                .iter()
+                .take(8)
+                .filter_map(|rule| {
+                    let rule = rule.as_object()?;
+                    let name = string_field(rule, &["rule"])?;
+                    let count = number_to_string(rule.get("count")).unwrap_or_else(|| "0".into());
+                    Some(format!("{name}:{count}"))
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
+}
+
+fn influxql_special_rule_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ToolFinding> {
+    object
+        .get("special_rules")
+        .and_then(|value| value.as_array())
+        .map(|rules| {
+            rules
+                .iter()
+                .take(12)
+                .filter_map(|rule| {
+                    let rule = rule.as_object()?;
+                    let name = string_field(rule, &["rule"])?;
+                    let count = number_to_string(rule.get("count")).unwrap_or_else(|| "0".into());
+                    let fingerprint_count = rule
+                        .get("fingerprints")
+                        .and_then(|value| value.as_array())
+                        .map(|items| items.len())
+                        .unwrap_or_default();
+                    Some(ToolFinding {
+                        severity: Some(influxql_rule_severity(&name).to_string()),
+                        file: None,
+                        line: None,
+                        message: format!(
+                            "rule {name} matched {count} statement(s) across {fingerprint_count} fingerprint(s): {}",
+                            influxql_rule_description(&name)
+                        ),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn influxql_parse_error_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ToolFinding> {
+    object
+        .get("parse_errors")
+        .and_then(|value| value.as_array())
+        .map(|errors| {
+            errors
+                .iter()
+                .take(5)
+                .filter_map(|error| {
+                    let error = error.as_object()?;
+                    let message = string_field(error, &["error"])?;
+                    let count = number_to_string(error.get("count")).unwrap_or_else(|| "0".into());
+                    Some(ToolFinding {
+                        severity: Some("high".to_string()),
+                        file: None,
+                        line: None,
+                        message: format!("parse error occurred {count} time(s): {message}"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn influxql_realtime_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ToolFinding> {
+    let Some(realtime) = object
+        .get("realtime_query")
+        .and_then(|value| value.as_object())
+    else {
+        return Vec::new();
+    };
+    let total = u64_field(realtime, "total").unwrap_or_default();
+    if total == 0 {
+        return Vec::new();
+    }
+    let non_realtime = u64_field(realtime, "non_realtime").unwrap_or_default();
+    let unknown = u64_field(realtime, "unknown").unwrap_or_default();
+    let realtime_count = u64_field(realtime, "realtime").unwrap_or_default();
+    let mut findings = Vec::new();
+    if non_realtime > 0 {
+        findings.push(ToolFinding {
+            severity: Some("medium".to_string()),
+            file: None,
+            line: None,
+            message: format!(
+                "realtime query classification found {non_realtime}/{total} non-realtime select-like statement(s)"
+            ),
+        });
+    }
+    if unknown > 0 {
+        let reason = first_realtime_sample_reason(realtime, "sample_unknown")
+            .map(|reason| format!("; sample reason: {reason}"))
+            .unwrap_or_default();
+        findings.push(ToolFinding {
+            severity: Some("low".to_string()),
+            file: None,
+            line: None,
+            message: format!(
+                "realtime query classification is unknown for {unknown}/{total} select-like statement(s); realtime={realtime_count}{reason}"
+            ),
+        });
+    }
+    findings
+}
+
+fn influxql_fingerprint_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ToolFinding> {
+    object
+        .get("fingerprints")
+        .and_then(|value| value.as_array())
+        .map(|fingerprints| {
+            fingerprints
+                .iter()
+                .take(5)
+                .filter_map(|fingerprint| {
+                    let fingerprint = fingerprint.as_object()?;
+                    let count = u64_field(fingerprint, "count").unwrap_or_default();
+                    let rules = fingerprint
+                        .get("rules")
+                        .and_then(|value| value.as_array())
+                        .map(|rules| {
+                            rules
+                                .iter()
+                                .filter_map(|value| value.as_str())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    if count <= 1 && rules.is_empty() {
+                        return None;
+                    }
+                    let statement_type =
+                        string_field(fingerprint, &["statement_type"]).unwrap_or_default();
+                    let normalized_query =
+                        string_field(fingerprint, &["normalized_query"]).unwrap_or_default();
+                    let rule_text = if rules.is_empty() {
+                        "none".to_string()
+                    } else {
+                        rules.join(", ")
+                    };
+                    Some(ToolFinding {
+                        severity: Some("low".to_string()),
+                        file: None,
+                        line: None,
+                        message: format!(
+                            "fingerprint {statement_type} occurred {count} time(s), rules=[{rule_text}], normalized={normalized_query}"
+                        ),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn first_realtime_sample_reason(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<String> {
+    object
+        .get(key)?
+        .as_array()?
+        .first()?
+        .as_object()
+        .and_then(|sample| string_field(sample, &["reason"]))
+}
+
+fn influxql_rule_severity(rule: &str) -> &'static str {
+    match rule {
+        "write_or_destructive" | "large_limit" | "no_time_filter" => "high",
+        "group_by_high_cardinality_risk" | "not_realtime_query" => "medium",
+        "has_regex" | "has_wildcard" | "meta_query" => "low",
+        _ => "low",
+    }
+}
+
+fn influxql_rule_description(rule: &str) -> &'static str {
+    match rule {
+        "no_time_filter" => "SELECT has no explicit time predicate",
+        "has_regex" => "query uses regex matching or regex measurement/source",
+        "has_wildcard" => "query uses wildcard selection, grouping, or metadata scope",
+        "large_limit" => "LIMIT or SLIMIT is greater than or equal to the configured threshold",
+        "group_by_high_cardinality_risk" => {
+            "non-time GROUP BY dimensions exceed the configured threshold"
+        }
+        "meta_query" => "metadata or explain query",
+        "write_or_destructive" => "query writes data or performs destructive changes",
+        "not_realtime_query" => "select-like query is explicitly non-realtime",
+        _ => "unrecognized analyzer rule",
     }
 }
 
@@ -518,6 +802,26 @@ fn number_field(object: &serde_json::Map<String, serde_json::Value>, keys: &[&st
         serde_json::Value::String(value) => value.trim().parse().ok(),
         _ => None,
     })
+}
+
+fn u64_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<u64> {
+    match object.get(key)? {
+        serde_json::Value::Number(value) => value.as_u64(),
+        serde_json::Value::String(value) => value.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+fn number_to_string(value: Option<&serde_json::Value>) -> Option<String> {
+    match value? {
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        serde_json::Value::String(value) => non_empty(value),
+        _ => None,
+    }
+}
+
+fn compact_json(value: &serde_json::Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -696,6 +1000,88 @@ JSON
         assert_eq!(parsed.findings[0].line, Some(7));
         assert_eq!(parsed.findings[0].message, "full scan");
         assert_eq!(parsed.findings[1].message, "missing retention policy");
+    }
+
+    #[test]
+    fn parses_influxql_analyzer_report_into_summary_and_findings() {
+        let parsed = parse_tool_stdout(
+            br#"{
+  "total_records": 2,
+  "records_in_window": 2,
+  "total_statements": 2,
+  "parse_error_count": 1,
+  "fingerprints": [
+    {
+      "statement_type": "SELECT",
+      "normalized_query": "SELECT * FROM cpu LIMIT 1",
+      "count": 1,
+      "rules": ["large_limit", "no_time_filter"]
+    }
+  ],
+  "special_rules": [
+    {"rule": "large_limit", "count": 1, "fingerprints": ["fp1"]},
+    {"rule": "no_time_filter", "count": 1, "fingerprints": ["fp1"]}
+  ],
+  "parse_errors": [
+    {"error": "found BAD, expected SELECT", "count": 1, "sample_queries": ["BAD"]}
+  ],
+  "realtime_query": {
+    "total": 1,
+    "realtime": 0,
+    "non_realtime": 0,
+    "unknown": 1,
+    "sample_unknown": [{"reason": "query has no where time predicate"}]
+  }
+}"#,
+        );
+
+        let summary = parsed.summary.unwrap();
+        assert!(summary.contains("records=2"));
+        assert!(summary.contains("specialRules=large_limit:1, no_time_filter:1"));
+        assert!(parsed
+            .findings
+            .iter()
+            .any(|finding| finding.severity.as_deref() == Some("high")
+                && finding.message.contains("rule large_limit")));
+        assert!(parsed
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("parse error occurred 1 time")));
+        assert!(parsed.findings.iter().any(|finding| finding
+            .message
+            .contains("realtime query classification is unknown")));
+        assert!(parsed.findings.iter().any(|finding| finding
+            .message
+            .contains("fingerprint SELECT occurred 1 time")));
+    }
+
+    #[test]
+    fn parses_influxql_compare_report_into_findings() {
+        let parsed = parse_tool_stdout(
+            br#"{
+  "batch_a": {"total_statements": 10},
+  "batch_b": {"total_statements": 14},
+  "statement_delta": 4,
+  "qps_delta": 0.5,
+  "new_fingerprints": [{"fingerprint": "fp-new", "count": 4}],
+  "removed_fingerprints": [],
+  "changed_fingerprints": [],
+  "rule_deltas": [{"rule": "large_limit", "count_delta": 2}]
+}"#,
+        );
+
+        assert_eq!(
+            parsed.summary.as_deref(),
+            Some("influxql compare report: statementDelta=4, qpsDelta=0.5")
+        );
+        assert!(parsed
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("new fingerprint")));
+        assert!(parsed
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("rule delta")));
     }
 
     #[test]

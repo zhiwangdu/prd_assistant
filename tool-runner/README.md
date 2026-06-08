@@ -53,17 +53,19 @@ tools:
     max_input_files: 3
     match:
       file_patterns:
-        - "*.sql"
-        - "*.log"
+        - "*.jsonl"
       keywords:
         - "influxql"
+        - "\"query\""
         - "select"
         - "show series"
     args:
-      - "--input"
+      - "-input"
       - "{input_file}"
-      - "--format"
+      - "-output"
       - "json"
+      - "-detail-limit"
+      - "5"
 ```
 
 ## 执行原则
@@ -89,6 +91,8 @@ tools:
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。
 - 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
+- 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置，避免本地未安装 flux 工具时阻塞 smoke。
+- 已适配真实 `influxql-analyzer` Report stdout：`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`。
 
 ## 本地真实工具 smoke
 
@@ -99,7 +103,21 @@ export LOGAGENT_TOOL_INFLUXQL_ANALYZER=/abs/path/to/influxql_analyzer
 cargo run -p logagent-server -- --config examples/server-tools.yaml
 ```
 
-`server-tools.yaml` 使用 stub LLM，便于单独验证 Tool Runner。上传 `.flux` 或包含 `flux/planner` 关键词的日志会触发 `flux_query_analyzer`；上传 `.sql` 或包含 `influxql/select/show series/show measurements` 关键词的日志会触发 `influxql_analyzer`。
+`server-tools.yaml` 使用 stub LLM，便于单独验证 Tool Runner。上传 `.flux` 或包含 `flux/planner` 关键词的日志会触发 `flux_query_analyzer`；上传 `.jsonl` 或包含 `influxql`、`"query"`、`select`、`show series`、`show measurements` 关键词的日志会触发 `influxql_analyzer`。
+
+只验证真实 InfluxQL 工具时：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+export LOGAGENT_TOOL_INFLUXQL_ANALYZER=/Users/duzhiwang/workspace/goWorkspace/influxql/influxql-analyzer
+cargo run -p logagent-server -- --config examples/server-influxql-tool.yaml
+```
+
+`influxql-analyzer` 输入应是 JSONL，每行至少包含 `query` 字段，可选 `timestamp` 或 `time`。CLI 参数使用真实工具协议：
+
+```text
+-input <file> -output json -detail-limit 5
+```
 
 ## 输出结构
 

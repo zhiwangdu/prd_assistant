@@ -45,7 +45,7 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 - final result。
 - failure 事件。
 
-`GET /api/tasks/:task_id/analysis` 可读取当前 state 和事件流。真实 `flux_query_analyzer` / `influxql_analyzer` 尚未完成时，Tool Runner 继续使用配置中的 mock/stub 工具替代，保证 action/event/evidence 链路先稳定。
+`GET /api/tasks/:task_id/analysis` 可读取当前 state 和事件流。真实 `influxql_analyzer` 已可通过 Tool Runner 产生结构化 evidence；`flux_query_analyzer` 尚未接入真实 smoke 时可继续使用配置中的 mock/stub 工具替代，保证 action/event/evidence 链路稳定。
 
 LLM Gateway 已接入 `PLAN_ANALYSIS` 多轮决策。当前 `search_logs` 会按模型关键词重建 grep evidence 并进入下一轮，`run_tool` 会走白名单 Tool Runner 通道并进入下一轮，`final_answer` 会直接持久化结果。循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 控制；达到预算或重复 fingerprint 上限时会生成低置信度结果并正常终止。
 

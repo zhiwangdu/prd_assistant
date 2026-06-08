@@ -25,7 +25,7 @@
 
 ## 第 2 阶段：证据能力
 
-- Tool Runner MVP 已接入 Server；下一步配置并 smoke-test 真实 `flux_query_analyzer` 和 `influxql_analyzer`。
+- Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已完成本地 smoke，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
 - Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
 - Environment Collector 完成白名单 SSH/SCP 采集。
 - 所有结果关联 `actionId` 并使用稳定证据引用。

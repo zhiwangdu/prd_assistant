@@ -201,6 +201,8 @@ MVP 要求：
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
+- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
+- 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
@@ -260,7 +262,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。artifacts 响应在成功任务中包含 `toolResults`，每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
 
 以下 Analysis API 为规划接口，尚未实现：
 
