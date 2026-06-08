@@ -411,8 +411,8 @@ mod tests {
 
     use crate::{
         config::{
-            AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings, ToolsSettings,
+            AnalysisSettings, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings,
+            ServerSettings, StorageSettings, ToolsSettings,
         },
         models::{TaskSource, TaskStatus, UploadStatus},
     };
@@ -536,6 +536,7 @@ mod tests {
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
                 },
+                analysis: test_analysis_settings(),
             })
         }
 
@@ -563,6 +564,15 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn test_analysis_settings() -> AnalysisSettings {
+        AnalysisSettings {
+            max_rounds: 4,
+            max_llm_calls: 4,
+            max_actions: 6,
+            max_repeated_action_fingerprints: 1,
         }
     }
 }

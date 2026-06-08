@@ -336,8 +336,8 @@ mod tests {
     use crate::{
         api,
         config::{
-            AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings, ToolsSettings,
+            AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
         metadata::MetadataImportRequest,
         models::{TaskInput, UploadRecord, UploadStatus},
@@ -823,9 +823,19 @@ nodes:
             },
             tools: ToolsSettings::default(),
             llm,
+            analysis: test_analysis_settings(),
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
+    }
+
+    fn test_analysis_settings() -> AnalysisSettings {
+        AnalysisSettings {
+            max_rounds: 4,
+            max_llm_calls: 4,
+            max_actions: 6,
+            max_repeated_action_fingerprints: 1,
+        }
     }
 
     async fn create_test_upload(state: &Arc<AppState>, upload_id: &str, status: UploadStatus) {

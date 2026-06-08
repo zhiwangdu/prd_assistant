@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP 和 `PLAN_ANALYSIS` 单轮 action loop。当前仍未启用完整 LLM 多轮调查循环。
+已实现 Analysis State Store MVP 和 `PLAN_ANALYSIS` 多轮 action loop。当前仍未启用用户追问和审批。
 
 已落地：
 
@@ -17,14 +17,16 @@
 - model decision 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
-- 单轮消费 `search_logs`、`run_tool` 或 `final_answer`
+- 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
+- `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions`
+- 重复 action fingerprint 防护
+- 预算或重复动作终止时生成低置信度最终结果并进入 `SUCCEEDED`
 
 尚未实现：
 
-- 多轮 action loop
 - `WAITING_FOR_USER`
 - `WAITING_FOR_APPROVAL`
-- 预算终止和重复 action 防护
+- token、运行时间和每轮追问预算
 
 ## 输入
 
@@ -135,8 +137,8 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 ## 验收标准
 
 - 能在两轮以上的 stub 决策中执行动作并合并新证据。
+- 重复动作和预算耗尽能确定终止。
 - 能进入 `WAITING_FOR_USER`，接收回答后恢复。
 - 能进入 `WAITING_FOR_APPROVAL`，批准或拒绝后继续。
-- 重复动作和预算耗尽能确定终止。
 - 重启后可从持久化状态恢复。
 - 最终结果包含证据引用、不确定性和终止原因。

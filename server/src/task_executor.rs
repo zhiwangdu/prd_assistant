@@ -5,10 +5,10 @@ use tracing::{error, warn};
 
 use crate::{
     analysis_state,
-    config::LogAnalyzerSettings,
+    config::{AnalysisSettings, LogAnalyzerSettings},
     contracts::{ActionKind, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
     llm_gateway::{ActionDecision, AgentDecision},
-    models::{GrepResults, Manifest, TaskPhase, TaskRecord},
+    models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskPhase, TaskRecord},
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
         prepare_pipeline_run, read_tool_results, search_task, search_task_with_settings,
@@ -158,97 +158,92 @@ async fn plan_analysis_phase(
 ) -> anyhow::Result<DispatchOutcome> {
     let workspace = state.config.storage.workspace_dir(&task.task_id);
     analysis_state::ensure_initialized(&workspace, &task)?;
-    let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
-    let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
-    let tool_results = read_tool_results(&workspace).await?;
-    let metadata_context = match task.metadata_context_path.as_deref() {
-        Some(path) if std::path::Path::new(path) == workspace.join("metadata_context.json") => {
-            Some(read_json(&workspace.join("metadata_context.json")).await?)
+
+    loop {
+        let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
+        let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+        let tool_results = read_tool_results(&workspace).await?;
+        if let Some(reason) = analysis_budget_exhausted(&workspace, &state.config.analysis)? {
+            return complete_with_budget_limited_result(state, &task, &grep, reason).await;
         }
-        Some(_) => anyhow::bail!("task contains invalid metadataContextPath"),
-        None => None,
-    };
-    let decision = state
-        .llm
-        .decide_next_action(
-            &task.question,
-            &manifest,
-            &grep,
-            metadata_context.as_ref(),
-            &tool_results,
-        )
-        .await?;
-    record_model_decision(&workspace, &decision)?;
-    match decision {
-        AgentDecision::Action { decision } => execute_action_decision(state, &task, decision).await,
-        AgentDecision::FinalAnswer { result } => {
-            let result = result.into_result(&grep, &tool_results)?;
-            let output = persist_final_answer_decision_result(&workspace, result).await?;
-            state
-                .tasks
-                .succeed(
-                    &task.task_id,
-                    TaskPhase::PlanAnalysis,
-                    workspace.join("manifest.json").display().to_string(),
-                    workspace.join("grep_results.json").display().to_string(),
-                    output.result_json_path.display().to_string(),
-                    output.result_markdown_path.display().to_string(),
-                )
-                .await?;
-            Ok(DispatchOutcome::Complete)
+        let metadata_context = match task.metadata_context_path.as_deref() {
+            Some(path) if std::path::Path::new(path) == workspace.join("metadata_context.json") => {
+                Some(read_json(&workspace.join("metadata_context.json")).await?)
+            }
+            Some(_) => anyhow::bail!("task contains invalid metadataContextPath"),
+            None => None,
+        };
+        let decision = state
+            .llm
+            .decide_next_action(
+                &task.question,
+                &manifest,
+                &grep,
+                metadata_context.as_ref(),
+                &tool_results,
+            )
+            .await?;
+        record_model_decision(&workspace, &decision)?;
+        match decision {
+            AgentDecision::Action { decision } => {
+                let action = action_from_decision(&task, decision);
+                if let Some(reason) =
+                    action_budget_exhausted(&workspace, &state.config.analysis, &action)?
+                {
+                    let grep =
+                        read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+                    return complete_with_budget_limited_result(state, &task, &grep, reason).await;
+                }
+                execute_agent_action(state.clone(), &task, action).await?;
+            }
+            AgentDecision::FinalAnswer { result } => {
+                let result = result.into_result(&grep, &tool_results)?;
+                let output = persist_final_answer_decision_result(&workspace, result).await?;
+                state
+                    .tasks
+                    .succeed(
+                        &task.task_id,
+                        TaskPhase::PlanAnalysis,
+                        workspace.join("manifest.json").display().to_string(),
+                        workspace.join("grep_results.json").display().to_string(),
+                        output.result_json_path.display().to_string(),
+                        output.result_markdown_path.display().to_string(),
+                    )
+                    .await?;
+                return Ok(DispatchOutcome::Complete);
+            }
         }
     }
 }
 
-async fn execute_action_decision(
+async fn execute_agent_action(
     state: Arc<AppState>,
     task: &TaskRecord,
-    decision: ActionDecision,
-) -> anyhow::Result<DispatchOutcome> {
-    match decision.kind {
+    action: AgentAction,
+) -> anyhow::Result<()> {
+    match action.kind {
         ActionKind::SearchLogs => {
-            run_search_logs_action(state.clone(), task, &decision).await?;
-            continue_with(
-                &state,
-                &task.task_id,
-                TaskPhase::PlanAnalysis,
-                TaskPhase::GenerateResult,
-            )
-            .await
+            run_search_logs_action(state.clone(), task, &action).await?;
+            Ok(())
         }
         ActionKind::RunTool => {
-            let action = action_from_decision(task, decision);
             let workspace = state.config.storage.workspace_dir(&task.task_id);
             let context = TaskContext::from_record(task, workspace, None);
             let artifact = state.tool_runner.execute(&context, &action).await?;
             analysis_state::record_tool_artifact(&context.workspace, &action, &artifact)?;
-            continue_with(
-                &state,
-                &task.task_id,
-                TaskPhase::PlanAnalysis,
-                TaskPhase::GenerateResult,
-            )
-            .await
+            Ok(())
         }
-        ActionKind::FinalAnswer => {
-            continue_with(
-                &state,
-                &task.task_id,
-                TaskPhase::PlanAnalysis,
-                TaskPhase::GenerateResult,
-            )
-            .await
-        }
-        _ => anyhow::bail!("unsupported action decision type {:?}", decision.kind),
+        ActionKind::FinalAnswer => Ok(()),
+        _ => anyhow::bail!("unsupported action decision type {:?}", action.kind),
     }
 }
 
 async fn run_search_logs_action(
     state: Arc<AppState>,
     task: &TaskRecord,
-    decision: &ActionDecision,
+    action: &AgentAction,
 ) -> anyhow::Result<()> {
-    let keywords = decision
+    let keywords = action
         .input
         .get("keywords")
         .and_then(|value| value.as_array())
@@ -263,7 +258,7 @@ async fn run_search_logs_action(
                 .ok_or_else(|| anyhow::anyhow!("search_logs keyword must be a non-empty string"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let max_matches = decision
+    let max_matches = action
         .input
         .get("maxMatches")
         .and_then(|value| value.as_u64())
@@ -279,8 +274,111 @@ async fn run_search_logs_action(
     .await?;
     let workspace = state.config.storage.workspace_dir(&task.task_id);
     let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
-    analysis_state::record_log_search(&workspace, &grep)?;
+    analysis_state::record_log_search_action(&workspace, action, &grep)?;
     Ok(())
+}
+
+fn analysis_budget_exhausted(
+    workspace: &std::path::Path,
+    settings: &AnalysisSettings,
+) -> anyhow::Result<Option<String>> {
+    let snapshot = analysis_state::read_snapshot(workspace)?;
+    let budget = snapshot.state.budget;
+    if budget.rounds >= settings.max_rounds {
+        return Ok(Some(format!(
+            "analysis round budget exhausted: {}/{}",
+            budget.rounds, settings.max_rounds
+        )));
+    }
+    if budget.llm_calls >= settings.max_llm_calls {
+        return Ok(Some(format!(
+            "LLM call budget exhausted: {}/{}",
+            budget.llm_calls, settings.max_llm_calls
+        )));
+    }
+    Ok(None)
+}
+
+fn action_budget_exhausted(
+    workspace: &std::path::Path,
+    settings: &AnalysisSettings,
+    action: &AgentAction,
+) -> anyhow::Result<Option<String>> {
+    let snapshot = analysis_state::read_snapshot(workspace)?;
+    let budget = snapshot.state.budget;
+    if budget.actions >= settings.max_actions {
+        return Ok(Some(format!(
+            "action budget exhausted: {}/{}",
+            budget.actions, settings.max_actions
+        )));
+    }
+    let repeated = snapshot
+        .state
+        .actions
+        .iter()
+        .filter(|record| record.fingerprint == action.fingerprint)
+        .count() as u32;
+    if repeated >= settings.max_repeated_action_fingerprints {
+        return Ok(Some(format!(
+            "repeated action fingerprint blocked after {repeated} completed attempt(s): {}",
+            action.fingerprint
+        )));
+    }
+    Ok(None)
+}
+
+async fn complete_with_budget_limited_result(
+    state: Arc<AppState>,
+    task: &TaskRecord,
+    grep: &GrepResults,
+    reason: String,
+) -> anyhow::Result<DispatchOutcome> {
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let result = budget_limited_result(&task.question, grep, &reason);
+    let output = persist_final_answer_decision_result(&workspace, result).await?;
+    state
+        .tasks
+        .succeed(
+            &task.task_id,
+            TaskPhase::PlanAnalysis,
+            workspace.join("manifest.json").display().to_string(),
+            workspace.join("grep_results.json").display().to_string(),
+            output.result_json_path.display().to_string(),
+            output.result_markdown_path.display().to_string(),
+        )
+        .await?;
+    Ok(DispatchOutcome::Complete)
+}
+
+fn budget_limited_result(question: &str, grep: &GrepResults, reason: &str) -> AnalysisResult {
+    let symptoms = grep
+        .matches
+        .iter()
+        .take(3)
+        .map(|item| format!("{}:{} {}", item.file, item.line, item.text))
+        .collect::<Vec<_>>();
+    let likely_root_causes = if grep.matches.is_empty() {
+        Vec::new()
+    } else {
+        vec![RootCause {
+            cause: "分析在预算或重复动作防护下提前终止，当前只能确认已有日志异常与问题相关"
+                .to_string(),
+            evidence_refs: vec!["grep_results.json#matches/0".to_string()],
+        }]
+    };
+    AnalysisResult {
+        schema_version: 1,
+        summary: format!("分析已受控终止：{reason}。用户问题：{}", question.trim()),
+        symptoms,
+        likely_root_causes,
+        next_checks: vec![
+            "提高 analysis 预算后重新分析，或补充更精确的问题和时间窗口".to_string(),
+            "检查 analysis_events.jsonl 中已执行动作和被阻止的重复 fingerprint".to_string(),
+        ],
+        fix_suggestions: vec!["当前结果置信度较低，建议先补充证据后再实施修复".to_string()],
+        missing_information: vec![reason.to_string()],
+        confidence: Confidence::Low,
+    }
 }
 
 fn action_from_decision(task: &TaskRecord, decision: ActionDecision) -> AgentAction {
@@ -421,8 +519,9 @@ mod tests {
     use super::*;
     use crate::{
         config::{
-            AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings, ToolMatchSettings, ToolSettings, ToolsSettings,
+            AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
+            ToolsSettings,
         },
         models::{TaskInput, TaskSource, TaskStatus},
         pipeline::{extract_task, prepare_pipeline_run, search_task},
@@ -527,6 +626,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(grep.keywords, vec!["error", "timeout", "failed"]);
+        let snapshot = analysis_state::read_snapshot(&fixture.workspace).unwrap();
+        assert_eq!(snapshot.state.budget.rounds, 2);
+        assert_eq!(snapshot.state.budget.actions, 1);
+        assert!(snapshot.state.evidence.iter().any(|record| record
+            .action_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("act_search_logs_"))));
+        let result: AnalysisResult = serde_json::from_str(
+            &fs::read_to_string(fixture.workspace.join("result.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(result
+            .missing_information
+            .iter()
+            .any(|item| item.contains("repeated action fingerprint blocked")));
     }
 
     struct Fixture {
@@ -589,6 +703,12 @@ mod tests {
                     request_timeout_seconds: 1,
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
+                },
+                analysis: AnalysisSettings {
+                    max_rounds: 4,
+                    max_llm_calls: 4,
+                    max_actions: 6,
+                    max_repeated_action_fingerprints: 1,
                 },
             });
             config.prepare_dirs().unwrap();

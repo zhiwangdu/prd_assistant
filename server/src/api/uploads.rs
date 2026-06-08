@@ -318,8 +318,8 @@ mod tests {
     use crate::{
         api,
         config::{
-            AppConfig, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, ServerSettings,
-            StorageSettings, ToolsSettings,
+            AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
         state::AppState,
     };
@@ -455,8 +455,18 @@ mod tests {
                 max_input_chars: 60_000,
                 max_output_tokens: 100,
             },
+            analysis: test_analysis_settings(),
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
+    }
+
+    fn test_analysis_settings() -> AnalysisSettings {
+        AnalysisSettings {
+            max_rounds: 4,
+            max_llm_calls: 4,
+            max_actions: 6,
+            max_repeated_action_fingerprints: 1,
+        }
     }
 }

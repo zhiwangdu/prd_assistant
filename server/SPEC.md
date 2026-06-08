@@ -22,7 +22,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
-- `PLAN_ANALYSIS` 单轮 LLM action decision
+- `PLAN_ANALYSIS` 多轮 LLM action loop、预算和重复 fingerprint 防护
 - Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema
 - task artifact 查询
@@ -152,10 +152,11 @@ background executor
   -> persist RUN_TOOL
   -> RUN_TOOL: rule-based configured tool actions, writes tool_results
   -> persist PLAN_ANALYSIS
-  -> PLAN_ANALYSIS: one LLM action decision
+  -> PLAN_ANALYSIS: bounded LLM action loop
       - final_answer: persist result.json/result.md and SUCCEEDED
-      - search_logs: rebuild grep_results.json from action keywords, then GENERATE_RESULT
-      - run_tool: execute whitelisted tool action, then GENERATE_RESULT
+      - search_logs: rebuild grep_results.json from action keywords, then next round
+      - run_tool: execute whitelisted tool action, then next round
+      - budget/repeated fingerprint: persist low-confidence result and SUCCEEDED
   -> persist GENERATE_RESULT
   -> GENERATE_RESULT: LLM Gateway call using grep/metadata/tool evidence, with one correction retry for result schema errors
   -> append analysis state/events
@@ -167,7 +168,7 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`PLAN_ANALYSIS` 的 ActionDecision 当前只开放 `search_logs`、`run_tool` 和 `final_answer`；暂不开放 `ask_user`、`collect_environment`、`collect_code_evidence`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会拒绝。`GENERATE_RESULT` 解析/schema 错误会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 Provider/decision schema 错误会进入 `FAILED / PLAN_ANALYSIS`。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`PLAN_ANALYSIS` 的 ActionDecision 当前只开放 `search_logs`、`run_tool` 和 `final_answer`；暂不开放 `ask_user`、`collect_environment`、`collect_code_evidence`。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名，以及单字符串列表字段会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会拒绝。`GENERATE_RESULT` 解析/schema 错误会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 Provider/decision schema 错误会进入 `FAILED / PLAN_ANALYSIS`。
 
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 
@@ -195,7 +196,7 @@ tool_results/<action_id>/
 
 当工具 stdout 是 JSON 时，Server 会解析 `summary` 和 `findings` 并写入 `tool_results/<action_id>/result.json`。`findings` 条目包含可选 `severity`、`file`、`line` 和必填 `message`。stdout 不是 JSON 或字段不匹配时不改变工具执行状态，仍保留 stdout/stderr 并使用通用 summary。
 
-Analysis State Store 当前记录 pipeline 和单轮 `PLAN_ANALYSIS` 决策的审计状态，尚不驱动完整多轮 action loop。Server 会写入：
+Analysis State Store 当前记录 pipeline 和多轮 `PLAN_ANALYSIS` 决策的审计状态。Server 会写入：
 
 ```text
 analysis_state.json
@@ -238,6 +239,10 @@ persist task
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
 - `llm.max_output_tokens`
+- `analysis.max_rounds`，默认 4，非正值按 1
+- `analysis.max_llm_calls`，默认 4，非正值按 1
+- `analysis.max_actions`，默认 6，非正值按 1
+- `analysis.max_repeated_action_fingerprints`，默认 1，非正值按 1
 - `tools.<name>.enabled`
 - `tools.<name>.path`
 - `tools.<name>.path_env`

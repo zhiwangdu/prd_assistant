@@ -4,7 +4,7 @@ Last updated: 2026-06-08
 
 ## Status Summary
 
-LogAgent MVP has a working upload-to-single-LLM-result loop and a documented multi-round Analysis Agent architecture.
+LogAgent MVP has a working upload-to-bounded-multi-round-analysis loop and a documented path toward user questions, approvals, and richer evidence modules.
 
 Current runnable loop:
 
@@ -16,9 +16,9 @@ Chrome Extension or WEBUI
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
   -> analysis_state.json / analysis_events.jsonl audit snapshot
-  -> PLAN_ANALYSIS single LLM action/final-answer decision
-  -> optional action-driven search_logs or run_tool
-  -> final answer or fallback result generation
+  -> PLAN_ANALYSIS bounded multi-round LLM action/final-answer loop
+  -> optional action-driven search_logs or run_tool, with repeated fingerprint protection
+  -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
 ```
 
@@ -81,10 +81,11 @@ Chrome Extension or WEBUI
 - Rejects stale phase advancement and inconsistent persisted `RUNNING`/`SUCCEEDED` state.
 - Defines shared `TaskContext`, Action, EvidenceArtifact, and EvidenceProvider contracts for Tool Runner and later evidence modules.
 - Runs optional rule-based Tool Runner actions during `RUN_TOOL` and exposes `toolResults` in artifacts.
-- Runs `PLAN_ANALYSIS` after rule-based tools and consumes one LLM `action | final_answer` decision.
-- Executes `search_logs` action by rebuilding `grep_results.json` with model-provided keywords, then continues to result generation.
-- Executes LLM-selected `run_tool` action through the same whitelist Tool Runner channel, then continues to result generation.
+- Runs `PLAN_ANALYSIS` after rule-based tools and consumes bounded multi-round LLM `action | final_answer` decisions.
+- Executes `search_logs` action by rebuilding `grep_results.json` with model-provided keywords, then continues to the next analysis round.
+- Executes LLM-selected `run_tool` action through the same whitelist Tool Runner channel, then continues to the next analysis round.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
+- Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 - `GENERATE_RESULT` now reads `tool_results/*/result.json` and passes Tool Runner summary/findings into LLM Gateway as citeable evidence.
@@ -221,8 +222,8 @@ tool_results/<action_id>/
 - Adds bounded Tool Runner summary/findings to the prompt after grep evidence; stdout/stderr raw output is not sent.
 - Validates result schema, confidence, and task-local grep evidence references.
 - Validates task-local Tool Runner finding evidence references.
-- Provides ActionDecision / FinalAnswer dual-mode schema and parser for the single-turn action loop.
-- `PLAN_ANALYSIS` now calls the dual-mode action decision entrypoint once per task before final fallback generation.
+- Provides ActionDecision / FinalAnswer dual-mode schema and parser for the multi-round action loop.
+- `PLAN_ANALYSIS` now calls the dual-mode action decision entrypoint until final answer, budget exhaustion, or repeated fingerprint termination.
 - ActionDecision currently accepts `search_logs`, `run_tool`, and `final_answer`; unopened actions such as environment collection are rejected.
 - Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
 - Normalizes real-model schema drift for string root causes with embedded evidence refs and single-string list fields.
@@ -235,8 +236,8 @@ tool_results/<action_id>/
 - Current pipeline records analysis initialization, manifest evidence, grep evidence, Tool Runner action/evidence, model decision, final result, and failure events.
 - Workspaces now include `analysis_state.json` and append-only `analysis_events.jsonl`.
 - `GET /api/tasks/:task_id/analysis` returns the current state snapshot and event list.
-- Single-turn Action Loop MVP is enabled through `PLAN_ANALYSIS` for `search_logs`, `run_tool`, and `final_answer`.
-- Full LLM-driven action loop, user questions, approvals, and budget termination remain planned.
+- Multi-round Action Loop MVP is enabled through `PLAN_ANALYSIS` for `search_logs`, `run_tool`, and `final_answer`.
+- User questions, approvals, token/runtime budgets, and richer state facts/hypotheses remain planned.
 
 ### Local startup
 
@@ -292,7 +293,7 @@ Task, upload, and LLM verification:
 - Isolated HTTP restart smoke on port 50996 uploaded 6/12 bytes, restarted the Server, resumed from persisted offset 6, completed at 12 bytes, and created a task that reached `SUCCEEDED`.
 - Task Store reload, corruption failure, reverse chronological listing, terminal-state protection, and interrupted task recovery.
 - Executor recovery tests resume directly from `SEARCH_LOGS` and `GENERATE_RESULT`; Action/Evidence serialization and safe relative artifact paths are covered.
-- Tool Runner, LLM, and Analysis State tests cover config validation, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, and tool finding evidence ref validation.
+- Tool Runner, LLM, and Analysis State tests cover config validation, analysis budget defaults, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, multi-round `PLAN_ANALYSIS`, repeated fingerprint termination, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, and tool finding evidence ref validation.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.

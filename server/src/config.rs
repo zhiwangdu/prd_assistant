@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
     pub llm: LlmSettings,
+    pub analysis: AnalysisSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,14 @@ pub struct LlmSettings {
     pub max_output_tokens: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct AnalysisSettings {
+    pub max_rounds: u32,
+    pub max_llm_calls: u32,
+    pub max_actions: u32,
+    pub max_repeated_action_fingerprints: u32,
+}
+
 impl std::fmt::Debug for LlmSettings {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -102,6 +111,7 @@ struct ConfigFile {
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
     llm: Option<LlmConfig>,
+    analysis: Option<AnalysisConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -189,6 +199,18 @@ struct LlmConfig {
     max_output_tokens: u32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct AnalysisConfig {
+    #[serde(default = "default_analysis_max_rounds")]
+    max_rounds: u32,
+    #[serde(default = "default_analysis_max_llm_calls")]
+    max_llm_calls: u32,
+    #[serde(default = "default_analysis_max_actions")]
+    max_actions: u32,
+    #[serde(default = "default_analysis_max_repeated_action_fingerprints")]
+    max_repeated_action_fingerprints: u32,
+}
+
 impl AppConfig {
     pub fn prepare_dirs(&self) -> anyhow::Result<()> {
         fs::create_dir_all(self.storage.uploads_dir())?;
@@ -240,6 +262,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             log_analyzer: None,
             tools: BTreeMap::new(),
             llm: None,
+            analysis: None,
         }
     } else {
         serde_yaml::from_str(&raw).context("invalid YAML")?
@@ -253,6 +276,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
+    let analysis = parsed.analysis.unwrap_or_else(default_analysis_config);
 
     let mut api_keys = Vec::new();
     for api_key in auth.api_keys {
@@ -327,6 +351,12 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             request_timeout_seconds: llm.request_timeout_seconds.max(1),
             max_input_chars: llm.max_input_chars.max(1024),
             max_output_tokens: llm.max_output_tokens.max(1),
+        },
+        analysis: AnalysisSettings {
+            max_rounds: analysis.max_rounds.max(1),
+            max_llm_calls: analysis.max_llm_calls.max(1),
+            max_actions: analysis.max_actions.max(1),
+            max_repeated_action_fingerprints: analysis.max_repeated_action_fingerprints.max(1),
         },
     }))
 }
@@ -442,6 +472,15 @@ fn default_llm_config() -> LlmConfig {
     }
 }
 
+fn default_analysis_config() -> AnalysisConfig {
+    AnalysisConfig {
+        max_rounds: default_analysis_max_rounds(),
+        max_llm_calls: default_analysis_max_llm_calls(),
+        max_actions: default_analysis_max_actions(),
+        max_repeated_action_fingerprints: default_analysis_max_repeated_action_fingerprints(),
+    }
+}
+
 fn default_tool_enabled() -> bool {
     true
 }
@@ -549,6 +588,22 @@ fn default_llm_max_output_tokens() -> u32 {
     4096
 }
 
+fn default_analysis_max_rounds() -> u32 {
+    4
+}
+
+fn default_analysis_max_llm_calls() -> u32 {
+    4
+}
+
+fn default_analysis_max_actions() -> u32 {
+    6
+}
+
+fn default_analysis_max_repeated_action_fingerprints() -> u32 {
+    1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,6 +656,16 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("LLM model must not be empty"));
+    }
+
+    #[test]
+    fn analysis_config_has_bounded_defaults() {
+        let config = default_analysis_config();
+
+        assert_eq!(config.max_rounds, 4);
+        assert_eq!(config.max_llm_calls, 4);
+        assert_eq!(config.max_actions, 6);
+        assert_eq!(config.max_repeated_action_fingerprints, 1);
     }
 
     #[test]

@@ -216,6 +216,39 @@ pub fn record_log_search(workspace: &Path, grep: &GrepResults) -> anyhow::Result
     )
 }
 
+pub fn record_log_search_action(
+    workspace: &Path,
+    action: &crate::contracts::AgentAction,
+    grep: &GrepResults,
+) -> anyhow::Result<()> {
+    let evidence_refs = (0..grep.matches.len())
+        .map(|index| format!("grep_results.json#matches/{index}"))
+        .collect::<Vec<_>>();
+    let evidence = AnalysisEvidenceRecord {
+        evidence_type: AnalysisEvidenceType::LogSearch,
+        artifact_path: "grep_results.json".to_string(),
+        action_id: Some(action.action_id.clone()),
+        summary: format!("search_logs action recorded {} matches", grep.matches.len()),
+        evidence_refs,
+        created_at: Utc::now(),
+    };
+    append_action_event(
+        workspace,
+        TaskPhase::PlanAnalysis,
+        action.action_id.clone(),
+        action.fingerprint.clone(),
+        "search_logs".to_string(),
+        AnalysisActionStatus::Succeeded,
+        format!("search_logs action {} completed", action.action_id),
+        evidence,
+        serde_json::json!({
+            "searchAction": action,
+            "keywords": grep.keywords,
+            "totalMatches": grep.total_matches,
+        }),
+    )
+}
+
 pub fn record_tool_artifact(
     workspace: &Path,
     action: &crate::contracts::AgentAction,

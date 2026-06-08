@@ -24,7 +24,7 @@ LLM Gateway 不负责：
 
 ## 当前实现
 
-当前作为 Server 内部 Rust 模块实现了单次最终结果生成和单轮 action decision：
+当前作为 Server 内部 Rust 模块实现了单次最终结果生成和多轮 action decision：
 
 ```text
 question + manifest.json + grep_results.json + metadata_context.json + tool_results
@@ -34,7 +34,7 @@ question + manifest.json + grep_results.json + metadata_context.json + tool_resu
   -> result.json / result.md
 ```
 
-Task Executor 在 `PLAN_ANALYSIS` 阶段会调用 ActionDecision / FinalAnswer 双模式入口。当前是单轮 MVP：`final_answer` 直接持久化结果，`search_logs` 和 `run_tool` 执行一次动作后进入旧的 `GENERATE_RESULT` 兜底生成路径。当前不记录模型用量和 Provider request id；这些能力留给多轮 Analysis Agent 阶段。当前会对最终结果的解析/schema 错误做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
+Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAnswer 双模式入口。`final_answer` 直接持久化结果，`search_logs` 和 `run_tool` 执行动作后回到下一轮，直到最终答案、预算耗尽或重复 fingerprint 被阻止。当前不记录 Provider request id；该能力留给后续审计阶段。当前会对最终结果的解析/schema 错误做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。多个 JSON object、无 JSON object 或 schema 不合法仍会拒绝。
 
@@ -89,7 +89,7 @@ llm:
 
 ## 结构化响应
 
-当前 Task Executor 已在 `PLAN_ANALYSIS` 启用单轮 `action | final_answer` 响应。完整多轮 Agent、预算终止、用户追问和审批尚未启用。
+当前 Task Executor 已在 `PLAN_ANALYSIS` 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、LLM 调用、action 数和重复 fingerprint。用户追问和审批尚未启用。
 
 第一版已支持 action：
 

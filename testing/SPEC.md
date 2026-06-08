@@ -22,7 +22,7 @@
 - Server 单测覆盖单字符串形式 `missingInformation` 规范化为字符串数组。
 - Server 单测覆盖 LLM schema 修正重试提示和字段级解析错误消息。
 - Server 单测覆盖 LLM Gateway ActionDecision / FinalAnswer 双模式解析、stub action decision 和未开放 action 拒绝。
-- Server 单测覆盖 `PLAN_ANALYSIS` 单轮 stub `search_logs` action 和 action keywords 驱动的 grep 重建。
+- Server 单测覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 驱动的 grep 重建、重复 fingerprint 防护和预算终止结果。
 - Server Task API 并发单测使用进程内原子序号生成临时目录，避免并发测试之间清理对方 workspace。
 - Server 单测覆盖 Analysis State Store state/event 持久化和 `/api/tasks/:task_id/analysis`。
 - Server 单测覆盖静态 LLM 模型名、`model_env` 优先级以及缺失/空环境变量校验。

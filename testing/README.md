@@ -72,7 +72,7 @@ environment approval -> collect stub -> Agent continuation -> result
 - Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏、自然语言包裹的唯一 JSON object，以及多个 JSON object 的拒绝路径。
 - LLM Gateway 测试覆盖 schema 修正重试提示，以及解析错误中包含具体字段/类型原因。
 - LLM Gateway 测试覆盖 ActionDecision / FinalAnswer 双模式解析、stub action decision、未开放 action 拒绝和 action input 校验。
-- Executor 测试覆盖 `PLAN_ANALYSIS` 单轮 stub `search_logs` action、action keywords 重建 grep evidence 和后续结果生成。
+- Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 - Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 

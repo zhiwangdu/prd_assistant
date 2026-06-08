@@ -16,7 +16,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `code_repos`
 - `environments`
 - `metadata`
-- `analysis_agent`
+- `analysis`
 - `webui`
 
 ## 示例
@@ -70,15 +70,11 @@ tools:
         - "flux"
         - "query"
 
-analysis_agent:
-  max_rounds: 12
-  max_llm_calls: 12
-  max_actions: 20
-  max_repeated_action: 2
-  max_questions_per_round: 3
-  max_running_seconds: 900
-  approval_required_actions:
-    - collect_environment
+analysis:
+  max_rounds: 4
+  max_llm_calls: 4
+  max_actions: 6
+  max_repeated_action_fingerprints: 1
 
 embedding:
   provider: "openai_compatible"
@@ -131,7 +127,8 @@ metadata:
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
-- 当前单次结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
+- 当前 `PLAN_ANALYSIS` 多轮循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 限制；非正值按 1 处理。
+- 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。

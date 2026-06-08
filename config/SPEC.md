@@ -49,6 +49,10 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
+- `analysis.max_rounds`
+- `analysis.max_llm_calls`
+- `analysis.max_actions`
+- `analysis.max_repeated_action_fingerprints`
 
 待扩展：
 
@@ -56,7 +60,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - SSH/SCP 测试环境节点
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
 - LLM 多轮重试、用量和 request id 审计
-- Analysis Agent 轮数、调用、动作、重复动作、追问和运行时间预算
+- Analysis Agent 追问、运行时间和 approval 预算
 - action 审批策略
 - Case Store 存储路径
 
@@ -82,6 +86,7 @@ auth:
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
-- 预算字段必须大于零且有上限；未知 action 类型启动失败。
+- Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
+- 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。
 - README 和 SPEC 在配置字段变更时同步更新。

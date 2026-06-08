@@ -145,7 +145,7 @@ flowchart TD
 - Tool Runner MVP 支持白名单工具配置、规则版多输入 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact 和 JSON stdout summary/findings 解析。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
-- LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入 ActionDecision / FinalAnswer 单轮决策。
+- LLM Gateway 支持 stub 和 OpenAI-compatible Chat Completions，基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
 - WEBUI 使用 React + Vite，支持上传、任务证据、单次 LLM 结果、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
@@ -153,7 +153,7 @@ flowchart TD
 - 接入真实 `flux_query_analyzer`、`influxql_analyzer` 工具路径和规则。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 测试环境通过 SSH/SCP 采集日志和运行环境信息。
-- Analysis Agent 持久化上下文，执行多轮调查、用户追问、动作审批和预算终止。
+- Analysis Agent 用户追问和动作审批。
 - LLM Gateway 扩展为多轮 action/final-answer 协议、用量审计和有限重试。
 - Case Store 沉淀和召回历史 Case。
 
