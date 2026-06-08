@@ -182,6 +182,8 @@ tool_results/<action_id>/
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
 - Real InfluxQL Tool Runner smoke on port 50999 previously used a local analyzer path; current local setup exposes the analyzer as `/usr/bin/influxql-analyzer`, a symlink to `/home/duzhiwang/workspace/influxql/influxql-analyzer`. Analyzer docs and code live under `/home/duzhiwang/workspace/influxql`.
 - The prior real InfluxQL smoke task `task_1780932701757_2` reached `SUCCEEDED` and artifacts contained `toolResults[0].findings` for `no_time_filter`, `large_limit`, `group_by_high_cardinality_risk`, `has_wildcard`, and `meta_query`.
+- InfluxQL CompareReport stdout mapping now includes batch summaries, statement/QPS deltas, fingerprint count/QPS A->B deltas, rule count/QPS A->B deltas, rules, normalized query, and severity classification.
+- Local search did not find `flux_query_analyzer` or `flux-query-analyzer`; real Flux smoke remains blocked until the binary is installed.
 
 ### WEBUI
 
@@ -325,6 +327,7 @@ Task, upload, and LLM verification:
 - Tool Runner, LLM, and Analysis State tests cover config validation, analysis budget defaults, `max_input_files`, rule-based multi-input selection, stable action ids, fake tool execution, JSON stdout summary/findings parsing, non-JSON fallback, timeout evidence, idempotent reuse, dispatcher `RUN_TOOL`, multi-round `PLAN_ANALYSIS`, repeated fingerprint termination, artifacts API `toolResults`, `/analysis` API, LLM prompt inclusion of tool findings, ActionDecision / FinalAnswer parsing, bare final-result JSON and nested final-answer wrapper normalization, and tool finding evidence ref validation.
 - Case Store tests cover local JSON persistence, task final-result confirmation, keyword recall, duplicate task confirmation protection, and disabling cases from default recall.
 - LLM Gateway tests cover Case context prompt inclusion and the task API test verifies recalled Case context appears in artifacts.
+- Tool Runner tests cover enhanced InfluxQL CompareReport delta summary/findings.
 - Pipeline rerun removes stale derived files and rebuilds evidence from raw snapshots.
 - Task API covers `202`, list/detail, `404`, and artifacts `409`.
 - Stub task execution reaches `SUCCEEDED`, writes result files, and serves the result API.
@@ -388,7 +391,7 @@ Current product-loop Case Store slice verification:
    - evidence display and navigation
    - broader final result confirmation polish after the Case Store MVP
    - repeatable local smoke with `/usr/bin/influxql-analyzer`
-2. Connect and smoke-test real `flux_query_analyzer`, then expand `influxql_analyzer` compare mode delta mapping.
+2. Install/connect and smoke-test real `flux_query_analyzer`; run a real `influxql_analyzer` compare-mode smoke and tune delta mapping if needed.
 3. Extend Case Store with embedding recall and a formal Analysis Agent evidence bundle after the product loop is stable.
 4. Implement Code Evidence after the product loop is stable:
    - map product/version to branch/tag/ref

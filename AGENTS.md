@@ -203,7 +203,7 @@ data_dir/
 ## 近期开发优先级
 
 1. 按当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环。
-2. 配置并 smoke-test 真实 `flux_query_analyzer`，扩展 `influxql_analyzer` compare mode delta 映射。
+2. 配置并 smoke-test 真实 `flux_query_analyzer`；对真实 `influxql_analyzer` compare mode 再做 smoke 并按需微调 delta 映射。
 3. 完善 Analysis Agent 多轮动作、追问、审批、预算终止、恢复幂等和产品化交互。
 4. Case Store embedding 召回和 Analysis Agent evidence 注入。
 5. Code Evidence 支持版本到代码 ref 映射，并在独立 worktree/cache 中只读检索。

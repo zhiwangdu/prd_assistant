@@ -93,7 +93,9 @@ tools:
 - 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
 - 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置；当前本机推荐直接调用 `/usr/bin/influxql-analyzer`。
 - 已适配真实 `influxql-analyzer` Report stdout：`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`。
+- 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - 当前 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，该路径是指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer` 的符号链接；相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
+- 当前本机尚未找到 `flux_query_analyzer` / `flux-query-analyzer` 二进制，因此真实 Flux 工具 smoke 仍等待工具安装。
 
 ## 本地真实工具 smoke
 

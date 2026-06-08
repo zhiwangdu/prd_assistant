@@ -70,6 +70,15 @@ tool_results/
 - `realtime_query.non_realtime` / `unknown` 进入实时性分类 findings。
 - 有规则命中的高频 fingerprint 进入低优先级 query statistics findings。
 
+真实 `influxql-analyzer` CompareReport stdout 也会被专门适配：
+
+- `statement_delta`、`qps_delta`、`batch_a` 和 `batch_b` 进入 summary。
+- `new_fingerprints` / `removed_fingerprints` / `changed_fingerprints` 进入 findings，包含 statement type、count A->B、qps A->B、delta、rules 和 normalized query。
+- `rule_deltas` 进入 findings，包含 rule、count A->B 和 qps A->B。
+- 新增 fingerprint 和正向规则增长默认 high severity，移除 fingerprint 默认 low severity。
+
+当前本机尚未安装 `flux_query_analyzer` / `flux-query-analyzer`，真实 Flux smoke 需要等待二进制就绪后再执行。
+
 stdout 不是 JSON 或字段不匹配时，不判定为工具失败，只保留 stdout/stderr 并生成通用 summary。
 
 LLM Gateway 会读取 result artifact 中的 summary/findings。finding 的最终答案引用格式固定为：

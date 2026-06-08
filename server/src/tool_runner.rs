@@ -511,30 +511,155 @@ fn parse_influxql_compare_report(
 ) -> ParsedToolOutput {
     let statement_delta = number_to_string(object.get("statement_delta")).unwrap_or_default();
     let qps_delta = number_to_string(object.get("qps_delta")).unwrap_or_default();
-    let summary =
-        format!("influxql compare report: statementDelta={statement_delta}, qpsDelta={qps_delta}");
+    let batch_a = compare_batch_summary(object.get("batch_a"));
+    let batch_b = compare_batch_summary(object.get("batch_b"));
+    let summary = format!(
+        "influxql compare report: statementDelta={statement_delta}, qpsDelta={qps_delta}, batchA={batch_a}, batchB={batch_b}"
+    );
     let mut findings = Vec::new();
-    for (key, label) in [
-        ("new_fingerprints", "new fingerprint"),
-        ("removed_fingerprints", "removed fingerprint"),
-        ("changed_fingerprints", "changed fingerprint"),
-        ("rule_deltas", "rule delta"),
-    ] {
-        if let Some(items) = object.get(key).and_then(|value| value.as_array()) {
-            for item in items.iter().take(5) {
-                findings.push(ToolFinding {
-                    severity: Some("medium".to_string()),
-                    file: None,
-                    line: None,
-                    message: format!("{label}: {}", compact_json(item)),
-                });
-            }
-        }
-    }
+    findings.extend(compare_fingerprint_findings(
+        object,
+        "new_fingerprints",
+        "new fingerprint",
+    ));
+    findings.extend(compare_fingerprint_findings(
+        object,
+        "removed_fingerprints",
+        "removed fingerprint",
+    ));
+    findings.extend(compare_fingerprint_findings(
+        object,
+        "changed_fingerprints",
+        "changed fingerprint",
+    ));
+    findings.extend(compare_rule_delta_findings(object));
 
     ParsedToolOutput {
         summary: Some(summary),
         findings,
+    }
+}
+
+fn compare_batch_summary(value: Option<&serde_json::Value>) -> String {
+    let Some(object) = value.and_then(|value| value.as_object()) else {
+        return "unknown".to_string();
+    };
+    let statements = number_to_string(object.get("total_statements")).unwrap_or_else(|| "0".into());
+    let parse_errors =
+        number_to_string(object.get("parse_error_count")).unwrap_or_else(|| "0".into());
+    let qps = number_to_string(object.get("qps")).unwrap_or_else(|| "0".into());
+    let duration =
+        number_to_string(object.get("effective_duration_seconds")).unwrap_or_else(|| "0".into());
+    format!("statements={statements}, parseErrors={parse_errors}, qps={qps}, durationSeconds={duration}")
+}
+
+fn compare_fingerprint_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    label: &str,
+) -> Vec<ToolFinding> {
+    object
+        .get(key)
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .take(8)
+                .filter_map(|item| {
+                    let item = item.as_object()?;
+                    let status = string_field(item, &["status"]).unwrap_or_else(|| label.into());
+                    let statement_type =
+                        string_field(item, &["statement_type"]).unwrap_or_else(|| "unknown".into());
+                    let normalized = string_field(item, &["normalized_query"])
+                        .or_else(|| string_field(item, &["fingerprint"]))
+                        .unwrap_or_else(|| "unknown".into());
+                    let count_a =
+                        number_to_string(item.get("count_a")).unwrap_or_else(|| "0".into());
+                    let count_b =
+                        number_to_string(item.get("count_b")).unwrap_or_else(|| "0".into());
+                    let count_delta =
+                        number_to_string(item.get("count_delta")).unwrap_or_else(|| "0".into());
+                    let qps_a = number_to_string(item.get("qps_a")).unwrap_or_else(|| "0".into());
+                    let qps_b = number_to_string(item.get("qps_b")).unwrap_or_else(|| "0".into());
+                    let qps_delta =
+                        number_to_string(item.get("qps_delta")).unwrap_or_else(|| "0".into());
+                    let rules = item
+                        .get("rules")
+                        .and_then(|value| value.as_array())
+                        .map(|rules| {
+                            rules
+                                .iter()
+                                .filter_map(|rule| rule.as_str())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        })
+                        .unwrap_or_default();
+                    Some(ToolFinding {
+                        severity: Some(compare_fingerprint_severity(key, &count_delta).to_string()),
+                        file: None,
+                        line: None,
+                        message: format!(
+                            "{label}: status={status}, statementType={statement_type}, count={count_a}->{count_b} (delta={count_delta}), qps={qps_a}->{qps_b} (delta={qps_delta}), rules={}, query={}",
+                            if rules.is_empty() { "-" } else { rules.as_str() },
+                            normalized
+                        ),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn compare_rule_delta_findings(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ToolFinding> {
+    object
+        .get("rule_deltas")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .take(8)
+                .filter_map(|item| {
+                    let item = item.as_object()?;
+                    let rule = string_field(item, &["rule"]).unwrap_or_else(|| "unknown".into());
+                    let count_a =
+                        number_to_string(item.get("count_a")).unwrap_or_else(|| "0".into());
+                    let count_b =
+                        number_to_string(item.get("count_b")).unwrap_or_else(|| "0".into());
+                    let count_delta =
+                        number_to_string(item.get("count_delta")).unwrap_or_else(|| "0".into());
+                    let qps_a = number_to_string(item.get("qps_a")).unwrap_or_else(|| "0".into());
+                    let qps_b = number_to_string(item.get("qps_b")).unwrap_or_else(|| "0".into());
+                    let qps_delta =
+                        number_to_string(item.get("qps_delta")).unwrap_or_else(|| "0".into());
+                    Some(ToolFinding {
+                        severity: Some(compare_delta_severity(&count_delta).to_string()),
+                        file: None,
+                        line: None,
+                        message: format!(
+                            "rule delta: rule={rule}, count={count_a}->{count_b} (delta={count_delta}), qps={qps_a}->{qps_b} (delta={qps_delta})"
+                        ),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn compare_fingerprint_severity(key: &str, count_delta: &str) -> &'static str {
+    match key {
+        "removed_fingerprints" => "low",
+        "new_fingerprints" => "high",
+        _ => compare_delta_severity(count_delta),
+    }
+}
+
+fn compare_delta_severity(count_delta: &str) -> &'static str {
+    match count_delta.trim().parse::<f64>() {
+        Ok(value) if value > 0.0 => "high",
+        Ok(value) if value < 0.0 => "low",
+        _ => "medium",
     }
 }
 
@@ -820,10 +945,6 @@ fn number_to_string(value: Option<&serde_json::Value>) -> Option<String> {
     }
 }
 
-fn compact_json(value: &serde_json::Value) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
-}
-
 fn non_empty(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())
@@ -1060,28 +1181,30 @@ JSON
         let parsed = parse_tool_stdout(
             br#"{
   "batch_a": {"total_statements": 10},
-  "batch_b": {"total_statements": 14},
+  "batch_b": {"total_statements": 14, "qps": 2.5, "effective_duration_seconds": 5},
   "statement_delta": 4,
   "qps_delta": 0.5,
-  "new_fingerprints": [{"fingerprint": "fp-new", "count": 4}],
+  "new_fingerprints": [{"fingerprint": "fp-new", "statement_type":"SELECT", "normalized_query":"SELECT * FROM cpu", "status":"new", "count_a":0, "count_b":4, "count_delta":4, "qps_a":0, "qps_b":0.5, "qps_delta":0.5, "rules":["no_time_filter"]}],
   "removed_fingerprints": [],
   "changed_fingerprints": [],
-  "rule_deltas": [{"rule": "large_limit", "count_delta": 2}]
+  "rule_deltas": [{"rule": "large_limit", "count_a":1, "count_b":3, "count_delta":2, "qps_a":0.1, "qps_b":0.3, "qps_delta":0.2}]
 }"#,
         );
 
-        assert_eq!(
-            parsed.summary.as_deref(),
-            Some("influxql compare report: statementDelta=4, qpsDelta=0.5")
-        );
+        let summary = parsed.summary.as_deref().unwrap();
+        assert!(summary.contains("statementDelta=4"));
+        assert!(summary.contains("batchB=statements=14"));
         assert!(parsed
             .findings
             .iter()
-            .any(|finding| finding.message.contains("new fingerprint")));
+            .any(|finding| finding.message.contains("count=0->4")
+                && finding.message.contains("rules=no_time_filter")
+                && finding.severity.as_deref() == Some("high")));
         assert!(parsed
             .findings
             .iter()
-            .any(|finding| finding.message.contains("rule delta")));
+            .any(|finding| finding.message.contains("rule=large_limit")
+                && finding.message.contains("qps=0.1->0.3")));
     }
 
     #[test]
