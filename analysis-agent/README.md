@@ -28,7 +28,7 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 
 ## 当前实现状态
 
-已实现 Analysis State Store MVP，暂不启用 LLM 多轮 action loop。
+已实现 Analysis State Store MVP，并启用 `PLAN_ANALYSIS` 单轮 LLM action loop。完整多轮调查、用户追问和审批尚未启用。
 
 当前 Server 会在现有固定 pipeline 中持久化：
 
@@ -41,12 +41,13 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 - manifest 证据。
 - grep evidence。
 - Tool Runner action 和 tool evidence。
+- model decision。
 - final result。
 - failure 事件。
 
 `GET /api/tasks/:task_id/analysis` 可读取当前 state 和事件流。真实 `flux_query_analyzer` / `influxql_analyzer` 尚未完成时，Tool Runner 继续使用配置中的 mock/stub 工具替代，保证 action/event/evidence 链路先稳定。
 
-LLM Gateway 已预置 ActionDecision / FinalAnswer 双模式 schema。下一步会把 `search_logs`、`run_tool`、`final_answer` 接入最小 action loop。
+LLM Gateway 已接入 `PLAN_ANALYSIS` 单轮决策。当前 `search_logs` 会按模型关键词重建 grep evidence，`run_tool` 会走白名单 Tool Runner 通道，`final_answer` 会直接持久化结果。下一步是把单轮 MVP 扩展为有预算、重复动作防护和恢复能力的多轮循环。
 
 ## 上下文产物
 

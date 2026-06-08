@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn llm_failure_marks_generate_result_phase() {
+    async fn llm_failure_marks_plan_analysis_phase() {
         let (state, root) = test_state_with_llm(LlmSettings {
             provider: LlmProvider::OpenAiCompatible,
             base_url: Some("not a valid URL".to_string()),
@@ -655,8 +655,8 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         let terminal = terminal.expect("task did not fail");
-        assert_eq!(terminal["phase"], "GENERATE_RESULT");
-        assert_eq!(terminal["error"]["phase"], "GENERATE_RESULT");
+        assert_eq!(terminal["phase"], "PLAN_ANALYSIS");
+        assert_eq!(terminal["error"]["phase"], "PLAN_ANALYSIS");
         let _ = std::fs::remove_dir_all(root);
     }
 

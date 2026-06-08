@@ -20,6 +20,7 @@
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
 - `result.json` / `result.md` 持久化。
+- Task Executor 在 `PLAN_ANALYSIS` 阶段已调用双模式 action decision；当前只执行单轮决策。
 
 ## 当前输入
 
@@ -63,9 +64,9 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 - 输出 schema 无效
 - 不支持的 action
 
-当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。
+当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入 `FAILED / GENERATE_RESULT`。如果 `PLAN_ANALYSIS` 的 action decision 调用或 schema 校验失败，任务进入 `FAILED / PLAN_ANALYSIS`。
 
-ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。当前固定 pipeline 尚未调用 action decision。
+ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。当前 `PLAN_ANALYSIS` 会调用 action decision，但完整多轮预算、重复动作防护和等待状态尚未实现。
 
 ## 安全约束
 
@@ -81,6 +82,7 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 - stub Provider 能返回最终结果。
 - stub action decision 能在 grep 为空时返回 `search_logs`，有 grep evidence 时返回 `final_answer`。
 - ActionDecision parser 接受合法 `search_logs` / `run_tool` / `final_answer`，拒绝尚未开放的 action。
+- `PLAN_ANALYSIS` 能消费一次 `search_logs`、`run_tool` 或 `final_answer` 决策。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。

@@ -5,9 +5,14 @@ use tracing::{error, warn};
 
 use crate::{
     analysis_state,
-    contracts::{EvidenceProvider, TaskContext},
+    config::LogAnalyzerSettings,
+    contracts::{ActionKind, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
+    llm_gateway::{ActionDecision, AgentDecision},
     models::{GrepResults, Manifest, TaskPhase, TaskRecord},
-    pipeline::{extract_task, generate_task_result, prepare_pipeline_run, search_task},
+    pipeline::{
+        extract_task, generate_task_result, persist_final_answer_decision_result,
+        prepare_pipeline_run, read_tool_results, search_task, search_task_with_settings,
+    },
     state::AppState,
 };
 
@@ -121,10 +126,11 @@ async fn dispatch_phase(
                 &state,
                 &task.task_id,
                 TaskPhase::RunTool,
-                TaskPhase::GenerateResult,
+                TaskPhase::PlanAnalysis,
             )
             .await
         }
+        TaskPhase::PlanAnalysis => plan_analysis_phase(state.clone(), task).await,
         TaskPhase::GenerateResult => {
             let workspace = state.config.storage.workspace_dir(&task.task_id);
             analysis_state::ensure_initialized(&workspace, &task)?;
@@ -143,10 +149,234 @@ async fn dispatch_phase(
                 .await?;
             Ok(DispatchOutcome::Complete)
         }
-        TaskPhase::PlanAnalysis => {
-            anyhow::bail!("task phase {phase:?} is not executable in this release")
+    }
+}
+
+async fn plan_analysis_phase(
+    state: Arc<AppState>,
+    task: TaskRecord,
+) -> anyhow::Result<DispatchOutcome> {
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    analysis_state::ensure_initialized(&workspace, &task)?;
+    let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
+    let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+    let tool_results = read_tool_results(&workspace).await?;
+    let metadata_context = match task.metadata_context_path.as_deref() {
+        Some(path) if std::path::Path::new(path) == workspace.join("metadata_context.json") => {
+            Some(read_json(&workspace.join("metadata_context.json")).await?)
+        }
+        Some(_) => anyhow::bail!("task contains invalid metadataContextPath"),
+        None => None,
+    };
+    let decision = state
+        .llm
+        .decide_next_action(
+            &task.question,
+            &manifest,
+            &grep,
+            metadata_context.as_ref(),
+            &tool_results,
+        )
+        .await?;
+    record_model_decision(&workspace, &decision)?;
+    match decision {
+        AgentDecision::Action { decision } => execute_action_decision(state, &task, decision).await,
+        AgentDecision::FinalAnswer { result } => {
+            let result = result.into_result(&grep, &tool_results)?;
+            let output = persist_final_answer_decision_result(&workspace, result).await?;
+            state
+                .tasks
+                .succeed(
+                    &task.task_id,
+                    TaskPhase::PlanAnalysis,
+                    workspace.join("manifest.json").display().to_string(),
+                    workspace.join("grep_results.json").display().to_string(),
+                    output.result_json_path.display().to_string(),
+                    output.result_markdown_path.display().to_string(),
+                )
+                .await?;
+            Ok(DispatchOutcome::Complete)
         }
     }
+}
+
+async fn execute_action_decision(
+    state: Arc<AppState>,
+    task: &TaskRecord,
+    decision: ActionDecision,
+) -> anyhow::Result<DispatchOutcome> {
+    match decision.kind {
+        ActionKind::SearchLogs => {
+            run_search_logs_action(state.clone(), task, &decision).await?;
+            continue_with(
+                &state,
+                &task.task_id,
+                TaskPhase::PlanAnalysis,
+                TaskPhase::GenerateResult,
+            )
+            .await
+        }
+        ActionKind::RunTool => {
+            let action = action_from_decision(task, decision);
+            let workspace = state.config.storage.workspace_dir(&task.task_id);
+            let context = TaskContext::from_record(task, workspace, None);
+            let artifact = state.tool_runner.execute(&context, &action).await?;
+            analysis_state::record_tool_artifact(&context.workspace, &action, &artifact)?;
+            continue_with(
+                &state,
+                &task.task_id,
+                TaskPhase::PlanAnalysis,
+                TaskPhase::GenerateResult,
+            )
+            .await
+        }
+        ActionKind::FinalAnswer => {
+            continue_with(
+                &state,
+                &task.task_id,
+                TaskPhase::PlanAnalysis,
+                TaskPhase::GenerateResult,
+            )
+            .await
+        }
+        _ => anyhow::bail!("unsupported action decision type {:?}", decision.kind),
+    }
+}
+
+async fn run_search_logs_action(
+    state: Arc<AppState>,
+    task: &TaskRecord,
+    decision: &ActionDecision,
+) -> anyhow::Result<()> {
+    let keywords = decision
+        .input
+        .get("keywords")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| anyhow::anyhow!("search_logs input.keywords must be an array"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .ok_or_else(|| anyhow::anyhow!("search_logs keyword must be a non-empty string"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let max_matches = decision
+        .input
+        .get("maxMatches")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(50) as usize;
+    search_task_with_settings(
+        state.config.clone(),
+        &task.task_id,
+        LogAnalyzerSettings {
+            keywords,
+            max_matches,
+        },
+    )
+    .await?;
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
+    analysis_state::record_log_search(&workspace, &grep)?;
+    Ok(())
+}
+
+fn action_from_decision(task: &TaskRecord, decision: ActionDecision) -> AgentAction {
+    let action_id = decision.action_id.unwrap_or_else(|| {
+        format!(
+            "act_{}_{}",
+            action_kind_suffix(decision.kind),
+            stable_json_hash(&decision.input)
+        )
+    });
+    let fingerprint = decision.fingerprint.unwrap_or_else(|| {
+        format!(
+            "{}:{}",
+            action_kind_suffix(decision.kind),
+            stable_json_hash(&decision.input)
+        )
+    });
+    AgentAction {
+        schema_version: 1,
+        action_id,
+        kind: decision.kind,
+        reason: decision.reason,
+        evidence_refs: decision
+            .evidence_refs
+            .into_iter()
+            .map(parse_evidence_ref)
+            .collect(),
+        input: decision.input,
+        risk: decision.risk,
+        fingerprint: format!("task:{}:{fingerprint}", task.task_id),
+    }
+}
+
+fn record_model_decision(
+    workspace: &std::path::Path,
+    decision: &AgentDecision,
+) -> anyhow::Result<()> {
+    let (action_id, message, evidence_refs, details) = match decision {
+        AgentDecision::Action { decision } => (
+            decision.action_id.clone(),
+            format!("model selected {:?}: {}", decision.kind, decision.reason),
+            decision.evidence_refs.clone(),
+            serde_json::json!({ "decision": decision }),
+        ),
+        AgentDecision::FinalAnswer { result } => (
+            None,
+            "model selected final_answer".to_string(),
+            result
+                .likely_root_causes
+                .iter()
+                .flat_map(|cause| cause.evidence_refs.iter().cloned())
+                .collect(),
+            serde_json::json!({ "result": result }),
+        ),
+    };
+    analysis_state::record_model_decision(
+        workspace,
+        TaskPhase::PlanAnalysis,
+        action_id,
+        message,
+        evidence_refs,
+        details,
+    )
+}
+
+fn parse_evidence_ref(value: String) -> EvidenceRef {
+    match value.split_once('#') {
+        Some((artifact_path, selector)) => EvidenceRef {
+            artifact_path: artifact_path.to_string(),
+            selector: Some(selector.to_string()),
+        },
+        None => EvidenceRef {
+            artifact_path: value,
+            selector: None,
+        },
+    }
+}
+
+fn action_kind_suffix(kind: ActionKind) -> &'static str {
+    match kind {
+        ActionKind::SearchLogs => "search_logs",
+        ActionKind::RunTool => "run_tool",
+        ActionKind::CollectCodeEvidence => "collect_code",
+        ActionKind::CollectEnvironment => "collect_env",
+        ActionKind::AskUser => "ask_user",
+        ActionKind::FinalAnswer => "final_answer",
+    }
+}
+
+fn stable_json_hash(value: &serde_json::Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let encoded = serde_json::to_string(value).unwrap_or_default();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    encoded.hash(&mut hasher);
+    hasher.finish()
 }
 
 async fn run_tool_phase(state: Arc<AppState>, task: &TaskRecord) -> anyhow::Result<()> {
@@ -274,6 +504,29 @@ mod tests {
         assert!(result_dirs[0].join("result.json").exists());
         let stdout = fs::read_to_string(result_dirs[0].join("stdout.txt")).unwrap();
         assert!(stdout.contains("extracted/sample/sample.log"));
+        let snapshot = analysis_state::read_snapshot(&fixture.workspace).unwrap();
+        assert_eq!(snapshot.state.budget.llm_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn plan_analysis_executes_stub_search_action_before_result() {
+        let fixture = Fixture::new_with_log(TaskPhase::Extract, "INFO start\nWARN slow\n");
+        let state = fixture.state();
+        let mut task = fixture.task(TaskPhase::Extract);
+        task.status = TaskStatus::Queued;
+        task.phase = None;
+        task.attempts = 0;
+        state.tasks.create(task.clone()).await.unwrap();
+
+        execute(state.clone(), &task.task_id).await.unwrap();
+
+        let completed = state.tasks.get(&task.task_id).await.unwrap();
+        assert_eq!(completed.status, TaskStatus::Succeeded);
+        let grep: GrepResults = serde_json::from_str(
+            &fs::read_to_string(fixture.workspace.join("grep_results.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(grep.keywords, vec!["error", "timeout", "failed"]);
     }
 
     struct Fixture {
@@ -284,6 +537,10 @@ mod tests {
 
     impl Fixture {
         fn new(phase: TaskPhase) -> Self {
+            Self::new_with_log(phase, "INFO start\nERROR failed\n")
+        }
+
+        fn new_with_log(phase: TaskPhase, log: &str) -> Self {
             let suffix = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -294,7 +551,7 @@ mod tests {
             let workspace = root.join("workspaces").join(&task_id);
             let raw_dir = workspace.join("raw/upl_1");
             fs::create_dir_all(&raw_dir).unwrap();
-            fs::write(raw_dir.join("sample.log"), "INFO start\nERROR failed\n").unwrap();
+            fs::write(raw_dir.join("sample.log"), log).unwrap();
             Self {
                 root,
                 workspace,

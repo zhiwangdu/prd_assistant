@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 ## Status Summary
 
@@ -16,7 +16,9 @@ Chrome Extension or WEBUI
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
   -> analysis_state.json / analysis_events.jsonl audit snapshot
-  -> one stub or OpenAI-compatible LLM call
+  -> PLAN_ANALYSIS single LLM action/final-answer decision
+  -> optional action-driven search_logs or run_tool
+  -> final answer or fallback result generation
   -> persisted result and WEBUI display
 ```
 
@@ -79,6 +81,10 @@ Chrome Extension or WEBUI
 - Rejects stale phase advancement and inconsistent persisted `RUNNING`/`SUCCEEDED` state.
 - Defines shared `TaskContext`, Action, EvidenceArtifact, and EvidenceProvider contracts for Tool Runner and later evidence modules.
 - Runs optional rule-based Tool Runner actions during `RUN_TOOL` and exposes `toolResults` in artifacts.
+- Runs `PLAN_ANALYSIS` after rule-based tools and consumes one LLM `action | final_answer` decision.
+- Executes `search_logs` action by rebuilding `grep_results.json` with model-provided keywords, then continues to result generation.
+- Executes LLM-selected `run_tool` action through the same whitelist Tool Runner channel, then continues to result generation.
+- Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Rejects artifact reads before success with `409` and the current task status.
 - Runs one LLM result generation phase after grep and persists `result.json` / `result.md`.
 - `GENERATE_RESULT` now reads `tool_results/*/result.json` and passes Tool Runner summary/findings into LLM Gateway as citeable evidence.
@@ -215,20 +221,21 @@ tool_results/<action_id>/
 - Adds bounded Tool Runner summary/findings to the prompt after grep evidence; stdout/stderr raw output is not sent.
 - Validates result schema, confidence, and task-local grep evidence references.
 - Validates task-local Tool Runner finding evidence references.
-- Provides ActionDecision / FinalAnswer dual-mode schema and parser for the upcoming action loop.
+- Provides ActionDecision / FinalAnswer dual-mode schema and parser for the single-turn action loop.
+- `PLAN_ANALYSIS` now calls the dual-mode action decision entrypoint once per task before final fallback generation.
 - ActionDecision currently accepts `search_logs`, `run_tool`, and `final_answer`; unopened actions such as environment collection are rejected.
 - Normalizes traceable LLM evidence ref aliases, including raw log line ranges such as `12-14`, index ranges such as `#0-#7`, and `matches/<start>-<end>`, into canonical `grep_results.json#matches/<index>` refs.
 - Normalizes real-model schema drift for string root causes with embedded evidence refs and single-string list fields.
 - Retries final-result parsing/schema failures once with a corrective schema prompt and returns latest/previous parse errors if both attempts fail.
-- Provider or schema failure moves the task to `FAILED / GENERATE_RESULT`.
+- Provider or schema failure in action decision moves the task to `FAILED / PLAN_ANALYSIS`; final result generation failures still move the task to `FAILED / GENERATE_RESULT`.
 
 ### Analysis Agent
 
 - Analysis State Store MVP is implemented as a Server internal module.
-- Current fixed pipeline records analysis initialization, manifest evidence, grep evidence, Tool Runner action/evidence, final result, and failure events.
+- Current pipeline records analysis initialization, manifest evidence, grep evidence, Tool Runner action/evidence, model decision, final result, and failure events.
 - Workspaces now include `analysis_state.json` and append-only `analysis_events.jsonl`.
 - `GET /api/tasks/:task_id/analysis` returns the current state snapshot and event list.
-- LLM Gateway dual-mode decisions are ready for the next Action Loop MVP, but the fixed pipeline still calls final result generation only.
+- Single-turn Action Loop MVP is enabled through `PLAN_ANALYSIS` for `search_logs`, `run_tool`, and `final_answer`.
 - Full LLM-driven action loop, user questions, approvals, and budget termination remain planned.
 
 ### Local startup

@@ -105,7 +105,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
+当前基础 pipeline 实际产生 `QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`，dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 已启用单轮 LLM action decision；`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL` 已进入公共模型，但在对应模块实现前不会由正常任务生成。
 
 ## 数据目录
 
@@ -195,7 +195,7 @@ MVP 要求：
 - 仅从 `EXTRACT` 恢复时清理 `extracted/`、`manifest.json`、`grep_results.json`、`result.json` 和 `result.md`；从后续阶段恢复时复用已完成的前置产物。
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
-- `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `GENERATE_RESULT`。
+- `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
@@ -204,7 +204,8 @@ MVP 要求：
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后调用 LLM Gateway，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings，写入 `result.json` 和 `result.md`；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，调用 LLM Gateway 生成单轮 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 后进入 `GENERATE_RESULT`，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 后进入 `GENERATE_RESULT`，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
+- `GENERATE_RESULT` 仍保留为 action 后的最终结果生成兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。如果 `PLAN_ANALYSIS` 的模型决策调用失败，任务进入 `FAILED / PLAN_ANALYSIS`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
 - LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。

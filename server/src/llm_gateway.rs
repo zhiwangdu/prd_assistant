@@ -54,12 +54,28 @@ impl LlmGateway {
     }
 
     #[allow(dead_code)]
-    pub async fn decide_next_action_stub(
+    pub async fn decide_next_action(
         &self,
         question: &str,
+        manifest: &Manifest,
         grep: &GrepResults,
+        metadata: Option<&TaskMetadataContext>,
+        tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AgentDecision> {
-        Ok(stub_action_decision(question, grep))
+        let prompt = build_action_prompt(
+            question,
+            manifest,
+            grep,
+            metadata,
+            tool_results,
+            self.settings.max_input_chars,
+        );
+        let decision = match self.settings.provider {
+            LlmProvider::Stub => stub_action_decision(question, grep),
+            LlmProvider::OpenAiCompatible => self.call_action_decision(&prompt).await?,
+        };
+        validate_agent_decision_with_evidence(&decision, grep, tool_results)?;
+        Ok(decision)
     }
 
     async fn call_chat_completions(&self, prompt: &str) -> anyhow::Result<ResultDraft> {
@@ -112,7 +128,6 @@ impl LlmGateway {
         unreachable!("result attempts loop always returns or bails")
     }
 
-    #[allow(dead_code)]
     async fn call_action_decision(&self, prompt: &str) -> anyhow::Result<AgentDecision> {
         let base_url = self
             .settings
@@ -402,6 +417,32 @@ fn build_prompt(
         }
     }
     prompt
+}
+
+fn build_action_prompt(
+    question: &str,
+    manifest: &Manifest,
+    grep: &GrepResults,
+    metadata: Option<&TaskMetadataContext>,
+    tool_results: &[ToolRunRecord],
+    max_input_chars: usize,
+) -> String {
+    let mut prompt = build_prompt(
+        question,
+        manifest,
+        grep,
+        metadata,
+        tool_results,
+        max_input_chars,
+    );
+    prompt.push_str(
+        "\n\n请基于当前证据选择下一步：\n\
+- 若还需要更精确的日志证据，输出 search_logs。\n\
+- 若需要对已解压文件运行白名单诊断工具，输出 run_tool。\n\
+- 若证据已经足够，输出 final_answer。\n\
+当前不要输出 ask_user、collect_environment 或 collect_code_evidence。",
+    );
+    truncate_chars(&prompt, max_input_chars).to_string()
 }
 
 fn tool_result_artifact_path(result: &ToolRunRecord) -> String {
@@ -771,6 +812,31 @@ impl FinalAnswerDecision {
             confidence: draft.confidence,
         }
     }
+
+    fn into_draft(self) -> ResultDraft {
+        ResultDraft {
+            summary: self.summary,
+            symptoms: self.symptoms,
+            likely_root_causes: self.likely_root_causes,
+            next_checks: self.next_checks,
+            fix_suggestions: self.fix_suggestions,
+            missing_information: self.missing_information,
+            confidence: self.confidence,
+        }
+    }
+
+    pub fn into_result(
+        self,
+        grep: &GrepResults,
+        tool_results: &[ToolRunRecord],
+    ) -> anyhow::Result<AnalysisResult> {
+        validate_result_evidence(
+            self.into_draft(),
+            Some(grep),
+            grep.matches.len(),
+            tool_results,
+        )
+    }
 }
 
 fn validate_agent_decision(decision: &AgentDecision) -> anyhow::Result<()> {
@@ -783,6 +849,19 @@ fn validate_agent_decision(decision: &AgentDecision) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+fn validate_agent_decision_with_evidence(
+    decision: &AgentDecision,
+    grep: &GrepResults,
+    tool_results: &[ToolRunRecord],
+) -> anyhow::Result<()> {
+    validate_agent_decision(decision)?;
+    if let AgentDecision::FinalAnswer { result } = decision {
+        let draft = result.clone().into_draft();
+        validate_result_evidence(draft, Some(grep), grep.matches.len(), tool_results)?;
+    }
+    Ok(())
 }
 
 fn validate_action_decision(decision: &ActionDecision) -> anyhow::Result<()> {

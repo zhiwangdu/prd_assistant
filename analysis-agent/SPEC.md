@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP。当前仍使用固定 pipeline，不启用 LLM 多轮 action loop。
+已实现 Analysis State Store MVP 和 `PLAN_ANALYSIS` 单轮 action loop。当前仍未启用完整 LLM 多轮调查循环。
 
 已落地：
 
@@ -14,8 +14,10 @@
 - `analysis_events.jsonl`
 - `GET /api/tasks/:task_id/analysis`
 - grep/tool/final result/failure 的基础事件记录
+- model decision 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
+- 单轮消费 `search_logs`、`run_tool` 或 `final_answer`
 
 尚未实现：
 

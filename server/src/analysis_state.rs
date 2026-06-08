@@ -106,6 +106,7 @@ pub struct AnalysisEvent {
 #[serde(rename_all = "snake_case")]
 pub enum AnalysisEventType {
     AnalysisStarted,
+    ModelDecision,
     EvidenceRecorded,
     ActionCompleted,
     FinalResultGenerated,
@@ -249,6 +250,23 @@ pub fn record_final_result(
     result_path: &Path,
     result: &AnalysisResult,
 ) -> anyhow::Result<()> {
+    record_final_result_inner(workspace, result_path, result, true)
+}
+
+pub fn record_final_answer_decision_result(
+    workspace: &Path,
+    result_path: &Path,
+    result: &AnalysisResult,
+) -> anyhow::Result<()> {
+    record_final_result_inner(workspace, result_path, result, false)
+}
+
+fn record_final_result_inner(
+    workspace: &Path,
+    result_path: &Path,
+    result: &AnalysisResult,
+    increment_llm_calls: bool,
+) -> anyhow::Result<()> {
     let artifact_path = relative_to_workspace(workspace, result_path)?;
     let evidence_refs = result
         .likely_root_causes
@@ -277,7 +295,9 @@ pub fn record_final_result(
         state.status = AnalysisStatus::Succeeded;
         state.current_phase = None;
         state.final_result_path = Some(artifact_path.clone());
-        state.budget.llm_calls = state.budget.llm_calls.saturating_add(1);
+        if increment_llm_calls {
+            state.budget.llm_calls = state.budget.llm_calls.saturating_add(1);
+        }
         Ok(())
     })?;
     let state = read_state(workspace)?;
@@ -316,6 +336,32 @@ pub fn record_failure(
         |state| {
             state.status = AnalysisStatus::Failed;
             state.current_phase = phase;
+            Ok(())
+        },
+    )
+}
+
+pub fn record_model_decision(
+    workspace: &Path,
+    phase: TaskPhase,
+    action_id: Option<String>,
+    message: String,
+    evidence_refs: Vec<String>,
+    details: serde_json::Value,
+) -> anyhow::Result<()> {
+    append_event(
+        workspace,
+        AnalysisEventType::ModelDecision,
+        Some(phase),
+        action_id,
+        message,
+        evidence_refs,
+        None,
+        details,
+        |state| {
+            state.current_phase = Some(phase);
+            state.budget.rounds = state.budget.rounds.saturating_add(1);
+            state.budget.llm_calls = state.budget.llm_calls.saturating_add(1);
             Ok(())
         },
     )

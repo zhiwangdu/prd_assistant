@@ -5,7 +5,7 @@ use tokio::task;
 use crate::llm_gateway::LlmGateway;
 use crate::{
     analysis_state,
-    config::AppConfig,
+    config::{AppConfig, LogAnalyzerSettings},
     error::AppError,
     fs_utils::relative_string,
     log_analyzer::LogAnalyzer,
@@ -149,12 +149,20 @@ pub async fn extract_task(config: Arc<AppConfig>, task_record: TaskRecord) -> Re
 }
 
 pub async fn search_task(config: Arc<AppConfig>, task_id: &str) -> Result<(), AppError> {
+    search_task_with_settings(config.clone(), task_id, config.log_analyzer.clone()).await
+}
+
+pub async fn search_task_with_settings(
+    config: Arc<AppConfig>,
+    task_id: &str,
+    settings: LogAnalyzerSettings,
+) -> Result<(), AppError> {
     let workspace = config.storage.workspace_dir(task_id);
     let extracted_dir = workspace.join("extracted");
     let grep_results_path = workspace.join("grep_results.json");
     let grep_path = grep_results_path.clone();
     task::spawn_blocking(move || {
-        let analyzer = LogAnalyzer::new(config.log_analyzer.clone());
+        let analyzer = LogAnalyzer::new(settings);
         let grep: GrepResults = analyzer.run_simple_grep(&extracted_dir)?;
         write_json(&grep_path, &grep)
     })
@@ -195,6 +203,36 @@ pub async fn generate_task_result(
         )
         .await
         .map_err(|err| AppError::internal(format!("LLM result generation failed: {err}")))?;
+    persist_task_result(&workspace, result).await
+}
+
+async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
+    serde_json::from_str(&raw)
+        .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
+}
+
+pub async fn persist_task_result(
+    workspace: &Path,
+    result: AnalysisResult,
+) -> Result<ResultOutput, AppError> {
+    persist_task_result_inner(workspace, result, true).await
+}
+
+pub async fn persist_final_answer_decision_result(
+    workspace: &Path,
+    result: AnalysisResult,
+) -> Result<ResultOutput, AppError> {
+    persist_task_result_inner(workspace, result, false).await
+}
+
+async fn persist_task_result_inner(
+    workspace: &Path,
+    result: AnalysisResult,
+    increment_llm_calls: bool,
+) -> Result<ResultOutput, AppError> {
     let result_json_path = workspace.join("result.json");
     let result_markdown_path = workspace.join("result.md");
     let json_path = result_json_path.clone();
@@ -208,23 +246,26 @@ pub async fn generate_task_result(
     .await
     .map_err(|err| AppError::internal(format!("result writer panicked: {err}")))?
     .map_err(|err| AppError::internal(format!("failed to persist LLM result: {err}")))?;
-    analysis_state::record_final_result(&workspace, &result_json_path, &result_for_state)
+    if increment_llm_calls {
+        analysis_state::record_final_result(workspace, &result_json_path, &result_for_state)
+            .map_err(|err| {
+                AppError::internal(format!("failed to persist analysis state: {err}"))
+            })?;
+    } else {
+        analysis_state::record_final_answer_decision_result(
+            workspace,
+            &result_json_path,
+            &result_for_state,
+        )
         .map_err(|err| AppError::internal(format!("failed to persist analysis state: {err}")))?;
+    }
     Ok(ResultOutput {
         result_json_path,
         result_markdown_path,
     })
 }
 
-async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
-    let raw = tokio::fs::read_to_string(path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
-    serde_json::from_str(&raw)
-        .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
-}
-
-async fn read_tool_results(workspace: &Path) -> Result<Vec<ToolRunRecord>, AppError> {
+pub async fn read_tool_results(workspace: &Path) -> Result<Vec<ToolRunRecord>, AppError> {
     let root = workspace.join("tool_results");
     let mut entries = match tokio::fs::read_dir(&root).await {
         Ok(entries) => entries,
