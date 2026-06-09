@@ -110,7 +110,7 @@ Chrome Extension or WEBUI
 - Records LLM call lifecycle events for `PLAN_ANALYSIS` action decisions, including `llm_call_started`, `llm_call_completed`, `llm_call_schema_retry`, `llmcall_*` callId, attempt, model, and schema error details.
 - Exposes `/api/debug/llm` for runtime LLM response-content logging control; the flag is in-memory, defaults off, and does not print prompts or API keys.
 - `scripts/start-local.sh` background mode now disowns the server job after `nohup`, so local quick-start remains available after non-interactive zsh exits.
-- Runtime directory `/home/duzhiwang/workspace/data/prd_assistant` now uses `bin/logagent-server` through `logagentctl.sh` and includes `rebuild-install.sh` to compile from the source tree, replace the runtime binary, sync WebUI static files, and restart only when the server was already running.
+- Runtime deployment assets are now organized under `$LOGAGENT_APP_DIR/deploy`, including deploy steps, env sample, config sample, `logagentctl.sh`, and `rebuild-install.sh`. The scripts use `LOGAGENT_APP_DIR` and `LOGAGENT_SRC_DIR`, replace `$LOGAGENT_APP_DIR/bin/logagent-server`, sync WebUI static files, and restart only when the server was already running.
 
 ### Upload And Workspace
 

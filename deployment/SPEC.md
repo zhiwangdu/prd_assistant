@@ -10,7 +10,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 
 - Server 从项目根目录启动并托管 `webui/`。
 - `scripts/start-local.sh` 支持真实 LLM、stub 和前台调试模式；后台模式必须在非交互 shell 中保持 Server 进程存活。
-- 测试运行目录 `/home/duzhiwang/workspace/data/prd_assistant` 提供 `logagentctl.sh` 和 `rebuild-install.sh`，支持从运行目录启动、停止、查看日志，以及从源码快速编译并替换 `bin/logagent-server`。
+- 运行目录 `deploy/` 提供 `README.md`、`env.example`、`logagent.example.yaml`、`logagent.yaml`、`logagentctl.sh` 和 `rebuild-install.sh`；脚本通过 `LOGAGENT_APP_DIR` 和 `LOGAGENT_SRC_DIR` 定位运行目录与源码目录，支持启动、停止、查看日志，以及从源码快速编译并替换 `bin/logagent-server`。
 - Native Agent 本机启动并连接远端 Server。
 - 示例配置支持 50992 测试端口。
 
@@ -34,8 +34,11 @@ WEBUI -> Server 同源 API
 - Server binary
 - Runtime `bin/logagent-server` in the deployment directory
 - Native Agent binary
-- `webui/`
-- `logagent.yaml`
+- `webui/out`
+- `deploy/logagent.yaml`
+- `deploy/env.example`
+- `deploy/logagentctl.sh`
+- `deploy/rebuild-install.sh`
 - 环境变量密钥
 - 持久化 tasks、analysis state/events 和 workspaces 的数据目录
 

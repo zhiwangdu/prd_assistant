@@ -347,7 +347,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         },
         auth: AuthSettings { api_keys },
         storage: StorageSettings {
-            data_dir: storage.data_dir,
+            data_dir: expand_path_env_vars(storage.data_dir)?,
             max_upload_bytes: storage.max_upload_bytes,
             max_chunk_bytes: storage.max_chunk_bytes,
         },
@@ -437,6 +437,43 @@ fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
         return Ok(PathBuf::from(value));
     }
     anyhow::bail!("tools.{name}.path or tools.{name}.path_env is required when enabled")
+}
+
+fn expand_path_env_vars(path: PathBuf) -> anyhow::Result<PathBuf> {
+    let raw = path
+        .to_str()
+        .context("storage.data_dir must be valid UTF-8 when using config env expansion")?;
+    Ok(PathBuf::from(expand_env_vars_with(raw, |name| {
+        env::var(name)
+    })?))
+}
+
+fn expand_env_vars_with(
+    value: &str,
+    read_env: impl Fn(&str) -> Result<String, env::VarError>,
+) -> anyhow::Result<String> {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some(start) = remaining.find("${") {
+        output.push_str(&remaining[..start]);
+        let after_start = &remaining[start + 2..];
+        let Some(end) = after_start.find('}') else {
+            anyhow::bail!("unclosed environment variable placeholder in config value {value}");
+        };
+        let name = &after_start[..end];
+        if name.trim().is_empty() {
+            anyhow::bail!("empty environment variable placeholder in config value {value}");
+        }
+        let replacement = read_env(name)
+            .with_context(|| format!("missing config environment variable {name}"))?;
+        if replacement.trim().is_empty() {
+            anyhow::bail!("config environment variable {name} must not be empty");
+        }
+        output.push_str(&replacement);
+        remaining = &after_start[end + 1..];
+    }
+    output.push_str(remaining);
+    Ok(output)
 }
 
 fn resolve_llm_binary_path(llm: &LlmConfig) -> anyhow::Result<PathBuf> {
@@ -717,6 +754,27 @@ mod tests {
         assert_eq!(config.max_llm_calls, 4);
         assert_eq!(config.max_actions, 6);
         assert_eq!(config.max_repeated_action_fingerprints, 1);
+    }
+
+    #[test]
+    fn expands_config_env_placeholders() {
+        let expanded = expand_env_vars_with("${LOGAGENT_APP_DIR}/data", |name| {
+            assert_eq!(name, "LOGAGENT_APP_DIR");
+            Ok("/opt/logagent".to_string())
+        })
+        .unwrap();
+
+        assert_eq!(expanded, "/opt/logagent/data");
+
+        let missing = expand_env_vars_with("${MISSING}/data", |_| Err(env::VarError::NotPresent))
+            .unwrap_err()
+            .to_string();
+        assert!(missing.contains("missing config environment variable MISSING"));
+
+        let unclosed = expand_env_vars_with("${BROKEN/data", |_| unreachable!())
+            .unwrap_err()
+            .to_string();
+        assert!(unclosed.contains("unclosed environment variable placeholder"));
     }
 
     #[test]

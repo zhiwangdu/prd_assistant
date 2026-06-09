@@ -37,7 +37,7 @@ auth:
       value_env: "LOGAGENT_WEB_API_KEY"
 
 storage:
-  data_dir: "/data/logagent"
+  data_dir: "${LOGAGENT_APP_DIR}/data"
   max_upload_bytes: 2147483648
   max_files_per_task: 20
 
@@ -153,6 +153,7 @@ metadata:
 ## 原则
 
 - 密钥不直接写入配置文件，只引用环境变量。
+- `storage.data_dir` 支持 `${VAR}` 环境变量展开；例如运行目录部署可使用 `${LOGAGENT_APP_DIR}/data`。缺少变量或变量为空时 Server 启动失败。
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
 - Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。

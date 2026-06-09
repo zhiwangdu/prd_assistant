@@ -80,9 +80,19 @@ auth:
       value_env: "LOGAGENT_NATIVE_API_KEY"
 ```
 
+路径类配置可使用 `${VAR}` 引用环境变量。当前 Server 已支持 `storage.data_dir` 展开，例如：
+
+```yaml
+storage:
+  data_dir: "${LOGAGENT_APP_DIR}/data"
+```
+
+缺少被引用的环境变量、变量为空或占位符未闭合时，Server 启动失败。
+
 ## 验收标准
 
 - 缺少必要密钥环境变量时启动失败。
+- `storage.data_dir` 中的 `${VAR}` 能展开为环境变量值，缺失或空值时启动失败。
 - 配置有默认值，但示例文件必须展示推荐值。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL 或 API Key 环境变量时启动失败。
