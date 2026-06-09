@@ -1204,6 +1204,7 @@ mod tests {
             .create_import_preview(MetadataImportRequest {
                 template_type: "yaml".to_string(),
                 filename: None,
+                instance_id: None,
                 content: r#"
 instances:
   - instanceId: i-1

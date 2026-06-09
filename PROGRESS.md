@@ -69,7 +69,9 @@ Chrome Extension or WEBUI
   - `GET /api/cases`
   - `GET /api/cases/:case_id`
   - `PATCH /api/cases/:case_id`
+  - `GET /api/metadata/instances`
   - `GET /api/metadata/instances/:instance_id`
+  - `GET /api/metadata/instances/:instance_id/snapshot`
   - `GET /api/metadata/clusters/:cluster_id`
   - `GET /api/metadata/clusters/:cluster_id/nodes`
   - `POST /api/metadata/snapshots/fetch`
@@ -98,6 +100,7 @@ Chrome Extension or WEBUI
 - Successful tasks can now be manually confirmed into the local Case Store through `POST /api/tasks/:task_id/case`.
 - Case Store records are persisted as JSON under `storage.data_dir/cases`, loaded at startup, searchable through `GET /api/cases`, and can be disabled through `PATCH /api/cases/:case_id`.
 - New tasks now recall up to 5 enabled Cases by question, persist `case_context.json`, expose `caseContext` in artifacts, and include historical Case references in the LLM prompt as non-authoritative context.
+- Metadata now uses user-provided `instanceId` as the user-facing unique key. openGemini imports require an explicit InstanceID, preserve the raw openGemini `ClusterID` as `sourceClusterId`, expose an imported Instance list, and serve stored topology snapshots by InstanceID. Legacy cluster endpoints remain for compatibility.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
@@ -212,9 +215,11 @@ tool_results/<action_id>/
   - Case Store keyword search and disabling cases from the Log analysis view
   - grep evidence reference navigation
   - Metadata query
+  - imported Metadata Instance list
+  - stored Metadata snapshot loading by InstanceID
   - Metadata YAML/JSON import preview and confirmation
-  - Metadata openGemini `/getdata` URL fetch preview
-  - Metadata cluster view for `PtView` partition state and `Databases` schema/RP/shard summary
+  - Metadata openGemini `/getdata` URL fetch preview with explicit InstanceID
+  - Metadata Instance view for `PtView` partition state and `Databases` schema/RP/shard summary
   - Metadata Overview, Nodes, Partitions, Topology, Databases, Schemas, Diagnostics, and Raw JSON
   - complete Shard, IndexGroup, Index, and MstVersions logical/physical table views
   - topology follows DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index

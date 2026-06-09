@@ -57,9 +57,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/debug/llm",
             get(debug::get_llm_debug).put(debug::update_llm_debug),
         )
+        .route("/api/metadata/instances", get(metadata::list_instances))
         .route(
             "/api/metadata/instances/:instance_id",
             get(metadata::get_instance),
+        )
+        .route(
+            "/api/metadata/instances/:instance_id/snapshot",
+            get(metadata::get_instance_snapshot),
         )
         .route(
             "/api/metadata/clusters/:cluster_id",

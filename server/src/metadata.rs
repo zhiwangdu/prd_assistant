@@ -216,6 +216,7 @@ pub struct MetadataTemplate {
 pub struct MetadataImportRequest {
     pub template_type: String,
     pub filename: Option<String>,
+    pub instance_id: Option<String>,
     pub content: String,
 }
 
@@ -225,13 +226,31 @@ pub struct MetadataFetchImportRequest {
     pub url: String,
     pub template_type: Option<String>,
     pub filename: Option<String>,
+    pub instance_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataSnapshotResponse {
+    pub instance: Option<InstanceMetadata>,
     pub cluster: ClusterMetadata,
     pub nodes: Vec<NodeMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataInstanceSummary {
+    pub instance_id: String,
+    pub cluster_id: Option<String>,
+    pub node_id: Option<String>,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub region: Option<String>,
+    pub owner: Option<String>,
+    pub node_count: usize,
+    pub database_count: usize,
+    pub partition_view_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -323,6 +342,77 @@ impl MetadataStore {
             .instances
             .get(instance_id)
             .cloned()
+    }
+
+    pub async fn list_instances(&self) -> Vec<MetadataInstanceSummary> {
+        let records = self.records.read().await;
+        let mut instances = records
+            .instances
+            .values()
+            .map(|instance| {
+                let cluster = instance
+                    .cluster_id
+                    .as_ref()
+                    .and_then(|cluster_id| records.clusters.get(cluster_id));
+                MetadataInstanceSummary {
+                    instance_id: instance.instance_id.clone(),
+                    cluster_id: instance.cluster_id.clone(),
+                    node_id: instance.node_id.clone(),
+                    product: instance.product.clone(),
+                    version: instance.version.clone(),
+                    environment: instance.environment.clone(),
+                    region: instance.region.clone(),
+                    owner: instance.owner.clone(),
+                    node_count: instance
+                        .cluster_id
+                        .as_deref()
+                        .map(|cluster_id| cluster_nodes(&records, cluster_id).len())
+                        .unwrap_or_else(|| {
+                            records
+                                .nodes
+                                .values()
+                                .filter(|node| {
+                                    node.instance_id.as_deref()
+                                        == Some(instance.instance_id.as_str())
+                                })
+                                .count()
+                        }),
+                    database_count: cluster.map(|cluster| cluster.databases.len()).unwrap_or(0),
+                    partition_view_count: cluster
+                        .map(|cluster| cluster.partition_views.len())
+                        .unwrap_or(0),
+                }
+            })
+            .collect::<Vec<_>>();
+        instances.sort_by(|left, right| left.instance_id.cmp(&right.instance_id));
+        instances
+    }
+
+    pub async fn get_instance_snapshot(
+        &self,
+        instance_id: &str,
+    ) -> Result<MetadataSnapshotResponse, AppError> {
+        let records = self.records.read().await;
+        let instance = records
+            .instances
+            .get(instance_id)
+            .cloned()
+            .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
+        let cluster_id = instance
+            .cluster_id
+            .as_deref()
+            .unwrap_or(instance.instance_id.as_str());
+        let cluster = records
+            .clusters
+            .get(cluster_id)
+            .cloned()
+            .ok_or_else(|| AppError::bad_request("instanceId has no metadata snapshot"))?;
+        let nodes = cluster_nodes(&records, cluster_id);
+        Ok(MetadataSnapshotResponse {
+            instance: Some(instance),
+            cluster,
+            nodes,
+        })
     }
 
     pub async fn get_cluster(&self, cluster_id: &str) -> Option<ClusterMetadata> {
@@ -473,7 +563,8 @@ impl MetadataStore {
         &self,
         req: MetadataImportRequest,
     ) -> Result<MetadataImportPreview, AppError> {
-        let template = parse_template(&req.template_type, &req.content)?;
+        let template =
+            parse_template(&req.template_type, &req.content, req.instance_id.as_deref())?;
         let mut records = self.records.write().await;
         let import_id = next_id("meta_imp");
         let preview = build_preview(&import_id, &req, &template, &records);
@@ -497,6 +588,7 @@ impl MetadataStore {
                 .template_type
                 .unwrap_or_else(|| "opengemini".to_string()),
             filename: req.filename.or(Some(req.url)),
+            instance_id: req.instance_id,
             content,
         })
         .await
@@ -510,13 +602,16 @@ impl MetadataStore {
         let template = parse_template(
             req.template_type.as_deref().unwrap_or("opengemini"),
             &content,
+            req.instance_id.as_deref(),
         )?;
+        let instance = template.instances.into_iter().next();
         let cluster = template
             .clusters
             .into_iter()
             .next()
             .ok_or_else(|| AppError::bad_request("metadata snapshot has no cluster"))?;
         Ok(MetadataSnapshotResponse {
+            instance,
             cluster,
             nodes: template.nodes,
         })
@@ -621,12 +716,18 @@ async fn fetch_metadata_content(url: &str) -> Result<String, AppError> {
         .map_err(|err| AppError::bad_request(format!("failed to read metadata response: {err}")))
 }
 
-fn parse_template(template_type: &str, content: &str) -> Result<MetadataTemplate, AppError> {
+fn parse_template(
+    template_type: &str,
+    content: &str,
+    instance_id: Option<&str>,
+) -> Result<MetadataTemplate, AppError> {
     match template_type.to_ascii_lowercase().as_str() {
-        "json" => parse_metadata_json(content),
+        "json" => parse_metadata_json(content, instance_id),
         "yaml" | "yml" => serde_yaml::from_str(content)
             .map_err(|err| AppError::bad_request(format!("invalid metadata YAML: {err}"))),
-        "opengemini" | "opengemini-json" | "influxdb-meta" => parse_opengemini_snapshot(content),
+        "opengemini" | "opengemini-json" | "influxdb-meta" => {
+            parse_opengemini_snapshot(content, instance_id)
+        }
         "csv" => Err(AppError::bad_request(
             "metadata CSV import is reserved but not implemented yet",
         )),
@@ -636,7 +737,10 @@ fn parse_template(template_type: &str, content: &str) -> Result<MetadataTemplate
     }
 }
 
-fn parse_metadata_json(content: &str) -> Result<MetadataTemplate, AppError> {
+fn parse_metadata_json(
+    content: &str,
+    instance_id: Option<&str>,
+) -> Result<MetadataTemplate, AppError> {
     let value: serde_json::Value = serde_json::from_str(content)
         .map_err(|err| AppError::bad_request(format!("invalid metadata JSON: {err}")))?;
     if value.get("ClusterID").is_some()
@@ -644,25 +748,33 @@ fn parse_metadata_json(content: &str) -> Result<MetadataTemplate, AppError> {
         || value.get("DataNodes").is_some()
         || value.get("SqlNodes").is_some()
     {
-        return normalize_opengemini_value(value);
+        return normalize_opengemini_value(value, instance_id);
     }
     serde_json::from_value(value)
         .map_err(|err| AppError::bad_request(format!("invalid metadata JSON: {err}")))
 }
 
-fn parse_opengemini_snapshot(content: &str) -> Result<MetadataTemplate, AppError> {
+fn parse_opengemini_snapshot(
+    content: &str,
+    instance_id: Option<&str>,
+) -> Result<MetadataTemplate, AppError> {
     let value = serde_json::from_str(content)
         .map_err(|err| AppError::bad_request(format!("invalid openGemini metadata JSON: {err}")))?;
-    normalize_opengemini_value(value)
+    normalize_opengemini_value(value, instance_id)
 }
 
-fn normalize_opengemini_value(value: serde_json::Value) -> Result<MetadataTemplate, AppError> {
-    let cluster_id = value
+fn normalize_opengemini_value(
+    value: serde_json::Value,
+    instance_id: Option<&str>,
+) -> Result<MetadataTemplate, AppError> {
+    let instance_id = clean_required_instance_id(instance_id)?;
+    let source_cluster_id = value
         .get("ClusterID")
         .and_then(serde_json::Value::as_u64)
         .map(|id| id.to_string())
         .unwrap_or_else(|| "opengemini-local".to_string());
     let mut labels = HashMap::new();
+    labels.insert("sourceClusterId".to_string(), source_cluster_id.clone());
     insert_u64_label(&mut labels, "term", value.get("Term"));
     insert_u64_label(&mut labels, "index", value.get("Index"));
     insert_u64_label(&mut labels, "clusterPtNum", value.get("ClusterPtNum"));
@@ -693,9 +805,20 @@ fn normalize_opengemini_value(value: serde_json::Value) -> Result<MetadataTempla
     let partition_views = normalize_opengemini_pt_view(value.get("PtView"));
 
     let mut template = MetadataTemplate {
+        instances: vec![InstanceMetadata {
+            instance_id: instance_id.clone(),
+            cluster_id: Some(instance_id.clone()),
+            node_id: None,
+            product: Some("opengemini".to_string()),
+            version: None,
+            environment: None,
+            region: None,
+            owner: None,
+            tags: HashMap::from([("sourceClusterId".to_string(), source_cluster_id.clone())]),
+        }],
         clusters: vec![ClusterMetadata {
-            cluster_id: cluster_id.clone(),
-            name: Some(format!("opengemini-{cluster_id}")),
+            cluster_id: instance_id.clone(),
+            name: Some(format!("opengemini-{instance_id}")),
             product: Some("opengemini".to_string()),
             version: None,
             environment: None,
@@ -708,9 +831,9 @@ fn normalize_opengemini_value(value: serde_json::Value) -> Result<MetadataTempla
         ..MetadataTemplate::default()
     };
 
-    append_opengemini_nodes(&mut template, &cluster_id, "meta", value.get("MetaNodes"));
-    append_opengemini_nodes(&mut template, &cluster_id, "data", value.get("DataNodes"));
-    append_opengemini_nodes(&mut template, &cluster_id, "sql", value.get("SqlNodes"));
+    append_opengemini_nodes(&mut template, &instance_id, "meta", value.get("MetaNodes"));
+    append_opengemini_nodes(&mut template, &instance_id, "data", value.get("DataNodes"));
+    append_opengemini_nodes(&mut template, &instance_id, "sql", value.get("SqlNodes"));
     if let Some(cluster) = template.clusters.first_mut() {
         cluster.nodes = template
             .nodes
@@ -719,6 +842,24 @@ fn normalize_opengemini_value(value: serde_json::Value) -> Result<MetadataTempla
             .collect();
     }
     Ok(template)
+}
+
+fn clean_required_instance_id(instance_id: Option<&str>) -> Result<String, AppError> {
+    let value = instance_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::bad_request("instanceId is required for openGemini metadata import")
+        })?;
+    let valid = value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'));
+    if !valid {
+        return Err(AppError::bad_request(
+            "instanceId may only contain letters, numbers, '.', ':', '_' or '-'",
+        ));
+    }
+    Ok(value.to_string())
 }
 
 fn normalize_opengemini_databases(value: Option<&serde_json::Value>) -> Vec<DatabaseMetadata> {
@@ -1059,7 +1200,7 @@ fn normalize_opengemini_pt_view(value: Option<&serde_json::Value>) -> Vec<Partit
 
 fn append_opengemini_nodes(
     template: &mut MetadataTemplate,
-    cluster_id: &str,
+    instance_id: &str,
     node_kind: &str,
     nodes: Option<&serde_json::Value>,
 ) {
@@ -1072,7 +1213,7 @@ fn append_opengemini_nodes(
             .and_then(serde_json::Value::as_u64)
             .map(|id| id.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        let node_id = format!("{node_kind}-{raw_id}");
+        let node_id = format!("{instance_id}:{node_kind}-{raw_id}");
         let role = node
             .get("Role")
             .and_then(serde_json::Value::as_str)
@@ -1095,26 +1236,11 @@ fn append_opengemini_nodes(
         insert_u64_label(&mut labels, "index", node.get("Index"));
         insert_u64_label(&mut labels, "segregateStatus", node.get("SegregateStatus"));
 
-        template.instances.push(InstanceMetadata {
-            instance_id: node_id.clone(),
-            cluster_id: Some(cluster_id.to_string()),
-            node_id: Some(node_id.clone()),
-            product: Some("opengemini".to_string()),
-            version: None,
-            environment: None,
-            region: node
-                .get("Az")
-                .and_then(serde_json::Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string),
-            owner: None,
-            tags: labels.clone(),
-        });
         template.nodes.push(NodeMetadata {
             node_id: node_id.clone(),
             raw_node_id: node.get("ID").and_then(serde_json::Value::as_u64),
             kind: Some(node_kind.to_string()),
-            instance_id: Some(node_id),
+            instance_id: Some(instance_id.to_string()),
             hostname: host.as_deref().map(hostname_from_addr),
             host,
             tcp_host: optional_string(node.get("TCPHost")),
@@ -1443,6 +1569,7 @@ mod tests {
             .create_import_preview(MetadataImportRequest {
                 template_type: "yaml".to_string(),
                 filename: Some("metadata.yaml".to_string()),
+                instance_id: None,
                 content: r#"
 instances:
   - instanceId: i-123
@@ -1507,6 +1634,7 @@ nodes:
             .create_import_preview(MetadataImportRequest {
                 template_type: "yaml".to_string(),
                 filename: None,
+                instance_id: None,
                 content: r#"
 instances:
   - instanceId: i-1
@@ -1537,6 +1665,7 @@ clusters:
             .create_import_preview(MetadataImportRequest {
                 template_type: "json".to_string(),
                 filename: None,
+                instance_id: None,
                 content: serde_json::json!({
                     "instances": [
                         { "instanceId": "i-dup" },
@@ -1560,6 +1689,7 @@ clusters:
             .create_import_preview(MetadataImportRequest {
                 template_type: "opengemini".to_string(),
                 filename: Some("getdata.json".to_string()),
+                instance_id: Some("prod-a".to_string()),
                 content: serde_json::json!({
                     "ClusterID": 6735497445922383781_u64,
                     "Term": 2,
@@ -1674,20 +1804,34 @@ clusters:
             .unwrap();
 
         assert_eq!(preview.summary.clusters, 1);
-        assert_eq!(preview.summary.instances, 3);
+        assert_eq!(preview.summary.instances, 1);
         assert_eq!(preview.summary.nodes, 3);
         assert_eq!(preview.summary.databases, 1);
         assert_eq!(preview.summary.partition_views, 1);
         assert_eq!(preview.summary.errors, 0);
 
         store.confirm_import(&preview.import_id).await.unwrap();
-        let cluster = store.get_cluster("6735497445922383781").await.unwrap();
+        let instances = store.list_instances().await;
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].instance_id, "prod-a");
+        assert_eq!(instances[0].cluster_id.as_deref(), Some("prod-a"));
+        assert_eq!(instances[0].node_count, 3);
+        let snapshot = store.get_instance_snapshot("prod-a").await.unwrap();
+        assert_eq!(snapshot.instance.unwrap().instance_id, "prod-a");
+        let cluster = snapshot.cluster;
         assert_eq!(cluster.product.as_deref(), Some("opengemini"));
+        assert_eq!(
+            cluster.labels.get("sourceClusterId").map(String::as_str),
+            Some("6735497445922383781")
+        );
         assert_eq!(
             cluster.labels.get("databases").map(String::as_str),
             Some("mydb")
         );
-        assert_eq!(cluster.nodes, vec!["meta-1", "data-2", "sql-3"]);
+        assert_eq!(
+            cluster.nodes,
+            vec!["prod-a:meta-1", "prod-a:data-2", "prod-a:sql-3"]
+        );
         assert_eq!(cluster.partition_views.len(), 1);
         assert_eq!(cluster.partition_views[0].database, "mydb");
         assert_eq!(cluster.partition_views[0].owner_node_id, Some(2));
@@ -1732,10 +1876,10 @@ clusters:
         assert!(cluster.raw_snapshot.is_some());
 
         let data_node = store
-            .list_cluster_nodes("6735497445922383781")
+            .list_cluster_nodes("prod-a")
             .await
             .into_iter()
-            .find(|node| node.node_id == "data-2")
+            .find(|node| node.node_id == "prod-a:data-2")
             .unwrap();
         assert_eq!(data_node.role.as_deref(), Some("data"));
         assert_eq!(data_node.status.as_deref(), Some("active"));

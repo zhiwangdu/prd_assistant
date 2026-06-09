@@ -210,7 +210,7 @@ MVP 要求：
 - `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；当前固定调用 `/usr/bin/influxql-analyzer`，真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
-- task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
+- task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；旧 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理该快照。
 - task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
@@ -268,7 +268,9 @@ GET /api/cases/:case_id
 PATCH /api/cases/:case_id
 GET /api/debug/llm
 PUT /api/debug/llm
+GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+GET /api/metadata/instances/:instance_id/snapshot
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -282,9 +284,9 @@ analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_e
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
-`GET /api/metadata/clusters/:cluster_id` 会返回 cluster 基本信息、节点 ID 列表、labels，以及 openGemini 解析出的 `databases` 和 `partitionViews` 摘要。`databases` 包含默认保留策略、RP 参数、Measurements schema 和 ShardGroups；`partitionViews` 对应 `PtView`，用于查看 database partition 的 owner data node、状态、版本和 RGID。
+Metadata 的用户主键是手工输入的 `instanceId`。`GET /api/metadata/instances` 返回已导入实例列表及节点、数据库和 PT view 计数；`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的拓扑快照。旧 `cluster` 查询接口保留为兼容和内部拓扑排查用途，不再作为 WebUI 主入口。
 
-`POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，返回完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
+`POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，请求必须提供 `instanceId`。Server 使用该 InstanceID 作为 store 唯一键和内部 snapshot key，原始 openGemini `ClusterID` 仅保存在 `labels.sourceClusterId`。响应返回 instance、完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
 
 `POST /api/uploads` 使用 multipart：
 
@@ -346,7 +348,6 @@ UPLOADING -> COMPLETE
   "uploadId": "upl_123",
   "question": "请分析连接超时的可能原因",
   "instanceId": "i-123",
-  "clusterId": "c-1",
   "nodeId": "n-1",
   "sourceUrl": "https://logs.example/export/123"
 }
@@ -356,7 +357,7 @@ UPLOADING -> COMPLETE
 
 `question` 可选；未提供时使用默认日志分析问题。长度上限为 `llm.max_input_chars / 2`。
 
-Metadata ID 均可选。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应包含 `metadataContextPath` 和 `metadataContext`。
+Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应包含 `metadataContextPath` 和 `metadataContext`。
 
 `GET /api/tasks/:task_id/artifacts` 仅允许 `SUCCEEDED`；其他状态返回 `409 Conflict`，JSON 中包含当前 `status`。未知任务返回 `404 Not Found`。
 

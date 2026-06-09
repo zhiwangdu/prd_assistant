@@ -13,36 +13,61 @@ import {
   Server,
   TableProperties
 } from "lucide-react";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
-import { confirmImport, fetchSnapshot, fetchStoredCluster, previewImport, type ImportPreview } from "./api";
+import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, type ImportPreview } from "./api";
 import { buildTopology } from "./topology";
-import type { DatabaseDto, Diagnostic, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters } from "./types";
+import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters } from "./types";
 import { buildViewModel } from "./view-model";
 
 type Props = { apiKey: string };
 
 export function MetadataDashboard({ apiKey }: Props) {
   const [url, setUrl] = useState("http://127.0.0.1:8091/getdata");
-  const [clusterId, setClusterId] = useState("6735497445922383781");
+  const [instanceId, setInstanceId] = useState("");
+  const [instances, setInstances] = useState<MetadataInstanceSummary[]>([]);
+  const [listStatus, setListStatus] = useState("等待加载已导入列表");
   const [vm, setVm] = useState<MetadataViewModel | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importMessage, setImportMessage] = useState("");
 
+  const refreshInstances = useCallback(async () => {
+    if (!apiKey.trim()) {
+      setInstances([]);
+      setListStatus("请先填写 API Key");
+      return;
+    }
+    try {
+      const result = await fetchImportedInstances(apiKey);
+      setInstances(result.instances);
+      setListStatus(`${result.instances.length} 个已导入 Instance`);
+    } catch (reason) {
+      setListStatus(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [apiKey]);
+
+  useEffect(() => {
+    void refreshInstances();
+  }, [refreshInstances]);
+
   async function load(mode: "live" | "stored") {
     if (!apiKey.trim()) {
       setError("请先填写 API Key");
       return;
     }
+    if (!instanceId.trim()) {
+      setError("请先填写 InstanceID");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const snapshot = mode === "live" ? await fetchSnapshot(url, apiKey) : await fetchStoredCluster(clusterId, apiKey);
+      const snapshot = mode === "live" ? await fetchSnapshot(url, instanceId.trim(), apiKey) : await fetchStoredInstance(instanceId.trim(), apiKey);
       setVm(buildViewModel(snapshot));
-      setClusterId(snapshot.cluster.clusterId);
+      setInstanceId(snapshot.instance?.instanceId ?? instanceId.trim());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -51,17 +76,27 @@ export function MetadataDashboard({ apiKey }: Props) {
   }
 
   async function persistSnapshot() {
+    if (!apiKey.trim()) {
+      setError("请先填写 API Key");
+      return;
+    }
+    if (!instanceId.trim()) {
+      setError("请先填写 InstanceID");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       if (!importPreview) {
-        const preview = await previewImport(url, apiKey);
+        const preview = await previewImport(url, instanceId.trim(), apiKey);
         setImportPreview(preview);
         setImportMessage(`预览完成：${preview.summary.nodes} nodes / ${preview.summary.databases} databases。再次点击确认写入。`);
       } else {
         await confirmImport(importPreview.importId, apiKey);
         setImportMessage(`已写入 Server Metadata Store：${importPreview.importId}`);
         setImportPreview(null);
+        await refreshInstances();
+        await load("stored");
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -73,9 +108,10 @@ export function MetadataDashboard({ apiKey }: Props) {
   return (
     <div className="space-y-5">
       <Card>
-        <CardContent className="flex flex-col gap-3 pt-5 xl:flex-row">
-          <div className="flex flex-1 gap-2">
-            <Input value={url} onChange={(event) => setUrl(event.target.value)} aria-label="Metadata URL" />
+        <CardContent className="grid gap-3 pt-5 xl:grid-cols-[280px_minmax(0,1fr)_auto]">
+          <Input value={instanceId} onChange={(event) => { setInstanceId(event.target.value); setImportPreview(null); }} aria-label="Instance ID" placeholder="InstanceID（手工输入，唯一键）" />
+          <div className="flex min-w-0 gap-2">
+            <Input value={url} onChange={(event) => { setUrl(event.target.value); setImportPreview(null); }} aria-label="Metadata URL" />
             <Button onClick={() => void load("live")} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               实时加载
@@ -84,51 +120,132 @@ export function MetadataDashboard({ apiKey }: Props) {
               {importPreview ? "确认写入" : "预览导入"}
             </Button>
           </div>
-          <div className="flex gap-2 xl:w-[420px]">
-            <Input value={clusterId} onChange={(event) => setClusterId(event.target.value)} aria-label="Cluster ID" />
-            <Button variant="outline" onClick={() => void load("stored")} disabled={loading}>读取已存快照</Button>
-          </div>
+          <Button variant="outline" onClick={() => void load("stored")} disabled={loading}>读取已存 Instance</Button>
         </CardContent>
       </Card>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {importMessage && <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">{importMessage}</div>}
-      {!vm ? (
-        <EmptyState>从 openGemini `/getdata` 实时加载，或读取 Server 中已确认的 Metadata 快照。</EmptyState>
-      ) : (
-        <Tabs defaultValue="overview">
-          <TabsList>
-            <Tab value="overview" icon={Boxes} label="Overview" />
-            <Tab value="nodes" icon={Server} label="Nodes" />
-            <Tab value="partitions" icon={GitBranch} label="Partitions" />
-            <Tab value="topology" icon={Network} label="Topology" />
-            <Tab value="databases" icon={Database} label="Databases" />
-            <Tab value="schemas" icon={TableProperties} label="Schemas" />
-            <Tab value="diagnostics" icon={AlertTriangle} label={`Diagnostics ${vm.diagnostics.length}`} />
-            <Tab value="raw" icon={Braces} label="Raw JSON" />
-          </TabsList>
-          <TabsContent value="overview"><Overview vm={vm} /></TabsContent>
-          <TabsContent value="nodes"><NodesView nodes={vm.nodes} /></TabsContent>
-          <TabsContent value="partitions"><PartitionsView vm={vm} /></TabsContent>
-          <TabsContent value="topology"><TopologyView vm={vm} /></TabsContent>
-          <TabsContent value="databases"><DatabasesView databases={vm.cluster.databases ?? []} /></TabsContent>
-          <TabsContent value="schemas"><SchemasView databases={vm.cluster.databases ?? []} /></TabsContent>
-          <TabsContent value="diagnostics"><DiagnosticsView diagnostics={vm.diagnostics} /></TabsContent>
-          <TabsContent value="raw"><RawJsonView value={vm.cluster.rawSnapshot ?? vm.cluster} /></TabsContent>
-        </Tabs>
-      )}
+      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <ImportedInstancesPanel
+          instances={instances}
+          loading={loading}
+          selectedInstanceId={instanceId}
+          status={listStatus}
+          onRefresh={() => void refreshInstances()}
+          onSelect={(nextInstanceId) => {
+            setInstanceId(nextInstanceId);
+            setImportPreview(null);
+            void loadStoredInstance(nextInstanceId);
+          }}
+        />
+        {!vm ? (
+          <EmptyState>输入 InstanceID 后从 openGemini `/getdata` 实时加载，或从左侧读取已确认的 Metadata 快照。</EmptyState>
+        ) : (
+          <Tabs defaultValue="overview">
+            <TabsList>
+              <Tab value="overview" icon={Boxes} label="Overview" />
+              <Tab value="nodes" icon={Server} label="Nodes" />
+              <Tab value="partitions" icon={GitBranch} label="Partitions" />
+              <Tab value="topology" icon={Network} label="Topology" />
+              <Tab value="databases" icon={Database} label="Databases" />
+              <Tab value="schemas" icon={TableProperties} label="Schemas" />
+              <Tab value="diagnostics" icon={AlertTriangle} label={`Diagnostics ${vm.diagnostics.length}`} />
+              <Tab value="raw" icon={Braces} label="Raw JSON" />
+            </TabsList>
+            <TabsContent value="overview"><Overview vm={vm} /></TabsContent>
+            <TabsContent value="nodes"><NodesView nodes={vm.nodes} /></TabsContent>
+            <TabsContent value="partitions"><PartitionsView vm={vm} /></TabsContent>
+            <TabsContent value="topology"><TopologyView vm={vm} /></TabsContent>
+            <TabsContent value="databases"><DatabasesView databases={vm.cluster.databases ?? []} /></TabsContent>
+            <TabsContent value="schemas"><SchemasView databases={vm.cluster.databases ?? []} /></TabsContent>
+            <TabsContent value="diagnostics"><DiagnosticsView diagnostics={vm.diagnostics} /></TabsContent>
+            <TabsContent value="raw"><RawJsonView value={vm.cluster.rawSnapshot ?? vm.cluster} /></TabsContent>
+          </Tabs>
+        )}
+      </div>
     </div>
   );
+
+  async function loadStoredInstance(nextInstanceId: string) {
+    if (!apiKey.trim()) {
+      setError("请先填写 API Key");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const snapshot = await fetchStoredInstance(nextInstanceId, apiKey);
+      setVm(buildViewModel(snapshot));
+      setInstanceId(snapshot.instance?.instanceId ?? nextInstanceId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
 }
 
 function Tab({ value, icon: Icon, label }: { value: string; icon: typeof Boxes; label: string }) {
   return <TabsTrigger value={value}><Icon className="mr-2 inline h-4 w-4" />{label}</TabsTrigger>;
 }
 
+function ImportedInstancesPanel({
+  instances,
+  loading,
+  selectedInstanceId,
+  status,
+  onRefresh,
+  onSelect
+}: {
+  instances: MetadataInstanceSummary[];
+  loading: boolean;
+  selectedInstanceId: string;
+  status: string;
+  onRefresh: () => void;
+  onSelect: (instanceId: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle>Imported Instances</CardTitle>
+            <CardDescription>{status}</CardDescription>
+          </div>
+          <Button className="h-8 px-3" variant="outline" onClick={onRefresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {instances.length ? instances.map((item) => (
+          <button
+            className={`w-full rounded-lg border p-3 text-left transition ${selectedInstanceId === item.instanceId ? "border-primary bg-slate-50" : "border-border hover:bg-slate-50"}`}
+            key={item.instanceId}
+            onClick={() => onSelect(item.instanceId)}
+            type="button"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="break-all text-sm font-medium">{item.instanceId}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.product ?? "unknown"} {item.version ?? ""} · {item.environment ?? "env -"}</p>
+              </div>
+              <Badge variant="secondary">{item.nodeCount} nodes</Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{item.databaseCount} databases · {item.partitionViewCount} PT views</p>
+          </button>
+        )) : <EmptyState>暂无已导入 Instance。</EmptyState>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function Overview({ vm }: { vm: MetadataViewModel }) {
   const labels = vm.cluster.labels ?? {};
   const metrics = [
-    ["Cluster ID", vm.cluster.clusterId],
+    ["Instance ID", vm.instance?.instanceId ?? vm.cluster.clusterId],
+    ["Source Cluster ID", labels.sourceClusterId],
     ["Term", labels.term],
     ["Index", labels.index],
     ["Nodes", vm.nodes.length],

@@ -1,8 +1,27 @@
 export type NodeKind = "meta" | "data" | "sql";
 
 export type MetadataSnapshotResponse = {
+  instance?: InstanceDto | null;
   cluster: ClusterDto;
   nodes: NodeDto[];
+};
+
+export type InstanceDto = {
+  instanceId: string;
+  clusterId?: string | null;
+  nodeId?: string | null;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  region?: string | null;
+  owner?: string | null;
+  tags?: Record<string, string>;
+};
+
+export type MetadataInstanceSummary = InstanceDto & {
+  nodeCount: number;
+  databaseCount: number;
+  partitionViewCount: number;
 };
 
 export type ClusterDto = {

@@ -9,10 +9,17 @@ use crate::{
     error::AppError,
     metadata::{
         MetadataConfirmResponse, MetadataFetchImportRequest, MetadataImportPreview,
-        MetadataImportRequest, MetadataSnapshotResponse,
+        MetadataImportRequest, MetadataInstanceSummary, MetadataSnapshotResponse,
     },
     state::AppState,
 };
+
+pub async fn list_instances(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let instances: Vec<MetadataInstanceSummary> = state.metadata.list_instances().await;
+    Ok(Json(serde_json::json!({ "instances": instances })))
+}
 
 pub async fn get_instance(
     State(state): State<Arc<AppState>>,
@@ -24,6 +31,15 @@ pub async fn get_instance(
         .await
         .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
     Ok(Json(serde_json::json!({ "instance": instance })))
+}
+
+pub async fn get_instance_snapshot(
+    State(state): State<Arc<AppState>>,
+    Path(instance_id): Path<String>,
+) -> Result<Json<MetadataSnapshotResponse>, AppError> {
+    Ok(Json(
+        state.metadata.get_instance_snapshot(&instance_id).await?,
+    ))
 }
 
 pub async fn fetch_snapshot(

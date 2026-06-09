@@ -1,23 +1,23 @@
-import type { MetadataSnapshotResponse } from "./types";
+import type { MetadataInstanceSummary, MetadataSnapshotResponse } from "./types";
 
-export async function fetchSnapshot(url: string, apiKey: string) {
+export async function fetchSnapshot(url: string, instanceId: string, apiKey: string) {
   return fetchJson<MetadataSnapshotResponse>("/api/metadata/snapshots/fetch", {
     method: "POST",
     headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ url, templateType: "opengemini", filename: "opengemini-getdata.json" })
+    body: JSON.stringify({ url, instanceId, templateType: "opengemini", filename: "opengemini-getdata.json" })
   });
 }
 
-export async function fetchStoredCluster(clusterId: string, apiKey: string): Promise<MetadataSnapshotResponse> {
-  const [clusterResponse, nodesResponse] = await Promise.all([
-    fetchJson<{ cluster: MetadataSnapshotResponse["cluster"] }>(`/api/metadata/clusters/${encodeURIComponent(clusterId)}`, {
-      headers: authHeaders(apiKey)
-    }),
-    fetchJson<{ nodes: MetadataSnapshotResponse["nodes"] }>(`/api/metadata/clusters/${encodeURIComponent(clusterId)}/nodes`, {
-      headers: authHeaders(apiKey)
-    })
-  ]);
-  return { cluster: clusterResponse.cluster, nodes: nodesResponse.nodes };
+export async function fetchImportedInstances(apiKey: string) {
+  return fetchJson<{ instances: MetadataInstanceSummary[] }>("/api/metadata/instances", {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function fetchStoredInstance(instanceId: string, apiKey: string): Promise<MetadataSnapshotResponse> {
+  return fetchJson<MetadataSnapshotResponse>(`/api/metadata/instances/${encodeURIComponent(instanceId)}/snapshot`, {
+    headers: authHeaders(apiKey)
+  });
 }
 
 export type ImportPreview = {
@@ -33,11 +33,11 @@ export type ImportPreview = {
   };
 };
 
-export async function previewImport(url: string, apiKey: string) {
+export async function previewImport(url: string, instanceId: string, apiKey: string) {
   return fetchJson<ImportPreview>("/api/metadata/imports/fetch", {
     method: "POST",
     headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ url, templateType: "opengemini", filename: "opengemini-getdata.json" })
+    body: JSON.stringify({ url, instanceId, templateType: "opengemini", filename: "opengemini-getdata.json" })
   });
 }
 

@@ -15,9 +15,10 @@ Metadata 模块已完成基础 Rust Server 实现。
 - openGemini `PtView` 分区视图解析。
 - openGemini `Databases` 库、保留策略、表结构和 shard group 摘要解析。
 - Server 侧从真实元数据 URL 拉取并预览。
-- 导入确认后写入 metadata store。
+- openGemini 导入依赖用户手工输入 `instanceId`，并以 `instanceId` 作为唯一业务键；原始 `ClusterID` 仅保存在 `sourceClusterId` 标签中。
+- 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看。
 - WEBUI Metadata 页面。
-- task 创建时关联 `instanceId` / `clusterId` / `nodeId`。
+- task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
 - 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 LLM Gateway。
 
@@ -32,7 +33,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 维护实例 ID 到产品、版本、集群、节点、角色等信息的映射。
 - 维护集群拓扑和节点清单。
 - 支持按模板批量导入元数据。
-- 为 Server task 提供 `instanceId` / `clusterId` 上下文。
+- 为 Server task 提供以 `instanceId` 为主的上下文。
 - 为 WEBUI 提供元数据查询和展示。
 
 不负责：
@@ -46,7 +47,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 实例：
 
 - `instance_id`
-- `cluster_id`
+- `cluster_id`：内部拓扑快照键，openGemini 导入时等于 `instance_id`
 - `product`
 - `version`
 - `environment`
@@ -138,7 +139,9 @@ Metadata 模块已完成基础 Rust Server 实现。
 已实现接口：
 
 ```http
+GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+GET /api/metadata/instances/:instance_id/snapshot
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -153,6 +156,7 @@ POST /api/metadata/imports/:import_id/confirm
 ```json
 {
   "url": "http://127.0.0.1:8091/getdata",
+  "instanceId": "prod-og-1",
   "templateType": "opengemini",
   "filename": "opengemini-getdata.json"
 }
@@ -160,10 +164,11 @@ POST /api/metadata/imports/:import_id/confirm
 
 解析规则：
 
-- `ClusterID` -> `clusterId`
-- `MetaNodes` -> `meta-*` 节点
-- `DataNodes` -> `data-*` 节点
-- `SqlNodes` -> `sql-*` 节点
+- 用户输入 `instanceId` -> `instanceId` 和内部 `clusterId`
+- `ClusterID` -> `labels.sourceClusterId`
+- `MetaNodes` -> `<instanceId>:meta-*` 节点
+- `DataNodes` -> `<instanceId>:data-*` 节点
+- `SqlNodes` -> `<instanceId>:sql-*` 节点
 - `Databases`、`Term`、`Index`、`NumOfShards` 等写入 cluster labels
 - `Databases` -> cluster `databases`，重点保留默认 RP、RP 参数、Measurements schema、ShardGroups
 - `PtView` -> cluster `partitionViews`，重点保留数据库、PT ID、owner data node、状态、版本和 RGID
@@ -183,8 +188,9 @@ Authorization: Bearer <api-key>
 
 已新增 Metadata 页面：
 
+- 展示已确认导入的 Instance 列表。
 - 按实例 ID 查询。
-- 按集群 ID 查询。
+- 读取已存快照时使用 InstanceID，不再要求用户输入 ClusterID。
 - 展示 DataNode 分栏容器，内部按 Database/DBPT 分组展示 ShardGroup/Shard、IndexGroup/Index。
 - 支持拓扑筛选、异常高亮和实体详情面板。
 - 展示 `PtView` 分区归属和状态。
@@ -197,10 +203,9 @@ Authorization: Bearer <api-key>
 任务创建时可选择或输入：
 
 - `instanceId`
-- `clusterId`
 - `nodeId`
 
-这些字段进入 task context，后续用于日志分析和证据关联。只填写 `instanceId` 或 `nodeId` 时，Server 会从已确认 Metadata 自动推导关联 ID；显式 ID 与元数据关系冲突时拒绝创建任务。
+这些字段进入 task context，后续用于日志分析和证据关联。只填写 `instanceId` 或 `nodeId` 时，Server 会从已确认 Metadata 自动推导关联 ID；显式 ID 与元数据关系冲突时拒绝创建任务。旧 `clusterId` 请求字段仍兼容，但 WebUI 不再暴露。
 
 任务创建时固化 `workspaces/<task_id>/metadata_context.json`。快照包含归一化 instance、cluster、node、cluster nodes、产品、版本和环境。为控制大小和避免重复，cluster `rawSnapshot` 不写入任务快照。
 
@@ -227,6 +232,7 @@ data_dir/
 至少验证：
 
 - 单实例查询。
+- 已导入 Instance 列表查询。
 - 集群节点查询。
 - YAML/JSON 模板导入预览。
 - 导入确认。

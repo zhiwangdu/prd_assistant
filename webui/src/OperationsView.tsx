@@ -144,7 +144,6 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [question, setQuestion] = useState("分析日志中的主要异常、可能原因和建议检查项。");
   const [instanceId, setInstanceId] = useState("");
-  const [clusterId, setClusterId] = useState("");
   const [nodeId, setNodeId] = useState("");
   const [uploadStatus, setUploadStatus] = useState("等待上传");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -265,7 +264,6 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
           sourceUrl: sourceUrl || null,
           question: question.trim() || null,
           instanceId: instanceId.trim() || null,
-          clusterId: clusterId.trim() || null,
           nodeId: nodeId.trim() || null
         })
       });
@@ -382,9 +380,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         <CardHeader><CardTitle>Log import and evidence</CardTitle><CardDescription>上传进度与 Server 后台任务执行状态独立展示</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID (optional)" />
-            <Input value={clusterId} onChange={(event) => setClusterId(event.target.value)} placeholder="Cluster ID (optional)" />
             <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
           </div>
           <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
@@ -420,8 +417,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
             {selectedTask ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2"><StatusBadge status={selectedTask.status} /><span className="text-sm text-muted-foreground">{selectedTask.phase ?? "No active phase"}</span></div>
-                {selectedTask.instanceId || selectedTask.clusterId || selectedTask.nodeId ? (
-                  <p className="text-xs text-muted-foreground">Metadata: instance={selectedTask.instanceId ?? "-"} · cluster={selectedTask.clusterId ?? "-"} · node={selectedTask.nodeId ?? "-"}</p>
+                {selectedTask.instanceId || selectedTask.nodeId ? (
+                  <p className="text-xs text-muted-foreground">Metadata: instance={selectedTask.instanceId ?? "-"} · node={selectedTask.nodeId ?? "-"}</p>
                 ) : null}
                 {selectedTask.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedTask.error?.phase ? `${selectedTask.error.phase}: ` : ""}{selectedTask.error?.message ?? "Task failed"}</div> : null}
                 <WaitingInteraction
@@ -754,7 +751,6 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
   const abnormalPartitions = partitions.filter((partition) => partition.statusText && partition.statusText !== "online").length;
   const rows = [
     ["Instance", context.instanceId],
-    ["Cluster", context.clusterId],
     ["Node", context.nodeId],
     ["Product", context.product],
     ["Version", context.version],

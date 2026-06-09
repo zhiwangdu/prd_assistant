@@ -61,7 +61,9 @@ GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
 GET /api/debug/llm
 PUT /api/debug/llm
+GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+GET /api/metadata/instances/:instance_id/snapshot
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -70,6 +72,8 @@ POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
+
+Metadata 的用户主键为手工输入的 `instanceId`。`GET /api/metadata/instances` 返回已导入列表，`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的 openGemini 拓扑快照。旧 cluster 查询接口保留兼容；WebUI 不再要求用户输入 ClusterID。
 
 `GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
 
@@ -166,7 +170,7 @@ background executor
   -> SUCCEEDED or FAILED
 ```
 
-`POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Optional `instanceId` / `clusterId` / `nodeId` are resolved against Metadata before persistence.
+`POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
@@ -314,7 +318,7 @@ persist task
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
-- Metadata ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
+- Metadata 以 `instanceId` 作为用户主键；openGemini 导入必须由用户提供 InstanceID，原始 `ClusterID` 仅作为 `sourceClusterId` 标签保留。ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
 - pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
