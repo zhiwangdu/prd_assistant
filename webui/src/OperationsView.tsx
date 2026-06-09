@@ -2,10 +2,8 @@ import { BookOpenCheck, FileArchive, RefreshCw, UploadCloud } from "lucide-react
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { type UploadResponse, uploadFile } from "./upload";
 
-const CHUNK_BYTES = 512 * 1024;
-
-type UploadResponse = { uploadId: string; filename: string; size: number };
 type TaskStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
 type TaskSummary = {
   taskId: string;
@@ -850,32 +848,6 @@ function uniqueEvidenceRefs(result: AnalysisResult) {
 
 function DataLine({ id, title, detail }: { id?: string; title: string; detail: string }) {
   return <div id={id} className="rounded-lg border border-border p-3"><div className="flex items-center gap-2 text-sm font-medium"><FileArchive className="h-4 w-4 text-slate-400" />{title}</div><p className="mt-1 break-words text-xs text-muted-foreground">{detail}</p></div>;
-}
-
-async function uploadFile(file: File, apiKey: string, onProgress: (value: number) => void) {
-  if (file.size <= CHUNK_BYTES) {
-    const form = new FormData();
-    form.append("filename", file.name);
-    form.append("file", file, file.name);
-    const result = await fetchJson<UploadResponse>("/api/uploads", { method: "POST", headers: authHeaders(apiKey), body: form });
-    onProgress(1);
-    return result;
-  }
-  const upload = await fetchJson<UploadResponse>("/api/uploads/init", {
-    method: "POST",
-    headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ filename: file.name, size: file.size })
-  });
-  for (let offset = 0; offset < file.size; offset += CHUNK_BYTES) {
-    const next = Math.min(offset + CHUNK_BYTES, file.size);
-    await fetchJson(`/api/uploads/${encodeURIComponent(upload.uploadId)}/chunks?offset=${offset}`, {
-      method: "POST",
-      headers: authHeaders(apiKey),
-      body: file.slice(offset, next)
-    });
-    onProgress(next / file.size);
-  }
-  return fetchJson<UploadResponse>(`/api/uploads/${encodeURIComponent(upload.uploadId)}/complete`, { method: "POST", headers: authHeaders(apiKey) });
 }
 
 async function fetchTaskAnalysis(taskId: string, apiKey: string) {

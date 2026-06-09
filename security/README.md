@@ -39,6 +39,7 @@
 - 调用外部工具时使用参数数组，不拼接 shell 字符串。
 - 限制外部工具执行时间、输出大小和可访问目录。
 - 工具执行结果要保留 exit code、stderr 和原始输出路径，方便审计。
+- Tools 页面创建的手动工具运行也必须走同一白名单和 workspace 边界。`pprof_analyzer` 只分析已上传到 Server 的本地 profile 文件，不接受 URL source，并把 `PPROF_TMPDIR` 设置到当前 task workspace 内。
 
 ## 代码仓
 

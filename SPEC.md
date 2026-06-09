@@ -143,17 +143,20 @@ flowchart TD
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
 - Tool Runner MVP 支持白名单工具配置、规则版多输入 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 `influxql-analyzer` Report stdout 已适配为结构化 findings 并通过本地 smoke，当前本机路径为 `/usr/bin/influxql-analyzer`。
+- Tools API MVP 支持 `tool_run` 任务、工具目录、手动创建工具运行、运行状态轮询、结果/artifact 查询；`/api/tasks` 默认只返回日志分析任务，工具运行通过 `/api/tools/runs` 查询。
+- `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 真实 LLM 调用会记录 callId、attempt 和 schema retry 事件。
 - Analysis Agent 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Agent 已支持 `collect_environment` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；当前批准后生成 mock `environment_evidence`，真实 SSH/SCP 采集后续接入。
 - Case Store MVP 已支持 schema v2、成功任务人工确认、手工 Case 录入、JSON 持久化、关键词召回和禁用。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；binary provider 固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON。Gateway 基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
-- WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Case Store 管理页面、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Tools 工具集页面、Case Store 管理页面、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 
 - 按当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环。
+- 将更多工具按 Tools 插件描述接入，并让 Analysis Agent 的 `run_tool` action 逐步复用同一个工具 registry。
 - 接入真实 `flux_query_analyzer` 工具路径和规则。
 - 扩展 `influxql_analyzer` compare mode delta 字段映射。
 - Analysis Agent 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。

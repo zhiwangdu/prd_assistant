@@ -1,0 +1,480 @@
+use std::sync::Arc;
+
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Json,
+};
+use chrono::Utc;
+use serde::Deserialize;
+
+use crate::{
+    error::AppError,
+    id::next_id,
+    models::{
+        CreateToolRunRequest, TaskKind, TaskRecord, TaskResponse, TaskSource, TaskStatus,
+        ToolListResponse, ToolRunArtifactsResponse, ToolRunListResponse, UploadStatus,
+    },
+    pipeline::prepare_raw_snapshot,
+    state::AppState,
+    tools,
+};
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRunsQuery {
+    pub tool_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
+pub async fn list_tools(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ToolListResponse>, AppError> {
+    Ok(Json(ToolListResponse {
+        tools: tools::descriptors(&state.config),
+    }))
+}
+
+pub async fn get_tool(
+    State(state): State<Arc<AppState>>,
+    Path(tool_id): Path<String>,
+) -> Result<Json<crate::models::ToolDescriptor>, AppError> {
+    tools::get_descriptor(&state.config, &tool_id)
+        .map(Json)
+        .ok_or_else(|| AppError::not_found(format!("unknown toolId {tool_id}")))
+}
+
+pub async fn create_tool_run(
+    State(state): State<Arc<AppState>>,
+    Path(tool_id): Path<String>,
+    Json(req): Json<CreateToolRunRequest>,
+) -> Result<(StatusCode, Json<TaskResponse>), AppError> {
+    let _idempotency_key = req
+        .idempotency_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let upload_ids = req
+        .upload_ids
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if upload_ids.is_empty() {
+        return Err(AppError::bad_request("missing uploadIds"));
+    }
+    let normalized_params =
+        tools::validate_tool_run_request(&state.config, &tool_id, upload_ids.len(), &req.params)?;
+
+    let mut uploads = Vec::with_capacity(upload_ids.len());
+    for upload_id in &upload_ids {
+        let upload = state
+            .uploads
+            .get(upload_id)
+            .await
+            .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
+        if upload.status != UploadStatus::Complete {
+            return Err(AppError::bad_request(format!(
+                "uploadId {upload_id} is not complete"
+            )));
+        }
+        uploads.push(upload);
+    }
+
+    let task_id = next_id("task");
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
+    let now = Utc::now();
+    let record = TaskRecord {
+        schema_version: 5,
+        task_id: task_id.clone(),
+        task_kind: TaskKind::ToolRun,
+        source: TaskSource::Upload,
+        upload_ids,
+        inputs,
+        source_url: None,
+        tool_id: Some(tool_id),
+        tool_params: normalized_params,
+        tool_result_path: None,
+        instance_id: None,
+        cluster_id: None,
+        node_id: None,
+        question: "Run selected tool".to_string(),
+        status: TaskStatus::Queued,
+        phase: None,
+        attempts: 0,
+        error: None,
+        manifest_path: None,
+        grep_results_path: None,
+        metadata_context_path: None,
+        result_json_path: None,
+        result_markdown_path: None,
+        created_at: now,
+        updated_at: now,
+    };
+    state
+        .tasks
+        .create(record.clone())
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist tool run: {err}")))?;
+    state.executor.enqueue(state.clone(), task_id);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(record.summary(&state.config.server.public_base_url)),
+    ))
+}
+
+pub async fn list_tool_runs(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ToolRunsQuery>,
+) -> Result<Json<ToolRunListResponse>, AppError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let runs = state
+        .tasks
+        .list()
+        .await
+        .into_iter()
+        .filter(|task| task.task_kind == TaskKind::ToolRun)
+        .filter(|task| match query.tool_id.as_deref() {
+            Some(tool_id) if !tool_id.trim().is_empty() => task.tool_id.as_deref() == Some(tool_id),
+            _ => true,
+        })
+        .take(limit)
+        .map(|task| task.summary(&state.config.server.public_base_url))
+        .collect();
+    Ok(Json(ToolRunListResponse { runs }))
+}
+
+pub async fn get_tool_run(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> Result<Json<TaskRecord>, AppError> {
+    validate_task_id(&task_id)?;
+    let task = state
+        .tasks
+        .get(&task_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))?;
+    if task.task_kind != TaskKind::ToolRun {
+        return Err(AppError::bad_request(format!(
+            "{task_id} is not a tool run"
+        )));
+    }
+    Ok(Json(task))
+}
+
+pub async fn tool_run_result(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> Result<Json<ToolRunArtifactsResponse>, AppError> {
+    read_tool_run_result(state, task_id).await.map(Json)
+}
+
+pub async fn tool_run_artifacts(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> Result<Json<ToolRunArtifactsResponse>, AppError> {
+    read_tool_run_result(state, task_id).await.map(Json)
+}
+
+async fn read_tool_run_result(
+    state: Arc<AppState>,
+    task_id: String,
+) -> Result<ToolRunArtifactsResponse, AppError> {
+    validate_task_id(&task_id)?;
+    let task = state
+        .tasks
+        .get(&task_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown taskId {task_id}")))?;
+    if task.task_kind != TaskKind::ToolRun {
+        return Err(AppError::bad_request(format!(
+            "{task_id} is not a tool run"
+        )));
+    }
+    if task.status != TaskStatus::Succeeded {
+        return Err(AppError::conflict(
+            "tool run result is only available after success",
+            serde_json::json!({ "status": task.status }),
+        ));
+    }
+    let result_path = task
+        .tool_result_path
+        .ok_or_else(|| AppError::internal("successful tool run is missing toolResultPath"))?;
+    let result = read_json_file(std::path::Path::new(&result_path)).await?;
+    Ok(ToolRunArtifactsResponse {
+        task_id,
+        tool_id: task
+            .tool_id
+            .ok_or_else(|| AppError::internal("tool run is missing toolId"))?,
+        result_path,
+        result,
+    })
+}
+
+async fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, AppError> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|err| AppError::internal(format!("artifact not found: {err}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|err| AppError::internal(format!("failed to parse artifact JSON: {err}")))
+}
+
+fn validate_task_id(task_id: &str) -> Result<(), AppError> {
+    let valid = task_id.starts_with("task_")
+        && task_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("invalid taskId"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    };
+    use tower::ServiceExt;
+
+    use crate::{
+        api,
+        config::{
+            AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
+            ToolsSettings,
+        },
+        models::{UploadRecord, UploadStatus},
+    };
+
+    #[tokio::test]
+    async fn pprof_tool_run_reuses_uploads_tasks_and_result_api() {
+        let (state, root) = test_state_with_pprof_tool();
+        create_test_upload(&state, "upl_pprof").await;
+        let app = api::router(state.clone()).with_state(state.clone());
+
+        let list = app
+            .clone()
+            .oneshot(
+                Request::get("/api/tools")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list.status(), StatusCode::OK);
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["tools"][0]["toolId"], "pprof_analyzer");
+        assert_eq!(body["tools"][0]["enabled"], true);
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tools/pprof_analyzer/runs")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadIds":["upl_pprof"],"params":{"sampleIndex":"samples","nodeCount":20}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["taskKind"], "tool_run");
+        let task_id = body["taskId"].as_str().unwrap();
+
+        wait_for_tool_run(&app, task_id, "SUCCEEDED").await;
+        let result = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tools/runs/{task_id}/result"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = to_bytes(result.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["toolId"], "pprof_analyzer");
+        assert_eq!(body["result"]["status"], "OK");
+        assert_eq!(body["result"]["top"][0]["function"], "pkg.hot");
+        assert!(body["result"]["artifacts"]["topTextPath"]
+            .as_str()
+            .unwrap()
+            .ends_with("top.txt"));
+
+        let log_tasks = app
+            .oneshot(
+                Request::get("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(log_tasks.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["tasks"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn test_state_with_pprof_tool() -> (Arc<AppState>, std::path::PathBuf) {
+        static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
+        let root = std::env::temp_dir().join(format!(
+            "logagent-tools-api-{}-{}",
+            std::process::id(),
+            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let tool_path = write_fake_go(&root);
+        let mut tools = std::collections::BTreeMap::new();
+        tools.insert(
+            "pprof_analyzer".to_string(),
+            ToolSettings {
+                name: "pprof_analyzer".to_string(),
+                enabled: true,
+                path: tool_path,
+                timeout_seconds: 5,
+                max_output_bytes: 1024 * 1024,
+                max_input_files: 1,
+                args: Vec::new(),
+                match_settings: ToolMatchSettings::default(),
+            },
+        );
+        let config = Arc::new(AppConfig {
+            server: ServerSettings {
+                bind: "127.0.0.1:0".to_string(),
+                public_base_url: "http://127.0.0.1:0".to_string(),
+                max_concurrent_tasks: 2,
+            },
+            auth: AuthSettings {
+                api_keys: vec!["test-key".to_string()],
+            },
+            storage: StorageSettings {
+                data_dir: root.join("data"),
+                max_upload_bytes: 1024 * 1024,
+                max_chunk_bytes: 512 * 1024,
+            },
+            log_analyzer: LogAnalyzerSettings {
+                keywords: vec!["error".to_string()],
+                max_matches: 20,
+            },
+            tools: ToolsSettings { tools },
+            llm: LlmSettings {
+                provider: LlmProvider::Stub,
+                base_url: None,
+                api_key: None,
+                binary_path: None,
+                binary_max_output_bytes: 1024 * 1024,
+                model: "stub".to_string(),
+                request_timeout_seconds: 1,
+                max_input_chars: 60_000,
+                max_output_tokens: 100,
+            },
+            analysis: AnalysisSettings {
+                max_rounds: 4,
+                max_llm_calls: 4,
+                max_actions: 6,
+                max_repeated_action_fingerprints: 1,
+            },
+        });
+        config.prepare_dirs().unwrap();
+        (AppState::new(config).unwrap(), root)
+    }
+
+    fn write_fake_go(root: &std::path::Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::create_dir_all(root).unwrap();
+        let path = root.join("fake-go.sh");
+        std::fs::write(
+            &path,
+            r#"#!/usr/bin/env bash
+mode="$3"
+if [[ "$mode" == "-top" ]]; then
+  cat <<'OUT'
+File: sample
+Type: cpu
+Showing nodes accounting for 970ms, 100% of 970ms total
+      flat  flat%   sum%        cum   cum%
+     490ms 50.52% 50.52%      900ms 92.78%  pkg.hot
+OUT
+elif [[ "$mode" == "-tree" ]]; then
+  printf 'tree output\n'
+elif [[ "$mode" == "-raw" ]]; then
+  printf 'raw output\n'
+elif [[ "$mode" == "-svg" ]]; then
+  printf '<svg></svg>\n'
+else
+  echo "unexpected mode $mode" >&2
+  exit 2
+fi
+"#,
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    async fn create_test_upload(state: &Arc<AppState>, upload_id: &str) {
+        let upload_dir = state.config.storage.upload_dir(upload_id);
+        std::fs::create_dir_all(&upload_dir).unwrap();
+        let path = upload_dir.join("sample.pb.gz");
+        std::fs::write(&path, b"fake pprof").unwrap();
+        let now = Utc::now();
+        state
+            .uploads
+            .create(UploadRecord {
+                schema_version: 1,
+                upload_id: upload_id.to_string(),
+                filename: "sample.pb.gz".to_string(),
+                size: 10,
+                expected_size: Some(10),
+                status: UploadStatus::Complete,
+                path,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .unwrap();
+    }
+
+    async fn wait_for_tool_run(app: &axum::Router, task_id: &str, expected_status: &str) {
+        for _ in 0..100 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/api/tools/runs/{task_id}"))
+                        .header("authorization", "Bearer test-key")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            if body["status"] == expected_status {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("tool run did not reach {expected_status}");
+    }
+}

@@ -19,6 +19,7 @@
 - Native Agent 只读取配置允许目录。
 - Server 只在 workspace 内处理任务产物。
 - Tool Runner 只能执行白名单工具。
+- Tools 页面手动工具运行只能引用 Server UploadStore 中已完成上传，不能传入任意本地路径、远程 URL 或自由 argv；`pprof_analyzer` 的 `PPROF_TMPDIR` 必须位于 task workspace 内。
 - LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Agent action。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。

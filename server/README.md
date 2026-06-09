@@ -205,6 +205,8 @@ MVP 要求：
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
+- `pprof_analyzer` 是首个 Tools 插件，通过配置的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 文本结果，并把 top 输出解析为结构化表格。
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
@@ -264,6 +266,13 @@ POST /api/tasks/:task_id/actions/:action_id/decision
 POST /api/tasks/:task_id/case
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+GET /api/tools
+GET /api/tools/:tool_id
+POST /api/tools/:tool_id/runs
+GET /api/tools/runs
+GET /api/tools/runs/:task_id
+GET /api/tools/runs/:task_id/result
+GET /api/tools/runs/:task_id/artifacts
 POST /api/cases
 GET /api/cases
 GET /api/cases/:case_id
@@ -282,7 +291,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功任务中包含 `caseContext` 和 `toolResults`；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `caseContext` 和 `toolResults`；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
@@ -376,6 +385,17 @@ cargo run -p logagent-server -- --config examples/server-llm-openai-compatible.y
 ```
 
 `examples/server-llm-openai-compatible.yaml` 使用 `model_env: "LOGAGENT_LLM_MODEL"`。如果同时配置 `model_env` 和静态 `model`，环境变量值优先；变量缺失或值为空时 Server 启动失败。
+
+pprof Tools 页面本地启动：
+
+```bash
+cd webui && npm run build && cd ..
+export LOGAGENT_NATIVE_API_KEY=dev-token
+export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
+cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
+```
+
+访问 `http://127.0.0.1:50997/`，在 Tools 页面上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz` 文件即可创建 `tool_run` 任务。
 
 批量任务请求：
 

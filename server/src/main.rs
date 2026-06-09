@@ -16,6 +16,7 @@ mod state;
 mod task_executor;
 mod task_store;
 mod tool_runner;
+mod tools;
 mod upload_store;
 
 use std::{net::SocketAddr, path::PathBuf};

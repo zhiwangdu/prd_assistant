@@ -83,6 +83,8 @@ environment approval -> collect stub -> Agent continuation -> result
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 - Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 - Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换，以及 compare report 的基础 delta findings。
+- Tools API 单测覆盖 `pprof_analyzer` 目录发现、上传复用、`tool_run` task 创建、后台执行、结果 API，以及 `/api/tasks` 不混入工具运行。
+- pprof parser 单测覆盖 `go tool pprof -top` 文本到结构化 top 函数表的转换。
 
 ### LLM 测试策略
 
@@ -109,6 +111,7 @@ Stub 必须支持脚本化多轮响应：
 
 - 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
 - 单独验证真实 InfluxQL 工具可使用 `examples/server-influxql-tool.yaml`，当前会直接调用 `/usr/bin/influxql-analyzer`。
+- 单独验证 pprof Tools 页面可使用 `examples/server-pprof-tool.yaml`，需要设置 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`。
 - 手工真实工具验收需要为 `examples/server-tools.yaml` 设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`；如临时改回环境变量路径，再设置 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 

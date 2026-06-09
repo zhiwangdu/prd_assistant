@@ -24,6 +24,17 @@ Chrome Extension or WEBUI
   -> optional human confirmation or manual entry into local Case Store
 ```
 
+Current manual Tools loop:
+
+```text
+WEBUI Tools
+  -> upload pprof profile through existing upload API
+  -> create persisted taskKind=tool_run task
+  -> background RUN_TOOL execution
+  -> go tool pprof top/tree/raw artifacts
+  -> /api/tools/runs polling and result display
+```
+
 ## Implemented
 
 ### Chrome Extension
@@ -80,6 +91,13 @@ Chrome Extension or WEBUI
   - `POST /api/metadata/imports/fetch`
   - `GET /api/metadata/imports/:import_id/preview`
   - `POST /api/metadata/imports/:import_id/confirm`
+  - `GET /api/tools`
+  - `GET /api/tools/:tool_id`
+  - `POST /api/tools/:tool_id/runs`
+  - `GET /api/tools/runs`
+  - `GET /api/tools/runs/:task_id`
+  - `GET /api/tools/runs/:task_id/result`
+  - `GET /api/tools/runs/:task_id/artifacts`
 - Uses API Key middleware for protected APIs.
 - Statically serves Vite output from `webui/out`.
 - Creates Server-owned task IDs and workspaces.
@@ -115,6 +133,9 @@ Chrome Extension or WEBUI
 - Exposes `/api/debug/llm` for runtime LLM response-content logging control; the flag is in-memory, defaults off, and does not print prompts or API keys.
 - `scripts/start-local.sh` background mode now disowns the server job after `nohup`, so local quick-start remains available after non-interactive zsh exits.
 - Runtime deployment assets are now organized under `$LOGAGENT_APP_DIR/deploy`, including deploy steps, env sample, config sample, `logagentctl.sh`, and `rebuild-install.sh`. The scripts use `LOGAGENT_APP_DIR` and `LOGAGENT_SRC_DIR`, replace `$LOGAGENT_APP_DIR/bin/logagent-server`, sync WebUI static files, and restart only when the server was already running.
+- Tools API now supports a separate `taskKind=tool_run` path for user-triggered tools. Tool runs reuse upload records, raw workspace snapshots, TaskStore, background executor, status polling, and `tool_results`, while `/api/tasks` remains scoped to log analysis tasks.
+- `pprof_analyzer` is the first Tools plugin. It is configured through `tools.pprof_analyzer`, expects the path to a Go executable, runs `go tool pprof -top/-tree/-raw` with `PPROF_TMPDIR` inside the task workspace, optionally attempts SVG output, and writes a structured result with profile type, total, top functions, warnings, and artifact paths.
+- Added `examples/server-pprof-tool.yaml` for pprof Tools smoke with `LOGAGENT_TOOL_PPROF_GO`.
 
 ### Upload And Workspace
 
@@ -185,6 +206,7 @@ tool_results/<action_id>/
 - `GET /api/tasks/:task_id/artifacts` returns `toolResults`.
 - WebUI displays tool result status, exit code, duration, summary, structured findings, stdout path, and stderr path.
 - Tool findings can be cited by final LLM results as `tool_results/<action_id>/result.json#findings/<index>`.
+- Manual Tools runs now also write under `tool_results/<action_id>/`; `pprof_analyzer` results are exposed through `/api/tools/runs/:task_id/result` rather than the log-analysis artifact endpoint.
 - Added `examples/server-tools.yaml` with `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` and `LOGAGENT_TOOL_INFLUXQL_ANALYZER` templates for real tool smoke tests.
 - Added `examples/server-influxql-tool.yaml` for single-tool real InfluxQL smoke; it now uses `/usr/bin/influxql-analyzer` directly.
 - Local Tool Runner smoke on port 50998 used `examples/server-tools.yaml` with both tool env vars pointed at `/bin/echo`; a batch `.flux` + `.sql` task `task_1780845768676_3` reached `SUCCEEDED` and returned OK tool results for both configured analyzers.
@@ -202,6 +224,7 @@ tool_results/<action_id>/
 - Supports:
   - health check
   - fixed top-bar API Key input
+  - top-level Tools page
   - one or more file uploads
   - chunked upload for large files
   - task creation with `uploadIds`
@@ -210,7 +233,9 @@ tool_results/<action_id>/
   - separate upload and task execution progress
   - persisted task recovery after page refresh
   - failed phase/message display and historical artifact selection
+  - manual tool run status polling and result loading
   - Tool Runner result display
+  - pprof analyzer upload, sample index/node count/SVG controls, top function table, and artifact path display
   - user question input and structured LLM result display
   - live Task execution loop summary from `/api/tasks/:task_id/analysis`
   - `WAITING_FOR_USER` prompt answer form

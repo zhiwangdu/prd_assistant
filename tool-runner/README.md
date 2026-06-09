@@ -96,6 +96,7 @@ tools:
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - 当前 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，该路径是指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer` 的符号链接；相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
 - 当前本机尚未找到 `flux_query_analyzer` / `flux-query-analyzer` 二进制，因此真实 Flux 工具 smoke 仍等待工具安装。
+- Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。首个 `pprof_analyzer` 复用 `tools.<name>` 白名单配置和 workspace 产物目录，但由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果。
 
 ## 本地真实工具 smoke
 
@@ -122,6 +123,16 @@ cargo run -p logagent-server -- --config examples/server-influxql-tool.yaml
 ```text
 -input <file> -output json -detail-limit 5
 ```
+
+验证 pprof Tools 页面：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
+cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
+```
+
+访问 `http://127.0.0.1:50997/` 的 Tools 页面上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
 
 ## 输出结构
 

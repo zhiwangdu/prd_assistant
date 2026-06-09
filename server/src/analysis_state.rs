@@ -1111,6 +1111,7 @@ mod tests {
         TaskRecord {
             schema_version: 4,
             task_id: task_id.to_string(),
+            task_kind: crate::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {
@@ -1120,6 +1121,9 @@ mod tests {
                 raw_path: "raw/upl_1/sample.log".to_string(),
             }],
             source_url: None,
+            tool_id: None,
+            tool_params: serde_json::Value::Null,
+            tool_result_path: None,
             instance_id: None,
             cluster_id: None,
             node_id: None,

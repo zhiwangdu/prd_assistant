@@ -12,6 +12,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `examples/server-test.yaml`
 - `examples/server-tools.yaml`
 - `examples/server-influxql-tool.yaml`
+- `examples/server-pprof-tool.yaml`
 - `examples/native-agent-remote-50992.yaml`
 
 ## 配置范围
@@ -54,6 +55,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
+- `tools.pprof_analyzer.path` / `path_env`，首版必须指向 Go 可执行文件，Server 固定追加 `tool pprof` 子命令。
 - `analysis.max_rounds`
 - `analysis.max_llm_calls`
 - `analysis.max_actions`
@@ -106,6 +108,7 @@ storage:
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
 - `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地 smoke；当前真实工具路径固定为 `/usr/bin/influxql-analyzer`。
+- `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
 - Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。

@@ -102,6 +102,13 @@ tools:
         - "select"
         - "show series"
 
+  pprof_analyzer:
+    enabled: true
+    path_env: LOGAGENT_TOOL_PPROF_GO
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 1
+
 analysis:
   max_rounds: 4
   max_llm_calls: 4
@@ -167,6 +174,7 @@ metadata:
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
 - 真实 `influxql_analyzer` 推荐使用 `examples/server-influxql-tool.yaml` 验证；当前本机路径为 `/usr/bin/influxql-analyzer`，输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`。
+- `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

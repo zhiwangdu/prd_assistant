@@ -142,6 +142,24 @@ impl TaskStore {
         .await
     }
 
+    pub async fn succeed_tool_run(
+        &self,
+        task_id: &str,
+        expected: TaskPhase,
+        tool_result_path: String,
+    ) -> anyhow::Result<TaskRecord> {
+        self.update(task_id, |task| {
+            ensure_running(task)?;
+            ensure_phase(task, expected)?;
+            task.status = TaskStatus::Succeeded;
+            task.phase = None;
+            task.error = None;
+            task.tool_result_path = Some(tool_result_path);
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn fail(
         &self,
         task_id: &str,
@@ -278,6 +296,7 @@ mod tests {
         TaskRecord {
             schema_version: 1,
             task_id: id.to_string(),
+            task_kind: crate::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {
@@ -287,6 +306,9 @@ mod tests {
                 raw_path: "raw/upl_1/sample.log".to_string(),
             }],
             source_url: None,
+            tool_id: None,
+            tool_params: serde_json::Value::Null,
+            tool_result_path: None,
             instance_id: None,
             cluster_id: None,
             node_id: None,

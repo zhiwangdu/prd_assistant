@@ -26,6 +26,7 @@
 ## 第 2 阶段：当前产品闭环
 
 - Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已配置到 `/usr/bin/influxql-analyzer` 并可直接调用，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
+- Tools 页面 MVP 已接入 Server 和 WebUI，首个 `pprof_analyzer` 通过 `tool_run` task 复用上传、任务状态、workspace 和 artifact 机制；后续更多工具应按同一 registry/adapter 方式扩展。
 - 围绕现有上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 流程补齐端到端产品闭环。
 - 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
 - 所有结果关联 `actionId` 并使用稳定证据引用。

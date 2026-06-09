@@ -8,7 +8,10 @@ use crate::{
     config::{AnalysisSettings, LogAnalyzerSettings},
     contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
     llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
-    models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskPhase, TaskRecord},
+    models::{
+        AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskKind, TaskPhase,
+        TaskRecord,
+    },
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
         prepare_pipeline_run, read_optional_json, read_tool_results, search_task,
@@ -48,7 +51,16 @@ impl TaskExecutor {
 }
 
 async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
-    let mut task = match state.tasks.start_attempt(task_id, TaskPhase::Extract).await {
+    let initial_phase = state
+        .tasks
+        .get(task_id)
+        .await
+        .map(|task| match task.task_kind {
+            TaskKind::LogAnalysis => TaskPhase::Extract,
+            TaskKind::ToolRun => TaskPhase::RunTool,
+        })
+        .unwrap_or(TaskPhase::Extract);
+    let mut task = match state.tasks.start_attempt(task_id, initial_phase).await {
         Ok(record) => record,
         Err(err) => {
             warn!(task_id, "skipping task that is no longer queued: {err}");
@@ -120,6 +132,17 @@ async fn dispatch_phase(
             .await
         }
         TaskPhase::RunTool => {
+            if task.task_kind == TaskKind::ToolRun {
+                let result_path = crate::tools::run_tool_task(state.config.clone(), task.clone())
+                    .await?
+                    .display()
+                    .to_string();
+                state
+                    .tasks
+                    .succeed_tool_run(&task.task_id, TaskPhase::RunTool, result_path)
+                    .await?;
+                return Ok(DispatchOutcome::Complete);
+            }
             let workspace = state.config.storage.workspace_dir(&task.task_id);
             analysis_state::ensure_initialized(&workspace, &task)?;
             run_tool_phase(state.clone(), &task).await?;
@@ -876,6 +899,7 @@ mod tests {
             TaskRecord {
                 schema_version: 4,
                 task_id: self.task_id.clone(),
+                task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {
@@ -885,6 +909,9 @@ mod tests {
                     raw_path: "raw/upl_1/sample.log".to_string(),
                 }],
                 source_url: None,
+                tool_id: None,
+                tool_params: serde_json::Value::Null,
+                tool_result_path: None,
                 instance_id: None,
                 cluster_id: None,
                 node_id: None,

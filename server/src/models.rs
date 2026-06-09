@@ -76,6 +76,7 @@ pub struct CreateTaskRequest {
 pub struct TaskResponse {
     pub task_id: String,
     pub url: String,
+    pub task_kind: TaskKind,
     pub status: TaskStatus,
     pub phase: Option<TaskPhase>,
     pub created_at: DateTime<Utc>,
@@ -87,6 +88,52 @@ pub type TaskSummary = TaskResponse;
 #[serde(rename_all = "camelCase")]
 pub struct TaskListResponse {
     pub tasks: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolListResponse {
+    pub tools: Vec<ToolDescriptor>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDescriptor {
+    pub tool_id: String,
+    pub display_name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub backend: String,
+    pub accepted_suffixes: Vec<String>,
+    pub min_files: usize,
+    pub max_files: usize,
+    pub params_schema: serde_json::Value,
+    pub output_views: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateToolRunRequest {
+    #[serde(default)]
+    pub upload_ids: Vec<String>,
+    #[serde(default)]
+    pub params: serde_json::Value,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRunListResponse {
+    pub runs: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRunArtifactsResponse {
+    pub task_id: String,
+    pub tool_id: String,
+    pub result_path: String,
+    pub result: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,6 +187,17 @@ pub enum TaskPhase {
     GenerateResult,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    LogAnalysis,
+    ToolRun,
+}
+
+pub fn default_task_kind() -> TaskKind {
+    TaskKind::LogAnalysis
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: &'static str,
@@ -172,10 +230,18 @@ pub struct TaskError {
 pub struct TaskRecord {
     pub schema_version: u32,
     pub task_id: String,
+    #[serde(default = "default_task_kind")]
+    pub task_kind: TaskKind,
     pub source: TaskSource,
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
     pub source_url: Option<String>,
+    #[serde(default)]
+    pub tool_id: Option<String>,
+    #[serde(default)]
+    pub tool_params: serde_json::Value,
+    #[serde(default)]
+    pub tool_result_path: Option<String>,
     #[serde(default)]
     pub instance_id: Option<String>,
     #[serde(default)]
@@ -209,6 +275,7 @@ impl TaskRecord {
                 public_base_url.trim_end_matches('/'),
                 self.task_id
             ),
+            task_kind: self.task_kind,
             status: self.status,
             phase: self.phase,
             created_at: self.created_at,

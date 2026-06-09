@@ -16,6 +16,8 @@ Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
 
 Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版 `run_tool` action 和未来 LLM action 走同一执行接口。
 
+Server 现在也支持 `taskKind=tool_run` 的手动工具运行任务。该路径复用 TaskStore、workspace 和 `tool_results` 产物，但不进入 `PLAN_ANALYSIS`；后续 Analysis Agent 的 `run_tool` action 会逐步复用同一个工具 registry。
+
 ## 核心数据
 
 ```rust
@@ -118,6 +120,15 @@ GENERATE_RESULT
 ```
 
 稳定状态供 API、恢复和终态判断使用；执行阶段供进度和审计使用。不得把每个内部步骤扩展为无法恢复的任务状态。
+
+任务类型：
+
+```text
+log_analysis
+tool_run
+```
+
+`log_analysis` 继续执行完整日志分析 pipeline。`tool_run` 从 `RUN_TOOL` phase 开始，由工具插件写入结果后直接进入 `SUCCEEDED`。
 
 ## Action
 

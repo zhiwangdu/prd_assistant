@@ -31,6 +31,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - task artifact 查询
 - metadata 查询和导入确认
 - Case Store schema v2、本地 JSON 召回、任务确认 Case 和手工 Case 创建
+- Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
@@ -60,6 +61,13 @@ POST /api/tasks/:task_id/messages
 POST /api/tasks/:task_id/actions/:action_id/decision
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+GET /api/tools
+GET /api/tools/:tool_id
+POST /api/tools/:tool_id/runs
+GET /api/tools/runs
+GET /api/tools/runs/:task_id
+GET /api/tools/runs/:task_id/result
+GET /api/tools/runs/:task_id/artifacts
 POST /api/tasks/:task_id/case
 POST /api/cases
 GET /api/cases
@@ -145,7 +153,7 @@ storage.data_dir/uploads/<upload_id>/<filename>
 
 ## 当前任务模型与 Pipeline
 
-`TaskRecord` 包含 `schemaVersion`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、状态、阶段、attempts、错误、metadata/artifact/result 路径和 RFC 3339 时间。
+`TaskRecord` 包含 `schemaVersion`、`taskKind`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、工具 ID/参数/结果路径、状态、阶段、attempts、错误、metadata/artifact/result 路径和 RFC 3339 时间。旧任务默认视为 `taskKind=log_analysis`。
 
 ```text
 POST task
@@ -175,6 +183,8 @@ background executor
   -> write result.json/result.md
   -> SUCCEEDED or FAILED
 ```
+
+`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
 `POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
 
@@ -242,6 +252,14 @@ tool_results/<action_id>/
 - Report stdout 的 `special_rules` 会生成结构化 findings，例如 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`。
 - `parse_errors` 和 `realtime_query` 会生成可引用 findings。
 
+Tools `pprof_analyzer` 适配：
+
+- `examples/server-pprof-tool.yaml` 通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
+- 接受 `.pprof`、`.prof`、`.profile` 和 `.pb.gz` 上传文件。
+- 固定使用 argv 调用 `go tool pprof`，不拼接 shell，不接受 URL source，并将 `PPROF_TMPDIR` 限制到当前 workspace 下。
+- 默认运行 `-top`、`-tree` 和 `-raw`，可选运行 `-svg`；`-svg` 失败只写入 warning，不阻断 top/raw 结果。
+- 标准结果写入 `tool_results/<action_id>/result.json`，包含 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+
 Analysis State Store 当前记录 pipeline 和多轮 `PLAN_ANALYSIS` 决策的审计状态。Server 会写入：
 
 ```text
@@ -306,6 +324,8 @@ persist task
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
+
+`pprof_analyzer` 复用通用 `tools.pprof_analyzer.*` 配置；该工具的 `path` / `path_env` 必须指向 Go 可执行文件，Server 会固定附加 `tool pprof` 子命令。
 
 ## 待实现
 

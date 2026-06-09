@@ -13,7 +13,7 @@ use crate::{
     error::AppError,
     id::next_id,
     models::{
-        default_task_question, AnalysisResult, CreateTaskRequest, TaskArtifactsResponse,
+        default_task_question, AnalysisResult, CreateTaskRequest, TaskArtifactsResponse, TaskKind,
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
@@ -81,12 +81,16 @@ pub async fn create_task(
     write_case_context(&workspace, &question, &recalled_cases).await?;
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 4,
+        schema_version: 5,
         task_id: task_id.clone(),
+        task_kind: TaskKind::LogAnalysis,
         source: TaskSource::Upload,
         upload_ids,
         inputs,
         source_url: req.source_url,
+        tool_id: None,
+        tool_params: serde_json::Value::Null,
+        tool_result_path: None,
         instance_id: metadata_context.instance_id.clone(),
         cluster_id: metadata_context.cluster_id.clone(),
         node_id: metadata_context.node_id.clone(),
@@ -131,6 +135,9 @@ pub async fn task_result(
             serde_json::json!({ "status": task.status }),
         ));
     }
+    if task.task_kind != TaskKind::LogAnalysis {
+        return Err(AppError::bad_request("task is not a log analysis task"));
+    }
     let result_json_path = task
         .result_json_path
         .map(std::path::PathBuf::from)
@@ -156,6 +163,7 @@ pub async fn list_tasks(
         .list()
         .await
         .into_iter()
+        .filter(|task| task.task_kind == TaskKind::LogAnalysis)
         .map(|task| task.summary(&state.config.server.public_base_url))
         .collect();
     Ok(Json(TaskListResponse { tasks }))
@@ -367,6 +375,9 @@ pub async fn task_artifacts(
             "task artifacts are only available after success",
             serde_json::json!({ "status": task.status }),
         ));
+    }
+    if task.task_kind != TaskKind::LogAnalysis {
+        return Err(AppError::bad_request("task is not a log analysis task"));
     }
     let manifest_path = task
         .manifest_path
@@ -719,10 +730,14 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 1,
                 task_id: "task_queued".to_string(),
+                task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_test".to_string()],
                 inputs: vec![],
                 source_url: None,
+                tool_id: None,
+                tool_params: serde_json::Value::Null,
+                tool_result_path: None,
                 instance_id: None,
                 cluster_id: None,
                 node_id: None,
@@ -1010,6 +1025,7 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 4,
                 task_id: task_id.to_string(),
+                task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {
@@ -1019,6 +1035,9 @@ mod tests {
                     raw_path: "raw/upl_1/sample.log".to_string(),
                 }],
                 source_url: None,
+                tool_id: None,
+                tool_params: serde_json::Value::Null,
+                tool_result_path: None,
                 instance_id: None,
                 cluster_id: None,
                 node_id: None,

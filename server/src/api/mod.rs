@@ -14,6 +14,7 @@ mod debug;
 mod health;
 mod metadata;
 mod tasks;
+mod tools;
 mod uploads;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -48,6 +49,19 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/tasks/:task_id/case", post(cases::confirm_task_case))
         .route("/api/tasks/:task_id/result", get(tasks::task_result))
         .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
+        .route("/api/tools", get(tools::list_tools))
+        .route("/api/tools/:tool_id", get(tools::get_tool))
+        .route("/api/tools/:tool_id/runs", post(tools::create_tool_run))
+        .route("/api/tools/runs", get(tools::list_tool_runs))
+        .route("/api/tools/runs/:task_id", get(tools::get_tool_run))
+        .route(
+            "/api/tools/runs/:task_id/result",
+            get(tools::tool_run_result),
+        )
+        .route(
+            "/api/tools/runs/:task_id/artifacts",
+            get(tools::tool_run_artifacts),
+        )
         .route(
             "/api/cases",
             post(cases::create_manual_case).get(cases::list_cases),

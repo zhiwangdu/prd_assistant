@@ -25,6 +25,11 @@ result.md
 
 公共 JSON 必须包含 `schemaVersion`。证据引用使用 workspace 相对路径和稳定 selector，禁止把绝对敏感路径暴露给模型或 WebUI。
 
+Task schema 现在包含 `taskKind`：
+
+- `log_analysis`：完整上传、解压、grep、Tool Runner、Analysis Agent、LLM result 流程。
+- `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。
+
 ## 状态契约
 
 - `QUEUED`：已持久化，尚未执行。
@@ -78,4 +83,5 @@ result.md
 - 公共 JSON schema 可版本化。
 - `RUNNING` 任务重启后保留 phase，并从该 phase 幂等恢复。
 - phase 推进带 expected phase 校验，陈旧执行器不能覆盖状态。
+- `tool_run` 任务不能混入 `/api/tasks` 日志分析列表，必须通过 `/api/tools/runs` 查询。
 - README 和 SPEC 在接口、状态或 action 变更时同步更新。
