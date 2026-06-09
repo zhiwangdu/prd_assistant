@@ -46,6 +46,13 @@ Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并
 - 修改后确认
 - 放弃
 
+顶部 `Cases` 页面提供独立 Case Store 管理入口：
+
+- 搜索和查看已保存 Case。
+- 手工录入 `manual` Case。
+- 编辑标题、现象、根因、解决方案、产品、版本、环境、InstanceID、NodeID 和 evidence refs。
+- 启用或禁用 Case。
+
 ## Case 字段
 
 - `case_id`
@@ -80,7 +87,7 @@ title + symptom + root_cause + solution
 - Case 写入本地 JSON 文件。
 - Case schema v2 使用 `source_type` 区分任务确认 Case 和手工录入 Case。
 - 服务端内存加载后做关键词重叠评分。
-- WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表。
+- WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表，顶部 `Cases` 页面提供手工录入和管理入口。
 - 新任务保存 `case_context.json` 并在分析 prompt 中提供历史 Case 参考。
 - Case 可禁用，不做硬删除。
 
@@ -96,11 +103,12 @@ Case 基础功能当前状态：
 
 - 人工确认：已实现。
 - 手工录入 API：已实现。
+- WebUI 管理页面：已实现基础搜索、录入、编辑和启用状态切换。
 - Case 存储：已实现本地 JSON。
 - Top N 相似召回：已实现关键词重叠评分。
 - embedding 生成：后续实现。
 
-完整 Case 编辑和高级管理可以后续增强。
+Case 合并、批量管理和 embedding 召回可以后续增强。
 
 ## 召回流程
 

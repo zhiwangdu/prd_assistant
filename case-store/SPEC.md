@@ -16,13 +16,14 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 - `GET /api/cases` 支持关键词召回，默认只返回 `enabled=true` 的 Case。
 - `PATCH /api/cases/:case_id` 支持编辑文本、元信息、证据引用和禁用 Case。
 - WebUI 在成功任务最终结果下方提供确认表单、相似 Case 列表和禁用操作。
+- WebUI 顶部 `Cases` 页面支持搜索、手工录入、详情编辑和启用/禁用。
 
 未实现：
 
 - embedding 生成。
 - embedding 召回。
 - 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
-- Case 高级编辑、合并和批量管理。
+- Case 合并和批量管理。
 
 ## 输入
 
@@ -37,6 +38,7 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 - 相似 Case 列表
 - Case 详情
 - 可编辑 Case 记录
+- Case Store 管理页面
 
 ## API
 
@@ -105,4 +107,5 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 - 重复确认同一 task 时返回已有 Case，不创建重复记录。
 - `sourceType=task` Case 必须有 `taskId` 和 `sourceResultPath`；`sourceType=manual` Case 禁止带这两个字段。
 - 新任务 artifacts 能返回 `caseContext`，LLM prompt 包含历史 Case 参考段落。
+- WebUI 顶部 `Cases` 页面能完成手工录入、搜索、编辑和启用状态切换。
 - README 和 SPEC 在存储结构或召回策略变更时同步更新。

@@ -149,7 +149,7 @@ flowchart TD
 - Case Store MVP 已支持 schema v2、成功任务人工确认、手工 Case 录入、JSON 持久化、关键词召回和禁用。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；binary provider 固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON。Gateway 基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
-- WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，支持上传、任务证据、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、完整 Metadata 拓扑、Case Store 管理页面、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 

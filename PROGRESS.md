@@ -218,6 +218,7 @@ tool_results/<action_id>/
   - top-bar LLM debug switch backed by `/api/debug/llm`
   - successful task confirmation into Case Store with editable title/symptom/root cause/solution
   - Case Store schema v2 source display, keyword search, and disabling cases from the Log analysis view
+  - top-level Cases page for Case Store search, manual entry, detail editing, evidence ref maintenance, and enable/disable state changes
   - grep evidence reference navigation
   - Metadata query
   - imported Metadata Instance list
