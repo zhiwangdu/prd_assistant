@@ -8,7 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    case_store::{CaseRecord, CaseSearchHit, CaseUpdate, NewCase},
+    case_store::{CaseRecord, CaseSearchHit, CaseUpdate, ManualCase, NewCase},
     error::AppError,
     id::next_id,
     models::{AnalysisResult, TaskStatus},
@@ -31,6 +31,24 @@ pub struct ConfirmCaseRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CreateManualCaseRequest {
+    pub title: String,
+    pub symptom: String,
+    pub root_cause: String,
+    pub solution: String,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub instance_id: Option<String>,
+    pub node_id: Option<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListCasesQuery {
     pub query: Option<String>,
     pub limit: Option<usize>,
@@ -41,6 +59,11 @@ pub struct ListCasesQuery {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCaseRequest {
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub instance_id: Option<String>,
+    pub node_id: Option<String>,
     pub title: Option<String>,
     pub symptom: Option<String>,
     pub root_cause: Option<String>,
@@ -59,6 +82,31 @@ pub struct CaseResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CaseListResponse {
     pub cases: Vec<CaseSearchHit>,
+}
+
+pub async fn create_manual_case(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateManualCaseRequest>,
+) -> Result<(StatusCode, Json<CaseResponse>), AppError> {
+    let record = state
+        .cases
+        .create_manual(ManualCase {
+            case_id: next_id("case"),
+            product: clean_optional(req.product),
+            version: clean_optional(req.version),
+            environment: clean_optional(req.environment),
+            instance_id: clean_optional(req.instance_id),
+            node_id: clean_optional(req.node_id),
+            title: req.title,
+            symptom: req.symptom,
+            root_cause: req.root_cause,
+            solution: req.solution,
+            evidence_refs: clean_refs(req.evidence_refs),
+            enabled: req.enabled,
+        })
+        .await
+        .map_err(|err| AppError::bad_request(format!("failed to save case: {err}")))?;
+    Ok((StatusCode::CREATED, Json(CaseResponse { case: record })))
 }
 
 pub async fn confirm_task_case(
@@ -147,6 +195,11 @@ pub async fn update_case(
         .update(
             &case_id,
             CaseUpdate {
+                product: clean_optional(req.product),
+                version: clean_optional(req.version),
+                environment: clean_optional(req.environment),
+                instance_id: clean_optional(req.instance_id),
+                node_id: clean_optional(req.node_id),
                 title: clean_optional(req.title),
                 symptom: clean_optional(req.symptom),
                 root_cause: clean_optional(req.root_cause),
@@ -210,6 +263,10 @@ fn clean_refs(refs: Vec<String>) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .take(64)
         .collect()
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn validate_task_id(task_id: &str) -> Result<(), AppError> {

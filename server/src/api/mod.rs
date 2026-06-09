@@ -48,7 +48,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/tasks/:task_id/case", post(cases::confirm_task_case))
         .route("/api/tasks/:task_id/result", get(tasks::task_result))
         .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
-        .route("/api/cases", get(cases::list_cases))
+        .route(
+            "/api/cases",
+            post(cases::create_manual_case).get(cases::list_cases),
+        )
         .route(
             "/api/cases/:case_id",
             get(cases::get_case).patch(cases::update_case),

@@ -113,18 +113,24 @@ type MetadataContext = {
   cluster?: { databases?: Array<{ name: string }>; partitionViews?: Array<{ statusText?: string | null }> } | null;
 };
 type CaseRecord = {
+  schemaVersion: number;
   caseId: string;
-  taskId: string;
+  sourceType: "task" | "manual";
+  taskId?: string | null;
   product?: string | null;
   version?: string | null;
   environment?: string | null;
+  instanceId?: string | null;
+  nodeId?: string | null;
   title: string;
   symptom: string;
   rootCause: string;
   solution: string;
   evidenceRefs: string[];
+  sourceResultPath?: string | null;
   enabled: boolean;
   createdAt: string;
+  updatedAt: string;
 };
 type CaseHit = CaseRecord & { score: number };
 type CaseContext = {
@@ -609,7 +615,7 @@ function CaseClosurePanel({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">{item.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · score {item.score.toFixed(2)} · {new Date(item.createdAt).toLocaleDateString()}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · score {item.score.toFixed(2)} · {new Date(item.createdAt).toLocaleDateString()}</p>
                 </div>
                 <Badge variant={item.enabled ? "secondary" : "destructive"}>{item.enabled ? "enabled" : "disabled"}</Badge>
               </div>
@@ -785,7 +791,7 @@ function TaskCaseContextView({ context }: { context: CaseContext }) {
               <span className="text-sm font-medium">{item.title}</span>
               <Badge variant="secondary">score {item.score.toFixed(2)}</Badge>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.product ?? "unknown"} {item.version ?? ""}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · {item.product ?? "unknown"} {item.version ?? ""}</p>
             <p className="mt-2 text-sm">{item.rootCause}</p>
           </div>
         )) : <EmptyState>任务创建时未召回相似 Case。</EmptyState>}

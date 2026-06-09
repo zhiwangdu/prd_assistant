@@ -824,6 +824,8 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let case_id = body["case"]["caseId"].as_str().unwrap();
+        assert_eq!(body["case"]["schemaVersion"], 2);
+        assert_eq!(body["case"]["sourceType"], "task");
         assert_eq!(body["case"]["taskId"], task_id);
         assert_eq!(body["case"]["rootCause"], "missing time filter");
 
@@ -917,6 +919,65 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["cases"][0]["caseId"], case_id);
         assert_eq!(body["cases"][0]["enabled"], false);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn manual_case_can_be_created_and_recalled() {
+        let (state, root) = test_state();
+        let app = api::router(state.clone()).with_state(state.clone());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/cases")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"title":"Manual WAL saturation","symptom":"write latency increased","rootCause":"wal disk saturation","solution":"move shards and expand disk","product":"opengemini","instanceId":"inst-prod-1","nodeId":"node-3","evidenceRefs":["INC-123"]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let case_id = body["case"]["caseId"].as_str().unwrap();
+        assert_eq!(body["case"]["schemaVersion"], 2);
+        assert_eq!(body["case"]["sourceType"], "manual");
+        assert!(body["case"]["taskId"].is_null());
+        assert!(body["case"]["sourceResultPath"].is_null());
+
+        let list = app
+            .clone()
+            .oneshot(
+                Request::get("/api/cases?query=inst-prod-1%20wal")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list.status(), StatusCode::OK);
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["cases"][0]["caseId"], case_id);
+
+        let updated = app
+            .oneshot(
+                Request::patch(format!("/api/cases/{case_id}"))
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"environment":"prod","nodeId":"node-4"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.status(), StatusCode::OK);
+        let body = to_bytes(updated.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["case"]["environment"], "prod");
+        assert_eq!(body["case"]["nodeId"], "node-4");
         let _ = std::fs::remove_dir_all(root);
     }
 

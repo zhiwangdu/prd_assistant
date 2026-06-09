@@ -187,9 +187,10 @@ MVP 要求：
 - `GET /api/tasks/:task_id/artifacts` 读取任务产物。
 - `GET /api/tasks/:task_id/result` 读取结构化 LLM 分析结果。
 - `POST /api/tasks/:task_id/case` 将成功任务的最终结果人工确认保存为 Case。
+- `POST /api/cases` 手工录入不绑定任务的 Case。
 - `GET /api/cases` 按关键词召回本地 Case。
 - `GET /api/cases/:case_id` 读取 Case 详情。
-- `PATCH /api/cases/:case_id` 编辑或禁用 Case。
+- `PATCH /api/cases/:case_id` 编辑 Case 文本、元信息、证据引用或禁用 Case。
 - `POST /api/tasks/:task_id/messages` 接收等待中的用户回答，追加 analysis event，并将任务从 `WAITING_FOR_USER` 恢复为 `QUEUED / PLAN_ANALYSIS`。
 - `POST /api/tasks/:task_id/actions/:action_id/decision` 接收等待中的审批批准或拒绝，追加 analysis event，并将任务从 `WAITING_FOR_APPROVAL` 恢复为 `QUEUED / PLAN_ANALYSIS`。
 - `GET /api/debug/llm` / `PUT /api/debug/llm` 读取或修改当前进程内的 LLM 输出日志开关。
@@ -211,7 +212,7 @@ MVP 要求：
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；旧 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理该快照。
-- task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。
+- task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。Case Store 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
@@ -263,6 +264,7 @@ POST /api/tasks/:task_id/actions/:action_id/decision
 POST /api/tasks/:task_id/case
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+POST /api/cases
 GET /api/cases
 GET /api/cases/:case_id
 PATCH /api/cases/:case_id

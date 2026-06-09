@@ -30,6 +30,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - runtime LLM output debug 开关和 `/api/debug/llm`
 - task artifact 查询
 - metadata 查询和导入确认
+- Case Store schema v2、本地 JSON 召回、任务确认 Case 和手工 Case 创建
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
@@ -59,6 +60,11 @@ POST /api/tasks/:task_id/messages
 POST /api/tasks/:task_id/actions/:action_id/decision
 GET /api/tasks/:task_id/artifacts
 GET /api/tasks/:task_id/result
+POST /api/tasks/:task_id/case
+POST /api/cases
+GET /api/cases
+GET /api/cases/:case_id
+PATCH /api/cases/:case_id
 GET /api/debug/llm
 PUT /api/debug/llm
 GET /api/metadata/instances
@@ -307,7 +313,7 @@ persist task
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 已增强 delta 字段映射，后续根据真实 compare smoke 继续调整。
 - 多轮 Analysis Agent 的产品化策略、模型用量和 Provider request id 审计。
-- Case Store 已完成本地 JSON MVP，任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding 和更正式的 Analysis Agent evidence bundle。
+- Case Store 已完成本地 JSON schema v2、本地召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding 和更正式的 Analysis Agent evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
 - Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
 
 ## 验收标准
@@ -329,7 +335,9 @@ persist task
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
 - `POST /api/tasks/:task_id/case` 只能保存 `SUCCEEDED` 任务，重复确认同一任务不能生成重复 Case。
+- `POST /api/cases` 必须能手工创建 `sourceType=manual` Case，必填标题、现象、根因和解决方案，且不包含 `taskId/sourceResultPath`。
 - `GET /api/cases` 必须能按关键词召回启用 Case，禁用 Case 默认不返回。
+- `PATCH /api/cases/:case_id` 必须能更新 Case 文本、产品、版本、环境、InstanceID、NodeID、证据引用和启用状态。
 - 新任务 artifacts 必须返回 `caseContext`，LLM prompt 必须包含历史 Case 参考段落且不能要求模型把历史 Case 当作当前证据。
 - LLM Gateway 必须能解析合法 `search_logs`、`run_tool`、`final_answer` decision，并拒绝当前未开放 action。
 - phase 推进必须检查期望阶段，陈旧 dispatcher 不能覆盖较新的任务状态。

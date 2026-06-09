@@ -21,7 +21,7 @@ Chrome Extension or WEBUI
   -> optional ask_user / approval wait and resume
   -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
-  -> optional human confirmation into local Case Store
+  -> optional human confirmation or manual entry into local Case Store
 ```
 
 ## Implemented
@@ -66,6 +66,7 @@ Chrome Extension or WEBUI
   - `POST /api/tasks/:task_id/messages`
   - `POST /api/tasks/:task_id/actions/:action_id/decision`
   - `POST /api/tasks/:task_id/case`
+  - `POST /api/cases`
   - `GET /api/cases`
   - `GET /api/cases/:case_id`
   - `PATCH /api/cases/:case_id`
@@ -98,7 +99,10 @@ Chrome Extension or WEBUI
 - Enters `WAITING_FOR_APPROVAL` for `collect_environment` / `REQUIRES_APPROVAL`, persists `pendingApprovals`, accepts approval or rejection through `POST /api/tasks/:task_id/actions/:action_id/decision`, and resumes the same task from `PLAN_ANALYSIS`.
 - Approved environment collection currently writes mock `environment_evidence/<action_id>/result.json`; real SSH/SCP execution remains planned for Environment Collector.
 - Successful tasks can now be manually confirmed into the local Case Store through `POST /api/tasks/:task_id/case`.
-- Case Store records are persisted as JSON under `storage.data_dir/cases`, loaded at startup, searchable through `GET /api/cases`, and can be disabled through `PATCH /api/cases/:case_id`.
+- Manual Cases can now be created through `POST /api/cases` without binding to a task.
+- Case Store records now use schema v2 with `sourceType=task|manual`; task Cases require `taskId/sourceResultPath`, while manual Cases forbid those fields. Development-stage startup intentionally rejects old v1 Case JSON instead of migrating it.
+- Case Store records are persisted as JSON under `storage.data_dir/cases`, loaded at startup, searchable through `GET /api/cases`, and can be updated or disabled through `PATCH /api/cases/:case_id`.
+- Case search now indexes InstanceID, NodeID, and evidence refs in addition to title, symptom, root cause, solution, product, version, and environment.
 - New tasks now recall up to 5 enabled Cases by question, persist `case_context.json`, expose `caseContext` in artifacts, and include historical Case references in the LLM prompt as non-authoritative context.
 - Metadata now uses user-provided `instanceId` as the user-facing unique key. openGemini imports require an explicit InstanceID, preserve the raw openGemini `ClusterID` as `sourceClusterId`, expose an imported Instance list, and serve stored topology snapshots by InstanceID. Legacy cluster endpoints remain for compatibility.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
@@ -213,7 +217,7 @@ tool_results/<action_id>/
   - `WAITING_FOR_APPROVAL` action approval/rejection form
   - top-bar LLM debug switch backed by `/api/debug/llm`
   - successful task confirmation into Case Store with editable title/symptom/root cause/solution
-  - Case Store keyword search and disabling cases from the Log analysis view
+  - Case Store schema v2 source display, keyword search, and disabling cases from the Log analysis view
   - grep evidence reference navigation
   - Metadata query
   - imported Metadata Instance list

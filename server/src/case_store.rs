@@ -17,22 +17,29 @@ pub struct CaseStore {
 pub struct CaseRecord {
     pub schema_version: u32,
     pub case_id: String,
-    pub task_id: String,
+    pub source_type: CaseSourceType,
+    pub task_id: Option<String>,
     pub product: Option<String>,
     pub version: Option<String>,
     pub environment: Option<String>,
     pub instance_id: Option<String>,
-    pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     pub title: String,
     pub symptom: String,
     pub root_cause: String,
     pub solution: String,
     pub evidence_refs: Vec<String>,
-    pub source_result_path: String,
+    pub source_result_path: Option<String>,
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseSourceType {
+    Task,
+    Manual,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -59,8 +66,29 @@ pub struct NewCase {
     pub evidence_refs: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ManualCase {
+    pub case_id: String,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub instance_id: Option<String>,
+    pub node_id: Option<String>,
+    pub title: String,
+    pub symptom: String,
+    pub root_cause: String,
+    pub solution: String,
+    pub evidence_refs: Vec<String>,
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CaseUpdate {
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub environment: Option<String>,
+    pub instance_id: Option<String>,
+    pub node_id: Option<String>,
     pub title: Option<String>,
     pub symptom: Option<String>,
     pub root_cause: Option<String>,
@@ -97,21 +125,24 @@ impl CaseStore {
         let mut cases = self.inner.write().await;
         if let Some(existing) = cases
             .values()
-            .find(|record| record.task_id == input.task.task_id)
+            .find(|record| {
+                record.source_type == CaseSourceType::Task
+                    && record.task_id.as_deref() == Some(input.task.task_id.as_str())
+            })
             .cloned()
         {
             return Ok(existing);
         }
         let now = Utc::now();
         let mut record = CaseRecord {
-            schema_version: 1,
+            schema_version: 2,
             case_id: input.case_id,
-            task_id: input.task.task_id.clone(),
+            source_type: CaseSourceType::Task,
+            task_id: Some(input.task.task_id.clone()),
             product: input.product,
             version: input.version,
             environment: input.environment,
             instance_id: input.task.instance_id.clone(),
-            cluster_id: input.task.cluster_id.clone(),
             node_id: input.task.node_id.clone(),
             title: input
                 .title
@@ -133,8 +164,41 @@ impl CaseStore {
             evidence_refs: input
                 .evidence_refs
                 .unwrap_or_else(|| result_evidence_refs(&input.result)),
-            source_result_path: input.source_result_path,
+            source_result_path: Some(input.source_result_path),
             enabled: true,
+            created_at: now,
+            updated_at: now,
+        };
+        normalize_case_record(&mut record);
+        validate_case(&record)?;
+        self.persist(&record)?;
+        cases.insert(record.case_id.clone(), record.clone());
+        Ok(record)
+    }
+
+    pub async fn create_manual(&self, input: ManualCase) -> anyhow::Result<CaseRecord> {
+        let mut cases = self.inner.write().await;
+        if cases.contains_key(&input.case_id) {
+            anyhow::bail!("duplicate case id");
+        }
+        let now = Utc::now();
+        let mut record = CaseRecord {
+            schema_version: 2,
+            case_id: input.case_id,
+            source_type: CaseSourceType::Manual,
+            task_id: None,
+            product: input.product,
+            version: input.version,
+            environment: input.environment,
+            instance_id: input.instance_id,
+            node_id: input.node_id,
+            title: input.title,
+            symptom: input.symptom,
+            root_cause: input.root_cause,
+            solution: input.solution,
+            evidence_refs: input.evidence_refs,
+            source_result_path: None,
+            enabled: input.enabled,
             created_at: now,
             updated_at: now,
         };
@@ -195,6 +259,21 @@ impl CaseStore {
             .get(case_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("unknown case {case_id}"))?;
+        if let Some(product) = update.product {
+            record.product = Some(product);
+        }
+        if let Some(version) = update.version {
+            record.version = Some(version);
+        }
+        if let Some(environment) = update.environment {
+            record.environment = Some(environment);
+        }
+        if let Some(instance_id) = update.instance_id {
+            record.instance_id = Some(instance_id);
+        }
+        if let Some(node_id) = update.node_id {
+            record.node_id = Some(node_id);
+        }
         if let Some(title) = update.title {
             record.title = title;
         }
@@ -231,11 +310,36 @@ impl CaseStore {
 }
 
 fn validate_case(record: &CaseRecord) -> anyhow::Result<()> {
+    if record.schema_version != 2 {
+        anyhow::bail!("unsupported case schema version");
+    }
     if !record.case_id.starts_with("case_") {
         anyhow::bail!("invalid case id");
     }
-    if !record.task_id.starts_with("task_") {
-        anyhow::bail!("invalid task id");
+    match record.source_type {
+        CaseSourceType::Task => {
+            let task_id = record.task_id.as_deref().unwrap_or("");
+            if !task_id.starts_with("task_") {
+                anyhow::bail!("invalid task id");
+            }
+            if record
+                .source_result_path
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+            {
+                anyhow::bail!("task case source result path must not be empty");
+            }
+        }
+        CaseSourceType::Manual => {
+            if record.task_id.is_some() {
+                anyhow::bail!("manual case must not have task id");
+            }
+            if record.source_result_path.is_some() {
+                anyhow::bail!("manual case must not have source result path");
+            }
+        }
     }
     if record.title.trim().is_empty() {
         anyhow::bail!("case title must not be empty");
@@ -257,6 +361,11 @@ fn normalize_case_record(record: &mut CaseRecord) {
     record.symptom = truncate(clean_text(&record.symptom), 4_000);
     record.root_cause = truncate(clean_text(&record.root_cause), 4_000);
     record.solution = truncate(clean_text(&record.solution), 4_000);
+    record.product = clean_optional_text(record.product.take());
+    record.version = clean_optional_text(record.version.take());
+    record.environment = clean_optional_text(record.environment.take());
+    record.instance_id = clean_optional_text(record.instance_id.take());
+    record.node_id = clean_optional_text(record.node_id.take());
     record.evidence_refs = record
         .evidence_refs
         .iter()
@@ -315,6 +424,9 @@ fn searchable_text(record: &CaseRecord) -> String {
         record.product.as_deref().unwrap_or(""),
         record.version.as_deref().unwrap_or(""),
         record.environment.as_deref().unwrap_or(""),
+        record.instance_id.as_deref().unwrap_or(""),
+        record.node_id.as_deref().unwrap_or(""),
+        &record.evidence_refs.join("\n"),
     ]
     .join("\n")
     .to_lowercase()
@@ -331,6 +443,12 @@ fn query_tokens(query: &str) -> Vec<String> {
 
 fn clean_text(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn clean_optional_text(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| clean_text(&value))
+        .filter(|value| !value.is_empty())
 }
 
 fn truncate(value: String, max_chars: usize) -> String {
@@ -405,6 +523,10 @@ mod tests {
             })
             .await
             .unwrap();
+        assert_eq!(created.schema_version, 2);
+        assert_eq!(created.source_type, CaseSourceType::Task);
+        assert_eq!(created.task_id.as_deref(), Some("task_case_test"));
+        assert_eq!(created.source_result_path.as_deref(), Some("result.json"));
         assert_eq!(created.root_cause, "missing time filter");
         let hits = store.search(Some("time filter"), 5, false).await;
         assert_eq!(hits.len(), 1);
@@ -423,6 +545,42 @@ mod tests {
         assert!(!disabled.enabled);
         assert!(store.search(Some("time filter"), 5, false).await.is_empty());
         assert_eq!(store.search(Some("time filter"), 5, true).await.len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn creates_manual_case_without_task_source() {
+        let dir =
+            std::env::temp_dir().join(format!("logagent-case-store-manual-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = CaseStore::load(dir.clone()).unwrap();
+        let created = store
+            .create_manual(ManualCase {
+                case_id: "case_manual_test".to_string(),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                instance_id: Some("inst-1".to_string()),
+                node_id: Some("node-1".to_string()),
+                title: "manual latency case".to_string(),
+                symptom: "write latency increased".to_string(),
+                root_cause: "wal disk saturation".to_string(),
+                solution: "move shards and expand disk".to_string(),
+                evidence_refs: vec!["INC-123".to_string()],
+                enabled: true,
+            })
+            .await
+            .unwrap();
+        assert_eq!(created.schema_version, 2);
+        assert_eq!(created.source_type, CaseSourceType::Manual);
+        assert!(created.task_id.is_none());
+        assert!(created.source_result_path.is_none());
+
+        let hits = store.search(Some("inst-1 wal"), 5, false).await;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.case_id, "case_manual_test");
+        let loaded = CaseStore::load(dir.clone()).unwrap();
+        assert!(loaded.get("case_manual_test").await.is_some());
         let _ = std::fs::remove_dir_all(dir);
     }
 }
