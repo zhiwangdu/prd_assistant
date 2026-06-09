@@ -46,6 +46,16 @@ logagentd --config ./logagent.yaml
 
 该脚本会构建 Server、后台启动、写入 `/tmp/logagent-server-llm.pid` 和 `/tmp/logagent-server-llm.log`，并等待 `/health` 成功；`--stub` 使用本地 stub provider，`--foreground` 用于调试启动日志。
 
+当前测试运行目录 `/home/duzhiwang/workspace/data/prd_assistant` 还提供两个本机运维脚本：
+
+```bash
+cd /home/duzhiwang/workspace/data/prd_assistant
+./logagentctl.sh start|stop|restart|status|logs
+./rebuild-install.sh [--server-only] [--no-restart]
+```
+
+`logagentctl.sh` 从运行目录的 `bin/logagent-server` 启动服务，使用同目录 `logagent.yaml`、`logagent-server.pid` 和 `logagent-server.log`。`rebuild-install.sh` 会从源码仓库编译 `logagent-server`，替换运行目录 `bin/logagent-server`，默认同步 `webui/out`，并在服务原本运行时自动重启；`--server-only` 只替换 Rust 二进制，`--no-restart` 跳过重启。
+
 生产或测试环境：
 
 - systemd 管理 `logagentd`
