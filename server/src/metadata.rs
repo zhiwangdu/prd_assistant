@@ -1784,6 +1784,8 @@ clusters:
                     provider: LlmProvider::Stub,
                     base_url: None,
                     api_key: None,
+                    binary_path: None,
+                    binary_max_output_bytes: 1024 * 1024,
                     model: "stub".to_string(),
                     request_timeout_seconds: 1,
                     max_input_chars: 60_000,

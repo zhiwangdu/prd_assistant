@@ -18,6 +18,7 @@
 - LLM 不能直接执行任意命令。
 - SSH key、API Key、repo path 等敏感配置不进入 Prompt。
 - LLM Provider、model、base_url、token 预算必须配置化。
+- `llm.provider: "binary"` 只能调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell，不接受用户输入覆盖路径或参数。
 - LLM 输入必须经过证据裁剪，不能直接塞入全部日志和工具输出。
 - LLM Gateway 只返回结构化 action 或最终答案候选，不持有执行能力。
 - 不保存模型隐藏思维链，只保留决策摘要、事实、假设和证据引用。

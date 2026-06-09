@@ -37,6 +37,9 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `llm.provider`
 - `llm.base_url_env`
 - `llm.api_key_env`
+- `llm.binary_path`
+- `llm.binary_path_env`
+- `llm.binary_max_output_bytes`
 - `llm.model_env`
 - `llm.model`
 - `llm.request_timeout_seconds`
@@ -83,7 +86,11 @@ auth:
 - 配置有默认值，但示例文件必须展示推荐值。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL 或 API Key 环境变量时启动失败。
+- `llm.provider` 支持 `stub`、`openai_compatible` 和预留的 `binary`。
 - `llm.model_env` 配置后优先于 `llm.model`；对应环境变量缺失或模型名为空时启动失败。
+- `llm.provider: "binary"` 时必须配置 `binary_path` 或 `binary_path_env`；解析后的二进制路径必须是绝对路径。
+- binary provider 运行时固定调用 `<binary_path> run <prompt>`，用户输入不能覆盖二进制路径或 argv。
+- `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
 - 启用的 tool path 或 path_env 解析结果必须是绝对路径；非法工具名、相对路径、缺失/空 path_env 启动失败。
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。

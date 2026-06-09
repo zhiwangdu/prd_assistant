@@ -26,6 +26,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复 API
 - Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema
+- LLM Gateway `binary` provider 预留分支，固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON
 - runtime LLM output debug 开关和 `/api/debug/llm`
 - task artifact 查询
 - metadata 查询和导入确认
@@ -169,7 +170,7 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`PLAN_ANALYSIS` 的 ActionDecision 当前开放 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`；暂不开放 `collect_code_evidence`。`collect_environment` 必须使用 `REQUIRES_APPROVAL` risk。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`llm.provider` 支持默认 `stub`、OpenAI-compatible Chat Completions，以及预留 `binary` provider；binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，stdout 使用同一套 JSON/schema/evidence 校验。`PLAN_ANALYSIS` 的 ActionDecision 当前开放 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`；暂不开放 `collect_code_evidence`。`collect_environment` 必须使用 `REQUIRES_APPROVAL` risk。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
 
 `POST /api/tasks/:task_id/messages` 请求：
 

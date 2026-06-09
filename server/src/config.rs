@@ -67,6 +67,8 @@ pub struct LlmSettings {
     pub provider: LlmProvider,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
+    pub binary_path: Option<PathBuf>,
+    pub binary_max_output_bytes: usize,
     pub model: String,
     pub request_timeout_seconds: u64,
     pub max_input_chars: usize,
@@ -88,6 +90,8 @@ impl std::fmt::Debug for LlmSettings {
             .field("provider", &self.provider)
             .field("base_url", &self.base_url)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("binary_path", &self.binary_path)
+            .field("binary_max_output_bytes", &self.binary_max_output_bytes)
             .field("model", &self.model)
             .field("request_timeout_seconds", &self.request_timeout_seconds)
             .field("max_input_chars", &self.max_input_chars)
@@ -100,6 +104,7 @@ impl std::fmt::Debug for LlmSettings {
 pub enum LlmProvider {
     Stub,
     OpenAiCompatible,
+    Binary,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,6 +193,10 @@ struct LlmConfig {
     provider: String,
     base_url_env: Option<String>,
     api_key_env: Option<String>,
+    binary_path: Option<PathBuf>,
+    binary_path_env: Option<String>,
+    #[serde(default = "default_llm_binary_max_output_bytes")]
+    binary_max_output_bytes: usize,
     model_env: Option<String>,
     #[serde(default = "default_llm_model")]
     model: String,
@@ -300,11 +309,12 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     let provider = match llm.provider.as_str() {
         "stub" => LlmProvider::Stub,
         "openai_compatible" => LlmProvider::OpenAiCompatible,
+        "binary" => LlmProvider::Binary,
         value => anyhow::bail!("unsupported llm.provider {value}"),
     };
     let model = resolve_llm_model(&llm)?;
-    let (base_url, api_key) = match provider {
-        LlmProvider::Stub => (None, None),
+    let (base_url, api_key, binary_path) = match provider {
+        LlmProvider::Stub => (None, None, None),
         LlmProvider::OpenAiCompatible => {
             let base_url_env = llm
                 .base_url_env
@@ -323,8 +333,10 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
                     env::var(api_key_env)
                         .with_context(|| format!("missing LLM API key env var {api_key_env}"))?,
                 ),
+                None,
             )
         }
+        LlmProvider::Binary => (None, None, Some(resolve_llm_binary_path(&llm)?)),
     };
 
     Ok(Arc::new(AppConfig {
@@ -352,6 +364,8 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             provider,
             base_url,
             api_key,
+            binary_path,
+            binary_max_output_bytes: llm.binary_max_output_bytes.max(1024),
             model,
             request_timeout_seconds: llm.request_timeout_seconds.max(1),
             max_input_chars: llm.max_input_chars.max(1024),
@@ -425,6 +439,28 @@ fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
     anyhow::bail!("tools.{name}.path or tools.{name}.path_env is required when enabled")
 }
 
+fn resolve_llm_binary_path(llm: &LlmConfig) -> anyhow::Result<PathBuf> {
+    let path = if let Some(path) = &llm.binary_path {
+        path.clone()
+    } else {
+        let binary_path_env = llm
+            .binary_path_env
+            .as_deref()
+            .context("llm.binary_path or llm.binary_path_env is required for binary provider")?;
+        let value = env::var(binary_path_env)
+            .with_context(|| format!("missing LLM binary path env var {binary_path_env}"))?;
+        let value = value.trim();
+        if value.is_empty() {
+            anyhow::bail!("LLM binary path env var {binary_path_env} must not be empty");
+        }
+        PathBuf::from(value)
+    };
+    if !path.is_absolute() {
+        anyhow::bail!("llm.binary_path must be absolute for binary provider");
+    }
+    Ok(path)
+}
+
 fn validate_tool_name(name: &str) -> anyhow::Result<()> {
     let valid = !name.is_empty()
         && name
@@ -469,6 +505,9 @@ fn default_llm_config() -> LlmConfig {
         provider: default_llm_provider(),
         base_url_env: None,
         api_key_env: None,
+        binary_path: None,
+        binary_path_env: None,
+        binary_max_output_bytes: default_llm_binary_max_output_bytes(),
         model_env: None,
         model: default_llm_model(),
         request_timeout_seconds: default_llm_timeout(),
@@ -593,6 +632,10 @@ fn default_llm_max_output_tokens() -> u32 {
     4096
 }
 
+fn default_llm_binary_max_output_bytes() -> usize {
+    1024 * 1024
+}
+
 fn default_analysis_max_rounds() -> u32 {
     4
 }
@@ -618,6 +661,9 @@ mod tests {
             provider: "openai_compatible".to_string(),
             base_url_env: Some("BASE_URL".to_string()),
             api_key_env: Some("API_KEY".to_string()),
+            binary_path: None,
+            binary_path_env: None,
+            binary_max_output_bytes: default_llm_binary_max_output_bytes(),
             model_env: model_env.map(ToString::to_string),
             model: model.to_string(),
             request_timeout_seconds: 120,
@@ -671,6 +717,37 @@ mod tests {
         assert_eq!(config.max_llm_calls, 4);
         assert_eq!(config.max_actions, 6);
         assert_eq!(config.max_repeated_action_fingerprints, 1);
+    }
+
+    #[test]
+    fn resolves_binary_llm_provider_path() {
+        let config = LlmConfig {
+            provider: "binary".to_string(),
+            base_url_env: None,
+            api_key_env: None,
+            binary_path: Some(PathBuf::from("/opt/logagent/bin/xxx")),
+            binary_path_env: None,
+            binary_max_output_bytes: 0,
+            model_env: None,
+            model: "binary-model".to_string(),
+            request_timeout_seconds: 120,
+            max_input_chars: 60_000,
+            max_output_tokens: 4096,
+        };
+
+        assert_eq!(
+            resolve_llm_binary_path(&config).unwrap(),
+            PathBuf::from("/opt/logagent/bin/xxx")
+        );
+
+        let relative = LlmConfig {
+            binary_path: Some(PathBuf::from("xxx")),
+            ..config.clone()
+        };
+        assert!(resolve_llm_binary_path(&relative)
+            .unwrap_err()
+            .to_string()
+            .contains("must be absolute"));
     }
 
     #[test]

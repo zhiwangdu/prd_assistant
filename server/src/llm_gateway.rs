@@ -1,4 +1,5 @@
 use std::{
+    process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -8,6 +9,7 @@ use std::{
 
 use anyhow::Context;
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+use tokio::{process::Command, time::timeout};
 
 use crate::{
     config::{LlmProvider, LlmSettings},
@@ -89,6 +91,7 @@ impl LlmGateway {
         let draft = match self.settings.provider {
             LlmProvider::Stub => stub_result(question, grep),
             LlmProvider::OpenAiCompatible => self.call_chat_completions(&prompt).await?,
+            LlmProvider::Binary => self.call_binary_result(&prompt).await?,
         };
         validate_result_evidence(draft, Some(grep), grep.matches.len(), tool_results)
     }
@@ -137,6 +140,7 @@ impl LlmGateway {
         let decision = match self.settings.provider {
             LlmProvider::Stub => stub_action_decision(question, grep),
             LlmProvider::OpenAiCompatible => self.call_action_decision(&prompt, on_event).await?,
+            LlmProvider::Binary => self.call_binary_action_decision(&prompt, on_event).await?,
         };
         validate_agent_decision_with_evidence(&decision, grep, tool_results)?;
         Ok(decision)
@@ -277,6 +281,145 @@ impl LlmGateway {
         unreachable!("action decision attempts loop always returns or bails")
     }
 
+    async fn call_binary_result(&self, prompt: &str) -> anyhow::Result<ResultDraft> {
+        let mut prompt = binary_prompt(SYSTEM_PROMPT, prompt);
+        let mut last_parse_error = None;
+
+        for attempt in 1..=MAX_RESULT_ATTEMPTS {
+            let content = self
+                .run_binary_prompt("generate_result", attempt, &prompt)
+                .await?;
+            self.log_debug_content("generate_result", attempt, &content);
+            match parse_result_content(&content) {
+                Ok(draft) => return Ok(draft),
+                Err(error) => {
+                    let message = error.to_string();
+                    if attempt == MAX_RESULT_ATTEMPTS {
+                        let previous = last_parse_error.as_deref().unwrap_or("none");
+                        anyhow::bail!(
+                            "LLM binary content is not valid result JSON after {attempt} attempts: latest error: {message}; previous error: {previous}"
+                        );
+                    }
+                    prompt.push_str("\n\n");
+                    prompt.push_str(&build_result_retry_prompt(&message));
+                    last_parse_error = Some(message);
+                }
+            }
+        }
+
+        unreachable!("binary result attempts loop always returns or bails")
+    }
+
+    async fn call_binary_action_decision(
+        &self,
+        prompt: &str,
+        mut on_event: impl FnMut(LlmCallEvent),
+    ) -> anyhow::Result<AgentDecision> {
+        let mut prompt = binary_prompt(ACTION_SYSTEM_PROMPT, prompt);
+        let mut last_parse_error = None;
+        let call_id = next_id("llmcall");
+        let call_kind = "action_decision";
+
+        for attempt in 1..=MAX_ACTION_DECISION_ATTEMPTS {
+            self.emit_llm_call_event(
+                &mut on_event,
+                &call_id,
+                call_kind,
+                attempt,
+                LlmCallEventType::Started,
+                None,
+            );
+            let content = self
+                .run_binary_prompt("action_decision", attempt, &prompt)
+                .await
+                .with_context(|| format!("LLM binary call {call_id} failed"))?;
+            self.log_debug_content("action_decision", attempt, &content);
+            match parse_action_decision_content(&content) {
+                Ok(decision) => {
+                    self.emit_llm_call_event(
+                        &mut on_event,
+                        &call_id,
+                        call_kind,
+                        attempt,
+                        LlmCallEventType::Completed,
+                        None,
+                    );
+                    return Ok(decision);
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    if attempt == MAX_ACTION_DECISION_ATTEMPTS {
+                        let previous = last_parse_error.as_deref().unwrap_or("none");
+                        anyhow::bail!(
+                            "LLM binary call {call_id} content is not valid action decision JSON after {attempt} attempts: latest error: {message}; previous error: {previous}"
+                        );
+                    }
+                    self.emit_llm_call_event(
+                        &mut on_event,
+                        &call_id,
+                        call_kind,
+                        attempt,
+                        LlmCallEventType::SchemaRetry,
+                        Some(message.clone()),
+                    );
+                    prompt.push_str("\n\n");
+                    prompt.push_str(&build_action_decision_retry_prompt(&message));
+                    last_parse_error = Some(message);
+                }
+            }
+        }
+
+        unreachable!("binary action decision attempts loop always returns or bails")
+    }
+
+    async fn run_binary_prompt(
+        &self,
+        call: &str,
+        attempt: usize,
+        prompt: &str,
+    ) -> anyhow::Result<String> {
+        let binary_path = self
+            .settings
+            .binary_path
+            .as_deref()
+            .context("missing LLM binary path")?;
+        let child = Command::new(binary_path)
+            .arg("run")
+            .arg(prompt)
+            .kill_on_drop(true)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("failed to spawn LLM binary {}", binary_path.display()))?;
+        let output = timeout(
+            Duration::from_secs(self.settings.request_timeout_seconds),
+            child.wait_with_output(),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "LLM binary {call} attempt {attempt} timed out after {} seconds",
+                self.settings.request_timeout_seconds
+            )
+        })?
+        .context("failed to wait for LLM binary")?;
+        if output.stdout.len() > self.settings.binary_max_output_bytes {
+            anyhow::bail!(
+                "LLM binary {call} attempt {attempt} stdout exceeded {} bytes",
+                self.settings.binary_max_output_bytes
+            );
+        }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(truncate_bytes(&output.stderr, 4096));
+            anyhow::bail!(
+                "LLM binary {call} attempt {attempt} exited with status {}: {}",
+                output.status,
+                stderr.trim()
+            );
+        }
+        String::from_utf8(output.stdout).context("LLM binary stdout is not valid UTF-8")
+    }
+
     async fn send_chat_completion(
         &self,
         base_url: &str,
@@ -342,11 +485,43 @@ impl LlmGateway {
             return;
         }
         for (index, choice) in response.choices.iter().enumerate() {
-            eprintln!(
-                "[logagent][llm-debug] call={call} attempt={attempt} choice={index} model={} content:\n{}",
-                self.settings.model, choice.message.content
-            );
+            self.log_debug_content_with_choice(call, attempt, Some(index), &choice.message.content);
         }
+    }
+
+    fn log_debug_content(&self, call: &str, attempt: usize, content: &str) {
+        if !self.debug_log_responses() {
+            return;
+        }
+        self.log_debug_content_with_choice(call, attempt, None, content);
+    }
+
+    fn log_debug_content_with_choice(
+        &self,
+        call: &str,
+        attempt: usize,
+        choice: Option<usize>,
+        content: &str,
+    ) {
+        let choice = choice
+            .map(|index| format!(" choice={index}"))
+            .unwrap_or_default();
+        eprintln!(
+            "[logagent][llm-debug] call={call} attempt={attempt}{choice} model={} content:\n{}",
+            self.settings.model, content
+        );
+    }
+}
+
+fn binary_prompt(system_prompt: &str, prompt: &str) -> String {
+    format!("{system_prompt}\n\n{prompt}")
+}
+
+fn truncate_bytes(value: &[u8], limit: usize) -> &[u8] {
+    if value.len() <= limit {
+        value
+    } else {
+        &value[..limit]
     }
 }
 
@@ -390,6 +565,10 @@ fn parse_chat_response(response: ChatResponse) -> anyhow::Result<ResultDraft> {
         .map(|choice| choice.message.content.trim())
         .filter(|content| !content.is_empty())
         .context("LLM response did not contain content")?;
+    parse_result_content(content)
+}
+
+fn parse_result_content(content: &str) -> anyhow::Result<ResultDraft> {
     let content = extract_result_json(content)?;
     serde_json::from_str(content)
         .map_err(|error| anyhow::anyhow!("LLM content is not valid result JSON: {error}"))
@@ -402,6 +581,10 @@ fn parse_action_decision_response(response: ChatResponse) -> anyhow::Result<Agen
         .map(|choice| choice.message.content.trim())
         .filter(|content| !content.is_empty())
         .context("LLM response did not contain content")?;
+    parse_action_decision_content(content)
+}
+
+fn parse_action_decision_content(content: &str) -> anyhow::Result<AgentDecision> {
     let content = extract_result_json(content)?;
     let decision = parse_agent_decision_json(content)?;
     validate_agent_decision(&decision)?;
@@ -1447,6 +1630,7 @@ mod tests {
     use crate::models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource};
     use crate::tool_runner::{ToolFinding, ToolRunStatus};
     use chrono::Utc;
+    use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
     #[test]
     fn prompt_keeps_refs_and_reports_omitted_matches() {
@@ -1651,6 +1835,8 @@ mod tests {
             provider: LlmProvider::Stub,
             base_url: None,
             api_key: None,
+            binary_path: None,
+            binary_max_output_bytes: 1024 * 1024,
             model: "stub".to_string(),
             request_timeout_seconds: 1,
             max_input_chars: 1024,
@@ -1663,6 +1849,78 @@ mod tests {
         assert!(gateway.debug_log_responses());
         gateway.set_debug_log_responses(false);
         assert!(!gateway.debug_log_responses());
+    }
+
+    #[tokio::test]
+    async fn binary_provider_invokes_run_subcommand_and_parses_json() {
+        let binary_path = write_mock_binary(
+            "llm-binary-json",
+            r#"#!/usr/bin/env bash
+if [ "$1" != "run" ]; then
+  echo "expected run subcommand" >&2
+  exit 42
+fi
+case "$2" in
+  *"用户问题:"*) ;;
+  *)
+    echo "missing prompt" >&2
+    exit 43
+    ;;
+esac
+cat <<'JSON'
+{"summary":"mock summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"network","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check network"],"fixSuggestions":["fix network"],"missingInformation":[],"confidence":"high"}
+JSON
+"#,
+        );
+        let gateway = LlmGateway::new(LlmSettings {
+            provider: LlmProvider::Binary,
+            base_url: None,
+            api_key: None,
+            binary_path: Some(binary_path),
+            binary_max_output_bytes: 1024 * 1024,
+            model: "binary-mock".to_string(),
+            request_timeout_seconds: 5,
+            max_input_chars: 60_000,
+            max_output_tokens: 100,
+        })
+        .unwrap();
+        let grep = GrepResults {
+            keywords: vec!["error".to_string()],
+            total_matches: 1,
+            matches: vec![grep_match("timeout")],
+        };
+
+        let result = gateway
+            .generate_result(
+                "why did it timeout?",
+                &fixture_manifest(),
+                &grep,
+                None,
+                None,
+                &[],
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.summary, "mock summary");
+
+        let mut events = Vec::new();
+        let decision = gateway
+            .decide_next_action_with_events(
+                "why did it timeout?",
+                &fixture_manifest(),
+                &grep,
+                None,
+                None,
+                &[],
+                |event| events.push(event.event_type),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(decision, AgentDecision::FinalAnswer { .. }));
+        assert_eq!(
+            events,
+            vec![LlmCallEventType::Started, LlmCallEventType::Completed]
+        );
     }
 
     #[test]
@@ -2201,6 +2459,20 @@ mod tests {
                 message: ChatResponseMessage { content },
             }],
         }
+    }
+
+    fn write_mock_binary(name: &str, content: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "logagent-{name}-{}",
+            Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("xxx");
+        fs::write(&path, content).unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
     }
 
     fn fixture_tool_result() -> ToolRunRecord {

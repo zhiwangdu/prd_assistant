@@ -50,6 +50,16 @@ llm:
   max_output_tokens: 4096
   request_timeout_seconds: 120
 
+# 预留 binary provider 示例：
+# llm:
+#   provider: "binary"
+#   binary_path_env: "LOGAGENT_LLM_BINARY_PATH"
+#   model: "binary-reserved"
+#   binary_max_output_bytes: 1048576
+#   max_input_chars: 60000
+#   max_output_tokens: 4096
+#   request_timeout_seconds: 120
+
 tools:
   flux_query_analyzer:
     enabled: true
@@ -149,6 +159,8 @@ metadata:
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
+- `llm.provider: "binary"` 为预留二进制模型调用分支；`binary_path` 或 `binary_path_env` 解析结果必须是绝对路径，运行时固定调用 `<binary_path> run <prompt>`，stdout 按结构化 LLM JSON 解析。
+- `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
 - 当前 `PLAN_ANALYSIS` 多轮循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 限制；非正值按 1 处理。
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。

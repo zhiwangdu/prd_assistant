@@ -29,10 +29,18 @@ LLM Gateway 不负责：
 ```text
 question + manifest.json + grep_results.json + metadata_context.json + tool_results
   -> Prompt 裁剪
-  -> stub 或 OpenAI-compatible Chat Completions
+  -> stub、OpenAI-compatible Chat Completions 或 binary provider
   -> schema / evidence ref 校验与可追踪别名规范化
   -> result.json / result.md
 ```
+
+`binary` provider 是预留的大模型调用分支。启用后 Gateway 会使用参数数组调用配置的二进制：
+
+```text
+<binary_path> run "<prompt>"
+```
+
+该分支不拼接 shell，不允许用户覆盖 binary path 或 argv。当前环境不要求接入真实二进制，已通过单元测试中的 mock binary 验证最终结果生成和 `PLAN_ANALYSIS` action decision 都能解析 stdout JSON。
 
 Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAnswer 双模式入口。`final_answer` 直接持久化结果，`search_logs` 和 `run_tool` 执行动作后回到下一轮，直到最终答案、预算耗尽或重复 fingerprint 被阻止。当前不记录 Provider request id；该能力留给后续审计阶段。当前会对最终结果和 action decision 的解析/schema 错误各做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
@@ -69,6 +77,21 @@ llm:
 
 模型名不作为固定依赖。`model_env` 配置后从环境变量读取模型名并优先于兼容用的静态 `model`；变量缺失或值为空时 Server 启动失败。
 
+binary provider 示例：
+
+```yaml
+llm:
+  provider: "binary"
+  binary_path_env: "LOGAGENT_LLM_BINARY_PATH"
+  model: "binary-reserved"
+  binary_max_output_bytes: 1048576
+  request_timeout_seconds: 120
+  max_input_chars: 60000
+  max_output_tokens: 4096
+```
+
+`binary_path` 或 `binary_path_env` 解析后的路径必须是绝对路径。stdout 必须返回与 OpenAI-compatible content 相同的结构化 JSON；非零退出、超时、非 UTF-8 stdout、超出 `binary_max_output_bytes` 或 schema 不合法都会使对应 LLM 调用失败。
+
 ## 输入
 
 - 用户问题和 task 元信息
@@ -93,18 +116,18 @@ llm:
 
 ## 结构化响应
 
-当前 Task Executor 已在 `PLAN_ANALYSIS` 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、LLM 调用、action 数和重复 fingerprint。用户追问和审批尚未启用。
+当前 Task Executor 已在 `PLAN_ANALYSIS` 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、LLM 调用、action 数和重复 fingerprint。用户追问和审批恢复 API 已启用。
 
 第一版已支持 action：
 
 - `search_logs`
 - `run_tool`
+- `ask_user`
+- `collect_environment`
 - `final_answer`
 
 暂未开放 action：
 
-- `ask_user`
-- `collect_environment`
 - `collect_code_evidence`
 
 响应必须区分：

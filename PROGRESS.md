@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-08
+Last updated: 2026-06-09
 
 ## Status Summary
 
@@ -245,6 +245,7 @@ tool_results/<action_id>/
 
 - Implemented as a Server-internal Rust module.
 - Supports deterministic `stub` and OpenAI-compatible Chat Completions.
+- Supports a reserved `binary` provider branch that invokes a configured absolute-path executable as `<binary_path> run <prompt>` through argv arrays, parses stdout with the same JSON/schema/evidence validation as the HTTP provider, and enforces timeout plus `binary_max_output_bytes`. Current verification uses a mock binary, so no real model executable is required in this environment.
 - Supports `llm.model_env` for environment-provided model names while retaining static `llm.model` compatibility.
 - Accepts pure JSON, whole-response JSON Markdown fences, and natural-language responses containing exactly one top-level JSON object.
 - Builds a bounded prompt from question, manifest summary, and indexed grep matches.

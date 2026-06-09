@@ -19,6 +19,7 @@
 - Native Agent 只读取配置允许目录。
 - Server 只在 workspace 内处理任务产物。
 - Tool Runner 只能执行白名单工具。
+- LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Agent action。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
 - Analysis Agent 只能产生结构化意图，Server 是唯一执行者。
@@ -39,4 +40,5 @@
 - 未知 action、越权参数和重复 action 被拒绝。
 - 未批准的远程采集不执行。
 - Prompt injection 不能改变工具、路径、仓库或环境白名单。
+- Prompt injection 不能改变 LLM binary provider 的可执行路径、subcommand 或 argv 结构。
 - README 和 SPEC 在安全策略变更时同步更新。

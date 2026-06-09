@@ -10,12 +10,13 @@
 
 - `stub` Provider。
 - OpenAI-compatible `/chat/completions` Provider。
+- `binary` Provider 预留分支，使用参数数组调用 `<binary_path> run <prompt>` 并解析 stdout JSON。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - manifest/grep/metadata Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
 - 最终结果 schema、confidence、grep evidence ref 和 tool finding evidence ref 校验。
 - ActionDecision / FinalAnswer 双模式 schema 和 parser。
-- ActionDecision 当前只允许 `search_logs`、`run_tool`、`final_answer`，并校验 action input 的基础结构。
+- ActionDecision 当前允许 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`，并校验 action input 的基础结构；`collect_code_evidence` 暂不开放。
 - `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
@@ -67,13 +68,24 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 
 当前版本对最终结果和 action decision 解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入对应失败阶段。最终结果失败进入 `FAILED / GENERATE_RESULT`；`PLAN_ANALYSIS` 的 action decision 失败进入 `FAILED / PLAN_ANALYSIS`。
 
-ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。裸最终结果 JSON 和常见最终结果包裹变体会作为 `final_answer` 兼容；其他缺失外层 `type` 且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 会多轮调用 action decision，但等待状态尚未实现。
+ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywords`、非法 `run_tool.tool` 或 unsafe `run_tool.inputFile` 返回 schema 错误。裸最终结果 JSON 和常见最终结果包裹变体会作为 `final_answer` 兼容；其他缺失外层 `type` 且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 会多轮调用 action decision，`ask_user` 进入 `WAITING_FOR_USER`，`collect_environment` 进入 `WAITING_FOR_APPROVAL`。
+
+binary provider 错误包括：
+
+- `llm.binary_path` 或 `llm.binary_path_env` 缺失、为空或不是绝对路径。
+- 二进制启动失败。
+- `<binary_path> run <prompt>` 超时。
+- 进程非零退出。
+- stdout 不是 UTF-8。
+- stdout 超过 `llm.binary_max_output_bytes`。
+- stdout 中没有合法的结构化 JSON 或 schema / evidence ref 校验失败。
 
 ## 安全约束
 
 - 不直接执行任何 action。
 - 不接收密钥、SSH key、Cookie 或完整敏感配置。
 - 不保存模型隐藏思维链。
+- binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell，不接受用户输入覆盖可执行路径或 argv。
 - Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
 - runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
 - 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
@@ -83,6 +95,7 @@ ActionDecision parser 对未知 action、空 reason、非法 `search_logs.keywor
 
 - stub Provider 能返回最终结果。
 - stub action decision 能在 grep 为空时返回 `search_logs`，有 grep evidence 时返回 `final_answer`。
+- binary Provider 能通过 mock binary 验证 `<binary_path> run <prompt>` 调用路径，stdout JSON 可用于最终结果生成和 action decision。
 - ActionDecision parser 接受合法 `search_logs` / `run_tool` / `final_answer`，并兼容裸最终结果 JSON 与常见最终结果包裹变体；拒绝尚未开放的 action。
 - `PLAN_ANALYSIS` 能多轮消费 `search_logs`、`run_tool` 或 `final_answer` 决策。
 - 预算耗尽或重复 fingerprint 被阻止时能生成低置信度最终结果。

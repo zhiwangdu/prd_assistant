@@ -212,6 +212,7 @@ MVP 要求：
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `clusterId` / `nodeId` 并保留 `metadata_context.json`；pipeline 重跑不清理该快照。
 - task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。
+- LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
 - `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，循环调用 LLM Gateway 生成 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
@@ -225,6 +226,7 @@ MVP 要求：
 - LLM Gateway 会把 `PLAN_ANALYSIS` 中真实模型返回的裸最终结果 JSON，或多包一层的 `final_answer.result.result` / `answer` / `finalAnswer`，规范化为真正的 `final_answer`；缺少 `summary` 等核心字段的结果仍会拒绝。
 - stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
+- `llm.provider: "binary"` 时从 `llm.binary_path` 或 `llm.binary_path_env` 读取绝对路径，使用参数数组调用二进制，不拼接 shell，不依赖当前环境存在真实模型二进制。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。
 - LLM 解析/schema 错误会返回最新失败原因和上一轮失败原因；Provider HTTP、鉴权、限流和超时错误不重试。
 - `PLAN_ANALYSIS` 的真实模型调用会生成 `llmcall_*` callId；Task error、debug 日志和 analysis events 都会带上该 callId，便于定位失败轮次。
