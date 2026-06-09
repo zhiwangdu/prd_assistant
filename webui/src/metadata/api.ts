@@ -1,10 +1,10 @@
 import type { MetadataInstanceSummary, MetadataSnapshotResponse } from "./types";
 
-export async function fetchSnapshot(url: string, instanceId: string, apiKey: string) {
+export async function fetchSnapshot(url: string, instanceId: string, remark: string, apiKey: string) {
   return fetchJson<MetadataSnapshotResponse>("/api/metadata/snapshots/fetch", {
     method: "POST",
     headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ url, instanceId, templateType: "opengemini", filename: "opengemini-getdata.json" })
+    body: JSON.stringify(metadataFetchBody(url, instanceId, remark))
   });
 }
 
@@ -33,12 +33,23 @@ export type ImportPreview = {
   };
 };
 
-export async function previewImport(url: string, instanceId: string, apiKey: string) {
+export async function previewImport(url: string, instanceId: string, remark: string, apiKey: string) {
   return fetchJson<ImportPreview>("/api/metadata/imports/fetch", {
     method: "POST",
     headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ url, instanceId, templateType: "opengemini", filename: "opengemini-getdata.json" })
+    body: JSON.stringify(metadataFetchBody(url, instanceId, remark))
   });
+}
+
+function metadataFetchBody(url: string, instanceId: string, remark: string) {
+  const trimmedRemark = remark.trim();
+  return {
+    url,
+    instanceId,
+    ...(trimmedRemark ? { remark: trimmedRemark } : {}),
+    templateType: "opengemini",
+    filename: "opengemini-getdata.json"
+  };
 }
 
 export async function confirmImport(importId: string, apiKey: string) {

@@ -16,6 +16,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - openGemini `Databases` 库、保留策略、表结构和 shard group 摘要解析。
 - Server 侧从真实元数据 URL 拉取并预览。
 - openGemini 导入依赖用户手工输入 `instanceId`，并以 `instanceId` 作为唯一业务键；原始 `ClusterID` 仅保存在 `sourceClusterId` 标签中。
+- Instance 支持可选 `remark` 备注名，openGemini 实时加载和导入预览可随 `instanceId` 一起提交。
 - 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看。
 - WEBUI Metadata 页面。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
@@ -47,6 +48,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 实例：
 
 - `instance_id`
+- `remark`：用户备注名，可选，最长 120 个字符
 - `cluster_id`：内部拓扑快照键，openGemini 导入时等于 `instance_id`
 - `product`
 - `version`
@@ -157,6 +159,7 @@ POST /api/metadata/imports/:import_id/confirm
 {
   "url": "http://127.0.0.1:8091/getdata",
   "instanceId": "prod-og-1",
+  "remark": "生产集群 A",
   "templateType": "opengemini",
   "filename": "opengemini-getdata.json"
 }
@@ -165,6 +168,7 @@ POST /api/metadata/imports/:import_id/confirm
 解析规则：
 
 - 用户输入 `instanceId` -> `instanceId` 和内部 `clusterId`
+- 用户输入 `remark` -> instance `remark`，空值不保存，超 120 字符拒绝
 - `ClusterID` -> `labels.sourceClusterId`
 - `MetaNodes` -> `<instanceId>:meta-*` 节点
 - `DataNodes` -> `<instanceId>:data-*` 节点
@@ -189,6 +193,7 @@ Authorization: Bearer <api-key>
 已新增 Metadata 页面：
 
 - 展示已确认导入的 Instance 列表。
+- Instance 列表展示备注名并保持单行省略，Overview 展示完整备注字段。
 - 按实例 ID 查询。
 - 读取已存快照时使用 InstanceID，不再要求用户输入 ClusterID。
 - 展示 DataNode 分栏容器，内部按 Database/DBPT 分组展示 ShardGroup/Shard、IndexGroup/Index。

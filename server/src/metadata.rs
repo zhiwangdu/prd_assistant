@@ -10,6 +10,8 @@ use crate::{config::AppConfig, error::AppError, id::next_id};
 #[serde(rename_all = "camelCase")]
 pub struct InstanceMetadata {
     pub instance_id: String,
+    #[serde(default)]
+    pub remark: Option<String>,
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     pub product: Option<String>,
@@ -217,6 +219,8 @@ pub struct MetadataImportRequest {
     pub template_type: String,
     pub filename: Option<String>,
     pub instance_id: Option<String>,
+    #[serde(default)]
+    pub remark: Option<String>,
     pub content: String,
 }
 
@@ -227,6 +231,8 @@ pub struct MetadataFetchImportRequest {
     pub template_type: Option<String>,
     pub filename: Option<String>,
     pub instance_id: Option<String>,
+    #[serde(default)]
+    pub remark: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -241,6 +247,7 @@ pub struct MetadataSnapshotResponse {
 #[serde(rename_all = "camelCase")]
 pub struct MetadataInstanceSummary {
     pub instance_id: String,
+    pub remark: Option<String>,
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     pub product: Option<String>,
@@ -356,6 +363,7 @@ impl MetadataStore {
                     .and_then(|cluster_id| records.clusters.get(cluster_id));
                 MetadataInstanceSummary {
                     instance_id: instance.instance_id.clone(),
+                    remark: instance.remark.clone(),
                     cluster_id: instance.cluster_id.clone(),
                     node_id: instance.node_id.clone(),
                     product: instance.product.clone(),
@@ -563,8 +571,12 @@ impl MetadataStore {
         &self,
         req: MetadataImportRequest,
     ) -> Result<MetadataImportPreview, AppError> {
-        let template =
-            parse_template(&req.template_type, &req.content, req.instance_id.as_deref())?;
+        let template = parse_template(
+            &req.template_type,
+            &req.content,
+            req.instance_id.as_deref(),
+            req.remark.as_deref(),
+        )?;
         let mut records = self.records.write().await;
         let import_id = next_id("meta_imp");
         let preview = build_preview(&import_id, &req, &template, &records);
@@ -589,6 +601,7 @@ impl MetadataStore {
                 .unwrap_or_else(|| "opengemini".to_string()),
             filename: req.filename.or(Some(req.url)),
             instance_id: req.instance_id,
+            remark: req.remark,
             content,
         })
         .await
@@ -603,6 +616,7 @@ impl MetadataStore {
             req.template_type.as_deref().unwrap_or("opengemini"),
             &content,
             req.instance_id.as_deref(),
+            req.remark.as_deref(),
         )?;
         let instance = template.instances.into_iter().next();
         let cluster = template
@@ -720,13 +734,14 @@ fn parse_template(
     template_type: &str,
     content: &str,
     instance_id: Option<&str>,
+    remark: Option<&str>,
 ) -> Result<MetadataTemplate, AppError> {
     match template_type.to_ascii_lowercase().as_str() {
-        "json" => parse_metadata_json(content, instance_id),
+        "json" => parse_metadata_json(content, instance_id, remark),
         "yaml" | "yml" => serde_yaml::from_str(content)
             .map_err(|err| AppError::bad_request(format!("invalid metadata YAML: {err}"))),
         "opengemini" | "opengemini-json" | "influxdb-meta" => {
-            parse_opengemini_snapshot(content, instance_id)
+            parse_opengemini_snapshot(content, instance_id, remark)
         }
         "csv" => Err(AppError::bad_request(
             "metadata CSV import is reserved but not implemented yet",
@@ -740,6 +755,7 @@ fn parse_template(
 fn parse_metadata_json(
     content: &str,
     instance_id: Option<&str>,
+    remark: Option<&str>,
 ) -> Result<MetadataTemplate, AppError> {
     let value: serde_json::Value = serde_json::from_str(content)
         .map_err(|err| AppError::bad_request(format!("invalid metadata JSON: {err}")))?;
@@ -748,7 +764,7 @@ fn parse_metadata_json(
         || value.get("DataNodes").is_some()
         || value.get("SqlNodes").is_some()
     {
-        return normalize_opengemini_value(value, instance_id);
+        return normalize_opengemini_value(value, instance_id, remark);
     }
     serde_json::from_value(value)
         .map_err(|err| AppError::bad_request(format!("invalid metadata JSON: {err}")))
@@ -757,17 +773,20 @@ fn parse_metadata_json(
 fn parse_opengemini_snapshot(
     content: &str,
     instance_id: Option<&str>,
+    remark: Option<&str>,
 ) -> Result<MetadataTemplate, AppError> {
     let value = serde_json::from_str(content)
         .map_err(|err| AppError::bad_request(format!("invalid openGemini metadata JSON: {err}")))?;
-    normalize_opengemini_value(value, instance_id)
+    normalize_opengemini_value(value, instance_id, remark)
 }
 
 fn normalize_opengemini_value(
     value: serde_json::Value,
     instance_id: Option<&str>,
+    remark: Option<&str>,
 ) -> Result<MetadataTemplate, AppError> {
     let instance_id = clean_required_instance_id(instance_id)?;
+    let remark = clean_optional_remark(remark)?;
     let source_cluster_id = value
         .get("ClusterID")
         .and_then(serde_json::Value::as_u64)
@@ -807,6 +826,7 @@ fn normalize_opengemini_value(
     let mut template = MetadataTemplate {
         instances: vec![InstanceMetadata {
             instance_id: instance_id.clone(),
+            remark,
             cluster_id: Some(instance_id.clone()),
             node_id: None,
             product: Some("opengemini".to_string()),
@@ -860,6 +880,18 @@ fn clean_required_instance_id(instance_id: Option<&str>) -> Result<String, AppEr
         ));
     }
     Ok(value.to_string())
+}
+
+fn clean_optional_remark(remark: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(value) = remark.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.chars().count() > 120 {
+        return Err(AppError::bad_request(
+            "remark must be at most 120 characters",
+        ));
+    }
+    Ok(Some(value.to_string()))
 }
 
 fn normalize_opengemini_databases(value: Option<&serde_json::Value>) -> Vec<DatabaseMetadata> {
@@ -1570,6 +1602,7 @@ mod tests {
                 template_type: "yaml".to_string(),
                 filename: Some("metadata.yaml".to_string()),
                 instance_id: None,
+                remark: None,
                 content: r#"
 instances:
   - instanceId: i-123
@@ -1635,6 +1668,7 @@ nodes:
                 template_type: "yaml".to_string(),
                 filename: None,
                 instance_id: None,
+                remark: None,
                 content: r#"
 instances:
   - instanceId: i-1
@@ -1666,6 +1700,7 @@ clusters:
                 template_type: "json".to_string(),
                 filename: None,
                 instance_id: None,
+                remark: None,
                 content: serde_json::json!({
                     "instances": [
                         { "instanceId": "i-dup" },
@@ -1690,6 +1725,7 @@ clusters:
                 template_type: "opengemini".to_string(),
                 filename: Some("getdata.json".to_string()),
                 instance_id: Some("prod-a".to_string()),
+                remark: Some("生产集群 A".to_string()),
                 content: serde_json::json!({
                     "ClusterID": 6735497445922383781_u64,
                     "Term": 2,
@@ -1814,10 +1850,13 @@ clusters:
         let instances = store.list_instances().await;
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].instance_id, "prod-a");
+        assert_eq!(instances[0].remark.as_deref(), Some("生产集群 A"));
         assert_eq!(instances[0].cluster_id.as_deref(), Some("prod-a"));
         assert_eq!(instances[0].node_count, 3);
         let snapshot = store.get_instance_snapshot("prod-a").await.unwrap();
-        assert_eq!(snapshot.instance.unwrap().instance_id, "prod-a");
+        let instance = snapshot.instance.unwrap();
+        assert_eq!(instance.instance_id, "prod-a");
+        assert_eq!(instance.remark.as_deref(), Some("生产集群 A"));
         let cluster = snapshot.cluster;
         assert_eq!(cluster.product.as_deref(), Some("opengemini"));
         assert_eq!(

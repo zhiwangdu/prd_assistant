@@ -295,9 +295,9 @@ analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_e
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
-Metadata 的用户主键是手工输入的 `instanceId`。`GET /api/metadata/instances` 返回已导入实例列表及节点、数据库和 PT view 计数；`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的拓扑快照。旧 `cluster` 查询接口保留为兼容和内部拓扑排查用途，不再作为 WebUI 主入口。
+Metadata 的用户主键是手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入实例列表、备注名及节点、数据库和 PT view 计数；`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的拓扑快照。旧 `cluster` 查询接口保留为兼容和内部拓扑排查用途，不再作为 WebUI 主入口。
 
-`POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，请求必须提供 `instanceId`。Server 使用该 InstanceID 作为 store 唯一键和内部 snapshot key，原始 openGemini `ClusterID` 仅保存在 `labels.sourceClusterId`。响应返回 instance、完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
+`POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，请求必须提供 `instanceId`，可选 `remark` 最长 120 个字符。Server 使用该 InstanceID 作为 store 唯一键和内部 snapshot key，原始 openGemini `ClusterID` 仅保存在 `labels.sourceClusterId`。响应返回 instance、备注名、完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
 
 `POST /api/uploads` 使用 multipart：
 

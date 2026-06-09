@@ -123,6 +123,7 @@ WEBUI Tools
 - Case search now indexes InstanceID, NodeID, and evidence refs in addition to title, symptom, root cause, solution, product, version, and environment.
 - New tasks now recall up to 5 enabled Cases by question, persist `case_context.json`, expose `caseContext` in artifacts, and include historical Case references in the LLM prompt as non-authoritative context.
 - Metadata now uses user-provided `instanceId` as the user-facing unique key. openGemini imports require an explicit InstanceID, preserve the raw openGemini `ClusterID` as `sourceClusterId`, expose an imported Instance list, and serve stored topology snapshots by InstanceID. Legacy cluster endpoints remain for compatibility.
+- Metadata instances now support an optional `remark` display name. openGemini fetch/import requests accept it, the store persists it, WebUI shows it beside InstanceID, truncates it in the list, and includes it in Overview.
 - Persists `final_answer` decisions directly as `result.json` / `result.md`.
 - Stops repeated action fingerprints and exhausted analysis budgets with a low-confidence final result instead of an infinite loop.
 - Rejects artifact reads before success with `409` and the current task status.
@@ -266,6 +267,7 @@ tool_results/<action_id>/
   - cluster node listing
   - JSON/YAML import preview
   - openGemini `/getdata` snapshot normalization
+  - optional instance `remark` persistence and summary listing
   - openGemini `PtView` normalization into cluster `partitionViews`
   - openGemini `Databases` normalization into database/RP/measurement/shard summaries
   - server-side metadata URL fetch
@@ -352,7 +354,7 @@ npm run build
 
 Task, upload, and LLM verification:
 
-- 48 Rust tests pass.
+- 92 Rust tests pass.
 - Upload Store tests cover persistence/reload, interrupted progress reconciliation, strict chunk offsets, completion size, and corrupt JSON.
 - Upload API tests cover single and batch multipart upload flush-before-persist behavior.
 - Task API rejects `UPLOADING` records until completion.

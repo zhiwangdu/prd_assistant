@@ -1285,6 +1285,7 @@ mod tests {
                 template_type: "yaml".to_string(),
                 filename: None,
                 instance_id: None,
+                remark: None,
                 content: r#"
 instances:
   - instanceId: i-1

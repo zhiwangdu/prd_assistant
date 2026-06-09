@@ -8,6 +8,7 @@ export type MetadataSnapshotResponse = {
 
 export type InstanceDto = {
   instanceId: string;
+  remark?: string | null;
   clusterId?: string | null;
   nodeId?: string | null;
   product?: string | null;

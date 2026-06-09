@@ -26,6 +26,7 @@ type Props = { apiKey: string };
 export function MetadataDashboard({ apiKey }: Props) {
   const [url, setUrl] = useState("http://127.0.0.1:8091/getdata");
   const [instanceId, setInstanceId] = useState("");
+  const [instanceRemark, setInstanceRemark] = useState("");
   const [instances, setInstances] = useState<MetadataInstanceSummary[]>([]);
   const [listStatus, setListStatus] = useState("等待加载已导入列表");
   const [vm, setVm] = useState<MetadataViewModel | null>(null);
@@ -65,9 +66,10 @@ export function MetadataDashboard({ apiKey }: Props) {
     setLoading(true);
     setError("");
     try {
-      const snapshot = mode === "live" ? await fetchSnapshot(url, instanceId.trim(), apiKey) : await fetchStoredInstance(instanceId.trim(), apiKey);
+      const snapshot = mode === "live" ? await fetchSnapshot(url, instanceId.trim(), instanceRemark, apiKey) : await fetchStoredInstance(instanceId.trim(), apiKey);
       setVm(buildViewModel(snapshot));
       setInstanceId(snapshot.instance?.instanceId ?? instanceId.trim());
+      setInstanceRemark(snapshot.instance?.remark ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -88,7 +90,7 @@ export function MetadataDashboard({ apiKey }: Props) {
     setError("");
     try {
       if (!importPreview) {
-        const preview = await previewImport(url, instanceId.trim(), apiKey);
+        const preview = await previewImport(url, instanceId.trim(), instanceRemark, apiKey);
         setImportPreview(preview);
         setImportMessage(`预览完成：${preview.summary.nodes} nodes / ${preview.summary.databases} databases。再次点击确认写入。`);
       } else {
@@ -108,8 +110,11 @@ export function MetadataDashboard({ apiKey }: Props) {
   return (
     <div className="space-y-5">
       <Card>
-        <CardContent className="grid gap-3 pt-5 xl:grid-cols-[280px_minmax(0,1fr)_auto]">
-          <Input value={instanceId} onChange={(event) => { setInstanceId(event.target.value); setImportPreview(null); }} aria-label="Instance ID" placeholder="InstanceID（手工输入，唯一键）" />
+        <CardContent className="grid gap-3 pt-5 xl:grid-cols-[440px_minmax(0,1fr)_auto]">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
+            <Input value={instanceId} onChange={(event) => { setInstanceId(event.target.value); setImportPreview(null); }} aria-label="Instance ID" placeholder="InstanceID（手工输入，唯一键）" />
+            <Input value={instanceRemark} onChange={(event) => { setInstanceRemark(event.target.value); setImportPreview(null); }} aria-label="Instance remark" maxLength={120} placeholder="备注名" />
+          </div>
           <div className="flex min-w-0 gap-2">
             <Input value={url} onChange={(event) => { setUrl(event.target.value); setImportPreview(null); }} aria-label="Metadata URL" />
             <Button onClick={() => void load("live")} disabled={loading}>
@@ -133,10 +138,11 @@ export function MetadataDashboard({ apiKey }: Props) {
           selectedInstanceId={instanceId}
           status={listStatus}
           onRefresh={() => void refreshInstances()}
-          onSelect={(nextInstanceId) => {
-            setInstanceId(nextInstanceId);
+          onSelect={(item) => {
+            setInstanceId(item.instanceId);
+            setInstanceRemark(item.remark ?? "");
             setImportPreview(null);
-            void loadStoredInstance(nextInstanceId);
+            void loadStoredInstance(item.instanceId);
           }}
         />
         {!vm ? (
@@ -178,6 +184,7 @@ export function MetadataDashboard({ apiKey }: Props) {
       const snapshot = await fetchStoredInstance(nextInstanceId, apiKey);
       setVm(buildViewModel(snapshot));
       setInstanceId(snapshot.instance?.instanceId ?? nextInstanceId);
+      setInstanceRemark(snapshot.instance?.remark ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -203,7 +210,7 @@ function ImportedInstancesPanel({
   selectedInstanceId: string;
   status: string;
   onRefresh: () => void;
-  onSelect: (instanceId: string) => void;
+  onSelect: (item: MetadataInstanceSummary) => void;
 }) {
   return (
     <Card>
@@ -223,12 +230,15 @@ function ImportedInstancesPanel({
           <button
             className={`w-full rounded-lg border p-3 text-left transition ${selectedInstanceId === item.instanceId ? "border-primary bg-slate-50" : "border-border hover:bg-slate-50"}`}
             key={item.instanceId}
-            onClick={() => onSelect(item.instanceId)}
+            onClick={() => onSelect(item)}
             type="button"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="break-all text-sm font-medium">{item.instanceId}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium" title={item.instanceId}>{item.instanceId}</p>
+                  {item.remark && <span className="max-w-[150px] truncate rounded-md border border-border bg-white px-1.5 py-0.5 text-[11px] text-muted-foreground" title={item.remark}>{item.remark}</span>}
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">{item.product ?? "unknown"} {item.version ?? ""} · {item.environment ?? "env -"}</p>
               </div>
               <Badge variant="secondary">{item.nodeCount} nodes</Badge>
@@ -245,6 +255,7 @@ function Overview({ vm }: { vm: MetadataViewModel }) {
   const labels = vm.cluster.labels ?? {};
   const metrics = [
     ["Instance ID", vm.instance?.instanceId ?? vm.cluster.clusterId],
+    ["Remark", vm.instance?.remark],
     ["Source Cluster ID", labels.sourceClusterId],
     ["Term", labels.term],
     ["Index", labels.index],
