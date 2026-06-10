@@ -236,7 +236,7 @@ async fn plan_analysis_phase(
                 execute_agent_action(state.clone(), &task, action).await?;
             }
             AgentDecision::FinalAnswer { result } => {
-                let result = result.into_result(&grep, &tool_results)?;
+                let result = result.into_result(&grep, case_context.as_ref(), &tool_results)?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
                 let completed = complete_successful_log_analysis(
                     &state,

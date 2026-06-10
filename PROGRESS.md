@@ -78,6 +78,14 @@ WEBUI Tools
 - WebUI Runs、timeline 收起态和 Case 确认区优先展示 alias；没有 alias 时用状态/时间回退，不再把裸 `task_...` 当主要显示名称。
 - Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
 
+### Case Evidence Ref Normalization
+
+- 修复线上 Session `sess_1781100427508_1` 中 `task_1781103906266_1` 的 `PLAN_ANALYSIS` 失败原因：模型把历史 Case 输出为 `历史案例 case_1781027802189_1`，旧校验无法映射该 evidence ref。
+- LLM Gateway 现在在 Prompt 中给历史 Case 标注 `case_context.json#cases/<index>`，并把模型输出的 `case_<id>` 或“历史案例 case_<id>”规范化为当前 task `case_context.json` 中的 canonical ref。
+- 最终结果允许引用 `case_context.json#cases/<index>`；未知 Case、缺失 case context 或越界 index 仍会拒绝。
+- WebUI 现在支持点击 `case_context.json#cases/<index>` 跳转到对应 Case context 条目。
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass; deployed to `/home/duzhiwang/workspace/data/prd_assistant`, rebuilt Server/WebUI, restarted with deployment env, and `logagentctl.sh status` returned `{"status":"ok"}`.
+
 ### WebUI Naming
 
 - Renamed the top bar product title from `LogAgent Metadata Console` to `LogAgent Analysis Workbench`.

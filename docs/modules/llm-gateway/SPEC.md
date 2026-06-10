@@ -37,6 +37,11 @@
 ## 当前输出
 
 结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、grep match 或 tool finding 引用。
+根因证据也可以引用当前 task 创建时固化的历史 Case context，canonical 格式为：
+
+- `case_context.json#cases/<index>`
+
+真实模型输出 `case_<id>` 或“历史案例 case_<id>”时，Gateway 会在当前 `case_context.json` 中查找对应 Case 并规范化为 canonical ref；找不到或索引越界必须拒绝。
 
 Task alias 输出只包含 `alias` 字段。alias 必须是短标题，不能包含 task ID、时间戳、`LogAgent`、`task`、`run` 等泛化词。alias 调用不记录到 `analysis_events.jsonl` 或 Session timeline；schema 错误最多重试一次，最终失败由 Server fallback，不影响 task 成功状态。
 
@@ -110,6 +115,7 @@ binary provider 错误包括：
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 最终结果和 action decision schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
 - 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
+- 可映射的历史 Case ID evidence ref 会规范化为 `case_context.json#cases/<index>`。
 - 可追踪的字符串形式 root cause 会规范化为对象形式。
 - 单字符串形式的列表字段会规范化为字符串数组。
 - 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。

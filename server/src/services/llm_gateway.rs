@@ -102,7 +102,13 @@ impl LlmGateway {
             LlmProvider::OpenAiCompatible => self.call_chat_completions(&prompt).await?,
             LlmProvider::Binary => self.call_binary_result(&prompt).await?,
         };
-        validate_result_evidence(draft, Some(grep), grep.matches.len(), tool_results)
+        validate_result_evidence(
+            draft,
+            Some(grep),
+            grep.matches.len(),
+            case_context,
+            tool_results,
+        )
     }
 
     #[allow(dead_code)]
@@ -151,7 +157,7 @@ impl LlmGateway {
             LlmProvider::OpenAiCompatible => self.call_action_decision(&prompt, on_event).await?,
             LlmProvider::Binary => self.call_binary_action_decision(&prompt, on_event).await?,
         };
-        validate_agent_decision_with_evidence(&decision, grep, tool_results)?;
+        validate_agent_decision_with_evidence(&decision, grep, case_context, tool_results)?;
         Ok(decision)
     }
 
@@ -741,7 +747,7 @@ fn build_result_retry_prompt(error: &str) -> String {
 - 字段仅使用 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation、confidence。\n\
 - symptoms、nextChecks、fixSuggestions、missingInformation 必须是字符串数组。\n\
 - likelyRootCauses 必须是对象数组，每项包含 cause 字符串和 evidenceRefs 字符串数组。\n\
-- evidenceRefs 必须引用已给出的 session_text_input.json#question、grep_results.json#matches/<index> 或 tool_results/<action_id>/result.json#findings/<index>。\n\
+- evidenceRefs 必须引用已给出的 session_text_input.json#question、grep_results.json#matches/<index>、case_context.json#cases/<index> 或 tool_results/<action_id>/result.json#findings/<index>。\n\
 - confidence 只能是 low、medium、high。"
     )
 }
@@ -1300,7 +1306,7 @@ fn case_context_prompt_summary(case_context: &serde_json::Value) -> String {
         return "no similar confirmed cases\n".to_string();
     }
     let mut lines = Vec::new();
-    for item in cases.iter().take(5) {
+    for (index, item) in cases.iter().take(5).enumerate() {
         let case_id = item
             .get("caseId")
             .and_then(|value| value.as_str())
@@ -1330,7 +1336,7 @@ fn case_context_prompt_summary(case_context: &serde_json::Value) -> String {
             .and_then(|value| value.as_str())
             .unwrap_or("unknown");
         lines.push(format!(
-            "- {case_id} score={score:.2} product={product} version={version} title={title} rootCause={root_cause} solution={solution}"
+            "- [case_context.json#cases/{index}] {case_id} score={score:.2} product={product} version={version} title={title} rootCause={root_cause} solution={solution}"
         ));
     }
     lines.push(
@@ -1593,6 +1599,7 @@ fn validate_result_evidence(
     mut draft: ResultDraft,
     grep: Option<&GrepResults>,
     match_count: usize,
+    case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
 ) -> anyhow::Result<AnalysisResult> {
     if draft.summary.trim().is_empty() {
@@ -1607,8 +1614,9 @@ fn validate_result_evidence(
         }
         let mut normalized_refs = Vec::new();
         for evidence_ref in &cause.evidence_refs {
-            let refs = normalize_evidence_ref(evidence_ref, grep, match_count, tool_results)
-                .with_context(|| format!("invalid evidence ref {evidence_ref}"))?;
+            let refs =
+                normalize_evidence_ref(evidence_ref, grep, match_count, case_context, tool_results)
+                    .with_context(|| format!("invalid evidence ref {evidence_ref}"))?;
             for normalized_ref in refs {
                 if !normalized_refs.contains(&normalized_ref) {
                     normalized_refs.push(normalized_ref);
@@ -1633,6 +1641,7 @@ fn normalize_evidence_ref(
     evidence_ref: &str,
     grep: Option<&GrepResults>,
     match_count: usize,
+    case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
 ) -> anyhow::Result<Vec<String>> {
     let value = evidence_ref.trim();
@@ -1646,6 +1655,14 @@ fn normalize_evidence_ref(
     if let Some(index) = parse_canonical_match_ref(value) {
         ensure_match_index(index, match_count)?;
         return Ok(vec![canonical_match_ref(index)]);
+    }
+    if let Some(index) = parse_canonical_case_ref(value) {
+        ensure_case_index(index, case_context)?;
+        return Ok(vec![canonical_case_ref(index)]);
+    }
+    if let Some(case_id) = parse_case_id_ref_alias(value) {
+        let index = find_case_index(case_id, case_context)?;
+        return Ok(vec![canonical_case_ref(index)]);
     }
     if let Some((start, end)) = parse_match_ref_alias(value) {
         if start > end {
@@ -1711,6 +1728,28 @@ fn parse_canonical_match_ref(value: &str) -> Option<usize> {
         .and_then(|value| value.parse::<usize>().ok())
 }
 
+fn parse_canonical_case_ref(value: &str) -> Option<usize> {
+    value
+        .strip_prefix("case_context.json#cases/")
+        .and_then(|value| value.parse::<usize>().ok())
+}
+
+fn parse_case_id_ref_alias(value: &str) -> Option<&str> {
+    let start = value.find("case_")?;
+    let candidate = &value[start..];
+    let end = candidate
+        .char_indices()
+        .find(|(_, ch)| !(ch.is_ascii_alphanumeric() || *ch == '_'))
+        .map(|(index, _)| index)
+        .unwrap_or(candidate.len());
+    let case_id = &candidate[..end];
+    if case_id.len() <= "case_".len() {
+        None
+    } else {
+        Some(case_id)
+    }
+}
+
 fn parse_match_ref_alias(value: &str) -> Option<(usize, usize)> {
     let value = value.strip_prefix("matches/")?;
     if let Some((start, end)) = value.split_once('-') {
@@ -1770,8 +1809,45 @@ fn ensure_tool_finding_index(
     Ok(())
 }
 
+fn ensure_case_index(index: usize, case_context: Option<&serde_json::Value>) -> anyhow::Result<()> {
+    let cases = case_context_cases(case_context)?;
+    if index >= cases.len() {
+        anyhow::bail!("evidence ref {} is out of range", canonical_case_ref(index));
+    }
+    Ok(())
+}
+
+fn find_case_index(
+    case_id: &str,
+    case_context: Option<&serde_json::Value>,
+) -> anyhow::Result<usize> {
+    let cases = case_context_cases(case_context)?;
+    cases
+        .iter()
+        .position(|item| {
+            item.get("caseId")
+                .and_then(|value| value.as_str())
+                .map(|value| value == case_id)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| anyhow::anyhow!("case {case_id} was not provided in case context"))
+}
+
+fn case_context_cases(
+    case_context: Option<&serde_json::Value>,
+) -> anyhow::Result<&Vec<serde_json::Value>> {
+    case_context
+        .and_then(|value| value.get("cases"))
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| anyhow::anyhow!("case evidence refs require case context"))
+}
+
 fn canonical_match_ref(index: usize) -> String {
     format!("grep_results.json#matches/{index}")
+}
+
+fn canonical_case_ref(index: usize) -> String {
+    format!("case_context.json#cases/{index}")
 }
 
 fn canonical_tool_finding_ref(action_id: &str, index: usize) -> String {
@@ -1848,12 +1924,14 @@ impl FinalAnswerDecision {
     pub fn into_result(
         self,
         grep: &GrepResults,
+        case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AnalysisResult> {
         validate_result_evidence(
             self.into_draft(),
             Some(grep),
             grep.matches.len(),
+            case_context,
             tool_results,
         )
     }
@@ -1874,12 +1952,19 @@ fn validate_agent_decision(decision: &AgentDecision) -> anyhow::Result<()> {
 fn validate_agent_decision_with_evidence(
     decision: &AgentDecision,
     grep: &GrepResults,
+    case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
 ) -> anyhow::Result<()> {
     validate_agent_decision(decision)?;
     if let AgentDecision::FinalAnswer { result } = decision {
         let draft = result.clone().into_draft();
-        validate_result_evidence(draft, Some(grep), grep.matches.len(), tool_results)?;
+        validate_result_evidence(
+            draft,
+            Some(grep),
+            grep.matches.len(),
+            case_context,
+            tool_results,
+        )?;
     }
     Ok(())
 }
@@ -2207,7 +2292,7 @@ mod tests {
             missing_information: vec![],
             confidence: Confidence::Low,
         };
-        assert!(validate_result_evidence(draft, None, 1, &[]).is_err());
+        assert!(validate_result_evidence(draft, None, 1, None, &[]).is_err());
     }
 
     #[test]
@@ -2241,7 +2326,8 @@ mod tests {
             confidence: Confidence::Low,
         };
 
-        let result = validate_result_evidence(draft, Some(&grep), grep.matches.len(), &[]).unwrap();
+        let result =
+            validate_result_evidence(draft, Some(&grep), grep.matches.len(), None, &[]).unwrap();
 
         assert_eq!(
             result.likely_root_causes[0].evidence_refs,
@@ -2277,7 +2363,9 @@ mod tests {
             confidence: Confidence::Low,
         };
 
-        assert!(validate_result_evidence(draft, Some(&grep), grep.matches.len(), &[]).is_err());
+        assert!(
+            validate_result_evidence(draft, Some(&grep), grep.matches.len(), None, &[]).is_err()
+        );
     }
 
     #[test]
@@ -2309,7 +2397,8 @@ mod tests {
         };
 
         let draft = parse_chat_response(response).unwrap();
-        let result = validate_result_evidence(draft, Some(&grep), grep.matches.len(), &[]).unwrap();
+        let result =
+            validate_result_evidence(draft, Some(&grep), grep.matches.len(), None, &[]).unwrap();
 
         assert_eq!(
             result.likely_root_causes[0].cause,
@@ -2638,7 +2727,7 @@ JSON
             confidence: Confidence::Low,
         };
 
-        let result = validate_result_evidence(draft, None, 0, &tool_results).unwrap();
+        let result = validate_result_evidence(draft, None, 0, None, &tool_results).unwrap();
 
         assert_eq!(
             result.likely_root_causes[0].evidence_refs,
@@ -2661,11 +2750,41 @@ JSON
             confidence: Confidence::Low,
         };
 
-        let result = validate_result_evidence(draft, None, 0, &[]).unwrap();
+        let result = validate_result_evidence(draft, None, 0, None, &[]).unwrap();
 
         assert_eq!(
             result.likely_root_causes[0].evidence_refs,
             vec!["session_text_input.json#question"]
+        );
+    }
+
+    #[test]
+    fn normalizes_case_context_evidence_refs() {
+        let case_context = serde_json::json!({
+            "schemaVersion": 1,
+            "query": "slow query",
+            "cases": [
+                { "caseId": "case_1781027802189_1", "title": "slow query" }
+            ]
+        });
+        let draft = ResultDraft {
+            summary: "summary".to_string(),
+            symptoms: vec![],
+            likely_root_causes: vec![RootCause {
+                cause: "similar historical case".to_string(),
+                evidence_refs: vec!["历史案例 case_1781027802189_1".to_string()],
+            }],
+            next_checks: vec![],
+            fix_suggestions: vec![],
+            missing_information: vec![],
+            confidence: Confidence::Low,
+        };
+
+        let result = validate_result_evidence(draft, None, 0, Some(&case_context), &[]).unwrap();
+
+        assert_eq!(
+            result.likely_root_causes[0].evidence_refs,
+            vec!["case_context.json#cases/0"]
         );
     }
 
@@ -2699,8 +2818,8 @@ JSON
             confidence: Confidence::Low,
         };
 
-        assert!(validate_result_evidence(out_of_range, None, 0, &tool_results).is_err());
-        assert!(validate_result_evidence(unknown_action, None, 0, &tool_results).is_err());
+        assert!(validate_result_evidence(out_of_range, None, 0, None, &tool_results).is_err());
+        assert!(validate_result_evidence(unknown_action, None, 0, None, &tool_results).is_err());
     }
 
     #[test]

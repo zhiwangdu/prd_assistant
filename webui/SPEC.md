@@ -80,6 +80,7 @@ DataNode
 - 顶部 `Cases` 页面必须支持 `GET /api/cases` 搜索列表、Case import 文本/文本文件导入、LLM 结构化草稿、缺失信息追问、确认保存、`PATCH /api/cases/:case_id` 详情编辑和启用/禁用。直接 `POST /api/cases` 保留为后端兼容能力，不再作为主录入 UI。
 - 成功任务 artifacts 中存在 `caseContext` 时，WebUI 必须展示任务创建时召回的历史 Case，并说明其仅作分析参考。
 - 成功任务 artifacts 中存在 `textInput` 时，WebUI 必须展示任务创建时固化的对话框输入，并支持 `session_text_input.json#question` evidence ref 跳转。
+- 最终结果中的 `case_context.json#cases/<index>` evidence ref 必须能跳转到对应历史 Case context 条目。
 - 页面初始化从 `GET /api/sessions` 读取最近 Session，不以 localStorage 作为任务真源。
 - 创建任务后每秒读取任务详情，终态停止；`SUCCEEDED` 再读取 artifacts，`FAILED` 展示失败阶段和消息。
 - 创建任务提交用户问题，展示 `GENERATE_RESULT` 阶段，并在成功后读取结构化 LLM 结果。

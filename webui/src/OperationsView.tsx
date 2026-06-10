@@ -818,7 +818,7 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
 }
 
 function TaskCaseContextView({ context }: { context: CaseContext }) {
-  return <Card><CardHeader><CardTitle>Case context</CardTitle><CardDescription>任务创建时按问题召回的历史 Case，仅作为分析参考</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-xs text-muted-foreground">query: {context.query || "-"}</p>{context.cases.length ? context.cases.map((item) => <div className="rounded-lg border border-border p-3" key={item.caseId}><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{item.title}</span><Badge variant="secondary">score {item.score.toFixed(2)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · {item.product ?? "unknown"} {item.version ?? ""}</p><p className="mt-2 text-sm">{item.rootCause}</p></div>) : <EmptyState>任务创建时未召回相似 Case。</EmptyState>}</CardContent></Card>;
+  return <Card><CardHeader><CardTitle>Case context</CardTitle><CardDescription>任务创建时按问题召回的历史 Case，仅作为分析参考</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-xs text-muted-foreground">query: {context.query || "-"}</p>{context.cases.length ? context.cases.map((item, index) => <div id={`case-context-${index}`} className="rounded-lg border border-border p-3" key={item.caseId}><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{item.title}</span><Badge variant="secondary">score {item.score.toFixed(2)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · {item.product ?? "unknown"} {item.version ?? ""}</p><p className="mt-2 text-sm">{item.rootCause}</p></div>) : <EmptyState>任务创建时未召回相似 Case。</EmptyState>}</CardContent></Card>;
 }
 
 function ToolResultLine({ result }: { result: ToolResult }) {
@@ -836,6 +836,8 @@ function scrollToEvidence(reference: string) {
   }
   const index = reference.match(/^grep_results\.json#matches\/(\d+)$/)?.[1];
   if (index) document.getElementById(`grep-match-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const caseIndex = reference.match(/^case_context\.json#cases\/(\d+)$/)?.[1];
+  if (caseIndex) document.getElementById(`case-context-${caseIndex}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function defaultCaseDraft(result: AnalysisResult): CaseDraft {
