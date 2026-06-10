@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::models::{AnalysisResult, TaskRecord};
+use crate::domain::models::{AnalysisResult, TaskRecord};
 
 #[derive(Debug, Clone)]
 pub struct CaseStore {
@@ -462,7 +462,7 @@ fn truncate(value: String, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Confidence, TaskSource, TaskStatus};
+    use crate::domain::models::{Confidence, TaskSource, TaskStatus};
 
     #[tokio::test]
     async fn creates_searches_and_updates_case() {
@@ -473,7 +473,7 @@ mod tests {
         let task = TaskRecord {
             schema_version: 4,
             task_id: "task_case_test".to_string(),
-            task_kind: crate::models::TaskKind::LogAnalysis,
+            task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![],
@@ -501,7 +501,7 @@ mod tests {
             schema_version: 1,
             summary: "slow query without time filter".to_string(),
             symptoms: vec!["query latency increased".to_string()],
-            likely_root_causes: vec![crate::models::RootCause {
+            likely_root_causes: vec![crate::domain::models::RootCause {
                 cause: "missing time filter".to_string(),
                 evidence_refs: vec!["tool_results/act/result.json#findings/0".to_string()],
             }],

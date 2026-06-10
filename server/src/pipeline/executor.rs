@@ -4,20 +4,24 @@ use tokio::sync::Semaphore;
 use tracing::{error, warn};
 
 use crate::{
-    analysis_state,
-    config::{AnalysisSettings, LogAnalyzerSettings},
-    contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext},
-    llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
-    models::{
-        AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskKind, TaskPhase,
-        TaskRecord,
+    app::AppState,
+    domain::{
+        contracts::{
+            ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext,
+        },
+        models::{
+            AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskKind, TaskPhase,
+            TaskRecord,
+        },
     },
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
         prepare_pipeline_run, read_optional_json, read_tool_results, search_task,
         search_task_with_settings,
     },
-    state::AppState,
+    services::llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
+    stores::analysis_state,
+    support::config::{AnalysisSettings, LogAnalyzerSettings},
 };
 
 #[derive(Debug)]
@@ -133,10 +137,11 @@ async fn dispatch_phase(
         }
         TaskPhase::RunTool => {
             if task.task_kind == TaskKind::ToolRun {
-                let result_path = crate::tools::run_tool_task(state.config.clone(), task.clone())
-                    .await?
-                    .display()
-                    .to_string();
+                let result_path =
+                    crate::services::tools::run_tool_task(state.config.clone(), task.clone())
+                        .await?
+                        .display()
+                        .to_string();
                 state
                     .tasks
                     .succeed_tool_run(&task.task_id, TaskPhase::RunTool, result_path)
@@ -685,13 +690,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        config::{
+        domain::models::{TaskInput, TaskSource, TaskStatus},
+        pipeline::{extract_task, prepare_pipeline_run, search_task},
+        support::config::{
             AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
             ToolsSettings,
         },
-        models::{TaskInput, TaskSource, TaskStatus},
-        pipeline::{extract_task, prepare_pipeline_run, search_task},
     };
 
     #[tokio::test]

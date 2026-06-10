@@ -1,23 +1,10 @@
-mod analysis_state;
-mod api;
-mod auth;
-mod case_store;
-mod config;
-mod contracts;
-mod error;
-mod fs_utils;
-mod id;
-mod llm_gateway;
-mod log_analyzer;
-mod metadata;
-mod models;
+mod app;
+mod domain;
+mod http;
 mod pipeline;
-mod state;
-mod task_executor;
-mod task_store;
-mod tool_runner;
-mod tools;
-mod upload_store;
+mod services;
+mod stores;
+mod support;
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -32,7 +19,7 @@ use tower_http::{
 };
 use tracing::info;
 
-use crate::{config::load_config, state::AppState};
+use crate::{app::AppState, support::config::load_config};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "LogAgent MVP server")]
@@ -60,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(config)?;
     state.recover_tasks().await?;
     let app = Router::new()
-        .merge(api::router(state.clone()))
+        .merge(http::router(state.clone()))
         .fallback_service(ServeDir::new("webui/out").append_index_html_on_directories(true))
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http())

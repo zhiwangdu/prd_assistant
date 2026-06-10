@@ -10,10 +10,12 @@ use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::Duration};
 
 use crate::{
-    config::{AppConfig, ToolSettings},
-    error::AppError,
-    fs_utils::relative_string,
-    models::{TaskRecord, ToolDescriptor},
+    domain::models::{TaskRecord, ToolDescriptor},
+    support::{
+        config::{AppConfig, ToolSettings},
+        error::AppError,
+        fs_utils::relative_string,
+    },
 };
 
 pub const PPROF_ANALYZER_ID: &str = "pprof_analyzer";

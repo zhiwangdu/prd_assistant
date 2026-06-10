@@ -6,12 +6,12 @@ use axum::{
 };
 
 use crate::{
-    error::AppError,
-    metadata::{
+    app::AppState,
+    services::metadata::{
         MetadataConfirmResponse, MetadataFetchImportRequest, MetadataImportPreview,
         MetadataImportRequest, MetadataInstanceSummary, MetadataSnapshotResponse,
     },
-    state::AppState,
+    support::error::AppError,
 };
 
 pub async fn list_instances(

@@ -8,11 +8,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    case_store::{CaseRecord, CaseSearchHit, CaseUpdate, ManualCase, NewCase},
-    error::AppError,
-    id::next_id,
-    models::{AnalysisResult, TaskStatus},
-    state::AppState,
+    app::AppState,
+    domain::models::{AnalysisResult, TaskStatus},
+    stores::case_store::{CaseRecord, CaseSearchHit, CaseUpdate, ManualCase, NewCase},
+    support::{error::AppError, id::next_id},
 };
 
 #[derive(Debug, Deserialize)]

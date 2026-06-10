@@ -35,6 +35,8 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
+代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化，`services/` 承载 Log Analyzer、Tool Runner、Metadata、LLM Gateway 和 Tools 插件等内部能力，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。HTTP API、配置结构、任务 schema 和 workspace artifact 路径保持不变。
+
 ## HTTP 接口
 
 公开接口：

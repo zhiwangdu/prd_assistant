@@ -2,9 +2,10 @@ use std::sync::Arc;
 use tracing::warn;
 
 use crate::{
-    case_store::CaseStore, config::AppConfig, llm_gateway::LlmGateway, metadata::MetadataStore,
-    task_executor::TaskExecutor, task_store::TaskStore, tool_runner::ToolRunner,
-    upload_store::UploadStore,
+    pipeline::executor::TaskExecutor,
+    services::{llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner},
+    stores::{case_store::CaseStore, task_store::TaskStore, upload_store::UploadStore},
+    support::config::AppConfig,
 };
 
 #[derive(Debug)]

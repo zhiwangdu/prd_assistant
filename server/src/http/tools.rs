@@ -9,15 +9,14 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::{
-    error::AppError,
-    id::next_id,
-    models::{
+    app::AppState,
+    domain::models::{
         CreateToolRunRequest, TaskKind, TaskRecord, TaskResponse, TaskSource, TaskStatus,
         ToolListResponse, ToolRunArtifactsResponse, ToolRunListResponse, UploadStatus,
     },
     pipeline::prepare_raw_snapshot,
-    state::AppState,
-    tools,
+    services::tools,
+    support::{error::AppError, id::next_id},
 };
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +37,7 @@ pub async fn list_tools(
 pub async fn get_tool(
     State(state): State<Arc<AppState>>,
     Path(tool_id): Path<String>,
-) -> Result<Json<crate::models::ToolDescriptor>, AppError> {
+) -> Result<Json<crate::domain::models::ToolDescriptor>, AppError> {
     tools::get_descriptor(&state.config, &tool_id)
         .map(Json)
         .ok_or_else(|| AppError::not_found(format!("unknown toolId {tool_id}")))
@@ -247,20 +246,20 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api,
-        config::{
+        domain::models::{UploadRecord, UploadStatus},
+        http,
+        support::config::{
             AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
             ToolsSettings,
         },
-        models::{UploadRecord, UploadStatus},
     };
 
     #[tokio::test]
     async fn pprof_tool_run_reuses_uploads_tasks_and_result_api() {
         let (state, root) = test_state_with_pprof_tool();
         create_test_upload(&state, "upl_pprof").await;
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
 
         let list = app
             .clone()

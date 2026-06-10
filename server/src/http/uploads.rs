@@ -8,14 +8,12 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    error::AppError,
-    fs_utils::sanitize_filename,
-    id::next_id,
-    models::{
+    app::AppState,
+    domain::models::{
         BatchUploadResponse, ChunkQuery, ChunkUploadResponse, InitUploadRequest, UploadRecord,
         UploadResponse, UploadStatus,
     },
-    state::AppState,
+    support::{error::AppError, fs_utils::sanitize_filename, id::next_id},
 };
 
 pub async fn upload(
@@ -316,18 +314,18 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api,
-        config::{
+        app::AppState,
+        http,
+        support::config::{
             AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
-        state::AppState,
     };
 
     #[tokio::test]
     async fn multipart_upload_flushes_payload_before_persisting_record() {
         let (state, root) = test_state();
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .oneshot(multipart_request(
                 "/api/uploads",
@@ -359,7 +357,7 @@ mod tests {
     #[tokio::test]
     async fn batch_upload_flushes_each_payload_before_persisting_records() {
         let (state, root) = test_state();
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .oneshot(multipart_request(
                 "/api/uploads/batch",

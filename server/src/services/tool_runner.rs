@@ -11,13 +11,17 @@ use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::Duration};
 
 use crate::{
-    config::{ToolSettings, ToolsSettings},
-    contracts::{
-        ActionKind, ActionRisk, AgentAction, EvidenceArtifact, EvidenceProvider, EvidenceRef,
-        EvidenceSummary, EvidenceType, TaskContext,
+    domain::{
+        contracts::{
+            ActionKind, ActionRisk, AgentAction, EvidenceArtifact, EvidenceProvider, EvidenceRef,
+            EvidenceSummary, EvidenceType, TaskContext,
+        },
+        models::{GrepResults, Manifest},
     },
-    fs_utils::relative_string,
-    models::{GrepResults, Manifest},
+    support::{
+        config::{ToolSettings, ToolsSettings},
+        fs_utils::relative_string,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -1038,9 +1042,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        config::{ToolMatchSettings, ToolSettings, ToolsSettings},
-        contracts::EvidenceProvider,
-        models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource},
+        domain::{
+            contracts::EvidenceProvider,
+            models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource},
+        },
+        support::config::{ToolMatchSettings, ToolSettings, ToolsSettings},
     };
 
     #[tokio::test]

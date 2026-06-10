@@ -25,28 +25,35 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 已有编译工具可复用，不强制重写。外部工具统一通过白名单配置和 Tool Runner 调用。
 
-## 模块边界
+## 组件和内部能力边界
 
-| 模块 | Spec |
+当前可运行组件：
+
+| 组件 | Spec |
 |------|------|
 | Chrome Extension | [chrome-extension/SPEC.md](./chrome-extension/SPEC.md) |
 | Native Agent | [native-agent/SPEC.md](./native-agent/SPEC.md) |
 | Server | [server/SPEC.md](./server/SPEC.md) |
-| Log Analyzer | [log-analyzer/SPEC.md](./log-analyzer/SPEC.md) |
-| Tool Runner | [tool-runner/SPEC.md](./tool-runner/SPEC.md) |
-| Code Evidence | [code-evidence/SPEC.md](./code-evidence/SPEC.md) |
-| Environment Collector | [environment-collector/SPEC.md](./environment-collector/SPEC.md) |
-| Metadata | [metadata/SPEC.md](./metadata/SPEC.md) |
-| Analysis Agent | [analysis-agent/SPEC.md](./analysis-agent/SPEC.md) |
-| LLM Gateway | [llm-agent/SPEC.md](./llm-agent/SPEC.md) |
-| Case Store | [case-store/SPEC.md](./case-store/SPEC.md) |
 | WebUI | [webui/SPEC.md](./webui/SPEC.md) |
-| Config | [config/SPEC.md](./config/SPEC.md) |
-| Interfaces | [interfaces/SPEC.md](./interfaces/SPEC.md) |
-| Deployment | [deployment/SPEC.md](./deployment/SPEC.md) |
-| Security | [security/SPEC.md](./security/SPEC.md) |
 | Testing | [testing/SPEC.md](./testing/SPEC.md) |
-| Roadmap | [roadmap/SPEC.md](./roadmap/SPEC.md) |
+
+Server 内部能力目前不拆独立目录或 crate，设计文档统一归档在 `docs/modules/`：
+
+| 能力 | Spec |
+|------|------|
+| Log Analyzer | [docs/modules/log-analyzer/SPEC.md](./docs/modules/log-analyzer/SPEC.md) |
+| Tool Runner | [docs/modules/tool-runner/SPEC.md](./docs/modules/tool-runner/SPEC.md) |
+| Code Evidence | [docs/modules/code-evidence/SPEC.md](./docs/modules/code-evidence/SPEC.md) |
+| Environment Collector | [docs/modules/environment-collector/SPEC.md](./docs/modules/environment-collector/SPEC.md) |
+| Metadata | [docs/modules/metadata/SPEC.md](./docs/modules/metadata/SPEC.md) |
+| Analysis Agent | [docs/modules/analysis-agent/SPEC.md](./docs/modules/analysis-agent/SPEC.md) |
+| LLM Gateway | [docs/modules/llm-gateway/SPEC.md](./docs/modules/llm-gateway/SPEC.md) |
+| Case Store | [docs/modules/case-store/SPEC.md](./docs/modules/case-store/SPEC.md) |
+| Config | [docs/modules/config/SPEC.md](./docs/modules/config/SPEC.md) |
+| Interfaces | [docs/modules/interfaces/SPEC.md](./docs/modules/interfaces/SPEC.md) |
+| Deployment | [docs/modules/deployment/SPEC.md](./docs/modules/deployment/SPEC.md) |
+| Security | [docs/modules/security/SPEC.md](./docs/modules/security/SPEC.md) |
+| Roadmap | [docs/modules/roadmap/SPEC.md](./docs/modules/roadmap/SPEC.md) |
 
 ## 核心数据流
 

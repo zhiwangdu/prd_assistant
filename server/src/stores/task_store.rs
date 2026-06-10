@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 use chrono::Utc;
 use tokio::sync::RwLock;
 
-use crate::models::{TaskError, TaskPhase, TaskRecord, TaskStatus};
+use crate::domain::models::{TaskError, TaskPhase, TaskRecord, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub struct TaskStore {
@@ -290,13 +290,13 @@ fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{TaskInput, TaskSource};
+    use crate::domain::models::{TaskInput, TaskSource};
 
     fn task(id: &str, created_at: chrono::DateTime<Utc>) -> TaskRecord {
         TaskRecord {
             schema_version: 1,
             task_id: id.to_string(),
-            task_kind: crate::models::TaskKind::LogAnalysis,
+            task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {
@@ -312,7 +312,7 @@ mod tests {
             instance_id: None,
             cluster_id: None,
             node_id: None,
-            question: crate::models::default_task_question(),
+            question: crate::domain::models::default_task_question(),
             status: TaskStatus::Queued,
             phase: None,
             attempts: 0,

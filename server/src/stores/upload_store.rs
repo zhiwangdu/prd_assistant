@@ -8,7 +8,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::models::{UploadRecord, UploadStatus};
+use crate::domain::models::{UploadRecord, UploadStatus};
 
 #[derive(Debug, Clone)]
 pub struct UploadStore {

@@ -2,7 +2,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::anyhow;
 
-use crate::error::AppError;
+use crate::support::error::AppError;
 
 pub fn sanitize_filename(value: &str) -> Result<String, AppError> {
     let filename = Path::new(value)

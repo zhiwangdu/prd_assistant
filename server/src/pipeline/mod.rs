@@ -1,21 +1,24 @@
+pub mod executor;
+
 use std::{fs, path::Path, sync::Arc};
 
 use tokio::task;
 
-use crate::llm_gateway::LlmGateway;
+use crate::services::llm_gateway::LlmGateway;
 use crate::{
-    analysis_state,
-    case_store::CaseSearchHit,
-    config::{AppConfig, LogAnalyzerSettings},
-    error::AppError,
-    fs_utils::relative_string,
-    log_analyzer::LogAnalyzer,
-    metadata::TaskMetadataContext,
-    models::{
+    domain::models::{
         AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, ResultOutput, TaskInput,
         TaskRecord, UploadRecord,
     },
-    tool_runner::ToolRunRecord,
+    services::{
+        log_analyzer::LogAnalyzer, metadata::TaskMetadataContext, tool_runner::ToolRunRecord,
+    },
+    stores::{analysis_state, case_store::CaseSearchHit},
+    support::{
+        config::{AppConfig, LogAnalyzerSettings},
+        error::AppError,
+        fs_utils::relative_string,
+    },
 };
 
 pub async fn prepare_raw_snapshot(
@@ -448,17 +451,18 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> anyhow::Result<()>
 mod tests {
     use super::*;
     use chrono::Utc;
+
     use std::{
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use crate::{
-        config::{
+        domain::models::{TaskSource, TaskStatus, UploadStatus},
+        support::config::{
             AnalysisSettings, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings,
             ServerSettings, StorageSettings, ToolsSettings,
         },
-        models::{TaskSource, TaskStatus, UploadStatus},
     };
 
     #[tokio::test]
@@ -514,7 +518,7 @@ mod tests {
         TaskRecord {
             schema_version: 1,
             task_id: "task_batch".to_string(),
-            task_kind: crate::models::TaskKind::LogAnalysis,
+            task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: inputs.iter().map(|input| input.upload_id.clone()).collect(),
             inputs,

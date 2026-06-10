@@ -1,6 +1,6 @@
 # LLM Gateway 方案
 
-目录名暂保留为 `llm-agent/`，组件职责已收窄为 LLM Gateway。自主调查、多轮状态和用户追问由独立的 Analysis Agent 负责。
+该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Agent 负责。
 
 ## 职责
 

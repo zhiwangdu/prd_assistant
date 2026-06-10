@@ -8,9 +8,11 @@ use anyhow::{anyhow, Context};
 use flate2::read::GzDecoder;
 
 use crate::{
-    config::LogAnalyzerSettings,
-    fs_utils::{relative_string, safe_join},
-    models::{GrepMatch, GrepResults, ManifestFile},
+    domain::models::{GrepMatch, GrepResults, ManifestFile},
+    support::{
+        config::LogAnalyzerSettings,
+        fs_utils::{relative_string, safe_join},
+    },
 };
 
 pub struct LogAnalyzer {

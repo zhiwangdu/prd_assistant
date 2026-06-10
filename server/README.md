@@ -20,7 +20,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 ## 职责
 
-Server 是任务管理和分析调度中心。Server 只负责编排，不直接实现日志解析、工具执行、代码检索或 SSH 采集的具体逻辑。
+Server 是任务管理、分析调度和内部证据能力的统一承载进程。当前 MVP 不把日志解析、工具执行、Metadata、Analysis、LLM Gateway 或 Case Store 拆成独立 crate / 服务；这些能力都在 `server` crate 内部分层实现，后续确有独立生命周期或部署需求时再迁出。
 
 负责：
 
@@ -35,51 +35,63 @@ Server 是任务管理和分析调度中心。Server 只负责编排，不直接
 - Case 存储和召回
 - WebUI API
 
-## 职责边界
+## 内部职责边界
 
-- Server：任务状态、API、调度、错误汇总。
-- Log Analyzer：解压、manifest、简单 grep 检索、日志摘要。
-- Tool Runner：外部工具调用。
-- Code Evidence：版本代码检索。
-- Environment Collector：测试环境采集。
-- Metadata：实例 ID、集群和节点元数据。
-- Analysis Agent：调查策略、事实/假设/缺口、多轮动作和终止判断。
-- LLM Gateway：证据裁剪、Prompt 组装、模型调用和结构化响应解析。
+- HTTP/API：请求解析、鉴权、响应封装。
+- Pipeline/Executor：任务 phase 调度、幂等恢复、状态推进。
+- Stores：upload、task、analysis state 和 case 的本地 JSON 持久化。
+- Services：Log Analyzer、Tool Runner、Metadata、LLM Gateway、Tools 插件等内部能力。
+- Domain：Task、Upload、Action、Evidence、Result 等公共数据结构。
+- Support：配置、错误、ID、路径安全和鉴权等支撑代码。
 
 ## 代码结构
 
-当前 Server 已按框架拆分：
+当前 Server 已按单 crate、内部分层目录拆分：
 
 ```text
 server/src
-  main.rs              # 启动入口和 Axum app 装配
-  api/                 # HTTP 路由
+  main.rs              # 启动入口
+  app.rs               # AppState 组装和任务启动恢复
+  http/                # HTTP 路由和 handler
     health.rs
     uploads.rs
     tasks.rs
-    metadata.rs          # 实例/集群/节点元数据 API
-  auth.rs              # API Key middleware
-  config.rs            # logagent.yaml 加载和默认值
-  contracts.rs         # TaskContext、Action、Evidence 和 Provider 公共契约
-  error.rs             # API 错误响应
-  fs_utils.rs          # 文件名和路径安全工具
-  id.rs                # MVP ID 生成
-  log_analyzer.rs      # 解压、manifest 文件扫描、简单 grep
-  models.rs            # DTO / task context / evidence output
-  pipeline.rs          # 各执行阶段的幂等处理函数
-  state.rs             # AppState 组装和任务启动恢复
-  task_store.rs        # 持久化 TaskRecord、状态转换和原子 JSON 更新
-  task_executor.rs     # Tokio semaphore 和可恢复 phase dispatcher
-  tool_runner.rs       # 白名单工具执行、规则 action 和 tool result artifact
-  upload_store.rs      # 持久化 UploadRecord、分片进度和启动恢复
+    tools.rs
+    metadata.rs
+    cases.rs
+    debug.rs
+  domain/              # DTO / TaskContext / Action / Evidence 公共契约
+    models.rs
+    contracts.rs
+  stores/              # 本地 JSON store
+    upload_store.rs
+    task_store.rs
+    case_store.rs
+    analysis_state.rs
+  services/            # Server 内部能力实现
+    log_analyzer.rs
+    tool_runner.rs
+    tools.rs
+    metadata.rs
+    llm_gateway.rs
+  pipeline/            # 任务流水线和可恢复 executor
+    mod.rs
+    executor.rs
+  support/             # 配置、鉴权、错误、ID 和路径安全
+    config.rs
+    auth.rs
+    error.rs
+    fs_utils.rs
+    id.rs
 ```
 
-后续新增 Tool Runner、Code Evidence、Environment Collector、Analysis Agent 和 LLM Gateway 时，应保持这个模式：
+后续新增 Code Evidence、Environment Collector 或扩展 Analysis Agent 时，默认继续放在 `services/`、`pipeline/`、`stores/` 或 `domain/` 的对应层内，只有出现明确的独立发布、复用或部署边界时才拆 crate。
 
 - API 层只做请求解析和响应。
 - Pipeline 负责任务编排。
-- 各模块只执行自己的能力。
-- 新模块的运行和部署方式同步写入对应 README。
+- Services 只执行自己的内部能力，不直接改变 task 状态。
+- Stores 只负责持久化和状态原子更新。
+- 能力设计文档统一归档在 `docs/modules/`，Server 行为变化同步更新本 README / SPEC。
 
 ## 任务来源
 

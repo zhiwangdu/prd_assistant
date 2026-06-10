@@ -7,7 +7,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use crate::domain::{
     contracts::EvidenceArtifact,
     models::{AnalysisResult, GrepResults, TaskPhase, TaskRecord},
 };
@@ -222,7 +222,7 @@ pub fn initialize(workspace: &Path, task: &TaskRecord) -> anyhow::Result<()> {
 
 pub fn record_pending_user_prompt(
     workspace: &Path,
-    action: &crate::contracts::AgentAction,
+    action: &crate::domain::contracts::AgentAction,
     question_id: String,
     question: String,
     required: bool,
@@ -347,7 +347,7 @@ pub fn record_user_message(
 
 pub fn record_pending_approval(
     workspace: &Path,
-    action: &crate::contracts::AgentAction,
+    action: &crate::domain::contracts::AgentAction,
 ) -> anyhow::Result<()> {
     let evidence_refs = action
         .evidence_refs
@@ -533,7 +533,7 @@ pub fn record_log_search(workspace: &Path, grep: &GrepResults) -> anyhow::Result
 
 pub fn record_log_search_action(
     workspace: &Path,
-    action: &crate::contracts::AgentAction,
+    action: &crate::domain::contracts::AgentAction,
     grep: &GrepResults,
 ) -> anyhow::Result<()> {
     let evidence_refs = (0..grep.matches.len())
@@ -566,7 +566,7 @@ pub fn record_log_search_action(
 
 pub fn record_tool_artifact(
     workspace: &Path,
-    action: &crate::contracts::AgentAction,
+    action: &crate::domain::contracts::AgentAction,
     artifact: &EvidenceArtifact,
 ) -> anyhow::Result<()> {
     let evidence = AnalysisEvidenceRecord {
@@ -1006,7 +1006,7 @@ fn relative_to_workspace(workspace: &Path, path: &Path) -> anyhow::Result<String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{TaskInput, TaskSource, TaskStatus};
+    use crate::domain::models::{TaskInput, TaskSource, TaskStatus};
     use std::path::PathBuf;
 
     #[test]
@@ -1019,7 +1019,7 @@ mod tests {
             &GrepResults {
                 keywords: vec!["error".to_string()],
                 total_matches: 1,
-                matches: vec![crate::models::GrepMatch {
+                matches: vec![crate::domain::models::GrepMatch {
                     file: "sample.log".to_string(),
                     line: 1,
                     keyword: "error".to_string(),
@@ -1111,7 +1111,7 @@ mod tests {
         TaskRecord {
             schema_version: 4,
             task_id: task_id.to_string(),
-            task_kind: crate::models::TaskKind::LogAnalysis,
+            task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {

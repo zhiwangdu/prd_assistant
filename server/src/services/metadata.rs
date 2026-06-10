@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::{config::AppConfig, error::AppError, id::next_id};
+use crate::support::{config::AppConfig, error::AppError, id::next_id};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1588,7 +1588,7 @@ mod tests {
 
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::config::{
+    use crate::support::config::{
         AnalysisSettings, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings,
         ServerSettings, StorageSettings, ToolsSettings,
     };

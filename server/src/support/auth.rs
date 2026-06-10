@@ -7,7 +7,7 @@ use axum::{
     response::Response,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{app::AppState, support::error::AppError};
 
 pub async fn require_api_key(
     State(state): State<Arc<AppState>>,

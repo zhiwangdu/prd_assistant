@@ -9,8 +9,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    metadata::TaskMetadataContext,
-    models::{TaskRecord, TaskSource},
+    domain::models::{TaskRecord, TaskSource},
+    services::metadata::TaskMetadataContext,
 };
 
 #[derive(Debug, Clone)]

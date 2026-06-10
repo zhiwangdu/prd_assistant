@@ -9,16 +9,15 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::{
-    analysis_state::{self, AnalysisSnapshotResponse},
-    error::AppError,
-    id::next_id,
-    models::{
+    app::AppState,
+    domain::models::{
         default_task_question, AnalysisResult, CreateTaskRequest, TaskArtifactsResponse, TaskKind,
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
     pipeline::{prepare_raw_snapshot, write_case_context, write_metadata_context},
-    state::AppState,
+    stores::analysis_state::{self, AnalysisSnapshotResponse},
+    support::{error::AppError, id::next_id},
 };
 
 #[derive(Debug, Deserialize)]
@@ -596,13 +595,13 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api,
-        config::{
+        domain::models::{TaskInput, UploadRecord, UploadStatus},
+        http,
+        services::metadata::MetadataImportRequest,
+        support::config::{
             AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
-        metadata::MetadataImportRequest,
-        models::{TaskInput, UploadRecord, UploadStatus},
     };
 
     #[test]
@@ -618,7 +617,7 @@ mod tests {
     async fn task_api_creates_lists_and_reads_details() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_test", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -756,7 +755,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
 
         let missing = app
             .clone()
@@ -802,7 +801,7 @@ mod tests {
     async fn successful_task_can_be_confirmed_as_case_and_recalled() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_case", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -940,7 +939,7 @@ mod tests {
     #[tokio::test]
     async fn manual_case_can_be_created_and_recalled() {
         let (state, root) = test_state();
-        let app = api::router(state.clone()).with_state(state.clone());
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -1056,7 +1055,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
 
         let response = app
             .oneshot(
@@ -1079,7 +1078,7 @@ mod tests {
     async fn task_message_resumes_waiting_for_user_task() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_ask_user", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
         let response = app
             .clone()
             .oneshot(
@@ -1139,7 +1138,7 @@ mod tests {
     async fn approval_decision_resumes_waiting_for_approval_task() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_approval", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
         let response = app
             .clone()
             .oneshot(
@@ -1212,7 +1211,7 @@ mod tests {
             max_output_tokens: 100,
         });
         create_test_upload(&state, "upl_failure", UploadStatus::Complete).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
         let response = app
             .clone()
             .oneshot(
@@ -1257,7 +1256,7 @@ mod tests {
     async fn task_api_rejects_incomplete_uploads() {
         let (state, root) = test_state();
         create_test_upload(&state, "upl_incomplete", UploadStatus::Uploading).await;
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
 
         let response = app
             .oneshot(
@@ -1313,7 +1312,7 @@ nodes:
             .confirm_import(&preview.import_id)
             .await
             .unwrap();
-        let app = api::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state);
         let response = app
             .clone()
             .oneshot(

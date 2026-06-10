@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-09
+Last updated: 2026-06-10
 
 ## Status Summary
 
@@ -36,6 +36,20 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Repository Structure
+
+- Root directory now keeps only runnable components and engineering support directories: `server/`, `native-agent/`, `chrome-extension/`, `webui/`, `examples/`, `scripts/`, and `testing/`.
+- Former planning-only capability directories were moved under `docs/modules/`, including Log Analyzer, Tool Runner, Metadata, Analysis Agent, LLM Gateway, Case Store, Code Evidence, Environment Collector, Config, Interfaces, Security, Deployment, and Roadmap.
+- Server remains a single Rust crate. Internal code is now organized by layer:
+  - `http/` for routes and handlers.
+  - `domain/` for shared DTOs and Action/Evidence contracts.
+  - `stores/` for JSON-backed persistence.
+  - `services/` for Log Analyzer, Tool Runner, Metadata, LLM Gateway, and Tools plugin implementations.
+  - `pipeline/` for task phase handlers and the recoverable executor.
+  - `support/` for config, auth, errors, IDs, and path safety.
+- The refactor is structure-only: HTTP API paths, config keys, task/upload/case JSON schema, and workspace artifact paths remain unchanged.
+- Verification: `cargo fmt --check`, `cargo check`, and `cargo test` all pass after the module move.
 
 ### Chrome Extension
 
