@@ -37,6 +37,12 @@ WEBUI Tools
 
 ## Implemented
 
+### WebUI Naming
+
+- Renamed the top bar product title from `LogAgent Metadata Console` to `LogAgent Analysis Workbench`.
+- Updated the subtitle to describe the broader WebUI scope: evidence, metadata, tools, and case workflow.
+- Verification: `npm run lint`, `npm run typecheck`, and `npm run build` from `webui/` all pass.
+
 ### Repository Structure
 
 - Root directory now keeps only runnable components and engineering support directories: `server/`, `native-agent/`, `chrome-extension/`, `webui/`, `examples/`, `scripts/`, and `testing/`.

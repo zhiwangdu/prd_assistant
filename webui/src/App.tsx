@@ -66,7 +66,7 @@ export function App() {
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary p-2 text-primary-foreground"><Layers3 className="h-5 w-5" /></div>
-            <div><h1 className="font-semibold">LogAgent Metadata Console</h1><p className="text-xs text-muted-foreground">openGemini cluster model and diagnostics</p></div>
+            <div><h1 className="font-semibold">LogAgent Analysis Workbench</h1><p className="text-xs text-muted-foreground">Evidence, metadata, tools, and case workflow</p></div>
             <Badge variant={healthy ? "success" : healthy === false ? "destructive" : "secondary"}><Activity className="mr-1 h-3 w-3" />{healthy ? "Server healthy" : healthy === false ? "Server unavailable" : "Checking"}</Badge>
           </div>
           <Card className="shadow-none lg:w-[560px]">
