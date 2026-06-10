@@ -54,7 +54,7 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 
   try {
     const result = await importDownload(item)
-    await notify("LogAgent task created", result.url || `Task ${result.taskId} created`)
+    await notify("LogAgent session updated", result.url || `Session ${result.sessionId} updated`)
   } catch (error) {
     await notify("LogAgent import failed", error.message)
   }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 
@@ -13,6 +13,7 @@ mod cases;
 mod debug;
 mod health;
 mod metadata;
+mod sessions;
 mod tasks;
 mod tools;
 mod uploads;
@@ -35,6 +36,30 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route(
             "/api/tasks",
             post(tasks::create_task).get(tasks::list_tasks),
+        )
+        .route(
+            "/api/sessions",
+            post(sessions::create_session).get(sessions::list_sessions),
+        )
+        .route(
+            "/api/sessions/:session_id",
+            get(sessions::get_session).patch(sessions::patch_session),
+        )
+        .route(
+            "/api/sessions/:session_id/uploads",
+            post(sessions::attach_uploads),
+        )
+        .route(
+            "/api/sessions/:session_id/uploads/:upload_id",
+            delete(sessions::detach_upload),
+        )
+        .route(
+            "/api/sessions/:session_id/tasks",
+            post(sessions::create_session_task),
+        )
+        .route(
+            "/api/sessions/:session_id/timeline",
+            get(sessions::session_timeline),
         )
         .route("/api/tasks/:task_id", get(tasks::get_task))
         .route("/api/tasks/:task_id/analysis", get(tasks::task_analysis))

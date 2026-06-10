@@ -29,6 +29,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `native_agent.allowed_suffixes`
 - `native_agent.request_timeout_seconds`
 - `native_agent.upload_chunk_bytes`
+- `native_agent.state_path`
 - `storage.data_dir`
 - `storage.max_upload_bytes`
 - `storage.max_chunk_bytes`
@@ -96,6 +97,7 @@ storage:
 - 缺少必要密钥环境变量时启动失败。
 - `storage.data_dir` 中的 `${VAR}` 能展开为环境变量值，缺失或空值时启动失败。
 - 配置有默认值，但示例文件必须展示推荐值。
+- `native_agent.state_path` 默认 `~/.logagent/native-agent-state.json`，用于保存当前活动 `sessionId`。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL 或 API Key 环境变量时启动失败。
 - `llm.provider` 支持 `stub`、`openai_compatible` 和预留的 `binary`。

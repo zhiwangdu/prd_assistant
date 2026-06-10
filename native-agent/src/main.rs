@@ -17,7 +17,7 @@ use axum::{
 use clap::Parser;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
-use tokio::{io::AsyncReadExt, net::TcpListener, time::sleep};
+use tokio::{io::AsyncReadExt, net::TcpListener};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -53,6 +53,8 @@ struct NativeAgentConfig {
     request_timeout_seconds: u64,
     #[serde(default = "default_upload_chunk_bytes")]
     upload_chunk_bytes: u64,
+    #[serde(default = "default_state_path")]
+    state_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +73,7 @@ struct AppConfig {
     max_upload_bytes: u64,
     request_timeout_seconds: u64,
     upload_chunk_bytes: u64,
+    state_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -91,15 +94,47 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase")]
 struct ImportResponse {
     upload_id: String,
-    task_id: String,
+    session_id: String,
+    task_id: Option<String>,
     url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateTaskRequest {
-    upload_id: String,
+struct CreateSessionRequest {
+    title: String,
     source_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionResponse {
+    session_id: Option<String>,
+    id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachUploadsRequest {
+    upload_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NativeAgentState {
+    current_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceCurrentRequest {
+    session_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceCurrentResponse {
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,14 +142,6 @@ struct CreateTaskRequest {
 struct InitUploadRequest {
     filename: String,
     size: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TaskResponse {
-    task_id: Option<String>,
-    id: Option<String>,
-    url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,6 +171,12 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/imports", post(import_file))
+        .route(
+            "/workspace/current",
+            get(get_current_workspace)
+                .put(put_current_workspace)
+                .delete(delete_current_workspace),
+        )
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -165,7 +198,13 @@ async fn shutdown_signal() {
 fn cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers(Any)
 }
 
@@ -179,17 +218,67 @@ async fn import_file(
 ) -> Result<Json<ImportResponse>, AppError> {
     let file_path = validate_import(&state.config, &req).await?;
     let upload_id = upload_file(&state, &file_path, &req).await?;
-    let task = create_task(&state, &upload_id, req.source_url.clone()).await?;
-    let task_id = task
-        .task_id
-        .or(task.id)
-        .ok_or_else(|| AppError::bad_gateway("server task response missing taskId/id"))?;
+    let session_id = match read_current_session(&state.config).await? {
+        Some(session_id) => session_id,
+        None => {
+            let filename = req
+                .filename
+                .clone()
+                .or_else(|| {
+                    file_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| "log import".to_string());
+            let session_id = create_session(
+                &state,
+                format!("Native import {filename}"),
+                req.source_url.clone(),
+            )
+            .await?;
+            write_current_session(&state.config, Some(session_id.clone())).await?;
+            session_id
+        }
+    };
+    attach_upload_to_session(&state, &session_id, &upload_id).await?;
 
     Ok(Json(ImportResponse {
         upload_id,
-        task_id,
-        url: task.url,
+        session_id: session_id.clone(),
+        task_id: None,
+        url: Some(format!(
+            "{}/sessions/{}",
+            state.config.server_base_url.trim_end_matches('/'),
+            session_id
+        )),
     }))
+}
+
+async fn get_current_workspace(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<WorkspaceCurrentResponse>, AppError> {
+    Ok(Json(WorkspaceCurrentResponse {
+        session_id: read_current_session(&state.config).await?,
+    }))
+}
+
+async fn put_current_workspace(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<WorkspaceCurrentRequest>,
+) -> Result<Json<WorkspaceCurrentResponse>, AppError> {
+    let session_id = req.session_id.trim().to_string();
+    validate_session_id(&session_id)?;
+    write_current_session(&state.config, Some(session_id.clone())).await?;
+    Ok(Json(WorkspaceCurrentResponse {
+        session_id: Some(session_id),
+    }))
+}
+
+async fn delete_current_workspace(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<WorkspaceCurrentResponse>, AppError> {
+    write_current_session(&state.config, None).await?;
+    Ok(Json(WorkspaceCurrentResponse { session_id: None }))
 }
 
 async fn validate_import(config: &AppConfig, req: &ImportRequest) -> Result<PathBuf, AppError> {
@@ -436,61 +525,73 @@ async fn complete_chunked_upload(state: &AppState, upload_id: &str) -> Result<()
     Ok(())
 }
 
-async fn create_task(
+async fn create_session(
     state: &AppState,
-    upload_id: &str,
+    title: String,
     source_url: Option<String>,
-) -> Result<TaskResponse, AppError> {
+) -> Result<String, AppError> {
     let url = format!(
-        "{}/api/tasks",
+        "{}/api/sessions",
         state.config.server_base_url.trim_end_matches('/')
     );
-    let payload = CreateTaskRequest {
-        upload_id: upload_id.to_string(),
-        source_url,
-    };
-    let mut last_error = None;
-    let mut response = None;
-    for attempt in 0..2 {
-        match state
-            .client
-            .post(&url)
-            .bearer_auth(&state.config.api_key)
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(value) => {
-                response = Some(value);
-                break;
-            }
-            Err(err) => {
-                last_error = Some(err);
-                if attempt == 0 {
-                    sleep(Duration::from_millis(250)).await;
-                }
-            }
-        }
-    }
-    let response = response.ok_or_else(|| {
-        AppError::bad_gateway(format!(
-            "create task request failed after retry: {:?}",
-            last_error
-        ))
-    })?;
+    let payload = CreateSessionRequest { title, source_url };
+    let response = state
+        .client
+        .post(&url)
+        .bearer_auth(&state.config.api_key)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| AppError::bad_gateway(format!("create session request failed: {err}")))?;
 
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         return Err(AppError::bad_gateway(format!(
-            "create task failed with status {status}: {body}"
+            "create session failed with status {status}: {body}"
         )));
     }
 
-    response
+    let response: SessionResponse = response
         .json()
         .await
-        .map_err(|err| AppError::bad_gateway(format!("invalid task response JSON: {err}")))
+        .map_err(|err| AppError::bad_gateway(format!("invalid session response JSON: {err}")))?;
+    response
+        .session_id
+        .or(response.id)
+        .ok_or_else(|| AppError::bad_gateway("server session response missing sessionId/id"))
+}
+
+async fn attach_upload_to_session(
+    state: &AppState,
+    session_id: &str,
+    upload_id: &str,
+) -> Result<(), AppError> {
+    let url = format!(
+        "{}/api/sessions/{}/uploads",
+        state.config.server_base_url.trim_end_matches('/'),
+        session_id
+    );
+    let response = state
+        .client
+        .post(url)
+        .bearer_auth(&state.config.api_key)
+        .json(&AttachUploadsRequest {
+            upload_ids: vec![upload_id.to_string()],
+        })
+        .send()
+        .await
+        .map_err(|err| AppError::bad_gateway(format!("attach upload request failed: {err}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::bad_gateway(format!(
+            "attach upload failed with status {status}: {body}"
+        )));
+    }
+    let _ = response.bytes().await;
+    Ok(())
 }
 
 fn upload_id_from_value(value: &serde_json::Value) -> Option<String> {
@@ -533,6 +634,7 @@ fn load_config(path: &Path) -> anyhow::Result<AppConfig> {
         max_upload_bytes: storage.max_upload_bytes,
         request_timeout_seconds: native.request_timeout_seconds,
         upload_chunk_bytes: native.upload_chunk_bytes,
+        state_path: expand_home(&native.state_path),
     })
 }
 
@@ -545,6 +647,7 @@ fn default_native_agent_config() -> NativeAgentConfig {
         allowed_suffixes: default_file_suffixes(),
         request_timeout_seconds: default_request_timeout_seconds(),
         upload_chunk_bytes: default_upload_chunk_bytes(),
+        state_path: default_state_path(),
     }
 }
 
@@ -572,6 +675,10 @@ fn default_request_timeout_seconds() -> u64 {
 
 fn default_upload_chunk_bytes() -> u64 {
     512 * 1024
+}
+
+fn default_state_path() -> PathBuf {
+    PathBuf::from("~/.logagent/native-agent-state.json")
 }
 
 fn default_max_upload_bytes() -> u64 {
@@ -603,6 +710,56 @@ fn expand_home(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+async fn read_current_session(config: &AppConfig) -> Result<Option<String>, AppError> {
+    let raw = match tokio::fs::read_to_string(&config.state_path).await {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(AppError::bad_request(format!(
+                "cannot read native agent state: {err}"
+            )))
+        }
+    };
+    let state: NativeAgentState = serde_json::from_str(&raw)
+        .map_err(|err| AppError::bad_request(format!("invalid native agent state: {err}")))?;
+    Ok(state.current_session_id)
+}
+
+async fn write_current_session(
+    config: &AppConfig,
+    session_id: Option<String>,
+) -> Result<(), AppError> {
+    if let Some(session_id) = session_id.as_deref() {
+        validate_session_id(session_id)?;
+    }
+    if let Some(parent) = config.state_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|err| AppError::bad_request(format!("cannot create state dir: {err}")))?;
+    }
+    let state = NativeAgentState {
+        current_session_id: session_id,
+    };
+    let encoded = serde_json::to_vec_pretty(&state)
+        .map_err(|err| AppError::bad_request(format!("cannot encode state: {err}")))?;
+    tokio::fs::write(&config.state_path, encoded)
+        .await
+        .map_err(|err| AppError::bad_request(format!("cannot write native agent state: {err}")))?;
+    Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> Result<(), AppError> {
+    let valid = session_id.starts_with("sess_")
+        && session_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("invalid sessionId"))
+    }
 }
 
 #[derive(Debug)]
@@ -637,5 +794,45 @@ impl IntoResponse for AppError {
         );
         let body = Json(serde_json::json!({ "error": self.message }));
         (self.status, headers, body).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(state_path: PathBuf) -> AppConfig {
+        AppConfig {
+            bind: "127.0.0.1:0".to_string(),
+            server_base_url: "http://127.0.0.1:0".to_string(),
+            api_key: "test-key".to_string(),
+            allowed_dirs: Vec::new(),
+            allowed_suffixes: default_file_suffixes(),
+            max_upload_bytes: 1024 * 1024,
+            request_timeout_seconds: 1,
+            upload_chunk_bytes: 512 * 1024,
+            state_path,
+        }
+    }
+
+    #[tokio::test]
+    async fn active_session_state_round_trips() {
+        let root =
+            std::env::temp_dir().join(format!("logagent-native-state-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let config = test_config(root.join("native-agent-state.json"));
+
+        assert_eq!(read_current_session(&config).await.unwrap(), None);
+        write_current_session(&config, Some("sess_test".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            read_current_session(&config).await.unwrap(),
+            Some("sess_test".to_string())
+        );
+        write_current_session(&config, None).await.unwrap();
+        assert_eq!(read_current_session(&config).await.unwrap(), None);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -17,6 +17,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - 分片上传
 - upload JSON 持久化和重启续传
 - task 创建
+- Log Analysis Session 创建、草稿更新、上传绑定、run 创建和 timeline
 - task JSON 持久化、列表、详情和重启恢复
 - semaphore 限制的后台执行
 - phase 驱动的可恢复 Executor dispatcher
@@ -55,6 +56,14 @@ POST /api/uploads/batch
 POST /api/uploads/init
 POST /api/uploads/:upload_id/chunks?offset=<bytes>
 POST /api/uploads/:upload_id/complete
+POST /api/sessions
+GET /api/sessions
+GET /api/sessions/:session_id
+PATCH /api/sessions/:session_id
+POST /api/sessions/:session_id/uploads
+DELETE /api/sessions/:session_id/uploads/:upload_id
+POST /api/sessions/:session_id/tasks
+GET /api/sessions/:session_id/timeline
 POST /api/tasks
 GET /api/tasks
 GET /api/tasks/:task_id
@@ -119,6 +128,11 @@ data_dir/
     upl_xxx.json
     upl_xxx/
       filename.log
+  sessions/
+    sess_xxx.json
+  session_workspaces/
+    sess_xxx/
+      session_events.jsonl
   tasks/
     task_xxx.json
   case_imports/
@@ -162,13 +176,17 @@ storage.data_dir/uploads/<upload_id>/<filename>
 
 ## 当前任务模型与 Pipeline
 
-`TaskRecord` 包含 `schemaVersion`、`taskKind`、任务 ID/来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、工具 ID/参数/结果路径、状态、阶段、attempts、错误、metadata/artifact/result 路径和 RFC 3339 时间。旧任务默认视为 `taskKind=log_analysis`。
+`AnalysisSessionRecord` 包含 `schemaVersion`、`sessionId`、`title`、`question`、`sourceUrl`、`instanceId`、`nodeId`、`uploadIds`、`taskIds`、`activeTaskId`、`status` 和 RFC 3339 时间。Session status 使用 `draft`、`ready`、`running`、`waiting_for_user`、`waiting_for_approval`、`succeeded`、`failed`。
+
+`TaskRecord` 包含 `schemaVersion`、`taskKind`、任务 ID、`sessionId`、来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、工具 ID/参数/结果路径、状态、阶段、attempts、错误、metadata/artifact/result 路径和 RFC 3339 时间。`log_analysis` task 必须绑定 Session；`tool_run` task 不绑定 Session。
 
 ```text
-POST task
+POST session task
+  -> validate Session and referenced UploadRecord[]
   -> validate UploadRecord[]
   -> copy raw files into raw/<upload_id>/
   -> persist QUEUED
+  -> append taskId / activeTaskId to Session
   -> return 202
 background executor
   -> RUNNING / attempts + 1
@@ -195,7 +213,9 @@ background executor
 
 `tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
-`POST /api/tasks` accepts either single-file `uploadId` or batch `uploadIds`. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
+`POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept either single-file `uploadId` or batch `uploadIds` at the task creation layer. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
+
+`GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, task creation, Metadata context summary, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, LLM calls, model decisions, ask_user, approval, environment evidence and final result events.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 

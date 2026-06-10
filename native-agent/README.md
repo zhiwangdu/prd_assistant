@@ -24,13 +24,17 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 接收 Chrome 插件提交的文件路径和元信息。
 - 校验文件大小、后缀、路径合法性。
 - 上传日志包到服务端。
-- 创建分析任务。
+- 维护本机活动 Session。
+- 上传完成后把文件附加到活动 Session；没有活动 Session 时自动创建一个 `Native import ...` Session 并设为活动。
 - 返回任务 URL 给插件或自动打开 WebUI。
 
 ## 本地接口
 
 ```http
 POST /imports
+GET /workspace/current
+PUT /workspace/current
+DELETE /workspace/current
 Content-Type: application/json
 
 {
@@ -78,8 +82,9 @@ curl -X POST http://127.0.0.1:17321/imports \
 ```json
 {
   "uploadId": "upl_...",
-  "taskId": "task_...",
-  "url": "http://127.0.0.1:8080/tasks/task_..."
+  "sessionId": "sess_...",
+  "taskId": null,
+  "url": "http://127.0.0.1:8080/sessions/sess_..."
 }
 ```
 
@@ -107,6 +112,7 @@ LOGAGENT_NATIVE_API_KEY=<same-as-server> \
 - `native_agent.allowed_dirs` 包含浏览器下载目录。
 - `storage.max_upload_bytes` 与 Server 保持一致或更小。
 - `native_agent.upload_chunk_bytes` 控制分片上传大小，默认 512KB。
+- `native_agent.state_path` 控制活动 Session 状态文件，默认 `~/.logagent/native-agent-state.json`。
 
 大文件上传：
 
@@ -138,24 +144,21 @@ POST /api/uploads
 Authorization: Bearer <api_key>
 ```
 
-创建任务：
+附加到 Session：
 
 ```http
-POST /api/tasks
+POST /api/sessions/:session_id/uploads
 Authorization: Bearer <api_key>
 
 {
-  "uploadId": "upl_123"
+  "uploadIds": ["upl_123"]
 }
 ```
 
-返回：
+没有活动 Session 时先创建：
 
-```json
-{
-  "taskId": "task_456",
-  "url": "http://logagent/tasks/task_456"
-}
+```http
+POST /api/sessions
 ```
 
 ## 安全边界

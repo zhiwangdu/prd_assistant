@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 use chrono::Utc;
 use tokio::sync::RwLock;
 
-use crate::domain::models::{TaskError, TaskPhase, TaskRecord, TaskStatus};
+use crate::domain::models::{TaskError, TaskKind, TaskPhase, TaskRecord, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub struct TaskStore {
@@ -36,6 +36,7 @@ impl TaskStore {
     }
 
     pub async fn create(&self, task: TaskRecord) -> anyhow::Result<()> {
+        validate_loaded_task(&task)?;
         let mut tasks = self.inner.write().await;
         if tasks.contains_key(&task.task_id) {
             anyhow::bail!("task {} already exists", task.task_id);
@@ -268,6 +269,12 @@ fn ensure_phase(task: &TaskRecord, expected: TaskPhase) -> anyhow::Result<()> {
 }
 
 fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
+    if task.task_kind == TaskKind::LogAnalysis {
+        match task.session_id.as_deref() {
+            Some(session_id) if session_id.starts_with("sess_") => {}
+            _ => anyhow::bail!("log analysis task {} is missing sessionId", task.task_id),
+        }
+    }
     if task.status == TaskStatus::Running && task.phase.is_none() {
         anyhow::bail!("RUNNING task {} is missing phase", task.task_id);
     }
@@ -296,6 +303,7 @@ mod tests {
         TaskRecord {
             schema_version: 1,
             task_id: id.to_string(),
+            session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],

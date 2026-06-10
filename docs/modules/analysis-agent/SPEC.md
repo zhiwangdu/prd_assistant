@@ -2,7 +2,7 @@
 
 ## 目标
 
-提供可持久化、可恢复、可审计的单 Agent 调查闭环，在受限预算内自主请求证据、向用户追问并生成结构化结果。
+提供可持久化、可恢复、可审计的单 Agent 调查闭环，在受限预算内自主请求证据、向用户追问并生成结构化结果。Agent 的执行上下文是一次 Session run 对应的 task workspace；Session 负责保存草稿、上传引用和多次 run 历史。
 
 ## 当前状态
 
@@ -13,6 +13,7 @@
 - `analysis_state.json`
 - `analysis_events.jsonl`
 - `GET /api/tasks/:task_id/analysis`
+- `GET /api/sessions/:session_id/timeline` 聚合 Session events 和 task analysis events
 - grep/tool/final result/failure 的基础事件记录
 - model decision 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行

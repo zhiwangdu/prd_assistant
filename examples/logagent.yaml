@@ -19,6 +19,7 @@ native_agent:
     - ".tar"
   request_timeout_seconds: 300
   upload_chunk_bytes: 524288
+  state_path: "~/.logagent/native-agent-state.json"
 
 storage:
   data_dir: "./data/logagent"

@@ -225,6 +225,8 @@ impl AppConfig {
         fs::create_dir_all(self.storage.uploads_dir())?;
         fs::create_dir_all(self.storage.workspaces_dir())?;
         fs::create_dir_all(self.storage.tasks_dir())?;
+        fs::create_dir_all(self.storage.sessions_dir())?;
+        fs::create_dir_all(self.storage.session_workspaces_dir())?;
         fs::create_dir_all(self.storage.cases_dir())?;
         fs::create_dir_all(self.storage.case_imports_dir())?;
         fs::create_dir_all(self.storage.metadata_dir())?;
@@ -252,6 +254,14 @@ impl StorageSettings {
 
     pub fn tasks_dir(&self) -> PathBuf {
         self.data_dir.join("tasks")
+    }
+
+    pub fn sessions_dir(&self) -> PathBuf {
+        self.data_dir.join("sessions")
+    }
+
+    pub fn session_workspaces_dir(&self) -> PathBuf {
+        self.data_dir.join("session_workspaces")
     }
 
     pub fn cases_dir(&self) -> PathBuf {

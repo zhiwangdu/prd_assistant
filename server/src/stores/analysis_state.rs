@@ -1111,6 +1111,7 @@ mod tests {
         TaskRecord {
             schema_version: 4,
             task_id: task_id.to_string(),
+            session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],

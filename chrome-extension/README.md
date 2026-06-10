@@ -10,7 +10,7 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 2. 插件通过 `chrome.downloads.onChanged` 监听下载完成事件。
 3. 根据 URL 前缀或文件后缀判断是否可能是日志。
 4. 弹出确认：是否交给 LogAgent 分析。
-5. 调用 Native Agent 的 `localhost` HTTP 接口。
+5. 调用 Native Agent 的 `localhost` HTTP 接口，把下载文件附加到当前 LogAgent Session。
 
 ## 本地安装
 
@@ -45,7 +45,8 @@ cargo run -p logagent-native-agent -- --config examples/logagent.yaml
 
 3. 在 Chrome 下载一个匹配后缀的文件，例如 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 4. Chrome notification 弹出后点击 `Send to LogAgent`。
-5. 检查 Server 侧 workspace：
+5. 成功 notification 显示 `LogAgent session updated`。
+6. 检查 Server 侧 Session 和 workspace：
 
 ```bash
 find data/logagent -maxdepth 5 -type f | sort

@@ -5,8 +5,8 @@ use crate::{
     pipeline::executor::TaskExecutor,
     services::{llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner},
     stores::{
-        case_import_store::CaseImportStore, case_store::CaseStore, task_store::TaskStore,
-        upload_store::UploadStore,
+        case_import_store::CaseImportStore, case_store::CaseStore,
+        session_store::AnalysisSessionStore, task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -18,6 +18,7 @@ pub struct AppState {
     pub metadata: MetadataStore,
     pub cases: CaseStore,
     pub case_imports: CaseImportStore,
+    pub sessions: AnalysisSessionStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub llm: LlmGateway,
@@ -30,10 +31,15 @@ impl AppState {
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
         let cases = CaseStore::load(config.storage.cases_dir())?;
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
+        let sessions = AnalysisSessionStore::load(
+            config.storage.sessions_dir(),
+            config.storage.session_workspaces_dir(),
+        )?;
         Ok(Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             cases,
             case_imports,
+            sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
             tool_runner: ToolRunner::new(config.tools.clone()),
@@ -61,6 +67,7 @@ impl AppState {
             }
         }
         for task in self.tasks.recover_incomplete().await? {
+            self.sessions.sync_task_status(&task).await?;
             self.executor.enqueue(self.clone(), task.task_id);
         }
         Ok(())

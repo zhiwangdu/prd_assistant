@@ -88,6 +88,7 @@ pub async fn create_tool_run(
     let record = TaskRecord {
         schema_version: 5,
         task_id: task_id.clone(),
+        session_id: None,
         task_kind: TaskKind::ToolRun,
         source: TaskSource::Upload,
         upload_ids,

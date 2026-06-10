@@ -81,7 +81,7 @@ flowchart LR
             Cases["Case Store"]
         end
 
-        Store[("Task Store / Workspace<br/>state、events、evidence、result")]
+        Store[("Session Store / Task Store / Workspace<br/>session、runs、events、evidence、result")]
     end
 
     Model["LLM Provider"]
@@ -89,8 +89,8 @@ flowchart LR
     Tools["白名单诊断工具"]
 
     Chrome --> Native
-    Native -->|"上传日志 / 创建任务"| API
-    User -->|"上传、问题、回答、审批"| API
+    Native -->|"上传日志 / 附加到当前 Session"| API
+    User -->|"创建 Session、上传、启动 run、回答、审批"| API
     API --> Orchestrator
     Orchestrator --> Agent
     Agent -->|"结构化 action"| Orchestrator
@@ -125,7 +125,8 @@ flowchart LR
 - Analysis Agent 和 LLM Gateway 都不能直接执行工具、读取任意路径或连接 SSH。
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
-- 所有任务上下文、事件、证据和结果都持久化到 Task Store / Workspace，支持重启恢复。
+- Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
+- 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
 - WebUI 可实时展示 Task execution loop 摘要；LLM response content 日志只能通过顶部 debug 开关手动开启。
 - Case Store 只接收人工确认后的 Case，包括成功任务最终结果确认和用户通过 LLM-assisted 文本导入确认的手工 Case。
 
@@ -176,7 +177,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先沿着已落地的上传、Metadata、Tool Runner、Tools 页面、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定创建任务、展示证据、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先沿着 Session-first Log Analysis、上传、Metadata、Tool Runner、Tools 页面、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定恢复 Session、创建多次分析 run、展示证据时间线、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
 Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
 

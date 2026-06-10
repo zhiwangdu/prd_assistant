@@ -71,6 +71,7 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
             return Ok(());
         }
     };
+    sync_session_status(&state, &task).await;
 
     loop {
         let phase = task
@@ -86,10 +87,11 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
                 {
                     warn!(task_id, "failed to record analysis failure: {record_err}");
                 }
-                state
+                let failed = state
                     .tasks
                     .fail(task_id, Some(phase), err.to_string())
                     .await?;
+                sync_session_status(&state, &failed).await;
                 return Ok(());
             }
         };
@@ -142,10 +144,11 @@ async fn dispatch_phase(
                         .await?
                         .display()
                         .to_string();
-                state
+                let completed = state
                     .tasks
                     .succeed_tool_run(&task.task_id, TaskPhase::RunTool, result_path)
                     .await?;
+                sync_session_status(&state, &completed).await;
                 return Ok(DispatchOutcome::Complete);
             }
             let workspace = state.config.storage.workspace_dir(&task.task_id);
@@ -165,7 +168,7 @@ async fn dispatch_phase(
             analysis_state::ensure_initialized(&workspace, &task)?;
             let result =
                 generate_task_result(state.config.clone(), state.llm.clone(), task.clone()).await?;
-            state
+            let completed = state
                 .tasks
                 .succeed(
                     &task.task_id,
@@ -176,6 +179,7 @@ async fn dispatch_phase(
                     result.result_markdown_path.display().to_string(),
                 )
                 .await?;
+            sync_session_status(&state, &completed).await;
             Ok(DispatchOutcome::Complete)
         }
     }
@@ -241,7 +245,7 @@ async fn plan_analysis_phase(
             AgentDecision::FinalAnswer { result } => {
                 let result = result.into_result(&grep, &tool_results)?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
-                state
+                let completed = state
                     .tasks
                     .succeed(
                         &task.task_id,
@@ -252,6 +256,7 @@ async fn plan_analysis_phase(
                         output.result_markdown_path.display().to_string(),
                     )
                     .await?;
+                sync_session_status(&state, &completed).await;
                 return Ok(DispatchOutcome::Complete);
             }
         }
@@ -359,17 +364,20 @@ async fn wait_for_agent_action(
                 required,
                 answer_format,
             )?;
-            state.tasks.wait_for_user(&task.task_id).await?;
+            let waiting = state.tasks.wait_for_user(&task.task_id).await?;
+            sync_session_status(&state, &waiting).await;
             Ok(DispatchOutcome::Complete)
         }
         ActionKind::CollectEnvironment if action.risk == ActionRisk::RequiresApproval => {
             analysis_state::record_pending_approval(&workspace, &action)?;
-            state.tasks.wait_for_approval(&task.task_id).await?;
+            let waiting = state.tasks.wait_for_approval(&task.task_id).await?;
+            sync_session_status(&state, &waiting).await;
             Ok(DispatchOutcome::Complete)
         }
         _ if action.risk == ActionRisk::RequiresApproval => {
             analysis_state::record_pending_approval(&workspace, &action)?;
-            state.tasks.wait_for_approval(&task.task_id).await?;
+            let waiting = state.tasks.wait_for_approval(&task.task_id).await?;
+            sync_session_status(&state, &waiting).await;
             Ok(DispatchOutcome::Complete)
         }
         _ => anyhow::bail!("action {:?} cannot enter waiting state", action.kind),
@@ -474,7 +482,7 @@ async fn complete_with_budget_limited_result(
     let workspace = state.config.storage.workspace_dir(&task.task_id);
     let result = budget_limited_result(&task.question, grep, &reason);
     let output = persist_final_answer_decision_result(&workspace, result).await?;
-    state
+    let completed = state
         .tasks
         .succeed(
             &task.task_id,
@@ -485,6 +493,7 @@ async fn complete_with_budget_limited_result(
             output.result_markdown_path.display().to_string(),
         )
         .await?;
+    sync_session_status(&state, &completed).await;
     Ok(DispatchOutcome::Complete)
 }
 
@@ -673,7 +682,18 @@ async fn continue_with(
     next: TaskPhase,
 ) -> anyhow::Result<DispatchOutcome> {
     let task = state.tasks.advance_phase(task_id, current, next).await?;
+    sync_session_status(state, &task).await;
     Ok(DispatchOutcome::Continue(task))
+}
+
+async fn sync_session_status(state: &AppState, task: &TaskRecord) {
+    if let Err(err) = state.sessions.sync_task_status(task).await {
+        warn!(
+            task_id = %task.task_id,
+            session_id = ?task.session_id,
+            "failed to sync session status: {err}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -904,6 +924,7 @@ mod tests {
             TaskRecord {
                 schema_version: 4,
                 task_id: self.task_id.clone(),
+                session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],

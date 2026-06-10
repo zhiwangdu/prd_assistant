@@ -16,13 +16,14 @@ Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
 
 Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版 `run_tool` action 和未来 LLM action 走同一执行接口。
 
-Server 现在也支持 `taskKind=tool_run` 的手动工具运行任务。该路径复用 TaskStore、workspace 和 `tool_results` 产物，但不进入 `PLAN_ANALYSIS`；后续 Analysis Agent 的 `run_tool` action 会逐步复用同一个工具 registry。
+Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；后续 Analysis Agent 的 `run_tool` action 会逐步复用同一个工具 registry。
 
 ## 核心数据
 
 ```rust
 pub struct TaskContext {
     pub task_id: String,
+    pub session_id: Option<String>,
     pub source: TaskSource,
     pub product: Option<String>,
     pub version: Option<String>,

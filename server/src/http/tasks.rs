@@ -20,6 +20,16 @@ use crate::{
     support::{error::AppError, id::next_id},
 };
 
+pub struct CreateLogAnalysisTaskInput {
+    pub session_id: String,
+    pub upload_ids: Vec<String>,
+    pub source_url: Option<String>,
+    pub question: Option<String>,
+    pub instance_id: Option<String>,
+    pub cluster_id: Option<String>,
+    pub node_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskMessageRequest {
@@ -47,7 +57,44 @@ pub async fn create_task(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTaskRequest>,
 ) -> Result<(StatusCode, Json<TaskResponse>), AppError> {
-    let upload_ids = task_upload_ids(&req)?;
+    let session_id = normalize_optional_id(req.session_id.clone())
+        .ok_or_else(|| AppError::bad_request("sessionId is required for log analysis tasks"))?;
+    state
+        .sessions
+        .get(&session_id)
+        .await
+        .ok_or_else(|| AppError::bad_request(format!("unknown sessionId {session_id}")))?;
+    let record = create_log_analysis_task(
+        state.clone(),
+        CreateLogAnalysisTaskInput {
+            session_id,
+            upload_ids: task_upload_ids(&req)?,
+            source_url: req.source_url,
+            question: req.question,
+            instance_id: req.instance_id,
+            cluster_id: req.cluster_id,
+            node_id: req.node_id,
+        },
+    )
+    .await?;
+    state
+        .executor
+        .enqueue(state.clone(), record.task_id.clone());
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(record.summary(&state.config.server.public_base_url)),
+    ))
+}
+
+pub async fn create_log_analysis_task(
+    state: Arc<AppState>,
+    input: CreateLogAnalysisTaskInput,
+) -> Result<TaskRecord, AppError> {
+    let session_id = input.session_id;
+    let upload_ids = input.upload_ids;
+    if upload_ids.is_empty() {
+        return Err(AppError::bad_request("session has no uploads"));
+    }
     let mut uploads = Vec::with_capacity(upload_ids.len());
     for upload_id in &upload_ids {
         let upload = state
@@ -66,27 +113,63 @@ pub async fn create_task(
     let metadata_context = state
         .metadata
         .resolve_task_context(
-            normalize_optional_id(req.instance_id),
-            normalize_optional_id(req.cluster_id),
-            normalize_optional_id(req.node_id),
+            normalize_optional_id(input.instance_id),
+            normalize_optional_id(input.cluster_id),
+            normalize_optional_id(input.node_id),
         )
         .await?;
     let task_id = next_id("task");
     let workspace = state.config.storage.workspace_dir(&task_id);
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
-    let question = normalize_question(req.question, state.config.llm.max_input_chars / 2)?;
+    let question = normalize_question(input.question, state.config.llm.max_input_chars / 2)?;
     let recalled_cases = state.cases.search(Some(&question), 5, false).await;
     write_case_context(&workspace, &question, &recalled_cases).await?;
+    state
+        .sessions
+        .record_event(
+            &session_id,
+            "metadata_context_recorded",
+            Some(task_id.clone()),
+            None,
+            "metadata context snapshot recorded".to_string(),
+            Some(metadata_context_path.display().to_string()),
+            serde_json::json!({
+                "instanceId": metadata_context.instance_id.clone(),
+                "clusterId": metadata_context.cluster_id.clone(),
+                "nodeId": metadata_context.node_id.clone(),
+                "product": metadata_context.product.clone(),
+                "version": metadata_context.version.clone(),
+                "environment": metadata_context.environment.clone(),
+                "clusterNodes": metadata_context.cluster_nodes.len(),
+            }),
+        )
+        .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
+    state
+        .sessions
+        .record_event(
+            &session_id,
+            "case_context_recorded",
+            Some(task_id.clone()),
+            None,
+            "case recall context snapshot recorded".to_string(),
+            Some(workspace.join("case_context.json").display().to_string()),
+            serde_json::json!({
+                "query": question.clone(),
+                "caseRecallCount": recalled_cases.len(),
+            }),
+        )
+        .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 5,
+        schema_version: 6,
         task_id: task_id.clone(),
+        session_id: Some(session_id.clone()),
         task_kind: TaskKind::LogAnalysis,
         source: TaskSource::Upload,
         upload_ids,
         inputs,
-        source_url: req.source_url,
+        source_url: input.source_url,
         tool_id: None,
         tool_params: serde_json::Value::Null,
         tool_result_path: None,
@@ -111,11 +194,12 @@ pub async fn create_task(
         .create(record.clone())
         .await
         .map_err(|err| AppError::internal(format!("failed to persist task: {err}")))?;
-    state.executor.enqueue(state.clone(), task_id);
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(record.summary(&state.config.server.public_base_url)),
-    ))
+    state
+        .sessions
+        .add_task_run(&session_id, &task_id)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
+    Ok(record)
 }
 
 pub async fn task_result(
@@ -276,6 +360,11 @@ pub async fn post_task_message(
                 serde_json::json!({"errorDetail": err.to_string()}),
             )
         })?;
+    state
+        .sessions
+        .sync_task_status(&resumed)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to sync session status: {err}")))?;
     state.executor.enqueue(state.clone(), task_id);
     Ok(Json(resumed.summary(&state.config.server.public_base_url)))
 }
@@ -355,6 +444,11 @@ pub async fn post_action_decision(
                 serde_json::json!({"errorDetail": err.to_string()}),
             )
         })?;
+    state
+        .sessions
+        .sync_task_status(&resumed)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to sync session status: {err}")))?;
     state.executor.enqueue(state.clone(), task_id);
     Ok(Json(resumed.summary(&state.config.server.public_base_url)))
 }
@@ -595,7 +689,9 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        domain::models::{TaskInput, UploadRecord, UploadStatus},
+        domain::models::{
+            AnalysisSessionRecord, AnalysisSessionStatus, TaskInput, UploadRecord, UploadStatus,
+        },
         http,
         services::metadata::MetadataImportRequest,
         support::config::{
@@ -616,6 +712,7 @@ mod tests {
     #[tokio::test]
     async fn task_api_creates_lists_and_reads_details() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_test", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state.clone());
         let response = app
@@ -625,7 +722,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_test","question":"Why did the sample fail?"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_test","question":"Why did the sample fail?"}"#,
                     ))
                     .unwrap(),
             )
@@ -729,6 +826,7 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 1,
                 task_id: "task_queued".to_string(),
+                session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_test".to_string()],
@@ -800,6 +898,7 @@ mod tests {
     #[tokio::test]
     async fn successful_task_can_be_confirmed_as_case_and_recalled() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_case", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state.clone());
         let response = app
@@ -809,7 +908,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_case","question":"slow query has no time filter"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_case","question":"slow query has no time filter"}"#,
                     ))
                     .unwrap(),
             )
@@ -867,7 +966,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_case_recall","question":"time filter regression"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_case_recall","question":"time filter regression"}"#,
                     ))
                     .unwrap(),
             )
@@ -1085,6 +1184,7 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 4,
                 task_id: task_id.to_string(),
+                session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
@@ -1138,6 +1238,7 @@ mod tests {
     #[tokio::test]
     async fn task_message_resumes_waiting_for_user_task() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_ask_user", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state);
         let response = app
@@ -1147,7 +1248,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_ask_user","question":"ASK_USER_MVP 请先追问"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_ask_user","question":"ASK_USER_MVP 请先追问"}"#,
                     ))
                     .unwrap(),
             )
@@ -1198,6 +1299,7 @@ mod tests {
     #[tokio::test]
     async fn approval_decision_resumes_waiting_for_approval_task() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_approval", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state);
         let response = app
@@ -1207,7 +1309,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_approval","question":"APPROVAL_MVP 请请求环境采集审批"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_approval","question":"APPROVAL_MVP 请请求环境采集审批"}"#,
                     ))
                     .unwrap(),
             )
@@ -1271,6 +1373,7 @@ mod tests {
             max_input_chars: 60_000,
             max_output_tokens: 100,
         });
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_failure", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state);
         let response = app
@@ -1279,7 +1382,9 @@ mod tests {
                 Request::post("/api/tasks")
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"uploadId":"upl_failure"}"#))
+                    .body(Body::from(
+                        r#"{"sessionId":"sess_test","uploadId":"upl_failure"}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -1316,6 +1421,7 @@ mod tests {
     #[tokio::test]
     async fn task_api_rejects_incomplete_uploads() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_incomplete", UploadStatus::Uploading).await;
         let app = http::router(state.clone()).with_state(state);
 
@@ -1324,7 +1430,9 @@ mod tests {
                 Request::post("/api/tasks")
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"uploadId":"upl_incomplete"}"#))
+                    .body(Body::from(
+                        r#"{"sessionId":"sess_test","uploadId":"upl_incomplete"}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -1338,6 +1446,7 @@ mod tests {
     #[tokio::test]
     async fn task_api_persists_and_serves_metadata_context() {
         let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_metadata", UploadStatus::Complete).await;
         let preview = state
             .metadata
@@ -1381,7 +1490,7 @@ nodes:
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"uploadId":"upl_metadata","instanceId":"i-1"}"#,
+                        r#"{"sessionId":"sess_test","uploadId":"upl_metadata","instanceId":"i-1"}"#,
                     ))
                     .unwrap(),
             )
@@ -1511,6 +1620,29 @@ nodes:
                 expected_size: Some(13),
                 status,
                 path,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .unwrap();
+    }
+
+    async fn create_test_session(state: &Arc<AppState>, session_id: &str) {
+        let now = Utc::now();
+        state
+            .sessions
+            .create(AnalysisSessionRecord {
+                schema_version: 1,
+                session_id: session_id.to_string(),
+                title: "Test session".to_string(),
+                question: default_task_question(),
+                source_url: None,
+                instance_id: None,
+                node_id: None,
+                upload_ids: Vec::new(),
+                task_ids: Vec::new(),
+                active_task_id: None,
+                status: AnalysisSessionStatus::Draft,
                 created_at: now,
                 updated_at: now,
             })

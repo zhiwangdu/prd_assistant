@@ -37,6 +37,22 @@ WEBUI Tools
 
 ## Implemented
 
+### Session-first Log Analysis
+
+- Log Analysis 公开入口从一次性 task 改为可恢复 Session。
+- 新增 Server `AnalysisSessionStore`，持久化到 `storage.data_dir/sessions/<session_id>.json`，Session events 追加到 `storage.data_dir/session_workspaces/<session_id>/session_events.jsonl`。
+- 新增受保护 Session API：`POST/GET /api/sessions`、`GET/PATCH /api/sessions/:session_id`、`POST /api/sessions/:session_id/uploads`、`DELETE /api/sessions/:session_id/uploads/:upload_id`、`POST /api/sessions/:session_id/tasks`、`GET /api/sessions/:session_id/timeline`。
+- `TaskRecord` schema 增加 `sessionId`；`log_analysis` task 必须绑定 Session，`tool_run` 不绑定 Session。
+- 每次从 Session 启动分析都会创建新的 `log_analysis` task workspace 快照，Session 记录 `taskIds`、`activeTaskId` 和状态。
+- Task 状态进入 running、waiting、succeeded、failed 时会同步 Session status，并追加 timeline event。
+- Task 创建时继续固化 `metadata_context.json` 和 `case_context.json`，同时向 Session timeline 记录 Metadata summary 和 Case recall count。
+- WebUI `Log analysis` 页面改为 Session-first：左侧 Session history，右侧 Session draft editor、upload attach、Start analysis、runs panel 和 unified Evidence timeline；草稿字段 debounce PATCH 到 Server。
+- WebUI 选择 Session 时 best-effort 调用本机 Native Agent `PUT /workspace/current` 设置活动 Session，失败只提示不阻断 WebUI 上传。
+- Native Agent 新增 `native_agent.state_path`，默认 `~/.logagent/native-agent-state.json`，并提供 `GET/PUT/DELETE /workspace/current`。
+- Native Agent `POST /imports` 上传后附加到活动 Session；没有活动 Session 时自动创建 `Native import <filename>` Session 并设为活动；返回 `{uploadId, sessionId, taskId:null, url}`。
+- Chrome Extension 成功通知改为 `LogAgent session updated`。
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass after implementation.
+
 ### WebUI Naming
 
 - Renamed the top bar product title from `LogAgent Metadata Console` to `LogAgent Analysis Workbench`.

@@ -11,7 +11,8 @@
 - `chrome.downloads.onChanged` 监听下载完成。
 - 根据 URL 前缀和文件后缀过滤。
 - 弹出 Chrome notification，由用户点击确认发送。
-- 调用 Native Agent `POST /imports`。
+- 调用 Native Agent `POST /imports`，由 Native Agent 附加到当前活动 Session。
+- 成功通知显示 `LogAgent session updated`。
 - Options 页面支持配置 Agent 地址、URL 前缀和文件后缀。
 
 ## 输入
@@ -60,5 +61,5 @@ Content-Type: application/json
 
 - Options 配置保存后立即影响后续下载匹配。
 - 未匹配 URL 或后缀的下载不会触发导入通知。
-- 点击通知后 Native Agent 收到 `/imports` 请求。
+- 点击通知后 Native Agent 收到 `/imports` 请求，成功时返回 `sessionId`。
 - README 和 SPEC 在匹配规则或接口变更时同步更新。
