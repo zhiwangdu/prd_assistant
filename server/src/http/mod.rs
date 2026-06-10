@@ -14,6 +14,7 @@ mod debug;
 mod health;
 mod metadata;
 mod sessions;
+mod system_context;
 mod tasks;
 mod tools;
 mod uploads;
@@ -112,6 +113,27 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/debug/llm",
             get(debug::get_llm_debug).put(debug::update_llm_debug),
         )
+        .route(
+            "/api/system-context/resources",
+            get(system_context::list_resources).post(system_context::create_resource),
+        )
+        .route(
+            "/api/system-context/resources/:context_id",
+            get(system_context::get_resource).patch(system_context::patch_resource),
+        )
+        .route(
+            "/api/system-context/resources/:context_id/versions",
+            post(system_context::create_version),
+        )
+        .route(
+            "/api/system-context/resources/:context_id/versions/:version_id",
+            axum::routing::patch(system_context::patch_version),
+        )
+        .route(
+            "/api/system-context/resources/:context_id/versions/:version_id/activate",
+            post(system_context::activate_version),
+        )
+        .route("/api/system-context/preview", post(system_context::preview))
         .route("/api/metadata/instances", get(metadata::list_instances))
         .route(
             "/api/metadata/instances/:instance_id",

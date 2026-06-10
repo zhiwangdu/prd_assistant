@@ -30,6 +30,7 @@ Rust -> C/C++ -> Go/Python/Java 等
     v
 基础证据提取
   - rg 日志检索
+  - System Context 背景资源
   - 实例和集群元数据
   - 外部工具调用
   - 对应版本代码检索
@@ -73,6 +74,7 @@ flowchart LR
         Gateway["LLM Gateway<br/>Prompt、裁剪、结构化响应"]
 
         subgraph Evidence["受控证据能力"]
+            SysCtx["System Context<br/>Prompt、架构、Runbook、Metadata adapter"]
             Log["Log Analyzer"]
             Tool["Tool Runner"]
             Code["Code Evidence"]
@@ -99,6 +101,7 @@ flowchart LR
     Model --> Gateway
 
     Orchestrator --> Log
+    Orchestrator --> SysCtx
     Orchestrator --> Tool
     Orchestrator --> Code
     Orchestrator -->|"批准后"| Env
@@ -127,6 +130,7 @@ flowchart LR
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Agent 基于问题、Metadata、Case 和后续交互继续分析。
+- Log Analysis run 会固化 `system_context.json`，把已启用的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
 - WebUI 可实时展示 Task execution loop 摘要；LLM response content 日志只能通过顶部 debug 开关手动开启。
@@ -154,6 +158,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 | Log Analyzer | [README](./docs/modules/log-analyzer/README.md) / [SPEC](./docs/modules/log-analyzer/SPEC.md) |
 | Tool Runner | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
 | Metadata | [README](./docs/modules/metadata/README.md) / [SPEC](./docs/modules/metadata/SPEC.md) |
+| System Context | [README](./docs/modules/system-context/README.md) / [SPEC](./docs/modules/system-context/SPEC.md) |
 | Analysis Agent | [README](./docs/modules/analysis-agent/README.md) / [SPEC](./docs/modules/analysis-agent/SPEC.md) |
 | LLM Gateway | [README](./docs/modules/llm-gateway/README.md) / [SPEC](./docs/modules/llm-gateway/SPEC.md) |
 | Case Store | [README](./docs/modules/case-store/README.md) / [SPEC](./docs/modules/case-store/SPEC.md) |
@@ -180,7 +185,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先沿着 Session-first Log Analysis、上传、Metadata、Tool Runner、Tools 页面、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定恢复 Session、创建多次分析 run、展示证据时间线、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先沿着 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定恢复 Session、创建多次分析 run、固化通用背景资源、展示证据时间线、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
 Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
 

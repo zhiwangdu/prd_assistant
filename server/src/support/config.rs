@@ -231,6 +231,7 @@ impl AppConfig {
         fs::create_dir_all(self.storage.case_imports_dir())?;
         fs::create_dir_all(self.storage.metadata_dir())?;
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
+        fs::create_dir_all(self.storage.system_context_dir())?;
         Ok(())
     }
 }
@@ -278,6 +279,10 @@ impl StorageSettings {
 
     pub fn metadata_imports_dir(&self) -> PathBuf {
         self.metadata_dir().join("imports")
+    }
+
+    pub fn system_context_dir(&self) -> PathBuf {
+        self.data_dir.join("system_context").join("resources")
     }
 }
 

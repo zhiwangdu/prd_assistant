@@ -1,4 +1,4 @@
-import { Activity, BookOpenCheck, FileSearch, KeyRound, Layers3, Network, Wrench } from "lucide-react";
+import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
@@ -6,6 +6,7 @@ import { MetadataDashboard } from "./metadata/MetadataDashboard";
 import { CasesView } from "./CasesView";
 import { OperationsView } from "./OperationsView";
 import { ToolsView } from "./ToolsView";
+import { SystemContextView } from "./SystemContextView";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
@@ -14,7 +15,7 @@ export function App() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
   const [llmDebugStatus, setLlmDebugStatus] = useState("LLM output logs off");
-  const [view, setView] = useState<"metadata" | "operations" | "tools" | "cases">("metadata");
+  const [view, setView] = useState<"system-context" | "metadata" | "operations" | "tools" | "cases">("system-context");
 
   useEffect(() => {
     setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
@@ -86,12 +87,12 @@ export function App() {
       </header>
       <main className="mx-auto max-w-[1680px] px-5 py-6">
         <nav className="mb-5 flex gap-2">
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "metadata" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("metadata")}><Network className="mr-2 inline h-4 w-4" />Metadata</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />System Context</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />Log analysis</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />Tools</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />Cases</button>
         </nav>
-        {view === "metadata" ? <MetadataDashboard apiKey={apiKey} /> : view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <CasesView apiKey={apiKey} />}
+        {view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "metadata" ? <MetadataDashboard apiKey={apiKey} /> : view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <CasesView apiKey={apiKey} />}
       </main>
     </div>
   );

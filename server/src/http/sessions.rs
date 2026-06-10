@@ -35,6 +35,7 @@ pub async fn create_session(
         source_url: normalize_optional(req.source_url),
         instance_id: normalize_optional(req.instance_id),
         node_id: normalize_optional(req.node_id),
+        system_context_ids: normalize_context_ids(req.system_context_ids)?,
         upload_ids: Vec::new(),
         task_ids: Vec::new(),
         active_task_id: None,
@@ -124,6 +125,9 @@ pub async fn patch_session(
                 if let Some(node_id) = req.node_id {
                     session.node_id = normalize_optional(node_id);
                 }
+                if let Some(system_context_ids) = req.system_context_ids {
+                    session.system_context_ids = normalize_context_ids(system_context_ids)?;
+                }
                 if let Some(status) = status {
                     session.status = status;
                 }
@@ -131,7 +135,7 @@ pub async fn patch_session(
             },
             "session_updated",
             "session draft updated".to_string(),
-            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/status" }),
+            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/systemContextIds/status" }),
         )
         .await
         .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
@@ -203,6 +207,7 @@ pub async fn create_session_task(
             instance_id: session.instance_id.clone(),
             cluster_id: None,
             node_id: session.node_id.clone(),
+            system_context_ids: session.system_context_ids.clone(),
         },
     )
     .await?;
@@ -335,6 +340,24 @@ fn normalize_optional(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+pub fn normalize_context_ids(context_ids: Vec<String>) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::new();
+    for context_id in context_ids {
+        let context_id = context_id.trim().to_string();
+        if context_id.is_empty() {
+            continue;
+        }
+        crate::stores::system_context_store::validate_context_id_for_api(&context_id)?;
+        if !normalized.iter().any(|value| value == &context_id) {
+            normalized.push(context_id);
+        }
+    }
+    if normalized.len() > 32 {
+        return Err(AppError::bad_request("too many systemContextIds"));
+    }
+    Ok(normalized)
 }
 
 fn validate_session_id_for_api(session_id: &str) -> Result<(), AppError> {

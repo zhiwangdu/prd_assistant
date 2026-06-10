@@ -1137,6 +1137,7 @@ mod tests {
             manifest_path: None,
             grep_results_path: None,
             metadata_context_path: None,
+            system_context_path: None,
             result_json_path: None,
             result_markdown_path: None,
             created_at: now,

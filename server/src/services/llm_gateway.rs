@@ -14,7 +14,9 @@ use tokio::{process::Command, time::timeout};
 use crate::{
     domain::{
         contracts::{ActionKind, ActionRisk},
-        models::{AnalysisResult, Confidence, GrepResults, Manifest, RootCause},
+        models::{
+            AnalysisResult, Confidence, GrepResults, Manifest, RootCause, SystemContextBundle,
+        },
     },
     services::{metadata::TaskMetadataContext, tool_runner::ToolRunRecord},
     stores::case_import_store::{CaseImportDraft, CaseImportMessage, CaseImportMessageRole},
@@ -85,6 +87,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        system_context: Option<&SystemContextBundle>,
         case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AnalysisResult> {
@@ -93,6 +96,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            system_context,
             case_context,
             tool_results,
             self.settings.max_input_chars,
@@ -118,6 +122,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        system_context: Option<&SystemContextBundle>,
         case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
     ) -> anyhow::Result<AgentDecision> {
@@ -126,6 +131,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            system_context,
             case_context,
             tool_results,
             |_| {},
@@ -139,6 +145,7 @@ impl LlmGateway {
         manifest: &Manifest,
         grep: &GrepResults,
         metadata: Option<&TaskMetadataContext>,
+        system_context: Option<&SystemContextBundle>,
         case_context: Option<&serde_json::Value>,
         tool_results: &[ToolRunRecord],
         on_event: impl FnMut(LlmCallEvent),
@@ -148,6 +155,7 @@ impl LlmGateway {
             manifest,
             grep,
             metadata,
+            system_context,
             case_context,
             tool_results,
             self.settings.max_input_chars,
@@ -1076,6 +1084,7 @@ fn build_prompt(
     manifest: &Manifest,
     grep: &GrepResults,
     metadata: Option<&TaskMetadataContext>,
+    system_context: Option<&SystemContextBundle>,
     case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
     max_input_chars: usize,
@@ -1103,6 +1112,10 @@ fn build_prompt(
     if let Some(metadata) = metadata {
         prompt.push_str("\nMetadata 上下文:\n");
         prompt.push_str(&metadata_prompt_summary(metadata));
+    }
+    if let Some(system_context) = system_context {
+        prompt.push_str("\nSystem Context（背景参考，不能替代当前任务证据）:\n");
+        prompt.push_str(&system_context_prompt_summary(system_context));
     }
     if let Some(case_context) = case_context {
         prompt.push_str("\n历史 Case 参考（仅供参考，不能替代当前任务证据）:\n");
@@ -1183,6 +1196,7 @@ fn build_action_prompt(
     manifest: &Manifest,
     grep: &GrepResults,
     metadata: Option<&TaskMetadataContext>,
+    system_context: Option<&SystemContextBundle>,
     case_context: Option<&serde_json::Value>,
     tool_results: &[ToolRunRecord],
     max_input_chars: usize,
@@ -1192,6 +1206,7 @@ fn build_action_prompt(
         manifest,
         grep,
         metadata,
+        system_context,
         case_context,
         tool_results,
         max_input_chars,
@@ -1296,6 +1311,35 @@ fn metadata_prompt_summary(metadata: &TaskMetadataContext) -> String {
         },
         partitions,
     )
+}
+
+fn system_context_prompt_summary(context: &SystemContextBundle) -> String {
+    if context.resources.is_empty() {
+        return "no system context resources selected\n".to_string();
+    }
+    let mut out = String::new();
+    for item in context.resources.iter().take(12) {
+        out.push_str(&format!(
+            "- [{}] {} source={} version={} summary={}\n",
+            serde_json::to_value(item.kind)
+                .ok()
+                .and_then(|value| value.as_str().map(ToString::to_string))
+                .unwrap_or_else(|| "context".to_string()),
+            item.title,
+            item.source,
+            item.version_id.as_deref().unwrap_or("-"),
+            item.summary.as_deref().unwrap_or("-")
+        ));
+        if !item.content.trim().is_empty() {
+            out.push_str(&truncate_chars(&item.content, item.prompt_chars.min(4000)));
+            out.push('\n');
+        }
+    }
+    let omitted = context.resources.len().saturating_sub(12);
+    if omitted > 0 {
+        out.push_str(&format!("omitted {omitted} system context resources\n"));
+    }
+    out
 }
 
 fn case_context_prompt_summary(case_context: &serde_json::Value) -> String {
@@ -2255,7 +2299,10 @@ fn parse_root_cause_string(value: &str) -> Option<RootCause> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource};
+    use crate::domain::models::{
+        GrepMatch, ManifestFile, ManifestUpload, SystemContextBundle, SystemContextBundleItem,
+        SystemContextContentType, SystemContextKind, TaskSource,
+    };
     use crate::services::metadata::{ClusterMetadata, NodeMetadata, TaskMetadataContext};
     use crate::services::tool_runner::{ToolFinding, ToolRunStatus};
     use chrono::Utc;
@@ -2272,7 +2319,7 @@ mod tests {
                 grep_match("second evidence that should be omitted"),
             ],
         };
-        let prompt = build_prompt("why", &manifest, &grep, None, None, &[], 220);
+        let prompt = build_prompt("why", &manifest, &grep, None, None, None, &[], 220);
         assert!(prompt.chars().count() <= 220);
         assert!(prompt.contains("grep_results.json#matches/0"));
         assert!(prompt.contains("省略"));
@@ -2530,6 +2577,7 @@ JSON
                 &grep,
                 None,
                 None,
+                None,
                 &[],
             )
             .await
@@ -2542,6 +2590,7 @@ JSON
                 "why did it timeout?",
                 &fixture_manifest(),
                 &grep,
+                None,
                 None,
                 None,
                 &[],
@@ -2592,6 +2641,7 @@ JSON
             },
             None,
             None,
+            None,
             &[],
             1024,
         );
@@ -2640,6 +2690,7 @@ JSON
             },
             Some(&metadata),
             None,
+            None,
             &[],
             2048,
         );
@@ -2677,6 +2728,7 @@ JSON
                 matches: vec![],
             },
             None,
+            None,
             Some(&case_context),
             &[],
             4096,
@@ -2685,6 +2737,46 @@ JSON
         assert!(prompt.contains("历史 Case 参考"));
         assert!(prompt.contains("case_1"));
         assert!(prompt.contains("missing time filter"));
+        assert!(prompt.contains("不能替代当前任务证据"));
+    }
+
+    #[test]
+    fn prompt_includes_system_context_summary() {
+        let context = SystemContextBundle {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            resources: vec![SystemContextBundleItem {
+                context_id: "ctx_1".to_string(),
+                version_id: Some("ctxver_1".to_string()),
+                kind: SystemContextKind::ArchitectureDoc,
+                title: "Write path architecture".to_string(),
+                content_type: SystemContextContentType::Mermaid,
+                summary: Some("Meta, Data and SQL nodes".to_string()),
+                content: "flowchart LR\nSQL-->Data\nData-->Meta".to_string(),
+                source: "system_context".to_string(),
+                prompt_priority: 0,
+                prompt_chars: 1000,
+            }],
+        };
+
+        let prompt = build_prompt(
+            "why",
+            &fixture_manifest(),
+            &GrepResults {
+                keywords: vec![],
+                total_matches: 0,
+                matches: vec![],
+            },
+            None,
+            Some(&context),
+            None,
+            &[],
+            4096,
+        );
+
+        assert!(prompt.contains("System Context"));
+        assert!(prompt.contains("Write path architecture"));
+        assert!(prompt.contains("SQL-->Data"));
         assert!(prompt.contains("不能替代当前任务证据"));
     }
 
@@ -2700,6 +2792,7 @@ JSON
                 total_matches: 0,
                 matches: vec![],
             },
+            None,
             None,
             None,
             &tool_results,

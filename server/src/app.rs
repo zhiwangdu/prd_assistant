@@ -6,7 +6,8 @@ use crate::{
     services::{llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner},
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
-        session_store::AnalysisSessionStore, task_store::TaskStore, upload_store::UploadStore,
+        session_store::AnalysisSessionStore, system_context_store::SystemContextStore,
+        task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -18,6 +19,7 @@ pub struct AppState {
     pub metadata: MetadataStore,
     pub cases: CaseStore,
     pub case_imports: CaseImportStore,
+    pub system_context: SystemContextStore,
     pub sessions: AnalysisSessionStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
@@ -31,6 +33,7 @@ impl AppState {
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
         let cases = CaseStore::load(config.storage.cases_dir())?;
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
+        let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
         let sessions = AnalysisSessionStore::load(
             config.storage.sessions_dir(),
             config.storage.session_workspaces_dir(),
@@ -39,6 +42,7 @@ impl AppState {
             metadata: MetadataStore::new(config.clone()),
             cases,
             case_imports,
+            system_context,
             sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,

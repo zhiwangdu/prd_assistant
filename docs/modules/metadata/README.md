@@ -6,6 +6,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 模块目标是管理实例 ID 对应的业务和部署元数据、集群节点信息，并把这些信息提供给后续日志分析、环境采集、代码证据和 WEBUI 展示。
 
+产品入口上，Metadata 已纳入 System Context：现有 Metadata Store/API 继续保持专业拓扑模型和诊断能力，System Context 通过只读 `metadata_instance` adapter 把已导入 Instance 摘要纳入通用背景资源目录，并在 task 创建时固化到 `system_context.json`。
+
 已实现：
 
 - 本地 JSON 文件存储。

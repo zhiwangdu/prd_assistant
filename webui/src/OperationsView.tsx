@@ -1,4 +1,4 @@
-import { BookOpenCheck, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
+import { BookOpenCheck, BrainCircuit, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
@@ -13,6 +13,7 @@ type SessionSummary = {
   sourceUrl?: string | null;
   instanceId?: string | null;
   nodeId?: string | null;
+  systemContextCount?: number;
   uploadCount: number;
   taskCount: number;
   activeTaskId?: string | null;
@@ -23,6 +24,7 @@ type SessionSummary = {
 type SessionRecord = Omit<SessionSummary, "uploadCount" | "taskCount"> & {
   schemaVersion: number;
   question: string;
+  systemContextIds: string[];
   uploadIds: string[];
   taskIds: string[];
 };
@@ -118,7 +120,19 @@ type Artifacts = {
   textInput?: { question?: string } | null;
   metadataContext?: MetadataContext | null;
   caseContext?: CaseContext | null;
+  systemContext?: SystemContextBundle | null;
   toolResults?: ToolResult[];
+};
+type SystemContextSummary = {
+  contextId: string;
+  kind: string;
+  title: string;
+  enabled: boolean;
+  activeSummary?: string | null;
+  source: string;
+};
+type SystemContextBundle = {
+  resources?: Array<{ contextId: string; kind: string; title: string; summary?: string | null; source: string }>;
 };
 type ToolResult = {
   tool: string;
@@ -193,6 +207,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [question, setQuestion] = useState("分析日志中的主要异常、可能原因和建议检查项。");
   const [instanceId, setInstanceId] = useState("");
   const [nodeId, setNodeId] = useState("");
+  const [systemContexts, setSystemContexts] = useState<SystemContextSummary[]>([]);
+  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [uploadStatus, setUploadStatus] = useState("请选择或创建 Session");
   const [nativeStatus, setNativeStatus] = useState("Native Agent not checked");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -217,6 +233,15 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     }
     const result = await fetchJson<{ sessions: SessionSummary[] }>("/api/sessions", { headers: authHeaders(apiKey) });
     setSessions(result.sessions);
+  }, [apiKey]);
+
+  const refreshSystemContexts = useCallback(async () => {
+    if (!apiKey.trim()) {
+      setSystemContexts([]);
+      return;
+    }
+    const result = await fetchJson<{ resources: SystemContextSummary[] }>("/api/system-context/resources", { headers: authHeaders(apiKey) });
+    setSystemContexts(result.resources.filter((resource) => resource.kind !== "metadata_instance" && resource.enabled));
   }, [apiKey]);
 
   const refreshCases = useCallback(async (queryText: string) => {
@@ -287,6 +312,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       setSourceUrl(session.sourceUrl ?? "");
       setInstanceId(session.instanceId ?? "");
       setNodeId(session.nodeId ?? "");
+      setSelectedContextIds(session.systemContextIds ?? []);
       setDraftExpanded(session.taskIds.length === 0);
       setNativeStatus("Setting Native Agent session...");
       await setNativeCurrentSession(session.sessionId)
@@ -309,8 +335,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setTimeline([]);
     setCases([]);
     void refreshSessions().catch((reason) => setUploadStatus(errorMessage(reason)));
+    void refreshSystemContexts().catch((reason) => setUploadStatus(errorMessage(reason)));
     void refreshCases("").catch((reason) => setCaseStatus(errorMessage(reason)));
-  }, [refreshCases, refreshSessions]);
+  }, [refreshCases, refreshSessions, refreshSystemContexts]);
 
   useEffect(() => {
     if (!selectedSession || !apiKey.trim()) return;
@@ -319,14 +346,16 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       question: question.trim(),
       sourceUrl: sourceUrl.trim(),
       instanceId: instanceId.trim(),
-      nodeId: nodeId.trim()
+      nodeId: nodeId.trim(),
+      systemContextIds: selectedContextIds
     };
     const unchanged =
       patch.title === selectedSession.title &&
       patch.question === selectedSession.question &&
       (patch.sourceUrl || "") === (selectedSession.sourceUrl ?? "") &&
       (patch.instanceId || "") === (selectedSession.instanceId ?? "") &&
-      (patch.nodeId || "") === (selectedSession.nodeId ?? "");
+      (patch.nodeId || "") === (selectedSession.nodeId ?? "") &&
+      sameStringList(patch.systemContextIds, selectedSession.systemContextIds ?? []);
     if (unchanged) return;
     const timer = window.setTimeout(() => {
       void fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(selectedSession.sessionId)}`, {
@@ -337,7 +366,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
           question: patch.question || null,
           sourceUrl: patch.sourceUrl || null,
           instanceId: patch.instanceId || null,
-          nodeId: patch.nodeId || null
+          nodeId: patch.nodeId || null,
+          systemContextIds: patch.systemContextIds
         })
       })
         .then((session) => {
@@ -347,7 +377,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         .catch((reason) => setUploadStatus(errorMessage(reason)));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [apiKey, instanceId, nodeId, question, refreshSessions, selectedSession, sourceUrl, title]);
+  }, [apiKey, instanceId, nodeId, question, refreshSessions, selectedContextIds, selectedSession, sourceUrl, title]);
 
   useEffect(() => {
     if (!taskResult) {
@@ -376,7 +406,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       const session = await fetchJson<SessionRecord>("/api/sessions", {
         method: "POST",
         headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ title: "New session", question })
+        body: JSON.stringify({ title: "New session", question, systemContextIds: selectedContextIds })
       });
       setUploadStatus(`已创建 Session ${session.sessionId}`);
       await refreshSessions();
@@ -432,7 +462,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
           question: question.trim() || null,
           sourceUrl: sourceUrl.trim() || null,
           instanceId: instanceId.trim() || null,
-          nodeId: nodeId.trim() || null
+          nodeId: nodeId.trim() || null,
+          systemContextIds: selectedContextIds
         })
       });
       setSelectedSession(savedSession);
@@ -597,6 +628,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                       <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
                     </div>
                     <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
+                    <SystemContextPicker contexts={systemContexts} selectedIds={selectedContextIds} onChange={setSelectedContextIds} />
                     <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
                       <UploadCloud className="mb-2 h-7 w-7" />
                       {files.length ? `${files.length} file(s): ${files.map((file) => file.name).join(", ")}` : "选择 .log / .txt / .zip / .tar.gz / .tgz / .tar"}
@@ -614,7 +646,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                       </div>
                     </div>
                   </>
-                ) : <SessionDraftSummary session={selectedSession} title={title} question={question} sourceUrl={sourceUrl} instanceId={instanceId} nodeId={nodeId} uploadStatus={uploadStatus} />}
+                ) : <SessionDraftSummary session={selectedSession} title={title} question={question} sourceUrl={sourceUrl} instanceId={instanceId} nodeId={nodeId} selectedContextIds={selectedContextIds} uploadStatus={uploadStatus} />}
               </CardContent>
             </Card>
 
@@ -654,6 +686,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       ) : null}
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
+      {artifacts?.systemContext ? <SystemContextSnapshotView context={artifacts.systemContext} /> : null}
       {artifacts?.textInput ? <Evidence title="Session text input" count={1}><DataLine id="session-text-input" title="Question" detail={artifacts.textInput.question ?? ""} /></Evidence> : null}
       {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
       {artifacts?.toolResults?.length ? <Evidence title="Tool results" count={artifacts.toolResults.length}>{artifacts.toolResults.map((result) => <ToolResultLine key={result.actionId} result={result} />)}</Evidence> : null}
@@ -679,6 +712,38 @@ function WaitingInteraction({ answer, approvalReason, loading, snapshot, status,
     return <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div><p className="text-sm font-medium text-amber-900">需要审批动作</p><p className="mt-1 text-sm text-amber-800">{approval.actionType} · {approval.actionId}</p><p className="mt-1 text-xs text-amber-700">risk: {approval.risk} · reason: {approval.reason}</p><pre className="mt-2 max-h-32 overflow-auto rounded bg-white p-2 text-xs text-slate-700">{JSON.stringify(approval.input, null, 2)}</pre></div><Input value={approvalReason} onChange={(event) => onApprovalReasonChange(event.target.value)} placeholder="审批备注或拒绝原因（可选）" /><div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={() => onSubmitApproval(approval, "approved")}>批准并继续</Button><Button disabled={loading} variant="outline" onClick={() => onSubmitApproval(approval, "rejected")}>拒绝并继续</Button></div></div>;
   }
   return null;
+}
+
+function SystemContextPicker({ contexts, selectedIds, onChange }: { contexts: SystemContextSummary[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium"><BrainCircuit className="mr-2 inline h-4 w-4 text-primary" />System Context</p>
+          <p className="text-xs text-muted-foreground">可选背景资源会随 run 固化到 system_context.json</p>
+        </div>
+        <Badge variant="secondary">{selectedIds.length} selected</Badge>
+      </div>
+      {contexts.length ? (
+        <div className="grid gap-2 md:grid-cols-2">
+          {contexts.slice(0, 12).map((context) => {
+            const checked = selectedIds.includes(context.contextId);
+            return (
+              <label className={`rounded-md border p-3 text-sm ${checked ? "border-primary bg-slate-50" : "border-border bg-white"}`} key={context.contextId}>
+                <div className="flex items-start gap-2">
+                  <input className="mt-1 h-4 w-4 accent-teal-700" type="checkbox" checked={checked} onChange={() => onChange(toggleString(selectedIds, context.contextId))} />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{context.title}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{context.kind} · {context.activeSummary ?? context.contextId}</p>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      ) : <p className="text-sm text-muted-foreground">暂无可选 System Context；自动匹配的 Prompt Pack 和 Metadata 仍会在创建 run 时固化。</p>}
+    </div>
+  );
 }
 
 function CaseClosurePanel({ cases, caseDraft, caseQuery, caseStatus, loading, taskLabel, onDraftChange, onQueryChange, onRefreshCases, onConfirmCase, onDisableCase }: { cases: CaseHit[]; caseDraft: CaseDraft; caseQuery: string; caseStatus: string; loading: boolean; taskLabel: string; onDraftChange: (draft: CaseDraft) => void; onQueryChange: (value: string) => void; onRefreshCases: () => void; onConfirmCase: () => void; onDisableCase: (caseId: string) => void; }) {
@@ -717,16 +782,26 @@ function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
 }
 
+function toggleString(values: string[], value: string) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function sameStringList(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
 function Evidence({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return <Card><CardHeader><div className="flex items-center justify-between"><CardTitle>{title}</CardTitle><Badge variant="secondary">{count}</Badge></div></CardHeader><CardContent className="space-y-2">{count ? children : <EmptyState>暂无数据</EmptyState>}</CardContent></Card>;
 }
 
-function SessionDraftSummary({ session, title, question, sourceUrl, instanceId, nodeId, uploadStatus }: { session: SessionRecord; title: string; question: string; sourceUrl: string; instanceId: string; nodeId: string; uploadStatus: string }) {
+function SessionDraftSummary({ session, title, question, sourceUrl, instanceId, nodeId, selectedContextIds, uploadStatus }: { session: SessionRecord; title: string; question: string; sourceUrl: string; instanceId: string; nodeId: string; selectedContextIds: string[]; uploadStatus: string }) {
   const rows = [
     ["Title", title || session.title || "-"],
     ["Question", question || session.question || "-"],
     ["Source URL", sourceUrl || "-"],
     ["Metadata", `instance=${instanceId || "-"} · node=${nodeId || "-"}`],
+    ["System Context", `${selectedContextIds.length} selected`],
     ["Inputs", `${session.uploadIds.length} upload(s) · ${session.taskIds.length} run(s)`],
     ["Status", `${session.status} · ${uploadStatus}`]
   ];
@@ -798,6 +873,7 @@ function summarizeEventDetails(details: Record<string, unknown>) {
   const result = details.result;
   if (isRecord(result) && typeof result.summary === "string") return `final_answer · ${result.summary}`;
   if (typeof details.caseRecallCount === "number") return `case recall count=${details.caseRecallCount}`;
+  if (typeof details.resourceCount === "number") return `system context resources=${details.resourceCount}`;
   if (typeof details.error === "string") return details.error;
   return "";
 }
@@ -815,6 +891,30 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
   const abnormalPartitions = partitions.filter((partition) => partition.statusText && partition.statusText !== "online").length;
   const rows = [["Instance", context.instanceId], ["Node", context.nodeId], ["Product", context.product], ["Version", context.version], ["Environment", context.environment], ["Node status", context.node?.status], ["Cluster nodes", String(context.clusterNodes?.length ?? 0)], ["Databases", (context.cluster?.databases ?? []).map((database) => database.name).join(", ") || "0"], ["Partitions", `${partitions.length} total, ${abnormalPartitions} non-online`]];
   return <Card><CardHeader><CardTitle>Metadata context</CardTitle><CardDescription>任务创建时固化的 Metadata 快照</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">{rows.map(([label, value]) => <div className="rounded-lg border border-border p-3" key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value || "-"}</p></div>)}</CardContent></Card>;
+}
+
+function SystemContextSnapshotView({ context }: { context: SystemContextBundle }) {
+  const resources = context.resources ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>System Context snapshot</CardTitle>
+        <CardDescription>任务创建时固化的通用背景资源，作为 prompt 背景参考</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {resources.length ? resources.map((resource) => (
+          <div className="rounded-lg border border-border p-3" key={`${resource.contextId}:${resource.title}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{resource.title}</span>
+              <Badge variant="secondary">{resource.kind}</Badge>
+              <span className="text-xs text-muted-foreground">{resource.source}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{resource.summary ?? resource.contextId}</p>
+          </div>
+        )) : <EmptyState>本次 run 未固化 System Context。</EmptyState>}
+      </CardContent>
+    </Card>
+  );
 }
 
 function TaskCaseContextView({ context }: { context: CaseContext }) {

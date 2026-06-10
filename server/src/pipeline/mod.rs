@@ -7,8 +7,8 @@ use tokio::task;
 use crate::services::llm_gateway::LlmGateway;
 use crate::{
     domain::models::{
-        AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, ResultOutput, TaskInput,
-        TaskRecord, UploadRecord,
+        AnalysisResult, Confidence, GrepResults, Manifest, ManifestUpload, ResultOutput,
+        SystemContextBundle, TaskInput, TaskRecord, UploadRecord,
     },
     services::{
         log_analyzer::LogAnalyzer, metadata::TaskMetadataContext, tool_runner::ToolRunRecord,
@@ -96,6 +96,26 @@ pub async fn write_case_context(
     tokio::fs::rename(&temp, &path)
         .await
         .map_err(|err| AppError::internal(format!("failed to persist case context: {err}")))?;
+    Ok(path)
+}
+
+pub async fn write_system_context(
+    workspace: &Path,
+    context: &SystemContextBundle,
+) -> Result<std::path::PathBuf, AppError> {
+    tokio::fs::create_dir_all(workspace)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
+    let path = workspace.join("system_context.json");
+    let temp = workspace.join(".system_context.json.tmp");
+    let encoded = serde_json::to_vec_pretty(context)
+        .map_err(|err| AppError::internal(format!("failed to encode system context: {err}")))?;
+    tokio::fs::write(&temp, encoded)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to write system context: {err}")))?;
+    tokio::fs::rename(&temp, &path)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to persist system context: {err}")))?;
     Ok(path)
 }
 
@@ -234,6 +254,18 @@ pub async fn generate_task_result(
     let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
     let tool_results = read_tool_results(&workspace).await?;
     let case_context = read_optional_json(&workspace.join("case_context.json")).await?;
+    let system_context = match task.system_context_path.as_deref() {
+        Some(path) => {
+            let expected = workspace.join("system_context.json");
+            if Path::new(path) != expected {
+                return Err(AppError::internal(
+                    "task contains invalid systemContextPath",
+                ));
+            }
+            Some(read_json(&expected).await?)
+        }
+        None => read_optional_json(&workspace.join("system_context.json")).await?,
+    };
     let metadata_context = match task.metadata_context_path.as_deref() {
         Some(path) => {
             let expected = workspace.join("metadata_context.json");
@@ -252,6 +284,7 @@ pub async fn generate_task_result(
             &manifest,
             &grep,
             metadata_context.as_ref(),
+            system_context.as_ref(),
             case_context.as_ref(),
             &tool_results,
         )
@@ -561,6 +594,7 @@ mod tests {
             manifest_path: None,
             grep_results_path: None,
             metadata_context_path: None,
+            system_context_path: None,
             result_json_path: None,
             result_markdown_path: None,
             created_at: now,

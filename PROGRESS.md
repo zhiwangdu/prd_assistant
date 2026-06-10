@@ -37,6 +37,17 @@ WEBUI Tools
 
 ## Implemented
 
+### System Context
+
+- Added Server `SystemContextStore`, persisted under `storage.data_dir/system_context/resources`, for versioned Prompt Pack, Architecture Doc, Runbook, Glossary, Tool Capability and Knowledge Note resources.
+- Added protected System Context API: list/create/get/patch resources, add/patch/activate versions, and prompt preview.
+- Metadata is now included under System Context through a read-only `metadata_instance` adapter while existing `/api/metadata/*` APIs and topology models remain unchanged.
+- `AnalysisSessionRecord` now persists `systemContextIds`; Log Analysis task creation resolves explicit Session selections, enabled matching resources and Metadata adapter summaries into `workspaces/<task_id>/system_context.json`.
+- `TaskRecord` and artifacts responses now expose `systemContextPath` / `systemContext`; Session timeline records `system_context_recorded`.
+- LLM Gateway now injects System Context as background reference for both final-result generation and action decisions; System Context cannot be used as final result evidence refs.
+- WebUI now has a top-level `System Context` page with resource library, version management, Prompt preview, Architecture Mermaid source preview and embedded Metadata tab; Log Analysis Session draft can select System Context resources and displays the frozen snapshot after a run.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build` pass.
+
 ### Runtime Deploy Template
 
 - Added repository `deploy/` runtime template copied from `/home/duzhiwang/workspace/data/prd_assistant/deploy`: README, `.env.example`, `logagent.example.yaml`, `logagentctl.sh`, and `rebuild-install.sh`.

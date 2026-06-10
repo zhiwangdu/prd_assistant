@@ -494,6 +494,7 @@ mod tests {
             manifest_path: None,
             grep_results_path: None,
             metadata_context_path: None,
+            system_context_path: None,
             result_json_path: Some("result.json".to_string()),
             result_markdown_path: Some("result.md".to_string()),
             created_at: now,

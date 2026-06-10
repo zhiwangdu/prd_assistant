@@ -15,10 +15,15 @@ use crate::{
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
+    http::{sessions::normalize_context_ids, system_context::resolve_task_system_context},
     pipeline::{
         prepare_raw_snapshot, write_case_context, write_metadata_context, write_session_text_input,
+        write_system_context,
     },
-    stores::analysis_state::{self, AnalysisSnapshotResponse},
+    stores::{
+        analysis_state::{self, AnalysisSnapshotResponse},
+        system_context_store::system_context_bundle,
+    },
     support::{error::AppError, id::next_id},
 };
 
@@ -30,6 +35,7 @@ pub struct CreateLogAnalysisTaskInput {
     pub instance_id: Option<String>,
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
+    pub system_context_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +82,7 @@ pub async fn create_task(
             instance_id: req.instance_id,
             cluster_id: req.cluster_id,
             node_id: req.node_id,
+            system_context_ids: req.system_context_ids,
         },
     )
     .await?;
@@ -121,6 +128,16 @@ pub async fn create_log_analysis_task(
     let workspace = state.config.storage.workspace_dir(&task_id);
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
+    let system_context_ids = normalize_context_ids(input.system_context_ids)?;
+    let system_context_items = resolve_task_system_context(
+        &state,
+        TaskKind::LogAnalysis,
+        &system_context_ids,
+        Some(&metadata_context),
+    )
+    .await;
+    let system_context = system_context_bundle(system_context_items);
+    let system_context_path = write_system_context(&workspace, &system_context).await?;
     let question = normalize_question(input.question, state.config.llm.max_input_chars / 2)?;
     let text_input_path = write_session_text_input(&workspace, &question).await?;
     let recalled_cases = state.cases.search(Some(&question), 5, false).await;
@@ -142,6 +159,27 @@ pub async fn create_log_analysis_task(
                 "version": metadata_context.version.clone(),
                 "environment": metadata_context.environment.clone(),
                 "clusterNodes": metadata_context.cluster_nodes.len(),
+            }),
+        )
+        .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
+    state
+        .sessions
+        .record_event(
+            &session_id,
+            "system_context_recorded",
+            Some(task_id.clone()),
+            None,
+            "system context snapshot recorded".to_string(),
+            Some(system_context_path.display().to_string()),
+            serde_json::json!({
+                "resourceCount": system_context.resources.len(),
+                "resources": system_context.resources.iter().map(|item| serde_json::json!({
+                    "contextId": item.context_id,
+                    "versionId": item.version_id,
+                    "kind": item.kind,
+                    "title": item.title,
+                    "source": item.source,
+                })).collect::<Vec<_>>(),
             }),
         )
         .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
@@ -203,6 +241,7 @@ pub async fn create_log_analysis_task(
         manifest_path: None,
         grep_results_path: None,
         metadata_context_path: Some(metadata_context_path.display().to_string()),
+        system_context_path: Some(system_context_path.display().to_string()),
         result_json_path: None,
         result_markdown_path: None,
         created_at: now,
@@ -561,6 +600,27 @@ pub async fn task_artifacts(
                 )))
             }
         };
+    let system_context_path = match task.system_context_path {
+        Some(path) => {
+            let path = std::path::PathBuf::from(path);
+            let expected = state
+                .config
+                .storage
+                .workspace_dir(&task_id)
+                .join("system_context.json");
+            if path != expected {
+                return Err(AppError::internal(
+                    "task contains invalid systemContextPath",
+                ));
+            }
+            Some(path)
+        }
+        None => None,
+    };
+    let system_context = match system_context_path.as_deref() {
+        Some(path) => Some(read_json_file(path).await?),
+        None => None,
+    };
     let tool_results = read_tool_results(&state.config.storage.workspace_dir(&task_id)).await?;
 
     Ok(Json(TaskArtifactsResponse {
@@ -575,6 +635,8 @@ pub async fn task_artifacts(
         metadata_context,
         case_context_path,
         case_context,
+        system_context_path: system_context_path.map(|path| path.display().to_string()),
+        system_context,
         tool_results,
     }))
 }
@@ -971,6 +1033,7 @@ mod tests {
                 manifest_path: None,
                 grep_results_path: None,
                 metadata_context_path: None,
+                system_context_path: None,
                 result_json_path: None,
                 result_markdown_path: None,
                 created_at: now,
@@ -1335,6 +1398,7 @@ mod tests {
                 manifest_path: Some(manifest_path.display().to_string()),
                 grep_results_path: Some(grep_path.display().to_string()),
                 metadata_context_path: None,
+                system_context_path: None,
                 result_json_path: None,
                 result_markdown_path: None,
                 created_at: now,
@@ -1765,6 +1829,7 @@ nodes:
                 source_url: None,
                 instance_id: None,
                 node_id: None,
+                system_context_ids: Vec::new(),
                 upload_ids: Vec::new(),
                 task_ids: Vec::new(),
                 active_task_id: None,

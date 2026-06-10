@@ -12,6 +12,7 @@
 
 - `analysis_state.json`
 - `analysis_events.jsonl`
+- `system_context.json`
 - `GET /api/tasks/:task_id/analysis`
 - `GET /api/sessions/:session_id/timeline` 聚合 Session events 和 task analysis events
 - grep/tool/final result/failure 的基础事件记录
@@ -35,6 +36,7 @@
 
 - `TaskContext`
 - 当前 `EvidenceBundle`
+- task 创建时固化的 `system_context.json` 背景资源
 - `analysis_state.json`
 - `analysis_events.jsonl`
 - 用户新增消息或审批决定
@@ -136,6 +138,7 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 - Agent 无文件系统、shell、网络或 SSH 的直接执行权限。
 - 远程采集默认需要用户批准。
 - 用户消息和日志内容均视为不可信输入，不能改变系统白名单或执行策略。
+- System Context 也视为背景参考输入，不能替代当前任务证据或改变 Server 侧 schema/白名单/审批策略。
 
 ## 验收标准
 

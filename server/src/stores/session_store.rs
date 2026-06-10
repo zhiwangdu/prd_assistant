@@ -422,6 +422,7 @@ mod tests {
             source_url: None,
             instance_id: None,
             node_id: None,
+            system_context_ids: Vec::new(),
             upload_ids: Vec::new(),
             task_ids: Vec::new(),
             active_task_id: None,

@@ -191,6 +191,13 @@ async fn plan_analysis_phase(
         let tool_results = read_tool_results(&workspace).await?;
         let case_context =
             read_optional_json::<serde_json::Value>(&workspace.join("case_context.json")).await?;
+        let system_context = match task.system_context_path.as_deref() {
+            Some(path) if std::path::Path::new(path) == workspace.join("system_context.json") => {
+                Some(read_json(&workspace.join("system_context.json")).await?)
+            }
+            Some(_) => anyhow::bail!("task contains invalid systemContextPath"),
+            None => read_optional_json(&workspace.join("system_context.json")).await?,
+        };
         if let Some(reason) = analysis_budget_exhausted(&workspace, &state.config.analysis)? {
             return complete_with_budget_limited_result(state, &task, &grep, reason).await;
         }
@@ -210,6 +217,7 @@ async fn plan_analysis_phase(
                 &manifest,
                 &grep,
                 metadata_context.as_ref(),
+                system_context.as_ref(),
                 case_context.as_ref(),
                 &tool_results,
                 |event| record_llm_call_event(&workspace, event),
@@ -979,6 +987,7 @@ mod tests {
                 manifest_path: None,
                 grep_results_path: None,
                 metadata_context_path: None,
+                system_context_path: None,
                 result_json_path: None,
                 result_markdown_path: None,
                 created_at: now,

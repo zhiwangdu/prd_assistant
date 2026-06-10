@@ -4,6 +4,8 @@
 
 Metadata 模块管理实例、集群和节点元数据，为日志分析提供业务、部署和拓扑上下文。
 
+Metadata 在产品入口上归入 System Context。现有 `/api/metadata/*` API 和 Store 保持不变，System Context 通过 `metadata_instance` adapter 暴露可注入摘要，并随 task 创建固化到 `system_context.json`。
+
 ## 当前状态
 
 基础实现已完成：

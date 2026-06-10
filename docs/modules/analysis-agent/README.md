@@ -34,6 +34,7 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 
 - `analysis_state.json`
 - `analysis_events.jsonl`
+- `system_context.json`
 
 已记录的事件和状态包括：
 
@@ -57,6 +58,7 @@ LLM Gateway 已接入 `PLAN_ANALYSIS` 多轮决策。当前 `search_logs` 会按
 ```text
 analysis_state.json
 analysis_events.jsonl
+system_context.json
 result.json
 result.md
 ```
@@ -67,6 +69,7 @@ result.md
 - 当前 task 状态与执行阶段
 - 用户问题和已补充消息
 - 已确认事实、候选假设和未解决信息缺口
+- task 创建时固化的 System Context 背景资源引用
 - 证据引用索引
 - 待执行、待审批和待用户回答的请求
 - 已完成动作的 fingerprint
@@ -151,4 +154,4 @@ MVP 默认自动执行：
 - `confidence`
 - `termination_reason`
 
-所有结论必须引用任务内证据。历史 Case 只能作为参考，不能替代当前任务证据。
+所有结论必须引用任务内证据。历史 Case 只能作为参考，不能替代当前任务证据。System Context 同样只作为背景参考，用于帮助模型理解产品架构、Runbook、工具能力和通用约束。

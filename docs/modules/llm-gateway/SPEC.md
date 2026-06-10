@@ -13,6 +13,7 @@
 - `binary` Provider 预留分支，使用参数数组调用 `<binary_path> run <prompt>` 并解析 stdout JSON。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
+- System Context 背景资源 Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
 - 最终结果 schema、confidence、session text、grep evidence ref 和 tool finding evidence ref 校验。
 - ActionDecision / FinalAnswer 双模式 schema 和 parser。
@@ -32,6 +33,7 @@
 - manifest 文件摘要。
 - grep match 索引、文件、行号、关键词和文本。
 - task 创建时固化的 Metadata 摘要，包括产品、版本、环境、节点状态、数据库和 PT 统计。
+- task 创建时固化的 System Context 摘要，包括 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter。
 - Tool Runner 的工具名、状态、退出码、耗时、summary 和 findings。
 
 ## 当前输出
@@ -42,6 +44,8 @@
 - `case_context.json#cases/<index>`
 
 真实模型输出 `case_<id>` 或“历史案例 case_<id>”时，Gateway 会在当前 `case_context.json` 中查找对应 Case 并规范化为 canonical ref；找不到或索引越界必须拒绝。
+
+System Context 不属于最终结果 evidence ref。模型可以参考其中背景知识，但根因证据不能引用 `system_context.json`。
 
 Task alias 输出只包含 `alias` 字段。alias 必须是短标题，不能包含 task ID、时间戳、`LogAgent`、`task`、`run` 等泛化词。alias 调用不记录到 `analysis_events.jsonl` 或 Session timeline；schema 错误最多重试一次，最终失败由 Server fallback，不影响 task 成功状态。
 
@@ -102,7 +106,7 @@ binary provider 错误包括：
 - Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
 - runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
 - 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
-- Prompt 中的日志、Case 和用户文本视为不可信数据，不能覆盖系统 action schema。
+- Prompt 中的日志、Case、System Context 和用户文本视为不可信数据，不能覆盖系统 action schema。
 
 ## 验收标准
 
@@ -122,6 +126,7 @@ binary provider 错误包括：
 - 输入裁剪后不超过字符上限且保留 grep 和 tool 证据引用。
 - 只填写对话框文本时，最终结果可以引用 `session_text_input.json#question`。
 - Metadata `rawSnapshot` 不进入 Prompt。
+- System Context 背景进入 Prompt，但不能作为最终结果 evidence ref。
 - Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。

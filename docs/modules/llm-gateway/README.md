@@ -27,7 +27,7 @@ LLM Gateway 不负责：
 当前作为 Server 内部 Rust 模块实现了单次最终结果生成和多轮 action decision：
 
 ```text
-question + session_text_input.json + manifest.json + grep_results.json + metadata_context.json + tool_results
+question + session_text_input.json + system_context.json + manifest.json + grep_results.json + metadata_context.json + tool_results
   -> Prompt 裁剪
   -> stub、OpenAI-compatible Chat Completions 或 binary provider
   -> schema / evidence ref 校验与可追踪别名规范化
@@ -56,6 +56,8 @@ Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调
 成功 task 的 alias 由独立 LLM Gateway 调用生成，输入为用户问题、最终结果、manifest 文件名和 Metadata 摘要。该命名调用只返回 `{"alias":"..."}`，schema 错误重试一次；调用失败时由 Server 用最终 summary/question 生成短标题。alias 生成不触发 Analysis State Store 的 `llm_call_*` 事件，不写 `analysis_events.jsonl`，也不写 Session timeline。
 
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
+
+System Context Prompt 摘要包含任务创建时固化的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 资源。System Context 只作为背景参考，不能替代当前任务证据，也不能作为最终结果 `evidenceRefs`。
 
 用户输入文本会作为 `session_text_input.json#question` 进入 Prompt，并可作为只填写对话框文本时的最终结果 evidence ref。
 
@@ -102,7 +104,7 @@ llm:
 - 用户问题和 task 元信息
 - 已确认事实、候选假设和信息缺口
 - 最近分析事件摘要
-- manifest、日志、工具、代码、环境和 Metadata 证据
+- manifest、日志、工具、代码、环境、Metadata 和 System Context 背景
 - Top 5 相似历史 Case
 - 本轮剩余预算
 - 允许的 action schema
