@@ -65,6 +65,8 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 extracted/<文件基名>/
 ```
 
+如果 Log Analysis Session 没有上传日志，Server pipeline 仍会创建 `raw/` 和 `extracted/` 目录，并生成 `session_text_input.json`、空文件列表的 `manifest.json` 和空 matches 的 `grep_results.json`，让 Analysis Agent 可以基于用户问题、Metadata、Case 和后续交互继续运行。
+
 ## manifest
 
 ```json

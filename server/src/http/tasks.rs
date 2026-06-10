@@ -15,7 +15,9 @@ use crate::{
         TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
         UploadStatus,
     },
-    pipeline::{prepare_raw_snapshot, write_case_context, write_metadata_context},
+    pipeline::{
+        prepare_raw_snapshot, write_case_context, write_metadata_context, write_session_text_input,
+    },
     stores::analysis_state::{self, AnalysisSnapshotResponse},
     support::{error::AppError, id::next_id},
 };
@@ -68,7 +70,7 @@ pub async fn create_task(
         state.clone(),
         CreateLogAnalysisTaskInput {
             session_id,
-            upload_ids: task_upload_ids(&req)?,
+            upload_ids: task_upload_ids(&req),
             source_url: req.source_url,
             question: req.question,
             instance_id: req.instance_id,
@@ -92,9 +94,6 @@ pub async fn create_log_analysis_task(
 ) -> Result<TaskRecord, AppError> {
     let session_id = input.session_id;
     let upload_ids = input.upload_ids;
-    if upload_ids.is_empty() {
-        return Err(AppError::bad_request("session has no uploads"));
-    }
     let mut uploads = Vec::with_capacity(upload_ids.len());
     for upload_id in &upload_ids {
         let upload = state
@@ -123,6 +122,7 @@ pub async fn create_log_analysis_task(
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
     let question = normalize_question(input.question, state.config.llm.max_input_chars / 2)?;
+    let text_input_path = write_session_text_input(&workspace, &question).await?;
     let recalled_cases = state.cases.search(Some(&question), 5, false).await;
     write_case_context(&workspace, &question, &recalled_cases).await?;
     state
@@ -160,6 +160,24 @@ pub async fn create_log_analysis_task(
             }),
         )
         .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
+    if upload_ids.is_empty() {
+        state
+            .sessions
+            .record_event(
+                &session_id,
+                "text_input_recorded",
+                Some(task_id.clone()),
+                None,
+                "text-only analysis input recorded from session question".to_string(),
+                Some(text_input_path.display().to_string()),
+                serde_json::json!({
+                    "questionChars": question.chars().count(),
+                    "uploadCount": 0,
+                    "evidenceRef": "session_text_input.json#question",
+                }),
+            )
+            .map_err(|err| AppError::internal(format!("failed to record session event: {err}")))?;
+    }
     let now = Utc::now();
     let record = TaskRecord {
         schema_version: 6,
@@ -503,6 +521,25 @@ pub async fn task_artifacts(
         Some(path) => Some(read_json_file(path).await?),
         None => None,
     };
+    let text_input_path = state
+        .config
+        .storage
+        .workspace_dir(&task_id)
+        .join("session_text_input.json");
+    let (text_input_path, text_input) = match tokio::fs::read_to_string(&text_input_path).await {
+        Ok(raw) => {
+            let value = serde_json::from_str(&raw).map_err(|err| {
+                AppError::internal(format!("failed to parse session text input JSON: {err}"))
+            })?;
+            (Some(text_input_path.display().to_string()), Some(value))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => (None, None),
+        Err(err) => {
+            return Err(AppError::internal(format!(
+                "failed to read session text input: {err}"
+            )))
+        }
+    };
     let case_context_path = state
         .config
         .storage
@@ -531,6 +568,8 @@ pub async fn task_artifacts(
         grep_results_path: grep_results_path.display().to_string(),
         manifest,
         grep_results,
+        text_input_path,
+        text_input,
         metadata_context_path: metadata_context_path.map(|path| path.display().to_string()),
         metadata_context,
         case_context_path,
@@ -539,7 +578,7 @@ pub async fn task_artifacts(
     }))
 }
 
-fn task_upload_ids(req: &CreateTaskRequest) -> Result<Vec<String>, AppError> {
+fn task_upload_ids(req: &CreateTaskRequest) -> Vec<String> {
     let mut upload_ids = Vec::new();
     if let Some(upload_id) = req.upload_id.as_ref().filter(|value| !value.is_empty()) {
         upload_ids.push(upload_id.clone());
@@ -549,11 +588,7 @@ fn task_upload_ids(req: &CreateTaskRequest) -> Result<Vec<String>, AppError> {
             upload_ids.push(upload_id.clone());
         }
     }
-    if upload_ids.is_empty() {
-        Err(AppError::bad_request("missing uploadId or uploadIds"))
-    } else {
-        Ok(upload_ids)
-    }
+    upload_ids
 }
 
 fn normalize_question(question: Option<String>, max_chars: usize) -> Result<String, AppError> {
@@ -814,6 +849,82 @@ mod tests {
             .iter()
             .any(|entry| entry["evidenceType"] == "log_search"));
         assert!(body["events"].as_array().unwrap().len() >= 3);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn session_task_can_run_with_question_only() {
+        let (state, root) = test_state();
+        create_test_session(&state, "sess_test").await;
+        let app = http::router(state.clone()).with_state(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/sessions/sess_test/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            status,
+            StatusCode::ACCEPTED,
+            "unexpected response: {}",
+            String::from_utf8_lossy(&body)
+        );
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+
+        let terminal = wait_for_task_status(&app, task_id, "SUCCEEDED").await;
+        assert!(terminal["uploadIds"].as_array().unwrap().is_empty());
+        assert!(terminal["inputs"].as_array().unwrap().is_empty());
+
+        let artifacts = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/artifacts"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(artifacts.status(), StatusCode::OK);
+        let body = to_bytes(artifacts.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["manifest"]["filename"], "session_text_input");
+        assert!(body["manifest"]["uploadIds"].as_array().unwrap().is_empty());
+        assert!(body["manifest"]["uploads"].as_array().unwrap().is_empty());
+        assert!(body["manifest"]["files"].as_array().unwrap().is_empty());
+        assert_eq!(body["grepResults"]["totalMatches"], 0);
+        assert_eq!(body["textInput"]["question"], default_task_question());
+        assert!(body["textInputPath"]
+            .as_str()
+            .unwrap()
+            .ends_with("session_text_input.json"));
+
+        let timeline = app
+            .oneshot(
+                Request::get("/api/sessions/sess_test/timeline")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(timeline.status(), StatusCode::OK);
+        let body = to_bytes(timeline.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["eventType"] == "text_input_recorded"));
+
         let _ = std::fs::remove_dir_all(root);
     }
 

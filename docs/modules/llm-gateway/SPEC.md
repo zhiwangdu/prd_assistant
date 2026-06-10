@@ -12,9 +12,9 @@
 - OpenAI-compatible `/chat/completions` Provider。
 - `binary` Provider 预留分支，使用参数数组调用 `<binary_path> run <prompt>` 并解析 stdout JSON。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
-- manifest/grep/metadata Prompt 和字符数裁剪。
+- session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
-- 最终结果 schema、confidence、grep evidence ref 和 tool finding evidence ref 校验。
+- 最终结果 schema、confidence、session text、grep evidence ref 和 tool finding evidence ref 校验。
 - ActionDecision / FinalAnswer 双模式 schema 和 parser。
 - ActionDecision 当前允许 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`，并校验 action input 的基础结构；`collect_code_evidence` 暂不开放。
 - `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
@@ -27,6 +27,7 @@
 ## 当前输入
 
 - 用户问题。
+- `session_text_input.json#question` 用户输入文本证据。
 - manifest 文件摘要。
 - grep match 索引、文件、行号、关键词和文本。
 - task 创建时固化的 Metadata 摘要，包括产品、版本、环境、节点状态、数据库和 PT 统计。
@@ -34,7 +35,11 @@
 
 ## 当前输出
 
-结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 grep match 或 tool finding 引用。
+结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、grep match 或 tool finding 引用。
+
+用户输入文本 evidence ref 使用固定 canonical 格式：
+
+- `session_text_input.json#question`
 
 Tool finding evidence ref 使用 canonical 格式：
 
@@ -106,6 +111,7 @@ binary provider 错误包括：
 - 单字符串形式的列表字段会规范化为字符串数组。
 - 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。
 - 输入裁剪后不超过字符上限且保留 grep 和 tool 证据引用。
+- 只填写对话框文本时，最终结果可以引用 `session_text_input.json#question`。
 - Metadata `rawSnapshot` 不进入 Prompt。
 - Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。

@@ -25,9 +25,6 @@ pub async fn prepare_raw_snapshot(
     workspace: &Path,
     uploads: &[UploadRecord],
 ) -> Result<Vec<TaskInput>, AppError> {
-    if uploads.is_empty() {
-        return Err(AppError::bad_request("missing uploads"));
-    }
     let raw_dir = workspace.join("raw");
     tokio::fs::create_dir_all(&raw_dir)
         .await
@@ -102,6 +99,30 @@ pub async fn write_case_context(
     Ok(path)
 }
 
+pub async fn write_session_text_input(
+    workspace: &Path,
+    question: &str,
+) -> Result<std::path::PathBuf, AppError> {
+    tokio::fs::create_dir_all(workspace)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
+    let path = workspace.join("session_text_input.json");
+    let temp = workspace.join(".session_text_input.json.tmp");
+    let context = serde_json::json!({
+        "schemaVersion": 1,
+        "question": question,
+    });
+    let encoded = serde_json::to_vec_pretty(&context)
+        .map_err(|err| AppError::internal(format!("failed to encode session text input: {err}")))?;
+    tokio::fs::write(&temp, encoded)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to write session text input: {err}")))?;
+    tokio::fs::rename(&temp, &path).await.map_err(|err| {
+        AppError::internal(format!("failed to persist session text input: {err}"))
+    })?;
+    Ok(path)
+}
+
 pub async fn prepare_pipeline_run(workspace: &Path) -> Result<(), AppError> {
     let extracted = workspace.join("extracted");
     match tokio::fs::remove_dir_all(&extracted).await {
@@ -157,17 +178,18 @@ pub async fn extract_task(config: Arc<AppConfig>, task_record: TaskRecord) -> Re
             });
         }
         let files = analyzer.collect_manifest_files(&extracted_dir)?;
-        let first = task_record
+        let (upload_id, filename) = task_record
             .inputs
             .first()
-            .ok_or_else(|| anyhow::anyhow!("task has no inputs"))?;
+            .map(|input| (input.upload_id.clone(), input.filename.clone()))
+            .unwrap_or_else(|| ("".to_string(), "session_text_input".to_string()));
         let manifest = Manifest {
-            upload_id: first.upload_id.clone(),
+            upload_id,
             upload_ids: task_record.upload_ids.clone(),
             uploads: manifest_uploads,
             task_id: task_record.task_id,
             source: task_record.source,
-            filename: first.filename.clone(),
+            filename,
             source_url: task_record.source_url,
             files,
         };

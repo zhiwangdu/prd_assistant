@@ -9,9 +9,9 @@ LogAgent MVP has a working upload-to-bounded-multi-round-analysis loop and a doc
 Current runnable loop:
 
 ```text
-Chrome Extension or WEBUI
-  -> Native Agent or Server upload API
-  -> persisted QUEUED task and raw snapshot
+Chrome Extension, WEBUI upload, or WEBUI question-only Session
+  -> optional Native Agent or Server upload API
+  -> persisted QUEUED task and raw/text snapshot
   -> bounded background extraction / manifest
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
@@ -52,6 +52,15 @@ WEBUI Tools
 - Native Agent `POST /imports` 上传后附加到活动 Session；没有活动 Session 时自动创建 `Native import <filename>` Session 并设为活动；返回 `{uploadId, sessionId, taskId:null, url}`。
 - Chrome Extension 成功通知改为 `LogAgent session updated`。
 - Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass after implementation.
+
+### Text-only Log Analysis
+
+- Log Analysis Session 现在支持不上传日志直接分析，只填写 Session 问题即可点击 `Start analysis`。
+- Server `POST /api/sessions/:session_id/tasks` 和兼容 `POST /api/tasks` 在绑定 `sessionId` 后允许 `uploadIds=[]`；有上传时仍校验上传存在且为 `COMPLETE`。
+- Text-only task 持久化 `uploadIds=[]`、`inputs=[]`，创建空 `raw/` 和 `extracted/`，并生成 `session_text_input.json`、`manifest.json` / `grep_results.json`。其中 `manifest.uploads`、`manifest.files` 和 grep `matches` 为空。
+- Session timeline 会记录 `text_input_recorded`，用于区分只来自问题文本的 run；`session_text_input.json#question` 可作为最终结果 evidence ref。
+- WebUI `Log analysis` 的 `Start analysis` 不再依赖已附加上传，Session draft 中标明 uploads optional；成功 artifacts 会展示 Session text input 并支持该 evidence ref 跳转。
+- Verification: focused Rust regressions, `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
 
 ### WebUI Naming
 

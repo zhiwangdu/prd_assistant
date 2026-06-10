@@ -114,6 +114,7 @@ type Artifacts = {
   taskId?: string;
   manifest?: { files?: Array<{ path: string; size: number }> };
   grepResults?: { matches?: Array<{ file: string; line: number; keyword: string; text: string }> };
+  textInput?: { question?: string } | null;
   metadataContext?: MetadataContext | null;
   caseContext?: CaseContext | null;
   toolResults?: ToolResult[];
@@ -402,10 +403,6 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
 
   async function startAnalysis() {
     if (!selectedSession || !apiKey.trim()) return;
-    if (!selectedSession.uploadIds.length) {
-      setUploadStatus("当前 Session 没有日志输入");
-      return;
-    }
     setLoading(true);
     setArtifacts(null);
     setTaskResult(null);
@@ -561,7 +558,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         {selectedSession ? (
           <div className="space-y-5">
             <Card>
-              <CardHeader><CardTitle>Session draft</CardTitle><CardDescription>{selectedSession.sessionId} · {selectedSession.uploadIds.length} upload(s)</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Session draft</CardTitle><CardDescription>{selectedSession.sessionId} · {selectedSession.uploadIds.length} upload(s) · uploads optional</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Session title" />
                 <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
@@ -583,7 +580,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                   <span className="text-sm text-muted-foreground">{uploadStatus}</span>
                   <div className="flex flex-wrap gap-2">
                     <Button disabled={loading || !files.length} variant="outline" onClick={() => void uploadToSession()}>Upload to session</Button>
-                    <Button disabled={loading || !selectedSession.uploadIds.length} onClick={() => void startAnalysis()}><ListChecks className="mr-2 h-4 w-4" />Start analysis</Button>
+                    <Button disabled={loading || !apiKey.trim()} onClick={() => void startAnalysis()}><ListChecks className="mr-2 h-4 w-4" />Start analysis</Button>
                   </div>
                 </div>
               </CardContent>
@@ -625,6 +622,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       ) : null}
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
+      {artifacts?.textInput ? <Evidence title="Session text input" count={1}><DataLine id="session-text-input" title="Question" detail={artifacts.textInput.question ?? ""} /></Evidence> : null}
       {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
       {artifacts?.toolResults?.length ? <Evidence title="Tool results" count={artifacts.toolResults.length}>{artifacts.toolResults.map((result) => <ToolResultLine key={result.actionId} result={result} />)}</Evidence> : null}
       {artifacts ? (
@@ -739,6 +737,10 @@ function ResultList({ title, items }: { title: string; items: string[] }) {
 }
 
 function scrollToEvidence(reference: string) {
+  if (reference === "session_text_input.json#question") {
+    document.getElementById("session-text-input")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
   const index = reference.match(/^grep_results\.json#matches\/(\d+)$/)?.[1];
   if (index) document.getElementById(`grep-match-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
 }

@@ -143,6 +143,7 @@ data_dir/
         upl_xxx/
       extracted/
         package_name/
+      session_text_input.json
       manifest.json
       grep_results.json
       metadata_context.json
@@ -183,8 +184,8 @@ storage.data_dir/uploads/<upload_id>/<filename>
 ```text
 POST session task
   -> validate Session and referenced UploadRecord[]
-  -> validate UploadRecord[]
-  -> copy raw files into raw/<upload_id>/
+  -> validate referenced UploadRecord[] when present
+  -> copy raw files into raw/<upload_id>/, or create an empty raw/input snapshot for question-only analysis
   -> persist QUEUED
   -> append taskId / activeTaskId to Session
   -> return 202
@@ -213,13 +214,13 @@ background executor
 
 `tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
-`POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept either single-file `uploadId` or batch `uploadIds` at the task creation layer. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
+`POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector.
 
-`GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, task creation, Metadata context summary, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, LLM calls, model decisions, ask_user, approval, environment evidence and final result events.
+`GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, text-only input recording, task creation, Metadata context summary, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, LLM calls, model decisions, ask_user, approval, environment evidence and final result events.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`llm.provider` 支持默认 `stub`、OpenAI-compatible Chat Completions，以及预留 `binary` provider；binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，stdout 使用同一套 JSON/schema/evidence 校验。`PLAN_ANALYSIS` 的 ActionDecision 当前开放 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`；暂不开放 `collect_code_evidence`。`collect_environment` 必须使用 `REQUIRES_APPROVAL` risk。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
+LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应。Prompt 包含 session text、grep evidence、Metadata 摘要和 Tool Runner summary/findings；stdout/stderr 原文不进入 Prompt。`llm.provider` 支持默认 `stub`、OpenAI-compatible Chat Completions，以及预留 `binary` provider；binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，stdout 使用同一套 JSON/schema/evidence 校验。`PLAN_ANALYSIS` 的 ActionDecision 当前开放 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`；暂不开放 `collect_code_evidence`。`collect_environment` 必须使用 `REQUIRES_APPROVAL` risk。每轮决策前检查 `analysis.max_rounds` / `analysis.max_llm_calls`，每个 action 执行前检查 `analysis.max_actions` 和同一 fingerprint 重复次数。达到预算或重复上限时生成低置信度最终结果并进入 `SUCCEEDED`。可追踪的字符串形式 root cause、`matches/<index>` / `matches/<start>-<end>` 引用别名、单字符串列表字段、裸最终结果 JSON，以及 `final_answer.result.result` / `answer` / `finalAnswer` 等常见最终结果包裹变体会规范化为正式结果结构。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；未知 action、缺少 `summary` 等核心字段或越界 finding 会拒绝。`GENERATE_RESULT` 和 `PLAN_ANALYSIS` 的解析/schema 错误都会追加修正提示并重试一次；多个 JSON object、无 JSON object 或两次 schema 都不合法时任务进入对应 `FAILED` 阶段。Provider HTTP、鉴权、限流、网络和超时错误不重试。
 
 `POST /api/tasks/:task_id/messages` 请求：
 
@@ -375,13 +376,13 @@ persist task
 - WEBUI `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
-- 上传 sample.log 或多个文件后能创建 task 并读取 artifacts。
+- 上传 sample.log、多个文件或只填写 Session 问题后都能创建 task 并读取 artifacts。
 - Metadata 以 `instanceId` 作为用户主键；openGemini 导入必须由用户提供 InstanceID，原始 `ClusterID` 仅作为 `sourceClusterId` 标签保留。ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
 - pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
 - 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。
-- `GET /api/tasks/:task_id/artifacts` 返回 `toolResults`。
+- `GET /api/tasks/:task_id/artifacts` 返回 `textInput` 和 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
@@ -402,6 +403,7 @@ persist task
 - 真实 Provider 返回纯 JSON 或完整 JSON 代码围栏时可解析，额外自然语言不能被静默忽略。
 - 真实 Provider 返回可映射的行号/范围或 `#start-#end` evidence ref 时应规范化为 canonical grep match refs；无法映射时必须失败。
 - 批量任务的 manifest `files[].path` 必须带包名目录前缀。
+- 无上传问题分析任务必须生成 `session_text_input.json`、空 `manifest.files`、空 `manifest.uploads` 和 `grep_results.totalMatches=0`。
 - 受保护接口无 API Key 时返回 401。
 - 等待用户或审批的任务可恢复，重复 message/decision/action 不产生重复执行。
 - 达到分析预算时能生成带不确定性的结果并正常终止。

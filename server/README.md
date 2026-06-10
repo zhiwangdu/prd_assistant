@@ -98,7 +98,7 @@ server/src
 
 ```text
 upload/environment
-  -> Session 草稿和上传引用
+  -> Session 草稿、问题和可选上传引用
   -> 用户显式创建一次 task run 快照
   -> 基础采集、解压和初始日志证据
   -> Analysis Agent 调查循环
@@ -145,6 +145,7 @@ FAILED
   raw/
   extracted/
   collected/
+  session_text_input.json
   manifest.json
   error_summary.json
   metadata_context.json
@@ -205,7 +206,7 @@ MVP 要求：
 - `PATCH /api/sessions/:session_id` 更新 title、question、sourceUrl、instanceId、nodeId 或 draft/ready 状态。
 - `POST /api/sessions/:session_id/uploads` 把已完成上传附加到 Session。
 - `DELETE /api/sessions/:session_id/uploads/:upload_id` 从未运行中的 Session 移除 upload 引用，不删除 upload payload。
-- `POST /api/sessions/:session_id/tasks` 按当前 Session 创建新的 Log Analysis task 快照。
+- `POST /api/sessions/:session_id/tasks` 按当前 Session 创建新的 Log Analysis task 快照；Session 可以没有上传日志，仅凭问题文本启动分析。
 - `GET /api/sessions/:session_id/timeline` 合并 Session events 和该 Session 下 task 的 analysis events。
 - `POST /api/tasks` 保留兼容/测试入口，但 Log Analysis task 必须提供 `sessionId`。
 - `GET /api/tasks` 返回按创建时间倒序的持久化 Log Analysis task run 列表。
@@ -227,7 +228,7 @@ MVP 要求：
 - `GET /api/debug/llm` / `PUT /api/debug/llm` 读取或修改当前进程内的 LLM 输出日志开关。
 - 同步解压 `.zip`、`.tar.gz`、`.tgz`、`.tar`，普通 `.log` / `.txt` 直接复制到 `extracted/<文件基名>/`。
 - `.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` fallback 再尝试一次。
-- 创建 Log Analysis task 支持 `uploadId` 单文件和 `uploadIds` 批量文件，但必须绑定 `sessionId`；请求验证上传后先复制到 workspace raw 快照、持久化 `QUEUED`，以 `202 Accepted` 立即返回。
+- 创建 Log Analysis task 支持 `uploadId` 单文件、`uploadIds` 批量文件或无上传的文本问题分析，但必须绑定 `sessionId`；有上传时先验证并复制到 workspace raw 快照，无上传时创建空 raw/input 快照，持久化 `QUEUED` 后以 `202 Accepted` 立即返回。
 - 每次 Session 创建 task run 时都会写入 task `sessionId`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
 - Task 状态进入 RUNNING、WAITING、SUCCEEDED 或 FAILED 时会同步更新所属 Session，并追加 `task_status_changed` event。
 - Task 创建时固化 `metadata_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary 和 Case recall count。
@@ -248,7 +249,7 @@ MVP 要求：
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；旧 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理该快照。
-- task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。Case Store 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
+- task 创建时按用户问题召回本地 Case Store，写入 `session_text_input.json` 和 `case_context.json`；artifacts API 返回 `textInput` 和 `caseContext`，LLM Prompt 会把用户输入作为 `session_text_input.json#question` 证据，并把历史 Case 作为参考上下文。Case Store 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
 - Case Store 管理页的手工录入路径已升级为 LLM-assisted import：Server 将未确认草稿持久化到 `storage.data_dir/case_imports`，只支持粘贴文本和 UTF-8 文本类文件，PDF/DOCX 暂不解析；缺少 `title`、`symptom`、`rootCause` 或 `solution` 时通过连续对话补齐。
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
@@ -258,6 +259,7 @@ MVP 要求：
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 action decision 解析/schema 错误也会追加修正提示并重试一次，仍失败时任务进入 `FAILED / PLAN_ANALYSIS`。
 - LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
+- LLM Gateway 允许最终结果引用用户在 Session 对话框中输入的文本，格式为 `session_text_input.json#question`。
 - LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
 - LLM Gateway 会把真实模型返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
@@ -326,7 +328,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `caseContext` 和 `toolResults`；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
@@ -383,7 +385,7 @@ UPLOADING -> COMPLETE
 - init 记录 `expectedSize`，chunk 记录当前 `size`。
 - chunk 的 `offset` 必须等于 Server 已持久化的 `size`，不允许覆盖或跳过字节。
 - complete 时 payload 实际大小必须等于 `expectedSize`。
-- 只有 `COMPLETE` 上传可以创建 task。
+- 引用上传创建 task 时，只有 `COMPLETE` 上传可以被使用；无上传的 Session 仍可创建文本问题分析 run。
 - 启动时损坏的上传 JSON、缺失 payload、完成记录大小不一致会使 Server 明确启动失败。
 - 如果进程在 payload 写入后、进度 JSON 更新前中断，启动恢复会以 payload 实际大小修正 `UPLOADING` 记录。
 
@@ -391,6 +393,7 @@ UPLOADING -> COMPLETE
 
 ```json
 {
+  "sessionId": "sess_123",
   "uploadId": "upl_123",
   "question": "请分析连接超时的可能原因",
   "instanceId": "i-123",
@@ -402,6 +405,7 @@ UPLOADING -> COMPLETE
 响应为 `202 Accepted`，包含 `taskId`、`url`、`status`、`phase` 和 `createdAt`。Native Agent 继续使用原有 `taskId`、`url` 字段。
 
 `question` 可选；未提供时使用默认日志分析问题。长度上限为 `llm.max_input_chars / 2`。
+如果请求只提供 `sessionId` 和问题、不提供 `uploadId` / `uploadIds`，Server 会创建 `inputs=[]` 的文本问题分析任务；该任务仍会生成 `session_text_input.json`、`manifest.json` 和 `grep_results.json`，但文件列表和 grep matches 为空。
 
 Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应包含 `metadataContextPath` 和 `metadataContext`。
 
@@ -451,6 +455,17 @@ workspaces/task_xxx/
   extracted/
     node1/
     node2/
+  manifest.json
+  grep_results.json
+```
+
+无上传的文本问题分析 workspace 示例：
+
+```text
+workspaces/task_xxx/
+  raw/
+  extracted/
+  session_text_input.json
   manifest.json
   grep_results.json
 ```

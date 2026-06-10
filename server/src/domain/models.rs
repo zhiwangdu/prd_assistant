@@ -146,6 +146,8 @@ pub struct TaskArtifactsResponse {
     pub grep_results_path: String,
     pub manifest: serde_json::Value,
     pub grep_results: serde_json::Value,
+    pub text_input_path: Option<String>,
+    pub text_input: Option<serde_json::Value>,
     pub metadata_context_path: Option<String>,
     pub metadata_context: Option<serde_json::Value>,
     pub case_context_path: Option<String>,
