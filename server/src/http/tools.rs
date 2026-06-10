@@ -86,8 +86,9 @@ pub async fn create_tool_run(
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 5,
+        schema_version: 6,
         task_id: task_id.clone(),
+        alias: None,
         session_id: None,
         task_kind: TaskKind::ToolRun,
         source: TaskSource::Upload,

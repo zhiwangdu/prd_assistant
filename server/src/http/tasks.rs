@@ -180,8 +180,9 @@ pub async fn create_log_analysis_task(
     }
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 6,
+        schema_version: 7,
         task_id: task_id.clone(),
+        alias: None,
         session_id: Some(session_id.clone()),
         task_kind: TaskKind::LogAnalysis,
         source: TaskSource::Upload,
@@ -809,6 +810,9 @@ mod tests {
         let terminal = terminal.expect("task did not reach a terminal state");
         assert_eq!(terminal["status"], "SUCCEEDED", "{terminal}");
         assert_eq!(terminal["question"], "Why did the sample fail?");
+        let alias = terminal["alias"].as_str().expect("task alias is set");
+        assert!(!alias.trim().is_empty());
+        assert!(!alias.contains("task_"));
 
         let result = app
             .clone()
@@ -849,6 +853,15 @@ mod tests {
             .iter()
             .any(|entry| entry["evidenceType"] == "log_search"));
         assert!(body["events"].as_array().unwrap().len() >= 3);
+        assert!(!body["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["eventType"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("task_alias")
+                || event["details"].to_string().contains("task_alias")));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -937,6 +950,7 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 1,
                 task_id: "task_queued".to_string(),
+                alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,
@@ -1295,6 +1309,7 @@ mod tests {
             .create(TaskRecord {
                 schema_version: 4,
                 task_id: task_id.to_string(),
+                alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,

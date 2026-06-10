@@ -21,6 +21,7 @@
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果和 action decision 解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
+- 成功 task 的 alias 生成调用，输出 `{"alias":"..."}`，用于 UI 展示而不是分析证据。
 - `result.json` / `result.md` 持久化。
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已循环调用双模式 action decision，并由 Analysis 预算和重复 fingerprint 防护终止。
 
@@ -36,6 +37,8 @@
 ## 当前输出
 
 结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、grep match 或 tool finding 引用。
+
+Task alias 输出只包含 `alias` 字段。alias 必须是短标题，不能包含 task ID、时间戳、`LogAgent`、`task`、`run` 等泛化词。alias 调用不记录到 `analysis_events.jsonl` 或 Session timeline；schema 错误最多重试一次，最终失败由 Server fallback，不影响 task 成功状态。
 
 用户输入文本 evidence ref 使用固定 canonical 格式：
 
@@ -118,3 +121,4 @@ binary provider 错误包括：
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。
 - `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。
 - `PLAN_ANALYSIS` 的真实 action decision 调用必须带 `llmcall_*` callId，并记录 started/completed/schema_retry 事件；schema retry 和最终错误必须能关联该 callId。
+- Task alias 生成不得写入 analysis event 或 Session timeline，且 UI 可用 alias 替代裸 task ID。

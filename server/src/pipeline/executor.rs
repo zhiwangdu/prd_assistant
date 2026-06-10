@@ -10,8 +10,8 @@ use crate::{
             ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext,
         },
         models::{
-            AnalysisResult, Confidence, GrepResults, Manifest, RootCause, TaskKind, TaskPhase,
-            TaskRecord,
+            AnalysisResult, Confidence, GrepResults, Manifest, ResultOutput, RootCause, TaskKind,
+            TaskPhase, TaskRecord,
         },
     },
     pipeline::{
@@ -20,6 +20,7 @@ use crate::{
         search_task_with_settings,
     },
     services::llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
+    services::metadata::TaskMetadataContext,
     stores::analysis_state,
     support::config::{AnalysisSettings, LogAnalyzerSettings},
 };
@@ -168,17 +169,9 @@ async fn dispatch_phase(
             analysis_state::ensure_initialized(&workspace, &task)?;
             let result =
                 generate_task_result(state.config.clone(), state.llm.clone(), task.clone()).await?;
-            let completed = state
-                .tasks
-                .succeed(
-                    &task.task_id,
-                    TaskPhase::GenerateResult,
-                    workspace.join("manifest.json").display().to_string(),
-                    workspace.join("grep_results.json").display().to_string(),
-                    result.result_json_path.display().to_string(),
-                    result.result_markdown_path.display().to_string(),
-                )
-                .await?;
+            let completed =
+                complete_successful_log_analysis(&state, &task, TaskPhase::GenerateResult, result)
+                    .await?;
             sync_session_status(&state, &completed).await;
             Ok(DispatchOutcome::Complete)
         }
@@ -245,17 +238,13 @@ async fn plan_analysis_phase(
             AgentDecision::FinalAnswer { result } => {
                 let result = result.into_result(&grep, &tool_results)?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
-                let completed = state
-                    .tasks
-                    .succeed(
-                        &task.task_id,
-                        TaskPhase::PlanAnalysis,
-                        workspace.join("manifest.json").display().to_string(),
-                        workspace.join("grep_results.json").display().to_string(),
-                        output.result_json_path.display().to_string(),
-                        output.result_markdown_path.display().to_string(),
-                    )
-                    .await?;
+                let completed = complete_successful_log_analysis(
+                    &state,
+                    &task,
+                    TaskPhase::PlanAnalysis,
+                    output,
+                )
+                .await?;
                 sync_session_status(&state, &completed).await;
                 return Ok(DispatchOutcome::Complete);
             }
@@ -296,6 +285,55 @@ fn record_llm_call_event(workspace: &std::path::Path, event: LlmCallEvent) {
     if let Err(err) = result {
         warn!("failed to record LLM call event: {err}");
     }
+}
+
+async fn complete_successful_log_analysis(
+    state: &AppState,
+    task: &TaskRecord,
+    phase: TaskPhase,
+    output: ResultOutput,
+) -> anyhow::Result<TaskRecord> {
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let result: AnalysisResult = read_json(&output.result_json_path).await?;
+    let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
+    let metadata_context = match task.metadata_context_path.as_deref() {
+        Some(path) if std::path::Path::new(path) == workspace.join("metadata_context.json") => {
+            Some(read_json::<TaskMetadataContext>(&workspace.join("metadata_context.json")).await?)
+        }
+        Some(_) => None,
+        None => None,
+    };
+    let alias = match state
+        .llm
+        .generate_task_alias(
+            &task.question,
+            &manifest,
+            &result,
+            metadata_context.as_ref(),
+        )
+        .await
+    {
+        Ok(alias) => alias,
+        Err(err) => {
+            warn!(
+                task_id = task.task_id,
+                "task alias generation failed: {err}"
+            );
+            crate::services::llm_gateway::fallback_task_alias(&result, &task.question)
+        }
+    };
+    state
+        .tasks
+        .succeed(
+            &task.task_id,
+            phase,
+            workspace.join("manifest.json").display().to_string(),
+            workspace.join("grep_results.json").display().to_string(),
+            output.result_json_path.display().to_string(),
+            output.result_markdown_path.display().to_string(),
+            Some(alias),
+        )
+        .await
 }
 
 async fn execute_agent_action(
@@ -482,17 +520,8 @@ async fn complete_with_budget_limited_result(
     let workspace = state.config.storage.workspace_dir(&task.task_id);
     let result = budget_limited_result(&task.question, grep, &reason);
     let output = persist_final_answer_decision_result(&workspace, result).await?;
-    let completed = state
-        .tasks
-        .succeed(
-            &task.task_id,
-            TaskPhase::PlanAnalysis,
-            workspace.join("manifest.json").display().to_string(),
-            workspace.join("grep_results.json").display().to_string(),
-            output.result_json_path.display().to_string(),
-            output.result_markdown_path.display().to_string(),
-        )
-        .await?;
+    let completed =
+        complete_successful_log_analysis(&state, task, TaskPhase::PlanAnalysis, output).await?;
     sync_session_status(&state, &completed).await;
     Ok(DispatchOutcome::Complete)
 }
@@ -924,6 +953,7 @@ mod tests {
             TaskRecord {
                 schema_version: 4,
                 task_id: self.task_id.clone(),
+                alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 source: TaskSource::Upload,

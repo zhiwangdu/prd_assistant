@@ -28,6 +28,7 @@ type SessionRecord = Omit<SessionSummary, "uploadCount" | "taskCount"> & {
 };
 type TaskSummary = {
   taskId: string;
+  alias?: string | null;
   url: string;
   taskKind?: "log_analysis" | "tool_run";
   sessionId?: string | null;
@@ -441,7 +442,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       });
       setDraftExpanded(false);
       setTimelineExpanded(true);
-      setUploadStatus(`已创建分析 run ${task.taskId}`);
+      setUploadStatus("已创建分析 run");
       await refreshSessions();
       await selectSession(selectedSession.sessionId, false, task.taskId);
     } catch (reason) {
@@ -618,11 +619,11 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle>Runs</CardTitle><CardDescription>{selectedTask ? `${selectedTask.taskId} · attempt ${selectedTask.attempts ?? 0}` : "No run selected"}</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Runs</CardTitle><CardDescription>{selectedTask ? `${taskDisplayName(selectedTask)} · attempt ${selectedTask.attempts ?? 0}` : "No run selected"}</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 {sessionTasks.length ? (
                   <div className="flex flex-wrap gap-2">
-                    {sessionTasks.map((task) => <button className={`rounded-md border px-3 py-2 text-left text-xs ${selectedTask?.taskId === task.taskId ? "border-primary bg-slate-50" : "border-border"}`} key={task.taskId} onClick={() => void loadTask(task.taskId)}><span className="font-mono">{task.taskId}</span><span className="ml-2"><StatusBadge status={task.status} /></span></button>)}
+                    {sessionTasks.map((task) => <button className={`rounded-md border px-3 py-2 text-left text-xs ${selectedTask?.taskId === task.taskId ? "border-primary bg-slate-50" : "border-border"}`} key={task.taskId} onClick={() => void loadTask(task.taskId)}><span className="font-medium">{taskDisplayName(task)}</span><span className="ml-2"><StatusBadge status={task.status} /></span><p className="mt-1 text-muted-foreground">{new Date(task.createdAt).toLocaleString()}</p></button>)}
                   </div>
                 ) : <EmptyState>当前 Session 还没有分析 run。</EmptyState>}
                 {selectedTask ? (
@@ -649,7 +650,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       {taskResult ? <AnalysisResultView result={taskResult.result} /> : null}
 
       {taskResult && selectedTask ? (
-        <CaseClosurePanel cases={cases} caseDraft={caseDraft} caseQuery={caseQuery} caseStatus={caseStatus} loading={loading} taskId={selectedTask.taskId} onDraftChange={setCaseDraft} onQueryChange={setCaseQuery} onRefreshCases={() => void refreshCases(caseQuery)} onConfirmCase={() => void confirmCase()} onDisableCase={(caseId) => void disableCase(caseId)} />
+        <CaseClosurePanel cases={cases} caseDraft={caseDraft} caseQuery={caseQuery} caseStatus={caseStatus} loading={loading} taskLabel={taskDisplayName(selectedTask)} onDraftChange={setCaseDraft} onQueryChange={setCaseQuery} onRefreshCases={() => void refreshCases(caseQuery)} onConfirmCase={() => void confirmCase()} onDisableCase={(caseId) => void disableCase(caseId)} />
       ) : null}
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
@@ -680,8 +681,8 @@ function WaitingInteraction({ answer, approvalReason, loading, snapshot, status,
   return null;
 }
 
-function CaseClosurePanel({ cases, caseDraft, caseQuery, caseStatus, loading, taskId, onDraftChange, onQueryChange, onRefreshCases, onConfirmCase, onDisableCase }: { cases: CaseHit[]; caseDraft: CaseDraft; caseQuery: string; caseStatus: string; loading: boolean; taskId: string; onDraftChange: (draft: CaseDraft) => void; onQueryChange: (value: string) => void; onRefreshCases: () => void; onConfirmCase: () => void; onDisableCase: (caseId: string) => void; }) {
-  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]"><Card><CardHeader><div className="flex items-center gap-2"><BookOpenCheck className="h-5 w-5 text-primary" /><CardTitle>Confirm as Case</CardTitle></div><CardDescription>{taskId} 的最终结果可人工确认后沉淀为可召回 Case</CardDescription></CardHeader><CardContent className="space-y-3"><Input value={caseDraft.title} onChange={(event) => onDraftChange({ ...caseDraft, title: event.target.value })} placeholder="Case title" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.symptom} onChange={(event) => onDraftChange({ ...caseDraft, symptom: event.target.value })} placeholder="Symptom" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.rootCause} onChange={(event) => onDraftChange({ ...caseDraft, rootCause: event.target.value })} placeholder="Root cause" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.solution} onChange={(event) => onDraftChange({ ...caseDraft, solution: event.target.value })} placeholder="Solution" /><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{caseStatus}</span><Button disabled={loading || !caseDraft.title.trim()} onClick={onConfirmCase}>保存 Case</Button></div></CardContent></Card><Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Similar cases</CardTitle><Button className="h-8 px-3" variant="outline" onClick={onRefreshCases}><RefreshCw className="h-4 w-4" /></Button></div><CardDescription>本地 JSON Case Store 关键词召回</CardDescription></CardHeader><CardContent className="space-y-3"><Input value={caseQuery} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onRefreshCases(); }} placeholder="Search cases" />{cases.length ? cases.map((item) => <div className="rounded-lg border border-border p-3" key={item.caseId}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium">{item.title}</p><p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · score {item.score.toFixed(2)} · {new Date(item.createdAt).toLocaleDateString()}</p></div><Badge variant={item.enabled ? "secondary" : "destructive"}>{item.enabled ? "enabled" : "disabled"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{item.rootCause}</p><div className="mt-3 flex flex-wrap gap-2"><Button className="h-8 px-3" disabled={loading || !item.enabled} variant="outline" onClick={() => onDisableCase(item.caseId)}>禁用</Button></div></div>) : <EmptyState>暂无匹配 Case。</EmptyState>}</CardContent></Card></div>;
+function CaseClosurePanel({ cases, caseDraft, caseQuery, caseStatus, loading, taskLabel, onDraftChange, onQueryChange, onRefreshCases, onConfirmCase, onDisableCase }: { cases: CaseHit[]; caseDraft: CaseDraft; caseQuery: string; caseStatus: string; loading: boolean; taskLabel: string; onDraftChange: (draft: CaseDraft) => void; onQueryChange: (value: string) => void; onRefreshCases: () => void; onConfirmCase: () => void; onDisableCase: (caseId: string) => void; }) {
+  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]"><Card><CardHeader><div className="flex items-center gap-2"><BookOpenCheck className="h-5 w-5 text-primary" /><CardTitle>Confirm as Case</CardTitle></div><CardDescription>{taskLabel} 的最终结果可人工确认后沉淀为可召回 Case</CardDescription></CardHeader><CardContent className="space-y-3"><Input value={caseDraft.title} onChange={(event) => onDraftChange({ ...caseDraft, title: event.target.value })} placeholder="Case title" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.symptom} onChange={(event) => onDraftChange({ ...caseDraft, symptom: event.target.value })} placeholder="Symptom" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.rootCause} onChange={(event) => onDraftChange({ ...caseDraft, rootCause: event.target.value })} placeholder="Root cause" /><textarea className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={caseDraft.solution} onChange={(event) => onDraftChange({ ...caseDraft, solution: event.target.value })} placeholder="Solution" /><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{caseStatus}</span><Button disabled={loading || !caseDraft.title.trim()} onClick={onConfirmCase}>保存 Case</Button></div></CardContent></Card><Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Similar cases</CardTitle><Button className="h-8 px-3" variant="outline" onClick={onRefreshCases}><RefreshCw className="h-4 w-4" /></Button></div><CardDescription>本地 JSON Case Store 关键词召回</CardDescription></CardHeader><CardContent className="space-y-3"><Input value={caseQuery} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onRefreshCases(); }} placeholder="Search cases" />{cases.length ? cases.map((item) => <div className="rounded-lg border border-border p-3" key={item.caseId}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium">{item.title}</p><p className="mt-1 text-xs text-muted-foreground">{item.caseId} · {item.sourceType} · score {item.score.toFixed(2)} · {new Date(item.createdAt).toLocaleDateString()}</p></div><Badge variant={item.enabled ? "secondary" : "destructive"}>{item.enabled ? "enabled" : "disabled"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{item.rootCause}</p><div className="mt-3 flex flex-wrap gap-2"><Button className="h-8 px-3" disabled={loading || !item.enabled} variant="outline" onClick={() => onDisableCase(item.caseId)}>禁用</Button></div></div>) : <EmptyState>暂无匹配 Case。</EmptyState>}</CardContent></Card></div>;
 }
 
 function StatusBadge({ status }: { status: TaskStatus }) {
@@ -694,6 +695,22 @@ function SessionBadge({ status }: { status: SessionStatus }) {
 
 function isTerminal(status: TaskStatus) {
   return status === "SUCCEEDED" || status === "FAILED";
+}
+
+function taskDisplayName(task: TaskRecord) {
+  const alias = task.alias?.trim();
+  if (alias) return alias;
+  if (task.status === "FAILED") return task.error?.phase ? `分析失败：${task.error.phase}` : "分析失败";
+  if (task.status === "SUCCEEDED") return "日志分析结果";
+  if (task.status === "WAITING_FOR_USER") return "等待补充信息";
+  if (task.status === "WAITING_FOR_APPROVAL") return "等待动作审批";
+  if (task.status === "QUEUED") return "等待分析";
+  return task.phase ? `分析中：${task.phase}` : "分析运行中";
+}
+
+function timelineTaskLabel(taskId: string, selectedTask: TaskRecord | null) {
+  if (selectedTask?.taskId === taskId) return taskDisplayName(selectedTask);
+  return "历史 run";
 }
 
 function errorMessage(reason: unknown) {
@@ -736,7 +753,7 @@ function SessionTimeline({ events, expanded, snapshot, task, taskResult, onToggl
       </CardHeader>
       <CardContent>
         {expanded ? (
-          latest.length ? <ol className="space-y-2">{latest.map((event, index) => <li className="rounded-md border border-border bg-white p-3" key={`${event.createdAt}:${event.eventType}:${index}`}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant={event.eventType === "analysis_failed" ? "destructive" : event.eventType === "model_decision" ? "warning" : "outline"}>{event.source}:{event.eventType}</Badge>{event.phase ? <span>{event.phase}</span> : null}{event.taskId ? <span className="font-mono">{event.taskId}</span> : null}{event.actionId ? <span className="font-mono">{event.actionId}</span> : null}<span><Clock3 className="mr-1 inline h-3 w-3" />{new Date(event.createdAt).toLocaleTimeString()}</span></div><p className="mt-2 text-sm">{event.message}</p><EventDetails event={event} /></li>)}</ol> : <EmptyState>暂无 timeline 事件。</EmptyState>
+          latest.length ? <ol className="space-y-2">{latest.map((event, index) => <li className="rounded-md border border-border bg-white p-3" key={`${event.createdAt}:${event.eventType}:${index}`}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant={event.eventType === "analysis_failed" ? "destructive" : event.eventType === "model_decision" ? "warning" : "outline"}>{event.source}:{event.eventType}</Badge>{event.phase ? <span>{event.phase}</span> : null}{event.taskId ? <span>{timelineTaskLabel(event.taskId, task)}</span> : null}{event.actionId ? <span className="font-mono">{event.actionId}</span> : null}<span><Clock3 className="mr-1 inline h-3 w-3" />{new Date(event.createdAt).toLocaleTimeString()}</span></div><p className="mt-2 text-sm">{event.message}</p><EventDetails event={event} /></li>)}</ol> : <EmptyState>暂无 timeline 事件。</EmptyState>
         ) : <TimelineSummary latest={latest[0]} snapshot={snapshot} task={task} taskResult={taskResult} />}
       </CardContent>
     </Card>
@@ -746,12 +763,12 @@ function SessionTimeline({ events, expanded, snapshot, task, taskResult, onToggl
 function TimelineSummary({ latest, snapshot, task, taskResult }: { latest?: SessionTimelineEvent; snapshot: AnalysisSnapshot | null; task: TaskRecord | null; taskResult: TaskResult | null }) {
   if (!task) return <EmptyState>暂无选中的分析 run。</EmptyState>;
   if (task.status === "SUCCEEDED" && taskResult) {
-    return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><Badge variant="secondary">confidence {taskResult.result.confidence}</Badge><span className="font-mono text-xs text-muted-foreground">{task.taskId}</span></div><p className="mt-2 text-sm">{taskResult.result.summary}</p></div>;
+    return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><Badge variant="secondary">confidence {taskResult.result.confidence}</Badge><span className="text-xs text-muted-foreground">{taskDisplayName(task)}</span></div><p className="mt-2 text-sm">{taskResult.result.summary}</p></div>;
   }
   if (task.status === "FAILED") {
-    return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><div className="mb-1 flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="font-mono text-xs">{task.taskId}</span></div>{task.error?.phase ? `${task.error.phase}: ` : ""}{task.error?.message ?? latest?.message ?? "Task failed"}</div>;
+    return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><div className="mb-1 flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="text-xs">{taskDisplayName(task)}</span></div>{task.error?.phase ? `${task.error.phase}: ` : ""}{task.error?.message ?? latest?.message ?? "Task failed"}</div>;
   }
-  return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="text-xs text-muted-foreground">{task.phase ?? snapshot?.state.currentPhase ?? "No active phase"}</span><span className="font-mono text-xs text-muted-foreground">{task.taskId}</span></div><p className="mt-2 text-sm">{latest?.message ?? "任务正在运行，展开 timeline 查看完整事件。"}</p>{snapshot ? <p className="mt-1 text-xs text-muted-foreground">revision {snapshot.state.revision} · rounds {snapshot.state.budget.rounds} · evidence {snapshot.state.evidence.length}</p> : null}</div>;
+  return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="text-xs text-muted-foreground">{task.phase ?? snapshot?.state.currentPhase ?? "No active phase"}</span><span className="text-xs text-muted-foreground">{taskDisplayName(task)}</span></div><p className="mt-2 text-sm">{latest?.message ?? "任务正在运行，展开 timeline 查看完整事件。"}</p>{snapshot ? <p className="mt-1 text-xs text-muted-foreground">revision {snapshot.state.revision} · rounds {snapshot.state.budget.rounds} · evidence {snapshot.state.evidence.length}</p> : null}</div>;
 }
 
 function EventDetails({ event }: { event: SessionTimelineEvent }) {

@@ -540,6 +540,7 @@ mod tests {
         TaskRecord {
             schema_version: 1,
             task_id: "task_batch".to_string(),
+            alias: None,
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,

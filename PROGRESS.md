@@ -70,6 +70,14 @@ WEBUI Tools
 - Timeline 收起态只展示最终结果 summary、confidence、失败 phase/message，或运行中的当前状态和最近事件；用户仍可手动展开查看完整 timeline。
 - Verification: `npm run lint`, `npm run typecheck`, and `npm run build` pass in `webui/`.
 
+### Task Alias Naming
+
+- 成功的 Log Analysis task 现在持久化 `alias` 字段；新写入的 Log Analysis task 使用 schemaVersion 7，tool_run 使用 schemaVersion 6，旧 task 缺少 alias 时仍可读取。
+- Task alias 在最终结果写入后由 LLM Gateway 静默生成，输入为用户问题、最终结果、manifest 和 Metadata 摘要；命名调用不写入 `analysis_events.jsonl`，也不追加 Session timeline event。
+- alias schema 错误会重试一次；Provider 或 schema 最终失败时 Server 使用最终 summary/question 生成短标题，避免命名失败影响 task 成功状态。
+- WebUI Runs、timeline 收起态和 Case 确认区优先展示 alias；没有 alias 时用状态/时间回退，不再把裸 `task_...` 当主要显示名称。
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
+
 ### WebUI Naming
 
 - Renamed the top bar product title from `LogAgent Metadata Console` to `LogAgent Analysis Workbench`.

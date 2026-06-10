@@ -151,6 +151,7 @@ flowchart TD
 - Server 支持 multipart 上传、分片上传、任务创建、任务产物读取。
 - Server 支持 Log Analysis Session：创建/列表/读取/草稿更新、附加/移除上传、按 Session 创建多次 task run、统一 timeline。
 - Log Analysis Session 支持不上传日志直接启动分析；Task snapshot 的 `uploadIds` 和 `inputs` 为空，pipeline 仍生成 `session_text_input.json`、空 `manifest.json` / `grep_results.json` 并进入 Analysis Agent。
+- 成功 Log Analysis task 持久化 `alias`；alias 由最终结果生成后的独立 LLM Gateway 调用产生，失败时回退到最终 summary/question 的短标题，且该调用不进入 timeline。
 - Log Analysis task schema 强制带 `sessionId`；旧的无 Session task 不再兼容展示。
 - Server 持久化任务并在后台执行，支持重启恢复。
 - Upload session 持久化并支持重启续传。

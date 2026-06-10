@@ -127,6 +127,7 @@ impl TaskStore {
         grep_results_path: String,
         result_json_path: String,
         result_markdown_path: String,
+        alias: Option<String>,
     ) -> anyhow::Result<TaskRecord> {
         self.update(task_id, |task| {
             ensure_running(task)?;
@@ -138,6 +139,7 @@ impl TaskStore {
             task.grep_results_path = Some(grep_results_path);
             task.result_json_path = Some(result_json_path);
             task.result_markdown_path = Some(result_markdown_path);
+            task.alias = alias;
             Ok(())
         })
         .await
@@ -303,6 +305,7 @@ mod tests {
         TaskRecord {
             schema_version: 1,
             task_id: id.to_string(),
+            alias: None,
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             source: TaskSource::Upload,
@@ -391,7 +394,8 @@ mod tests {
                 "manifest.json".to_string(),
                 "grep_results.json".to_string(),
                 "result.json".to_string(),
-                "result.md".to_string()
+                "result.md".to_string(),
+                None,
             )
             .await
             .is_err());
@@ -427,7 +431,8 @@ mod tests {
                 "manifest.json".to_string(),
                 "grep_results.json".to_string(),
                 "result.json".to_string(),
-                "result.md".to_string()
+                "result.md".to_string(),
+                None,
             )
             .await
             .is_err());

@@ -76,6 +76,7 @@ pub struct CreateTaskRequest {
 #[serde(rename_all = "camelCase")]
 pub struct TaskResponse {
     pub task_id: String,
+    pub alias: Option<String>,
     pub url: String,
     pub task_kind: TaskKind,
     pub session_id: Option<String>,
@@ -235,6 +236,8 @@ pub struct TaskRecord {
     pub schema_version: u32,
     pub task_id: String,
     #[serde(default)]
+    pub alias: Option<String>,
+    #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default = "default_task_kind")]
     pub task_kind: TaskKind,
@@ -276,6 +279,7 @@ impl TaskRecord {
     pub fn summary(&self, public_base_url: &str) -> TaskSummary {
         TaskSummary {
             task_id: self.task_id.clone(),
+            alias: self.alias.clone(),
             url: format!(
                 "{}/tasks/{}",
                 public_base_url.trim_end_matches('/'),

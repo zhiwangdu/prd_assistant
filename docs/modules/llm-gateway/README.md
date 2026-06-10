@@ -32,6 +32,7 @@ question + session_text_input.json + manifest.json + grep_results.json + metadat
   -> stub、OpenAI-compatible Chat Completions 或 binary provider
   -> schema / evidence ref 校验与可追踪别名规范化
   -> result.json / result.md
+  -> silent task alias generation for UI display
 ```
 
 `binary` provider 是预留的大模型调用分支。启用后 Gateway 会使用参数数组调用配置的二进制：
@@ -51,6 +52,8 @@ Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAn
 Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调用 `/api/debug/llm` 开启或关闭。开启后 Gateway 只把模型 response content 打印到 Server stderr，便于定位 schema 漂移；不会打印 prompt、API Key 或 HTTP headers。该开关默认关闭，Server 重启后恢复关闭。
 
 `PLAN_ANALYSIS` 的 OpenAI-compatible action decision 调用会生成 `llmcall_*` callId，并通过 Analysis State Store 记录 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry`。schema retry 和最终失败会带上 callId，WebUI Task execution 可直接展示对应轮次。
+
+成功 task 的 alias 由独立 LLM Gateway 调用生成，输入为用户问题、最终结果、manifest 文件名和 Metadata 摘要。该命名调用只返回 `{"alias":"..."}`，schema 错误重试一次；调用失败时由 Server 用最终 summary/question 生成短标题。alias 生成不触发 Analysis State Store 的 `llm_call_*` 事件，不写 `analysis_events.jsonl`，也不写 Session timeline。
 
 Metadata Prompt 摘要包含解析后的 ID、产品、版本、环境、选中节点状态、集群节点数量、数据库名和 PT 在线摘要；不会发送 Metadata `rawSnapshot`。
 
