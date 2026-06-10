@@ -67,6 +67,7 @@ cp -a deploy /opt/logagent/deploy
 cd /opt/logagent/deploy
 cp .env.example .env
 cp logagent.example.yaml logagent.yaml
+./install-deps.sh
 ./rebuild-install.sh
 ./logagentctl.sh start
 ```
@@ -83,12 +84,11 @@ cp logagent.example.yaml logagent.yaml
 
 ## 系统依赖
 
-- `rg`
-- `git`
-- `ssh`
-- `scp` 或 Rust SSH/SFTP 库
-- 已配置的外部分析工具，例如 `flux_query_analyzer`
-- SQLite，当前通过 bundled SQLite 依赖随 Server binary 使用；后续可扩展 PostgreSQL + pgvector
+- 运行已构建 Server binary 不需要单独安装 SQLite；Server 使用 bundled SQLite。
+- 从源码运行 `deploy/rebuild-install.sh` 需要 `cargo`、Node.js/npm、`git`、`curl`、C/C++ 编译工具和 `pkg-config`。
+- `deploy/install-deps.sh` 支持 macOS Homebrew、Debian/Ubuntu apt、Fedora dnf、RHEL/CentOS yum 和 Arch pacman，可快速安装通用构建依赖，并在缺少 `cargo` 时通过 rustup 安装最小 Rust toolchain。
+- `rg`、`ssh`、`scp` 后续 Environment Collector 和代码/环境采集会用到；当前核心上传分析链路不是硬依赖。
+- 已配置的外部分析工具，例如 `flux_query_analyzer`、`influxql_analyzer` 或 `go` for `pprof_analyzer`，按启用的工具单独安装和配置路径。
 
 启动时应检查依赖是否存在，并在 WebUI/日志中暴露健康检查结果。
 

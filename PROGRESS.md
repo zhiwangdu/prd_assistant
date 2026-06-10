@@ -53,6 +53,7 @@ WEBUI Tools
 
 - Updated `deploy/logagent.example.yaml` with the default disabled `embedding` block so runtime deployments match the current Server config shape.
 - Added optional `LOGAGENT_EMBEDDING_API_KEY` documentation to `deploy/.env.example`.
+- Added `deploy/install-deps.sh` to install common source rebuild dependencies on macOS/Homebrew and common Linux package managers; SQLite remains bundled with the Server binary and is not installed separately.
 - Updated `deploy/logagentctl.sh` and `deploy/rebuild-install.sh` to pre-create expected runtime data directories, including `data/memory`, `data/cases`, and `data/case_imports`, without deleting existing data.
 - Updated deploy README and deployment module docs to document `data/memory/memory.sqlite`, legacy Case JSON rollback files, and the current WebUI navigation.
 

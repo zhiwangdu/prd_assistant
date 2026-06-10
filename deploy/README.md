@@ -8,6 +8,7 @@ This directory contains the runtime deployment assets for a local LogAgent serve
 deploy/
   README.md
   .env.example
+  install-deps.sh
   logagent.example.yaml
   logagentctl.sh
   rebuild-install.sh
@@ -67,6 +68,31 @@ Optional variables:
 - `LOGAGENT_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.pid`.
 - `LOGAGENT_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.log`.
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
+
+## Dependencies
+
+Running an already built `logagent-server` binary does not require installing SQLite separately; the deploy binary is built with bundled SQLite support.
+
+Building from source with `rebuild-install.sh` needs:
+
+- Rust toolchain (`cargo`)
+- Node.js and npm
+- git and curl
+- C/C++ build tools and pkg-config
+
+Quick install on macOS or common Linux distributions:
+
+```bash
+./install-deps.sh
+```
+
+Preview without changing the host:
+
+```bash
+./install-deps.sh --dry-run
+```
+
+Optional diagnostic tools are not installed by this script. Install and configure `go` only if enabling `pprof_analyzer`; install `influxql_analyzer` or `flux_query_analyzer` separately and set their configured paths when enabling those tools.
 
 ## Configure
 
