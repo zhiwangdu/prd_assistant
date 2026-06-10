@@ -140,7 +140,7 @@ flowchart LR
 | [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、内部能力和 API | [SPEC](./server/SPEC.md) |
 | [webui](./webui/README.md) | Vite WebUI、任务证据、Metadata、Tools 和 Case 可视化 | [SPEC](./webui/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
-| [scripts](./scripts) | 本地启动和 smoke 脚本 | - |
+| [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
 | [testing](./testing/README.md) | 测试 fixture、集成测试和 LLM stub | [SPEC](./testing/SPEC.md) |
 
 Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/README.md)：

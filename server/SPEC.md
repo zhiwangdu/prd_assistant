@@ -342,6 +342,7 @@ persist task
 
 - `cargo fmt --check`、`cargo check`、`cargo test` 通过。
 - `scripts/start-local.sh` 能校验环境变量、构建 Server、后台启动、释放 shell job 并等待健康检查；支持真实 LLM、stub 和前台模式。
+- `scripts/init-workdir.sh`、`scripts/build-server.sh`、`scripts/build-webui.sh`、`scripts/build-all.sh` 和 `scripts/server-service.sh` 必须在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化运行目录、安装 Server binary 和 WebUI 静态产物，并通过工作目录内的 pid/log/config/data 管理 Server 启停。
 - WEBUI `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。

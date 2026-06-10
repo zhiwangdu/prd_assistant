@@ -46,20 +46,19 @@ logagentd --config ./logagent.yaml
 
 该脚本会构建 Server、后台启动、写入 `/tmp/logagent-server-llm.pid` 和 `/tmp/logagent-server-llm.log`，并等待 `/health` 成功；`--stub` 使用本地 stub provider，`--foreground` 用于调试启动日志。
 
-运行目录建议把部署资产统一放在 `deploy/` 下，并通过环境变量定位运行目录和源码目录：
+运行目录脚本通过 `LOGAGENT_WORK_DIR` 显式定位运行目录。该变量未设置时，脚本必须直接报错，避免把 pid、日志、数据或构建产物写到不明确的位置：
 
 ```bash
-cd "$LOGAGENT_APP_DIR/deploy"
-cp env.example .env
-set -a
-source .env
-set +a
+export LOGAGENT_WORK_DIR=/opt/logagent
+export LOGAGENT_NATIVE_API_KEY=<secret>
 
-./logagentctl.sh start|stop|restart|status|logs
-./rebuild-install.sh [--server-only] [--no-restart]
+./scripts/init-workdir.sh
+./scripts/build-server.sh
+./scripts/build-webui.sh
+./scripts/server-service.sh start|stop|restart|status|logs
 ```
 
-`LOGAGENT_APP_DIR` 指向运行目录，`LOGAGENT_SRC_DIR` 指向源码仓库。`deploy/logagentctl.sh` 从 `$LOGAGENT_APP_DIR/bin/logagent-server` 启动服务，使用 `$LOGAGENT_APP_DIR/deploy/logagent.yaml`、`$LOGAGENT_APP_DIR/logagent-server.pid` 和 `$LOGAGENT_APP_DIR/logagent-server.log`。`deploy/rebuild-install.sh` 会从 `$LOGAGENT_SRC_DIR` 编译 `logagent-server`，替换运行目录 binary，默认同步 `webui/out`，并在服务原本运行时自动重启；`--server-only` 只替换 Rust 二进制，`--no-restart` 跳过重启。
+`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
 
 生产或测试环境：
 

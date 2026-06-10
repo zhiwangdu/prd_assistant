@@ -455,6 +455,22 @@ export LOGAGENT_LLM_MODEL=gpt-4.1
 
 脚本默认使用 `examples/server-llm-openai-compatible.yaml` 和端口 `50994`，将 PID 写入 `/tmp/logagent-server-llm.pid`，日志写入 `/tmp/logagent-server-llm.log`，后台启动后会释放 shell job 并等待 `/health` 成功。`--stub` 使用端口 `50992`，`--foreground` 不进入后台。脚本只读取环境变量，不打印或持久化密钥。
 
+工作目录脚本适合本地或测试机长期运行。所有脚本都要求显式设置 `LOGAGENT_WORK_DIR`，未设置会直接失败：
+
+```bash
+export LOGAGENT_WORK_DIR=/tmp/logagent-runtime
+export LOGAGENT_NATIVE_API_KEY=dev-token
+
+./scripts/init-workdir.sh
+./scripts/build-server.sh
+./scripts/build-webui.sh
+./scripts/server-service.sh start
+./scripts/server-service.sh status
+./scripts/server-service.sh stop
+```
+
+`init-workdir.sh` 会创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`，其中 `storage.data_dir` 指向 `$LOGAGENT_WORK_DIR/data`。`build-server.sh` 安装 release Server binary 到 `$LOGAGENT_WORK_DIR/bin/logagent-server`；`build-webui.sh` 构建并同步 `webui/out` 到 `$LOGAGENT_WORK_DIR/webui/out`；`server-service.sh` 从工作目录启动服务，PID 写入 `run/logagent-server.pid`，日志写入 `logs/logagent-server.log`。
+
 Server 会静态托管 Vite 构建的 `webui/out`，本地访问：
 
 ```text
@@ -510,9 +526,11 @@ ECS 部署时：
 推荐生产运行方式：
 
 ```bash
-cargo build --release -p logagent-server
-LOGAGENT_NATIVE_API_KEY=<secret> \
-  ./target/release/logagent-server --config /etc/logagent/logagent.yaml
+export LOGAGENT_WORK_DIR=/opt/logagent
+export LOGAGENT_NATIVE_API_KEY=<secret>
+./scripts/init-workdir.sh
+./scripts/build-all.sh
+./scripts/server-service.sh start
 ```
 
-systemd 可按上述命令封装为 `logagent-server.service`。
+systemd 可封装 `scripts/server-service.sh start|stop`，但服务环境必须提供 `LOGAGENT_WORK_DIR` 和 `LOGAGENT_NATIVE_API_KEY`。

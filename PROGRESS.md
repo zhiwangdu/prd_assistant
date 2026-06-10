@@ -51,6 +51,17 @@ WEBUI Tools
 - The refactor is structure-only: HTTP API paths, config keys, task/upload/case JSON schema, and workspace artifact paths remain unchanged.
 - Verification: `cargo fmt --check`, `cargo check`, and `cargo test` all pass after the module move.
 
+### Runtime Scripts
+
+- Added `scripts/init-workdir.sh`, `scripts/build-server.sh`, `scripts/build-webui.sh`, `scripts/build-all.sh`, and `scripts/server-service.sh`.
+- All new workdir scripts require `LOGAGENT_WORK_DIR`; if it is unset or empty they fail before writing runtime files.
+- `init-workdir.sh` creates `bin/`, `config/`, `data/`, `logs/`, `run/`, and `webui/`, then writes `config/server.yaml` with `storage.data_dir` under the work directory.
+- `build-server.sh` compiles the release Server and installs it to `$LOGAGENT_WORK_DIR/bin/logagent-server`.
+- `build-webui.sh` runs the WebUI production build and syncs `webui/out` to `$LOGAGENT_WORK_DIR/webui/out`.
+- `server-service.sh` manages start, stop, restart, status, and logs using `$LOGAGENT_WORK_DIR/run/logagent-server.pid` and `$LOGAGENT_WORK_DIR/logs/logagent-server.log`.
+- Script validation: `bash -n` passes for the new scripts; every new entry script fails when `LOGAGENT_WORK_DIR` is missing; initialization smoke created the expected runtime tree; `build-server.sh` installed the release Server binary; `build-webui.sh` built and copied WebUI static output. `server-service.sh start` reached the Server startup step, but this Codex sandbox rejects local port binding (`PermissionError: [Errno 1] Operation not permitted` from a minimal Python socket bind), so live health-check startup cannot be completed in this environment.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
+
 ### Chrome Extension
 
 - Manifest V3 extension exists under `chrome-extension/`.

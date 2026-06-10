@@ -108,6 +108,16 @@ http://127.0.0.1:50992/
 API Key: dev-token
 ```
 
+使用工作目录脚本构建并交给 Server 托管：
+
+```bash
+export LOGAGENT_WORK_DIR=/tmp/logagent-runtime
+./scripts/init-workdir.sh
+./scripts/build-webui.sh
+```
+
+`build-webui.sh` 会运行 `npm --prefix webui run build`，并把 `webui/out` 同步到 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 会从 `$LOGAGENT_WORK_DIR` 作为当前目录启动 Server，因此静态托管路径仍是相对的 `webui/out`。
+
 ## 验证
 
 ```bash
