@@ -26,10 +26,15 @@ embedding:
 
 Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并在新任务中召回相似历史 Case。
 
-当前实现位于 `server/src/case_store.rs`，通过受保护 API 暴露：
+当前实现位于 `server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`，通过受保护 API 暴露：
 
 - `POST /api/tasks/:task_id/case`：成功任务人工确认后保存为 Case。
 - `POST /api/cases`：手工录入一个不绑定任务的 Case。
+- `POST /api/cases/imports`：从粘贴文本或 UTF-8 文本文件创建导入草稿并调用 LLM 整理。
+- `GET /api/cases/imports/:draft_id`：读取导入草稿。
+- `PATCH /api/cases/imports/:draft_id`：保存用户对草稿字段的修正。
+- `POST /api/cases/imports/:draft_id/messages`：提交缺失信息回答并继续整理。
+- `POST /api/cases/imports/:draft_id/confirm`：确认草稿并保存为 `manual` Case。
 - `GET /api/cases?query=<text>&limit=5`：按关键词召回启用 Case。
 - `GET /api/cases/:case_id`：读取 Case 详情。
 - `PATCH /api/cases/:case_id`：编辑 Case 字段或设置 `enabled=false` 禁用。
@@ -49,7 +54,8 @@ Case Store 负责把人工确认后的分析结果沉淀为可复用经验，并
 顶部 `Cases` 页面提供独立 Case Store 管理入口：
 
 - 搜索和查看已保存 Case。
-- 手工录入 `manual` Case。
+- 粘贴 Case 文档/文字或上传 UTF-8 文本类文件，调用 LLM 整理为 `manual` Case 草稿。
+- 缺少标题、现象、根因或解决方案时，通过连续对话补充信息。
 - 编辑标题、现象、根因、解决方案、产品、版本、环境、InstanceID、NodeID 和 evidence refs。
 - 启用或禁用 Case。
 
@@ -85,9 +91,10 @@ title + symptom + root_cause + solution
 第一版：
 
 - Case 写入本地 JSON 文件。
+- Case import 草稿写入 `storage.data_dir/case_imports/`，确认后再写入 `storage.data_dir/cases/`。
 - Case schema v2 使用 `source_type` 区分任务确认 Case 和手工录入 Case。
 - 服务端内存加载后做关键词重叠评分。
-- WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表，顶部 `Cases` 页面提供手工录入和管理入口。
+- WebUI 在成功任务结果下方提供可编辑确认表单和相似 Case 列表，顶部 `Cases` 页面提供 LLM-assisted import 和管理入口。
 - 新任务保存 `case_context.json` 并在分析 prompt 中提供历史 Case 参考。
 - Case 可禁用，不做硬删除。
 

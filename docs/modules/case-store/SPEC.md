@@ -8,15 +8,16 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 
 已实现 MVP：
 
-- Server 内部模块 `server/src/case_store.rs`。
+- Server 内部模块 `server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`。
 - 本地 JSON 文件存储，目录为 `storage.data_dir/cases/`。
+- Case import 草稿存储在 `storage.data_dir/case_imports/`。
 - Case schema v2 使用 `sourceType` 区分 `task` 和 `manual` 来源；开发阶段不兼容 v1 旧数据。
 - 成功任务可通过 `POST /api/tasks/:task_id/case` 人工确认保存为 Case。
 - 手工 Case 可通过 `POST /api/cases` 直接录入，不绑定任务。
 - `GET /api/cases` 支持关键词召回，默认只返回 `enabled=true` 的 Case。
 - `PATCH /api/cases/:case_id` 支持编辑文本、元信息、证据引用和禁用 Case。
 - WebUI 在成功任务最终结果下方提供确认表单、相似 Case 列表和禁用操作。
-- WebUI 顶部 `Cases` 页面支持搜索、手工录入、详情编辑和启用/禁用。
+- WebUI 顶部 `Cases` 页面支持搜索、LLM-assisted 文本导入、缺失信息追问、确认保存、详情编辑和启用/禁用。
 
 未实现：
 
@@ -45,6 +46,11 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 ```http
 POST /api/tasks/:task_id/case
 POST /api/cases
+POST /api/cases/imports
+GET /api/cases/imports/:draft_id
+PATCH /api/cases/imports/:draft_id
+POST /api/cases/imports/:draft_id/messages
+POST /api/cases/imports/:draft_id/confirm
 GET /api/cases?query=<text>&limit=5&includeDisabled=false
 GET /api/cases/:case_id
 PATCH /api/cases/:case_id
@@ -53,6 +59,8 @@ PATCH /api/cases/:case_id
 `POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。生成记录为 `sourceType=task`，必须包含 `taskId` 和 `sourceResultPath`。
 
 `POST /api/cases` 创建 `sourceType=manual` 记录。请求必须包含 `title`、`symptom`、`rootCause` 和 `solution`；可选 `product`、`version`、`environment`、`instanceId`、`nodeId`、`evidenceRefs` 和 `enabled`。手工 Case 不包含 `taskId` 和 `sourceResultPath`。
+
+Case import API 创建未确认草稿，不直接写入 Case Store。`POST /api/cases/imports` 支持 JSON 文本和 multipart UTF-8 文本类文件；PDF/DOCX 暂不解析。LLM Gateway 将原始材料整理为 `structuredCase`，如果缺少 `title`、`symptom`、`rootCause` 或 `solution`，返回 `missingFields` 和 `assistantQuestion`。`POST /api/cases/imports/:draft_id/messages` 追加用户补充并重新整理，`PATCH /api/cases/imports/:draft_id` 保存手工修正，`POST /api/cases/imports/:draft_id/confirm` 只有在必填字段完整时才创建 `sourceType=manual` Case。
 
 新任务创建时会写入：
 
@@ -100,7 +108,8 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 ## 验收标准
 
 - 人工确认后可保存 Case。
-- 手工录入可保存为 `sourceType=manual` Case，且不需要任务 ID。
+- 文本导入或直接 API 手工录入可保存为 `sourceType=manual` Case，且不需要任务 ID。
+- Case import 缺少必填字段时必须阻止确认保存，并提供可继续回答的问题。
 - 新任务可按产品、关键词和相似度召回 Case。
 - Case 可禁用而不是硬删除。
 - 未完成、未确认或仅包含中间假设的分析不可保存为 Case。

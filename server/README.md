@@ -127,6 +127,7 @@ FAILED
   workspaces/
   tasks/
   cases/
+  case_imports/
   code_worktrees/
 ```
 
@@ -200,6 +201,11 @@ MVP 要求：
 - `GET /api/tasks/:task_id/result` 读取结构化 LLM 分析结果。
 - `POST /api/tasks/:task_id/case` 将成功任务的最终结果人工确认保存为 Case。
 - `POST /api/cases` 手工录入不绑定任务的 Case。
+- `POST /api/cases/imports` 从粘贴文本或 UTF-8 文本文件创建 Case 导入草稿，并调用 LLM Gateway 整理为结构化 Case。
+- `GET /api/cases/imports/:draft_id` 读取 Case 导入草稿。
+- `PATCH /api/cases/imports/:draft_id` 保存用户对结构化草稿的手工修正。
+- `POST /api/cases/imports/:draft_id/messages` 提交缺失信息回答，并再次调用 LLM Gateway 合并草稿。
+- `POST /api/cases/imports/:draft_id/confirm` 确认草稿并保存为 `sourceType=manual` Case。
 - `GET /api/cases` 按关键词召回本地 Case。
 - `GET /api/cases/:case_id` 读取 Case 详情。
 - `PATCH /api/cases/:case_id` 编辑 Case 文本、元信息、证据引用或禁用 Case。
@@ -227,6 +233,7 @@ MVP 要求：
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；旧 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理该快照。
 - task 创建时按用户问题召回本地 Case Store，写入 `case_context.json`；artifacts API 返回 `caseContext`，LLM Prompt 会把历史 Case 作为参考上下文。Case Store 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
+- Case Store 管理页的手工录入路径已升级为 LLM-assisted import：Server 将未确认草稿持久化到 `storage.data_dir/case_imports`，只支持粘贴文本和 UTF-8 文本类文件，PDF/DOCX 暂不解析；缺少 `title`、`symptom`、`rootCause` 或 `solution` 时通过连续对话补齐。
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。

@@ -30,7 +30,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - runtime LLM output debug 开关和 `/api/debug/llm`
 - task artifact 查询
 - metadata 查询和导入确认
-- Case Store schema v2、本地 JSON 召回、任务确认 Case 和手工 Case 创建
+- Case Store schema v2、本地 JSON 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
 - Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
@@ -72,6 +72,11 @@ GET /api/tools/runs/:task_id/result
 GET /api/tools/runs/:task_id/artifacts
 POST /api/tasks/:task_id/case
 POST /api/cases
+POST /api/cases/imports
+GET /api/cases/imports/:draft_id
+PATCH /api/cases/imports/:draft_id
+POST /api/cases/imports/:draft_id/messages
+POST /api/cases/imports/:draft_id/confirm
 GET /api/cases
 GET /api/cases/:case_id
 PATCH /api/cases/:case_id
@@ -116,6 +121,8 @@ data_dir/
       filename.log
   tasks/
     task_xxx.json
+  case_imports/
+    caseimp_xxx.json
   workspaces/
     task_xxx/
       raw/
@@ -219,6 +226,8 @@ LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或
 `decision` 可为 `approved` 或 `rejected`。仅 `WAITING_FOR_APPROVAL` 任务可调用。当前 `approved` 会写入 mock `environment_evidence/<action_id>/result.json`，记录 `approval_decision_recorded` event，将任务恢复为 `QUEUED / PLAN_ANALYSIS` 并重新入队；真实 SSH/SCP 采集在 Environment Collector 阶段替换该 mock 产物。
 
 `GET /api/debug/llm` 和 `PUT /api/debug/llm` 控制当前 Server 进程内的 LLM 输出日志开关。开关默认关闭，重启后不保留。开启后只打印模型 response content 到 Server stderr，不打印 prompt、API Key 或 HTTP headers。
+
+Case import API 用于替代低效的 Case 手工录入表单。`POST /api/cases/imports` 接受 JSON `{text, filename?}` 或 multipart `file`，仅支持粘贴文本和 UTF-8 文本类文件（`.txt/.md/.log/.json/.yaml/.yml/.csv`）；PDF/DOCX 暂不解析。Server 调用 LLM Gateway 输出 `structuredCase`、`missingFields`、`assistantQuestion` 和 `readyToConfirm`，并持久化到 `storage.data_dir/case_imports/<draft_id>.json`。`title`、`symptom`、`rootCause` 和 `solution` 是确认保存的必填字段；缺失时通过 `POST /api/cases/imports/:draft_id/messages` 连续补充。用户可通过 `PATCH /api/cases/imports/:draft_id` 修正草稿，最后用 `POST /api/cases/imports/:draft_id/confirm` 创建 `sourceType=manual` Case。
 
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 

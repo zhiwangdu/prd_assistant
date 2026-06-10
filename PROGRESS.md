@@ -21,7 +21,7 @@ Chrome Extension or WEBUI
   -> optional ask_user / approval wait and resume
   -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
-  -> optional human confirmation or manual entry into local Case Store
+  -> optional human confirmation or LLM-assisted text import into local Case Store
 ```
 
 Current manual Tools loop:
@@ -67,6 +67,16 @@ WEBUI Tools
 - Removed obsolete root `plan.md`. Its early full-plan content duplicated current README/SPEC and `docs/modules/*` documents while retaining outdated module-directory and implementation assumptions.
 - Root README now points readers to the maintained documentation set instead of the deleted historical draft.
 
+### Case Store Import
+
+- Reworked the top-level WebUI `Cases` page from direct manual entry to an LLM-assisted import workflow.
+- Users can paste long Case text or upload UTF-8 text-like files (`.txt/.md/.log/.json/.yaml/.yml/.csv`); PDF/DOCX parsing is intentionally out of scope for this first pass.
+- Server now persists Case import drafts under `storage.data_dir/case_imports/` and exposes `POST /api/cases/imports`, `GET/PATCH /api/cases/imports/:draft_id`, `POST /api/cases/imports/:draft_id/messages`, and `POST /api/cases/imports/:draft_id/confirm`.
+- LLM Gateway now has a Case extraction call for stub, OpenAI-compatible, and binary providers. It returns `structuredCase`, `missingFields`, `assistantQuestion`, and `readyToConfirm`.
+- Missing `title`, `symptom`, `rootCause`, or `solution` blocks confirmation; users can answer follow-up questions or edit the structured draft before saving.
+- Confirmation still creates a normal `sourceType=manual` Case, so existing search, detail edit, enable/disable, and task recall behavior remain unchanged.
+- Verification: `cargo test -p logagent-server`, `npm --prefix webui run typecheck`, `npm --prefix webui run lint`, and `npm --prefix webui run build` pass.
+
 ### Chrome Extension
 
 - Manifest V3 extension exists under `chrome-extension/`.
@@ -108,6 +118,11 @@ WEBUI Tools
   - `POST /api/tasks/:task_id/actions/:action_id/decision`
   - `POST /api/tasks/:task_id/case`
   - `POST /api/cases`
+  - `POST /api/cases/imports`
+  - `GET /api/cases/imports/:draft_id`
+  - `PATCH /api/cases/imports/:draft_id`
+  - `POST /api/cases/imports/:draft_id/messages`
+  - `POST /api/cases/imports/:draft_id/confirm`
   - `GET /api/cases`
   - `GET /api/cases/:case_id`
   - `PATCH /api/cases/:case_id`

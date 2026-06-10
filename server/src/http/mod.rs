@@ -66,6 +66,19 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/cases",
             post(cases::create_manual_case).get(cases::list_cases),
         )
+        .route("/api/cases/imports", post(cases::create_case_import))
+        .route(
+            "/api/cases/imports/:draft_id",
+            get(cases::get_case_import).patch(cases::update_case_import_draft),
+        )
+        .route(
+            "/api/cases/imports/:draft_id/messages",
+            post(cases::post_case_import_message),
+        )
+        .route(
+            "/api/cases/imports/:draft_id/confirm",
+            post(cases::confirm_case_import),
+        )
         .route(
             "/api/cases/:case_id",
             get(cases::get_case).patch(cases::update_case),

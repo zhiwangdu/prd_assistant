@@ -4,7 +4,10 @@ use tracing::warn;
 use crate::{
     pipeline::executor::TaskExecutor,
     services::{llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner},
-    stores::{case_store::CaseStore, task_store::TaskStore, upload_store::UploadStore},
+    stores::{
+        case_import_store::CaseImportStore, case_store::CaseStore, task_store::TaskStore,
+        upload_store::UploadStore,
+    },
     support::config::AppConfig,
 };
 
@@ -14,6 +17,7 @@ pub struct AppState {
     pub uploads: UploadStore,
     pub metadata: MetadataStore,
     pub cases: CaseStore,
+    pub case_imports: CaseImportStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub llm: LlmGateway,
@@ -25,9 +29,11 @@ impl AppState {
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
         let cases = CaseStore::load(config.storage.cases_dir())?;
+        let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         Ok(Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             cases,
+            case_imports,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
             tool_runner: ToolRunner::new(config.tools.clone()),

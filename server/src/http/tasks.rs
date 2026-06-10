@@ -996,6 +996,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn case_import_can_collect_missing_info_and_confirm() {
+        let (state, root) = test_state();
+        let app = http::router(state.clone()).with_state(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/cases/imports")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"text":"Title: Manual WAL saturation\nSymptom: write latency increased\nRoot cause: wal disk saturation"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let draft_id = body["draft"]["draftId"].as_str().unwrap();
+        assert_eq!(body["draft"]["readyToConfirm"], false);
+        assert_eq!(body["draft"]["missingFields"][0]["field"], "solution");
+
+        let answered = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/cases/imports/{draft_id}/messages"))
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"message":"Solution: move shards and expand disk"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(answered.status(), StatusCode::OK);
+        let body = to_bytes(answered.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["draft"]["readyToConfirm"], true);
+
+        let confirmed = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/cases/imports/{draft_id}/confirm"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(confirmed.status(), StatusCode::CREATED);
+        let body = to_bytes(confirmed.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["case"]["sourceType"], "manual");
+        assert_eq!(body["case"]["solution"], "move shards and expand disk");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn task_artifacts_include_tool_results() {
         let (state, root) = test_state();
         let task_id = "task_tool_artifacts";
