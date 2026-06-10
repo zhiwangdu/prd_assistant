@@ -1,5 +1,5 @@
-import { BookOpenCheck, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { BookOpenCheck, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { type UploadResponse, uploadFile } from "./upload";
@@ -205,6 +205,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [loading, setLoading] = useState(false);
   const [userAnswer, setUserAnswer] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
+  const [draftExpanded, setDraftExpanded] = useState(true);
+  const [timelineExpanded, setTimelineExpanded] = useState(true);
+  const taskStatusRef = useRef<{ taskId: string; status: TaskStatus } | null>(null);
 
   const refreshSessions = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -232,6 +235,14 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const loadTask = useCallback(async (taskId: string) => {
     const task = await fetchJson<TaskRecord>(`/api/tasks/${encodeURIComponent(taskId)}`, { headers: authHeaders(apiKey) });
     setSelectedTask(task);
+    const previous = taskStatusRef.current;
+    const sameTask = previous?.taskId === task.taskId;
+    if (!sameTask) {
+      setTimelineExpanded(!isTerminal(task.status));
+    } else if (previous && !isTerminal(previous.status) && isTerminal(task.status)) {
+      setTimelineExpanded(false);
+    }
+    taskStatusRef.current = { taskId: task.taskId, status: task.status };
     const nextAnalysis = await fetchTaskAnalysis(taskId, apiKey);
     setAnalysisSnapshot(nextAnalysis);
     if (task.status === "SUCCEEDED") {
@@ -275,6 +286,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       setSourceUrl(session.sourceUrl ?? "");
       setInstanceId(session.instanceId ?? "");
       setNodeId(session.nodeId ?? "");
+      setDraftExpanded(session.taskIds.length === 0);
       setNativeStatus("Setting Native Agent session...");
       await setNativeCurrentSession(session.sessionId)
         .then(() => setNativeStatus(`Native Agent active: ${session.sessionId}`))
@@ -290,6 +302,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setArtifacts(null);
     setTaskResult(null);
     setAnalysisSnapshot(null);
+    setDraftExpanded(true);
+    setTimelineExpanded(true);
+    taskStatusRef.current = null;
     setTimeline([]);
     setCases([]);
     void refreshSessions().catch((reason) => setUploadStatus(errorMessage(reason)));
@@ -424,6 +439,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         method: "POST",
         headers: authHeaders(apiKey)
       });
+      setDraftExpanded(false);
+      setTimelineExpanded(true);
       setUploadStatus(`已创建分析 run ${task.taskId}`);
       await refreshSessions();
       await selectSession(selectedSession.sessionId, false, task.taskId);
@@ -558,31 +575,45 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         {selectedSession ? (
           <div className="space-y-5">
             <Card>
-              <CardHeader><CardTitle>Session draft</CardTitle><CardDescription>{selectedSession.sessionId} · {selectedSession.uploadIds.length} upload(s) · uploads optional</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Session title" />
-                <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID (optional)" />
-                  <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
-                </div>
-                <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
-                <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
-                  <UploadCloud className="mb-2 h-7 w-7" />
-                  {files.length ? `${files.length} file(s): ${files.map((file) => file.name).join(", ")}` : "选择 .log / .txt / .zip / .tar.gz / .tgz / .tar"}
-                  <input className="hidden" type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
-                </label>
-                <div>
-                  <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
-                  <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{uploadStatus}</span>
-                  <div className="flex flex-wrap gap-2">
-                    <Button disabled={loading || !files.length} variant="outline" onClick={() => void uploadToSession()}>Upload to session</Button>
-                    <Button disabled={loading || !apiKey.trim()} onClick={() => void startAnalysis()}><ListChecks className="mr-2 h-4 w-4" />Start analysis</Button>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>Session draft</CardTitle>
+                    <CardDescription>{selectedSession.sessionId} · {selectedSession.uploadIds.length} upload(s) · uploads optional</CardDescription>
                   </div>
+                  <Button className="h-8 px-2" variant="outline" onClick={() => setDraftExpanded((value) => !value)} aria-label={draftExpanded ? "Collapse Session draft" : "Expand Session draft"}>
+                    {draftExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </Button>
                 </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {draftExpanded ? (
+                  <>
+                    <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Session title" />
+                    <Input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Source URL (optional)" />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID (optional)" />
+                      <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
+                    </div>
+                    <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
+                    <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
+                      <UploadCloud className="mb-2 h-7 w-7" />
+                      {files.length ? `${files.length} file(s): ${files.map((file) => file.name).join(", ")}` : "选择 .log / .txt / .zip / .tar.gz / .tgz / .tar"}
+                      <input className="hidden" type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
+                    </label>
+                    <div>
+                      <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
+                      <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-sm text-muted-foreground">{uploadStatus}</span>
+                      <div className="flex flex-wrap gap-2">
+                        <Button disabled={loading || !files.length} variant="outline" onClick={() => void uploadToSession()}>Upload to session</Button>
+                        <Button disabled={loading || !apiKey.trim()} onClick={() => void startAnalysis()}><ListChecks className="mr-2 h-4 w-4" />Start analysis</Button>
+                      </div>
+                    </div>
+                  </>
+                ) : <SessionDraftSummary session={selectedSession} title={title} question={question} sourceUrl={sourceUrl} instanceId={instanceId} nodeId={nodeId} uploadStatus={uploadStatus} />}
               </CardContent>
             </Card>
 
@@ -605,7 +636,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
               </CardContent>
             </Card>
 
-            <SessionTimeline events={timeline} snapshot={analysisSnapshot} />
+            <SessionTimeline events={timeline} expanded={timelineExpanded} snapshot={analysisSnapshot} task={selectedTask} taskResult={taskResult} onToggle={() => setTimelineExpanded((value) => !value)} />
           </div>
         ) : (
           <Card>
@@ -673,9 +704,54 @@ function Evidence({ title, count, children }: { title: string; count: number; ch
   return <Card><CardHeader><div className="flex items-center justify-between"><CardTitle>{title}</CardTitle><Badge variant="secondary">{count}</Badge></div></CardHeader><CardContent className="space-y-2">{count ? children : <EmptyState>暂无数据</EmptyState>}</CardContent></Card>;
 }
 
-function SessionTimeline({ events, snapshot }: { events: SessionTimelineEvent[]; snapshot: AnalysisSnapshot | null }) {
+function SessionDraftSummary({ session, title, question, sourceUrl, instanceId, nodeId, uploadStatus }: { session: SessionRecord; title: string; question: string; sourceUrl: string; instanceId: string; nodeId: string; uploadStatus: string }) {
+  const rows = [
+    ["Title", title || session.title || "-"],
+    ["Question", question || session.question || "-"],
+    ["Source URL", sourceUrl || "-"],
+    ["Metadata", `instance=${instanceId || "-"} · node=${nodeId || "-"}`],
+    ["Inputs", `${session.uploadIds.length} upload(s) · ${session.taskIds.length} run(s)`],
+    ["Status", `${session.status} · ${uploadStatus}`]
+  ];
+  return <div className="grid gap-3 md:grid-cols-2">{rows.map(([label, value]) => <div className="rounded-lg border border-border p-3" key={label}><p className="text-xs text-muted-foreground">{label}</p><p className={`mt-1 break-words text-sm ${label === "Question" ? "max-h-10 overflow-hidden" : ""}`}>{value}</p></div>)}</div>;
+}
+
+function SessionTimeline({ events, expanded, snapshot, task, taskResult, onToggle }: { events: SessionTimelineEvent[]; expanded: boolean; snapshot: AnalysisSnapshot | null; task: TaskRecord | null; taskResult: TaskResult | null; onToggle: () => void }) {
   const latest = events.slice(-18).reverse();
-  return <Card><CardHeader><div className="flex items-center justify-between gap-3"><div><CardTitle>Evidence timeline</CardTitle><CardDescription>{snapshot ? `revision ${snapshot.state.revision} · ${snapshot.state.status} · phase ${snapshot.state.currentPhase ?? "none"}` : "Session and task events"}</CardDescription></div>{snapshot ? <div className="flex flex-wrap gap-2 text-xs"><Badge variant="secondary">rounds {snapshot.state.budget.rounds}</Badge><Badge variant="secondary">LLM {snapshot.state.budget.llmCalls}</Badge><Badge variant="secondary">actions {snapshot.state.budget.actions}</Badge><Badge variant="secondary">evidence {snapshot.state.evidence.length}</Badge></div> : null}</div></CardHeader><CardContent>{latest.length ? <ol className="space-y-2">{latest.map((event, index) => <li className="rounded-md border border-border bg-white p-3" key={`${event.createdAt}:${event.eventType}:${index}`}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant={event.eventType === "analysis_failed" ? "destructive" : event.eventType === "model_decision" ? "warning" : "outline"}>{event.source}:{event.eventType}</Badge>{event.phase ? <span>{event.phase}</span> : null}{event.taskId ? <span className="font-mono">{event.taskId}</span> : null}{event.actionId ? <span className="font-mono">{event.actionId}</span> : null}<span><Clock3 className="mr-1 inline h-3 w-3" />{new Date(event.createdAt).toLocaleTimeString()}</span></div><p className="mt-2 text-sm">{event.message}</p><EventDetails event={event} /></li>)}</ol> : <EmptyState>暂无 timeline 事件。</EmptyState>}</CardContent></Card>;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Evidence timeline</CardTitle>
+            <CardDescription>{snapshot ? `revision ${snapshot.state.revision} · ${snapshot.state.status} · phase ${snapshot.state.currentPhase ?? "none"}` : "Session and task events"}</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {expanded && snapshot ? <div className="flex flex-wrap gap-2 text-xs"><Badge variant="secondary">rounds {snapshot.state.budget.rounds}</Badge><Badge variant="secondary">LLM {snapshot.state.budget.llmCalls}</Badge><Badge variant="secondary">actions {snapshot.state.budget.actions}</Badge><Badge variant="secondary">evidence {snapshot.state.evidence.length}</Badge></div> : null}
+            <Button className="h-8 px-2" variant="outline" onClick={onToggle} aria-label={expanded ? "Collapse Evidence timeline" : "Expand Evidence timeline"}>
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {expanded ? (
+          latest.length ? <ol className="space-y-2">{latest.map((event, index) => <li className="rounded-md border border-border bg-white p-3" key={`${event.createdAt}:${event.eventType}:${index}`}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant={event.eventType === "analysis_failed" ? "destructive" : event.eventType === "model_decision" ? "warning" : "outline"}>{event.source}:{event.eventType}</Badge>{event.phase ? <span>{event.phase}</span> : null}{event.taskId ? <span className="font-mono">{event.taskId}</span> : null}{event.actionId ? <span className="font-mono">{event.actionId}</span> : null}<span><Clock3 className="mr-1 inline h-3 w-3" />{new Date(event.createdAt).toLocaleTimeString()}</span></div><p className="mt-2 text-sm">{event.message}</p><EventDetails event={event} /></li>)}</ol> : <EmptyState>暂无 timeline 事件。</EmptyState>
+        ) : <TimelineSummary latest={latest[0]} snapshot={snapshot} task={task} taskResult={taskResult} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TimelineSummary({ latest, snapshot, task, taskResult }: { latest?: SessionTimelineEvent; snapshot: AnalysisSnapshot | null; task: TaskRecord | null; taskResult: TaskResult | null }) {
+  if (!task) return <EmptyState>暂无选中的分析 run。</EmptyState>;
+  if (task.status === "SUCCEEDED" && taskResult) {
+    return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><Badge variant="secondary">confidence {taskResult.result.confidence}</Badge><span className="font-mono text-xs text-muted-foreground">{task.taskId}</span></div><p className="mt-2 text-sm">{taskResult.result.summary}</p></div>;
+  }
+  if (task.status === "FAILED") {
+    return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><div className="mb-1 flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="font-mono text-xs">{task.taskId}</span></div>{task.error?.phase ? `${task.error.phase}: ` : ""}{task.error?.message ?? latest?.message ?? "Task failed"}</div>;
+  }
+  return <div className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge status={task.status} /><span className="text-xs text-muted-foreground">{task.phase ?? snapshot?.state.currentPhase ?? "No active phase"}</span><span className="font-mono text-xs text-muted-foreground">{task.taskId}</span></div><p className="mt-2 text-sm">{latest?.message ?? "任务正在运行，展开 timeline 查看完整事件。"}</p>{snapshot ? <p className="mt-1 text-xs text-muted-foreground">revision {snapshot.state.revision} · rounds {snapshot.state.budget.rounds} · evidence {snapshot.state.evidence.length}</p> : null}</div>;
 }
 
 function EventDetails({ event }: { event: SessionTimelineEvent }) {

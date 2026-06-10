@@ -62,6 +62,14 @@ WEBUI Tools
 - WebUI `Log analysis` 的 `Start analysis` 不再依赖已附加上传，Session draft 中标明 uploads optional；成功 artifacts 会展示 Session text input 并支持该 evidence ref 跳转。
 - Verification: focused Rust regressions, `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
 
+### Log Analysis Collapse UX
+
+- WebUI `Log analysis` 的 `Session draft` 现在支持展开/收起；新建空 Session 默认展开，已有 run 的 Session 默认收起，点击 `Start analysis` 创建 run 后会自动收起。
+- Session draft 收起态展示 title、question、source URL、Metadata 绑定、upload/run 数量和 session 状态摘要，避免运行中占用主要视野。
+- Unified Evidence Timeline 现在支持展开/收起；运行中 run 默认展开，切换到历史终态 run 或当前 run 到达 `SUCCEEDED` / `FAILED` 后自动收起。
+- Timeline 收起态只展示最终结果 summary、confidence、失败 phase/message，或运行中的当前状态和最近事件；用户仍可手动展开查看完整 timeline。
+- Verification: `npm run lint`, `npm run typecheck`, and `npm run build` pass in `webui/`.
+
 ### WebUI Naming
 
 - Renamed the top bar product title from `LogAgent Metadata Console` to `LogAgent Analysis Workbench`.
