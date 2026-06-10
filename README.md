@@ -1,6 +1,6 @@
 # LogAgent MVP 总览
 
-本目录保留原始完整方案 [plan.md](./plan.md)，并按模块拆分为可独立推进的设计文档。
+当前权威文档入口是本总览、[SPEC.md](./SPEC.md)、各可运行组件目录，以及 [docs/modules](./docs/modules/README.md) 中的 Server 内部能力文档。
 
 ## 目标
 

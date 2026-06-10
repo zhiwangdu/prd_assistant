@@ -62,6 +62,11 @@ WEBUI Tools
 - Script validation: `bash -n` passes for the new scripts; every new entry script fails when `LOGAGENT_WORK_DIR` is missing; initialization smoke created the expected runtime tree; `build-server.sh` installed the release Server binary; `build-webui.sh` built and copied WebUI static output. `server-service.sh start` reached the Server startup step, but this Codex sandbox rejects local port binding (`PermissionError: [Errno 1] Operation not permitted` from a minimal Python socket bind), so live health-check startup cannot be completed in this environment.
 - Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm run lint`, `npm run typecheck`, and `npm run build` pass.
 
+### Documentation Cleanup
+
+- Removed obsolete root `plan.md`. Its early full-plan content duplicated current README/SPEC and `docs/modules/*` documents while retaining outdated module-directory and implementation assumptions.
+- Root README now points readers to the maintained documentation set instead of the deleted historical draft.
+
 ### Chrome Extension
 
 - Manifest V3 extension exists under `chrome-extension/`.
@@ -468,7 +473,7 @@ Current product-loop Case Store slice verification:
 For the Analysis Agent architecture update:
 
 - Reviewed all component README/SPEC documents.
-- Updated root architecture, original `plan.md`, interfaces, Server, WebUI, config, security, testing, deployment, evidence providers, Case Store, roadmap, and `AGENTS.md`.
+- Updated root architecture, interfaces, Server, WebUI, config, security, testing, deployment, evidence providers, Case Store, roadmap, and `AGENTS.md`.
 - No application code or runtime configuration was changed, so Rust and WebUI build checks were not required.
 - Added and syntax-reviewed the root Mermaid architecture and investigation-loop diagrams.
 
