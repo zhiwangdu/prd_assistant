@@ -2,7 +2,6 @@ import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, W
 import { useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
-import { MetadataDashboard } from "./metadata/MetadataDashboard";
 import { CasesView } from "./CasesView";
 import { OperationsView } from "./OperationsView";
 import { ToolsView } from "./ToolsView";
@@ -15,7 +14,7 @@ export function App() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
   const [llmDebugStatus, setLlmDebugStatus] = useState("LLM output logs off");
-  const [view, setView] = useState<"system-context" | "metadata" | "operations" | "tools" | "cases">("system-context");
+  const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools">("operations");
 
   useEffect(() => {
     setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
@@ -67,7 +66,7 @@ export function App() {
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary p-2 text-primary-foreground"><Layers3 className="h-5 w-5" /></div>
-            <div><h1 className="font-semibold">LogAgent Analysis Workbench</h1><p className="text-xs text-muted-foreground">Evidence, metadata, tools, and case workflow</p></div>
+            <div><h1 className="font-semibold">LogAgent Analysis Workbench</h1><p className="text-xs text-muted-foreground">Evidence, memory, system context, and tools</p></div>
             <Badge variant={healthy ? "success" : healthy === false ? "destructive" : "secondary"}><Activity className="mr-1 h-3 w-3" />{healthy ? "Server healthy" : healthy === false ? "Server unavailable" : "Checking"}</Badge>
           </div>
           <Card className="shadow-none lg:w-[560px]">
@@ -87,12 +86,12 @@ export function App() {
       </header>
       <main className="mx-auto max-w-[1680px] px-5 py-6">
         <nav className="mb-5 flex gap-2">
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />Log Analysis</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />Memory</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />System Context</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />Log analysis</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />Tools</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />Cases</button>
         </nav>
-        {view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "metadata" ? <MetadataDashboard apiKey={apiKey} /> : view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <CasesView apiKey={apiKey} />}
+        {view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : <ToolsView apiKey={apiKey} />}
       </main>
     </div>
   );

@@ -515,8 +515,8 @@ mod tests {
     use crate::{
         domain::models::{TaskSource, TaskStatus, UploadStatus},
         support::config::{
-            AnalysisSettings, AuthSettings, LlmProvider, LlmSettings, LogAnalyzerSettings,
-            ServerSettings, StorageSettings, ToolsSettings,
+            AnalysisSettings, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
     };
 
@@ -649,6 +649,7 @@ mod tests {
                     max_output_tokens: 100,
                 },
                 analysis: test_analysis_settings(),
+                embedding: test_embedding_settings(),
             })
         }
 
@@ -685,6 +686,16 @@ mod tests {
             max_llm_calls: 4,
             max_actions: 6,
             max_repeated_action_fingerprints: 1,
+        }
+    }
+
+    fn test_embedding_settings() -> EmbeddingSettings {
+        EmbeddingSettings {
+            enabled: false,
+            provider: "openai_compatible".to_string(),
+            model: "text-embedding-3-small".to_string(),
+            api_key_env: None,
+            store: "sqlite".to_string(),
         }
     }
 }

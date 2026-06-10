@@ -793,7 +793,7 @@ mod tests {
         http,
         services::metadata::MetadataImportRequest,
         support::config::{
-            AnalysisSettings, AppConfig, AuthSettings, LlmProvider, LlmSettings,
+            AnalysisSettings, AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
     };
@@ -1780,6 +1780,7 @@ nodes:
             tools: ToolsSettings::default(),
             llm,
             analysis: test_analysis_settings(),
+            embedding: test_embedding_settings(),
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
@@ -1791,6 +1792,16 @@ nodes:
             max_llm_calls: 4,
             max_actions: 6,
             max_repeated_action_fingerprints: 1,
+        }
+    }
+
+    fn test_embedding_settings() -> EmbeddingSettings {
+        EmbeddingSettings {
+            enabled: false,
+            provider: "openai_compatible".to_string(),
+            model: "text-embedding-3-small".to_string(),
+            api_key_env: None,
+            store: "sqlite".to_string(),
         }
     }
 

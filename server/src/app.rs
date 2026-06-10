@@ -31,7 +31,10 @@ impl AppState {
     pub fn new(config: Arc<AppConfig>) -> anyhow::Result<Arc<Self>> {
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
-        let cases = CaseStore::load(config.storage.cases_dir())?;
+        let cases = CaseStore::load_with_memory(
+            config.storage.cases_dir(),
+            config.storage.memory_db_path(),
+        )?;
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
         let sessions = AnalysisSessionStore::load(

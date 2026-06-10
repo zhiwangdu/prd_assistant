@@ -1,15 +1,18 @@
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, fs, path::PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tracing::warn;
 
-use crate::domain::models::{AnalysisResult, TaskRecord};
+use crate::{
+    domain::models::{AnalysisResult, TaskRecord},
+    stores::memory_store::MemoryStore,
+};
 
 #[derive(Debug, Clone)]
 pub struct CaseStore {
-    dir: PathBuf,
-    inner: Arc<RwLock<HashMap<String, CaseRecord>>>,
+    legacy_dir: PathBuf,
+    memory: MemoryStore,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,9 +101,16 @@ pub struct CaseUpdate {
 }
 
 impl CaseStore {
+    #[cfg(test)]
     pub fn load(dir: PathBuf) -> anyhow::Result<Self> {
+        let memory_db_path = dir.join("memory.sqlite");
+        Self::load_with_memory(dir, memory_db_path)
+    }
+
+    pub fn load_with_memory(dir: PathBuf, memory_db_path: PathBuf) -> anyhow::Result<Self> {
         fs::create_dir_all(&dir)?;
-        let mut cases = HashMap::new();
+        let memory = MemoryStore::load(memory_db_path)?;
+        let mut seen = HashSet::new();
         for entry in fs::read_dir(&dir)? {
             let path = entry?.path();
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
@@ -111,26 +121,19 @@ impl CaseStore {
                 .map_err(|err| anyhow::anyhow!("invalid case record {}: {err}", path.display()))?;
             validate_case(&record)
                 .map_err(|err| anyhow::anyhow!("invalid case record {}: {err}", path.display()))?;
-            if cases.insert(record.case_id.clone(), record).is_some() {
+            if !seen.insert(record.case_id.clone()) {
                 anyhow::bail!("duplicate case record in {}", path.display());
             }
+            memory.upsert_case(&record)?;
         }
         Ok(Self {
-            dir,
-            inner: Arc::new(RwLock::new(cases)),
+            legacy_dir: dir,
+            memory,
         })
     }
 
     pub async fn create_or_get_for_task(&self, input: NewCase) -> anyhow::Result<CaseRecord> {
-        let mut cases = self.inner.write().await;
-        if let Some(existing) = cases
-            .values()
-            .find(|record| {
-                record.source_type == CaseSourceType::Task
-                    && record.task_id.as_deref() == Some(input.task.task_id.as_str())
-            })
-            .cloned()
-        {
+        if let Some(existing) = self.memory.find_task_case(&input.task.task_id)? {
             return Ok(existing);
         }
         let now = Utc::now();
@@ -171,14 +174,13 @@ impl CaseStore {
         };
         normalize_case_record(&mut record);
         validate_case(&record)?;
-        self.persist(&record)?;
-        cases.insert(record.case_id.clone(), record.clone());
+        self.memory.upsert_case(&record)?;
+        self.persist_legacy(&record)?;
         Ok(record)
     }
 
     pub async fn create_manual(&self, input: ManualCase) -> anyhow::Result<CaseRecord> {
-        let mut cases = self.inner.write().await;
-        if cases.contains_key(&input.case_id) {
+        if self.memory.get_case(&input.case_id)?.is_some() {
             anyhow::bail!("duplicate case id");
         }
         let now = Utc::now();
@@ -204,13 +206,16 @@ impl CaseStore {
         };
         normalize_case_record(&mut record);
         validate_case(&record)?;
-        self.persist(&record)?;
-        cases.insert(record.case_id.clone(), record.clone());
+        self.memory.upsert_case(&record)?;
+        self.persist_legacy(&record)?;
         Ok(record)
     }
 
     pub async fn get(&self, case_id: &str) -> Option<CaseRecord> {
-        self.inner.read().await.get(case_id).cloned()
+        self.memory.get_case(case_id).unwrap_or_else(|err| {
+            warn!(case_id, error = %err, "failed to read case from memory");
+            None
+        })
     }
 
     pub async fn search(
@@ -219,45 +224,18 @@ impl CaseStore {
         limit: usize,
         include_disabled: bool,
     ) -> Vec<CaseSearchHit> {
-        let query_tokens = query_tokens(query.unwrap_or(""));
-        let mut hits = self
-            .inner
-            .read()
-            .await
-            .values()
-            .filter(|record| include_disabled || record.enabled)
-            .filter_map(|record| {
-                let score = if query_tokens.is_empty() {
-                    1.0
-                } else {
-                    score_case(record, &query_tokens)
-                };
-                if score > 0.0 {
-                    Some(CaseSearchHit {
-                        record: record.clone(),
-                        score,
-                    })
-                } else {
-                    None
-                }
+        self.memory
+            .search_cases(query, limit, include_disabled)
+            .unwrap_or_else(|err| {
+                warn!(error = %err, "failed to search cases from memory");
+                Vec::new()
             })
-            .collect::<Vec<_>>();
-        hits.sort_by(|left, right| {
-            right
-                .score
-                .partial_cmp(&left.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| right.record.created_at.cmp(&left.record.created_at))
-        });
-        hits.truncate(limit.max(1));
-        hits
     }
 
     pub async fn update(&self, case_id: &str, update: CaseUpdate) -> anyhow::Result<CaseRecord> {
-        let mut cases = self.inner.write().await;
-        let mut record = cases
-            .get(case_id)
-            .cloned()
+        let mut record = self
+            .memory
+            .get_case(case_id)?
             .ok_or_else(|| anyhow::anyhow!("unknown case {case_id}"))?;
         if let Some(product) = update.product {
             record.product = Some(product);
@@ -295,14 +273,16 @@ impl CaseStore {
         record.updated_at = Utc::now();
         normalize_case_record(&mut record);
         validate_case(&record)?;
-        self.persist(&record)?;
-        cases.insert(case_id.to_string(), record.clone());
+        self.memory.upsert_case(&record)?;
+        self.persist_legacy(&record)?;
         Ok(record)
     }
 
-    fn persist(&self, record: &CaseRecord) -> anyhow::Result<()> {
-        let path = self.dir.join(format!("{}.json", record.case_id));
-        let temp = self.dir.join(format!(".{}.json.tmp", record.case_id));
+    fn persist_legacy(&self, record: &CaseRecord) -> anyhow::Result<()> {
+        let path = self.legacy_dir.join(format!("{}.json", record.case_id));
+        let temp = self
+            .legacy_dir
+            .join(format!(".{}.json.tmp", record.case_id));
         fs::write(&temp, serde_json::to_vec_pretty(record)?)?;
         fs::rename(&temp, &path)?;
         Ok(())
@@ -404,7 +384,7 @@ fn result_evidence_refs(result: &AnalysisResult) -> Vec<String> {
     refs
 }
 
-fn score_case(record: &CaseRecord, query_tokens: &[String]) -> f64 {
+pub(crate) fn score_case(record: &CaseRecord, query_tokens: &[String]) -> f64 {
     let text = searchable_text(record);
     let mut hits = 0usize;
     for token in query_tokens {
@@ -415,7 +395,7 @@ fn score_case(record: &CaseRecord, query_tokens: &[String]) -> f64 {
     hits as f64 / query_tokens.len().max(1) as f64
 }
 
-fn searchable_text(record: &CaseRecord) -> String {
+pub(crate) fn searchable_text(record: &CaseRecord) -> String {
     [
         record.title.as_str(),
         record.symptom.as_str(),
@@ -432,7 +412,7 @@ fn searchable_text(record: &CaseRecord) -> String {
     .to_lowercase()
 }
 
-fn query_tokens(query: &str) -> Vec<String> {
+pub(crate) fn query_tokens(query: &str) -> Vec<String> {
     query
         .split(|value: char| value.is_whitespace() || value == ',' || value == ';')
         .map(|value| value.trim().to_lowercase())
@@ -588,6 +568,100 @@ mod tests {
         assert_eq!(hits[0].record.case_id, "case_manual_test");
         let loaded = CaseStore::load(dir.clone()).unwrap();
         assert!(loaded.get("case_manual_test").await.is_some());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn imports_legacy_json_cases_into_memory_idempotently() {
+        let root = std::env::temp_dir().join(format!(
+            "logagent-case-store-migration-{}",
+            std::process::id()
+        ));
+        let legacy_dir = root.join("cases");
+        let memory_db = root.join("memory/memory.sqlite");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let now = Utc::now();
+        let record = CaseRecord {
+            schema_version: 2,
+            case_id: "case_legacy_test".to_string(),
+            source_type: CaseSourceType::Manual,
+            task_id: None,
+            product: Some("opengemini".to_string()),
+            version: Some("1.3.0".to_string()),
+            environment: Some("prod".to_string()),
+            instance_id: Some("inst-legacy".to_string()),
+            node_id: None,
+            title: "legacy timeout case".to_string(),
+            symptom: "query timeout".to_string(),
+            root_cause: "coordinator overloaded".to_string(),
+            solution: "rebalance partitions".to_string(),
+            evidence_refs: vec!["INC-legacy".to_string()],
+            source_result_path: None,
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+        };
+        std::fs::write(
+            legacy_dir.join("case_legacy_test.json"),
+            serde_json::to_vec_pretty(&record).unwrap(),
+        )
+        .unwrap();
+
+        let store = CaseStore::load_with_memory(legacy_dir.clone(), memory_db.clone()).unwrap();
+        assert_eq!(
+            store
+                .search(Some("coordinator timeout"), 10, false)
+                .await
+                .len(),
+            1
+        );
+        assert!(legacy_dir.join("case_legacy_test.json").exists());
+
+        let reloaded = CaseStore::load_with_memory(legacy_dir.clone(), memory_db).unwrap();
+        let hits = reloaded
+            .search(Some("coordinator timeout"), 10, false)
+            .await;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.case_id, "case_legacy_test");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn fts_search_handles_hyphenated_queries() {
+        let dir =
+            std::env::temp_dir().join(format!("logagent-case-store-fts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = CaseStore::load(dir.clone()).unwrap();
+        store
+            .create_manual(ManualCase {
+                case_id: "case_fts_test".to_string(),
+                product: Some("opengemini".to_string()),
+                version: None,
+                environment: None,
+                instance_id: None,
+                node_id: None,
+                title: "WAL disk saturation".to_string(),
+                symptom: "writes are slow".to_string(),
+                root_cause: "wal disk saturation".to_string(),
+                solution: "move shards and expand disk".to_string(),
+                evidence_refs: vec![],
+                enabled: true,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            score_case(
+                &store.get("case_fts_test").await.unwrap(),
+                &query_tokens("wal-disk")
+            ),
+            0.0
+        );
+        let hits = store.search(Some("wal-disk"), 5, false).await;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.case_id, "case_fts_test");
+        assert!(hits[0].score > 0.0);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

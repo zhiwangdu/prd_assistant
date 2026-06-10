@@ -32,12 +32,12 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - task artifact 查询
 - metadata 查询和导入确认
 - System Context 资源管理、版本化 Prompt Pack、架构文档和 Prompt preview
-- Case Store schema v2、本地 JSON 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
+- Memory SQLite store、Case Store schema v2 兼容 API、legacy JSON 启动导入、FTS/BM25 + 关键词 fallback 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
 - Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
-代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化，`services/` 承载 Log Analyzer、Tool Runner、Metadata、LLM Gateway 和 Tools 插件等内部能力，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。HTTP API、配置结构、任务 schema 和 workspace artifact 路径保持不变。
+代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Metadata、LLM Gateway 和 Tools 插件等内部能力，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。HTTP API、配置结构、任务 schema 和 workspace artifact 路径保持不变。
 
 ## HTTP 接口
 
@@ -144,6 +144,10 @@ data_dir/
       session_events.jsonl
   tasks/
     task_xxx.json
+  memory/
+    memory.sqlite
+  cases/
+    case_xxx.json
   case_imports/
     caseimp_xxx.json
   system_context/
@@ -266,6 +270,8 @@ LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或
 
 Case import API 用于替代低效的 Case 手工录入表单。`POST /api/cases/imports` 接受 JSON `{text, filename?}` 或 multipart `file`，仅支持粘贴文本和 UTF-8 文本类文件（`.txt/.md/.log/.json/.yaml/.yml/.csv`）；PDF/DOCX 暂不解析。Server 调用 LLM Gateway 输出 `structuredCase`、`missingFields`、`assistantQuestion` 和 `readyToConfirm`，并持久化到 `storage.data_dir/case_imports/<draft_id>.json`。`title`、`symptom`、`rootCause` 和 `solution` 是确认保存的必填字段；缺失时通过 `POST /api/cases/imports/:draft_id/messages` 连续补充。用户可通过 `PATCH /api/cases/imports/:draft_id` 修正草稿，最后用 `POST /api/cases/imports/:draft_id/confirm` 创建 `sourceType=manual` Case。
 
+Memory 当前作为 Server 内部本地知识后端，主库为 `storage.data_dir/memory/memory.sqlite`，第一阶段仅启用 `memoryType=case`。`CaseStore` 仍暴露现有 `/api/cases*` API、`CaseRecord`、`CaseSearchHit` 和 `case_context.json` 结构。启动时 Server 会读取 `storage.data_dir/cases/*.json` 并按 `caseId` idempotent upsert 到 SQLite；旧 JSON 文件不删除，新增和更新 Case 也会同步写 JSON 作为回滚源。SQLite schema 包含 `memory_items`、`memory_chunks` 和 `memory_chunks_fts`；搜索先过滤 `memoryType=case`、`status=active` 和 `enabled`，再使用 FTS/BM25 分数合并关键词重叠分数。若 FTS 创建或查询失败，Server 记录 warning 并回退到关键词重叠召回。
+
 任务文件使用临时文件加 rename 原子替换。Task schema version 4 支持扩展 phase。每次 phase 推进都校验当前持久化 phase，防止陈旧 dispatcher 覆盖状态。
 
 启动时损坏 JSON、未知 phase、`RUNNING` 无 phase 或 `SUCCEEDED` 仍有 phase 必须失败。`RUNNING` 恢复为 `QUEUED` 时保留 phase，重新获得执行许可后 attempts 加一并从该 phase 幂等重跑。全新 `QUEUED` 任务从 `EXTRACT` 开始；终态不恢复。
@@ -363,6 +369,11 @@ persist task
 - `analysis.max_llm_calls`，默认 4，非正值按 1
 - `analysis.max_actions`，默认 6，非正值按 1
 - `analysis.max_repeated_action_fingerprints`，默认 1，非正值按 1
+- `embedding.enabled`，默认 `false`
+- `embedding.provider`，默认 `openai_compatible`
+- `embedding.model`，默认 `text-embedding-3-small`
+- `embedding.api_key_env`，预留，默认不读取
+- `embedding.store`，默认 `sqlite`
 - `tools.<name>.enabled`
 - `tools.<name>.path`
 - `tools.<name>.path_env`
@@ -381,7 +392,7 @@ persist task
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 已增强 delta 字段映射，后续根据真实 compare smoke 继续调整。
 - 多轮 Analysis Agent 的产品化策略、模型用量和 Provider request id 审计。
-- Case Store 已完成本地 JSON schema v2、本地召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding 和更正式的 Analysis Agent evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
+- Memory 已完成本地 SQLite schema、legacy JSON Case 导入、Case schema v2 兼容 API、本地 FTS/BM25 召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding/vector 召回和更正式的 Analysis Agent evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
 - Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
 
 ## 验收标准
@@ -405,7 +416,7 @@ persist task
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
 - `POST /api/tasks/:task_id/case` 只能保存 `SUCCEEDED` 任务，重复确认同一任务不能生成重复 Case。
 - `POST /api/cases` 必须能手工创建 `sourceType=manual` Case，必填标题、现象、根因和解决方案，且不包含 `taskId/sourceResultPath`。
-- `GET /api/cases` 必须能按关键词召回启用 Case，禁用 Case 默认不返回。
+- `GET /api/cases` 必须能通过 Memory 按 FTS/BM25 和关键词 fallback 召回启用 Case，禁用 Case 默认不返回。
 - `PATCH /api/cases/:case_id` 必须能更新 Case 文本、产品、版本、环境、InstanceID、NodeID、证据引用和启用状态。
 - 新任务 artifacts 必须返回 `caseContext`，LLM prompt 必须包含历史 Case 参考段落且不能要求模型把历史 Case 当作当前证据。
 - LLM Gateway 必须能解析合法 `search_logs`、`run_tool`、`final_answer` decision，并拒绝当前未开放 action。

@@ -80,7 +80,7 @@ flowchart LR
             Code["Code Evidence"]
             Env["Environment Collector"]
             Meta["Metadata"]
-            Cases["Case Store"]
+            Cases["Memory<br/>Case Store compatibility"]
         end
 
         Store[("Session Store / Task Store / Workspace<br/>session、runs、events、evidence、result")]
@@ -134,18 +134,18 @@ flowchart LR
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
 - WebUI 可实时展示 Task execution loop 摘要；LLM response content 日志只能通过顶部 debug 开关手动开启。
-- Case Store 只接收人工确认后的 Case，包括成功任务最终结果确认和用户通过 LLM-assisted 文本导入确认的手工 Case。
+- Memory 当前只激活 `memoryType=case`，通过兼容的 Case API 接收人工确认后的 Case，包括成功任务最终结果确认和用户通过 LLM-assisted 文本导入确认的手工 Case。
 
 ## 项目目录
 
-根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Agent、LLM Gateway、Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
+根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Agent、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
 
 | 目录 | 职责 | Spec |
 |------|------|------|
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
 | [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
 | [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、内部能力和 API | [SPEC](./server/SPEC.md) |
-| [webui](./webui/README.md) | Vite WebUI、任务证据、Metadata、Tools 和 Case 可视化 | [SPEC](./webui/SPEC.md) |
+| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、System Context、Metadata 和 Tools 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
@@ -161,7 +161,8 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 | System Context | [README](./docs/modules/system-context/README.md) / [SPEC](./docs/modules/system-context/SPEC.md) |
 | Analysis Agent | [README](./docs/modules/analysis-agent/README.md) / [SPEC](./docs/modules/analysis-agent/SPEC.md) |
 | LLM Gateway | [README](./docs/modules/llm-gateway/README.md) / [SPEC](./docs/modules/llm-gateway/SPEC.md) |
-| Case Store | [README](./docs/modules/case-store/README.md) / [SPEC](./docs/modules/case-store/SPEC.md) |
+| Memory / Case Store compatibility | [README](./docs/modules/case-store/README.md) / [SPEC](./docs/modules/case-store/SPEC.md) |
+| Memory | [README](./docs/modules/memory/README.md) / [SPEC](./docs/modules/memory/SPEC.md) |
 | Code Evidence | [README](./docs/modules/code-evidence/README.md) / [SPEC](./docs/modules/code-evidence/SPEC.md) |
 | Environment Collector | [README](./docs/modules/environment-collector/README.md) / [SPEC](./docs/modules/environment-collector/SPEC.md) |
 | Config / Interfaces / Security / Deployment / Roadmap | [docs/modules](./docs/modules/README.md) |

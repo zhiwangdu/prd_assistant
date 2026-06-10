@@ -5,7 +5,8 @@
 | 能力 | README | SPEC |
 |------|--------|------|
 | Analysis Agent | [README](./analysis-agent/README.md) | [SPEC](./analysis-agent/SPEC.md) |
-| Case Store | [README](./case-store/README.md) | [SPEC](./case-store/SPEC.md) |
+| Memory | [README](./memory/README.md) | [SPEC](./memory/SPEC.md) |
+| Memory / Case Store compatibility | [README](./case-store/README.md) | [SPEC](./case-store/SPEC.md) |
 | Code Evidence | [README](./code-evidence/README.md) | [SPEC](./code-evidence/SPEC.md) |
 | Config | [README](./config/README.md) | [SPEC](./config/SPEC.md) |
 | Deployment | [README](./deployment/README.md) | [SPEC](./deployment/SPEC.md) |

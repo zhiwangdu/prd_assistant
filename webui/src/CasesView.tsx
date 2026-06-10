@@ -95,7 +95,7 @@ export function CasesView({ apiKey }: { apiKey: string }) {
   const [caseImport, setCaseImport] = useState<CaseImportSession | null>(null);
   const [importDraft, setImportDraft] = useState<CaseDraft>(EMPTY_DRAFT);
   const [importAnswer, setImportAnswer] = useState("");
-  const [status, setStatus] = useState("等待加载 Case Store");
+  const [status, setStatus] = useState("等待加载 Memory");
   const [loading, setLoading] = useState(false);
 
   const canStartImport = Boolean(apiKey.trim() && (sourceText.trim() || sourceFile));
@@ -120,7 +120,7 @@ export function CasesView({ apiKey }: { apiKey: string }) {
         headers: authHeaders(apiKey)
       });
       setCases(response.cases);
-      setStatus(`Loaded ${response.cases.length} cases`);
+      setStatus(`Loaded ${response.cases.length} memory cases`);
       if (selectedCase && !response.cases.some((item) => item.caseId === selectedCase.caseId)) {
         setSelectedCase(null);
       }
@@ -345,8 +345,8 @@ export function CasesView({ apiKey }: { apiKey: string }) {
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle>Case Store</CardTitle>
-                <CardDescription>本地 JSON Case 列表、搜索和启用状态管理</CardDescription>
+                <CardTitle>Memory</CardTitle>
+                <CardDescription>已确认故障 Case 的本地 Memory 索引、搜索和启用状态管理</CardDescription>
               </div>
               <Button className="h-9 px-3" disabled={loading} variant="outline" onClick={() => void refreshCases()}><RefreshCw className="h-4 w-4" /></Button>
             </div>
@@ -360,7 +360,7 @@ export function CasesView({ apiKey }: { apiKey: string }) {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => { if (event.key === "Enter") void refreshCases(); }}
-                  placeholder="Search title, symptom, root cause, InstanceID, NodeID"
+                  placeholder="Search memory title, symptom, root cause, InstanceID, NodeID"
                 />
               </div>
               <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">

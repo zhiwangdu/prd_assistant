@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub tools: ToolsSettings,
     pub llm: LlmSettings,
     pub analysis: AnalysisSettings,
+    #[allow(dead_code)]
+    pub embedding: EmbeddingSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +85,16 @@ pub struct AnalysisSettings {
     pub max_repeated_action_fingerprints: u32,
 }
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct EmbeddingSettings {
+    pub enabled: bool,
+    pub provider: String,
+    pub model: String,
+    pub api_key_env: Option<String>,
+    pub store: String,
+}
+
 impl std::fmt::Debug for LlmSettings {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -117,6 +129,7 @@ struct ConfigFile {
     tools: BTreeMap<String, ToolConfig>,
     llm: Option<LlmConfig>,
     analysis: Option<AnalysisConfig>,
+    embedding: Option<EmbeddingConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -220,6 +233,19 @@ struct AnalysisConfig {
     max_repeated_action_fingerprints: u32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct EmbeddingConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_embedding_provider")]
+    provider: String,
+    #[serde(default = "default_embedding_model")]
+    model: String,
+    api_key_env: Option<String>,
+    #[serde(default = "default_embedding_store")]
+    store: String,
+}
+
 impl AppConfig {
     pub fn prepare_dirs(&self) -> anyhow::Result<()> {
         fs::create_dir_all(self.storage.uploads_dir())?;
@@ -228,6 +254,7 @@ impl AppConfig {
         fs::create_dir_all(self.storage.sessions_dir())?;
         fs::create_dir_all(self.storage.session_workspaces_dir())?;
         fs::create_dir_all(self.storage.cases_dir())?;
+        fs::create_dir_all(self.storage.memory_dir())?;
         fs::create_dir_all(self.storage.case_imports_dir())?;
         fs::create_dir_all(self.storage.metadata_dir())?;
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
@@ -269,6 +296,14 @@ impl StorageSettings {
         self.data_dir.join("cases")
     }
 
+    pub fn memory_dir(&self) -> PathBuf {
+        self.data_dir.join("memory")
+    }
+
+    pub fn memory_db_path(&self) -> PathBuf {
+        self.memory_dir().join("memory.sqlite")
+    }
+
     pub fn case_imports_dir(&self) -> PathBuf {
         self.data_dir.join("case_imports")
     }
@@ -297,6 +332,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             tools: BTreeMap::new(),
             llm: None,
             analysis: None,
+            embedding: None,
         }
     } else {
         serde_yaml::from_str(&raw).context("invalid YAML")?
@@ -311,6 +347,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     let tools = resolve_tools(parsed.tools)?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
     let analysis = parsed.analysis.unwrap_or_else(default_analysis_config);
+    let embedding = parsed.embedding.unwrap_or_else(default_embedding_config);
 
     let mut api_keys = Vec::new();
     for api_key in auth.api_keys {
@@ -396,6 +433,13 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_llm_calls: analysis.max_llm_calls.max(1),
             max_actions: analysis.max_actions.max(1),
             max_repeated_action_fingerprints: analysis.max_repeated_action_fingerprints.max(1),
+        },
+        embedding: EmbeddingSettings {
+            enabled: embedding.enabled,
+            provider: embedding.provider,
+            model: embedding.model,
+            api_key_env: embedding.api_key_env,
+            store: embedding.store,
         },
     }))
 }
@@ -582,6 +626,16 @@ fn default_analysis_config() -> AnalysisConfig {
     }
 }
 
+fn default_embedding_config() -> EmbeddingConfig {
+    EmbeddingConfig {
+        enabled: false,
+        provider: default_embedding_provider(),
+        model: default_embedding_model(),
+        api_key_env: None,
+        store: default_embedding_store(),
+    }
+}
+
 fn default_tool_enabled() -> bool {
     true
 }
@@ -707,6 +761,18 @@ fn default_analysis_max_actions() -> u32 {
 
 fn default_analysis_max_repeated_action_fingerprints() -> u32 {
     1
+}
+
+fn default_embedding_provider() -> String {
+    "openai_compatible".to_string()
+}
+
+fn default_embedding_model() -> String {
+    "text-embedding-3-small".to_string()
+}
+
+fn default_embedding_store() -> String {
+    "sqlite".to_string()
 }
 
 #[cfg(test)]

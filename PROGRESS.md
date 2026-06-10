@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-10
+Last updated: 2026-06-11
 
 ## Status Summary
 
@@ -21,7 +21,7 @@ Chrome Extension, WEBUI upload, or WEBUI question-only Session
   -> optional ask_user / approval wait and resume
   -> final answer or budget-limited low-confidence result
   -> persisted result and WEBUI display
-  -> optional human confirmation or LLM-assisted text import into local Case Store
+  -> optional human confirmation or LLM-assisted text import into local Memory-backed Case Store
 ```
 
 Current manual Tools loop:
@@ -36,6 +36,18 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Memory-backed Case Store
+
+- Added Server `MemoryStore` backed by `storage.data_dir/memory/memory.sqlite` with `memory_items`, `memory_chunks`, and FTS5 `memory_chunks_fts`.
+- Converted `CaseStore` into a compatibility facade over Memory while preserving existing `/api/cases*`, `CaseRecord`, `CaseSearchHit`, `case_context.json`, and `case_context.json#cases/<index>` evidence refs.
+- Server startup now idempotently imports legacy `storage.data_dir/cases/*.json` by `caseId` into SQLite. Legacy JSON files remain untouched as migration/rollback source, and create/update still syncs JSON.
+- Case recall now filters `memoryType=case`, active status, and enabled state, then merges SQLite FTS/BM25 scores with existing keyword-overlap scoring. If FTS is unavailable, recall falls back to keyword overlap.
+- Added disabled embedding config shape (`embedding.enabled/provider/model/api_key_env/store`) for future vector retrieval without changing API contracts.
+- WebUI now defaults to `Log Analysis` and top navigation order is `Log Analysis`, `Memory`, `System Context`, `Tools`; the old top-level Metadata path is removed and Metadata remains reachable inside System Context.
+- The former Cases page is presented as `Memory` while keeping Case terminology inside confirmed fault-case forms.
+- Added Memory module docs and updated Server/WebUI/Case Store docs for storage, migration, recall, and UI naming.
+- Verification so far: focused `cargo test -p logagent-server stores::case_store -- --nocapture` and `cargo check -p logagent-server` pass.
 
 ### System Context
 

@@ -1,28 +1,29 @@
-# Case Store Spec
+# Memory / Case Store Spec
 
 ## 目标
 
-Case Store 保存已确认故障 Case，并支持后续任务相似召回。
+Memory 保存已确认故障 Case，并支持后续任务相似召回。现有 Case Store API 是 Memory 的兼容层。
 
 ## 当前状态
 
 已实现 MVP：
 
-- Server 内部模块 `server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`。
-- 本地 JSON 文件存储，目录为 `storage.data_dir/cases/`。
+- Server 内部模块 `server/src/stores/memory_store.rs`、`server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`。
+- SQLite Memory 主库，路径为 `storage.data_dir/memory/memory.sqlite`。
+- legacy JSON Case 文件保留在 `storage.data_dir/cases/`，启动时按 `caseId` idempotent 导入 SQLite，新增和更新 Case 仍同步写 JSON。
 - Case import 草稿存储在 `storage.data_dir/case_imports/`。
 - Case schema v2 使用 `sourceType` 区分 `task` 和 `manual` 来源；开发阶段不兼容 v1 旧数据。
 - 成功任务可通过 `POST /api/tasks/:task_id/case` 人工确认保存为 Case。
 - 手工 Case 可通过 `POST /api/cases` 直接录入，不绑定任务。
-- `GET /api/cases` 支持关键词召回，默认只返回 `enabled=true` 的 Case。
+- `GET /api/cases` 支持 SQLite FTS/BM25 + 关键词 fallback 召回，默认只返回 `enabled=true` 的 Case。
 - `PATCH /api/cases/:case_id` 支持编辑文本、元信息、证据引用和禁用 Case。
 - WebUI 在成功任务最终结果下方提供确认表单、相似 Case 列表和禁用操作。
-- WebUI 顶部 `Cases` 页面支持搜索、LLM-assisted 文本导入、缺失信息追问、确认保存、详情编辑和启用/禁用。
+- WebUI 顶部 `Memory` 页面支持搜索、LLM-assisted 文本导入、缺失信息追问、确认保存、详情编辑和启用/禁用。
 
 未实现：
 
 - embedding 生成。
-- embedding 召回。
+- embedding / vector 召回。
 - 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
 - Case 合并和批量管理。
 
@@ -39,7 +40,7 @@ Case Store 保存已确认故障 Case，并支持后续任务相似召回。
 - 相似 Case 列表
 - Case 详情
 - 可编辑 Case 记录
-- Case Store 管理页面
+- Memory 管理页面
 
 ## API
 
@@ -72,7 +73,13 @@ workspaces/<task_id>/case_context.json
 
 ## 存储
 
-MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
+MVP 当前使用本地 SQLite。pgvector 不是第一版硬依赖。
+
+SQLite 表：
+
+- `memory_items`：Memory item 元数据和完整 `CaseRecord` JSON，第一阶段 `memoryType=case`。
+- `memory_chunks`：用于检索的文本 chunk，Case 当前写入单 chunk。
+- `memory_chunks_fts`：FTS5 索引。创建或查询失败时不阻断 Case API，Server fallback 到关键词重叠评分。
 
 建议字段：
 
@@ -97,9 +104,11 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 
 ## 召回策略
 
-当前召回策略为关键词重叠评分：
+当前召回策略：
 
-- 查询文本按空白、逗号和分号切分。
+- 先过滤 `memoryType=case`、`status=active`、`enabled`。
+- 查询文本按空白、逗号和分号切分用于关键词 fallback；FTS 查询会进一步拆分 hyphen 等符号。
+- SQLite FTS/BM25 分数和关键词重叠分数合并排序。
 - 检索字段包括 title、symptom、rootCause、solution、product、version、environment、instanceId、nodeId 和 evidenceRefs。
 - 未提供 query 时按创建时间返回最近启用 Case。
 - 禁用 Case 默认不返回，除非 `includeDisabled=true`。
@@ -110,11 +119,12 @@ MVP 当前使用本地 JSON 文件。pgvector 不是第一版硬依赖。
 - 人工确认后可保存 Case。
 - 文本导入或直接 API 手工录入可保存为 `sourceType=manual` Case，且不需要任务 ID。
 - Case import 缺少必填字段时必须阻止确认保存，并提供可继续回答的问题。
-- 新任务可按产品、关键词和相似度召回 Case。
+- 新任务可按产品、关键词和 FTS 相似度召回 Case。
 - Case 可禁用而不是硬删除。
 - 未完成、未确认或仅包含中间假设的分析不可保存为 Case。
 - 重复确认同一 task 时返回已有 Case，不创建重复记录。
 - `sourceType=task` Case 必须有 `taskId` 和 `sourceResultPath`；`sourceType=manual` Case 禁止带这两个字段。
 - 新任务 artifacts 能返回 `caseContext`，LLM prompt 包含历史 Case 参考段落。
-- WebUI 顶部 `Cases` 页面能完成手工录入、搜索、编辑和启用状态切换。
+- WebUI 顶部 `Memory` 页面能完成手工录入、搜索、编辑和启用状态切换。
+- 启动迁移重复执行时不能创建重复 Case，legacy JSON 文件必须保留。
 - README 和 SPEC 在存储结构或召回策略变更时同步更新。
