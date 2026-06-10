@@ -1,0 +1,75 @@
+server:
+  bind: "0.0.0.0:50992"
+  public_base_url: "http://127.0.0.1:50992"
+  max_concurrent_tasks: 2
+
+storage:
+  data_dir: "${LOGAGENT_APP_DIR}/data"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+auth:
+  api_keys:
+    - name: "webui"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+log_analyzer:
+  max_matches: 200
+  keywords:
+    - error
+    - exception
+    - timeout
+    - fail
+    - failed
+    - panic
+    - fatal
+    - refused
+    - denied
+    - verify
+    - influxql
+    - "\"query\""
+    - select
+    - show
+    - query
+    - large_limit
+    - no_time_filter
+
+tools:
+  influxql_analyzer:
+    enabled: true
+    path: "/usr/bin/influxql-analyzer"
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 3
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-output"
+      - "json"
+      - "-detail-limit"
+      - "5"
+    match:
+      file_patterns:
+        - "*.jsonl"
+      keywords:
+        - "influxql"
+        - "\"query\""
+        - "select"
+        - "show series"
+        - "show measurements"
+
+analysis:
+  max_rounds: 4
+  max_llm_calls: 4
+  max_actions: 6
+  max_repeated_action_fingerprints: 1
+
+llm:
+  provider: "openai_compatible"
+  base_url_env: "LOGAGENT_LLM_BASE_URL"
+  api_key_env: "LOGAGENT_LLM_API_KEY"
+  model_env: "LOGAGENT_LLM_MODEL"
+  request_timeout_seconds: 120
+  max_input_chars: 60000
+  max_output_tokens: 4096
+

@@ -60,6 +60,19 @@ export LOGAGENT_NATIVE_API_KEY=<secret>
 
 `init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
 
+测试/长期运行环境也可以使用仓库根目录 `deploy/` 模板：
+
+```bash
+cp -a deploy /opt/logagent/deploy
+cd /opt/logagent/deploy
+cp .env.example .env
+cp logagent.example.yaml logagent.yaml
+./rebuild-install.sh
+./logagentctl.sh start
+```
+
+`deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。
+
 生产或测试环境：
 
 - systemd 管理 `logagentd`

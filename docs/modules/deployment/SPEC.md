@@ -11,6 +11,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - Server 从项目根目录启动并托管 `webui/`。
 - `scripts/start-local.sh` 支持真实 LLM、stub 和前台调试模式；后台模式必须在非交互 shell 中保持 Server 进程存活。
 - 工作目录脚本通过 `LOGAGENT_WORK_DIR` 定位运行目录，支持初始化 `bin/config/data/logs/run/webui`、快速编译 Server、快速编译 WebUI、启动、停止、重启、状态和日志查看；缺少 `LOGAGENT_WORK_DIR` 时必须报错。
+- 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
 - Native Agent 本机启动并连接远端 Server。
 - 示例配置支持 50992 测试端口。
 
@@ -36,6 +37,8 @@ WEBUI -> Server 同源 API
 - Native Agent binary
 - `$LOGAGENT_WORK_DIR/webui/out`
 - `$LOGAGENT_WORK_DIR/config/server.yaml`
+- Runtime `deploy/.env` 和 `deploy/logagent.yaml`
+- Repository `deploy/.env.example`、`deploy/logagent.example.yaml`、`deploy/logagentctl.sh`、`deploy/rebuild-install.sh`
 - `$LOGAGENT_WORK_DIR/run/logagent-server.pid`
 - `$LOGAGENT_WORK_DIR/logs/logagent-server.log`
 - 环境变量密钥

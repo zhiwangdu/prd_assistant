@@ -13,3 +13,5 @@ webui/vite.config.js
 webui/vite.config.d.ts
 webui/tailwind.config.js
 webui/tailwind.config.d.ts
+deploy/.env
+deploy/logagent.yaml

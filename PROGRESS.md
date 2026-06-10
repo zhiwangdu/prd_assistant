@@ -37,6 +37,13 @@ WEBUI Tools
 
 ## Implemented
 
+### Runtime Deploy Template
+
+- Added repository `deploy/` runtime template copied from `/home/duzhiwang/workspace/data/prd_assistant/deploy`: README, `.env.example`, `logagent.example.yaml`, `logagentctl.sh`, and `rebuild-install.sh`.
+- Real runtime secrets/config remain excluded: `deploy/.env` and `deploy/logagent.yaml` are ignored.
+- Deployment scripts now auto-load same-directory `.env`; `logagentctl.sh` starts Server detached so non-interactive script execution can keep the process alive.
+- Verification: `bash -n deploy/logagentctl.sh`, `bash -n deploy/rebuild-install.sh`, and `git diff --check` pass.
+
 ### Session-first Log Analysis
 
 - Log Analysis 公开入口从一次性 task 改为可恢复 Session。
