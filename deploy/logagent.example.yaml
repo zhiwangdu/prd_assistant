@@ -64,6 +64,13 @@ analysis:
   max_actions: 6
   max_repeated_action_fingerprints: 1
 
+embedding:
+  enabled: false
+  provider: "openai_compatible"
+  model: "text-embedding-3-small"
+  api_key_env: "LOGAGENT_EMBEDDING_API_KEY"
+  store: "sqlite"
+
 llm:
   provider: "openai_compatible"
   base_url_env: "LOGAGENT_LLM_BASE_URL"
@@ -72,4 +79,3 @@ llm:
   request_timeout_seconds: 120
   max_input_chars: 60000
   max_output_tokens: 4096
-

@@ -23,6 +23,22 @@ usage() {
   echo "Usage: $0 {start|stop|restart|status|logs}"
 }
 
+prepare_runtime_dirs() {
+  mkdir -p \
+    "$(dirname "$BIN")" \
+    "$(dirname "$PID_FILE")" \
+    "$(dirname "$LOG_FILE")" \
+    "$APP_DIR/data/uploads" \
+    "$APP_DIR/data/sessions" \
+    "$APP_DIR/data/session_workspaces" \
+    "$APP_DIR/data/tasks" \
+    "$APP_DIR/data/workspaces" \
+    "$APP_DIR/data/cases" \
+    "$APP_DIR/data/case_imports" \
+    "$APP_DIR/data/memory" \
+    "$APP_DIR/webui/out"
+}
+
 process_matches_server() {
   local pid="$1"
   local args
@@ -67,7 +83,7 @@ start_server() {
     exit 1
   fi
 
-  mkdir -p "$APP_DIR/data" "$APP_DIR/webui/out"
+  prepare_runtime_dirs
   cd "$APP_DIR"
   if command -v setsid >/dev/null 2>&1; then
     nohup setsid "$BIN" --config "$CONFIG" >>"$LOG_FILE" 2>&1 < /dev/null &

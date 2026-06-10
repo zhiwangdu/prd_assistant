@@ -49,6 +49,13 @@ WEBUI Tools
 - Added Memory module docs and updated Server/WebUI/Case Store docs for storage, migration, recall, and UI naming.
 - Verification so far: focused `cargo test -p logagent-server stores::case_store -- --nocapture` and `cargo check -p logagent-server` pass.
 
+### Deploy Template Refresh
+
+- Updated `deploy/logagent.example.yaml` with the default disabled `embedding` block so runtime deployments match the current Server config shape.
+- Added optional `LOGAGENT_EMBEDDING_API_KEY` documentation to `deploy/.env.example`.
+- Updated `deploy/logagentctl.sh` and `deploy/rebuild-install.sh` to pre-create expected runtime data directories, including `data/memory`, `data/cases`, and `data/case_imports`, without deleting existing data.
+- Updated deploy README and deployment module docs to document `data/memory/memory.sqlite`, legacy Case JSON rollback files, and the current WebUI navigation.
+
 ### System Context
 
 - Added Server `SystemContextStore`, persisted under `storage.data_dir/system_context/resources`, for versioned Prompt Pack, Architecture Doc, Runbook, Glossary, Tool Capability and Knowledge Note resources.

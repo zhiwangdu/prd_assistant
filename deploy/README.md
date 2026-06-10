@@ -19,6 +19,15 @@ Runtime files stay one level above this directory:
 $LOGAGENT_APP_DIR/
   bin/logagent-server
   data/
+    uploads/
+    sessions/
+    session_workspaces/
+    tasks/
+    workspaces/
+    cases/              # legacy Case JSON migration/rollback source
+    case_imports/
+    memory/
+      memory.sqlite     # Memory SQLite index, currently memoryType=case
   webui/out/
   logagent-server.pid
   logagent-server.log
@@ -57,6 +66,7 @@ Optional variables:
 - `LOGAGENT_HEALTH_URL`: defaults to `http://127.0.0.1:50992/health`.
 - `LOGAGENT_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.pid`.
 - `LOGAGENT_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.log`.
+- `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
 
 ## Configure
 
@@ -67,6 +77,8 @@ To reset from the sample:
 ```bash
 cp logagent.example.yaml logagent.yaml
 ```
+
+The sample config includes an `embedding` block with `enabled: false`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
 
 ## Build And Install
 
@@ -83,7 +95,7 @@ Useful variants:
 ./rebuild-install.sh --no-restart
 ```
 
-The script builds `logagent-server`, replaces `$LOGAGENT_APP_DIR/bin/logagent-server`, syncs `webui/out`, and restarts only if the server was already running.
+The script builds `logagent-server`, creates the expected runtime data directories including `data/memory/`, replaces `$LOGAGENT_APP_DIR/bin/logagent-server`, syncs `webui/out`, and restarts only if the server was already running. It does not delete or migrate runtime data.
 
 ## Start And Stop
 
@@ -100,3 +112,5 @@ Check the UI after startup:
 ```text
 http://127.0.0.1:50992/
 ```
+
+The WebUI opens on `Log Analysis`; top navigation is `Log Analysis`, `Memory`, `System Context`, `Tools`.

@@ -15,6 +15,7 @@ SRC_DIR="${LOGAGENT_SRC_DIR:-}"
 CONTROL="${LOGAGENT_CONTROL:-$APP_DIR/deploy/logagentctl.sh}"
 RUNTIME_BIN="${LOGAGENT_SERVER_BIN:-$APP_DIR/bin/logagent-server}"
 WEBUI_DST="$APP_DIR/webui/out"
+DATA_DIR="$APP_DIR/data"
 
 export LOGAGENT_APP_DIR="$APP_DIR"
 
@@ -84,7 +85,16 @@ if [[ "$server_only" == false ]]; then
 fi
 
 echo "Installing server binary to $RUNTIME_BIN..."
-mkdir -p "$(dirname "$RUNTIME_BIN")"
+mkdir -p \
+  "$(dirname "$RUNTIME_BIN")" \
+  "$DATA_DIR/uploads" \
+  "$DATA_DIR/sessions" \
+  "$DATA_DIR/session_workspaces" \
+  "$DATA_DIR/tasks" \
+  "$DATA_DIR/workspaces" \
+  "$DATA_DIR/cases" \
+  "$DATA_DIR/case_imports" \
+  "$DATA_DIR/memory"
 tmp_bin="$RUNTIME_BIN.tmp.$$"
 cp -f "$BUILD_BIN" "$tmp_bin"
 chmod +x "$tmp_bin"
