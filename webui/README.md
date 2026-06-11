@@ -8,11 +8,12 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部栏使用 `LogAgent Analysis Workbench` 作为全局产品名，覆盖证据、Memory、System Context、Metadata 和工具工作流，不再只强调 Metadata。
 
-- 顶部导航默认进入 `Log Analysis`，可见顺序固定为 `Log Analysis`、`Memory`、`System Context`、`Tools`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
+- 顶部导航默认进入 `Log Analysis`，可见顺序固定为 `Log Analysis`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
 - `Log Analysis`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：管理 Prompt Pack、产品架构、Mermaid 架构图、Runbook、知识说明和 Metadata adapter；其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。
+- `Settings`：设置与诊断入口；当前先提供 LLM 服务接口测试，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Log Analysis` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
 - `Log Analysis` Session draft 可选择 System Context 资源；创建 run 后展示本次固化的 `system_context.json` 摘要。
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。
@@ -215,3 +216,9 @@ Tools：
 - `GET /api/tools/runs/:task_id`
 - `GET /api/tools/runs/:task_id/result`
 - `GET /api/tools/runs/:task_id/artifacts`
+
+Settings：
+
+- `GET /api/settings/llm`
+- `GET /api/settings/llm/models`
+- `POST /api/settings/llm/chat`

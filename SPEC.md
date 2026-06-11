@@ -173,7 +173,7 @@ flowchart TD
 - 最终结果 evidence refs 支持历史 Case canonical 引用 `case_context.json#cases/<index>`；真实模型输出 `case_<id>` 或“历史案例 case_<id>”时会按当前 task 的 `case_context.json` 规范化。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；binary provider 固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON。Gateway 基于 manifest/grep/metadata/tool evidence 单次生成结构化结果，并已通过 `PLAN_ANALYSIS` 接入多轮 ActionDecision / FinalAnswer 决策、预算和重复 fingerprint 防护。
-- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，默认进入 Log Analysis，顶部导航顺序为 Log Analysis、Memory、System Context、Tools；支持 Session history、草稿自动保存、System Context 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 资源管理、完整 Metadata 拓扑、Tools 工具集页面、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，默认进入 Log Analysis，顶部导航顺序为 Log Analysis、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、System Context 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution loop 摘要、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 资源管理、完整 Metadata 拓扑、Tools 工具集页面、Settings LLM 诊断、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 

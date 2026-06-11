@@ -51,6 +51,14 @@ Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAn
 
 Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调用 `/api/debug/llm` 开启或关闭。开启后 Gateway 只把模型 response content 打印到 Server stderr，便于定位 schema 漂移；不会打印 prompt、API Key 或 HTTP headers。该开关默认关闭，Server 重启后恢复关闭。
 
+Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务：
+
+- `GET /api/settings/llm`：返回 provider、模型、超时和输入/输出限制等摘要，不返回密钥。
+- `GET /api/settings/llm/models`：测试模型列表接口；OpenAI-compatible 调用 `/models`，stub/binary 返回配置模型。
+- `POST /api/settings/llm/chat`：发送一条简单 user message，返回模型响应。
+
+诊断接口使用 `{ok,result,error}` 响应；Provider HTTP、鉴权、限流、网络、超时、JSON decode 等异常会写入 `error`，便于页面直接展示。
+
 `PLAN_ANALYSIS` 的 OpenAI-compatible action decision 调用会生成 `llmcall_*` callId，并通过 Analysis State Store 记录 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry`。schema retry 和最终失败会带上 callId，WebUI Task execution 可直接展示对应轮次。
 
 成功 task 的 alias 由独立 LLM Gateway 调用生成，输入为用户问题、最终结果、manifest 文件名和 Metadata 摘要。该命名调用只返回 `{"alias":"..."}`，schema 错误重试一次；调用失败时由 Server 用最终 summary/question 生成短标题。alias 生成不触发 Analysis State Store 的 `llm_call_*` 事件，不写 `analysis_events.jsonl`，也不写 Session timeline。

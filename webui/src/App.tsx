@@ -1,4 +1,4 @@
-import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, Wrench } from "lucide-react";
+import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, Settings, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
@@ -6,6 +6,7 @@ import { CasesView } from "./CasesView";
 import { OperationsView } from "./OperationsView";
 import { ToolsView } from "./ToolsView";
 import { SystemContextView } from "./SystemContextView";
+import { SettingsView } from "./SettingsView";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
@@ -14,7 +15,7 @@ export function App() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
   const [llmDebugStatus, setLlmDebugStatus] = useState("LLM output logs off");
-  const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools">("operations");
+  const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools" | "settings">("operations");
 
   useEffect(() => {
     setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
@@ -90,8 +91,9 @@ export function App() {
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />Memory</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />System Context</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />Tools</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "settings" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("settings")}><Settings className="mr-2 inline h-4 w-4" />Settings</button>
         </nav>
-        {view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : <ToolsView apiKey={apiKey} />}
+        {view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <SettingsView apiKey={apiKey} />}
       </main>
     </div>
   );

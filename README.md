@@ -145,7 +145,7 @@ flowchart LR
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
 | [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
 | [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、内部能力和 API | [SPEC](./server/SPEC.md) |
-| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、System Context、Metadata 和 Tools 可视化 | [SPEC](./webui/SPEC.md) |
+| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |

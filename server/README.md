@@ -60,6 +60,7 @@ server/src
     uploads.rs
     tasks.rs
     tools.rs
+    settings.rs
     metadata.rs
     cases.rs
     debug.rs
@@ -218,6 +219,9 @@ MVP 要求：
 - `POST /api/sessions/:session_id/tasks` 按当前 Session 创建新的 Log Analysis task 快照；Session 可以没有上传日志，仅凭问题文本启动分析。
 - `GET /api/sessions/:session_id/timeline` 合并 Session events 和该 Session 下 task 的 analysis events。
 - `GET /api/system-context/resources` / `POST /api/system-context/resources` 管理通用背景资源。
+- `GET /api/settings/llm` 返回当前 LLM Provider 配置摘要，不包含密钥。
+- `GET /api/settings/llm/models` 测试当前 LLM Provider 的模型列表接口，返回 `{ok,result,error}` 诊断响应。
+- `POST /api/settings/llm/chat` 使用当前 LLM Provider 发送一条简单 user message，返回 `{ok,result,error}` 诊断响应。
 - `GET /api/system-context/resources/:context_id` / `PATCH /api/system-context/resources/:context_id` 读取或更新资源元信息。
 - `POST /api/system-context/resources/:context_id/versions` 新增资源版本。
 - `PATCH /api/system-context/resources/:context_id/versions/:version_id` 更新资源版本。

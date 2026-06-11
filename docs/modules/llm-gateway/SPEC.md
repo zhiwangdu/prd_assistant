@@ -25,6 +25,7 @@
 - 成功 task 的 alias 生成调用，输出 `{"alias":"..."}`，用于 UI 展示而不是分析证据。
 - `result.json` / `result.md` 持久化。
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已循环调用双模式 action decision，并由 Analysis 预算和重复 fingerprint 防护终止。
+- Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
 
 ## 当前输入
 
@@ -131,5 +132,6 @@ binary provider 错误包括：
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。
 - `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。
+- `/api/settings/llm` 可读取不含密钥的当前 LLM 配置摘要；`/api/settings/llm/models` 可测试模型列表获取；`/api/settings/llm/chat` 可发送简单消息并返回响应或完整异常文本。
 - `PLAN_ANALYSIS` 的真实 action decision 调用必须带 `llmcall_*` callId，并记录 started/completed/schema_retry 事件；schema retry 和最终错误必须能关联该 callId。
 - Task alias 生成不得写入 analysis event 或 Session timeline，且 UI 可用 alias 替代裸 task ID。

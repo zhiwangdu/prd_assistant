@@ -60,6 +60,36 @@ pub enum LlmCallEventType {
     SchemaRetry,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmSettingsSummary {
+    pub provider: String,
+    pub configured_model: String,
+    pub max_input_chars: usize,
+    pub max_output_tokens: u32,
+    pub request_timeout_seconds: u64,
+    pub base_url_configured: bool,
+    pub api_key_configured: bool,
+    pub binary_path_configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmModelsTestResult {
+    pub provider: String,
+    pub configured_model: String,
+    pub models: Vec<String>,
+    pub raw: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmChatTestResult {
+    pub provider: String,
+    pub model: String,
+    pub response: String,
+}
+
 impl LlmGateway {
     pub fn new(settings: LlmSettings) -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
@@ -79,6 +109,162 @@ impl LlmGateway {
 
     pub fn set_debug_log_responses(&self, enabled: bool) {
         self.debug_log_responses.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn settings_summary(&self) -> LlmSettingsSummary {
+        LlmSettingsSummary {
+            provider: self.provider_name().to_string(),
+            configured_model: self.settings.model.clone(),
+            max_input_chars: self.settings.max_input_chars,
+            max_output_tokens: self.settings.max_output_tokens,
+            request_timeout_seconds: self.settings.request_timeout_seconds,
+            base_url_configured: self.settings.base_url.is_some(),
+            api_key_configured: self.settings.api_key.is_some(),
+            binary_path_configured: self.settings.binary_path.is_some(),
+        }
+    }
+
+    pub async fn test_list_models(&self) -> anyhow::Result<LlmModelsTestResult> {
+        match self.settings.provider {
+            LlmProvider::Stub => Ok(LlmModelsTestResult {
+                provider: self.provider_name().to_string(),
+                configured_model: self.settings.model.clone(),
+                models: vec![self.settings.model.clone()],
+                raw: serde_json::json!({
+                    "object": "list",
+                    "data": [{ "id": self.settings.model.clone(), "object": "model" }]
+                }),
+            }),
+            LlmProvider::OpenAiCompatible => {
+                let base_url = self
+                    .settings
+                    .base_url
+                    .as_deref()
+                    .context("missing LLM base URL")?
+                    .trim_end_matches('/');
+                let api_key = self
+                    .settings
+                    .api_key
+                    .as_deref()
+                    .context("missing LLM API key")?;
+                let response = self
+                    .client
+                    .get(format!("{base_url}/models"))
+                    .bearer_auth(api_key)
+                    .send()
+                    .await
+                    .context("LLM models request failed")?;
+                let status = response.status();
+                let body = response
+                    .text()
+                    .await
+                    .context("failed to read LLM models response body")?;
+                if !status.is_success() {
+                    let category = provider_error_category(status.as_u16());
+                    anyhow::bail!(
+                        "LLM models {category}: HTTP {}: {}",
+                        status.as_u16(),
+                        truncate_error_body(&body)
+                    );
+                }
+                let raw: serde_json::Value =
+                    serde_json::from_str(&body).context("failed to decode LLM models response")?;
+                let models = raw
+                    .get("data")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.get("id").and_then(|id| id.as_str()))
+                            .map(ToOwned::to_owned)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                Ok(LlmModelsTestResult {
+                    provider: self.provider_name().to_string(),
+                    configured_model: self.settings.model.clone(),
+                    models,
+                    raw,
+                })
+            }
+            LlmProvider::Binary => Ok(LlmModelsTestResult {
+                provider: self.provider_name().to_string(),
+                configured_model: self.settings.model.clone(),
+                models: vec![self.settings.model.clone()],
+                raw: serde_json::json!({
+                    "object": "list",
+                    "data": [{ "id": self.settings.model.clone(), "object": "binary-configured-model" }]
+                }),
+            }),
+        }
+    }
+
+    pub async fn test_chat_message(&self, message: &str) -> anyhow::Result<LlmChatTestResult> {
+        match self.settings.provider {
+            LlmProvider::Stub => Ok(LlmChatTestResult {
+                provider: self.provider_name().to_string(),
+                model: self.settings.model.clone(),
+                response: format!("stub response: {message}"),
+            }),
+            LlmProvider::OpenAiCompatible => {
+                let base_url = self
+                    .settings
+                    .base_url
+                    .as_deref()
+                    .context("missing LLM base URL")?
+                    .trim_end_matches('/');
+                let api_key = self
+                    .settings
+                    .api_key
+                    .as_deref()
+                    .context("missing LLM API key")?;
+                let messages = vec![
+                    ChatMessage {
+                        role: "system",
+                        content: "You are a LogAgent settings connectivity test. Reply briefly with the user message acknowledged.".to_string(),
+                    },
+                    ChatMessage {
+                        role: "user",
+                        content: message.to_string(),
+                    },
+                ];
+                let response = self
+                    .send_chat_completion_messages(base_url, api_key, &messages)
+                    .await?;
+                let content = response
+                    .choices
+                    .first()
+                    .map(|choice| choice.message.content.clone())
+                    .context("LLM response did not contain content")?;
+                Ok(LlmChatTestResult {
+                    provider: self.provider_name().to_string(),
+                    model: self.settings.model.clone(),
+                    response: content,
+                })
+            }
+            LlmProvider::Binary => {
+                let content = self
+                    .run_binary_prompt(
+                        "settings_chat",
+                        1,
+                        &binary_prompt("LogAgent settings connectivity test", message),
+                    )
+                    .await?;
+                Ok(LlmChatTestResult {
+                    provider: self.provider_name().to_string(),
+                    model: self.settings.model.clone(),
+                    response: content,
+                })
+            }
+        }
+    }
+
+    fn provider_name(&self) -> &'static str {
+        match self.settings.provider {
+            LlmProvider::Stub => "stub",
+            LlmProvider::OpenAiCompatible => "openai_compatible",
+            LlmProvider::Binary => "binary",
+        }
     }
 
     pub async fn generate_result(
@@ -673,14 +859,20 @@ impl LlmGateway {
             .await
             .context("LLM request failed")?;
         let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read LLM response body")?;
         if !status.is_success() {
             let category = provider_error_category(status.as_u16());
-            anyhow::bail!("LLM {category}: HTTP {}", status.as_u16());
+            anyhow::bail!(
+                "LLM {category}: HTTP {}: {}",
+                status.as_u16(),
+                truncate_error_body(&body)
+            );
         }
-        let response: ChatResponse = response
-            .json()
-            .await
-            .context("failed to decode LLM response")?;
+        let response: ChatResponse =
+            serde_json::from_str(&body).context("failed to decode LLM response")?;
         Ok(response)
     }
 
@@ -798,6 +990,19 @@ fn provider_error_category(status: u16) -> &'static str {
         500..=599 => "provider server error",
         _ => "provider request rejected",
     }
+}
+
+fn truncate_error_body(body: &str) -> String {
+    const MAX_ERROR_BODY_CHARS: usize = 2000;
+    let trimmed = body.trim();
+    if trimmed.chars().count() <= MAX_ERROR_BODY_CHARS {
+        return trimmed.to_string();
+    }
+    let prefix = trimmed
+        .chars()
+        .take(MAX_ERROR_BODY_CHARS)
+        .collect::<String>();
+    format!("{prefix}...<truncated>")
 }
 
 fn parse_chat_response(response: ChatResponse) -> anyhow::Result<ResultDraft> {

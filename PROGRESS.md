@@ -37,6 +37,15 @@ WEBUI Tools
 
 ## Implemented
 
+### Settings LLM Diagnostics
+
+- Added protected Server Settings APIs for LLM diagnostics: configuration summary, model list test and simple chat message test.
+- OpenAI-compatible model list diagnostics call the provider `/models` endpoint; stub and binary providers report the configured model.
+- Diagnostic model/chat calls return `{ok,result,error}` so WebUI can print provider HTTP, auth, rate-limit, network, timeout or decode exceptions directly.
+- Added a WebUI `Settings` top navigation page with LLM configuration summary, model list fetch test, simple message send test and raw success/error output panels.
+- Updated WebUI, Server and LLM Gateway docs/specs for the new Settings page and APIs.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, local Vite HTTP smoke, and stub LLM Settings API smoke pass; in-app Browser was unavailable for visual verification.
+
 ### Metadata Page Usability Refinements
 
 - Raw JSON now renders as a lazy expandable tree instead of stringifying and rendering the full snapshot on initial page load.

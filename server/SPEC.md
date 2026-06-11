@@ -29,6 +29,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema
 - LLM Gateway `binary` provider 预留分支，固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON
 - runtime LLM output debug 开关和 `/api/debug/llm`
+- Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`
 - task artifact 查询
 - metadata 查询和导入确认
 - System Context 资源管理、版本化 Prompt Pack、架构文档和 Prompt preview
@@ -92,6 +93,9 @@ GET /api/cases/:case_id
 PATCH /api/cases/:case_id
 GET /api/debug/llm
 PUT /api/debug/llm
+GET /api/settings/llm
+GET /api/settings/llm/models
+POST /api/settings/llm/chat
 GET /api/system-context/resources
 POST /api/system-context/resources
 GET /api/system-context/resources/:context_id
@@ -267,6 +271,8 @@ LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或
 `decision` 可为 `approved` 或 `rejected`。仅 `WAITING_FOR_APPROVAL` 任务可调用。当前 `approved` 会写入 mock `environment_evidence/<action_id>/result.json`，记录 `approval_decision_recorded` event，将任务恢复为 `QUEUED / PLAN_ANALYSIS` 并重新入队；真实 SSH/SCP 采集在 Environment Collector 阶段替换该 mock 产物。
 
 `GET /api/debug/llm` 和 `PUT /api/debug/llm` 控制当前 Server 进程内的 LLM 输出日志开关。开关默认关闭，重启后不保留。开启后只打印模型 response content 到 Server stderr，不打印 prompt、API Key 或 HTTP headers。
+
+Settings LLM 诊断接口用于 WebUI 验证当前 Provider 连通性。`GET /api/settings/llm` 返回 provider、当前模型、超时、输入/输出限制和配置项是否存在；不返回 API Key、base URL 原文或 binary path。`GET /api/settings/llm/models` 调用当前 Provider 的模型列表能力，OpenAI-compatible Provider 调用 `<base_url>/models`，stub/binary Provider 返回配置模型。`POST /api/settings/llm/chat` 请求体为 `{"message":"..."}`，用当前 Provider 发送一条简单消息。模型列表和消息测试响应使用 `{ok,result,error}`；Provider HTTP、鉴权、限流、网络、超时或 JSON decode 异常写入 `error`。
 
 Case import API 用于替代低效的 Case 手工录入表单。`POST /api/cases/imports` 接受 JSON `{text, filename?}` 或 multipart `file`，仅支持粘贴文本和 UTF-8 文本类文件（`.txt/.md/.log/.json/.yaml/.yml/.csv`）；PDF/DOCX 暂不解析。Server 调用 LLM Gateway 输出 `structuredCase`、`missingFields`、`assistantQuestion` 和 `readyToConfirm`，并持久化到 `storage.data_dir/case_imports/<draft_id>.json`。`title`、`symptom`、`rootCause` 和 `solution` 是确认保存的必填字段；缺失时通过 `POST /api/cases/imports/:draft_id/messages` 连续补充。用户可通过 `PATCH /api/cases/imports/:draft_id` 修正草稿，最后用 `POST /api/cases/imports/:draft_id/confirm` 创建 `sourceType=manual` Case。
 

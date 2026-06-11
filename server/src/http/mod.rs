@@ -14,6 +14,7 @@ mod debug;
 mod health;
 mod metadata;
 mod sessions;
+mod settings;
 mod system_context;
 mod tasks;
 mod tools;
@@ -113,6 +114,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/debug/llm",
             get(debug::get_llm_debug).put(debug::update_llm_debug),
         )
+        .route("/api/settings/llm", get(settings::llm_settings))
+        .route("/api/settings/llm/models", get(settings::llm_models))
+        .route("/api/settings/llm/chat", post(settings::llm_chat))
         .route(
             "/api/system-context/resources",
             get(system_context::list_resources).post(system_context::create_resource),
