@@ -206,6 +206,7 @@ Authorization: Bearer <api-key>
 - 展示 `PtView` 分区归属和状态。
 - Databases 页面按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
 - Schemas 页面通过筛选框查询后展示匹配的表结构，不默认铺开全部 Schema。
+- 节点、分区、Topology、Databases 和 Schemas 明细表使用局部滚动和固定表头，便于浏览大量行时识别字段含义。
 - 展示产品、版本、环境、标签。
 - 从真实元数据 URL 拉取并预览。
 - 上传 JSON 文件或输入 JSON 文本并预览导入结果。

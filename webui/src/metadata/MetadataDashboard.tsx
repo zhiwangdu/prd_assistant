@@ -793,9 +793,9 @@ function StatusBadge({ node }: { node: NodeDto }) {
 function Table({ headers, rows, empty = "暂无数据" }: { headers: string[]; rows: ReactNode[][]; empty?: string }) {
   if (!rows.length) return <EmptyState>{empty}</EmptyState>;
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
+    <div className="max-h-[560px] overflow-auto rounded-lg border border-border">
       <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr>{headers.map((header) => <th key={header} className="border-b border-border px-3 py-2.5">{header}</th>)}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]"><tr>{headers.map((header) => <th key={header} className="px-3 py-2.5">{header}</th>)}</tr></thead>
         <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-border last:border-0 hover:bg-slate-50/70">{row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2.5 align-top">{isValidElement(cell) ? cell : valueOrDash(cell)}</td>)}</tr>)}</tbody>
       </table>
     </div>

@@ -299,9 +299,9 @@ function PprofResultView({ result, resultPath }: { result: PprofResult; resultPa
       </div>
       {result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div> : null}
       {result.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{result.warnings.join(" · ")}</div> : null}
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="max-h-[560px] overflow-auto rounded-lg border border-border">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
             <tr>
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">Flat</th>

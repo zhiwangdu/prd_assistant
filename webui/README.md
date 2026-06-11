@@ -12,7 +12,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Log Analysis`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：管理 Prompt Pack、产品架构、Mermaid 架构图、Runbook、知识说明和 Metadata adapter；其中 Metadata tab 复用现有 openGemini 拓扑页面。
-- `Tools`：工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`。
+- `Tools`：工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。
 - `Log Analysis` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
 - `Log Analysis` Session draft 可选择 System Context 资源；创建 run 后展示本次固化的 `system_context.json` 摘要。
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。
@@ -57,6 +57,7 @@ Metadata 能力：
 - 缺失 DataNode 或缺失 PT 使用红色虚拟容器/lane 展示，不会从拓扑中消失。
 - Databases：按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
 - Schemas：通过 Database、RP、Measurement/field 筛选后展示，不默认铺开全部 Schema。
+- Metadata 明细表使用局部滚动和固定表头，浏览大量节点、分片、索引或字段时保留字段含义。
 - Diagnostics：检查节点离线、连接状态、PT/Shard owner、默认 RP、ShardGroup、Schema 和 Index 引用。
 - Raw JSON：保留并筛选原始 `/getdata` JSON。
 

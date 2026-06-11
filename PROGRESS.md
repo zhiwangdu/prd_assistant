@@ -37,6 +37,13 @@ WEBUI Tools
 
 ## Implemented
 
+### Sticky Table Headers
+
+- Metadata reusable tables now use bounded local scrolling with sticky headers, so Nodes, Partitions, Topology shard rows, Databases shard/index rows and Schemas field rows keep column meanings visible while scrolling.
+- Tools pprof top table now uses the same sticky-header scrolling behavior.
+- Updated WebUI and Metadata module docs/specs for the long-table browsing behavior.
+- Verification: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and local Vite HTTP smoke pass; in-app Browser was unavailable for visual verification.
+
 ### Metadata Cascading Views
 
 - Removed the WebUI Metadata graph rendering path and the `@xyflow/react` dependency; Topology is now rendered as a cascade instead of a React Flow graph.

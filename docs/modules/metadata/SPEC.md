@@ -291,6 +291,7 @@ metadata_context.json
 - Topology 支持 Database、DataNode、时间范围、仅异常、Shard 行/Index 信息显隐筛选和 DBPT 聚合详情面板。
 - Databases 页面按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
 - Schemas 页面必须提供筛选框，按 Database、RP、Measurement 或 field 过滤后展示，不默认铺开全部 Schema。
+- Metadata 明细表必须支持长列表局部滚动，并在滚动时固定表头。
 - 实例查询。
 - 已导入 Instance 列表和按 InstanceID 查询拓扑快照。
 - 兼容集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
@@ -321,6 +322,7 @@ metadata_context.json
 - Topology 大集群通过级联展开可读，不渲染 Graph。
 - Databases 页面能按 Database/RP/ShardGroup/IndexGroup 展开查看明细。
 - Schemas 页面未输入筛选条件时不铺开全部 Schema，输入筛选后能展示匹配结果。
+- 节点、分区、分片、索引和 Schema 表格下翻时表头固定在表格顶部。
 - 导入确认后 metadata store 可查询。
 - task 创建可关联 instance/node 上下文并返回固化快照。
 - README 和 SPEC 在字段、模板格式或 API 变更时同步更新。
