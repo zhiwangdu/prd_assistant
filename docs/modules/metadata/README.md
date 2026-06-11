@@ -20,7 +20,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - openGemini 导入依赖用户手工输入 `instanceId`，并以 `instanceId` 作为唯一业务键；原始 `ClusterID` 仅保存在 `sourceClusterId` 标签中。
 - Instance 支持可选 `remark` 备注名，openGemini 实时加载和导入预览可随 `instanceId` 一起提交。
 - 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看。
-- WEBUI Metadata 页面。
+- WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
 - 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 LLM Gateway。
@@ -132,7 +132,9 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 导入方式：
 
-- WEBUI 上传模板文件。
+- WEBUI 实时加载 openGemini `/getdata` URL。
+- WEBUI 上传 JSON 模板文件。
+- WEBUI 手动粘贴 JSON 模板文本。
 - Server 调用 Metadata Importer 解析。
 - 校验字段和重复项。
 - 生成导入预览。
@@ -204,7 +206,7 @@ Authorization: Bearer <api-key>
 - 展示 `Databases`、保留策略、表结构 schema 和 shard group 摘要。
 - 展示产品、版本、环境、标签。
 - 从真实元数据 URL 拉取并预览。
-- 输入模板并预览导入结果。
+- 上传 JSON 文件或输入 JSON 文本并预览导入结果。
 - 导入确认后显示成功/失败明细。
 
 任务创建时可选择或输入：
@@ -242,6 +244,7 @@ data_dir/
 - 已导入 Instance 列表查询。
 - 集群节点查询。
 - YAML/JSON 模板导入预览。
+- WebUI JSON 文件上传和手动 JSON 文本导入预览。
 - 导入确认。
 
 ## 上下游接口

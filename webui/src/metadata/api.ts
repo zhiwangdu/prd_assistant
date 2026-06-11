@@ -33,11 +33,35 @@ export type ImportPreview = {
   };
 };
 
+export type MetadataTemplateImport = {
+  templateType: "json";
+  filename?: string;
+  instanceId?: string;
+  remark?: string;
+  content: string;
+};
+
 export async function previewImport(url: string, instanceId: string, remark: string, apiKey: string) {
   return fetchJson<ImportPreview>("/api/metadata/imports/fetch", {
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify(metadataFetchBody(url, instanceId, remark))
+  });
+}
+
+export async function previewTemplateImport(request: MetadataTemplateImport, apiKey: string) {
+  const trimmedRemark = request.remark?.trim();
+  const trimmedInstanceId = request.instanceId?.trim();
+  return fetchJson<ImportPreview>("/api/metadata/imports", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({
+      templateType: request.templateType,
+      filename: request.filename,
+      content: request.content,
+      ...(trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
+      ...(trimmedRemark ? { remark: trimmedRemark } : {})
+    })
   });
 }
 

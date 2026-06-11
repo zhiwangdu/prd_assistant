@@ -6,27 +6,34 @@ import {
   CheckCircle2,
   CircleX,
   Database,
+  FileJson,
   GitBranch,
+  Link,
   Network,
   RefreshCw,
   Search,
   Server,
-  TableProperties
+  TableProperties,
+  UploadCloud
 } from "lucide-react";
 import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
-import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, type ImportPreview } from "./api";
+import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
 import { buildTopology } from "./topology";
 import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters } from "./types";
 import { buildViewModel } from "./view-model";
 
 type Props = { apiKey: string };
+type MetadataImportMode = "live" | "file" | "text";
 
 export function MetadataDashboard({ apiKey }: Props) {
   const [url, setUrl] = useState("http://127.0.0.1:8091/getdata");
   const [instanceId, setInstanceId] = useState("");
   const [instanceRemark, setInstanceRemark] = useState("");
+  const [importMode, setImportMode] = useState<MetadataImportMode>("live");
+  const [jsonFile, setJsonFile] = useState<File | null>(null);
+  const [jsonText, setJsonText] = useState("");
   const [instances, setInstances] = useState<MetadataInstanceSummary[]>([]);
   const [listStatus, setListStatus] = useState("等待加载已导入列表");
   const [vm, setVm] = useState<MetadataViewModel | null>(null);
@@ -82,7 +89,7 @@ export function MetadataDashboard({ apiKey }: Props) {
       setError("请先填写 API Key");
       return;
     }
-    if (!instanceId.trim()) {
+    if (importMode === "live" && !instanceId.trim()) {
       setError("请先填写 InstanceID");
       return;
     }
@@ -90,15 +97,15 @@ export function MetadataDashboard({ apiKey }: Props) {
     setError("");
     try {
       if (!importPreview) {
-        const preview = await previewImport(url, instanceId.trim(), instanceRemark, apiKey);
+        const preview = await createImportPreview();
         setImportPreview(preview);
-        setImportMessage(`预览完成：${preview.summary.nodes} nodes / ${preview.summary.databases} databases。再次点击确认写入。`);
+        setImportMessage(`预览完成：${preview.summary.instances} instances / ${preview.summary.nodes} nodes / ${preview.summary.databases} databases。再次点击确认写入。`);
       } else {
         await confirmImport(importPreview.importId, apiKey);
         setImportMessage(`已写入 Server Metadata Store：${importPreview.importId}`);
         setImportPreview(null);
         await refreshInstances();
-        await load("stored");
+        if (instanceId.trim()) await load("stored");
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -107,25 +114,74 @@ export function MetadataDashboard({ apiKey }: Props) {
     }
   }
 
+  async function createImportPreview() {
+    if (importMode === "live") {
+      return previewImport(url, instanceId.trim(), instanceRemark, apiKey);
+    }
+    if (importMode === "file") {
+      if (!jsonFile) throw new Error("请先选择 JSON 文件");
+      const content = await jsonFile.text();
+      return previewTemplateImport({
+        templateType: "json",
+        filename: jsonFile.name,
+        instanceId,
+        remark: instanceRemark,
+        content
+      }, apiKey);
+    }
+    if (!jsonText.trim()) throw new Error("请先输入 JSON 文本");
+    return previewTemplateImport({
+      templateType: "json",
+      filename: "metadata-manual.json",
+      instanceId,
+      remark: instanceRemark,
+      content: jsonText
+    }, apiKey);
+  }
+
+  function resetImportPreview() {
+    setImportPreview(null);
+    setImportMessage("");
+  }
+
   return (
     <div className="space-y-5">
       <Card>
-        <CardContent className="grid gap-3 pt-5 xl:grid-cols-[440px_minmax(0,1fr)_auto]">
+        <CardHeader>
+          <CardTitle>Metadata import</CardTitle>
+          <CardDescription>支持实时加载、JSON 文件上传和手动 JSON 文本三种导入方式</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
-            <Input value={instanceId} onChange={(event) => { setInstanceId(event.target.value); setImportPreview(null); }} aria-label="Instance ID" placeholder="InstanceID（手工输入，唯一键）" />
-            <Input value={instanceRemark} onChange={(event) => { setInstanceRemark(event.target.value); setImportPreview(null); }} aria-label="Instance remark" maxLength={120} placeholder="备注名" />
+            <Input value={instanceId} onChange={(event) => { setInstanceId(event.target.value); resetImportPreview(); }} aria-label="Instance ID" placeholder={importMode === "live" ? "InstanceID（实时加载必填）" : "InstanceID（openGemini JSON 必填，模板 JSON 可选）"} />
+            <Input value={instanceRemark} onChange={(event) => { setInstanceRemark(event.target.value); resetImportPreview(); }} aria-label="Instance remark" maxLength={120} placeholder="备注名" />
           </div>
-          <div className="flex min-w-0 gap-2">
-            <Input value={url} onChange={(event) => { setUrl(event.target.value); setImportPreview(null); }} aria-label="Metadata URL" />
-            <Button onClick={() => void load("live")} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          <div className="flex flex-wrap gap-2">
+            <ImportModeButton active={importMode === "live"} icon={Link} label="实时加载" onClick={() => { setImportMode("live"); resetImportPreview(); }} />
+            <ImportModeButton active={importMode === "file"} icon={UploadCloud} label="JSON 文件" onClick={() => { setImportMode("file"); resetImportPreview(); }} />
+            <ImportModeButton active={importMode === "text"} icon={FileJson} label="JSON 文本" onClick={() => { setImportMode("text"); resetImportPreview(); }} />
+          </div>
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <ImportSourceControls
+              mode={importMode}
+              url={url}
+              jsonFile={jsonFile}
+              jsonText={jsonText}
+              onUrlChange={(value) => { setUrl(value); resetImportPreview(); }}
+              onFileChange={(file) => { setJsonFile(file); resetImportPreview(); }}
+              onTextChange={(value) => { setJsonText(value); resetImportPreview(); }}
+            />
+            <Button onClick={() => void load("live")} disabled={loading || importMode !== "live"}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading && importMode === "live" ? "animate-spin" : ""}`} />
               实时加载
             </Button>
             <Button variant="outline" onClick={() => void persistSnapshot()} disabled={loading}>
               {importPreview ? "确认写入" : "预览导入"}
             </Button>
           </div>
-          <Button variant="outline" onClick={() => void load("stored")} disabled={loading}>读取已存 Instance</Button>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => void load("stored")} disabled={loading}>读取已存 Instance</Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -191,6 +247,55 @@ export function MetadataDashboard({ apiKey }: Props) {
       setLoading(false);
     }
   }
+}
+
+function ImportModeButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Boxes; label: string; onClick: () => void }) {
+  return (
+    <Button className={active ? "border-primary bg-teal-50 text-teal-800 hover:bg-teal-50" : ""} variant="outline" onClick={onClick} type="button">
+      <Icon className="mr-2 h-4 w-4" />
+      {label}
+    </Button>
+  );
+}
+
+function ImportSourceControls({
+  mode,
+  url,
+  jsonFile,
+  jsonText,
+  onUrlChange,
+  onFileChange,
+  onTextChange
+}: {
+  mode: MetadataImportMode;
+  url: string;
+  jsonFile: File | null;
+  jsonText: string;
+  onUrlChange: (value: string) => void;
+  onFileChange: (file: File | null) => void;
+  onTextChange: (value: string) => void;
+}) {
+  if (mode === "live") {
+    return <Input value={url} onChange={(event) => onUrlChange(event.target.value)} aria-label="Metadata URL" placeholder="http://127.0.0.1:8091/getdata" />;
+  }
+  if (mode === "file") {
+    return (
+      <label className="flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-white px-3 text-sm hover:bg-slate-50">
+        <span className="min-w-0 truncate">{jsonFile ? jsonFile.name : "选择 .json 元数据文件"}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">Browse</span>
+        <input className="hidden" type="file" accept=".json,application/json" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
+      </label>
+    );
+  }
+  return (
+    <textarea
+      className="min-h-[132px] w-full rounded-md border border-border bg-white px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-teal-600/20"
+      value={jsonText}
+      onChange={(event) => onTextChange(event.target.value)}
+      aria-label="Metadata JSON text"
+      placeholder='{"ClusterID":1,"MetaNodes":[],"DataNodes":[],"SqlNodes":[]}'
+    />
+  );
 }
 
 function Tab({ value, icon: Icon, label }: { value: string; icon: typeof Boxes; label: string }) {

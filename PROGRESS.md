@@ -37,6 +37,15 @@ WEBUI Tools
 
 ## Implemented
 
+### Metadata Import UX
+
+- WebUI Metadata tab now exposes three explicit import paths in the management panel: realtime openGemini `/getdata` URL loading, `.json` file upload, and manual JSON text paste.
+- Realtime loading keeps the existing readonly snapshot behavior and still requires a user-provided InstanceID for openGemini metadata.
+- JSON file and manual JSON text imports call `/api/metadata/imports` with `templateType=json`, then require preview and confirmation before writing to the Metadata Store.
+- Full Metadata JSON templates can be previewed without an InstanceID; raw openGemini JSON still requires InstanceID so the Server can normalize it into the instance-keyed topology model.
+- Updated WebUI and Metadata module docs/specs for the three import modes.
+- Verification: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check` pass.
+
 ### Memory-backed Case Store
 
 - Added Server `MemoryStore` backed by `storage.data_dir/memory/memory.sqlite` with `memory_items`, `memory_chunks`, and FTS5 `memory_chunks_fts`.

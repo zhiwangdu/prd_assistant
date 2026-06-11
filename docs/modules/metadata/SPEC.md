@@ -20,7 +20,7 @@ Metadata 在产品入口上归入 System Context。现有 `/api/metadata/*` API 
 - openGemini 导入要求用户手工提供 `instanceId`，并以该值作为唯一业务键；原始 `ClusterID` 只作为 `sourceClusterId` 标签保留。
 - Instance 支持可选 `remark` 备注名；openGemini 拉取和导入请求可携带，空值不保存，服务端限制最长 120 个字符。
 - 已导入 Instance 列表和按 InstanceID 读取拓扑快照。
-- WEBUI Metadata 页面。
+- WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
 - `metadata_context.json` workspace 快照和 LLM 摘要。
 
@@ -292,7 +292,8 @@ metadata_context.json
 - 已导入 Instance 列表和按 InstanceID 查询拓扑快照。
 - 兼容集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
 - 真实元数据 URL 拉取和预览。
-- 模板输入、导入预览和确认。
+- JSON 文件上传、手动 JSON 文本输入、导入预览和确认。
+- 完整 Metadata JSON 模板可不填写 InstanceID；openGemini 原始 JSON 仍需填写 InstanceID。
 - task 创建时选择实例和可选节点。
 
 ## 安全约束
@@ -311,6 +312,8 @@ metadata_context.json
 - 能从 cluster 查询结果中直接看到 openGemini `PtView` 的 PT owner 和状态。
 - 能从 cluster 查询结果中直接看到 openGemini `Databases` 的默认 RP、Measurements schema 和 ShardGroups。
 - 能提交 YAML/JSON 模板并得到导入预览。
+- WebUI 能上传 `.json` 文件并得到导入预览。
+- WebUI 能粘贴 JSON 文本并得到导入预览。
 - 能在用户输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 拉取 openGemini metadata 并归一化展示。
 - 导入确认后 metadata store 可查询。
 - task 创建可关联 instance/node 上下文并返回固化快照。

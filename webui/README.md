@@ -44,6 +44,8 @@ Metadata 能力：
 
 - 手工输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 实时只读加载。
 - InstanceID 旁支持输入可选备注名，实时加载和导入预览会随请求提交。
+- 导入区支持三种方式：实时加载 openGemini `/getdata` URL、上传 `.json` 元数据文件、手动粘贴 JSON 文本。
+- JSON 文件和手动 JSON 文本通过 `/api/metadata/imports` 生成导入预览；完整 Metadata JSON 模板可包含多个 Instance，openGemini `/getdata` JSON 仍需填写 InstanceID。
 - 预览并确认写入 Server Metadata Store。
 - 展示已导入 Instance 列表和备注名；列表备注单行省略，避免长文本撑开布局，并按 InstanceID 读取已经持久化的快照。
 - Overview：InstanceID、备注名、sourceClusterId、Term、Index、节点/DB/PT/Shard 数量、功能开关和全部 MaxID。
