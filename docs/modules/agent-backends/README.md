@@ -49,7 +49,7 @@ agent_backends:
 - 成熟 agent 后端不能直接修改 LogAgent 状态，不能绕过 Server 执行 shell、SSH、工具或文件访问。
 - `claude_agent_sdk` 后端只能消费 Server 生成的 `analysis_package.json` / `agent_request.json`，并通过 stdout 返回结构化 action 或 final answer；Server 写入真实 `agent_response.json`。
 - 首版不开放 Claude 内置 Bash/Read/Grep/Write/Edit。后续如需后端工具访问，只通过 LogAgent MCP/adapter 暴露受控只读能力；实际工具执行仍回到 Server Action Executor。
-- 当命令文件名为 `claude` 或 `claude.exe` 时，Server 在 task workspace 中直接执行 Claude Code CLI：`<command_path> --print --output-format json --json-schema <AgentDecision schema> --tools "" --no-session-persistence <prompt>`。因此 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 通常应设置为 `which claude` 的绝对路径。
+- 当命令文件名为 `claude` 或 `claude.exe` 时，Server 在 task workspace 中直接执行 Claude Code CLI：`<command_path> --print --output-format json --json-schema <AgentDecision schema> --tools "" --no-session-persistence <prompt>`。因此 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 通常应设置为 `which claude` 的绝对路径；Server 会优先解析 Claude CLI envelope 的 `structured_output` 字段。
 - 当命令文件名不是 `claude` / `claude.exe` 时，Server 保留自定义 adapter 协议：`<command_path> run --request agent_request.json --package analysis_package.json`。
 
 ## 后续计划

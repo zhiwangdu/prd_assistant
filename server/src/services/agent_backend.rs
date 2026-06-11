@@ -161,7 +161,7 @@ impl AgentBackendRegistry {
                     "agent backend type {} is configured but not supported for Log Analysis runtime; configure claude_agent_sdk",
                     backend.backend_type.as_str()
                 );
-                write_failed_agent_response(input.workspace, backend, 0, &error).await?;
+                write_failed_agent_response(input.workspace, backend, 0, &error, None).await?;
                 anyhow::bail!(error)
             }
         }
@@ -197,6 +197,7 @@ impl AgentBackendRegistry {
                                 backend,
                                 duration_ms,
                                 &error.to_string(),
+                                None,
                             )
                             .await?;
                             return Err(error);
@@ -216,7 +217,8 @@ impl AgentBackendRegistry {
                             input.workspace,
                             backend,
                             duration_ms,
-                            &error.to_string(),
+                            &format!("{error:#}"),
+                            Some(&stdout),
                         )
                         .await?;
                         Err(error)
@@ -228,7 +230,8 @@ impl AgentBackendRegistry {
                     input.workspace,
                     backend,
                     duration_ms,
-                    &error.to_string(),
+                    &format!("{error:#}"),
+                    None,
                 )
                 .await?;
                 Err(error)
@@ -555,6 +558,10 @@ fn parse_adapter_decision(stdout: &str) -> anyhow::Result<(AgentDecision, serde_
         .filter(|value| !value.is_null())
         .or_else(|| raw_response.get("decision"))
         .filter(|value| !value.is_null())
+        .or_else(|| raw_response.get("structured_output"))
+        .filter(|value| !value.is_null())
+        .or_else(|| raw_response.get("structuredOutput"))
+        .filter(|value| !value.is_null())
         .or_else(|| raw_response.get("result"))
         .filter(|value| !value.is_null())
         .unwrap_or(&raw_response);
@@ -611,6 +618,8 @@ fn raw_decision_value(raw_response: &serde_json::Value) -> serde_json::Value {
     raw_response
         .get("decision")
         .or_else(|| raw_response.get("normalizedDecision"))
+        .or_else(|| raw_response.get("structured_output"))
+        .or_else(|| raw_response.get("structuredOutput"))
         .or_else(|| raw_response.get("result"))
         .cloned()
         .unwrap_or_else(|| raw_response.clone())
@@ -621,6 +630,7 @@ async fn write_failed_agent_response(
     backend: &AgentBackendSettingsEntry,
     duration_ms: u64,
     error: &str,
+    raw_stdout: Option<&str>,
 ) -> Result<(), AppError> {
     let response = serde_json::json!({
         "schemaVersion": 1,
@@ -632,6 +642,7 @@ async fn write_failed_agent_response(
         "normalizedDecision": null,
         "usage": null,
         "cost": null,
+        "rawStdoutPreview": raw_stdout.map(|value| truncate_string(value, 16384)),
         "error": error,
     });
     write_json_atomic(workspace.join("agent_response.json"), &response).await
@@ -643,6 +654,10 @@ fn truncate_bytes(value: &[u8], max: usize) -> &[u8] {
     } else {
         &value[..max]
     }
+}
+
+fn truncate_string(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
 }
 
 #[cfg(test)]
@@ -716,7 +731,7 @@ for arg in "$@"; do
 done
 printf '%s\n' "$*" > claude_args.txt
 cat <<'JSON'
-{"type":"result","subtype":"success","is_error":false,"result":"{\"type\":\"final_answer\",\"result\":{\"summary\":\"direct cli summary\",\"symptoms\":[\"timeout\"],\"likelyRootCauses\":[{\"cause\":\"timeout in logs\",\"evidenceRefs\":[\"grep_results.json#matches/0\"]}],\"nextChecks\":[\"check timeout\"],\"fixSuggestions\":[\"increase timeout\"],\"missingInformation\":[],\"confidence\":\"medium\"}}","usage":{"input_tokens":22},"total_cost_usd":0.02}
+{"type":"result","subtype":"success","is_error":false,"result":"Done.","structured_output":{"type":"final_answer","result":{"summary":"direct cli summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":["increase timeout"],"missingInformation":[],"confidence":"medium"}},"usage":{"input_tokens":22},"total_cost_usd":0.02}
 JSON
 "#,
         );

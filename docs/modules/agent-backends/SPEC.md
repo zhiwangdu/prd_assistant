@@ -83,7 +83,7 @@ agent_response.json
 <command_path> --print --output-format json --json-schema <AgentDecision schema> --tools "" --no-session-persistence <prompt>
 ```
 
-此时 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 应设置为 `which claude` 输出的绝对路径。Server 禁用 Claude 内置工具，并把 `analysis_package.json` / `agent_request.json` 嵌入 prompt；stdout 可是 Claude CLI 的 JSON envelope，Server 会解析其中的 `result` 为 `AgentDecision`。
+此时 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 应设置为 `which claude` 输出的绝对路径。Server 禁用 Claude 内置工具，并把 `analysis_package.json` / `agent_request.json` 嵌入 prompt；stdout 可是 Claude CLI 的 JSON envelope，Server 会优先解析其中的 `structured_output` 为 `AgentDecision`，并保留 `result` 作为兼容字段。
 
 当命令文件名不是 `claude` / `claude.exe` 时，`claude_agent_sdk` 使用自定义 adapter 协议：
 
@@ -91,7 +91,7 @@ agent_response.json
 <command_path> run --request agent_request.json --package analysis_package.json
 ```
 
-stdout 必须是纯 JSON，可直接是 `AgentDecision`，也可使用包含 `decision`、`normalizedDecision` 或 Claude CLI `result` 的 envelope。未知 action、自由命令、任意路径、任意 SSH 目标和非法 evidence ref 必须拒绝。
+stdout 必须是纯 JSON，可直接是 `AgentDecision`，也可使用包含 `decision`、`normalizedDecision`、Claude CLI `structured_output` 或兼容 `result` 的 envelope。未知 action、自由命令、任意路径、任意 SSH 目标和非法 evidence ref 必须拒绝。
 
 ## 验收标准
 

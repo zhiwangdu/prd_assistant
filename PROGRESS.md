@@ -653,6 +653,9 @@ Current product-loop Case Store slice verification:
 - Updated `deploy/logagentctl.sh` to load runtime `.env` with auto-export semantics so background Server processes receive `LOGAGENT_AGENT_CLAUDE_SDK_PATH` and other configured environment variables. The local runtime `logagentctl.sh` and `.env` were adjusted, the runtime server binary was rebuilt/installed, and `/health` returned `{"status":"ok"}` after a normal control-script start.
 - Verification for the Claude CLI backend fix passed: `cargo fmt --check`, `cargo check`, `cargo test` (native 1 + server 114 tests), `bash -n deploy/logagentctl.sh deploy/rebuild-install.sh /home/duzhiwang/workspace/data/prd_assistant/deploy/logagentctl.sh`, and repeated runtime `/health` checks through `logagentctl.sh status`.
 
+- Fixed Claude CLI structured output parsing after real `PLAN_ANALYSIS` returned a valid Claude envelope whose user-visible `result` was `"Done."` and whose actual schema-constrained decision was in `structured_output`. Agent Backend parsing now checks `structured_output` / `structuredOutput` before `result`, and failed parse responses include a truncated `rawStdoutPreview` plus the full error chain for future diagnosis.
+- Verification for the structured output parser fix passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::agent_backend`, `cargo test` (native 1 + server 114 tests), runtime `rebuild-install.sh --server-only --no-restart`, and `logagentctl.sh status` returning `/health` `{"status":"ok"}`.
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:
