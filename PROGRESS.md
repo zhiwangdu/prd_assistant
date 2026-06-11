@@ -37,9 +37,18 @@ WEBUI Tools
 
 ## Implemented
 
+### Metadata Page Usability Refinements
+
+- Raw JSON now renders as a lazy expandable tree instead of stringifying and rendering the full snapshot on initial page load.
+- Imported Instances can collapse into a narrow rail and expand back without losing selection.
+- Metadata Explorer now combines the former topology and database detail entry points into `Node / DBPT / Shards` and `DB / RP / Shards / Indexes` views.
+- Schemas now defaults to the first non-`_internal` database and its first retention policy, keeps RP options scoped to the selected DB, and renders field type codes as names.
+- Nodes now display MetaNode status as `none` and map Data/SQL node status codes to `none`, `alive`, `leaving`, `left`, and `failed`.
+- Verification: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and local Vite HTTP smoke pass; in-app Browser was unavailable for visual verification.
+
 ### Sticky Table Headers
 
-- Metadata reusable tables now use bounded local scrolling with sticky headers, so Nodes, Partitions, Topology shard rows, Databases shard/index rows and Schemas field rows keep column meanings visible while scrolling.
+- Metadata reusable tables now use bounded local scrolling with sticky headers, so Nodes, Partitions, Explorer shard/index rows and Schemas field rows keep column meanings visible while scrolling.
 - Tools pprof top table now uses the same sticky-header scrolling behavior.
 - Updated WebUI and Metadata module docs/specs for the long-table browsing behavior.
 - Verification: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and local Vite HTTP smoke pass; in-app Browser was unavailable for visual verification.

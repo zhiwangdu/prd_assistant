@@ -47,19 +47,19 @@ Metadata 能力：
 - 导入区支持三种方式：实时加载 openGemini `/getdata` URL、上传 `.json` 元数据文件、手动粘贴 JSON 文本。
 - JSON 文件和手动 JSON 文本通过 `/api/metadata/imports` 生成导入预览；完整 Metadata JSON 模板可包含多个 Instance，openGemini `/getdata` JSON 仍需填写 InstanceID。
 - 预览并确认写入 Server Metadata Store。
-- 展示已导入 Instance 列表和备注名；列表备注单行省略，避免长文本撑开布局，并按 InstanceID 读取已经持久化的快照。
+- 展示已导入 Instance 列表和备注名；列表备注单行省略，并支持向左收缩/展开，避免长文本撑开布局，并按 InstanceID 读取已经持久化的快照。
 - Overview：InstanceID、备注名、sourceClusterId、Term、Index、节点/DB/PT/Shard 数量、功能开关和全部 MaxID。
-- Nodes：MetaNode、DataNode、SqlNode 完整地址、状态、连接和 AZ 字段。
+- Nodes：MetaNode、DataNode、SqlNode 完整地址、状态、连接和 AZ 字段；MetaNode 状态固定显示 none，Data/SQL 节点按 none/alive/leaving/left/failed 映射。
 - Partitions：Database、PtId、Owner DataNode、Status、Ver、RGID。
-- Topology：按 `Database -> DataNode -> DBPT -> Shards` 级联展开，Shard 行展示 time range、IndexID 和 Index 状态信息。
-- Topology 支持 Database、DataNode、时间范围、仅异常、Shard 行和 Index 信息显隐筛选，不再渲染 Graph。
-- 点击 DBPT 时在右侧展示聚合指标、异常和时间范围。
+- Metadata Explorer：合并原 Topology 和 Databases，提供 `Node / DBPT / Shards` 与 `DB / RP / Shards / Indexes` 两个视角。
+- `Node / DBPT / Shards` 视角按 `Database -> DataNode -> DBPT -> Shards` 级联展开，Shard 行展示 time range、IndexID 和 Index 状态信息。
+- Explorer 支持 Database、DataNode、时间范围、仅异常、Shard 行和 Index 信息显隐筛选，不再渲染 Graph；点击 DBPT 时在右侧展示聚合指标、异常和时间范围。
 - 缺失 DataNode 或缺失 PT 使用红色虚拟容器/lane 展示，不会从拓扑中消失。
-- Databases：按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
-- Schemas：通过 Database、RP、Measurement/field 筛选后展示，不默认铺开全部 Schema。
+- `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
+- Schemas：默认选择第一个非 `_internal` DB 及其第一个 RP，RP 选项跟随 DB 联动，Measurement/field 搜索用于缩小结果，field type 数字展示为实际类型。
 - Metadata 明细表使用局部滚动和固定表头，浏览大量节点、分片、索引或字段时保留字段含义。
 - Diagnostics：检查节点离线、连接状态、PT/Shard owner、默认 RP、ShardGroup、Schema 和 Index 引用。
-- Raw JSON：保留并筛选原始 `/getdata` JSON。
+- Raw JSON：按需展开原始 `/getdata` JSON，不在进入页面时全量 stringify 或渲染全部节点。
 
 System Context 能力：
 
@@ -73,7 +73,7 @@ System Context 能力：
 
 ```text
 Shard.Owners / Index.Owners = PT ID
-Database -> DataNode -> DBPT -> Shards
+Metadata Explorer: Database -> DataNode -> DBPT -> Shards / Database -> RP -> ShardGroup/IndexGroup
 ```
 
 ## 文件结构

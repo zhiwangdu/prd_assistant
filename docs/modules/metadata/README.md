@@ -197,16 +197,17 @@ Authorization: Bearer <api-key>
 已新增 Metadata 页面：
 
 - 展示已确认导入的 Instance 列表。
-- Instance 列表展示备注名并保持单行省略，Overview 展示完整备注字段。
+- Instance 列表展示备注名并保持单行省略，支持向左收缩/展开，Overview 展示完整备注字段。
 - 按实例 ID 查询。
 - 读取已存快照时使用 InstanceID，不再要求用户输入 ClusterID。
-- Topology 不再渲染 Graph，改为按 `Database -> DataNode -> DBPT -> Shards` 级联展开。
-- Shard 行展示所属 RP、ShardGroup、time range、Owners、IndexID 和 Index 状态信息。
-- 支持拓扑筛选、异常高亮、Shard 行/Index 信息显隐和 DBPT 聚合详情面板。
+- Metadata Explorer 合并原 Topology 和 Databases，提供 `Node / DBPT / Shards` 与 `DB / RP / Shards / Indexes` 两个视角。
+- `Node / DBPT / Shards` 不再渲染 Graph，改为按 `Database -> DataNode -> DBPT -> Shards` 级联展开，Shard 行展示所属 RP、ShardGroup、time range、Owners、IndexID 和 Index 状态信息。
+- Explorer 支持拓扑筛选、异常高亮、Shard 行/Index 信息显隐和 DBPT 聚合详情面板。
 - 展示 `PtView` 分区归属和状态。
-- Databases 页面按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
-- Schemas 页面通过筛选框查询后展示匹配的表结构，不默认铺开全部 Schema。
-- 节点、分区、Topology、Databases 和 Schemas 明细表使用局部滚动和固定表头，便于浏览大量行时识别字段含义。
+- `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
+- Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 跟随 DB 联动，Measurement/field 用于缩小表结构结果，field type 解析为实际类型名称。
+- 节点、分区、Explorer 和 Schemas 明细表使用局部滚动和固定表头，便于浏览大量行时识别字段含义。
+- Raw JSON 页面按需展开原始 JSON，不在进入页面时全量 stringify 大对象。
 - 展示产品、版本、环境、标签。
 - 从真实元数据 URL 拉取并预览。
 - 上传 JSON 文件或输入 JSON 文本并预览导入结果。

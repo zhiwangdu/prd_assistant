@@ -281,17 +281,20 @@ metadata_context.json
 ## WEBUI
 
 - Metadata 页面已实现。
-- Metadata 页面包含 Overview、Nodes、Partitions、Topology、Databases、Schemas、Diagnostics 和 Raw JSON。
+- Metadata 页面包含 Overview、Nodes、Partitions、Metadata Explorer、Schemas、Diagnostics 和 Raw JSON。
 - Metadata 页面展示已导入 Instance 列表，读取已存快照时只要求 InstanceID。
 - InstanceID 输入旁展示备注名输入框；列表中备注单行省略，Overview 展示备注字段。
+- Nodes 页面中 MetaNode 状态固定展示 none；Data/SQL 节点按 0 none、1 alive、2 leaving、3 left、4 failed 映射状态。
 - Shard/Index Owners 按 PT ID 解析，经 PtView 关联 DataNode。
-- Topology 不渲染 Graph，按 `Database -> DataNode -> DBPT -> Shards` 级联展开。
-- Shard 行必须展示所属 RP、ShardGroup、time range、Owners、IndexID 和 Index 状态信息。
+- Metadata Explorer 不渲染 Graph，合并原 Topology 和 Databases，提供 `Node / DBPT / Shards` 与 `DB / RP / Shards / Indexes` 两个视角。
+- `Node / DBPT / Shards` 视角按 `Database -> DataNode -> DBPT -> Shards` 级联展开，Shard 行必须展示所属 RP、ShardGroup、time range、Owners、IndexID 和 Index 状态信息。
 - 缺失 DataNode/PT 使用异常聚合行展示。
-- Topology 支持 Database、DataNode、时间范围、仅异常、Shard 行/Index 信息显隐筛选和 DBPT 聚合详情面板。
-- Databases 页面按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
-- Schemas 页面必须提供筛选框，按 Database、RP、Measurement 或 field 过滤后展示，不默认铺开全部 Schema。
+- Explorer 支持 Database、DataNode、时间范围、仅异常、Shard 行/Index 信息显隐筛选和 DBPT 聚合详情面板。
+- `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
+- Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 筛选必须跟随 DB 联动，Measurement 或 field 搜索用于缩小结果。
+- Schema field type 必须解析为 unknown/int/uint/float/string/boolean/tag/last。
 - Metadata 明细表必须支持长列表局部滚动，并在滚动时固定表头。
+- Raw JSON 页面必须按需展开原始 JSON，不得在初始渲染时全量 stringify 大对象。
 - 实例查询。
 - 已导入 Instance 列表和按 InstanceID 查询拓扑快照。
 - 兼容集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
@@ -319,9 +322,10 @@ metadata_context.json
 - WebUI 能上传 `.json` 文件并得到导入预览。
 - WebUI 能粘贴 JSON 文本并得到导入预览。
 - 能在用户输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 拉取 openGemini metadata 并归一化展示。
-- Topology 大集群通过级联展开可读，不渲染 Graph。
-- Databases 页面能按 Database/RP/ShardGroup/IndexGroup 展开查看明细。
-- Schemas 页面未输入筛选条件时不铺开全部 Schema，输入筛选后能展示匹配结果。
+- Metadata Explorer 大集群通过级联展开可读，不渲染 Graph。
+- Metadata Explorer 能在 `Node / DBPT / Shards` 和 `DB / RP / Shards / Indexes` 两个视角间切换。
+- Schemas 页面默认选择非 `_internal` DB 和首个 RP，DB 变化后 RP 选项联动更新，field type 展示为实际类型。
+- Raw JSON 大对象默认只展示顶层结构并按需展开，不导致页面卡死。
 - 节点、分区、分片、索引和 Schema 表格下翻时表头固定在表格顶部。
 - 导入确认后 metadata store 可查询。
 - task 创建可关联 instance/node 上下文并返回固化快照。

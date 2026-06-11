@@ -3,8 +3,9 @@ import {
   Boxes,
   Braces,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleX,
-  Database,
   FileJson,
   GitBranch,
   Link,
@@ -40,6 +41,7 @@ export function MetadataDashboard({ apiKey }: Props) {
   const [error, setError] = useState("");
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importMessage, setImportMessage] = useState("");
+  const [instancesCollapsed, setInstancesCollapsed] = useState(false);
 
   const refreshInstances = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -186,12 +188,14 @@ export function MetadataDashboard({ apiKey }: Props) {
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {importMessage && <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">{importMessage}</div>}
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <div className={`grid gap-5 ${instancesCollapsed ? "xl:grid-cols-[64px_minmax(0,1fr)]" : "xl:grid-cols-[360px_minmax(0,1fr)]"}`}>
         <ImportedInstancesPanel
           instances={instances}
           loading={loading}
           selectedInstanceId={instanceId}
           status={listStatus}
+          collapsed={instancesCollapsed}
+          onToggleCollapsed={() => setInstancesCollapsed((value) => !value)}
           onRefresh={() => void refreshInstances()}
           onSelect={(item) => {
             setInstanceId(item.instanceId);
@@ -208,8 +212,7 @@ export function MetadataDashboard({ apiKey }: Props) {
               <Tab value="overview" icon={Boxes} label="Overview" />
               <Tab value="nodes" icon={Server} label="Nodes" />
               <Tab value="partitions" icon={GitBranch} label="Partitions" />
-              <Tab value="topology" icon={Network} label="Topology" />
-              <Tab value="databases" icon={Database} label="Databases" />
+              <Tab value="explorer" icon={Network} label="Explorer" />
               <Tab value="schemas" icon={TableProperties} label="Schemas" />
               <Tab value="diagnostics" icon={AlertTriangle} label={`Diagnostics ${vm.diagnostics.length}`} />
               <Tab value="raw" icon={Braces} label="Raw JSON" />
@@ -217,8 +220,7 @@ export function MetadataDashboard({ apiKey }: Props) {
             <TabsContent value="overview"><Overview vm={vm} /></TabsContent>
             <TabsContent value="nodes"><NodesView nodes={vm.nodes} /></TabsContent>
             <TabsContent value="partitions"><PartitionsView vm={vm} /></TabsContent>
-            <TabsContent value="topology"><TopologyView vm={vm} /></TabsContent>
-            <TabsContent value="databases"><DatabasesView databases={vm.cluster.databases ?? []} /></TabsContent>
+            <TabsContent value="explorer"><MetadataExplorerView vm={vm} /></TabsContent>
             <TabsContent value="schemas"><SchemasView databases={vm.cluster.databases ?? []} /></TabsContent>
             <TabsContent value="diagnostics"><DiagnosticsView diagnostics={vm.diagnostics} /></TabsContent>
             <TabsContent value="raw"><RawJsonView value={vm.cluster.rawSnapshot ?? vm.cluster} /></TabsContent>
@@ -306,6 +308,8 @@ function ImportedInstancesPanel({
   loading,
   selectedInstanceId,
   status,
+  collapsed,
+  onToggleCollapsed,
   onRefresh,
   onSelect
 }: {
@@ -313,9 +317,29 @@ function ImportedInstancesPanel({
   loading: boolean;
   selectedInstanceId: string;
   status: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onRefresh: () => void;
   onSelect: (item: MetadataInstanceSummary) => void;
 }) {
+  if (collapsed) {
+    const selected = instances.find((item) => item.instanceId === selectedInstanceId);
+    return (
+      <Card className="h-fit">
+        <CardContent className="flex flex-col items-center gap-2 p-2">
+          <Button className="h-9 w-9 px-0" variant="outline" onClick={onToggleCollapsed} title="展开 Imported Instances">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button className="h-9 w-9 px-0" variant="outline" onClick={onRefresh} disabled={loading} title="刷新 Imported Instances">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+          <div className="mt-2 max-h-40 overflow-hidden text-xs text-muted-foreground [writing-mode:vertical-rl]" title={selected?.instanceId ?? status}>
+            {selected ? selected.instanceId.slice(0, 18) : "Instances"}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardHeader>
@@ -324,9 +348,14 @@ function ImportedInstancesPanel({
             <CardTitle>Imported Instances</CardTitle>
             <CardDescription>{status}</CardDescription>
           </div>
-          <Button className="h-8 px-3" variant="outline" onClick={onRefresh} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button className="h-8 px-3" variant="outline" onClick={onToggleCollapsed} title="收缩 Imported Instances">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button className="h-8 px-3" variant="outline" onClick={onRefresh} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -440,7 +469,10 @@ function PartitionsView({ vm }: { vm: MetadataViewModel }) {
   );
 }
 
-function TopologyView({ vm }: { vm: MetadataViewModel }) {
+type ExplorerMode = "relations" | "metadata";
+
+function MetadataExplorerView({ vm }: { vm: MetadataViewModel }) {
+  const [mode, setMode] = useState<ExplorerMode>("relations");
   const [filters, setFilters] = useState<TopologyFilters>({
     database: "",
     dataNodeId: "",
@@ -454,6 +486,8 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
   const index = useMemo(() => buildTopologyIndex(vm), [vm]);
   const rows = useMemo(() => filterTopologyRows(index.rows, filters), [index.rows, filters]);
   const groupedRows = useMemo(() => groupTopologyRows(rows), [rows]);
+  const filteredDatabases = useMemo(() => filterDatabasesForExplorer(vm.cluster.databases ?? [], filters), [vm.cluster.databases, filters]);
+  const databaseMetrics = useMemo(() => databaseCascadeMetrics(filteredDatabases), [filteredDatabases]);
 
   function patchFilter<K extends keyof TopologyFilters>(key: K, value: TopologyFilters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -466,28 +500,49 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
 
   return (
     <Card>
-      <CardHeader><CardTitle>Topology explorer</CardTitle><CardDescription>按 Database / DataNode / DBPT / Shards 级联展开，Shard 行包含时间范围和 Index 信息。</CardDescription></CardHeader>
+      <CardHeader>
+        <CardTitle>Metadata Explorer</CardTitle>
+        <CardDescription>用一个入口查看 Node / DBPT / Shard 归属关系，以及 DB / RP / Shard / Index 元数据详情。</CardDescription>
+      </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button className={mode === "relations" ? "border-primary bg-teal-50 text-teal-800 hover:bg-teal-50" : ""} variant="outline" onClick={() => setMode("relations")}>Node / DBPT / Shards</Button>
+          <Button className={mode === "metadata" ? "border-primary bg-teal-50 text-teal-800 hover:bg-teal-50" : ""} variant="outline" onClick={() => setMode("metadata")}>DB / RP / Shards / Indexes</Button>
+        </div>
         <div className="mb-4 grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-4">
           <FilterSelect label="Database" value={filters.database} onChange={(value) => patchFilter("database", value)} options={index.databases} />
-          <FilterSelect label="DataNode" value={filters.dataNodeId} onChange={(value) => patchFilter("dataNodeId", value)} options={index.dataNodes} />
+          {mode === "relations" ? <FilterSelect label="DataNode" value={filters.dataNodeId} onChange={(value) => patchFilter("dataNodeId", value)} options={index.dataNodes} /> : null}
           <FilterInput label="Start time" type="datetime-local" value={filters.startTime} onChange={(value) => patchFilter("startTime", value)} />
           <FilterInput label="End time" type="datetime-local" value={filters.endTime} onChange={(value) => patchFilter("endTime", value)} />
-          <FilterCheck label="Only abnormal" checked={filters.onlyAbnormal} onChange={(value) => patchFilter("onlyAbnormal", value)} />
+          {mode === "relations" ? <FilterCheck label="Only abnormal" checked={filters.onlyAbnormal} onChange={(value) => patchFilter("onlyAbnormal", value)} /> : null}
           <FilterCheck label="Show shard rows" checked={filters.showShards} onChange={(value) => patchFilter("showShards", value)} />
           <FilterCheck label="Show index info" checked={filters.showIndexes} onChange={(value) => patchFilter("showIndexes", value)} />
           <div className="flex items-end"><Button className="w-full" variant="outline" onClick={resetFilters}>Reset filters</Button></div>
         </div>
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
-          <Metric label="Visible PTs" value={rows.length} compact />
-          <Metric label="Abnormal PTs" value={rows.filter((row) => row.abnormal).length} compact />
-          <Metric label="ShardGroups" value={rows.reduce((total, row) => total + row.shardGroups, 0)} compact />
-          <Metric label="Indexes" value={rows.reduce((total, row) => total + row.indexes, 0)} compact />
-        </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <TopologyCascade groups={groupedRows} selectedRow={selectedRow} showShards={filters.showShards} showIndexes={filters.showIndexes} onSelect={setSelectedRow} />
-          <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
-        </div>
+        {mode === "relations" ? (
+          <>
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
+              <Metric label="Visible PTs" value={rows.length} compact />
+              <Metric label="Abnormal PTs" value={rows.filter((row) => row.abnormal).length} compact />
+              <Metric label="ShardGroups" value={rows.reduce((total, row) => total + row.shardGroups, 0)} compact />
+              <Metric label="Indexes" value={rows.reduce((total, row) => total + row.indexes, 0)} compact />
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <TopologyCascade groups={groupedRows} selectedRow={selectedRow} showShards={filters.showShards} showIndexes={filters.showIndexes} onSelect={setSelectedRow} />
+              <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
+              <Metric label="Databases" value={filteredDatabases.length} compact />
+              <Metric label="Retention policies" value={databaseMetrics.retentionPolicies} compact />
+              <Metric label="ShardGroups" value={databaseMetrics.shardGroups} compact />
+              <Metric label="Indexes" value={databaseMetrics.indexes} compact />
+            </div>
+            <DatabasesView databases={filteredDatabases} showShards={filters.showShards} showIndexes={filters.showIndexes} />
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -588,8 +643,8 @@ function groupTopologyRows(rows: TopologySummaryRow[]) {
   }));
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
-  return <label className="grid gap-1 text-xs font-medium text-muted-foreground">{label}<select className="h-10 rounded-md border border-border bg-white px-3 text-sm text-foreground" value={value} onChange={(event) => onChange(event.target.value)}><option value="">All</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+function FilterSelect({ label, value, options, onChange, allowAll = true }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; allowAll?: boolean }) {
+  return <label className="grid gap-1 text-xs font-medium text-muted-foreground">{label}<select className="h-10 rounded-md border border-border bg-white px-3 text-sm text-foreground" value={value} onChange={(event) => onChange(event.target.value)}>{allowAll ? <option value="">All</option> : null}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
 function FilterInput({ label, value, type, onChange }: { label: string; value: string; type: string; onChange: (value: string) => void }) {
@@ -629,7 +684,40 @@ function timeRange(start?: string | null, end?: string | null) {
   return `${start?.slice(0, 19) ?? "-"} -> ${end?.slice(0, 19) ?? "-"}`;
 }
 
-function DatabasesView({ databases }: { databases: DatabaseDto[] }) {
+function filterDatabasesForExplorer(databases: DatabaseDto[], filters: TopologyFilters) {
+  return databases
+    .filter((database) => !filters.database || database.name === filters.database)
+    .map((database) => ({
+      ...database,
+      retentionPolicies: (database.retentionPolicies ?? []).map((rp) => ({
+        ...rp,
+        shardGroups: (rp.shardGroups ?? []).filter((group) => rangeOverlapsFilter(group.startTime, group.endTime, filters)),
+        indexGroups: (rp.indexGroups ?? []).filter((group) => rangeOverlapsFilter(group.startTime, group.endTime, filters))
+      }))
+    }));
+}
+
+function databaseCascadeMetrics(databases: DatabaseDto[]) {
+  const retentionPolicies = databases.flatMap((database) => database.retentionPolicies ?? []);
+  const shardGroups = retentionPolicies.flatMap((rp) => rp.shardGroups ?? []);
+  const indexGroups = retentionPolicies.flatMap((rp) => rp.indexGroups ?? []);
+  return {
+    retentionPolicies: retentionPolicies.length,
+    shardGroups: shardGroups.length,
+    indexes: indexGroups.reduce((total, group) => total + (group.indexes ?? []).length, 0)
+  };
+}
+
+function rangeOverlapsFilter(start: string | null | undefined, end: string | null | undefined, filters: TopologyFilters) {
+  if (!filters.startTime && !filters.endTime) return true;
+  const filterStart = filters.startTime ? Date.parse(filters.startTime) : Number.NEGATIVE_INFINITY;
+  const filterEnd = filters.endTime ? Date.parse(filters.endTime) : Number.POSITIVE_INFINITY;
+  const itemStart = start ? Date.parse(start) : Number.NEGATIVE_INFINITY;
+  const itemEnd = end ? Date.parse(end) : Number.POSITIVE_INFINITY;
+  return itemStart <= filterEnd && itemEnd >= filterStart;
+}
+
+function DatabasesView({ databases, showShards = true, showIndexes = true }: { databases: DatabaseDto[]; showShards?: boolean; showIndexes?: boolean }) {
   if (!databases.length) return <EmptyState>No databases</EmptyState>;
   return (
     <div className="space-y-3">
@@ -641,7 +729,7 @@ function DatabasesView({ databases }: { databases: DatabaseDto[] }) {
             {database.markDeleted && <span className="ml-2"><Badge variant="destructive">Marked deleted</Badge></span>}
           </summary>
           <div className="space-y-3 border-t border-border p-3">
-            {(database.retentionPolicies ?? []).map((rp) => <RetentionPolicy key={rp.name} database={database.name} rp={rp} />)}
+            {(database.retentionPolicies ?? []).map((rp) => <RetentionPolicy key={rp.name} database={database.name} rp={rp} showShards={showShards} showIndexes={showIndexes} />)}
           </div>
         </details>
       ))}
@@ -649,7 +737,7 @@ function DatabasesView({ databases }: { databases: DatabaseDto[] }) {
   );
 }
 
-function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPolicyDto }) {
+function RetentionPolicy({ database, rp, showShards, showIndexes }: { database: string; rp: RetentionPolicyDto; showShards: boolean; showIndexes: boolean }) {
   const shardCount = (rp.shardGroups ?? []).reduce((total, group) => total + (group.shards ?? []).length, 0);
   const indexCount = (rp.indexGroups ?? []).reduce((total, group) => total + (group.indexes ?? []).length, 0);
   return (
@@ -665,7 +753,7 @@ function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPoli
           <Badge variant="secondary">ShardGroup {formatDuration(rp.shardGroupDuration)}</Badge>
           <Badge variant="secondary">IndexGroup {formatDuration(rp.indexGroupDuration)}</Badge>
         </div>
-        <details className="rounded-md border border-border bg-white">
+        {showShards ? <details className="rounded-md border border-border bg-white">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium">ShardGroups and Shards</summary>
           <div className="space-y-2 border-t border-border p-3">
             {(rp.shardGroups ?? []).length ? (rp.shardGroups ?? []).map((group) => (
@@ -679,8 +767,8 @@ function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPoli
               </details>
             )) : <EmptyState>No ShardGroups</EmptyState>}
           </div>
-        </details>
-        <details className="rounded-md border border-border bg-white">
+        </details> : <p className="text-sm text-muted-foreground">Shard groups hidden by filter.</p>}
+        {showIndexes ? <details className="rounded-md border border-border bg-white">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium">IndexGroups and Indexes</summary>
           <div className="space-y-2 border-t border-border p-3">
             {(rp.indexGroups ?? []).length ? (rp.indexGroups ?? []).map((group) => (
@@ -694,23 +782,38 @@ function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPoli
               </details>
             )) : <EmptyState>No IndexGroups</EmptyState>}
           </div>
-        </details>
+        </details> : <p className="text-sm text-muted-foreground">Index groups hidden by filter.</p>}
       </div>
     </details>
   );
 }
 
 function SchemasView({ databases }: { databases: DatabaseDto[] }) {
-  const [databaseFilter, setDatabaseFilter] = useState("");
-  const [rpFilter, setRpFilter] = useState("");
+  const defaultDatabase = useMemo(() => preferredSchemaDatabase(databases), [databases]);
+  const [databaseFilter, setDatabaseFilter] = useState(defaultDatabase);
+  const selectedDatabase = useMemo(() => databases.find((database) => database.name === databaseFilter) ?? databases.find((database) => database.name === defaultDatabase), [databaseFilter, databases, defaultDatabase]);
+  const rpOptions = useMemo(() => selectedDatabase?.retentionPolicies ?? [], [selectedDatabase]);
+  const defaultRp = rpOptions[0]?.name ?? "";
+  const [rpFilter, setRpFilter] = useState(defaultRp);
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (defaultDatabase && !databases.some((database) => database.name === databaseFilter)) {
+      setDatabaseFilter(defaultDatabase);
+    }
+  }, [databaseFilter, databases, defaultDatabase]);
+
+  useEffect(() => {
+    if (!rpOptions.some((rp) => rp.name === rpFilter)) {
+      setRpFilter(defaultRp);
+    }
+  }, [defaultRp, rpFilter, rpOptions]);
+
   const measurements = databases.flatMap((database) => (database.retentionPolicies ?? []).flatMap((rp) => (rp.measurements ?? []).map((measurement) => ({ database: database.name, rp: rp.name, measurement }))));
-  const rpOptions = [...new Set(databases.flatMap((database) => (database.retentionPolicies ?? []).map((rp) => rp.name)))].sort();
   const normalizedQuery = query.trim().toLowerCase();
-  const hasFilter = Boolean(databaseFilter || rpFilter || normalizedQuery);
-  const matched = hasFilter ? measurements.filter(({ database, rp, measurement }) =>
-    (!databaseFilter || database === databaseFilter) &&
-    (!rpFilter || rp === rpFilter) &&
+  const matched = databaseFilter && rpFilter ? measurements.filter(({ database, rp, measurement }) =>
+    database === databaseFilter &&
+    rp === rpFilter &&
     (!normalizedQuery ||
       database.toLowerCase().includes(normalizedQuery) ||
       rp.toLowerCase().includes(normalizedQuery) ||
@@ -722,11 +825,15 @@ function SchemasView({ databases }: { databases: DatabaseDto[] }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-3">
-        <FilterSelect label="Database" value={databaseFilter} onChange={setDatabaseFilter} options={databases.map((database) => ({ value: database.name, label: database.name }))} />
-        <FilterSelect label="Retention policy" value={rpFilter} onChange={setRpFilter} options={rpOptions.map((rp) => ({ value: rp, label: rp }))} />
+        <FilterSelect label="Database" value={databaseFilter} allowAll={false} onChange={(value) => {
+          setDatabaseFilter(value);
+          const nextDatabase = databases.find((database) => database.name === value);
+          setRpFilter(nextDatabase?.retentionPolicies?.[0]?.name ?? "");
+        }} options={databases.map((database) => ({ value: database.name, label: database.name }))} />
+        <FilterSelect label="Retention policy" value={rpFilter} allowAll={false} onChange={setRpFilter} options={rpOptions.map((rp) => ({ value: rp.name, label: rp.name }))} />
         <FilterInput label="Measurement / field" type="search" value={query} onChange={setQuery} />
       </div>
-      {!hasFilter ? <EmptyState>请输入 Database、RP 或 Measurement / field 过滤条件后展示 Schema，避免一次铺开全部表结构。</EmptyState> : visible.length ? (
+      {!databaseFilter || !rpFilter ? <EmptyState>当前没有可展示的 Database / RP Schema。</EmptyState> : visible.length ? (
         <div className="space-y-3">
           {matched.length > visible.length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">当前只展示前 {visible.length} 个匹配 schema；请继续缩小过滤条件。</div>}
           {visible.map(({ database, rp, measurement }) => (
@@ -768,16 +875,72 @@ function DiagnosticsView({ diagnostics }: { diagnostics: Diagnostic[] }) {
 
 function RawJsonView({ value }: { value: unknown }) {
   const [query, setQuery] = useState("");
-  const text = JSON.stringify(value, null, 2);
-  const visible = query ? text.split("\n").filter((line) => line.toLowerCase().includes(query.toLowerCase())).join("\n") : text;
   return (
     <Card>
-      <CardHeader><CardTitle>Raw openGemini JSON</CardTitle><CardDescription>保留 `/getdata` 原始响应，便于字段核对和故障排查</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Raw openGemini JSON</CardTitle><CardDescription>按需展开原始 `/getdata` 响应，避免大 JSON 一次性渲染导致页面卡顿。</CardDescription></CardHeader>
       <CardContent>
-        <div className="relative mb-3"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选字段或值" /></div>
-        <pre className="max-h-[720px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">{visible}</pre>
+        <div className="relative mb-3"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选当前展开层级的 key/path" /></div>
+        <div className="max-h-[720px] overflow-auto rounded-lg bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100">
+          <JsonTreeNode name="root" path="$" value={value} query={query.trim().toLowerCase()} defaultExpanded />
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+function JsonTreeNode({ name, path, value, query, defaultExpanded = false }: { name: string; path: string; value: unknown; query: string; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [visibleCount, setVisibleCount] = useState(100);
+  const expandable = value !== null && typeof value === "object";
+
+  if (!expandable) {
+    return (
+      <div className="flex gap-2 py-0.5">
+        <span className="text-slate-400">{name}</span>
+        <span className="text-slate-500">:</span>
+        <span className="break-all text-emerald-200">{formatJsonPrimitive(value)}</span>
+      </div>
+    );
+  }
+
+  const arrayValue = Array.isArray(value) ? value : null;
+  const objectValue = !arrayValue ? value as Record<string, unknown> : null;
+  const objectKeys = objectValue ? Object.keys(objectValue) : [];
+  const totalKeys = arrayValue ? arrayValue.length : objectKeys.length;
+  const candidateKeys = arrayValue ? Array.from({ length: Math.min(totalKeys, visibleCount) }, (_, index) => String(index)) : objectKeys;
+  const filteredKeys = query ? candidateKeys.filter((key) => `${path}.${key}`.toLowerCase().includes(query) || key.toLowerCase().includes(query)) : candidateKeys;
+  const visibleKeys = arrayValue ? filteredKeys : filteredKeys.slice(0, visibleCount);
+  const hasMore = arrayValue ? visibleCount < totalKeys : filteredKeys.length > visibleKeys.length;
+  const summary = arrayValue ? `Array(${arrayValue.length})` : `Object(${objectKeys.length})`;
+
+  return (
+    <div className="py-0.5">
+      <button className="flex max-w-full items-center gap-2 text-left hover:text-white" onClick={() => setExpanded((current) => !current)} type="button">
+        <span className="w-4 text-slate-400">{expanded ? "▾" : "▸"}</span>
+        <span className="text-sky-200">{name}</span>
+        <span className="text-slate-500">:</span>
+        <span className="text-slate-300">{summary}</span>
+        <span className="truncate text-slate-500">{path}</span>
+      </button>
+      {expanded ? (
+        <div className="ml-5 border-l border-slate-800 pl-3">
+          {visibleKeys.length ? visibleKeys.map((key) => (
+            <JsonTreeNode
+              key={`${path}.${key}`}
+              name={arrayValue ? `[${key}]` : key}
+              path={arrayValue ? `${path}[${key}]` : `${path}.${key}`}
+              value={arrayValue ? arrayValue[Number(key)] : objectValue?.[key]}
+              query={query}
+            />
+          )) : <div className="py-1 text-slate-500">No matching keys in this level.</div>}
+          {hasMore ? (
+            <button className="mt-1 rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-900" onClick={() => setVisibleCount((count) => count + 100)} type="button">
+              Load more ({Math.min(visibleCount, totalKeys)}/{totalKeys})
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -785,9 +948,18 @@ function Metric({ label, value, compact }: { label: string; value: unknown; comp
   return <div className={`rounded-lg border border-border bg-white ${compact ? "p-3" : "p-4"}`}><p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 break-all text-xl font-semibold">{valueOrDash(value)}</p></div>;
 }
 
+function formatJsonPrimitive(value: unknown) {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null) return "null";
+  return String(value);
+}
+
 function StatusBadge({ node }: { node: NodeDto }) {
-  const healthy = node.kind === "meta" ? node.statusCode === 0 || node.statusCode === 1 : node.statusCode === 1;
-  return <Badge variant={healthy ? "success" : "destructive"}>{node.status ?? node.statusCode ?? "unknown"}</Badge>;
+  if (node.kind === "meta") {
+    return <Badge variant="secondary">none</Badge>;
+  }
+  const status = dataSqlStatus(node.statusCode);
+  return <Badge variant={status.variant}>{status.label}</Badge>;
 }
 
 function Table({ headers, rows, empty = "暂无数据" }: { headers: string[]; rows: ReactNode[][]; empty?: string }) {
@@ -808,5 +980,33 @@ function rawBoolean(vm: MetadataViewModel, key: string) {
 
 function fieldType(type?: number | null) {
   if (type == null) return "unknown";
-  return type === 6 ? "tag" : `type-${type}`;
+  const types: Record<number, string> = {
+    0: "unknown",
+    1: "int",
+    2: "uint",
+    3: "float",
+    4: "string",
+    5: "boolean",
+    6: "tag",
+    7: "last"
+  };
+  return types[type] ?? `type-${type}`;
+}
+
+function dataSqlStatus(statusCode?: number | null): { label: string; variant: "success" | "warning" | "destructive" | "secondary" } {
+  if (statusCode == null) return { label: "unknown", variant: "secondary" };
+  const labels: Record<number, string> = {
+    0: "none",
+    1: "alive",
+    2: "leaving",
+    3: "left",
+    4: "failed"
+  };
+  if (statusCode === 1) return { label: labels[statusCode], variant: "success" };
+  if (statusCode === 3 || statusCode === 4) return { label: labels[statusCode], variant: "destructive" };
+  return { label: labels[statusCode] ?? `status-${statusCode}`, variant: "warning" };
+}
+
+function preferredSchemaDatabase(databases: DatabaseDto[]) {
+  return databases.find((database) => database.name !== "_internal")?.name ?? databases[0]?.name ?? "";
 }
