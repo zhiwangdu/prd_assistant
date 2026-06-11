@@ -1,6 +1,6 @@
 # LLM Gateway 方案
 
-该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Orchestrator 负责。Log Analysis 的运行后端已切换为 `claude_agent_sdk`，LLM Gateway 不再作为 Agent Backend fallback。
+该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Orchestrator 负责。Log Analysis 的运行后端已切换为 Claude Code session runner，LLM Gateway 不再作为分析 fallback。
 
 ## 职责
 
@@ -21,7 +21,7 @@ LLM Gateway 不负责：
 - 直接调用工具、代码仓、文件系统或 SSH
 - 执行动作或审批
 - 保存隐藏思维链
-- 适配 Claude Agent SDK、Codex/Claude Code/OpenCode CLI 的交互协议
+- 适配 Claude Code CLI 或 MCP 交互协议
 
 ## 当前实现
 
@@ -36,36 +36,36 @@ question + session_text_input.json + system_context.json + manifest.json + grep_
   -> silent task alias generation for UI display
 ```
 
-`binary` provider 是预留的大模型调用分支，不等同于成熟 Agent Backend。启用后 Gateway 会使用参数数组调用配置的二进制：
+`binary` provider 是预留的大模型调用分支，不等同于 Claude Code session runner。启用后 Gateway 会使用参数数组调用配置的二进制：
 
 ```text
 <binary_path> run "<prompt>"
 ```
 
-该分支不拼接 shell，不允许用户覆盖 binary path 或 argv。当前环境不要求接入真实二进制，已通过单元测试中的 mock binary 验证最终结果生成和 `PLAN_ANALYSIS` action decision 都能解析 stdout JSON。
+该分支不拼接 shell，不允许用户覆盖 binary path 或 argv。当前环境不要求接入真实二进制，已通过单元测试中的 mock binary 验证最终结果生成可解析 stdout JSON。
 
-Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 `claude_agent_sdk` adapter。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
+Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 Claude Code session runner。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
-`analysis_package.json`、`agent_request.json` 和 `agent_response.json` 由 Analysis Orchestrator 与 Agent Backend Adapter 管理。LLM Gateway 不读取或执行这些后端输入/响应文件。
+`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 由 Analysis Orchestrator 与 Claude Code Session Runner 管理。LLM Gateway 不读取或执行这些 session 输入/响应文件。
 
-响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。`PLAN_ANALYSIS` 期望双模式 `action | final_answer` 外层结构；如果真实模型直接返回裸最终结果 JSON，或把最终结果多包一层 `result` / `answer` / `finalAnswer`，Gateway 会将其规范化为 `final_answer` 并继续执行同一套 evidence 校验。多个 JSON object、无 JSON object 或最终结果核心 schema 不合法仍会拒绝。
+响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。如果真实模型直接返回裸最终结果 JSON，或把最终结果多包一层 `result` / `answer` / `finalAnswer`，Gateway 会在兼容恢复路径中规范化为最终结果并继续执行同一套 evidence 校验。多个 JSON object、无 JSON object 或最终结果核心 schema 不合法仍会拒绝。
 
 重试时 Gateway 只把解析/schema 错误摘要和结果 schema 要求追加给模型，不保存原始响应，不暴露 API Key。两次都失败时，错误信息包含最新解析失败原因和上一次失败原因。
 
 Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调用 `/api/debug/llm` 开启或关闭。开启后 Gateway 只把模型 response content 打印到 Server stderr，便于定位 schema 漂移；不会打印 prompt、API Key 或 HTTP headers。该开关默认关闭，Server 重启后恢复关闭。
 
-Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务和 agent backend 配置：
+Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务和 Claude Code 配置：
 
 - `GET /api/settings/llm`：返回 provider、模型、超时和输入/输出限制等摘要，不返回密钥。
 - `GET /api/settings/llm/models`：测试模型列表接口；OpenAI-compatible 调用 `/models`，stub/binary 返回配置模型。
 - `POST /api/settings/llm/chat`：发送一条简单 user message，返回模型响应。
-- `GET /api/settings/agent-backends`：返回 Agent Backend 配置摘要。
-- `POST /api/settings/agent-backends/:backend_id/test`：执行后端 dry-run 诊断。
+- `GET /api/settings/agent-backends`：返回 Claude Code session runner 配置摘要。
+- `POST /api/settings/agent-backends/:backend_id/test`：执行 Claude Code dry-run 诊断。
 - `GET /api/settings/domain-adapters`：返回领域 adapter 摘要。
 
 诊断接口使用 `{ok,result,error}` 响应；Provider HTTP、鉴权、限流、网络、超时、JSON decode 等异常会写入 `error`，便于页面直接展示。
 
-`PLAN_ANALYSIS` 的 OpenAI-compatible action decision 调用会生成 `llmcall_*` callId，并通过 Analysis State Store 记录 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry`。schema retry 和最终失败会带上 callId，WebUI Task execution 可直接展示对应轮次。
+`PLAN_ANALYSIS` 的 Claude Code session 调用由 Claude runner 记录 `agentcall_*` callId。LLM Gateway 自身的 `llmcall_*` 事件只用于 Case import、alias 和兼容恢复路径。
 
 成功 task 的 alias 由独立 LLM Gateway 调用生成，输入为用户问题、最终结果、manifest 文件名和 Metadata 摘要。该命名调用只返回 `{"alias":"..."}`，schema 错误重试一次；调用失败时由 Server 用最终 summary/question 生成短标题。alias 生成不触发 Analysis State Store 的 `llm_call_*` 事件，不写 `analysis_events.jsonl`，也不写 Session timeline。
 
@@ -137,19 +137,7 @@ llm:
 
 ## 结构化响应
 
-当前 Task Executor 已在 `PLAN_ANALYSIS` 通过 `claude_agent_sdk` adapter 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、后端调用、action 数和重复 fingerprint。用户追问和审批恢复 API 已启用。
-
-第一版已支持 action：
-
-- `search_logs`
-- `run_tool`
-- `ask_user`
-- `collect_environment`
-- `final_answer`
-
-暂未开放 action：
-
-- `collect_code_evidence`
+LLM Gateway 当前只负责 Case import、alias 和兼容恢复路径的结构化 JSON。Log Analysis `PLAN_ANALYSIS` 的 structured outcome 由 Claude Code Session Runner 处理。
 
 响应必须区分：
 
@@ -159,7 +147,7 @@ llm:
 - 简短决策依据
 - 证据引用
 
-Gateway 对未知动作、缺字段、无效枚举和超预算响应返回 schema 错误，由 Analysis Orchestrator 决定重试或终止。
+Gateway 对缺字段、无效枚举和非法 evidence ref 返回 schema 错误，由调用方决定重试或终止。
 
 ## Prompt 约束
 

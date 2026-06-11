@@ -68,8 +68,7 @@ Optional variables:
 - `LOGAGENT_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.pid`.
 - `LOGAGENT_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.log`.
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
-- `LOGAGENT_AGENT_CLAUDE_SDK_PATH`: required by the default `logagent.yaml`. Set it to the absolute Claude Code CLI path, usually the output of `which claude`; custom LogAgent adapters are still supported when the command filename is not `claude`.
-- `LOGAGENT_AGENT_CODEX_PATH`, `LOGAGENT_AGENT_CLAUDE_CODE_PATH`, `LOGAGENT_AGENT_OPENCODE_PATH`: optional reserved mature-agent commands. They are only required when the matching backend is enabled in `logagent.yaml`.
+- `LOGAGENT_CLAUDE_CODE_PATH`: required by the default `logagent.yaml`. Set it to the absolute Claude Code CLI path, usually the output of `which claude`.
 
 ## Dependencies
 
@@ -106,7 +105,7 @@ To reset from the sample:
 cp logagent.example.yaml logagent.yaml
 ```
 
-The sample config includes an `embedding` block with `enabled: false` and an `agent_backends` block with `claude_agent_sdk` enabled by default. `LOGAGENT_AGENT_CLAUDE_SDK_PATH` can point directly to the `claude` binary; the Server invokes it with `--print --output-format json --json-schema ... --tools ""`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
+The sample config includes an `embedding` block with `enabled: false`, a `claude_code` block, and `mcp.transport=stdio`. `LOGAGENT_CLAUDE_CODE_PATH` points directly to the `claude` binary; the Server invokes it with `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
 
 ## Build And Install
 

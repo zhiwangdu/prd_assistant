@@ -37,7 +37,7 @@ GET /api/settings/domain-adapters
 - `metadataSources`：可解释的元数据或拓扑输入。
 - `tools`：可用诊断工具及其证据引用格式。
 - `systemContext`：可注入的 Runbook、架构说明和术语。
-- `evidenceSummarizer`：面向 agent backend 的证据摘要规则。
+- `evidenceSummarizer`：面向 Claude Code / MCP resource 的证据摘要规则。
 
 ## 初始领域边界
 

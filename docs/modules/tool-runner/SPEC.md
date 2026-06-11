@@ -2,11 +2,11 @@
 
 ## 目标
 
-Tool Runner 负责按白名单调用已有外部分析工具，把结果标准化为任务证据，供 Domain Adapter 和 Agent Backend 引用。
+Tool Runner 负责按白名单调用已有外部分析工具，把结果标准化为任务证据，供 Domain Adapter、Claude Code 和最终结果引用。
 
 ## 当前状态
 
-Server 已实现 Tool Runner MVP：配置白名单、规则版 `run_tool` action、可恢复 `RUN_TOOL` phase、timeout、stdout/stderr/result 持久化、stdout JSON 摘要解析和 artifacts API 展示。真实工具可通过固定 `path` 或 `path_env` 环境变量接入，`examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 模板，`examples/server-influxql-tool.yaml` 提供单独验证真实 InfluxQL 工具的模板。当前本机 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
+Server 已实现 Tool Runner MVP：配置白名单、规则版工具 action、Claude MCP `logagent.run_domain_tool`、可恢复 `RUN_TOOL` phase、timeout、stdout/stderr/result 持久化、stdout JSON 摘要解析和 artifacts API 展示。真实工具可通过固定 `path` 或 `path_env` 环境变量接入，`examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 模板，`examples/server-influxql-tool.yaml` 提供单独验证真实 InfluxQL 工具的模板。当前本机 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
 
 Server 也已实现面向 WebUI 手动执行的 Tools API。`tool_run` task 复用上传、workspace、TaskStore 和后台 Executor；首个 `pprof_analyzer` 通过 `tools.pprof_analyzer` 白名单配置调用 Go 可执行文件的 `tool pprof` 子命令，结果仍写入 `tool_results/<action_id>/`。
 
@@ -97,7 +97,7 @@ tool_results/<action_id>/result.json#findings/<index>
 - 参数必须由模板和结构化输入生成，不能拼接任意用户命令。
 - 工具执行需要超时和输出大小限制。
 - 工作目录限制在 task workspace 或只读工具目录。
-- Agent Backend 只能选择允许的工具和结构化参数，不能传入任意命令。
+- Claude Code 只能通过 `logagent.run_domain_tool` 选择允许的工具和结构化参数，不能传入任意命令。
 
 ## 验收标准
 
@@ -111,5 +111,5 @@ tool_results/<action_id>/result.json#findings/<index>
 - 规则版 action 选择必须先使用 manifest file pattern，再使用 grep keyword 补充候选；同一工具最多生成 `max_input_files` 个 action。
 - 同一工具的不同输入文件必须生成不同稳定 action id。
 - 重复 action id 幂等，结果可回填到同一分析 revision。
-- 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 LLM 结果。
+- 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 Claude Code 分析结果。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

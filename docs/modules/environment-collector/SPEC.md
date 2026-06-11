@@ -53,7 +53,7 @@ environment_evidence.json
 - SSH 命令必须在白名单内。
 - 不支持任意远程 shell。
 - 默认必须有有效批准记录，配置可对特定只读采集项另行放宽。
-- Agent Backend 不能直接执行 SSH/SCP，只能返回结构化采集意图。
+- Claude Code 不能直接执行 SSH/SCP，只能通过 LogAgent MCP 请求审批和结构化采集意图。
 
 ## 验收标准
 

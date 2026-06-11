@@ -32,6 +32,16 @@ pub struct AnalysisState {
     pub pending_user_prompts: Vec<PendingUserPrompt>,
     #[serde(default)]
     pub pending_approvals: Vec<PendingApproval>,
+    #[serde(default)]
+    pub claude_session_id: Option<String>,
+    #[serde(default)]
+    pub analysis_mode: Option<String>,
+    #[serde(default)]
+    pub permission_profile: Option<String>,
+    #[serde(default)]
+    pub mcp_config_path: Option<String>,
+    #[serde(default)]
+    pub last_claude_response_path: Option<String>,
     pub budget: AnalysisBudgetSnapshot,
     pub final_result_path: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -191,6 +201,11 @@ pub fn initialize(workspace: &Path, task: &TaskRecord) -> anyhow::Result<()> {
         user_messages: Vec::new(),
         pending_user_prompts: Vec::new(),
         pending_approvals: Vec::new(),
+        claude_session_id: None,
+        analysis_mode: Some(task.analysis_mode.as_str().to_string()),
+        permission_profile: None,
+        mcp_config_path: None,
+        last_claude_response_path: None,
         budget: AnalysisBudgetSnapshot {
             rounds: 0,
             llm_calls: 0,
@@ -532,39 +547,6 @@ pub fn record_log_search(workspace: &Path, grep: &GrepResults) -> anyhow::Result
     )
 }
 
-pub fn record_log_search_action(
-    workspace: &Path,
-    action: &crate::domain::contracts::AgentAction,
-    grep: &GrepResults,
-) -> anyhow::Result<()> {
-    let evidence_refs = (0..grep.matches.len())
-        .map(|index| format!("grep_results.json#matches/{index}"))
-        .collect::<Vec<_>>();
-    let evidence = AnalysisEvidenceRecord {
-        evidence_type: AnalysisEvidenceType::LogSearch,
-        artifact_path: "grep_results.json".to_string(),
-        action_id: Some(action.action_id.clone()),
-        summary: format!("search_logs action recorded {} matches", grep.matches.len()),
-        evidence_refs,
-        created_at: Utc::now(),
-    };
-    append_action_event(
-        workspace,
-        TaskPhase::PlanAnalysis,
-        action.action_id.clone(),
-        action.fingerprint.clone(),
-        "search_logs".to_string(),
-        AnalysisActionStatus::Succeeded,
-        format!("search_logs action {} completed", action.action_id),
-        evidence,
-        serde_json::json!({
-            "searchAction": action,
-            "keywords": grep.keywords,
-            "totalMatches": grep.total_matches,
-        }),
-    )
-}
-
 pub fn record_tool_artifact(
     workspace: &Path,
     action: &crate::domain::contracts::AgentAction,
@@ -599,11 +581,13 @@ pub fn record_agent_contracts(workspace: &Path, backend_id: &str) -> anyhow::Res
         evidence_type: AnalysisEvidenceType::AgentContract,
         artifact_path: "analysis_package.json".to_string(),
         action_id: None,
-        summary: format!("external agent contract package recorded for {backend_id}"),
+        summary: format!("Claude Code MCP session package recorded for {backend_id}"),
         evidence_refs: vec![
             "analysis_package.json".to_string(),
-            "agent_request.json".to_string(),
+            "claude_mcp_config.json".to_string(),
+            "claude_session.json".to_string(),
             "agent_response.json".to_string(),
+            "mcp_calls.jsonl".to_string(),
         ],
         created_at: Utc::now(),
     };
@@ -611,15 +595,33 @@ pub fn record_agent_contracts(workspace: &Path, backend_id: &str) -> anyhow::Res
         workspace,
         "",
         TaskPhase::PlanAnalysis,
-        "external agent contract artifacts recorded".to_string(),
+        "Claude Code session artifacts recorded".to_string(),
         evidence,
         serde_json::json!({
             "backendId": backend_id,
             "analysisPackagePath": "analysis_package.json",
-            "agentRequestPath": "agent_request.json",
+            "claudeMcpConfigPath": "claude_mcp_config.json",
+            "claudeSessionPath": "claude_session.json",
             "agentResponsePath": "agent_response.json",
+            "mcpCallsPath": "mcp_calls.jsonl",
         }),
     )
+}
+
+pub fn record_claude_session_artifacts(
+    workspace: &Path,
+    claude_session_id: Option<String>,
+    analysis_mode: String,
+    permission_profile: String,
+) -> anyhow::Result<()> {
+    update_state(workspace, |state| {
+        state.claude_session_id = claude_session_id;
+        state.analysis_mode = Some(analysis_mode);
+        state.permission_profile = Some(permission_profile);
+        state.mcp_config_path = Some("claude_mcp_config.json".to_string());
+        state.last_claude_response_path = Some("agent_response.json".to_string());
+        Ok(())
+    })
 }
 
 pub fn record_final_result(
@@ -1144,6 +1146,7 @@ mod tests {
             alias: None,
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
+            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {

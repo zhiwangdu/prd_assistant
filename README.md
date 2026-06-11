@@ -4,7 +4,7 @@
 
 ## 目标
 
-LogAgent 是面向开发和运维诊断的证据工作台。它不再把自研通用 Agent Loop 作为核心差异化方向，而是把用户问题、日志包、元数据、工具结果、测试流水线、测试环境采集结果和历史 Case 整理成高质量证据包，再通过可插拔 Agent Backend 调用 Codex、Claude Code、OpenCode 或内部 LLM Gateway 生成结构化故障分析结果。
+LogAgent 是面向开发和运维诊断的证据工作台，也是 Claude Code 的领域诊断增强层。它不再维护自研通用 Agent Loop，而是把用户问题、日志包、Metadata、System Context、Domain Tools、测试环境采集结果和历史 Case 整理成可审计证据包，通过 LogAgent MCP server 暴露给 Claude Code，由 Claude Code 完成通用推理、代码理解和结构化诊断输出。
 
 当前重点场景是快速问题分析、日志分析、日常测试流水线失败分析和数据库/存储系统专项诊断。第一批领域继续覆盖 openGemini/InfluxDB，并新增 Cassandra、RocksDB 的 Domain Adapter 骨架。
 
@@ -41,13 +41,14 @@ Rust -> C/C++ -> Go/Python/Java 等
     v
 Analysis Orchestrator
   - 汇总任务证据、领域上下文和预算
-  - 调用可插拔 Agent Backend
-  - 校验后端返回的结构化动作或最终答案
+  - 生成 Claude MCP 配置
+  - 启动或恢复 Claude Code session
     |
     v
-Agent Backend
-  - Claude Agent SDK / Codex CLI / Claude Code CLI / OpenCode CLI
-  - 推理、代码上下文分析和结构化响应
+Claude Code session
+  - 通过 LogAgent MCP resources/tools 获取证据
+  - 按权限模式使用允许的 native tools
+  - 返回结构化 session outcome
     |
     v
 人工确认
@@ -73,8 +74,9 @@ flowchart LR
     subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
         API["API / Auth / Task Manager"]
         Orchestrator["Pipeline / Action Executor"]
-        Agent["Analysis Orchestrator<br/>证据包、预算、动作校验"]
-        Gateway["Agent Backend Adapter<br/>Claude SDK / Codex / OpenCode"]
+        Agent["Analysis Orchestrator<br/>证据包、MCP 配置、等待态"]
+        Gateway["Claude Code Session Runner<br/>CLI + MCP config"]
+        Mcp["LogAgent MCP Server<br/>Resources / Tools"]
 
         subgraph Evidence["受控证据能力"]
             Domains["Domain Adapters<br/>openGemini/InfluxDB、Cassandra、RocksDB"]
@@ -90,7 +92,7 @@ flowchart LR
         Store[("Session Store / Task Store / Workspace<br/>session、runs、events、evidence、result")]
     end
 
-    Model["LLM / Mature Agent Backend"]
+    Model["Claude Code CLI"]
     Repos["已配置代码仓"]
     Tools["白名单诊断工具"]
 
@@ -99,10 +101,11 @@ flowchart LR
     User -->|"创建 Session、可选上传、启动 run、回答、审批"| API
     API --> Orchestrator
     Orchestrator --> Agent
-    Agent -->|"结构化 action"| Orchestrator
     Agent --> Gateway
-    Gateway --> Model
+    Gateway -->|"--mcp-config"| Model
     Model --> Gateway
+    Model --> Mcp
+    Mcp --> Domains
 
     Orchestrator --> Domains
     Orchestrator --> Log
@@ -122,29 +125,29 @@ flowchart LR
     Agent <--> Store
     Evidence --> Store
 
-    Agent -->|"ask_user / approval_required"| API
+    Agent -->|"pending prompt / approval"| API
     API -->|"时间线、问题、审批、最终结果"| User
-    Agent -->|"final_answer"| Store
+    Agent -->|"structured outcome"| Store
     Store -->|"人工确认后沉淀"| Cases
 ```
 
 关键控制边界：
 
-- Analysis Orchestrator、LLM Gateway 和外部 Agent Backend 都不能直接执行工具、读取任意路径或连接 SSH。
+- Analysis Orchestrator、LLM Gateway 和 Claude Code 都不能绕过 LogAgent MCP/Server 边界直接执行领域工具、读取任意任务外路径或连接 SSH。
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
-- `claude_agent_sdk` 是 Log Analysis 唯一默认分析后端；`LOGAGENT_AGENT_CLAUDE_SDK_PATH` 可直接指向 `claude` 二进制，也可指向自定义 LogAgent adapter。Log Analysis run 会写出 `analysis_package.json`、`agent_request.json`，调用后端后写出真实 `agent_response.json`。未配置或调用失败时任务失败，不自动 fallback。
+- `LOGAGENT_CLAUDE_CODE_PATH` 是默认 Claude Code CLI 路径来源。Log Analysis run 会写出 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 Claude session 语义的 `agent_response.json`。未配置或调用失败时任务失败，不自动 fallback。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
 - Log Analysis run 会固化 `system_context.json`，把已启用的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
-- WebUI 可实时展示 Task execution loop 摘要；LLM response content 日志只能通过顶部 debug 开关手动开启。
+- WebUI 可实时展示 Task execution、Claude Code session、MCP calls 和 evidence artifact；LLM response content 日志只能通过顶部 debug 开关手动开启。
 - Memory 当前只激活 `memoryType=case`，通过兼容的 Case API 接收人工确认后的 Case，包括成功任务最终结果确认和用户通过 LLM-assisted 文本导入确认的手工 Case。
 
 ## 项目目录
 
-根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Agent Backends、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
+根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Claude Code Session Runner、LogAgent MCP、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
 
 | 目录 | 职责 | Spec |
 |------|------|------|
@@ -155,13 +158,13 @@ flowchart LR
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
-| [testing](./testing/README.md) | 测试 fixture、集成测试和 mock Claude SDK adapter | [SPEC](./testing/SPEC.md) |
+| [testing](./testing/README.md) | 测试 fixture、集成测试和 mock Claude CLI | [SPEC](./testing/SPEC.md) |
 
 Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/README.md)：
 
 | 能力 | 文档 |
 |------|------|
-| Agent Backends | [README](./docs/modules/agent-backends/README.md) / [SPEC](./docs/modules/agent-backends/SPEC.md) |
+| Claude Code Session Runner | [README](./docs/modules/agent-backends/README.md) / [SPEC](./docs/modules/agent-backends/SPEC.md) |
 | Log Analyzer | [README](./docs/modules/log-analyzer/README.md) / [SPEC](./docs/modules/log-analyzer/SPEC.md) |
 | Tool Runner | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
 | Domain Adapters | [README](./docs/modules/domain-adapters/README.md) / [SPEC](./docs/modules/domain-adapters/SPEC.md) |
@@ -182,8 +185,8 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 关键边界：
 
 - 外部工具只允许白名单配置调用。
-- LLM 不能直接执行任意命令。
-- Agent Backend 只产生结构化动作意图或最终答案，所有动作由 Server 校验和执行。
+- LLM Gateway 不能直接执行任意命令。
+- Claude Code 只能按 `analysisMode` permission profile 使用 native tools；领域证据和工具执行必须经过 LogAgent MCP/Server。
 - 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。
@@ -194,9 +197,9 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code SDK 后端 + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 直接调用 `claude_agent_sdk` 后端（Claude Code CLI 或自定义 adapter），后端只返回结构化 action 或 final answer，Server 继续执行工具、审批和证据持久化。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、Metadata、Case recall、用户追问和审批；Server 继续负责白名单、审批、证据持久化和最终 evidence ref 校验。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
-Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
+Code Investigation 和 Fix 模式的真实代码 worktree、以及真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前远程采集仍通过 LogAgent approval gate 进入等待态。
 
 ## 开发约定
 

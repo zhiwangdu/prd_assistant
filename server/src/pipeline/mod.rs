@@ -576,6 +576,7 @@ mod tests {
             alias: None,
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
+            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
             source: TaskSource::Upload,
             upload_ids: inputs.iter().map(|input| input.upload_id.clone()).collect(),
             inputs,
@@ -621,6 +622,7 @@ mod tests {
 
         fn config(&self) -> Arc<AppConfig> {
             Arc::new(AppConfig {
+                config_path: self.root.join("logagent-test.yaml"),
                 server: ServerSettings {
                     bind: "127.0.0.1:0".to_string(),
                     public_base_url: "http://127.0.0.1:0".to_string(),
@@ -648,7 +650,8 @@ mod tests {
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
                 },
-                agent_backends: crate::support::config::AgentBackendSettings::default(),
+                claude_code: crate::support::config::ClaudeCodeSettings::default(),
+                mcp: crate::support::config::McpSettings::default(),
                 analysis: test_analysis_settings(),
                 embedding: test_embedding_settings(),
             })

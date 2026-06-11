@@ -2,11 +2,11 @@
 
 ## 目标
 
-MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Orchestrator 持有证据包构建、预算和动作校验，Agent Backend 只提供推理/代码上下文分析，证据模块只执行受约束能力。
+MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Orchestrator 持有证据包构建、Claude MCP 配置、预算和等待态，Claude Code 只提供推理/代码上下文分析，证据模块只执行受约束能力。
 
 ## 当前实现
 
-Server 已在 `server/src/contracts.rs` 落地第一版公共契约，并新增 Agent Backend / Domain Adapter 摘要接口：
+Server 已在 `server/src/domain/contracts.rs` 落地第一版公共契约，并新增 Claude Code / Domain Adapter 摘要接口：
 
 - `TaskContext`
 - `AgentAction` / `ActionKind` / `ActionRisk`
@@ -14,11 +14,11 @@ Server 已在 `server/src/contracts.rs` 落地第一版公共契约，并新增 
 - `EvidenceArtifact` / `EvidenceType` / `EvidenceSummary`
 - `EvidenceProvider`
 
-Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版 `run_tool` action 和未来 LLM action 走同一执行接口。
+Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版工具 action、Tools 页面手动运行和 Claude MCP `logagent.run_domain_tool` 走同一执行接口。
 
-Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；后续 Analysis Orchestrator 的 `run_tool` action 会逐步复用同一个工具 registry。
+Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；Claude MCP `logagent.run_domain_tool` 复用同一个工具 registry。
 
-Agent Backend 提供配置摘要、dry-run 诊断和 `analysis_package.json` / `agent_request.json` / `agent_response.json` 后端输入/响应产物。`PLAN_ANALYSIS` 当前直接调用 `claude_agent_sdk` adapter；adapter 输出必须映射到现有 action/final answer 契约。
+Claude Code Session Runner 提供配置摘要、dry-run 诊断和 `analysis_package.json` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json` session 输入/响应产物。`PLAN_ANALYSIS` 当前直接调用 Claude Code CLI；structured outcome 必须映射到等待态或 final answer 契约。
 
 ## 核心数据
 
@@ -59,22 +59,13 @@ pub struct EvidenceBundle {
 ## 模块接口
 
 ```rust
-pub trait AnalysisAgent {
-    async fn next_step(
-        &self,
-        task: &TaskContext,
-        analysis: &AnalysisContext,
-        evidence: &EvidenceBundle,
-    ) -> anyhow::Result<AgentDecision>;
-}
-
 pub trait LlmGateway {
     async fn decide(&self, input: AnalysisPromptInput) -> anyhow::Result<LlmDecision>;
 }
 
-pub trait AgentBackend {
-    async fn run(&self, request: AgentBackendRequest)
-        -> anyhow::Result<AgentBackendResponse>;
+pub trait ClaudeSessionRunner {
+    async fn run(&self, request: ClaudeSessionRequest)
+        -> anyhow::Result<ClaudeSessionResponse>;
 }
 
 pub trait DomainAdapter {
@@ -102,7 +93,7 @@ pub trait EnvironmentCollector {
 }
 ```
 
-`AgentDecision` 只能是受支持的结构化 action 或 `final_answer`。Server 将 action 映射到对应模块，模块不能反向控制任务状态。
+`ClaudeSessionResponse` 只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval`。Server 将等待请求映射到任务状态，并继续校验最终结果 evidence refs；模块不能反向控制任务状态。
 
 ## 状态与阶段
 
@@ -143,19 +134,18 @@ tool_run
 
 `log_analysis` 继续执行完整日志分析 pipeline。`tool_run` 从 `RUN_TOOL` phase 开始，由工具插件写入结果后直接进入 `SUCCEEDED`。
 
-## Action
+## MCP Tools
 
-```rust
-pub enum AgentActionKind {
-    SearchLogs,
-    RunTool,
-    CollectCodeEvidence,
-    CollectEnvironment,
-    AskUser,
-    FinalAnswer,
-}
+```text
+logagent.search_logs
+logagent.get_log_slice
+logagent.run_domain_tool
+logagent.recall_cases
+logagent.get_metadata_topology
+logagent.request_user_input
+logagent.request_approval
 ```
 
-所有 action 包含 id、reason、evidence refs、typed input、risk 和 fingerprint。Server 在执行前检查 schema、预算、白名单、幂等和审批要求。
+所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。
 
 当前 Executor 已按持久化 phase 循环分派 handler，并在推进阶段时校验 expected phase。重启恢复保留中断 phase，为后续 `RUN_TOOL` 和 `PLAN_ANALYSIS` 分支提供基础。

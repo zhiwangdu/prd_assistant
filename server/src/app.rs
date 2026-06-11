@@ -54,7 +54,7 @@ impl AppState {
             sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
-            agent_backends: AgentBackendRegistry::new(config.agent_backends.clone()),
+            agent_backends: AgentBackendRegistry::new(config.claude_code.clone()),
             domain_adapters: DomainAdapterRegistry::builtin(),
             tool_runner: ToolRunner::new(config.tools.clone()),
             config,

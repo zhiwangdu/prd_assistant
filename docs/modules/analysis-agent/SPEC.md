@@ -2,11 +2,11 @@
 
 ## 目标
 
-提供可持久化、可恢复、可审计的单 Orchestrator 调查闭环，在受限预算内汇总证据、调用 Agent Backend、向用户追问并生成结构化结果。执行上下文是一次 Session run 对应的 task workspace；Session 负责保存草稿、上传引用和多次 run 历史。
+提供可持久化、可恢复、可审计的单 Orchestrator 调查闭环，在受限预算内汇总证据、启动或恢复 Claude Code session、向用户追问并生成结构化结果。执行上下文是一次 Session run 对应的 task workspace；Session 负责保存草稿、上传引用和多次 run 历史。
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 Claude Agent SDK action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 已提供配置、诊断接口和后端输入/响应产物；现有分析执行默认且唯一调用 `claude_agent_sdk`。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
 
 已落地：
 
@@ -16,19 +16,17 @@
 - `GET /api/tasks/:task_id/analysis`
 - `GET /api/sessions/:session_id/timeline` 聚合 Session events 和 task analysis events
 - grep/tool/final result/failure 的基础事件记录
-- model decision 事件记录
+- Claude Code session lifecycle 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
-- AgentDecision / FinalAnswer 双模式 schema 和 parser
-- Agent Backend 配置摘要和 dry-run 诊断
-- `analysis_package.json`、`agent_request.json` 和真实 `agent_response.json`
+- Claude structured outcome / FinalAnswer schema 和 parser
+- Claude Code 配置摘要和 dry-run 诊断
+- `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
 - Domain Adapter 内置 registry
-- 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
-- `ask_user` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
-- `collect_environment` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务；批准后当前写入 mock environment evidence
+- Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`
+- `request_user_input` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
+- `request_approval` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
-- `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions`
-- 重复 action fingerprint 防护
-- 预算或重复动作终止时生成低置信度最终结果并进入 `SUCCEEDED`
+- `analysis.max_rounds`、`analysis.max_llm_calls`
 
 尚未实现：
 
@@ -43,15 +41,15 @@
 - `analysis_state.json`
 - `analysis_events.jsonl`
 - 用户新增消息或审批决定
-- Claude Agent SDK adapter 的结构化决策
+- Claude Code structured outcome 和 MCP tool 调用
 
 ## 输出
 
 - 更新后的 `analysis_state.json`
 - 追加的 `analysis_events.jsonl`
-- 一个待 Server 处理的结构化 action
+- Claude session response artifact 或待 Server 处理的等待 marker
 - 终态时的 `result.json` 和 `result.md`
-- Claude Agent SDK backend 输入/响应：`analysis_package.json` / `agent_request.json` / `agent_response.json`
+- Claude Code session 输入/响应：`analysis_package.json` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`
 
 当前 `/analysis` 响应包含：
 
@@ -90,34 +88,31 @@ GENERATE_RESULT
 
 `WAITING_FOR_USER` 和 `WAITING_FOR_APPROVAL` 可恢复到 `RUNNING`。执行阶段用于进度展示，不代替稳定状态。
 
-## Action Schema
+## Claude / MCP Schema
 
-动作枚举：
+Claude Code structured outcome：
 
 ```text
-search_logs
-run_tool
-collect_code_evidence
-collect_environment
-ask_user
-final_answer
+completed
+waiting_for_user
+waiting_for_approval
 ```
 
-每个动作必须包含：
+LogAgent MCP tools：
 
-- `action_id`
-- `type`
-- `reason`
-- `evidence_refs`
-- `input`
-- `risk`
-- `fingerprint`
+- `logagent.search_logs`
+- `logagent.get_log_slice`
+- `logagent.run_domain_tool`
+- `logagent.recall_cases`
+- `logagent.get_metadata_topology`
+- `logagent.request_user_input`
+- `logagent.request_approval`
 
-Server 必须在执行前验证动作类型、输入 schema、白名单、预算和审批策略。LLM Gateway 和外部 Agent Backend 不得绕过 Server 调用能力模块。
+Server 必须在执行前验证 MCP tool 名称、输入 schema、白名单、预算和审批策略。LLM Gateway 和 Claude Code 不得绕过 Server 调用能力模块。
 
 ## 用户追问
 
-`ask_user` 的问题项至少包含：
+`request_user_input` 的问题项至少包含：
 
 - `question_id`
 - `question`
@@ -130,7 +125,7 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 ## 一致性与恢复
 
 - 状态更新使用 revision 或等价并发控制，防止重复恢复。
-- action 使用 `action_id` 和 fingerprint 幂等。
+- MCP tool calls 使用 call id / artifact path 幂等；等待请求使用 action id 幂等。
 - 事件流仅追加，state 可由事件和最新快照恢复。
 - Server 重启后能识别运行中、等待中和未完成动作。
 - 最终结果生成后禁止继续自动动作；用户显式重新分析应创建新的 analysis revision。
@@ -139,15 +134,15 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 
 - 不保存或展示隐藏思维链。
 - 只记录简短决策依据、假设、事实和证据引用。
-- Orchestrator、LLM Gateway 和外部 Agent Backend 无文件系统、shell、网络或 SSH 的直接执行权限。
+- Orchestrator、LLM Gateway 和 Claude Code 无领域工具、SSH 或任务外文件系统的直接执行权限；Claude native tools 仅按 `analysisMode` permission profile 开放。
 - 远程采集默认需要用户批准。
 - 用户消息和日志内容均视为不可信输入，不能改变系统白名单或执行策略。
 - System Context 也视为背景参考输入，不能替代当前任务证据或改变 Server 侧 schema/白名单/审批策略。
 
 ## 验收标准
 
-- 能在两轮以上的 mock Claude SDK 决策中执行动作并合并新证据。
-- 重复动作和预算耗尽能确定终止。
+- 能用 mock Claude CLI 生成 completed / waiting structured outcome。
+- MCP tool call 能写入 evidence artifact 和 `mcp_calls.jsonl`。
 - 能进入 `WAITING_FOR_USER`，接收回答后恢复。
 - 能进入 `WAITING_FOR_APPROVAL`，批准或拒绝后继续。
 - 重启后可从持久化状态恢复。

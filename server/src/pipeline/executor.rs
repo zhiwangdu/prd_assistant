@@ -17,19 +17,14 @@ use crate::{
     pipeline::{
         extract_task, generate_task_result, persist_final_answer_decision_result,
         prepare_pipeline_run, read_optional_json, read_tool_results, search_task,
-        search_task_with_settings,
     },
     services::metadata::TaskMetadataContext,
     services::{
-        agent_backend::AgentBackendDecisionInput,
+        agent_backend::{AgentBackendDecisionInput, ClaudeSessionOutcome},
         agent_contracts::{write_agent_contracts, AgentContractInput},
-        llm_gateway::{ActionDecision, AgentDecision},
     },
     stores::analysis_state,
-    support::{
-        config::{AnalysisSettings, LogAnalyzerSettings},
-        id::next_id,
-    },
+    support::{config::AnalysisSettings, id::next_id},
 };
 
 #[derive(Debug)]
@@ -245,19 +240,19 @@ async fn plan_analysis_phase(
                 case_context: case_context.as_ref(),
                 tool_results: &tool_results,
                 analysis_snapshot: &snapshot,
-                agent_backends: &state.config.agent_backends,
+                claude_code: &state.config.claude_code,
+                mcp: &state.config.mcp,
+                config_path: &state.config.config_path,
+                analysis_mode: task.analysis_mode,
                 tools: &state.config.tools,
             },
         )
         .await?;
         if !contracts_existed {
-            analysis_state::record_agent_contracts(
-                &workspace,
-                &state.config.agent_backends.default_backend,
-            )?;
+            analysis_state::record_agent_contracts(&workspace, "claude_code")?;
         }
         let call_id = next_id("agentcall");
-        let backend_id = state.config.agent_backends.default_backend.clone();
+        let backend_id = "claude_code".to_string();
         analysis_state::record_llm_call_started(
             &workspace,
             TaskPhase::PlanAnalysis,
@@ -270,6 +265,7 @@ async fn plan_analysis_phase(
             .agent_backends
             .decide_next(AgentBackendDecisionInput {
                 workspace: &workspace,
+                analysis_mode: task.analysis_mode,
                 grep_results: &grep,
                 case_context: case_context.as_ref(),
                 tool_results: &tool_results,
@@ -283,27 +279,34 @@ async fn plan_analysis_phase(
             1,
             backend_id,
         )?;
-        record_model_decision(&workspace, &decision)?;
+        let claude_session_id =
+            read_optional_json::<serde_json::Value>(&workspace.join("claude_session.json"))
+                .await?
+                .and_then(|value| {
+                    value
+                        .get("claudeSessionId")
+                        .and_then(|value| value.as_str())
+                        .map(ToString::to_string)
+                });
+        let permission_profile = state
+            .config
+            .claude_code
+            .permission_profiles
+            .get(&task.analysis_mode)
+            .map(|profile| profile.name.clone())
+            .unwrap_or_else(|| task.analysis_mode.as_str().to_string());
+        analysis_state::record_claude_session_artifacts(
+            &workspace,
+            claude_session_id,
+            task.analysis_mode.as_str().to_string(),
+            permission_profile,
+        )?;
+        record_claude_outcome(&workspace, &decision)?;
+        if let Some(waiting_action) = read_mcp_waiting_marker(&task, &workspace).await? {
+            return wait_for_agent_action(state.clone(), &task, waiting_action).await;
+        }
         match decision {
-            AgentDecision::Action { decision } => {
-                let action = action_from_decision(&task, decision);
-                if let Some(reason) =
-                    action_budget_exhausted(&workspace, &state.config.analysis, &action)?
-                {
-                    let grep =
-                        read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
-                    return complete_with_budget_limited_result(state, &task, &grep, reason).await;
-                }
-                if matches!(
-                    action.kind,
-                    ActionKind::AskUser | ActionKind::CollectEnvironment
-                ) || action.risk == ActionRisk::RequiresApproval
-                {
-                    return wait_for_agent_action(state.clone(), &task, action).await;
-                }
-                execute_agent_action(state.clone(), &task, action).await?;
-            }
-            AgentDecision::FinalAnswer { result } => {
+            ClaudeSessionOutcome::FinalAnswer { result } => {
                 let result = result.into_result(&grep, case_context.as_ref(), &tool_results)?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
                 let completed = complete_successful_log_analysis(
@@ -316,8 +319,98 @@ async fn plan_analysis_phase(
                 sync_session_status(&state, &completed).await;
                 return Ok(DispatchOutcome::Complete);
             }
+            ClaudeSessionOutcome::WaitingForUser { prompt } => {
+                let action = ask_user_action_from_prompt(&task, prompt);
+                return wait_for_agent_action(state.clone(), &task, action).await;
+            }
+            ClaudeSessionOutcome::WaitingForApproval { approval } => {
+                let action = approval_action_from_request(&task, approval);
+                return wait_for_agent_action(state.clone(), &task, action).await;
+            }
         }
     }
+}
+
+async fn read_mcp_waiting_marker(
+    task: &TaskRecord,
+    workspace: &std::path::Path,
+) -> anyhow::Result<Option<AgentAction>> {
+    let marker_path = workspace.join("mcp_waiting_request.json");
+    let Some(marker) = read_optional_json::<serde_json::Value>(&marker_path).await? else {
+        return Ok(None);
+    };
+    let _ = tokio::fs::remove_file(&marker_path).await;
+    let status = marker
+        .get("runtimeStatus")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let request = marker
+        .get("request")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let action = match status {
+        "waiting_for_user" => {
+            let prompt = crate::services::agent_backend::ClaudeUserPrompt {
+                question_id: request
+                    .get("questionId")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string),
+                question: request
+                    .get("question")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("Please provide the requested diagnostic detail.")
+                    .to_string(),
+                reason: request
+                    .get("reason")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string),
+                required: request
+                    .get("required")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(true),
+                answer_format: request
+                    .get("answerFormat")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string),
+            };
+            ask_user_action_from_prompt(task, prompt)
+        }
+        "waiting_for_approval" => {
+            let approval = crate::services::agent_backend::ClaudeApprovalRequest {
+                action_id: request
+                    .get("actionId")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string),
+                action_type: request
+                    .get("actionType")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("collect_environment")
+                    .to_string(),
+                reason: request
+                    .get("reason")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("Claude Code requested an approval-gated action.")
+                    .to_string(),
+                input: request
+                    .get("input")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({ "scope": "default" })),
+                evidence_refs: request
+                    .get("evidenceRefs")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|value| value.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+            approval_action_from_request(task, approval)
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(action))
 }
 
 async fn complete_successful_log_analysis(
@@ -367,28 +460,6 @@ async fn complete_successful_log_analysis(
             Some(alias),
         )
         .await
-}
-
-async fn execute_agent_action(
-    state: Arc<AppState>,
-    task: &TaskRecord,
-    action: AgentAction,
-) -> anyhow::Result<()> {
-    match action.kind {
-        ActionKind::SearchLogs => {
-            run_search_logs_action(state.clone(), task, &action).await?;
-            Ok(())
-        }
-        ActionKind::RunTool => {
-            let workspace = state.config.storage.workspace_dir(&task.task_id);
-            let context = TaskContext::from_record(task, workspace, None);
-            let artifact = state.tool_runner.execute(&context, &action).await?;
-            analysis_state::record_tool_artifact(&context.workspace, &action, &artifact)?;
-            Ok(())
-        }
-        ActionKind::FinalAnswer => Ok(()),
-        _ => anyhow::bail!("unsupported action decision type {:?}", action.kind),
-    }
 }
 
 async fn wait_for_agent_action(
@@ -455,46 +526,6 @@ async fn wait_for_agent_action(
     }
 }
 
-async fn run_search_logs_action(
-    state: Arc<AppState>,
-    task: &TaskRecord,
-    action: &AgentAction,
-) -> anyhow::Result<()> {
-    let keywords = action
-        .input
-        .get("keywords")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| anyhow::anyhow!("search_logs input.keywords must be an array"))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string)
-                .ok_or_else(|| anyhow::anyhow!("search_logs keyword must be a non-empty string"))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let max_matches = action
-        .input
-        .get("maxMatches")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(50) as usize;
-    search_task_with_settings(
-        state.config.clone(),
-        &task.task_id,
-        LogAnalyzerSettings {
-            keywords,
-            max_matches,
-        },
-    )
-    .await?;
-    let workspace = state.config.storage.workspace_dir(&task.task_id);
-    let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
-    analysis_state::record_log_search_action(&workspace, action, &grep)?;
-    Ok(())
-}
-
 fn analysis_budget_exhausted(
     workspace: &std::path::Path,
     settings: &AnalysisSettings,
@@ -511,34 +542,6 @@ fn analysis_budget_exhausted(
         return Ok(Some(format!(
             "LLM call budget exhausted: {}/{}",
             budget.llm_calls, settings.max_llm_calls
-        )));
-    }
-    Ok(None)
-}
-
-fn action_budget_exhausted(
-    workspace: &std::path::Path,
-    settings: &AnalysisSettings,
-    action: &AgentAction,
-) -> anyhow::Result<Option<String>> {
-    let snapshot = analysis_state::read_snapshot(workspace)?;
-    let budget = snapshot.state.budget;
-    if budget.actions >= settings.max_actions {
-        return Ok(Some(format!(
-            "action budget exhausted: {}/{}",
-            budget.actions, settings.max_actions
-        )));
-    }
-    let repeated = snapshot
-        .state
-        .actions
-        .iter()
-        .filter(|record| record.fingerprint == action.fingerprint)
-        .count() as u32;
-    if repeated >= settings.max_repeated_action_fingerprints {
-        return Ok(Some(format!(
-            "repeated action fingerprint blocked after {repeated} completed attempt(s): {}",
-            action.fingerprint
         )));
     }
     Ok(None)
@@ -590,57 +593,103 @@ fn budget_limited_result(question: &str, grep: &GrepResults, reason: &str) -> An
     }
 }
 
-fn action_from_decision(task: &TaskRecord, decision: ActionDecision) -> AgentAction {
-    let action_id = decision.action_id.unwrap_or_else(|| {
-        format!(
-            "act_{}_{}",
-            action_kind_suffix(decision.kind),
-            stable_json_hash(&decision.input)
-        )
+fn ask_user_action_from_prompt(
+    task: &TaskRecord,
+    prompt: crate::services::agent_backend::ClaudeUserPrompt,
+) -> AgentAction {
+    let input = serde_json::json!({
+        "questionId": prompt.question_id,
+        "question": prompt.question,
+        "answerFormat": prompt.answer_format,
+        "required": prompt.required,
     });
-    let fingerprint = decision.fingerprint.unwrap_or_else(|| {
-        format!(
-            "{}:{}",
-            action_kind_suffix(decision.kind),
-            stable_json_hash(&decision.input)
-        )
-    });
+    let action_id = input
+        .get("questionId")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("act_ask_user_{}", stable_json_hash(&input)));
+    let fingerprint = format!(
+        "task:{}:ask_user:{}",
+        task.task_id,
+        stable_json_hash(&serde_json::json!({"question": input.get("question")}))
+    );
     AgentAction {
         schema_version: 1,
         action_id,
-        kind: decision.kind,
-        reason: decision.reason,
-        evidence_refs: decision
+        kind: ActionKind::AskUser,
+        reason: prompt
+            .reason
+            .unwrap_or_else(|| "Claude Code requested additional user input".to_string()),
+        evidence_refs: Vec::new(),
+        input,
+        risk: ActionRisk::SafeReadOnly,
+        fingerprint,
+    }
+}
+
+fn approval_action_from_request(
+    task: &TaskRecord,
+    approval: crate::services::agent_backend::ClaudeApprovalRequest,
+) -> AgentAction {
+    let kind = match approval.action_type.as_str() {
+        "collect_environment" => ActionKind::CollectEnvironment,
+        _ => ActionKind::CollectEnvironment,
+    };
+    let input = if approval.input.is_null() {
+        serde_json::json!({ "scope": "default" })
+    } else {
+        approval.input
+    };
+    let action_id = approval
+        .action_id
+        .unwrap_or_else(|| format!("act_approval_{}", stable_json_hash(&input)));
+    let fingerprint = format!(
+        "task:{}:approval:{}",
+        task.task_id,
+        stable_json_hash(&serde_json::json!({"actionType": kind, "input": input.clone()}))
+    );
+    AgentAction {
+        schema_version: 1,
+        action_id,
+        kind,
+        reason: approval.reason,
+        evidence_refs: approval
             .evidence_refs
             .into_iter()
             .map(parse_evidence_ref)
             .collect(),
-        input: decision.input,
-        risk: decision.risk,
-        fingerprint: format!("task:{}:{fingerprint}", task.task_id),
+        input,
+        risk: ActionRisk::RequiresApproval,
+        fingerprint,
     }
 }
 
-fn record_model_decision(
+fn record_claude_outcome(
     workspace: &std::path::Path,
-    decision: &AgentDecision,
+    outcome: &ClaudeSessionOutcome,
 ) -> anyhow::Result<()> {
-    let (action_id, message, evidence_refs, details) = match decision {
-        AgentDecision::Action { decision } => (
-            decision.action_id.clone(),
-            format!("model selected {:?}: {}", decision.kind, decision.reason),
-            decision.evidence_refs.clone(),
-            serde_json::json!({ "decision": decision }),
-        ),
-        AgentDecision::FinalAnswer { result } => (
+    let (action_id, message, evidence_refs, details) = match outcome {
+        ClaudeSessionOutcome::FinalAnswer { result } => (
             None,
-            "model selected final_answer".to_string(),
+            "Claude Code session returned final answer".to_string(),
             result
                 .likely_root_causes
                 .iter()
                 .flat_map(|cause| cause.evidence_refs.iter().cloned())
                 .collect(),
-            serde_json::json!({ "result": result }),
+            serde_json::json!({ "finalAnswer": result }),
+        ),
+        ClaudeSessionOutcome::WaitingForUser { prompt } => (
+            prompt.question_id.clone(),
+            "Claude Code session requested user input".to_string(),
+            Vec::new(),
+            serde_json::json!({ "pendingPrompt": prompt }),
+        ),
+        ClaudeSessionOutcome::WaitingForApproval { approval } => (
+            approval.action_id.clone(),
+            "Claude Code session requested approval".to_string(),
+            approval.evidence_refs.clone(),
+            serde_json::json!({ "pendingApproval": approval }),
         ),
     };
     analysis_state::record_model_decision(
@@ -663,17 +712,6 @@ fn parse_evidence_ref(value: String) -> EvidenceRef {
             artifact_path: value,
             selector: None,
         },
-    }
-}
-
-fn action_kind_suffix(kind: ActionKind) -> &'static str {
-    match kind {
-        ActionKind::SearchLogs => "search_logs",
-        ActionKind::RunTool => "run_tool",
-        ActionKind::CollectCodeEvidence => "collect_code",
-        ActionKind::CollectEnvironment => "collect_env",
-        ActionKind::AskUser => "ask_user",
-        ActionKind::FinalAnswer => "final_answer",
     }
 }
 
@@ -727,6 +765,7 @@ async fn sync_session_status(state: &AppState, task: &TaskRecord) {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeMap,
         fs,
         os::unix::fs::PermissionsExt,
         path::PathBuf,
@@ -741,10 +780,10 @@ mod tests {
         domain::models::{TaskInput, TaskSource, TaskStatus},
         pipeline::{extract_task, prepare_pipeline_run, search_task},
         support::config::{
-            AgentBackendSettings, AgentBackendSettingsEntry, AgentBackendType, AnalysisSettings,
-            AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
-            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
-            ToolsSettings,
+            AnalysisMode, AnalysisSettings, AppConfig, AuthSettings, ClaudeCodeSettings,
+            EmbeddingSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, McpSettings,
+            PermissionProfileSettings, ServerSettings, StorageSettings, ToolMatchSettings,
+            ToolSettings, ToolsSettings,
         },
     };
 
@@ -831,13 +870,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plan_analysis_executes_stub_search_action_before_result() {
+    async fn plan_analysis_completes_claude_code_session() {
         let fixture = Fixture::new_with_log(TaskPhase::Extract, "INFO start\nWARN slow\n");
         let adapter = fixture.write_tool(
-            "search_adapter.sh",
+            "claude",
             r#"#!/usr/bin/env bash
 cat <<'JSON'
-{"decision":{"type":"action","decision":{"type":"search_logs","reason":"need broader error keywords","input":{"keywords":["error","timeout","failed"],"maxMatches":50},"risk":"SAFE_READ_ONLY","fingerprint":"search:error-timeout-failed"}},"usage":{"inputTokens":10,"outputTokens":5},"cost":{"usd":0.001}}
+{"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"session summary","symptoms":["slow warning"],"likelyRootCauses":[],"nextChecks":["inspect warning"],"fixSuggestions":[],"missingInformation":["no error evidence"],"confidence":"low"}},"session_id":"sess-claude-direct"}
 JSON
 "#,
         );
@@ -852,26 +891,19 @@ JSON
 
         let completed = state.tasks.get(&task.task_id).await.unwrap();
         assert_eq!(completed.status, TaskStatus::Succeeded);
-        let grep: GrepResults = serde_json::from_str(
-            &fs::read_to_string(fixture.workspace.join("grep_results.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(grep.keywords, vec!["error", "timeout", "failed"]);
         let snapshot = analysis_state::read_snapshot(&fixture.workspace).unwrap();
-        assert_eq!(snapshot.state.budget.rounds, 2);
-        assert_eq!(snapshot.state.budget.actions, 1);
-        assert!(snapshot.state.evidence.iter().any(|record| record
-            .action_id
-            .as_deref()
-            .is_some_and(|id| id.starts_with("act_search_logs_"))));
+        assert_eq!(snapshot.state.budget.rounds, 1);
+        assert_eq!(
+            snapshot.state.claude_session_id.as_deref(),
+            Some("sess-claude-direct")
+        );
+        assert!(fixture.workspace.join("claude_mcp_config.json").exists());
+        assert!(fixture.workspace.join("claude_session.json").exists());
         let result: AnalysisResult = serde_json::from_str(
             &fs::read_to_string(fixture.workspace.join("result.json")).unwrap(),
         )
         .unwrap();
-        assert!(result
-            .missing_information
-            .iter()
-            .any(|item| item.contains("repeated action fingerprint blocked")));
+        assert_eq!(result.summary, "session summary");
     }
 
     struct Fixture {
@@ -910,10 +942,10 @@ JSON
 
         fn state_with_tools(&self, tools: ToolsSettings) -> Arc<AppState> {
             let adapter = self.write_tool(
-                "final_adapter.sh",
+                "claude",
                 r#"#!/usr/bin/env bash
 cat <<'JSON'
-{"decision":{"type":"final_answer","result":{"summary":"mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"log contains an error","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check logs"],"fixSuggestions":["fix error"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":12,"outputTokens":8},"cost":{"usd":0.002}}
+{"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"log contains an error","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check logs"],"fixSuggestions":["fix error"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":12,"outputTokens":8},"cost":{"usd":0.002},"session_id":"sess-claude-test"}
 JSON
 "#,
             );
@@ -930,6 +962,7 @@ JSON
             adapter: PathBuf,
         ) -> Arc<AppState> {
             let config = Arc::new(AppConfig {
+                config_path: self.root.join("logagent-test.yaml"),
                 server: ServerSettings {
                     bind: "127.0.0.1:0".to_string(),
                     public_base_url: "http://127.0.0.1:0".to_string(),
@@ -957,23 +990,8 @@ JSON
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
                 },
-                agent_backends: AgentBackendSettings {
-                    default_backend: "claude_agent_sdk".to_string(),
-                    backends: [(
-                        "claude_agent_sdk".to_string(),
-                        AgentBackendSettingsEntry {
-                            name: "claude_agent_sdk".to_string(),
-                            backend_type: AgentBackendType::ClaudeAgentSdk,
-                            enabled: true,
-                            command_path: Some(adapter),
-                            timeout_seconds: 5,
-                            max_input_bytes: 1024 * 1024,
-                            max_output_bytes: 1024 * 1024,
-                        },
-                    )]
-                    .into_iter()
-                    .collect(),
-                },
+                claude_code: test_claude_code_settings(adapter),
+                mcp: McpSettings::default(),
                 analysis: AnalysisSettings {
                     max_rounds: 4,
                     max_llm_calls: 4,
@@ -1009,6 +1027,7 @@ JSON
                 alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
+                analysis_mode: AnalysisMode::Diagnose,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {
@@ -1052,6 +1071,28 @@ JSON
             TaskPhase::SearchLogs => "search",
             TaskPhase::GenerateResult => "generate",
             _ => "other",
+        }
+    }
+
+    fn test_claude_code_settings(command_path: PathBuf) -> ClaudeCodeSettings {
+        ClaudeCodeSettings {
+            command_path,
+            default_mode: AnalysisMode::Diagnose,
+            max_session_seconds: 5,
+            max_output_bytes: 1024 * 1024,
+            permission_profiles: BTreeMap::from([(
+                AnalysisMode::Diagnose,
+                PermissionProfileSettings {
+                    name: "diagnose".to_string(),
+                    permission_mode: "dontAsk".to_string(),
+                    tools: String::new(),
+                    allowed_tools: Vec::new(),
+                    disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
+                    native_bash: false,
+                    native_edit: false,
+                    worktree_required: false,
+                },
+            )]),
         }
     }
 }

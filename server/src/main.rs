@@ -1,6 +1,7 @@
 mod app;
 mod domain;
 mod http;
+mod mcp;
 mod pipeline;
 mod services;
 mod stores;
@@ -10,7 +11,7 @@ use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
 use axum::Router;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -19,13 +20,31 @@ use tower_http::{
 };
 use tracing::info;
 
-use crate::{app::AppState, support::config::load_config};
+use crate::{
+    app::AppState,
+    support::config::{load_config, AnalysisMode},
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "LogAgent MVP server")]
 struct Args {
-    #[arg(long, default_value = "logagent.yaml")]
+    #[arg(long, global = true, default_value = "logagent.yaml")]
     config: PathBuf,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    Mcp(McpArgs),
+}
+
+#[derive(Parser, Debug)]
+struct McpArgs {
+    #[arg(long)]
+    task_id: String,
+    #[arg(long, default_value = "diagnose")]
+    mode: AnalysisMode,
 }
 
 #[tokio::main]
@@ -37,6 +56,10 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config = load_config(&args.config).context("failed to load server config")?;
     config.prepare_dirs()?;
+
+    if let Some(Command::Mcp(mcp_args)) = args.command {
+        return mcp::run_stdio(config, mcp_args.task_id, mcp_args.mode).await;
+    }
 
     let bind: SocketAddr = config
         .server

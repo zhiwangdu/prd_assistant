@@ -123,10 +123,14 @@ type Artifacts = {
   systemContext?: SystemContextBundle | null;
   analysisPackagePath?: string | null;
   analysisPackage?: AgentAnalysisPackage | null;
-  agentRequestPath?: string | null;
-  agentRequest?: AgentRequestArtifact | null;
   agentResponsePath?: string | null;
   agentResponse?: AgentResponseArtifact | null;
+  claudeMcpConfigPath?: string | null;
+  claudeMcpConfig?: Record<string, unknown> | null;
+  claudeSessionPath?: string | null;
+  claudeSession?: ClaudeSessionArtifact | null;
+  mcpCallsPath?: string | null;
+  mcpCalls?: Array<Record<string, unknown>>;
   toolResults?: ToolResult[];
 };
 type AgentAnalysisPackage = {
@@ -135,17 +139,27 @@ type AgentAnalysisPackage = {
   generatedAt?: string;
   boundaries?: Record<string, unknown>;
 };
-type AgentRequestArtifact = {
-  backend?: { backendId?: string; backendType?: string; executionMode?: string; runtimeStatus?: string };
-};
 type AgentResponseArtifact = {
   runtimeStatus?: string;
+  claudeSessionId?: string | null;
+  analysisMode?: string;
+  permissionProfile?: string;
   reason?: string;
   durationMs?: number;
-  normalizedDecision?: unknown;
+  structuredOutput?: unknown;
   usage?: unknown;
   cost?: unknown;
+  nativeToolPolicy?: unknown;
   error?: string | null;
+};
+type ClaudeSessionArtifact = {
+  runtimeStatus?: string;
+  claudeSessionId?: string | null;
+  analysisMode?: string;
+  permissionProfile?: string;
+  mcpConfigPath?: string;
+  lastClaudeResponsePath?: string;
+  durationMs?: number | null;
 };
 type SystemContextSummary = {
   contextId: string;
@@ -711,7 +725,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
       {artifacts?.systemContext ? <SystemContextSnapshotView context={artifacts.systemContext} /> : null}
-      {artifacts?.analysisPackage || artifacts?.agentRequest || artifacts?.agentResponse ? <AgentBackendPanel artifacts={artifacts} /> : null}
+      {artifacts?.analysisPackage || artifacts?.claudeMcpConfig || artifacts?.claudeSession || artifacts?.agentResponse ? <AgentBackendPanel artifacts={artifacts} /> : null}
       {artifacts?.textInput ? <Evidence title="Session text input" count={1}><DataLine id="session-text-input" title="Question" detail={artifacts.textInput.question ?? ""} /></Evidence> : null}
       {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
       {artifacts?.toolResults?.length ? <Evidence title="Tool results" count={artifacts.toolResults.length}>{artifacts.toolResults.map((result) => <ToolResultLine key={result.actionId} result={result} />)}</Evidence> : null}
@@ -943,21 +957,24 @@ function SystemContextSnapshotView({ context }: { context: SystemContextBundle }
 }
 
 function AgentBackendPanel({ artifacts }: { artifacts: Artifacts }) {
-  const backend = artifacts.agentRequest?.backend;
+  const mcpCallCount = artifacts.mcpCalls?.length ?? 0;
   const rows = [
-    ["Backend", [backend?.backendId, backend?.backendType].filter(Boolean).join(" · ") || "-"],
-    ["Execution mode", backend?.executionMode ?? "-"],
-    ["Runtime status", artifacts.agentResponse?.runtimeStatus ?? artifacts.analysisPackage?.runtimeStatus ?? backend?.runtimeStatus ?? "-"],
+    ["Session", artifacts.agentResponse?.claudeSessionId ?? artifacts.claudeSession?.claudeSessionId ?? "-"],
+    ["Analysis mode", artifacts.agentResponse?.analysisMode ?? artifacts.claudeSession?.analysisMode ?? "-"],
+    ["Permission", artifacts.agentResponse?.permissionProfile ?? artifacts.claudeSession?.permissionProfile ?? "-"],
+    ["Runtime status", artifacts.agentResponse?.runtimeStatus ?? artifacts.analysisPackage?.runtimeStatus ?? "-"],
     ["Duration", typeof artifacts.agentResponse?.durationMs === "number" ? `${artifacts.agentResponse.durationMs} ms` : "-"],
     ["Package", artifacts.analysisPackagePath ?? "-"],
-    ["Request", artifacts.agentRequestPath ?? "-"],
-    ["Response", artifacts.agentResponsePath ?? "-"]
+    ["MCP config", artifacts.claudeMcpConfigPath ?? "-"],
+    ["Session artifact", artifacts.claudeSessionPath ?? "-"],
+    ["Response", artifacts.agentResponsePath ?? "-"],
+    ["MCP calls", artifacts.mcpCallsPath ? `${mcpCallCount} calls · ${artifacts.mcpCallsPath}` : `${mcpCallCount} calls`]
   ];
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Claude Code backend</CardTitle>
-        <CardDescription>Agent backend receives the evidence package and returns a structured action or final answer.</CardDescription>
+        <CardTitle>Claude Code session</CardTitle>
+        <CardDescription>Claude Code uses LogAgent MCP evidence tools and returns a structured session outcome.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
@@ -970,6 +987,8 @@ function AgentBackendPanel({ artifacts }: { artifacts: Artifacts }) {
         </div>
         {artifacts.agentResponse?.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{artifacts.agentResponse.error}</div> : null}
         {artifacts.agentResponse?.usage || artifacts.agentResponse?.cost ? <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify({ usage: artifacts.agentResponse.usage, cost: artifacts.agentResponse.cost }, null, 2)}</pre> : null}
+        {artifacts.agentResponse?.structuredOutput ? <pre className="max-h-56 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify(artifacts.agentResponse.structuredOutput, null, 2)}</pre> : null}
+        {artifacts.mcpCalls?.length ? <div className="space-y-2">{artifacts.mcpCalls.slice(-5).map((call, index) => <pre className="max-h-32 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs" key={index}>{JSON.stringify(call, null, 2)}</pre>)}</div> : null}
       </CardContent>
     </Card>
   );

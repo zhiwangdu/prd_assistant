@@ -1,31 +1,26 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::{path::Path, time::Instant};
 
 use anyhow::Context;
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::timeout};
 
 use crate::{
     domain::models::GrepResults,
     services::{
         agent_contracts::write_json_atomic,
-        llm_gateway::{
-            parse_action_decision_content, validate_agent_decision_with_evidence, AgentDecision,
-        },
+        llm_gateway::{validate_final_answer_with_evidence, FinalAnswerDecision},
         tool_runner::ToolRunRecord,
     },
     support::{
-        config::{AgentBackendSettings, AgentBackendSettingsEntry, AgentBackendType},
+        config::{AnalysisMode, ClaudeCodeSettings, PermissionProfileSettings},
         error::AppError,
     },
 };
 
 #[derive(Debug, Clone)]
 pub struct AgentBackendRegistry {
-    settings: AgentBackendSettings,
+    settings: ClaudeCodeSettings,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,6 +42,8 @@ pub struct AgentBackendSummary {
     pub max_input_bytes: usize,
     pub max_output_bytes: usize,
     pub execution_mode: String,
+    pub default_mode: String,
+    pub permission_profile: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,25 +59,86 @@ pub struct AgentBackendDiagnosticResult {
 
 pub struct AgentBackendDecisionInput<'a> {
     pub workspace: &'a Path,
+    pub analysis_mode: AnalysisMode,
     pub grep_results: &'a GrepResults,
     pub case_context: Option<&'a serde_json::Value>,
     pub tool_results: &'a [ToolRunRecord],
 }
 
+#[derive(Debug, Clone)]
+pub enum ClaudeSessionOutcome {
+    FinalAnswer { result: FinalAnswerDecision },
+    WaitingForUser { prompt: ClaudeUserPrompt },
+    WaitingForApproval { approval: ClaudeApprovalRequest },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeUserPrompt {
+    #[serde(default)]
+    pub question_id: Option<String>,
+    pub question: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default = "default_required")]
+    pub required: bool,
+    #[serde(default)]
+    pub answer_format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeApprovalRequest {
+    #[serde(default)]
+    pub action_id: Option<String>,
+    #[serde(default = "default_approval_action_type")]
+    pub action_type: String,
+    pub reason: String,
+    #[serde(default)]
+    pub input: serde_json::Value,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeStructuredOutput {
+    pub runtime_status: String,
+    #[serde(default)]
+    pub final_answer: Option<FinalAnswerDecision>,
+    #[serde(default)]
+    pub pending_prompt: Option<ClaudeUserPrompt>,
+    #[serde(default)]
+    pub pending_approval: Option<ClaudeApprovalRequest>,
+}
+
 impl AgentBackendRegistry {
-    pub fn new(settings: AgentBackendSettings) -> Self {
+    pub fn new(settings: ClaudeCodeSettings) -> Self {
         Self { settings }
     }
 
     pub fn summary(&self) -> AgentBackendsSummary {
+        let profile = self
+            .settings
+            .permission_profiles
+            .get(&self.settings.default_mode)
+            .map(|profile| profile.name.clone())
+            .unwrap_or_else(|| self.settings.default_mode.as_str().to_string());
         AgentBackendsSummary {
-            default_backend: self.settings.default_backend.clone(),
-            backends: self
-                .settings
-                .backends
-                .values()
-                .map(|backend| self.backend_summary(backend))
-                .collect(),
+            default_backend: "claude_code".to_string(),
+            backends: vec![AgentBackendSummary {
+                id: "claude_code".to_string(),
+                backend_type: "claude_code_cli".to_string(),
+                enabled: true,
+                default_backend: true,
+                command_configured: true,
+                timeout_seconds: self.settings.max_session_seconds,
+                max_input_bytes: 0,
+                max_output_bytes: self.settings.max_output_bytes,
+                execution_mode: "claude_code_mcp_session".to_string(),
+                default_mode: self.settings.default_mode.as_str().to_string(),
+                permission_profile: profile,
+            }],
         }
     }
 
@@ -88,137 +146,155 @@ impl AgentBackendRegistry {
         &self,
         backend_id: &str,
     ) -> anyhow::Result<AgentBackendDiagnosticResult> {
-        let backend = self
-            .settings
-            .backends
-            .get(backend_id)
-            .ok_or_else(|| anyhow::anyhow!("unknown agent backend {backend_id}"))?;
-        if !backend.enabled {
-            anyhow::bail!("agent backend {backend_id} is disabled");
+        if backend_id != "claude_code" {
+            anyhow::bail!("unknown Claude Code backend {backend_id}");
         }
-        match backend.backend_type {
-            AgentBackendType::CodexCli
-            | AgentBackendType::ClaudeCodeCli
-            | AgentBackendType::ClaudeAgentSdk
-            | AgentBackendType::OpencodeCli => {
-                let command_path = backend.command_path.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!("agent backend {backend_id} has no configured command path")
-                })?;
-                let metadata = tokio::fs::metadata(command_path).await.map_err(|error| {
-                    anyhow::anyhow!(
-                        "failed to inspect agent backend command {}: {error}",
-                        command_path.display()
-                    )
-                })?;
-                if !metadata.is_file() {
-                    anyhow::bail!(
-                        "agent backend command {} is not a regular file",
-                        command_path.display()
-                    );
-                }
-                Ok(AgentBackendDiagnosticResult {
-                    backend_id: backend.name.clone(),
-                    backend_type: backend.backend_type.as_str().to_string(),
-                    enabled: true,
-                    status: "configured".to_string(),
-                    execution_mode: backend.backend_type.execution_mode().to_string(),
-                    details: vec![
-                        "Command path exists. Log analysis runtime invokes the adapter during PLAN_ANALYSIS."
-                            .to_string(),
-                        format!(
-                            "Limits: timeout={}s, maxInputBytes={}, maxOutputBytes={}.",
-                            backend.timeout_seconds,
-                            backend.max_input_bytes,
-                            backend.max_output_bytes
-                        ),
-                    ],
-                })
-            }
+        let metadata = tokio::fs::metadata(&self.settings.command_path)
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "failed to inspect Claude Code command {}: {error}",
+                    self.settings.command_path.display()
+                )
+            })?;
+        if !metadata.is_file() {
+            anyhow::bail!(
+                "Claude Code command {} is not a regular file",
+                self.settings.command_path.display()
+            );
         }
+        Ok(AgentBackendDiagnosticResult {
+            backend_id: "claude_code".to_string(),
+            backend_type: "claude_code_cli".to_string(),
+            enabled: true,
+            status: "configured".to_string(),
+            execution_mode: "claude_code_mcp_session".to_string(),
+            details: vec![
+                "Command path exists. PLAN_ANALYSIS invokes Claude Code with --mcp-config."
+                    .to_string(),
+                format!(
+                    "Default mode={}, timeout={}s, maxOutputBytes={}.",
+                    self.settings.default_mode.as_str(),
+                    self.settings.max_session_seconds,
+                    self.settings.max_output_bytes
+                ),
+            ],
+        })
     }
 
     pub async fn decide_next(
         &self,
         input: AgentBackendDecisionInput<'_>,
-    ) -> anyhow::Result<AgentDecision> {
-        let backend = self
+    ) -> anyhow::Result<ClaudeSessionOutcome> {
+        let profile = self
             .settings
-            .backends
-            .get(&self.settings.default_backend)
-            .ok_or_else(|| anyhow::anyhow!("default agent backend is not configured"))?;
-        if !backend.enabled {
-            anyhow::bail!(
-                "default agent backend {} is disabled",
-                self.settings.default_backend
-            );
-        }
-        match backend.backend_type {
-            AgentBackendType::ClaudeAgentSdk => self.invoke_claude_agent_sdk(backend, input).await,
-            AgentBackendType::CodexCli
-            | AgentBackendType::ClaudeCodeCli
-            | AgentBackendType::OpencodeCli => {
-                let error = format!(
-                    "agent backend type {} is configured but not supported for Log Analysis runtime; configure claude_agent_sdk",
-                    backend.backend_type.as_str()
-                );
-                write_failed_agent_response(input.workspace, backend, 0, &error, None).await?;
-                anyhow::bail!(error)
-            }
-        }
-    }
-
-    async fn invoke_claude_agent_sdk(
-        &self,
-        backend: &AgentBackendSettingsEntry,
-        input: AgentBackendDecisionInput<'_>,
-    ) -> anyhow::Result<AgentDecision> {
-        let command_path = backend
-            .command_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("claude_agent_sdk backend has no command path"))?;
-        ensure_input_size(input.workspace, backend)?;
+            .permission_profiles
+            .get(&input.analysis_mode)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "analysis mode {} has no Claude Code permission profile",
+                    input.analysis_mode.as_str()
+                )
+            })?;
         let started = Instant::now();
-        let result = run_adapter_command(command_path, backend, input.workspace).await;
+        let resume_session_id = read_existing_claude_session_id(input.workspace).await?;
+        write_claude_session_state(
+            input.workspace,
+            input.analysis_mode,
+            profile,
+            resume_session_id.as_deref(),
+            "starting",
+            None,
+            None,
+        )
+        .await?;
+        let result = run_claude_code_command(
+            &self.settings.command_path,
+            &self.settings,
+            input.analysis_mode,
+            profile,
+            input.workspace,
+            resume_session_id.as_deref(),
+        )
+        .await;
         let duration_ms = started.elapsed().as_millis() as u64;
         match result {
             Ok(stdout) => {
-                let parsed = parse_adapter_decision(&stdout)
-                    .context("claude_agent_sdk adapter stdout did not contain a valid decision");
+                let parsed = parse_claude_session_output(&stdout)
+                    .context("Claude Code stdout did not contain a valid structured outcome");
                 match parsed {
-                    Ok((decision, raw_response)) => {
-                        if let Err(error) = validate_agent_decision_with_evidence(
-                            &decision,
-                            input.grep_results,
-                            input.case_context,
-                            input.tool_results,
-                        ) {
-                            write_failed_agent_response(
-                                input.workspace,
-                                backend,
-                                duration_ms,
-                                &error.to_string(),
-                                None,
-                            )
-                            .await?;
-                            return Err(error);
+                    Ok((outcome, raw_response, structured_output)) => {
+                        if let ClaudeSessionOutcome::FinalAnswer { result } = &outcome {
+                            if let Err(error) = validate_final_answer_with_evidence(
+                                result,
+                                input.grep_results,
+                                input.case_context,
+                                input.tool_results,
+                            ) {
+                                write_failed_agent_response(
+                                    input.workspace,
+                                    input.analysis_mode,
+                                    profile,
+                                    duration_ms,
+                                    &error.to_string(),
+                                    Some(&stdout),
+                                )
+                                .await?;
+                                write_claude_session_state(
+                                    input.workspace,
+                                    input.analysis_mode,
+                                    profile,
+                                    resume_session_id.as_deref(),
+                                    "failed",
+                                    Some(duration_ms),
+                                    Some(&error.to_string()),
+                                )
+                                .await?;
+                                return Err(error);
+                            }
                         }
+                        let claude_session_id =
+                            raw_session_id(&raw_response).or_else(|| resume_session_id.clone());
                         write_success_agent_response(
                             input.workspace,
-                            backend,
+                            input.analysis_mode,
+                            profile,
                             duration_ms,
+                            claude_session_id.as_deref(),
                             &raw_response,
-                            &decision,
+                            &structured_output,
                         )
                         .await?;
-                        Ok(decision)
+                        write_claude_session_state(
+                            input.workspace,
+                            input.analysis_mode,
+                            profile,
+                            claude_session_id.as_deref(),
+                            "succeeded",
+                            Some(duration_ms),
+                            None,
+                        )
+                        .await?;
+                        Ok(outcome)
                     }
                     Err(error) => {
                         write_failed_agent_response(
                             input.workspace,
-                            backend,
+                            input.analysis_mode,
+                            profile,
                             duration_ms,
                             &format!("{error:#}"),
                             Some(&stdout),
+                        )
+                        .await?;
+                        write_claude_session_state(
+                            input.workspace,
+                            input.analysis_mode,
+                            profile,
+                            resume_session_id.as_deref(),
+                            "failed",
+                            Some(duration_ms),
+                            Some(&format!("{error:#}")),
                         )
                         .await?;
                         Err(error)
@@ -228,325 +304,240 @@ impl AgentBackendRegistry {
             Err(error) => {
                 write_failed_agent_response(
                     input.workspace,
-                    backend,
+                    input.analysis_mode,
+                    profile,
                     duration_ms,
                     &format!("{error:#}"),
                     None,
+                )
+                .await?;
+                write_claude_session_state(
+                    input.workspace,
+                    input.analysis_mode,
+                    profile,
+                    resume_session_id.as_deref(),
+                    "failed",
+                    Some(duration_ms),
+                    Some(&format!("{error:#}")),
                 )
                 .await?;
                 Err(error)
             }
         }
     }
-
-    fn backend_summary(&self, backend: &AgentBackendSettingsEntry) -> AgentBackendSummary {
-        AgentBackendSummary {
-            id: backend.name.clone(),
-            backend_type: backend.backend_type.as_str().to_string(),
-            enabled: backend.enabled,
-            default_backend: backend.name == self.settings.default_backend,
-            command_configured: backend.command_path.is_some(),
-            timeout_seconds: backend.timeout_seconds,
-            max_input_bytes: backend.max_input_bytes,
-            max_output_bytes: backend.max_output_bytes,
-            execution_mode: backend.backend_type.execution_mode().to_string(),
-        }
-    }
 }
 
-fn ensure_input_size(workspace: &Path, backend: &AgentBackendSettingsEntry) -> anyhow::Result<()> {
-    let total = file_len(workspace.join("analysis_package.json"))?
-        + file_len(workspace.join("agent_request.json"))?;
-    if total > backend.max_input_bytes as u64 {
-        anyhow::bail!(
-            "agent backend input exceeded {} bytes: {total}",
-            backend.max_input_bytes
-        );
-    }
-    Ok(())
-}
-
-fn file_len(path: PathBuf) -> anyhow::Result<u64> {
-    Ok(std::fs::metadata(&path)
-        .with_context(|| format!("failed to inspect {}", path.display()))?
-        .len())
-}
-
-async fn run_adapter_command(
+async fn run_claude_code_command(
     command_path: &Path,
-    backend: &AgentBackendSettingsEntry,
+    settings: &ClaudeCodeSettings,
+    analysis_mode: AnalysisMode,
+    profile: &PermissionProfileSettings,
     workspace: &Path,
+    resume_session_id: Option<&str>,
 ) -> anyhow::Result<String> {
-    if is_direct_claude_cli(command_path) {
-        return run_claude_cli_command(command_path, backend, workspace).await;
-    }
-    run_logagent_adapter_command(command_path, backend, workspace).await
-}
-
-fn is_direct_claude_cli(command_path: &Path) -> bool {
-    command_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == "claude" || name == "claude.exe")
-}
-
-async fn run_logagent_adapter_command(
-    command_path: &Path,
-    backend: &AgentBackendSettingsEntry,
-    workspace: &Path,
-) -> anyhow::Result<String> {
-    let child = Command::new(command_path)
-        .arg("run")
-        .arg("--request")
-        .arg("agent_request.json")
-        .arg("--package")
-        .arg("analysis_package.json")
-        .current_dir(workspace)
-        .kill_on_drop(true)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .with_context(|| {
-            format!(
-                "failed to spawn claude_agent_sdk adapter {}",
-                command_path.display()
-            )
-        })?;
-    let output = timeout(
-        std::time::Duration::from_secs(backend.timeout_seconds),
-        child.wait_with_output(),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "claude_agent_sdk adapter timed out after {} seconds",
-            backend.timeout_seconds
-        )
-    })?
-    .context("failed to wait for claude_agent_sdk adapter")?;
-    if output.stdout.len() > backend.max_output_bytes {
-        anyhow::bail!(
-            "claude_agent_sdk adapter stdout exceeded {} bytes",
-            backend.max_output_bytes
-        );
-    }
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(truncate_bytes(&output.stderr, 4096));
-        anyhow::bail!(
-            "claude_agent_sdk adapter exited with status {}: {}",
-            output.status,
-            stderr.trim()
-        );
-    }
-    String::from_utf8(output.stdout).context("claude_agent_sdk adapter stdout is not valid UTF-8")
-}
-
-async fn run_claude_cli_command(
-    command_path: &Path,
-    backend: &AgentBackendSettingsEntry,
-    workspace: &Path,
-) -> anyhow::Result<String> {
-    let prompt = build_claude_cli_prompt(workspace)
+    let prompt = build_claude_code_prompt(workspace, analysis_mode, profile)
         .await
-        .context("failed to build Claude Code CLI prompt")?;
-    let schema = agent_decision_json_schema();
-    let child = Command::new(command_path)
+        .context("failed to build Claude Code prompt")?;
+    let mut command = Command::new(command_path);
+    command
         .arg("--print")
         .arg("--output-format")
         .arg("json")
         .arg("--json-schema")
-        .arg(schema.to_string())
+        .arg(claude_session_json_schema().to_string())
+        .arg("--mcp-config")
+        .arg("claude_mcp_config.json")
+        .arg("--strict-mcp-config")
+        .arg("--permission-mode")
+        .arg(&profile.permission_mode)
         .arg("--tools")
-        .arg("")
-        .arg("--no-session-persistence")
+        .arg(&profile.tools);
+    if !profile.allowed_tools.is_empty() {
+        command
+            .arg("--allowedTools")
+            .arg(profile.allowed_tools.join(","));
+    }
+    if !profile.disallowed_tools.is_empty() {
+        command
+            .arg("--disallowedTools")
+            .arg(profile.disallowed_tools.join(","));
+    }
+    if let Some(session_id) = resume_session_id {
+        command.arg("--resume").arg(session_id);
+    }
+    command
         .arg(prompt)
         .current_dir(workspace)
         .kill_on_drop(true)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let child = command
         .spawn()
         .with_context(|| format!("failed to spawn Claude Code CLI {}", command_path.display()))?;
     let output = timeout(
-        std::time::Duration::from_secs(backend.timeout_seconds),
+        std::time::Duration::from_secs(settings.max_session_seconds),
         child.wait_with_output(),
     )
     .await
     .with_context(|| {
         format!(
-            "Claude Code CLI timed out after {} seconds",
-            backend.timeout_seconds
+            "Claude Code session timed out after {} seconds",
+            settings.max_session_seconds
         )
     })?
-    .context("failed to wait for Claude Code CLI")?;
-    if output.stdout.len() > backend.max_output_bytes {
+    .context("failed to wait for Claude Code session")?;
+    if output.stdout.len() > settings.max_output_bytes {
         anyhow::bail!(
-            "Claude Code CLI stdout exceeded {} bytes",
-            backend.max_output_bytes
+            "Claude Code stdout exceeded {} bytes",
+            settings.max_output_bytes
         );
     }
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(truncate_bytes(&output.stderr, 4096));
         anyhow::bail!(
-            "Claude Code CLI exited with status {}: {}",
+            "Claude Code exited with status {}: {}",
             output.status,
             stderr.trim()
         );
     }
-    String::from_utf8(output.stdout).context("Claude Code CLI stdout is not valid UTF-8")
+    String::from_utf8(output.stdout).context("Claude Code stdout is not valid UTF-8")
 }
 
-async fn build_claude_cli_prompt(workspace: &Path) -> anyhow::Result<String> {
-    let request = tokio::fs::read_to_string(workspace.join("agent_request.json"))
-        .await
-        .context("failed to read agent_request.json")?;
+async fn build_claude_code_prompt(
+    workspace: &Path,
+    analysis_mode: AnalysisMode,
+    profile: &PermissionProfileSettings,
+) -> anyhow::Result<String> {
     let package = tokio::fs::read_to_string(workspace.join("analysis_package.json"))
         .await
         .context("failed to read analysis_package.json")?;
+    let user_messages = read_analysis_user_messages(workspace)
+        .await
+        .unwrap_or_default();
     Ok(format!(
-        r#"You are the LogAgent analysis backend.
+        r#"You are Claude Code running as the LogAgent domain diagnostic enhancement layer.
 
-Return exactly one JSON object matching the provided schema. Do not return Markdown, code fences, prose, or hidden reasoning.
+Use LogAgent MCP resources and tools for task evidence. Do not invent evidence refs. System Context is background only and must not be cited as final evidence. Historical Cases can guide analysis, but current-task evidence must support final conclusions.
 
-Execution boundary:
-- You must not use Claude Code built-in file, shell, edit, grep, read, write, network, or MCP tools.
-- You may only request Server-managed actions by returning an `action` decision.
-- The Server validates tool allowlists, action inputs, evidence refs, approvals, timeouts, and output limits.
-- System Context is background only and must not be used as final evidence.
-- Historical Cases can guide analysis, but final conclusions still need current-task evidence.
+Mode: {mode}
+Permission profile: {profile}
+Native Bash allowed: {native_bash}
+Native Edit allowed: {native_edit}
 
-Allowed top-level decisions:
-- `{{"type":"action","decision":{{...}}}}`
-- `{{"type":"final_answer","result":{{...}}}}`
+Return exactly one JSON object matching the schema:
+- runtimeStatus="completed" with finalAnswer when analysis can finish.
+- runtimeStatus="waiting_for_user" with pendingPrompt when user information is required.
+- runtimeStatus="waiting_for_approval" with pendingApproval when an approval-gated action is required.
 
-Allowed actions:
-- `search_logs`: choose search keywords for the Server to run.
-- `run_tool`: request one configured tool from analysis_package.evidence.toolCapabilities.
-- `ask_user`: request missing information from the user.
-- `collect_environment`: request approved environment collection.
+The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, tool_results/<action_id>/result.json#findings/<index>, log_slices/<id>.json#lines, or MCP-written evidence refs returned by tools.
 
-Evidence refs in final answers must use only current allowed refs such as:
-- `session_text_input.json#question`
-- `grep_results.json#matches/<index>`
-- `case_context.json#cases/<index>` when recalled
-- `tool_results/<action_id>/result.json#findings/<index>`
-
-agent_request.json:
-{request}
+Recent user messages from this task:
+{user_messages}
 
 analysis_package.json:
 {package}
-"#
+"#,
+        mode = analysis_mode.as_str(),
+        profile = profile.name,
+        native_bash = profile.native_bash,
+        native_edit = profile.native_edit,
+        user_messages = user_messages,
+        package = package,
     ))
 }
 
-fn agent_decision_json_schema() -> serde_json::Value {
+async fn read_analysis_user_messages(workspace: &Path) -> anyhow::Result<String> {
+    let raw = tokio::fs::read_to_string(workspace.join("analysis_state.json")).await?;
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    let messages = value
+        .get("userMessages")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(serde_json::to_string_pretty(&messages)?)
+}
+
+fn claude_session_json_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
-        "oneOf": [
-            {
+        "properties": {
+            "runtimeStatus": { "enum": ["completed", "waiting_for_user", "waiting_for_approval"] },
+            "finalAnswer": final_answer_schema(),
+            "pendingPrompt": {
                 "type": "object",
                 "properties": {
-                    "type": { "const": "action" },
-                    "decision": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "enum": [
-                                    "search_logs",
-                                    "run_tool",
-                                    "ask_user",
-                                    "collect_environment"
-                                ]
-                            },
-                            "reason": { "type": "string" },
-                            "input": { "type": "object" },
-                            "risk": {
-                                "enum": [
-                                    "SAFE_READ_ONLY",
-                                    "REQUIRES_APPROVAL"
-                                ]
-                            },
-                            "fingerprint": { "type": "string" }
-                        },
-                        "required": ["type", "reason", "input", "risk", "fingerprint"],
-                        "additionalProperties": true
-                    }
+                    "questionId": { "type": "string" },
+                    "question": { "type": "string" },
+                    "reason": { "type": "string" },
+                    "required": { "type": "boolean" },
+                    "answerFormat": { "type": "string" }
                 },
-                "required": ["type", "decision"],
+                "required": ["question"],
                 "additionalProperties": true
             },
-            {
+            "pendingApproval": {
                 "type": "object",
                 "properties": {
-                    "type": { "const": "final_answer" },
-                    "result": {
-                        "type": "object",
-                        "properties": {
-                            "summary": { "type": "string" },
-                            "symptoms": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            },
-                            "likelyRootCauses": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "cause": { "type": "string" },
-                                        "evidenceRefs": {
-                                            "type": "array",
-                                            "items": { "type": "string" }
-                                        }
-                                    },
-                                    "required": ["cause", "evidenceRefs"],
-                                    "additionalProperties": true
-                                }
-                            },
-                            "nextChecks": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            },
-                            "fixSuggestions": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            },
-                            "missingInformation": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            },
-                            "confidence": {
-                                "enum": ["low", "medium", "high"]
-                            }
-                        },
-                        "required": [
-                            "summary",
-                            "symptoms",
-                            "likelyRootCauses",
-                            "nextChecks",
-                            "fixSuggestions",
-                            "missingInformation",
-                            "confidence"
-                        ],
-                        "additionalProperties": true
-                    }
+                    "actionId": { "type": "string" },
+                    "actionType": { "type": "string" },
+                    "reason": { "type": "string" },
+                    "input": { "type": "object" },
+                    "evidenceRefs": { "type": "array", "items": { "type": "string" } }
                 },
-                "required": ["type", "result"],
+                "required": ["reason"],
                 "additionalProperties": true
             }
-        ]
+        },
+        "required": ["runtimeStatus"],
+        "additionalProperties": true
     })
 }
 
-fn parse_adapter_decision(stdout: &str) -> anyhow::Result<(AgentDecision, serde_json::Value)> {
+fn final_answer_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "summary": { "type": "string" },
+            "symptoms": { "type": "array", "items": { "type": "string" } },
+            "likelyRootCauses": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "cause": { "type": "string" },
+                        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+                    },
+                    "required": ["cause", "evidenceRefs"],
+                    "additionalProperties": true
+                }
+            },
+            "nextChecks": { "type": "array", "items": { "type": "string" } },
+            "fixSuggestions": { "type": "array", "items": { "type": "string" } },
+            "missingInformation": { "type": "array", "items": { "type": "string" } },
+            "confidence": { "enum": ["low", "medium", "high"] }
+        },
+        "required": ["summary", "symptoms", "likelyRootCauses", "nextChecks", "fixSuggestions", "missingInformation", "confidence"],
+        "additionalProperties": true
+    })
+}
+
+fn parse_claude_session_output(
+    stdout: &str,
+) -> anyhow::Result<(
+    ClaudeSessionOutcome,
+    serde_json::Value,
+    ClaudeStructuredOutput,
+)> {
     let raw_response: serde_json::Value =
-        serde_json::from_str(stdout.trim()).context("adapter stdout is not JSON")?;
+        serde_json::from_str(stdout.trim()).context("Claude Code stdout is not JSON")?;
     if raw_response
         .get("is_error")
         .and_then(|value| value.as_bool())
         .unwrap_or(false)
     {
         anyhow::bail!(
-            "Claude Code CLI returned an error result: {}",
+            "Claude Code returned an error result: {}",
             raw_response
                 .get("result")
                 .and_then(|value| value.as_str())
@@ -554,23 +545,40 @@ fn parse_adapter_decision(stdout: &str) -> anyhow::Result<(AgentDecision, serde_
         );
     }
     let candidate = raw_response
-        .get("normalizedDecision")
-        .filter(|value| !value.is_null())
-        .or_else(|| raw_response.get("decision"))
-        .filter(|value| !value.is_null())
-        .or_else(|| raw_response.get("structured_output"))
+        .get("structured_output")
         .filter(|value| !value.is_null())
         .or_else(|| raw_response.get("structuredOutput"))
         .filter(|value| !value.is_null())
         .or_else(|| raw_response.get("result"))
         .filter(|value| !value.is_null())
         .unwrap_or(&raw_response);
-    let decision_content = match candidate {
+    let content = match candidate {
         serde_json::Value::String(value) => strip_json_code_fence(value).to_string(),
         value => serde_json::to_string(value)?,
     };
-    let decision = parse_action_decision_content(&decision_content)?;
-    Ok((decision, raw_response))
+    let structured: ClaudeStructuredOutput = serde_json::from_str(&content)
+        .with_context(|| format!("invalid Claude structured output: {content}"))?;
+    let status = structured.runtime_status.as_str();
+    let outcome = match status {
+        "completed" | "succeeded" | "final_answer" => ClaudeSessionOutcome::FinalAnswer {
+            result: structured
+                .final_answer
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("completed Claude output is missing finalAnswer"))?,
+        },
+        "waiting_for_user" => ClaudeSessionOutcome::WaitingForUser {
+            prompt: structured.pending_prompt.clone().ok_or_else(|| {
+                anyhow::anyhow!("waiting_for_user output is missing pendingPrompt")
+            })?,
+        },
+        "waiting_for_approval" => ClaudeSessionOutcome::WaitingForApproval {
+            approval: structured.pending_approval.clone().ok_or_else(|| {
+                anyhow::anyhow!("waiting_for_approval output is missing pendingApproval")
+            })?,
+        },
+        value => anyhow::bail!("unsupported Claude runtimeStatus {value}"),
+    };
+    Ok((outcome, raw_response, structured))
 }
 
 fn strip_json_code_fence(value: &str) -> &str {
@@ -582,22 +590,62 @@ fn strip_json_code_fence(value: &str) -> &str {
     rest.strip_suffix("```").unwrap_or(rest).trim()
 }
 
-async fn write_success_agent_response(
+async fn read_existing_claude_session_id(workspace: &Path) -> anyhow::Result<Option<String>> {
+    let path = workspace.join("claude_session.json");
+    let raw = match tokio::fs::read_to_string(path).await {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    Ok(value
+        .get("claudeSessionId")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string))
+}
+
+async fn write_claude_session_state(
     workspace: &Path,
-    backend: &AgentBackendSettingsEntry,
-    duration_ms: u64,
-    raw_response: &serde_json::Value,
-    decision: &AgentDecision,
+    analysis_mode: AnalysisMode,
+    profile: &PermissionProfileSettings,
+    claude_session_id: Option<&str>,
+    runtime_status: &str,
+    duration_ms: Option<u64>,
+    error: Option<&str>,
 ) -> Result<(), AppError> {
-    let response = serde_json::json!({
+    let value = serde_json::json!({
         "schemaVersion": 1,
         "generatedAt": Utc::now(),
-        "backendId": backend.name,
-        "backendType": backend.backend_type.as_str(),
-        "runtimeStatus": "succeeded",
+        "runtimeStatus": runtime_status,
+        "claudeSessionId": claude_session_id,
+        "analysisMode": analysis_mode,
+        "permissionProfile": profile.name,
+        "mcpConfigPath": "claude_mcp_config.json",
+        "lastClaudeResponsePath": "agent_response.json",
         "durationMs": duration_ms,
-        "decision": raw_decision_value(raw_response),
-        "normalizedDecision": decision,
+        "nativeToolPolicy": native_tool_policy(profile),
+        "error": error,
+    });
+    write_json_atomic(workspace.join("claude_session.json"), &value).await
+}
+
+async fn write_success_agent_response(
+    workspace: &Path,
+    analysis_mode: AnalysisMode,
+    profile: &PermissionProfileSettings,
+    duration_ms: u64,
+    claude_session_id: Option<&str>,
+    raw_response: &serde_json::Value,
+    structured_output: &ClaudeStructuredOutput,
+) -> Result<(), AppError> {
+    let response = serde_json::json!({
+        "schemaVersion": 2,
+        "generatedAt": Utc::now(),
+        "runtimeStatus": "succeeded",
+        "claudeSessionId": claude_session_id,
+        "analysisMode": analysis_mode,
+        "permissionProfile": profile.name,
+        "structuredOutput": structured_output,
         "usage": raw_response.get("usage").cloned().unwrap_or(serde_json::Value::Null),
         "cost": raw_response
             .get("cost")
@@ -609,43 +657,68 @@ async fn write_success_agent_response(
                     .map(|usd| serde_json::json!({ "usd": usd }))
             })
             .unwrap_or(serde_json::Value::Null),
+        "mcpCallsPath": "mcp_calls.jsonl",
+        "nativeToolPolicy": native_tool_policy(profile),
+        "durationMs": duration_ms,
         "error": null,
+        "rawStdoutPreview": null,
     });
     write_json_atomic(workspace.join("agent_response.json"), &response).await
 }
 
-fn raw_decision_value(raw_response: &serde_json::Value) -> serde_json::Value {
-    raw_response
-        .get("decision")
-        .or_else(|| raw_response.get("normalizedDecision"))
-        .or_else(|| raw_response.get("structured_output"))
-        .or_else(|| raw_response.get("structuredOutput"))
-        .or_else(|| raw_response.get("result"))
-        .cloned()
-        .unwrap_or_else(|| raw_response.clone())
-}
-
 async fn write_failed_agent_response(
     workspace: &Path,
-    backend: &AgentBackendSettingsEntry,
+    analysis_mode: AnalysisMode,
+    profile: &PermissionProfileSettings,
     duration_ms: u64,
     error: &str,
     raw_stdout: Option<&str>,
 ) -> Result<(), AppError> {
     let response = serde_json::json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": Utc::now(),
-        "backendId": backend.name,
-        "backendType": backend.backend_type.as_str(),
         "runtimeStatus": "failed",
-        "durationMs": duration_ms,
-        "normalizedDecision": null,
+        "claudeSessionId": null,
+        "analysisMode": analysis_mode,
+        "permissionProfile": profile.name,
+        "structuredOutput": null,
         "usage": null,
         "cost": null,
-        "rawStdoutPreview": raw_stdout.map(|value| truncate_string(value, 16384)),
+        "mcpCallsPath": "mcp_calls.jsonl",
+        "nativeToolPolicy": native_tool_policy(profile),
+        "durationMs": duration_ms,
         "error": error,
+        "rawStdoutPreview": raw_stdout.map(|value| truncate_string(value, 16384)),
     });
     write_json_atomic(workspace.join("agent_response.json"), &response).await
+}
+
+fn raw_session_id(raw_response: &serde_json::Value) -> Option<String> {
+    raw_response
+        .get("session_id")
+        .or_else(|| raw_response.get("sessionId"))
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
+fn native_tool_policy(profile: &PermissionProfileSettings) -> serde_json::Value {
+    serde_json::json!({
+        "permissionMode": profile.permission_mode,
+        "tools": profile.tools,
+        "allowedTools": profile.allowed_tools,
+        "disallowedTools": profile.disallowed_tools,
+        "nativeBash": profile.native_bash,
+        "nativeEdit": profile.native_edit,
+        "worktreeRequired": profile.worktree_required,
+    })
+}
+
+fn default_required() -> bool {
+    true
+}
+
+fn default_approval_action_type() -> String {
+    "collect_environment".to_string()
 }
 
 fn truncate_bytes(value: &[u8], max: usize) -> &[u8] {
@@ -674,160 +747,92 @@ mod tests {
     };
 
     use crate::{
-        domain::{
-            contracts::ActionKind,
-            models::{Confidence, GrepMatch, GrepResults},
-        },
-        support::config::{AgentBackendSettings, AgentBackendSettingsEntry},
+        domain::models::{Confidence, GrepMatch, GrepResults},
+        support::config::{AnalysisMode, ClaudeCodeSettings, PermissionProfileSettings},
     };
 
     use super::*;
 
     #[tokio::test]
-    async fn claude_agent_sdk_adapter_returns_final_answer() {
+    async fn claude_code_session_returns_final_answer() {
         let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "final.sh",
+        let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
-cat <<'JSON'
-{"decision":{"type":"final_answer","result":{"summary":"mock summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":["increase timeout"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":11},"cost":{"usd":0.01}}
-JSON
-"#,
-        );
-        let decision = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
-            .await
-            .unwrap();
-
-        match decision {
-            AgentDecision::FinalAnswer { result } => {
-                assert_eq!(result.summary, "mock summary");
-                assert!(matches!(result.confidence, Confidence::High));
-            }
-            AgentDecision::Action { .. } => panic!("expected final_answer"),
-        }
-        let response: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(fixture.workspace.join("agent_response.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(response["runtimeStatus"], "succeeded");
-        assert_eq!(response["backendType"], "claude_agent_sdk");
-        assert_eq!(response["normalizedDecision"]["type"], "final_answer");
-        assert_eq!(response["usage"]["inputTokens"], 11);
-    }
-
-    #[tokio::test]
-    async fn direct_claude_cli_returns_final_answer_envelope() {
-        let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "claude",
-            r#"#!/usr/bin/env bash
-for arg in "$@"; do
-  if [ "$arg" = "--request" ]; then
-    echo "unexpected --request" >&2
-    exit 2
-  fi
-done
 printf '%s\n' "$*" > claude_args.txt
 cat <<'JSON'
-{"type":"result","subtype":"success","is_error":false,"result":"Done.","structured_output":{"type":"final_answer","result":{"summary":"direct cli summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":["increase timeout"],"missingInformation":[],"confidence":"medium"}},"usage":{"input_tokens":22},"total_cost_usd":0.02}
+{"type":"result","subtype":"success","is_error":false,"session_id":"sess-claude-1","structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"direct cli summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":["increase timeout"],"missingInformation":[],"confidence":"medium"}},"usage":{"input_tokens":22},"total_cost_usd":0.02}
 JSON
 "#,
         );
-        let decision = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
+        let outcome = fixture
+            .registry(claude)
+            .decide_next(fixture.input(AnalysisMode::Diagnose))
             .await
             .unwrap();
 
-        match decision {
-            AgentDecision::FinalAnswer { result } => {
+        match outcome {
+            ClaudeSessionOutcome::FinalAnswer { result } => {
                 assert_eq!(result.summary, "direct cli summary");
                 assert!(matches!(result.confidence, Confidence::Medium));
             }
-            AgentDecision::Action { .. } => panic!("expected final_answer"),
+            _ => panic!("expected final answer"),
         }
 
         let args = fs::read_to_string(fixture.workspace.join("claude_args.txt")).unwrap();
-        assert!(args.contains("--print"));
-        assert!(args.contains("--output-format"));
+        assert!(args.contains("--mcp-config claude_mcp_config.json"));
+        assert!(args.contains("--strict-mcp-config"));
         assert!(args.contains("--json-schema"));
-        assert!(args.contains("--tools"));
-        assert!(!args.contains("--request"));
+        assert!(args.contains("--permission-mode dontAsk"));
         let response: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(fixture.workspace.join("agent_response.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(response["runtimeStatus"], "succeeded");
-        assert_eq!(response["normalizedDecision"]["type"], "final_answer");
+        assert_eq!(response["claudeSessionId"], "sess-claude-1");
+        assert_eq!(response["structuredOutput"]["runtimeStatus"], "completed");
         assert_eq!(response["usage"]["input_tokens"], 22);
         assert_eq!(response["cost"]["usd"], 0.02);
+        assert!(fixture.workspace.join("claude_session.json").exists());
     }
 
     #[tokio::test]
-    async fn claude_agent_sdk_adapter_returns_run_tool_action() {
+    async fn claude_code_session_returns_pending_prompt() {
         let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "run_tool.sh",
+        let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
 cat <<'JSON'
-{"decision":{"type":"action","decision":{"type":"run_tool","reason":"need analyzer finding","input":{"tool":"influxql_analyzer","inputFile":"extracted/sample.log"},"risk":"SAFE_READ_ONLY","fingerprint":"tool:influxql"}}}
+{"structured_output":{"runtimeStatus":"waiting_for_user","pendingPrompt":{"questionId":"q1","question":"Which version?","reason":"need version","required":true,"answerFormat":"semver"}}}
 JSON
 "#,
         );
-        let decision = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
+        let outcome = fixture
+            .registry(claude)
+            .decide_next(fixture.input(AnalysisMode::Diagnose))
             .await
             .unwrap();
 
-        match decision {
-            AgentDecision::Action { decision } => {
-                assert_eq!(decision.kind, ActionKind::RunTool);
-                assert_eq!(decision.input["tool"], "influxql_analyzer");
+        match outcome {
+            ClaudeSessionOutcome::WaitingForUser { prompt } => {
+                assert_eq!(prompt.question_id.as_deref(), Some("q1"));
+                assert_eq!(prompt.question, "Which version?");
             }
-            AgentDecision::FinalAnswer { .. } => panic!("expected run_tool action"),
+            _ => panic!("expected pending prompt"),
         }
     }
 
     #[tokio::test]
-    async fn claude_agent_sdk_adapter_returns_ask_user_action() {
+    async fn claude_code_session_rejects_invalid_evidence_ref() {
         let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "ask_user.sh",
+        let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
 cat <<'JSON'
-{"decision":{"type":"action","decision":{"type":"ask_user","reason":"need deployment version","input":{"question":"Which version was running?","answerFormat":"semver","required":true},"risk":"SAFE_READ_ONLY","fingerprint":"ask-version"}}}
-JSON
-"#,
-        );
-        let decision = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
-            .await
-            .unwrap();
-
-        match decision {
-            AgentDecision::Action { decision } => assert_eq!(decision.kind, ActionKind::AskUser),
-            AgentDecision::FinalAnswer { .. } => panic!("expected ask_user action"),
-        }
-    }
-
-    #[tokio::test]
-    async fn claude_agent_sdk_adapter_rejects_invalid_evidence_ref() {
-        let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "bad_evidence.sh",
-            r#"#!/usr/bin/env bash
-cat <<'JSON'
-{"decision":{"type":"final_answer","result":{"summary":"mock summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"bad evidence","evidenceRefs":["system_context.json#resources/0"]}],"nextChecks":[],"fixSuggestions":[],"missingInformation":[],"confidence":"low"}}}
+{"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"bad evidence","symptoms":["timeout"],"likelyRootCauses":[{"cause":"bad","evidenceRefs":["system_context.json#resources/0"]}],"nextChecks":[],"fixSuggestions":[],"missingInformation":[],"confidence":"low"}}}
 JSON
 "#,
         );
         let error = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
+            .registry(claude)
+            .decide_next(fixture.input(AnalysisMode::Diagnose))
             .await
             .unwrap_err()
             .to_string();
@@ -838,35 +843,6 @@ JSON
         )
         .unwrap();
         assert_eq!(response["runtimeStatus"], "failed");
-    }
-
-    #[tokio::test]
-    async fn claude_agent_sdk_adapter_reports_nonzero_exit() {
-        let fixture = Fixture::new();
-        let adapter = fixture.write_adapter(
-            "fail.sh",
-            r#"#!/usr/bin/env bash
-echo adapter failed >&2
-exit 12
-"#,
-        );
-        let error = fixture
-            .registry(adapter)
-            .decide_next(fixture.input())
-            .await
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("exited with status"));
-        let response: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(fixture.workspace.join("agent_response.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(response["runtimeStatus"], "failed");
-        assert!(response["error"]
-            .as_str()
-            .unwrap()
-            .contains("adapter failed"));
     }
 
     struct Fixture {
@@ -885,13 +861,18 @@ exit 12
                 .as_nanos();
             let id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
             let root = std::env::temp_dir().join(format!(
-                "logagent-agent-backend-{}-{id}-{nanos}",
+                "logagent-claude-code-{}-{id}-{nanos}",
                 process::id()
             ));
             let workspace = root.join("workspace");
             fs::create_dir_all(&workspace).unwrap();
             fs::write(workspace.join("analysis_package.json"), "{}").unwrap();
-            fs::write(workspace.join("agent_request.json"), "{}").unwrap();
+            fs::write(workspace.join("claude_mcp_config.json"), "{}").unwrap();
+            fs::write(
+                workspace.join("analysis_state.json"),
+                r#"{"userMessages":[]}"#,
+            )
+            .unwrap();
             Self {
                 root,
                 workspace,
@@ -908,35 +889,40 @@ exit 12
             }
         }
 
-        fn registry(&self, adapter: PathBuf) -> AgentBackendRegistry {
-            AgentBackendRegistry::new(AgentBackendSettings {
-                default_backend: "claude_agent_sdk".to_string(),
-                backends: BTreeMap::from([(
-                    "claude_agent_sdk".to_string(),
-                    AgentBackendSettingsEntry {
-                        name: "claude_agent_sdk".to_string(),
-                        backend_type: AgentBackendType::ClaudeAgentSdk,
-                        enabled: true,
-                        command_path: Some(adapter),
-                        timeout_seconds: 5,
-                        max_input_bytes: 1024 * 1024,
-                        max_output_bytes: 1024 * 1024,
+        fn registry(&self, claude: PathBuf) -> AgentBackendRegistry {
+            AgentBackendRegistry::new(ClaudeCodeSettings {
+                command_path: claude,
+                default_mode: AnalysisMode::Diagnose,
+                max_session_seconds: 5,
+                max_output_bytes: 1024 * 1024,
+                permission_profiles: BTreeMap::from([(
+                    AnalysisMode::Diagnose,
+                    PermissionProfileSettings {
+                        name: "diagnose".to_string(),
+                        permission_mode: "dontAsk".to_string(),
+                        tools: String::new(),
+                        allowed_tools: Vec::new(),
+                        disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
+                        native_bash: false,
+                        native_edit: false,
+                        worktree_required: false,
                     },
                 )]),
             })
         }
 
-        fn input(&self) -> AgentBackendDecisionInput<'_> {
+        fn input(&self, analysis_mode: AnalysisMode) -> AgentBackendDecisionInput<'_> {
             AgentBackendDecisionInput {
                 workspace: &self.workspace,
+                analysis_mode,
                 grep_results: &self.grep,
                 case_context: None,
                 tool_results: &[],
             }
         }
 
-        fn write_adapter(&self, filename: &str, content: &str) -> PathBuf {
-            let path = self.root.join(filename);
+        fn write_claude(&self, content: &str) -> PathBuf {
+            let path = self.root.join("claude");
             let mut file = fs::File::create(&path).unwrap();
             file.write_all(content.as_bytes()).unwrap();
             file.sync_all().unwrap();

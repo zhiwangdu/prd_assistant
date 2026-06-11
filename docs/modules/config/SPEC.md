@@ -47,14 +47,14 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
 - `llm.max_output_tokens`
-- `agent_backends.default_backend`
-- `agent_backends.backends.<name>.type`
-- `agent_backends.backends.<name>.enabled`
-- `agent_backends.backends.<name>.command_path`
-- `agent_backends.backends.<name>.command_path_env`
-- `agent_backends.backends.<name>.timeout_seconds`
-- `agent_backends.backends.<name>.max_input_bytes`
-- `agent_backends.backends.<name>.max_output_bytes`
+- `claude_code.command_path`
+- `claude_code.command_path_env`
+- `claude_code.default_mode`
+- `claude_code.max_session_seconds`
+- `claude_code.max_output_bytes`
+- `claude_code.permission_profiles.<mode>.*`
+- `mcp.enabled`
+- `mcp.transport`
 - `tools.<name>.enabled`
 - `tools.<name>.path`
 - `tools.<name>.path_env`
@@ -113,11 +113,10 @@ storage:
 - `llm.provider: "binary"` 时必须配置 `binary_path` 或 `binary_path_env`；解析后的二进制路径必须是绝对路径。
 - binary provider 运行时固定调用 `<binary_path> run <prompt>`，用户输入不能覆盖二进制路径或 argv。
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
-- 未配置 `agent_backends` 时默认启用 `claude_agent_sdk`，并要求 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 或显式 `command_path`。
-- `agent_backends.default_backend` 必须引用已启用后端。
-- `agent_backends.backends.<name>.type` 支持 `claude_agent_sdk`、`codex_cli`、`claude_code_cli` 和 `opencode_cli`。
-- 启用后端时必须配置 `command_path` 或 `command_path_env`，解析后必须是绝对路径。
-- 禁用后端不读取 `command_path_env`。
+- 未配置 `claude_code.command_path` 时默认要求 `LOGAGENT_CLAUDE_CODE_PATH`。
+- `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径。
+- `claude_code.default_mode` 仅支持 `diagnose`、`code_investigation` 和 `fix`。
+- `mcp.transport` 当前只支持 `stdio`。
 - 启用的 tool path 或 path_env 解析结果必须是绝对路径；非法工具名、相对路径、缺失/空 path_env 启动失败。
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。

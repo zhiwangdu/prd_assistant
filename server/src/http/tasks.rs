@@ -8,6 +8,7 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::support::config::AnalysisMode;
 use crate::{
     app::AppState,
     domain::models::{
@@ -35,6 +36,7 @@ pub struct CreateLogAnalysisTaskInput {
     pub instance_id: Option<String>,
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
+    pub analysis_mode: AnalysisMode,
     pub system_context_ids: Vec<String>,
 }
 
@@ -48,7 +50,7 @@ pub struct TaskMessageRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionDecisionRequest {
+pub struct ApprovalDecisionRequest {
     pub decision: ApprovalDecision,
     pub reason: Option<String>,
     pub idempotency_key: Option<String>,
@@ -82,6 +84,9 @@ pub async fn create_task(
             instance_id: req.instance_id,
             cluster_id: req.cluster_id,
             node_id: req.node_id,
+            analysis_mode: req
+                .analysis_mode
+                .unwrap_or(state.config.claude_code.default_mode),
             system_context_ids: req.system_context_ids,
         },
     )
@@ -223,6 +228,7 @@ pub async fn create_log_analysis_task(
         alias: None,
         session_id: Some(session_id.clone()),
         task_kind: TaskKind::LogAnalysis,
+        analysis_mode: input.analysis_mode,
         source: TaskSource::Upload,
         upload_ids,
         inputs,
@@ -430,7 +436,7 @@ pub async fn post_task_message(
 pub async fn post_action_decision(
     State(state): State<Arc<AppState>>,
     Path((task_id, action_id)): Path<(String, String)>,
-    Json(req): Json<ActionDecisionRequest>,
+    Json(req): Json<ApprovalDecisionRequest>,
 ) -> Result<Json<TaskResponse>, AppError> {
     validate_task_id(&task_id)?;
     validate_action_id(&action_id)?;
@@ -624,10 +630,14 @@ pub async fn task_artifacts(
     let workspace = state.config.storage.workspace_dir(&task_id);
     let (analysis_package_path, analysis_package) =
         read_optional_artifact(&workspace, "analysis_package.json").await?;
-    let (agent_request_path, agent_request) =
-        read_optional_artifact(&workspace, "agent_request.json").await?;
     let (agent_response_path, agent_response) =
         read_optional_artifact(&workspace, "agent_response.json").await?;
+    let (claude_mcp_config_path, claude_mcp_config) =
+        read_optional_artifact(&workspace, "claude_mcp_config.json").await?;
+    let (claude_session_path, claude_session) =
+        read_optional_artifact(&workspace, "claude_session.json").await?;
+    let (mcp_calls_path, mcp_calls) =
+        read_optional_jsonl_artifact(&workspace, "mcp_calls.jsonl").await?;
     let tool_results = read_tool_results(&workspace).await?;
 
     Ok(Json(TaskArtifactsResponse {
@@ -646,10 +656,14 @@ pub async fn task_artifacts(
         system_context,
         analysis_package_path,
         analysis_package,
-        agent_request_path,
-        agent_request,
         agent_response_path,
         agent_response,
+        claude_mcp_config_path,
+        claude_mcp_config,
+        claude_session_path,
+        claude_session,
+        mcp_calls_path,
+        mcp_calls,
         tool_results,
     }))
 }
@@ -711,6 +725,34 @@ async fn read_optional_artifact(
             "failed to read artifact {name}: {err}"
         ))),
     }
+}
+
+async fn read_optional_jsonl_artifact(
+    workspace: &std::path::Path,
+    name: &str,
+) -> Result<(Option<String>, Vec<serde_json::Value>), AppError> {
+    let path = workspace.join(name);
+    let raw = match tokio::fs::read_to_string(&path).await {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok((None, Vec::new())),
+        Err(err) => {
+            return Err(AppError::internal(format!(
+                "failed to read artifact {name}: {err}"
+            )))
+        }
+    };
+    let mut values = Vec::new();
+    for (index, line) in raw.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value = serde_json::from_str(line).map_err(|err| {
+            AppError::internal(format!("failed to parse {name} line {}: {err}", index + 1))
+        })?;
+        values.push(value);
+    }
+    Ok((Some(path.display().to_string()), values))
 }
 
 async fn read_typed_json_file<T: serde::de::DeserializeOwned>(
@@ -816,6 +858,7 @@ mod tests {
         http::{Request, StatusCode},
     };
     use std::{
+        collections::BTreeMap,
         os::unix::fs::PermissionsExt,
         sync::atomic::{AtomicU64, Ordering},
     };
@@ -828,9 +871,9 @@ mod tests {
         http,
         services::metadata::MetadataImportRequest,
         support::config::{
-            AgentBackendSettings, AgentBackendSettingsEntry, AgentBackendType, AnalysisSettings,
-            AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
-            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
+            AnalysisMode, AnalysisSettings, AppConfig, AuthSettings, ClaudeCodeSettings,
+            EmbeddingSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, McpSettings,
+            PermissionProfileSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
     };
 
@@ -1051,6 +1094,7 @@ mod tests {
                 alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
+                analysis_mode: AnalysisMode::Diagnose,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_test".to_string()],
                 inputs: vec![],
@@ -1404,17 +1448,27 @@ mod tests {
         .unwrap();
         std::fs::write(
             workspace.join("analysis_package.json"),
-            r#"{"schemaVersion":1,"runtimeStatus":"ready_for_backend"}"#,
+            r#"{"schemaVersion":2,"runtimeStatus":"ready_for_claude_code"}"#,
         )
         .unwrap();
         std::fs::write(
-            workspace.join("agent_request.json"),
-            r#"{"schemaVersion":1,"backend":{"backendId":"claude_agent_sdk","backendType":"claude_agent_sdk","executionMode":"agent_sdk_adapter","runtimeStatus":"pending_backend_call"}}"#,
+            workspace.join("claude_mcp_config.json"),
+            r#"{"mcpServers":{"logagent":{"command":"/usr/bin/logagent-server","args":["mcp"]}}}"#,
         )
         .unwrap();
         std::fs::write(
             workspace.join("agent_response.json"),
-            r#"{"schemaVersion":1,"runtimeStatus":"succeeded"}"#,
+            r#"{"schemaVersion":2,"runtimeStatus":"succeeded","claudeSessionId":"sess-test","structuredOutput":{"runtimeStatus":"completed"},"durationMs":1}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("claude_session.json"),
+            r#"{"schemaVersion":1,"runtimeStatus":"succeeded","claudeSessionId":"sess-test","mcpConfigPath":"claude_mcp_config.json"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("mcp_calls.jsonl"),
+            r#"{"schemaVersion":1,"name":"logagent.search_logs","status":"succeeded"}"#,
         )
         .unwrap();
         let now = Utc::now();
@@ -1426,6 +1480,7 @@ mod tests {
                 alias: None,
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
+                analysis_mode: AnalysisMode::Diagnose,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {
@@ -1475,13 +1530,15 @@ mod tests {
         assert_eq!(body["toolResults"][0]["status"], "OK");
         assert_eq!(
             body["analysisPackage"]["runtimeStatus"],
-            "ready_for_backend"
+            "ready_for_claude_code"
         );
         assert_eq!(
-            body["agentRequest"]["backend"]["backendId"],
-            "claude_agent_sdk"
+            body["claudeMcpConfig"]["mcpServers"]["logagent"]["args"][0],
+            "mcp"
         );
         assert_eq!(body["agentResponse"]["runtimeStatus"], "succeeded");
+        assert_eq!(body["claudeSession"]["claudeSessionId"], "sess-test");
+        assert_eq!(body["mcpCalls"][0]["name"], "logagent.search_logs");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1827,13 +1884,13 @@ set -euo pipefail
 package="analysis_package.json"
 if grep -q 'ASK_USER_MVP' "$package" && ! grep -q 'msg-test-1' "$package"; then
   cat <<'JSON'
-{"decision":{"type":"action","decision":{"type":"ask_user","reason":"need time window from user","input":{"question":"请补充异常时间窗口","answerFormat":"time range","required":true},"risk":"SAFE_READ_ONLY","fingerprint":"ask-user-time-window"}}}
+{"structured_output":{"runtimeStatus":"waiting_for_user","pendingPrompt":{"questionId":"q-time-window","question":"请补充异常时间窗口","reason":"need time window from user","answerFormat":"time range","required":true}},"session_id":"sess-claude-http"}
 JSON
   exit 0
 fi
-if grep -q 'APPROVAL_MVP' "$package" && ! grep -q 'environment_evidence.json' "$package"; then
+if grep -q 'APPROVAL_MVP' "$package" && ! grep -q 'environment_evidence/' "$package"; then
   cat <<'JSON'
-{"decision":{"type":"action","decision":{"type":"collect_environment","reason":"need approved environment evidence","input":{"scope":"node","commands":["uptime"]},"risk":"REQUIRES_APPROVAL","fingerprint":"collect-env-uptime"}}}
+{"structured_output":{"runtimeStatus":"waiting_for_approval","pendingApproval":{"actionId":"act_collect_env_http","actionType":"collect_environment","reason":"need approved environment evidence","input":{"scope":"node","commands":["uptime"]},"evidenceRefs":[]}},"session_id":"sess-claude-http"}
 JSON
   exit 0
 fi
@@ -1843,7 +1900,7 @@ else
   evidence='grep_results.json#matches/0'
 fi
 cat <<JSON
-{"decision":{"type":"final_answer","result":{"summary":"Why did the sample fail? mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"current task evidence explains the failure","evidenceRefs":["$evidence"]}],"nextChecks":["check current evidence"],"fixSuggestions":["fix the reported issue"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":32,"outputTokens":18},"cost":{"usd":0.001}}
+{"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"Why did the sample fail? mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"current task evidence explains the failure","evidenceRefs":["$evidence"]}],"nextChecks":["check current evidence"],"fixSuggestions":["fix the reported issue"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":32,"outputTokens":18},"cost":{"usd":0.001},"session_id":"sess-claude-http"}
 JSON
 "#;
 
@@ -1857,13 +1914,14 @@ JSON
             std::process::id(),
             NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
-        let adapter = root.join("mock_claude_agent_sdk.sh");
+        let adapter = root.join("mock_claude.sh");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(&adapter, adapter_content).unwrap();
         let mut permissions = std::fs::metadata(&adapter).unwrap().permissions();
         permissions.set_mode(0o755);
         std::fs::set_permissions(&adapter, permissions).unwrap();
         let config = Arc::new(AppConfig {
+            config_path: root.join("logagent-test.yaml"),
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),
@@ -1883,23 +1941,8 @@ JSON
             },
             tools: ToolsSettings::default(),
             llm,
-            agent_backends: AgentBackendSettings {
-                default_backend: "claude_agent_sdk".to_string(),
-                backends: [(
-                    "claude_agent_sdk".to_string(),
-                    AgentBackendSettingsEntry {
-                        name: "claude_agent_sdk".to_string(),
-                        backend_type: AgentBackendType::ClaudeAgentSdk,
-                        enabled: true,
-                        command_path: Some(adapter),
-                        timeout_seconds: 5,
-                        max_input_bytes: 1024 * 1024,
-                        max_output_bytes: 1024 * 1024,
-                    },
-                )]
-                .into_iter()
-                .collect(),
-            },
+            claude_code: test_claude_code_settings(adapter),
+            mcp: McpSettings::default(),
             analysis: test_analysis_settings(),
             embedding: test_embedding_settings(),
         });
@@ -1923,6 +1966,28 @@ JSON
             model: "text-embedding-3-small".to_string(),
             api_key_env: None,
             store: "sqlite".to_string(),
+        }
+    }
+
+    fn test_claude_code_settings(command_path: std::path::PathBuf) -> ClaudeCodeSettings {
+        ClaudeCodeSettings {
+            command_path,
+            default_mode: AnalysisMode::Diagnose,
+            max_session_seconds: 5,
+            max_output_bytes: 1024 * 1024,
+            permission_profiles: BTreeMap::from([(
+                AnalysisMode::Diagnose,
+                PermissionProfileSettings {
+                    name: "diagnose".to_string(),
+                    permission_mode: "dontAsk".to_string(),
+                    tools: String::new(),
+                    allowed_tools: Vec::new(),
+                    disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
+                    native_bash: false,
+                    native_edit: false,
+                    worktree_required: false,
+                },
+            )]),
         }
     }
 

@@ -8,7 +8,7 @@ use crate::{
     services::tool_runner::ToolRunRecord,
     stores::analysis_state::AnalysisSnapshotResponse,
     support::{
-        config::{AgentBackendSettings, ToolsSettings},
+        config::{AnalysisMode, ClaudeCodeSettings, McpSettings, ToolsSettings},
         error::AppError,
     },
 };
@@ -23,7 +23,10 @@ pub struct AgentContractInput<'a> {
     pub case_context: Option<&'a serde_json::Value>,
     pub tool_results: &'a [ToolRunRecord],
     pub analysis_snapshot: &'a AnalysisSnapshotResponse,
-    pub agent_backends: &'a AgentBackendSettings,
+    pub claude_code: &'a ClaudeCodeSettings,
+    pub mcp: &'a McpSettings,
+    pub config_path: &'a Path,
+    pub analysis_mode: AnalysisMode,
     pub tools: &'a ToolsSettings,
 }
 
@@ -31,29 +34,32 @@ pub struct AgentContractInput<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct AgentContractArtifacts {
     pub analysis_package_path: String,
-    pub agent_request_path: String,
+    pub claude_mcp_config_path: String,
     pub agent_response_path: String,
+    pub claude_session_path: String,
+    pub mcp_calls_path: String,
 }
 
 pub async fn write_agent_contracts(
     workspace: &Path,
     input: AgentContractInput<'_>,
 ) -> Result<AgentContractArtifacts, AppError> {
-    let backend = input
-        .agent_backends
-        .backends
-        .get(&input.agent_backends.default_backend)
-        .ok_or_else(|| AppError::internal("default agent backend is not configured"))?;
     let now = Utc::now();
+    let permission_profile = input
+        .claude_code
+        .permission_profiles
+        .get(&input.analysis_mode)
+        .ok_or_else(|| AppError::internal("analysis mode permission profile is not configured"))?;
     let package = serde_json::json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": now,
         "purpose": "diagnostic_evidence_package",
-        "runtimeStatus": "ready_for_backend",
+        "runtimeStatus": "ready_for_claude_code",
         "task": {
             "taskId": input.task.task_id,
             "taskKind": input.task.task_kind,
             "sessionId": input.task.session_id,
+            "analysisMode": input.analysis_mode,
             "question": input.task.question,
             "sourceUrl": input.task.source_url,
             "instanceId": input.task.instance_id,
@@ -85,69 +91,54 @@ pub async fn write_agent_contracts(
         },
         "boundaries": {
             "logagentRole": "collect_and_govern_evidence",
-            "agentBackendRole": "reason_over_package_and_return_structured_result",
-            "serverExecutionBoundary": true,
-            "freeformShellAllowed": false,
-            "freeformSshAllowed": false,
-            "workspaceWriteAllowed": false,
+            "claudeCodeRole": "reason_with_mcp_evidence_and_return_structured_outcome",
+            "mcpEnabled": input.mcp.enabled,
+            "mcpTransport": input.mcp.transport,
+            "permissionProfile": permission_profile.name,
+            "nativeBashAllowed": permission_profile.native_bash,
+            "nativeEditAllowed": permission_profile.native_edit,
+            "worktreeRequired": permission_profile.worktree_required,
+            "serverOwnsEvidencePersistence": true,
+            "remoteCollectionRequiresApproval": true,
+            "systemContextIsFinalEvidence": false,
         },
     });
-    let request = serde_json::json!({
-        "schemaVersion": 1,
-        "generatedAt": now,
-        "backend": {
-            "backendId": backend.name,
-            "backendType": backend.backend_type.as_str(),
-            "executionMode": backend.backend_type.execution_mode(),
-            "runtimeStatus": "pending_backend_call",
-            "timeoutSeconds": backend.timeout_seconds,
-            "maxInputBytes": backend.max_input_bytes,
-            "maxOutputBytes": backend.max_output_bytes,
-        },
-        "input": {
-            "analysisPackagePath": "analysis_package.json",
-            "question": input.task.question,
-        },
-        "allowedOutputs": {
-            "finalAnswer": {
-                "summary": "string",
-                "symptoms": ["string"],
-                "likelyRootCauses": [{"cause": "string", "evidenceRefs": ["string"]}],
-                "nextChecks": ["string"],
-                "fixSuggestions": ["string"],
-                "missingInformation": ["string"],
-                "confidence": "low|medium|high"
-            },
-            "actions": [
-                "search_logs",
-                "run_tool",
-                "collect_code_evidence",
-                "collect_environment",
-                "ask_user",
-                "final_answer"
-            ],
-            "evidenceRefs": [
-                "session_text_input.json#question",
-                "grep_results.json#matches/<index>",
-                "case_context.json#cases/<index>",
-                "tool_results/<action_id>/result.json#findings/<index>"
-            ]
-        },
-        "executionPolicy": {
-            "externalBackendMayExecuteCommands": false,
-            "externalBackendMayMutateLogAgentState": false,
-            "serverValidatesActions": true,
-            "remoteCollectionRequiresApproval": true,
+    let config_path = input
+        .config_path
+        .to_str()
+        .ok_or_else(|| AppError::internal("config path must be valid UTF-8 for MCP config"))?;
+    let exe = std::env::current_exe().map_err(|err| {
+        AppError::internal(format!("failed to resolve current executable: {err}"))
+    })?;
+    let exe = exe
+        .to_str()
+        .ok_or_else(|| AppError::internal("server executable path must be valid UTF-8"))?;
+    let mcp_config = serde_json::json!({
+        "mcpServers": {
+            "logagent": {
+                "command": exe,
+                "args": [
+                    "mcp",
+                    "--config",
+                    config_path,
+                    "--task-id",
+                    input.task.task_id,
+                    "--mode",
+                    input.analysis_mode.as_str()
+                ]
+            }
         }
     });
 
     write_json_atomic(workspace.join("analysis_package.json"), &package).await?;
-    write_json_atomic(workspace.join("agent_request.json"), &request).await?;
+    write_json_atomic(workspace.join("claude_mcp_config.json"), &mcp_config).await?;
 
     Ok(AgentContractArtifacts {
         analysis_package_path: "analysis_package.json".to_string(),
-        agent_request_path: "agent_request.json".to_string(),
+        claude_mcp_config_path: "claude_mcp_config.json".to_string(),
         agent_response_path: "agent_response.json".to_string(),
+        claude_session_path: "claude_session.json".to_string(),
+        mcp_calls_path: "mcp_calls.jsonl".to_string(),
     })
 }
 

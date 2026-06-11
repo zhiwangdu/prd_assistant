@@ -308,6 +308,7 @@ mod tests {
             alias: None,
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
+            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {

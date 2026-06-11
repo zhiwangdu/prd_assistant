@@ -207,6 +207,7 @@ pub async fn create_session_task(
             instance_id: session.instance_id.clone(),
             cluster_id: None,
             node_id: session.node_id.clone(),
+            analysis_mode: state.config.claude_code.default_mode,
             system_context_ids: session.system_context_ids.clone(),
         },
     )

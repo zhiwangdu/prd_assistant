@@ -4,7 +4,7 @@ Last updated: 2026-06-11
 
 ## Status Summary
 
-LogAgent MVP has a working upload-to-bounded-multi-round-analysis loop and is being reframed as a diagnostic evidence workbench with pluggable mature agent backends and domain-specific adapters.
+LogAgent MVP is now framed as a diagnostic evidence workbench and Claude Code domain enhancement layer. The self-built analysis action loop is no longer the running analysis path; `PLAN_ANALYSIS` prepares LogAgent evidence/MCP artifacts, starts or resumes Claude Code, and persists Claude session outcomes, MCP calls, waiting state and final evidence.
 
 Current runnable loop:
 
@@ -16,11 +16,11 @@ Chrome Extension, WEBUI upload, or WEBUI question-only Session
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
   -> analysis_state.json / analysis_events.jsonl audit snapshot
-  -> analysis_package.json / agent_request.json / not-invoked agent_response.json contract snapshot
-  -> PLAN_ANALYSIS bounded multi-round LLM action/final-answer loop
-  -> optional action-driven search_logs or run_tool, with repeated fingerprint protection
-  -> optional ask_user / approval wait and resume
-  -> final answer or budget-limited low-confidence result
+  -> analysis_package.json / claude_mcp_config.json
+  -> Claude Code CLI --print --output-format json --json-schema --mcp-config
+  -> LogAgent MCP resources/tools for logs, slices, tools, Metadata, Cases, prompts and approvals
+  -> claude_session.json / mcp_calls.jsonl / agent_response.json
+  -> completed final answer, WAITING_FOR_USER, WAITING_FOR_APPROVAL, or PLAN_ANALYSIS failure
   -> persisted result and WEBUI display
   -> optional human confirmation or LLM-assisted text import into local Memory-backed Case Store
 ```
@@ -37,6 +37,16 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Claude Code MCP Session Runner
+
+- Replaced the running `PLAN_ANALYSIS` action-loop path with Claude Code session orchestration. The executor now writes `analysis_package.json` and `claude_mcp_config.json`, invokes Claude Code, validates completed final evidence refs, and persists waiting user/approval requests from MCP markers.
+- Added `claude_code` config, `mcp` config, `analysisMode=diagnose|code_investigation|fix`, mode-specific permission profiles, and the `logagent-server mcp --config <path> --task-id <task_id> --mode <mode>` stdio subcommand.
+- Added LogAgent MCP resources and tools for task/artifact context, manifest/grep, metadata, system context, case context, tool results, log search, log slices, domain tool execution, case recall, metadata topology, user input requests and approval requests. MCP calls append to `mcp_calls.jsonl` and evidence-producing tools write workspace artifacts.
+- Redefined `agent_response.json` as a Claude Code session response with `runtimeStatus`, `claudeSessionId`, `analysisMode`, `permissionProfile`, `structuredOutput`, usage/cost, MCP call path, native tool policy, duration, error and stdout preview. Added `claude_session.json` for resume metadata.
+- Removed `agent_request.json` from the task artifacts API and WebUI artifact model. The old AgentDecision parser helpers are test-gated in LLM Gateway; normal runtime validation uses final-answer evidence validation directly.
+- Updated sample/deploy configs to use `LOGAGENT_CLAUDE_CODE_PATH`, `claude_code`, and `mcp.transport=stdio`; updated root, Server, WebUI, deploy and module README/SPEC docs for the Claude Code MCP architecture.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, and `npm --prefix webui run build` pass.
 
 ### Agent Contract Artifacts
 

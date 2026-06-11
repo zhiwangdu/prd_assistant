@@ -12,9 +12,9 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 ## 职责
 
-Code Evidence 根据用户输入的软件产品和版本，定位对应代码分支或 tag，并结合实际代码生成证据链，供 Agent Backend 做代码上下文分析。
+Code Evidence 根据用户输入的软件产品和版本，定位对应代码分支或 tag，并结合实际代码生成证据链，供 Claude Code 做代码上下文分析。
 
-Analysis Orchestrator 可根据 Agent Backend 的 `collect_code_evidence` action 请求新的关键词或符号检索。Server 必须把请求限制到 task 已确定的 product/version、配置仓库和 search roots。
+Analysis Orchestrator 后续可根据 `code_investigation` mode 或 Claude MCP 请求执行新的关键词或符号检索。Server 必须把请求限制到 task 已确定的 product/version、配置仓库和 search roots。
 
 ## 输入示例
 
@@ -118,4 +118,4 @@ code_evidence:
 - 第一版只做代码检索和证据引用。
 - 不自动拉取陌生仓库，不自动修改代码。
 - 后续可增加版本间 diff / commit 对比，用于定位回归。
-- Agent Backend 不能通过 action 改写 repo、ref、search root 或执行构建脚本。
+- Claude Code 不能通过 MCP 请求改写 repo、ref、search root 或执行构建脚本；fix mode 的 Edit/Test 后续必须在隔离 worktree 中开放。

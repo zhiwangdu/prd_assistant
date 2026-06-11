@@ -52,22 +52,12 @@ llm:
   max_input_chars: 60000
   max_output_tokens: 4096
 
-agent_backends:
-  default_backend: "claude_agent_sdk"
-  backends:
-    claude_agent_sdk:
-      type: "claude_agent_sdk"
-      enabled: true
-      command_path_env: "LOGAGENT_AGENT_CLAUDE_SDK_PATH"
-    codex_cli:
-      type: "codex_cli"
-      enabled: false
-      command_path_env: "LOGAGENT_AGENT_CODEX_PATH"
-    claude_code_cli:
-      type: "claude_code_cli"
-      enabled: false
-      command_path_env: "LOGAGENT_AGENT_CLAUDE_CODE_PATH"
-    opencode_cli:
-      type: "opencode_cli"
-      enabled: false
-      command_path_env: "LOGAGENT_AGENT_OPENCODE_PATH"
+claude_code:
+  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
+  default_mode: "diagnose"
+  max_session_seconds: 120
+  max_output_bytes: 1048576
+
+mcp:
+  enabled: true
+  transport: "stdio"

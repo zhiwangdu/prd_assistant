@@ -47,6 +47,8 @@ type AgentBackendSummary = {
   maxInputBytes: number;
   maxOutputBytes: number;
   executionMode: string;
+  defaultMode?: string;
+  permissionProfile?: string;
 };
 
 type AgentBackendsSummary = {
@@ -223,8 +225,8 @@ export function SettingsView({ apiKey }: Props) {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>Agent backends</CardTitle>
-                <CardDescription>成熟 agent 后端适配器，当前阶段只做配置和 dry-run 诊断。</CardDescription>
+                <CardTitle>Claude Code</CardTitle>
+                <CardDescription>Claude Code CLI + LogAgent MCP session 配置和 dry-run 诊断。</CardDescription>
               </div>
               <Bot className="h-5 w-5 text-muted-foreground" />
             </div>
@@ -243,7 +245,7 @@ export function SettingsView({ apiKey }: Props) {
                           <Badge variant={backend.enabled ? "success" : "secondary"}>{backend.enabled ? "enabled" : "disabled"}</Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {backend.executionMode} · timeout {backend.timeoutSeconds}s · command {backend.commandConfigured ? "configured" : "not configured"}
+                          {backend.executionMode} · mode {backend.defaultMode ?? "-"} · permission {backend.permissionProfile ?? "-"} · timeout {backend.timeoutSeconds}s · command {backend.commandConfigured ? "configured" : "not configured"}
                         </p>
                       </div>
                       <Button variant="outline" onClick={() => void testAgentBackend(backend.id)} disabled={!backend.enabled || testingBackendId === backend.id}>

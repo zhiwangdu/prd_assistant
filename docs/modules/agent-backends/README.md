@@ -1,59 +1,99 @@
-# Agent Backends 方案
+# Claude Code Session Runner 方案
 
 ## 定位
 
-Agent Backends 是 LogAgent 接入成熟 agent 产品的适配层。LogAgent 不再把自研通用 agent loop 作为核心差异化方向，而是把日志、元数据、工具结果、测试流水线、环境采集和 Case 召回整理成诊断证据包，再交给可插拔后端完成推理和代码上下文分析。
+LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapter 协议接入后端。Log Analysis 的 `PLAN_ANALYSIS` 现在启动一次 Claude Code CLI session，并通过 LogAgent MCP server 暴露日志、Metadata、System Context、Tool Runner、Case 和审批能力。
 
-当前配置支持的后端类型：
+职责边界：
 
-- `claude_agent_sdk`：Log Analysis 唯一默认运行后端，可直接调用 Claude Code CLI `claude` 二进制，也可调用本地自定义 adapter 命令封装 Claude Agent SDK。
-- `codex_cli`：预留 Codex CLI 适配。
-- `claude_code_cli`：预留 Claude Code CLI 适配。
-- `opencode_cli`：预留 OpenCode CLI 适配。
+- Claude Code 负责通用推理、代码上下文理解和按模式使用允许的 native tools。
+- LogAgent 负责 evidence package、MCP resources/tools、工具白名单、等待态、审批、审计 artifact 和 Case 确认。
+- MCP tools 的输出必须写入 task workspace artifact，并返回 canonical evidence refs。
+- Case 保存仍由用户确认，Claude Code 和 MCP tool 都不能直接写入长期 Memory。
 
 ## 当前实现状态
 
-已实现配置解析、只读摘要、Settings dry-run 诊断接口和 task workspace 后端输入/响应产物。启用后端时必须配置绝对命令路径或路径环境变量；诊断只检查命令路径存在，不实际调用 CLI 或 SDK adapter。
+已实现：
 
-已实现接口：
-
-```http
-GET /api/settings/agent-backends
-POST /api/settings/agent-backends/:backend_id/test
-```
-
-`claude_agent_sdk` 是默认启用后端。未配置命令路径、Claude CLI 或 adapter 调用失败、返回非法 action 或返回非法 evidence ref 时，Log Analysis task 失败，不自动 fallback。
+- `claude_code` 配置块，读取 `LOGAGENT_CLAUDE_CODE_PATH` 或显式 `command_path`。
+- `mcp.enabled` / `mcp.transport=stdio` 配置。
+- `logagent-server mcp --config <logagent.yaml> --task-id <task_id> --mode <diagnose|code_investigation|fix>` stdio 子命令。
+- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`。
+- 分模式 permission profile：默认 `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/受控 Bash，`fix` 预留 Edit/Write/Test 能力。
+- task 创建接受 `analysisMode`，默认来自 `claude_code.default_mode`。
+- 新 workspace artifacts：
+  - `analysis_package.json`
+  - `claude_mcp_config.json`
+  - `claude_session.json`
+  - `mcp_calls.jsonl`
+  - `agent_response.json`，已重定义为 Claude Code session response。
+- `agent_response.json` 记录 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`structuredOutput`、usage/cost、MCP call path、native tool policy、duration、error 和 stdout preview。
+- Settings API 继续使用 `/api/settings/agent-backends` 作为前端兼容入口，但返回的是单一 `claude_code` 后端摘要。
 
 ## 配置示例
 
 ```yaml
-agent_backends:
-  default_backend: "claude_agent_sdk"
-  backends:
-    claude_agent_sdk:
-      type: "claude_agent_sdk"
-      enabled: true
-      command_path_env: "LOGAGENT_AGENT_CLAUDE_SDK_PATH"
-    codex_cli:
-      type: "codex_cli"
-      enabled: false
-      command_path_env: "LOGAGENT_AGENT_CODEX_PATH"
-      timeout_seconds: 120
-      max_input_bytes: 262144
-      max_output_bytes: 1048576
+claude_code:
+  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
+  default_mode: "diagnose"
+  max_session_seconds: 120
+  max_output_bytes: 1048576
+  permission_profiles:
+    diagnose:
+      permission_mode: "dontAsk"
+      tools: ""
+      disallowed_tools: ["Bash", "Edit", "Write", "Read", "Grep"]
+
+mcp:
+  enabled: true
+  transport: "stdio"
 ```
 
-## 执行边界
+## Claude 输出
 
-- Server 仍然是唯一执行边界，负责任务状态、证据持久化、工具白名单、审批和幂等。
-- 成熟 agent 后端不能直接修改 LogAgent 状态，不能绕过 Server 执行 shell、SSH、工具或文件访问。
-- `claude_agent_sdk` 后端只能消费 Server 生成的 `analysis_package.json` / `agent_request.json`，并通过 stdout 返回结构化 action 或 final answer；Server 写入真实 `agent_response.json`。
-- 首版不开放 Claude 内置 Bash/Read/Grep/Write/Edit。后续如需后端工具访问，只通过 LogAgent MCP/adapter 暴露受控只读能力；实际工具执行仍回到 Server Action Executor。
-- 当命令文件名为 `claude` 或 `claude.exe` 时，Server 在 task workspace 中直接执行 Claude Code CLI：`<command_path> --print --output-format json --json-schema <AgentDecision schema> --tools "" --no-session-persistence <prompt>`。因此 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 通常应设置为 `which claude` 的绝对路径；Server 会优先解析 Claude CLI envelope 的 `structured_output` 字段。
-- 当命令文件名不是 `claude` / `claude.exe` 时，Server 保留自定义 adapter 协议：`<command_path> run --request agent_request.json --package analysis_package.json`。
+Claude Code 必须返回结构化 session outcome：
 
-## 后续计划
+```json
+{
+  "runtimeStatus": "completed",
+  "finalAnswer": {
+    "summary": "...",
+    "symptoms": [],
+    "likelyRootCauses": [],
+    "nextChecks": [],
+    "fixSuggestions": [],
+    "missingInformation": [],
+    "confidence": "low"
+  }
+}
+```
 
-1. 把 Settings dry-run 诊断升级为真实版本探测和最小消息测试。
-2. 增加 usage/cost/provider request id 的稳定审计字段。
-3. 通过受控 MCP/adapter 逐步暴露只读证据能力。
+也可以返回：
+
+- `runtimeStatus=waiting_for_user` + `pendingPrompt`
+- `runtimeStatus=waiting_for_approval` + `pendingApproval`
+
+旧 JSON 动作循环不再由 `PLAN_ANALYSIS` 消费。日志搜索和工具运行应通过 LogAgent MCP tools 完成。
+
+## MCP 能力
+
+Resources：
+
+- task summary / artifact index
+- manifest / grep results
+- metadata context
+- system context
+- case context
+- tool results
+
+Tools：
+
+- `logagent.search_logs`
+- `logagent.get_log_slice`
+- `logagent.run_domain_tool`
+- `logagent.recall_cases`
+- `logagent.get_metadata_topology`
+- `logagent.request_user_input`
+- `logagent.request_approval`
+
+每个 MCP tool call 追加到 `mcp_calls.jsonl`。会产生证据的工具同时写入对应 workspace artifact。

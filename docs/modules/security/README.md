@@ -23,16 +23,16 @@
 - LLM Gateway 只返回结构化 action 或最终答案候选，不持有执行能力。
 - 不保存模型隐藏思维链，只保留决策摘要、事实、假设和证据引用。
 
-## Analysis Orchestrator / Agent Backend
+## Analysis Orchestrator / Claude Code MCP
 
-- Agent action 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
-- 外部 Agent Backend 只能通过配置中的 adapter 接入，不能直接执行 LogAgent 工具、SSH、文件系统或状态变更。
-- 第一阶段 Agent Backend dry-run 诊断只检查配置路径，不执行外部 CLI 或 SDK adapter；`analysis_package.json`、`agent_request.json` 和 `agent_response.json` 只是 workspace 内契约产物。
+- Claude MCP tool call 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
+- Claude Code 只能通过 `claude_code` 配置接入；领域能力只能通过 LogAgent MCP 调用，不能直接执行 LogAgent 工具、SSH、任务外文件系统或状态变更。
+- 第一阶段 Claude Code dry-run 诊断只检查配置路径，不执行 CLI；`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 只是 workspace 内契约产物。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
 - SSH/SCP 环境采集默认需要用户批准。
-- 当前 `collect_environment` 在批准前只写入 pending approval，不执行采集；批准后的 MVP 路径只写入 mock evidence，真实 SSH/SCP 执行器后续仍必须受白名单约束。
+- 当前 `logagent.request_approval` 在批准前只写入 pending approval，不执行采集；真实 SSH/SCP 执行器后续仍必须受白名单约束。
 - 用户消息、日志和 Case 内容都视为不可信输入，不能覆盖系统指令或安全策略。
-- 重复 action fingerprint 超限后终止循环。
+- 重复 MCP waiting request 或预算超限后终止或等待人工输入。
 - 达到预算时输出信息不足或低置信度结果，不能自动扩大权限。
 
 ## 外部工具

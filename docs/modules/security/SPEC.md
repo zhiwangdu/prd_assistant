@@ -21,14 +21,14 @@
 - Tool Runner 只能执行白名单工具。
 - Tools 页面手动工具运行只能引用 Server UploadStore 中已完成上传，不能传入任意本地路径、远程 URL 或自由 argv；`pprof_analyzer` 的 `PPROF_TMPDIR` 必须位于 task workspace 内。
 - LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Agent action。
-- Agent Backend adapter 只能通过 `agent_backends` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI 或 SDK adapter。
-- `analysis_package.json`、`agent_request.json` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权外部后端绕过 Server 执行命令、SSH 或状态写入。
-- 外部 Agent Backend 返回的任何动作仍必须经过 Server schema、白名单、预算、幂等和审批校验。
+- Claude Code 只能通过 `claude_code` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI。
+- `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权 Claude Code 绕过 Server 执行领域命令、SSH 或状态写入。
+- Claude MCP tool call 必须经过 Server schema、白名单、预算、幂等和审批校验。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
-- Analysis Orchestrator 和 Agent Backend 只能产生结构化意图，Server 是唯一执行者。
+- Analysis Orchestrator 和 Claude Code 只能通过 structured outcome / MCP tools 表达意图，Server 是唯一领域执行者。
 - 远程采集默认需要显式批准。
-- `collect_environment` 必须使用 `REQUIRES_APPROVAL` risk；未批准前不执行。当前 MVP 批准后仅生成 mock evidence，真实 SSH/SCP 接入时仍需配置节点、路径和命令白名单。
+- 远程采集必须通过 approval gate；未批准前不执行。真实 SSH/SCP 接入时仍需配置节点、路径和命令白名单。
 - 不持久化隐藏思维链。
 
 ## 密钥
@@ -45,5 +45,5 @@
 - 未批准的远程采集不执行。
 - Prompt injection 不能改变工具、路径、仓库或环境白名单。
 - Prompt injection 不能改变 LLM binary provider 的可执行路径、subcommand 或 argv 结构。
-- Prompt injection 不能改变 Agent Backend adapter 路径、后端类型或执行权限。
+- Prompt injection 不能改变 Claude Code 命令路径、analysis mode、permission profile 或 MCP tool 白名单。
 - README 和 SPEC 在安全策略变更时同步更新。

@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::support::config::AnalysisMode;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -71,6 +73,8 @@ pub struct CreateTaskRequest {
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     #[serde(default)]
+    pub analysis_mode: Option<AnalysisMode>,
+    #[serde(default)]
     pub system_context_ids: Vec<String>,
 }
 
@@ -82,6 +86,7 @@ pub struct TaskResponse {
     pub url: String,
     pub task_kind: TaskKind,
     pub session_id: Option<String>,
+    pub analysis_mode: AnalysisMode,
     pub status: TaskStatus,
     pub phase: Option<TaskPhase>,
     pub created_at: DateTime<Utc>,
@@ -159,10 +164,14 @@ pub struct TaskArtifactsResponse {
     pub system_context: Option<serde_json::Value>,
     pub analysis_package_path: Option<String>,
     pub analysis_package: Option<serde_json::Value>,
-    pub agent_request_path: Option<String>,
-    pub agent_request: Option<serde_json::Value>,
     pub agent_response_path: Option<String>,
     pub agent_response: Option<serde_json::Value>,
+    pub claude_mcp_config_path: Option<String>,
+    pub claude_mcp_config: Option<serde_json::Value>,
+    pub claude_session_path: Option<String>,
+    pub claude_session: Option<serde_json::Value>,
+    pub mcp_calls_path: Option<String>,
+    pub mcp_calls: Vec<serde_json::Value>,
     pub tool_results: Vec<serde_json::Value>,
 }
 
@@ -251,6 +260,8 @@ pub struct TaskRecord {
     pub session_id: Option<String>,
     #[serde(default = "default_task_kind")]
     pub task_kind: TaskKind,
+    #[serde(default = "default_analysis_mode")]
+    pub analysis_mode: AnalysisMode,
     pub source: TaskSource,
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
@@ -299,11 +310,16 @@ impl TaskRecord {
             ),
             task_kind: self.task_kind,
             session_id: self.session_id.clone(),
+            analysis_mode: self.analysis_mode,
             status: self.status,
             phase: self.phase,
             created_at: self.created_at,
         }
     }
+}
+
+pub fn default_analysis_mode() -> AnalysisMode {
+    AnalysisMode::Diagnose
 }
 
 pub fn default_task_question() -> String {

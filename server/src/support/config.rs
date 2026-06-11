@@ -1,17 +1,19 @@
 use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    pub config_path: PathBuf,
     pub server: ServerSettings,
     pub auth: AuthSettings,
     pub storage: StorageSettings,
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
     pub llm: LlmSettings,
-    pub agent_backends: AgentBackendSettings,
+    pub claude_code: ClaudeCodeSettings,
+    pub mcp: McpSettings,
     pub analysis: AnalysisSettings,
     #[allow(dead_code)]
     pub embedding: EmbeddingSettings,
@@ -79,66 +81,75 @@ pub struct LlmSettings {
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentBackendSettings {
-    pub default_backend: String,
-    pub backends: BTreeMap<String, AgentBackendSettingsEntry>,
+pub struct ClaudeCodeSettings {
+    pub command_path: PathBuf,
+    pub default_mode: AnalysisMode,
+    pub max_session_seconds: u64,
+    pub max_output_bytes: usize,
+    pub permission_profiles: BTreeMap<AnalysisMode, PermissionProfileSettings>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentBackendSettingsEntry {
+pub struct PermissionProfileSettings {
     pub name: String,
-    pub backend_type: AgentBackendType,
+    pub permission_mode: String,
+    pub tools: String,
+    pub allowed_tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
+    pub native_bash: bool,
+    pub native_edit: bool,
+    pub worktree_required: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpSettings {
     pub enabled: bool,
-    pub command_path: Option<PathBuf>,
-    pub timeout_seconds: u64,
-    pub max_input_bytes: usize,
-    pub max_output_bytes: usize,
+    pub transport: String,
 }
 
-impl Default for AgentBackendSettings {
-    fn default() -> Self {
-        let mut backends = BTreeMap::new();
-        backends.insert(
-            "claude_agent_sdk".to_string(),
-            AgentBackendSettingsEntry {
-                name: "claude_agent_sdk".to_string(),
-                backend_type: AgentBackendType::ClaudeAgentSdk,
-                enabled: false,
-                command_path: None,
-                timeout_seconds: default_agent_backend_timeout_seconds(),
-                max_input_bytes: default_agent_backend_max_input_bytes(),
-                max_output_bytes: default_agent_backend_max_output_bytes(),
-            },
-        );
-        Self {
-            default_backend: "claude_agent_sdk".to_string(),
-            backends,
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisMode {
+    Diagnose,
+    CodeInvestigation,
+    Fix,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentBackendType {
-    CodexCli,
-    ClaudeCodeCli,
-    ClaudeAgentSdk,
-    OpencodeCli,
-}
-
-impl AgentBackendType {
+impl AnalysisMode {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::CodexCli => "codex_cli",
-            Self::ClaudeCodeCli => "claude_code_cli",
-            Self::ClaudeAgentSdk => "claude_agent_sdk",
-            Self::OpencodeCli => "opencode_cli",
+            Self::Diagnose => "diagnose",
+            Self::CodeInvestigation => "code_investigation",
+            Self::Fix => "fix",
         }
     }
+}
 
-    pub fn execution_mode(self) -> &'static str {
-        match self {
-            Self::ClaudeAgentSdk => "agent_sdk_adapter",
-            Self::CodexCli | Self::ClaudeCodeCli | Self::OpencodeCli => "external_cli_adapter",
+impl std::str::FromStr for AnalysisMode {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        parse_analysis_mode(value)
+    }
+}
+
+impl Default for ClaudeCodeSettings {
+    fn default() -> Self {
+        Self {
+            command_path: PathBuf::from("/usr/bin/claude"),
+            default_mode: AnalysisMode::Diagnose,
+            max_session_seconds: default_claude_code_max_session_seconds(),
+            max_output_bytes: default_claude_code_max_output_bytes(),
+            permission_profiles: default_permission_profiles(),
+        }
+    }
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            transport: "stdio".to_string(),
         }
     }
 }
@@ -147,7 +158,9 @@ impl AgentBackendType {
 pub struct AnalysisSettings {
     pub max_rounds: u32,
     pub max_llm_calls: u32,
+    #[allow(dead_code)]
     pub max_actions: u32,
+    #[allow(dead_code)]
     pub max_repeated_action_fingerprints: u32,
 }
 
@@ -194,7 +207,8 @@ struct ConfigFile {
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
     llm: Option<LlmConfig>,
-    agent_backends: Option<AgentBackendsConfig>,
+    claude_code: Option<ClaudeCodeConfig>,
+    mcp: Option<McpConfig>,
     analysis: Option<AnalysisConfig>,
     embedding: Option<EmbeddingConfig>,
 }
@@ -289,27 +303,44 @@ struct LlmConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct AgentBackendsConfig {
-    #[serde(default = "default_agent_backend_id")]
-    default_backend: String,
+struct ClaudeCodeConfig {
+    command_path: Option<PathBuf>,
+    command_path_env: Option<String>,
+    #[serde(default = "default_claude_code_mode")]
+    default_mode: AnalysisMode,
+    #[serde(default = "default_claude_code_max_session_seconds")]
+    max_session_seconds: u64,
+    #[serde(default = "default_claude_code_max_output_bytes")]
+    max_output_bytes: usize,
     #[serde(default)]
-    backends: BTreeMap<String, AgentBackendConfig>,
+    permission_profiles: BTreeMap<String, PermissionProfileConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct AgentBackendConfig {
-    #[serde(rename = "type", default = "default_agent_backend_type")]
-    backend_type: String,
-    #[serde(default = "default_agent_backend_enabled")]
+struct PermissionProfileConfig {
+    name: Option<String>,
+    #[serde(default = "default_permission_mode")]
+    permission_mode: String,
+    #[serde(default = "default_permission_tools")]
+    tools: String,
+    #[serde(default)]
+    allowed_tools: Vec<String>,
+    #[serde(default)]
+    disallowed_tools: Vec<String>,
+    #[serde(default)]
+    native_bash: bool,
+    #[serde(default)]
+    native_edit: bool,
+    #[serde(default)]
+    worktree_required: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct McpConfig {
+    #[serde(default = "default_mcp_enabled")]
     enabled: bool,
-    command_path: Option<PathBuf>,
-    command_path_env: Option<String>,
-    #[serde(default = "default_agent_backend_timeout_seconds")]
-    timeout_seconds: u64,
-    #[serde(default = "default_agent_backend_max_input_bytes")]
-    max_input_bytes: usize,
-    #[serde(default = "default_agent_backend_max_output_bytes")]
-    max_output_bytes: usize,
+    #[serde(default = "default_mcp_transport")]
+    transport: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -422,7 +453,8 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             log_analyzer: None,
             tools: BTreeMap::new(),
             llm: None,
-            agent_backends: None,
+            claude_code: None,
+            mcp: None,
             analysis: None,
             embedding: None,
         }
@@ -438,7 +470,8 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
-    let agent_backends = resolve_agent_backends(parsed.agent_backends)?;
+    let claude_code = resolve_claude_code(parsed.claude_code)?;
+    let mcp = resolve_mcp(parsed.mcp.unwrap_or_else(default_mcp_config))?;
     let analysis = parsed.analysis.unwrap_or_else(default_analysis_config);
     let embedding = parsed.embedding.unwrap_or_else(default_embedding_config);
 
@@ -489,7 +522,14 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         LlmProvider::Binary => (None, None, Some(resolve_llm_binary_path(&llm)?)),
     };
 
+    let config_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
     Ok(Arc::new(AppConfig {
+        config_path,
         server: ServerSettings {
             bind: server.bind,
             public_base_url: server.public_base_url,
@@ -521,7 +561,8 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_input_chars: llm.max_input_chars.max(1024),
             max_output_tokens: llm.max_output_tokens.max(1),
         },
-        agent_backends,
+        claude_code,
+        mcp,
         analysis: AnalysisSettings {
             max_rounds: analysis.max_rounds.max(1),
             max_llm_calls: analysis.max_llm_calls.max(1),
@@ -538,85 +579,97 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     }))
 }
 
-fn resolve_agent_backends(
-    raw: Option<AgentBackendsConfig>,
-) -> anyhow::Result<AgentBackendSettings> {
-    let raw = raw.unwrap_or_else(default_agent_backends_config);
-    let mut backends = BTreeMap::new();
-    for (name, backend) in raw.backends {
-        validate_tool_name(&name)
-            .with_context(|| format!("invalid agent_backends backend {name}"))?;
-        let backend_type = parse_agent_backend_type(&backend.backend_type)?;
-        let command_path = resolve_agent_backend_command_path(&name, backend_type, &backend)?;
-        backends.insert(
-            name.clone(),
-            AgentBackendSettingsEntry {
-                name,
-                backend_type,
-                enabled: backend.enabled,
-                command_path,
-                timeout_seconds: backend.timeout_seconds.max(1),
-                max_input_bytes: backend.max_input_bytes.max(1024),
-                max_output_bytes: backend.max_output_bytes.max(1024),
-            },
-        );
-    }
-    let default_backend = raw.default_backend.trim();
-    if default_backend.is_empty() {
-        anyhow::bail!("agent_backends.default_backend must not be empty");
-    }
-    let Some(default_entry) = backends.get(default_backend) else {
-        anyhow::bail!("agent_backends.default_backend {default_backend} is not configured");
-    };
-    if !default_entry.enabled {
-        anyhow::bail!("agent_backends.default_backend {default_backend} must be enabled");
-    }
-    Ok(AgentBackendSettings {
-        default_backend: default_backend.to_string(),
-        backends,
-    })
-}
-
-fn resolve_agent_backend_command_path(
-    name: &str,
-    _backend_type: AgentBackendType,
-    backend: &AgentBackendConfig,
-) -> anyhow::Result<Option<PathBuf>> {
-    if !backend.enabled {
-        return Ok(None);
-    }
-    let path = if let Some(path) = &backend.command_path {
+fn resolve_claude_code(raw: Option<ClaudeCodeConfig>) -> anyhow::Result<ClaudeCodeSettings> {
+    let raw = raw.unwrap_or_else(default_claude_code_config);
+    let path = if let Some(path) = &raw.command_path {
         path.clone()
     } else {
-        let path_env = backend
+        let path_env = raw
             .command_path_env
             .as_deref()
-            .with_context(|| {
-                format!(
-                    "agent_backends.backends.{name}.command_path or command_path_env is required when enabled"
-                )
-            })?;
+            .context("claude_code.command_path or command_path_env is required")?;
         let value = env::var(path_env)
-            .with_context(|| format!("missing agent backend command path env var {path_env}"))?;
+            .with_context(|| format!("missing Claude Code command path env var {path_env}"))?;
         let value = value.trim();
         if value.is_empty() {
-            anyhow::bail!("agent backend command path env var {path_env} must not be empty");
+            anyhow::bail!("Claude Code command path env var {path_env} must not be empty");
         }
         PathBuf::from(value)
     };
     if !path.is_absolute() {
-        anyhow::bail!("agent_backends.backends.{name}.command_path must be absolute");
+        anyhow::bail!("claude_code.command_path must be absolute");
     }
-    Ok(Some(path))
+    let mut permission_profiles = default_permission_profiles();
+    for (mode, profile) in raw.permission_profiles {
+        let mode = parse_analysis_mode(&mode)
+            .with_context(|| format!("invalid claude_code.permission_profiles key {mode}"))?;
+        permission_profiles.insert(mode, resolve_permission_profile(mode, profile)?);
+    }
+    if !permission_profiles.contains_key(&raw.default_mode) {
+        anyhow::bail!(
+            "claude_code.default_mode {} has no permission profile",
+            raw.default_mode.as_str()
+        );
+    }
+    Ok(ClaudeCodeSettings {
+        command_path: path,
+        default_mode: raw.default_mode,
+        max_session_seconds: raw.max_session_seconds.max(1),
+        max_output_bytes: raw.max_output_bytes.max(1024),
+        permission_profiles,
+    })
 }
 
-fn parse_agent_backend_type(value: &str) -> anyhow::Result<AgentBackendType> {
+fn resolve_permission_profile(
+    mode: AnalysisMode,
+    raw: PermissionProfileConfig,
+) -> anyhow::Result<PermissionProfileSettings> {
+    let permission_mode = raw.permission_mode.trim();
+    if permission_mode.is_empty() {
+        anyhow::bail!(
+            "permission profile {} has empty permission_mode",
+            mode.as_str()
+        );
+    }
+    Ok(PermissionProfileSettings {
+        name: raw.name.unwrap_or_else(|| mode.as_str().to_string()),
+        permission_mode: permission_mode.to_string(),
+        tools: raw.tools,
+        allowed_tools: raw
+            .allowed_tools
+            .into_iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect(),
+        disallowed_tools: raw
+            .disallowed_tools
+            .into_iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect(),
+        native_bash: raw.native_bash,
+        native_edit: raw.native_edit,
+        worktree_required: raw.worktree_required,
+    })
+}
+
+fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
+    let transport = raw.transport.trim();
+    if transport != "stdio" {
+        anyhow::bail!("mcp.transport currently only supports stdio");
+    }
+    Ok(McpSettings {
+        enabled: raw.enabled,
+        transport: transport.to_string(),
+    })
+}
+
+pub fn parse_analysis_mode(value: &str) -> anyhow::Result<AnalysisMode> {
     match value {
-        "codex_cli" => Ok(AgentBackendType::CodexCli),
-        "claude_code_cli" => Ok(AgentBackendType::ClaudeCodeCli),
-        "claude_agent_sdk" => Ok(AgentBackendType::ClaudeAgentSdk),
-        "opencode_cli" => Ok(AgentBackendType::OpencodeCli),
-        value => anyhow::bail!("unsupported agent backend type {value}"),
+        "diagnose" => Ok(AnalysisMode::Diagnose),
+        "code_investigation" => Ok(AnalysisMode::CodeInvestigation),
+        "fix" => Ok(AnalysisMode::Fix),
+        value => anyhow::bail!("unsupported analysis mode {value}"),
     }
 }
 
@@ -793,23 +846,21 @@ fn default_llm_config() -> LlmConfig {
     }
 }
 
-fn default_agent_backends_config() -> AgentBackendsConfig {
-    let mut backends = BTreeMap::new();
-    backends.insert(
-        "claude_agent_sdk".to_string(),
-        AgentBackendConfig {
-            backend_type: default_agent_backend_type(),
-            enabled: true,
-            command_path: None,
-            command_path_env: Some("LOGAGENT_AGENT_CLAUDE_SDK_PATH".to_string()),
-            timeout_seconds: default_agent_backend_timeout_seconds(),
-            max_input_bytes: default_agent_backend_max_input_bytes(),
-            max_output_bytes: default_agent_backend_max_output_bytes(),
-        },
-    );
-    AgentBackendsConfig {
-        default_backend: default_agent_backend_id(),
-        backends,
+fn default_claude_code_config() -> ClaudeCodeConfig {
+    ClaudeCodeConfig {
+        command_path: None,
+        command_path_env: Some("LOGAGENT_CLAUDE_CODE_PATH".to_string()),
+        default_mode: default_claude_code_mode(),
+        max_session_seconds: default_claude_code_max_session_seconds(),
+        max_output_bytes: default_claude_code_max_output_bytes(),
+        permission_profiles: BTreeMap::new(),
+    }
+}
+
+fn default_mcp_config() -> McpConfig {
+    McpConfig {
+        enabled: default_mcp_enabled(),
+        transport: default_mcp_transport(),
     }
 }
 
@@ -848,28 +899,88 @@ fn default_tool_max_input_files() -> usize {
     1
 }
 
-fn default_agent_backend_id() -> String {
-    "claude_agent_sdk".to_string()
-}
-
-fn default_agent_backend_type() -> String {
-    "claude_agent_sdk".to_string()
-}
-
-fn default_agent_backend_enabled() -> bool {
-    true
-}
-
-fn default_agent_backend_timeout_seconds() -> u64 {
+fn default_claude_code_max_session_seconds() -> u64 {
     120
 }
 
-fn default_agent_backend_max_input_bytes() -> usize {
-    256 * 1024
+fn default_claude_code_max_output_bytes() -> usize {
+    1024 * 1024
 }
 
-fn default_agent_backend_max_output_bytes() -> usize {
-    1024 * 1024
+fn default_claude_code_mode() -> AnalysisMode {
+    AnalysisMode::Diagnose
+}
+
+fn default_mcp_enabled() -> bool {
+    true
+}
+
+fn default_mcp_transport() -> String {
+    "stdio".to_string()
+}
+
+fn default_permission_mode() -> String {
+    "dontAsk".to_string()
+}
+
+fn default_permission_tools() -> String {
+    String::new()
+}
+
+fn default_permission_profiles() -> BTreeMap<AnalysisMode, PermissionProfileSettings> {
+    BTreeMap::from([
+        (
+            AnalysisMode::Diagnose,
+            PermissionProfileSettings {
+                name: "diagnose".to_string(),
+                permission_mode: "dontAsk".to_string(),
+                tools: String::new(),
+                allowed_tools: Vec::new(),
+                disallowed_tools: vec![
+                    "Bash".to_string(),
+                    "Edit".to_string(),
+                    "Write".to_string(),
+                    "Read".to_string(),
+                    "Grep".to_string(),
+                ],
+                native_bash: false,
+                native_edit: false,
+                worktree_required: false,
+            },
+        ),
+        (
+            AnalysisMode::CodeInvestigation,
+            PermissionProfileSettings {
+                name: "code_investigation".to_string(),
+                permission_mode: "dontAsk".to_string(),
+                tools: "Read,Grep,Bash".to_string(),
+                allowed_tools: vec!["Read".to_string(), "Grep".to_string(), "Bash".to_string()],
+                disallowed_tools: vec!["Edit".to_string(), "Write".to_string()],
+                native_bash: true,
+                native_edit: false,
+                worktree_required: false,
+            },
+        ),
+        (
+            AnalysisMode::Fix,
+            PermissionProfileSettings {
+                name: "fix".to_string(),
+                permission_mode: "acceptEdits".to_string(),
+                tools: "Read,Grep,Bash,Edit,Write".to_string(),
+                allowed_tools: vec![
+                    "Read".to_string(),
+                    "Grep".to_string(),
+                    "Bash".to_string(),
+                    "Edit".to_string(),
+                    "Write".to_string(),
+                ],
+                disallowed_tools: Vec::new(),
+                native_bash: true,
+                native_edit: true,
+                worktree_required: true,
+            },
+        ),
+    ])
 }
 
 fn default_bind() -> String {
@@ -1016,144 +1127,92 @@ mod tests {
     }
 
     #[test]
-    fn resolves_default_agent_backend_config() {
-        temp_env_set(
-            "LOGAGENT_AGENT_CLAUDE_SDK_PATH",
-            "/opt/bin/claude-sdk",
-            || {
-                let settings = resolve_agent_backends(None).unwrap();
+    fn resolves_default_claude_code_config() {
+        temp_env_set("LOGAGENT_CLAUDE_CODE_PATH", "/opt/bin/claude", || {
+            let settings = resolve_claude_code(None).unwrap();
 
-                assert_eq!(settings.default_backend, "claude_agent_sdk");
-                let backend = settings.backends.get("claude_agent_sdk").unwrap();
-                assert_eq!(backend.backend_type, AgentBackendType::ClaudeAgentSdk);
-                assert!(backend.enabled);
-                assert_eq!(
-                    backend.command_path.as_ref().unwrap(),
-                    &PathBuf::from("/opt/bin/claude-sdk")
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn rejects_missing_default_claude_agent_sdk_config() {
-        let parsed = serde_yaml::from_str::<ConfigFile>(
-            r#"
-agent_backends:
-  default_backend: claude_agent_sdk
-  backends:
-    claude_agent_sdk:
-      type: claude_agent_sdk
-      command_path_env: LOGAGENT_TEST_MISSING_CLAUDE_SDK_PATH
-"#,
-        )
-        .unwrap();
-        assert!(resolve_agent_backends(parsed.agent_backends)
-            .unwrap_err()
-            .to_string()
-            .contains("LOGAGENT_TEST_MISSING_CLAUDE_SDK_PATH"));
-    }
-
-    #[test]
-    fn resolves_external_agent_backend_path_env_and_validates_default() {
-        temp_env_set("LOGAGENT_TEST_CODEX_PATH", "/opt/bin/codex", || {
-            let parsed = serde_yaml::from_str::<ConfigFile>(
-                r#"
-agent_backends:
-  default_backend: codex
-  backends:
-    codex:
-      type: codex_cli
-      command_path_env: LOGAGENT_TEST_CODEX_PATH
-      timeout_seconds: 30
-      max_input_bytes: 2048
-      max_output_bytes: 4096
-"#,
-            )
-            .unwrap();
-            let settings = resolve_agent_backends(parsed.agent_backends).unwrap();
-            let backend = settings.backends.get("codex").unwrap();
-            assert_eq!(settings.default_backend, "codex");
-            assert_eq!(backend.backend_type, AgentBackendType::CodexCli);
-            assert_eq!(
-                backend.command_path.as_ref().unwrap(),
-                &PathBuf::from("/opt/bin/codex")
-            );
-            assert_eq!(backend.timeout_seconds, 30);
-            assert_eq!(backend.max_input_bytes, 2048);
-            assert_eq!(backend.max_output_bytes, 4096);
+            assert_eq!(settings.command_path, PathBuf::from("/opt/bin/claude"));
+            assert_eq!(settings.default_mode, AnalysisMode::Diagnose);
+            let diagnose = settings
+                .permission_profiles
+                .get(&AnalysisMode::Diagnose)
+                .unwrap();
+            assert_eq!(diagnose.permission_mode, "dontAsk");
+            assert!(!diagnose.native_bash);
+            assert!(!diagnose.native_edit);
         });
-
-        let missing_default = serde_yaml::from_str::<ConfigFile>(
-            r#"
-agent_backends:
-  default_backend: missing
-"#,
-        )
-        .unwrap();
-        assert!(resolve_agent_backends(missing_default.agent_backends)
-            .unwrap_err()
-            .to_string()
-            .contains("is not configured"));
     }
 
     #[test]
-    fn resolves_claude_agent_sdk_backend_type() {
+    fn rejects_missing_default_claude_code_config() {
         let parsed = serde_yaml::from_str::<ConfigFile>(
             r#"
-agent_backends:
-  default_backend: claude
-  backends:
-    claude:
-      type: claude_agent_sdk
-      command_path: /opt/logagent/bin/claude-agent-adapter
+claude_code:
+  command_path_env: LOGAGENT_TEST_MISSING_CLAUDE_CODE_PATH
 "#,
         )
         .unwrap();
-
-        let settings = resolve_agent_backends(parsed.agent_backends).unwrap();
-        let backend = settings.backends.get("claude").unwrap();
-        assert_eq!(settings.default_backend, "claude");
-        assert_eq!(backend.backend_type, AgentBackendType::ClaudeAgentSdk);
-        assert_eq!(backend.backend_type.execution_mode(), "agent_sdk_adapter");
-        assert_eq!(
-            backend.command_path.as_ref().unwrap(),
-            &PathBuf::from("/opt/logagent/bin/claude-agent-adapter")
-        );
+        assert!(resolve_claude_code(parsed.claude_code)
+            .unwrap_err()
+            .to_string()
+            .contains("LOGAGENT_TEST_MISSING_CLAUDE_CODE_PATH"));
     }
 
     #[test]
-    fn rejects_enabled_external_agent_backend_without_absolute_command() {
-        let missing_command = serde_yaml::from_str::<ConfigFile>(
+    fn resolves_claude_code_permission_profile_override() {
+        let parsed = serde_yaml::from_str::<ConfigFile>(
             r#"
-agent_backends:
-  default_backend: codex
-  backends:
-    codex:
-      type: codex_cli
+claude_code:
+  command_path: /opt/bin/claude
+  default_mode: code_investigation
+  max_session_seconds: 30
+  max_output_bytes: 4096
+  permission_profiles:
+    code_investigation:
+      permission_mode: plan
+      tools: "Read,Grep,Bash"
+      allowed_tools: ["Read", "Grep", "Bash"]
+      disallowed_tools: ["Edit", "Write"]
+      native_bash: true
 "#,
         )
         .unwrap();
-        assert!(resolve_agent_backends(missing_command.agent_backends)
-            .unwrap_err()
-            .to_string()
-            .contains("command_path or command_path_env is required"));
+        let settings = resolve_claude_code(parsed.claude_code).unwrap();
+        let profile = settings
+            .permission_profiles
+            .get(&AnalysisMode::CodeInvestigation)
+            .unwrap();
+        assert_eq!(settings.default_mode, AnalysisMode::CodeInvestigation);
+        assert_eq!(settings.max_session_seconds, 30);
+        assert_eq!(settings.max_output_bytes, 4096);
+        assert_eq!(profile.permission_mode, "plan");
+        assert_eq!(profile.allowed_tools, vec!["Read", "Grep", "Bash"]);
+        assert_eq!(profile.disallowed_tools, vec!["Edit", "Write"]);
+        assert!(profile.native_bash);
+        assert!(!profile.native_edit);
+    }
 
+    #[test]
+    fn rejects_claude_code_relative_command_and_unknown_mcp_transport() {
         let relative = serde_yaml::from_str::<ConfigFile>(
             r#"
-agent_backends:
-  default_backend: codex
-  backends:
-    codex:
-      type: codex_cli
-      command_path: bin/codex
+claude_code:
+  command_path: bin/claude
 "#,
         )
         .unwrap();
-        assert!(resolve_agent_backends(relative.agent_backends)
+        assert!(resolve_claude_code(relative.claude_code)
             .unwrap_err()
             .to_string()
             .contains("must be absolute"));
+
+        assert!(resolve_mcp(McpConfig {
+            enabled: true,
+            transport: "http".to_string(),
+        })
+        .unwrap_err()
+        .to_string()
+        .contains("stdio"));
     }
 
     #[test]

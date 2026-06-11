@@ -43,7 +43,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - SSH/SCP 采集。
 - 日志解压和 grep。
 - 代码仓切换和检索。
-- Analysis Orchestrator 调查和 Agent Backend 调用。
+- Analysis Orchestrator 调查和 Claude Code session 调用。
 
 ## 数据模型草案
 
@@ -276,7 +276,7 @@ metadata_context.json
 - context 是创建时快照，后续 Metadata Store 更新不改变历史任务。
 - cluster `rawSnapshot` 不进入 task context。
 
-用于 Analysis Orchestrator、Agent Backend、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
+用于 Analysis Orchestrator、Claude Code、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
 
 ## WEBUI
 

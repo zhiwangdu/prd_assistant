@@ -23,7 +23,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
-- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 Agent Backend。
+- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 Claude Code MCP resources。
 
 暂未实现：
 
@@ -42,7 +42,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 不负责：
 
 - 不直接采集测试环境信息；采集由 Environment Collector 负责。
-- 不直接分析日志；调查由 Analysis Orchestrator 编排，推理由 Agent Backend 负责。
+- 不直接分析日志；调查由 Analysis Orchestrator 编排，推理由 Claude Code 负责。
 - 不直接管理代码仓；代码版本证据由 Code Evidence 负责。
 
 ## 核心对象

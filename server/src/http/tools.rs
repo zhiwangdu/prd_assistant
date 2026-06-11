@@ -91,6 +91,7 @@ pub async fn create_tool_run(
         alias: None,
         session_id: None,
         task_kind: TaskKind::ToolRun,
+        analysis_mode: state.config.claude_code.default_mode,
         source: TaskSource::Upload,
         upload_ids,
         inputs,
@@ -359,6 +360,7 @@ mod tests {
             },
         );
         let config = Arc::new(AppConfig {
+            config_path: root.join("logagent-test.yaml"),
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),
@@ -388,7 +390,8 @@ mod tests {
                 max_input_chars: 60_000,
                 max_output_tokens: 100,
             },
-            agent_backends: crate::support::config::AgentBackendSettings::default(),
+            claude_code: crate::support::config::ClaudeCodeSettings::default(),
+            mcp: crate::support::config::McpSettings::default(),
             analysis: AnalysisSettings {
                 max_rounds: 4,
                 max_llm_calls: 4,

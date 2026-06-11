@@ -10,7 +10,7 @@
 | Code Evidence | 4~6 天 |
 | Environment Collector | 4~6 天 |
 | Analysis Orchestrator | 4~6 天 |
-| Agent Backend Adapter | 4~6 天 |
+| Claude Code MCP Session Runner | 已完成 MVP |
 | Domain Adapters | 持续迭代 |
 | LLM Gateway | 3~4 天 |
 | Case Store | 3~4 天 |
@@ -29,24 +29,24 @@
 
 - Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已配置到 `/usr/bin/influxql-analyzer` 并可直接调用，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
 - Tools 页面 MVP 已接入 Server 和 WebUI，首个 `pprof_analyzer` 通过 `tool_run` task 复用上传、任务状态、workspace 和 artifact 机制；后续更多工具应按同一 registry/adapter 方式扩展。
-- 围绕现有上传、Metadata、Tool Runner、Agent Backend、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
+- 围绕现有上传、Metadata、Tool Runner、Claude Code MCP、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
 - 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
 - 所有结果关联 `actionId` 并使用稳定证据引用。
 
-## 第 3 阶段：Agent Backend 与 Domain Adapter
+## 第 3 阶段：Claude Code MCP 与 Domain Adapter
 
-- 已新增 Agent Backend 配置、默认 `claude_agent_sdk`、外部 adapter 后端类型和 Settings dry-run 诊断。
+- 已新增 `claude_code` 配置、`mcp` 配置、Claude Code session runner 和 Settings dry-run 诊断。
 - 已新增 `opengemini_influxdb` active adapter，以及 Cassandra/RocksDB skeleton adapter。
-- 已固化 `analysis_package.json`、`agent_request.json` 和真实 `agent_response.json` 后端输入/响应产物。
-- 下一步选择 Claude Agent SDK adapter 做受控 PoC。
-- 外部后端输出仍映射到 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
+- 已固化 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` session 输入/响应产物。
+- 下一步完善 Claude Code usage/cost、session resume、mode-specific native tool policy 和 MCP tool tests。
+- Claude 通过 MCP tools 请求日志、工具、Case、Metadata、用户追问和审批。
 - 安全只读动作自动执行；远程采集默认等待批准。
 
 ## 第 4 阶段：LLM Gateway
 
 - 作为 Case import、alias 和兼容恢复路径保留 Provider 配置和错误分类。
 - Prompt 组装、证据裁剪和 token 预算。
-- action/final answer 结构化输出校验。
+- final answer 结构化输出和 evidence ref 校验。
 - LLM Gateway stub provider、Case/alias 辅助调用和有限重试。
 - 不保存隐藏思维链。
 

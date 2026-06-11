@@ -4,7 +4,7 @@
 
 | 能力 | README | SPEC |
 |------|--------|------|
-| Agent Backends | [README](./agent-backends/README.md) | [SPEC](./agent-backends/SPEC.md) |
+| Claude Code Session Runner | [README](./agent-backends/README.md) | [SPEC](./agent-backends/SPEC.md) |
 | Analysis Agent | [README](./analysis-agent/README.md) | [SPEC](./analysis-agent/SPEC.md) |
 | Domain Adapters | [README](./domain-adapters/README.md) | [SPEC](./domain-adapters/SPEC.md) |
 | Memory | [README](./memory/README.md) | [SPEC](./memory/SPEC.md) |
