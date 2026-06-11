@@ -79,6 +79,7 @@ server/src
   services/            # Server 内部能力实现
     log_analyzer.rs
     agent_backend.rs
+    agent_contracts.rs
     domain_adapters.rs
     tool_runner.rs
     tools.rs
@@ -167,6 +168,9 @@ FAILED
   tool_results/
   code_evidence.json
   environment_evidence.json
+  analysis_package.json
+  agent_request.json
+  agent_response.json
   analysis_state.json
   analysis_events.jsonl
   result.json
@@ -227,7 +231,7 @@ MVP 要求：
 - `GET /api/settings/llm/models` 测试当前 LLM Provider 的模型列表接口，返回 `{ok,result,error}` 诊断响应。
 - `POST /api/settings/llm/chat` 使用当前 LLM Provider 发送一条简单 user message，返回 `{ok,result,error}` 诊断响应。
 - `GET /api/settings/agent-backends` 返回 Agent Backend 配置摘要，不返回命令路径。
-- `POST /api/settings/agent-backends/:backend_id/test` 执行 dry-run 诊断，第一阶段外部 CLI 只检查路径存在，不运行命令。
+- `POST /api/settings/agent-backends/:backend_id/test` 执行 dry-run 诊断，第一阶段外部 adapter 只检查路径存在，不运行命令。
 - `GET /api/settings/domain-adapters` 返回内置领域 adapter 能力摘要。
 - `GET /api/system-context/resources/:context_id` / `PATCH /api/system-context/resources/:context_id` 读取或更新资源元信息。
 - `POST /api/system-context/resources/:context_id/versions` 新增资源版本。
@@ -281,7 +285,7 @@ MVP 要求：
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`，当前默认循环调用 `internal_llm` 后端生成 `action | final_answer` 决策；`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。每轮决策前会刷新 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，用于外部成熟 agent 后端契约；当前这些文件标记为 `contract_only_not_invoked`，默认仍循环调用 `internal_llm` 后端生成 `action | final_answer` 决策。`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
 - `PLAN_ANALYSIS` 支持 `ask_user` 和 `collect_environment`：前者写入 `pendingUserPrompts` 并等待用户回答，后者写入 `pendingApprovals` 并等待批准/拒绝。当前批准环境采集后写入 mock `environment_evidence/<action_id>/result.json`，真实 SSH/SCP 执行器后续替换。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 action decision 解析/schema 错误也会追加修正提示并重试一次，仍失败时任务进入 `FAILED / PLAN_ANALYSIS`。
@@ -355,7 +359,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext`、`analysisPackage`、`agentRequest`、`agentResponse` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`analysisPackage` / `agentRequest` / `agentResponse` 分别来自外部后端契约文件；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 

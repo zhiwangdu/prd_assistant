@@ -83,6 +83,7 @@ impl AgentBackendRegistry {
             }),
             AgentBackendType::CodexCli
             | AgentBackendType::ClaudeCodeCli
+            | AgentBackendType::ClaudeAgentSdk
             | AgentBackendType::OpencodeCli => {
                 let command_path = backend.command_path.as_ref().ok_or_else(|| {
                     anyhow::anyhow!("agent backend {backend_id} has no configured command path")
@@ -106,7 +107,7 @@ impl AgentBackendRegistry {
                     status: "configured".to_string(),
                     execution_mode: backend.backend_type.execution_mode().to_string(),
                     details: vec![
-                        "Command path exists; first-stage diagnostic does not invoke the CLI."
+                        "Command path exists; first-stage diagnostic does not invoke the external agent adapter."
                             .to_string(),
                         format!(
                             "Limits: timeout={}s, maxInputBytes={}, maxOutputBytes={}.",

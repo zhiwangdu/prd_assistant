@@ -157,6 +157,12 @@ pub struct TaskArtifactsResponse {
     pub case_context: Option<serde_json::Value>,
     pub system_context_path: Option<String>,
     pub system_context: Option<serde_json::Value>,
+    pub analysis_package_path: Option<String>,
+    pub analysis_package: Option<serde_json::Value>,
+    pub agent_request_path: Option<String>,
+    pub agent_request: Option<serde_json::Value>,
+    pub agent_response_path: Option<String>,
+    pub agent_response: Option<serde_json::Value>,
     pub tool_results: Vec<serde_json::Value>,
 }
 

@@ -66,6 +66,10 @@ agent_backends:
       type: "claude_code_cli"
       enabled: false
       command_path_env: "LOGAGENT_AGENT_CLAUDE_CODE_PATH"
+    claude_agent_sdk:
+      type: "claude_agent_sdk"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_CLAUDE_SDK_PATH"
     opencode_cli:
       type: "opencode_cli"
       enabled: false

@@ -16,6 +16,7 @@ Chrome Extension, WEBUI upload, or WEBUI question-only Session
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
   -> analysis_state.json / analysis_events.jsonl audit snapshot
+  -> analysis_package.json / agent_request.json / not-invoked agent_response.json contract snapshot
   -> PLAN_ANALYSIS bounded multi-round LLM action/final-answer loop
   -> optional action-driven search_logs or run_tool, with repeated fingerprint protection
   -> optional ask_user / approval wait and resume
@@ -37,15 +38,24 @@ WEBUI Tools
 
 ## Implemented
 
+### Agent Contract Artifacts
+
+- Added `claude_agent_sdk` as an Agent Backend type with `agent_sdk_adapter` execution mode; enabled external adapters still require an absolute configured command path, and Settings diagnostics only inspect the path without invoking the adapter.
+- Log Analysis `PLAN_ANALYSIS` now refreshes `analysis_package.json`, `agent_request.json`, and `agent_response.json` in the task workspace before each internal decision call. The package freezes task input, manifest, grep, Metadata, System Context, Case context, Tool results, analysis state summary, and Server execution boundaries.
+- `agent_response.json` is currently an explicit `not_invoked` placeholder: the production decision loop still uses `internal_llm`, and the contract artifacts prepare the next Claude Agent SDK adapter PoC without changing the running analysis path.
+- Task artifacts API now returns optional `analysisPackage`, `agentRequest`, and `agentResponse`; WebUI successful task details show an Agent contract panel with backend, execution mode, runtime status, and artifact paths.
+- Updated sample and deploy configs with disabled `claude_agent_sdk` entries and optional `LOGAGENT_AGENT_CLAUDE_SDK_PATH`.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, and `npm --prefix webui run build` pass.
+
 ### Agent Backend And Domain Adapter Direction
 
 - Reframed LogAgent as a diagnostic evidence workbench that can call mature agent backends instead of trying to replace Codex, Claude Code or OpenCode with a fully self-built general agent loop.
-- Added Server `agent_backends` config with default `internal_llm` and reserved `codex_cli`, `claude_code_cli` and `opencode_cli` backend types.
+- Added Server `agent_backends` config with default `internal_llm` and reserved `claude_agent_sdk`, `codex_cli`, `claude_code_cli` and `opencode_cli` backend types.
 - Added protected Settings APIs:
   - `GET /api/settings/agent-backends`
   - `POST /api/settings/agent-backends/:backend_id/test`
   - `GET /api/settings/domain-adapters`
-- Agent backend diagnostics are first-stage dry-run checks: `internal_llm` returns ready; external CLI backends validate configured command paths but do not execute the CLI.
+- Agent backend diagnostics are first-stage dry-run checks: `internal_llm` returns ready; external adapters validate configured command paths but do not execute the adapter.
 - Added an in-process Domain Adapter registry with active `opengemini_influxdb` and skeleton `cassandra` / `rocksdb` adapters.
 - Extended WebUI Settings to show LLM diagnostics, Agent Backend summaries/dry-run results, and Domain Adapter status.
 - Added Agent Backends and Domain Adapters module docs, and updated root, Server, WebUI, config, interfaces, security, analysis, LLM Gateway, Tool Runner, Metadata, Code Evidence, Environment Collector, System Context and Roadmap docs for the new direction.

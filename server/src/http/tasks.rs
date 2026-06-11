@@ -621,7 +621,14 @@ pub async fn task_artifacts(
         Some(path) => Some(read_json_file(path).await?),
         None => None,
     };
-    let tool_results = read_tool_results(&state.config.storage.workspace_dir(&task_id)).await?;
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let (analysis_package_path, analysis_package) =
+        read_optional_artifact(&workspace, "analysis_package.json").await?;
+    let (agent_request_path, agent_request) =
+        read_optional_artifact(&workspace, "agent_request.json").await?;
+    let (agent_response_path, agent_response) =
+        read_optional_artifact(&workspace, "agent_response.json").await?;
+    let tool_results = read_tool_results(&workspace).await?;
 
     Ok(Json(TaskArtifactsResponse {
         task_id,
@@ -637,6 +644,12 @@ pub async fn task_artifacts(
         case_context,
         system_context_path: system_context_path.map(|path| path.display().to_string()),
         system_context,
+        analysis_package_path,
+        analysis_package,
+        agent_request_path,
+        agent_request,
+        agent_response_path,
+        agent_response,
         tool_results,
     }))
 }
@@ -679,6 +692,25 @@ async fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, App
         .map_err(|err| AppError::internal(format!("artifact not found: {err}")))?;
     serde_json::from_str(&raw)
         .map_err(|err| AppError::internal(format!("failed to parse artifact JSON: {err}")))
+}
+
+async fn read_optional_artifact(
+    workspace: &std::path::Path,
+    name: &str,
+) -> Result<(Option<String>, Option<serde_json::Value>), AppError> {
+    let path = workspace.join(name);
+    match tokio::fs::read_to_string(&path).await {
+        Ok(raw) => {
+            let value = serde_json::from_str(&raw).map_err(|err| {
+                AppError::internal(format!("failed to parse artifact {name}: {err}"))
+            })?;
+            Ok((Some(path.display().to_string()), Some(value)))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok((None, None)),
+        Err(err) => Err(AppError::internal(format!(
+            "failed to read artifact {name}: {err}"
+        ))),
+    }
 }
 
 async fn read_typed_json_file<T: serde::de::DeserializeOwned>(
@@ -1366,6 +1398,21 @@ mod tests {
             r#"{"schemaVersion":1,"tool":"fake","actionId":"act_tool_fake","status":"OK","exitCode":0,"durationMs":1,"command":["/bin/echo"],"inputFile":"extracted/sample.log","stdoutPath":"tool_results/act_tool_fake/stdout.txt","stderrPath":"tool_results/act_tool_fake/stderr.txt","summary":"tool completed","error":null}"#,
         )
         .unwrap();
+        std::fs::write(
+            workspace.join("analysis_package.json"),
+            r#"{"schemaVersion":1,"runtimeStatus":"contract_only_not_invoked"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("agent_request.json"),
+            r#"{"schemaVersion":1,"backend":{"backendId":"internal_llm","backendType":"internal_llm","executionMode":"llm_gateway","runtimeStatus":"contract_only_not_invoked"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("agent_response.json"),
+            r#"{"schemaVersion":1,"runtimeStatus":"not_invoked"}"#,
+        )
+        .unwrap();
         let now = Utc::now();
         state
             .tasks
@@ -1422,6 +1469,12 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["toolResults"][0]["tool"], "fake");
         assert_eq!(body["toolResults"][0]["status"], "OK");
+        assert_eq!(
+            body["analysisPackage"]["runtimeStatus"],
+            "contract_only_not_invoked"
+        );
+        assert_eq!(body["agentRequest"]["backend"]["backendId"], "internal_llm");
+        assert_eq!(body["agentResponse"]["runtimeStatus"], "not_invoked");
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 第一阶段已提供配置和诊断接口，但现有分析执行仍默认使用 `internal_llm`。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 第一阶段已提供配置、诊断接口和外部后端契约产物，但现有分析执行仍默认使用 `internal_llm`。
 
 已落地：
 
@@ -20,6 +20,7 @@
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
 - Agent Backend 配置摘要和 dry-run 诊断
+- `analysis_package.json`、`agent_request.json`、`agent_response.json` 契约产物
 - Domain Adapter 内置 registry
 - 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
 - `ask_user` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
@@ -51,7 +52,7 @@
 - 追加的 `analysis_events.jsonl`
 - 一个待 Server 处理的结构化 action
 - 终态时的 `result.json` 和 `result.md`
-- 后续外部 backend 接入时的 `agent_request.json` / `agent_response.json`
+- 外部 backend 接入契约：`analysis_package.json` / `agent_request.json` / `agent_response.json`
 
 当前 `/analysis` 响应包含：
 

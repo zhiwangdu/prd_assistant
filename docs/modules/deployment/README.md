@@ -74,7 +74,7 @@ cp logagent.example.yaml logagent.yaml
 
 `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。部署脚本会预创建 `data/uploads`、`data/sessions`、`data/tasks`、`data/workspaces`、`data/cases`、`data/case_imports` 和 `data/memory`；其中 `data/memory/memory.sqlite` 是 Memory SQLite 主索引，`data/cases/*.json` 保留为 legacy Case 迁移和回滚源。
 
-`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；后续启用 embedding/vector recall 时再配置。
+`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块和成熟 agent adapter 配置入口。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY` 或 `LOGAGENT_AGENT_*_PATH`；后续启用 embedding/vector recall 或外部 agent backend 时再配置。
 
 生产或测试环境：
 

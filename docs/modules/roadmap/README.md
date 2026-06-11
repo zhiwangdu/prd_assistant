@@ -35,10 +35,10 @@
 
 ## 第 3 阶段：Agent Backend 与 Domain Adapter
 
-- 已新增 Agent Backend 配置、默认 `internal_llm`、外部 CLI 后端类型和 Settings dry-run 诊断。
+- 已新增 Agent Backend 配置、默认 `internal_llm`、外部 adapter 后端类型和 Settings dry-run 诊断。
 - 已新增 `opengemini_influxdb` active adapter，以及 Cassandra/RocksDB skeleton adapter。
-- 下一步固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`。
-- 选择 Codex、Claude Code 或 OpenCode 中一个 CLI 做受控 PoC。
+- 已固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json` 契约产物；当前 `agent_response.json` 为 `not_invoked` 占位。
+- 下一步选择 Claude Agent SDK adapter 做受控 PoC。
 - 外部后端输出仍映射到 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
 - 安全只读动作自动执行；远程采集默认等待批准。
 

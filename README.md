@@ -46,7 +46,7 @@ Analysis Orchestrator
     |
     v
 Agent Backend
-  - internal_llm / Codex CLI / Claude Code CLI / OpenCode CLI
+  - internal_llm / Claude Agent SDK / Codex CLI / Claude Code CLI / OpenCode CLI
   - 推理、代码上下文分析和结构化响应
     |
     v
@@ -133,7 +133,7 @@ flowchart LR
 - Analysis Orchestrator、LLM Gateway 和外部 Agent Backend 都不能直接执行工具、读取任意路径或连接 SSH。
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
-- 外部 Agent Backend 第一阶段只做配置和诊断接口，后续必须通过 `agent_request.json` / `agent_response.json` 结构化契约接入。
+- 外部 Agent Backend 第一阶段只做配置、诊断和契约产物冻结；Log Analysis run 会写出 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，当前仍由 `internal_llm` 执行 `PLAN_ANALYSIS`。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
 - Log Analysis run 会固化 `system_context.json`，把已启用的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 不能替代当前任务证据。
@@ -194,7 +194,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Agent Backend Adapter + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，新增成熟 agent 后端适配配置/诊断接口，并把 openGemini/InfluxDB、Cassandra、RocksDB 作为领域能力包管理。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Agent Backend Adapter + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，新增成熟 agent 后端适配配置/诊断接口和外部 agent contract artifacts，首个目标后端为 `claude_agent_sdk` adapter，并把 openGemini/InfluxDB、Cassandra、RocksDB 作为领域能力包管理。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
 Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
 

@@ -18,7 +18,7 @@ Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspac
 
 Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；后续 Analysis Orchestrator 的 `run_tool` action 会逐步复用同一个工具 registry。
 
-Agent Backend 第一阶段只提供配置摘要和 dry-run 诊断，不改变现有 `PLAN_ANALYSIS` 执行路径。后续外部 CLI 后端必须通过 `analysis_package.json`、`agent_request.json` 和 `agent_response.json` 与 Server 通信，输出仍映射到现有 action/final answer 契约。
+Agent Backend 第一阶段提供配置摘要、dry-run 诊断和 `analysis_package.json` / `agent_request.json` / `agent_response.json` 契约产物，不改变现有 `PLAN_ANALYSIS` 执行路径。当前 `agent_response.json` 为 `not_invoked` 占位；后续外部后端实际输出仍必须映射到现有 action/final answer 契约。
 
 ## 核心数据
 

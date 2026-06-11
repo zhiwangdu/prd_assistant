@@ -121,7 +121,26 @@ type Artifacts = {
   metadataContext?: MetadataContext | null;
   caseContext?: CaseContext | null;
   systemContext?: SystemContextBundle | null;
+  analysisPackagePath?: string | null;
+  analysisPackage?: AgentAnalysisPackage | null;
+  agentRequestPath?: string | null;
+  agentRequest?: AgentRequestArtifact | null;
+  agentResponsePath?: string | null;
+  agentResponse?: AgentResponseArtifact | null;
   toolResults?: ToolResult[];
+};
+type AgentAnalysisPackage = {
+  runtimeStatus?: string;
+  purpose?: string;
+  generatedAt?: string;
+  boundaries?: Record<string, unknown>;
+};
+type AgentRequestArtifact = {
+  backend?: { backendId?: string; backendType?: string; executionMode?: string; runtimeStatus?: string };
+};
+type AgentResponseArtifact = {
+  runtimeStatus?: string;
+  reason?: string;
 };
 type SystemContextSummary = {
   contextId: string;
@@ -687,6 +706,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
       {artifacts?.systemContext ? <SystemContextSnapshotView context={artifacts.systemContext} /> : null}
+      {artifacts?.analysisPackage || artifacts?.agentRequest || artifacts?.agentResponse ? <AgentContractView artifacts={artifacts} /> : null}
       {artifacts?.textInput ? <Evidence title="Session text input" count={1}><DataLine id="session-text-input" title="Question" detail={artifacts.textInput.question ?? ""} /></Evidence> : null}
       {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
       {artifacts?.toolResults?.length ? <Evidence title="Tool results" count={artifacts.toolResults.length}>{artifacts.toolResults.map((result) => <ToolResultLine key={result.actionId} result={result} />)}</Evidence> : null}
@@ -912,6 +932,34 @@ function SystemContextSnapshotView({ context }: { context: SystemContextBundle }
             <p className="mt-1 text-xs text-muted-foreground">{resource.summary ?? resource.contextId}</p>
           </div>
         )) : <EmptyState>本次 run 未固化 System Context。</EmptyState>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgentContractView({ artifacts }: { artifacts: Artifacts }) {
+  const backend = artifacts.agentRequest?.backend;
+  const rows = [
+    ["Backend", [backend?.backendId, backend?.backendType].filter(Boolean).join(" · ") || "-"],
+    ["Execution mode", backend?.executionMode ?? "-"],
+    ["Runtime status", artifacts.agentResponse?.runtimeStatus ?? artifacts.analysisPackage?.runtimeStatus ?? backend?.runtimeStatus ?? "-"],
+    ["Package", artifacts.analysisPackagePath ?? "-"],
+    ["Request", artifacts.agentRequestPath ?? "-"],
+    ["Response", artifacts.agentResponsePath ?? "-"]
+  ];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Agent contract</CardTitle>
+        <CardDescription>外部成熟 agent 后端的证据包和请求/响应契约；当前先冻结契约，主分析路径仍使用内部后端。</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {rows.map(([label, value]) => (
+          <div className="rounded-lg border border-border p-3" key={label}>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 break-all text-sm">{value}</p>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

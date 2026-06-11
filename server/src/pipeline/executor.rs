@@ -10,8 +10,8 @@ use crate::{
             ActionKind, ActionRisk, AgentAction, EvidenceProvider, EvidenceRef, TaskContext,
         },
         models::{
-            AnalysisResult, Confidence, GrepResults, Manifest, ResultOutput, RootCause, TaskKind,
-            TaskPhase, TaskRecord,
+            AnalysisResult, Confidence, GrepResults, Manifest, ResultOutput, RootCause,
+            SystemContextBundle, TaskKind, TaskPhase, TaskRecord,
         },
     },
     pipeline::{
@@ -19,8 +19,11 @@ use crate::{
         prepare_pipeline_run, read_optional_json, read_tool_results, search_task,
         search_task_with_settings,
     },
-    services::llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
     services::metadata::TaskMetadataContext,
+    services::{
+        agent_contracts::{write_agent_contracts, AgentContractInput},
+        llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
+    },
     stores::analysis_state,
     support::config::{AnalysisSettings, LogAnalyzerSettings},
 };
@@ -193,22 +196,61 @@ async fn plan_analysis_phase(
             read_optional_json::<serde_json::Value>(&workspace.join("case_context.json")).await?;
         let system_context = match task.system_context_path.as_deref() {
             Some(path) if std::path::Path::new(path) == workspace.join("system_context.json") => {
-                Some(read_json(&workspace.join("system_context.json")).await?)
+                Some(
+                    read_json::<SystemContextBundle>(&workspace.join("system_context.json"))
+                        .await?,
+                )
             }
             Some(_) => anyhow::bail!("task contains invalid systemContextPath"),
-            None => read_optional_json(&workspace.join("system_context.json")).await?,
+            None => {
+                read_optional_json::<SystemContextBundle>(&workspace.join("system_context.json"))
+                    .await?
+            }
         };
         if let Some(reason) = analysis_budget_exhausted(&workspace, &state.config.analysis)? {
             return complete_with_budget_limited_result(state, &task, &grep, reason).await;
         }
         let metadata_context = match task.metadata_context_path.as_deref() {
             Some(path) if std::path::Path::new(path) == workspace.join("metadata_context.json") => {
-                Some(read_json(&workspace.join("metadata_context.json")).await?)
+                Some(
+                    read_json::<TaskMetadataContext>(&workspace.join("metadata_context.json"))
+                        .await?,
+                )
             }
             Some(_) => anyhow::bail!("task contains invalid metadataContextPath"),
             None => None,
         };
         let snapshot = analysis_state::read_snapshot(&workspace)?;
+        let metadata_context_value = metadata_context
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?;
+        let system_context_value = system_context
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?;
+        let contracts_existed = workspace.join("analysis_package.json").exists();
+        write_agent_contracts(
+            &workspace,
+            AgentContractInput {
+                task: &task,
+                manifest: &manifest,
+                grep_results: &grep,
+                metadata_context: metadata_context_value.as_ref(),
+                system_context: system_context_value.as_ref(),
+                case_context: case_context.as_ref(),
+                tool_results: &tool_results,
+                analysis_snapshot: &snapshot,
+                agent_backends: &state.config.agent_backends,
+            },
+        )
+        .await?;
+        if !contracts_existed {
+            analysis_state::record_agent_contracts(
+                &workspace,
+                &state.config.agent_backends.default_backend,
+            )?;
+        }
         let question_context = question_with_analysis_context(&task.question, &snapshot.state);
         let decision = state
             .llm

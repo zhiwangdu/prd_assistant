@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Agent Backend 配置摘要、dry-run 诊断和 Domain Adapter 内置 registry 已实现；外部 Agent Backend 运行时契约尚未接入。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Agent Backend 配置摘要、dry-run 诊断、外部契约产物和 Domain Adapter 内置 registry 已实现；真实外部 Agent Backend 执行尚未接入。
 
 ## 公共产物
 
@@ -70,7 +70,7 @@ Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
 ## Agent Backend 契约
 
-第一阶段已暴露 Settings 摘要和 dry-run 诊断。后续外部 CLI 运行时必须遵守：
+第一阶段已暴露 Settings 摘要、dry-run 诊断和 task workspace 契约产物。当前 `agent_response.json` 标记为 `not_invoked`，后续真实外部后端运行时必须遵守：
 
 - Server 生成 `analysis_package.json` 和 `agent_request.json`。
 - 后端只返回 `agent_response.json`。

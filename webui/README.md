@@ -30,6 +30,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 页面顶部提供 `LLM debug` 开关，调用 Server runtime debug API 控制 LLM response content 是否打印到 Server 日志。
 - 创建任务时可填写 `instanceId` / `nodeId`，任务详情展示 Server 解析后的关联 ID；`clusterId` 不再作为用户输入。
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
+- 成功任务展示 Agent contract 面板，包括 `analysis_package.json`、`agent_request.json`、`agent_response.json` 路径、默认后端、执行模式和当前 `not_invoked` 状态；该面板用于外部成熟 agent 后端接入审计，当前不表示已执行 Claude/Codex/OpenCode。
 - 成功任务展示 Tool Runner 产物，包括工具名、状态、退出码、耗时、摘要、结构化 findings 和 stdout/stderr 路径。
 - Tools 页面复用上传和 Server task 轮询，`pprof_analyzer` 可上传 `.pprof` / `.prof` / `.profile` / `.pb.gz`，展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 - 根因 evidence ref 可滚动定位到对应 grep match。

@@ -167,7 +167,7 @@ flowchart TD
 - Upload session 持久化并支持重启续传。
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
 - System Context 接入 task context，支持 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 资源管理；创建 Log Analysis run 时写入 `system_context.json` 并进入 LLM Prompt 背景区。
-- Agent Backends 第一阶段已支持 `internal_llm`、`codex_cli`、`claude_code_cli` 和 `opencode_cli` 配置解析、默认后端校验、Settings 摘要和 dry-run 诊断；外部 CLI 诊断只检查配置路径，不执行命令。
+- Agent Backends 第一阶段已支持 `internal_llm`、`claude_agent_sdk`、`codex_cli`、`claude_code_cli` 和 `opencode_cli` 配置解析、默认后端校验、Settings 摘要和 dry-run 诊断；外部 adapter 诊断只检查配置路径，不执行命令。
 - Domain Adapters 第一阶段已内置 `opengemini_influxdb` active adapter，以及 `cassandra`、`rocksdb` skeleton adapter，并通过 Settings API 暴露摘要。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
 - Tool Runner MVP 支持白名单工具配置、规则版多输入 `run_tool` action、`RUN_TOOL` phase、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 `influxql-analyzer` Report stdout 已适配为结构化 findings 并通过本地 smoke，当前本机路径为 `/usr/bin/influxql-analyzer`。
@@ -175,6 +175,7 @@ flowchart TD
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 真实 LLM 调用会记录 callId、attempt 和 schema retry 事件。
+- Log Analysis run 会在 `PLAN_ANALYSIS` 前写出 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，用于冻结外部成熟 agent 后端契约；当前这些契约标记为 `contract_only_not_invoked`，主分析路径仍使用 `internal_llm`。
 - Analysis Orchestrator 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Orchestrator 已支持 `collect_environment` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；当前批准后生成 mock `environment_evidence`，真实 SSH/SCP 采集后续接入。
 - Memory MVP 已支持 `memoryType=case`、兼容 Case schema v2 API、成功任务人工确认、LLM-assisted 文本导入手工 Case、SQLite/FTS 本地索引、legacy JSON 启动导入、关键词 fallback 召回和禁用。
@@ -186,7 +187,7 @@ flowchart TD
 ## 待实现能力
 
 - 围绕“诊断证据工作台 + Agent Backend Adapter + Domain Adapter”补齐完整产品闭环。
-- 固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，再接入一个真实外部 agent CLI PoC。
+- 接入真实 Claude Agent SDK adapter PoC，让 `agent_response.json` 从占位契约变为后端实际输出，并映射到现有 action/final answer schema。
 - 将更多工具按 Tools 插件描述接入，并让 Analysis Orchestrator 的 `run_tool` action 逐步复用同一个工具 registry。
 - 接入真实 `flux_query_analyzer` 工具路径和规则。
 - 扩展 `influxql_analyzer` compare mode delta 字段映射。

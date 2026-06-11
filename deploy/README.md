@@ -68,6 +68,7 @@ Optional variables:
 - `LOGAGENT_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.pid`.
 - `LOGAGENT_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.log`.
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
+- `LOGAGENT_AGENT_CLAUDE_SDK_PATH`, `LOGAGENT_AGENT_CODEX_PATH`, `LOGAGENT_AGENT_CLAUDE_CODE_PATH`, `LOGAGENT_AGENT_OPENCODE_PATH`: optional mature agent adapter commands. They are only required when the matching backend is enabled in `logagent.yaml`.
 
 ## Dependencies
 
@@ -104,7 +105,7 @@ To reset from the sample:
 cp logagent.example.yaml logagent.yaml
 ```
 
-The sample config includes an `embedding` block with `enabled: false`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
+The sample config includes an `embedding` block with `enabled: false` and an `agent_backends` block with `internal_llm` enabled plus disabled mature-agent adapter entries. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
 
 ## Build And Install
 

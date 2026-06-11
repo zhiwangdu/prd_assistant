@@ -6,11 +6,11 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 `influxql_analyzer` smoke、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Agent Backend 配置/诊断、Domain Adapter registry 和静态 WebUI 托管。当前 `influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer`，可直接调用；真实 Environment Collector 尚未实现并延后。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 `influxql_analyzer` smoke、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Agent Backend 配置/诊断、外部 agent contract artifacts、Domain Adapter registry 和静态 WebUI 托管。当前 `influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer`，可直接调用；真实 Environment Collector 尚未实现并延后。
 
 ## 下一阶段优先级
 
-1. 固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，选择一个成熟 agent CLI 做受控 PoC。
+1. 接入真实 Claude Agent SDK adapter PoC，让 `agent_response.json` 从 `not_invoked` 占位变为实际结构化输出。
 2. 围绕现有上传、Metadata、Tool Runner、Tools、Agent Backend、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
 3. 接入真实 `flux_query_analyzer`，并扩展 `influxql_analyzer` compare mode delta 字段映射。
 4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。

@@ -66,6 +66,7 @@ pub enum AnalysisEvidenceType {
     LogSearch,
     ToolOutput,
     EnvironmentEvidence,
+    AgentContract,
     FinalResult,
 }
 
@@ -589,6 +590,34 @@ pub fn record_tool_artifact(
         serde_json::json!({
             "toolAction": action,
             "artifact": artifact,
+        }),
+    )
+}
+
+pub fn record_agent_contracts(workspace: &Path, backend_id: &str) -> anyhow::Result<()> {
+    let evidence = AnalysisEvidenceRecord {
+        evidence_type: AnalysisEvidenceType::AgentContract,
+        artifact_path: "analysis_package.json".to_string(),
+        action_id: None,
+        summary: format!("external agent contract package recorded for {backend_id}"),
+        evidence_refs: vec![
+            "analysis_package.json".to_string(),
+            "agent_request.json".to_string(),
+            "agent_response.json".to_string(),
+        ],
+        created_at: Utc::now(),
+    };
+    append_evidence_event(
+        workspace,
+        "",
+        TaskPhase::PlanAnalysis,
+        "external agent contract artifacts recorded".to_string(),
+        evidence,
+        serde_json::json!({
+            "backendId": backend_id,
+            "analysisPackagePath": "analysis_package.json",
+            "agentRequestPath": "agent_request.json",
+            "agentResponsePath": "agent_response.json",
         }),
     )
 }

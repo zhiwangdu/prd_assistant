@@ -21,7 +21,8 @@
 - Tool Runner 只能执行白名单工具。
 - Tools 页面手动工具运行只能引用 Server UploadStore 中已完成上传，不能传入任意本地路径、远程 URL 或自由 argv；`pprof_analyzer` 的 `PPROF_TMPDIR` 必须位于 task workspace 内。
 - LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Agent action。
-- Agent Backend CLI 只能通过 `agent_backends` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI。
+- Agent Backend adapter 只能通过 `agent_backends` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI 或 SDK adapter。
+- `analysis_package.json`、`agent_request.json` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权外部后端绕过 Server 执行命令、SSH 或状态写入。
 - 外部 Agent Backend 返回的任何动作仍必须经过 Server schema、白名单、预算、幂等和审批校验。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
@@ -44,5 +45,5 @@
 - 未批准的远程采集不执行。
 - Prompt injection 不能改变工具、路径、仓库或环境白名单。
 - Prompt injection 不能改变 LLM binary provider 的可执行路径、subcommand 或 argv 结构。
-- Prompt injection 不能改变 Agent Backend CLI 路径、后端类型或执行权限。
+- Prompt injection 不能改变 Agent Backend adapter 路径、后端类型或执行权限。
 - README 和 SPEC 在安全策略变更时同步更新。

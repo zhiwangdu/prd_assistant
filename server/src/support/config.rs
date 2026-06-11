@@ -122,6 +122,7 @@ pub enum AgentBackendType {
     InternalLlm,
     CodexCli,
     ClaudeCodeCli,
+    ClaudeAgentSdk,
     OpencodeCli,
 }
 
@@ -131,6 +132,7 @@ impl AgentBackendType {
             Self::InternalLlm => "internal_llm",
             Self::CodexCli => "codex_cli",
             Self::ClaudeCodeCli => "claude_code_cli",
+            Self::ClaudeAgentSdk => "claude_agent_sdk",
             Self::OpencodeCli => "opencode_cli",
         }
     }
@@ -138,6 +140,7 @@ impl AgentBackendType {
     pub fn execution_mode(self) -> &'static str {
         match self {
             Self::InternalLlm => "llm_gateway",
+            Self::ClaudeAgentSdk => "agent_sdk_adapter",
             Self::CodexCli | Self::ClaudeCodeCli | Self::OpencodeCli => "external_cli_adapter",
         }
     }
@@ -629,6 +632,7 @@ fn parse_agent_backend_type(value: &str) -> anyhow::Result<AgentBackendType> {
         "internal_llm" => Ok(AgentBackendType::InternalLlm),
         "codex_cli" => Ok(AgentBackendType::CodexCli),
         "claude_code_cli" => Ok(AgentBackendType::ClaudeCodeCli),
+        "claude_agent_sdk" => Ok(AgentBackendType::ClaudeAgentSdk),
         "opencode_cli" => Ok(AgentBackendType::OpencodeCli),
         value => anyhow::bail!("unsupported agent backend type {value}"),
     }
@@ -1081,6 +1085,31 @@ agent_backends:
             .unwrap_err()
             .to_string()
             .contains("is not configured"));
+    }
+
+    #[test]
+    fn resolves_claude_agent_sdk_backend_type() {
+        let parsed = serde_yaml::from_str::<ConfigFile>(
+            r#"
+agent_backends:
+  default_backend: claude
+  backends:
+    claude:
+      type: claude_agent_sdk
+      command_path: /opt/logagent/bin/claude-agent-adapter
+"#,
+        )
+        .unwrap();
+
+        let settings = resolve_agent_backends(parsed.agent_backends).unwrap();
+        let backend = settings.backends.get("claude").unwrap();
+        assert_eq!(settings.default_backend, "claude");
+        assert_eq!(backend.backend_type, AgentBackendType::ClaudeAgentSdk);
+        assert_eq!(backend.backend_type.execution_mode(), "agent_sdk_adapter");
+        assert_eq!(
+            backend.command_path.as_ref().unwrap(),
+            &PathBuf::from("/opt/logagent/bin/claude-agent-adapter")
+        );
     }
 
     #[test]
