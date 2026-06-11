@@ -41,13 +41,13 @@ fixtures/
 覆盖 upload 来源：
 
 ```text
-upload -> extract -> rg -> Agent -> action -> evidence -> LLM stub -> result
+upload -> extract -> rg -> Agent -> action -> evidence -> mock Claude SDK adapter -> result
 ```
 
 覆盖 environment 来源：
 
 ```text
-environment approval -> collect stub -> Agent continuation -> result
+environment approval -> mock environment evidence -> Agent continuation -> result
 ```
 
 当前任务系统测试覆盖：
@@ -63,11 +63,11 @@ environment approval -> collect stub -> Agent continuation -> result
 - Analysis State Store 覆盖 state/event 持久化、pipeline 写入和 `/api/tasks/:task_id/analysis` 读取。
 - Task API 覆盖 `WAITING_FOR_USER` 的 pending prompt、message 提交、幂等 key 和恢复到 `PLAN_ANALYSIS`。
 - Task API 覆盖 `WAITING_FOR_APPROVAL` 的 pending approval、批准决策、mock environment evidence 和恢复到 `PLAN_ANALYSIS`。
-- Analysis State Store 覆盖 LLM call started/completed/schema retry 事件和 callId 详情。
+- Analysis State Store 覆盖 Agent backend call started/completed 事件和 callId 详情。
 - LLM Gateway 测试覆盖 runtime response logging debug 开关的默认关闭和进程内切换。
 - raw 快照重复执行、派生产物清理和结果重建。
 - API `202` 创建、列表、详情、404 和 artifacts 409。
-- stub LLM 单次任务闭环和 result API。
+- mock Claude SDK adapter 单次任务闭环和 result API。
 - Task API 并发测试使用进程内原子序号隔离临时数据目录，避免目录碰撞导致后台任务误删数据。
 - Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
 - LLM evidence ref 覆盖 canonical refs、裸日志行号/范围、索引范围和无法映射引用的拒绝路径。
@@ -76,21 +76,21 @@ environment approval -> collect stub -> Agent continuation -> result
 - Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏、自然语言包裹的唯一 JSON object，以及多个 JSON object 的拒绝路径。
 - LLM Gateway 测试覆盖 schema 修正重试提示，以及解析错误中包含具体字段/类型原因。
 - LLM Gateway 测试覆盖 action decision 修正重试提示，要求顶层 `type` 和合法 `action | final_answer` schema。
-- LLM Gateway 测试覆盖 ActionDecision / FinalAnswer 双模式解析、裸最终结果 JSON 和常见最终结果包裹变体包装为 `final_answer`、stub action decision、未开放 action 拒绝和 action input 校验。
-- WebUI 检查覆盖 Task execution analysis loop 摘要、LLM callId/schema retry 展示和顶部 LLM debug 开关的类型/构建正确性。
+- LLM Gateway 测试覆盖 AgentDecision / FinalAnswer 双模式解析、裸最终结果 JSON 和常见最终结果包裹变体包装为 `final_answer`、mock action decision、未开放 action 拒绝和 action input 校验。
+- WebUI 检查覆盖 Task execution analysis loop 摘要、backend callId 展示和顶部 LLM debug 开关的类型/构建正确性。
 - WebUI 检查覆盖等待用户输入和等待审批控件的类型/构建正确性。
-- Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 stub `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
+- Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 mock Claude SDK `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 - Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 - Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换，以及 compare report 的基础 delta findings。
 - Tools API 单测覆盖 `pprof_analyzer` 目录发现、上传复用、`tool_run` task 创建、后台执行、结果 API，以及 `/api/tasks` 不混入工具运行。
 - pprof parser 单测覆盖 `go tool pprof -top` 文本到结构化 top 函数表的转换。
 
-### LLM 测试策略
+### Agent Backend 测试策略
 
-开发和 CI 中默认使用 LLM stub，不直接调用真实模型。
+开发和 CI 中默认使用 mock Claude SDK adapter，不直接调用真实模型或真实 Claude 服务。
 
-Stub 必须支持脚本化多轮响应：
+Mock adapter 必须支持脚本化多轮响应：
 
 - 首轮请求日志搜索，次轮输出结论。
 - 请求用户信息，回答后恢复。

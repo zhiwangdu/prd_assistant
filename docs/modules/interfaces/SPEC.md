@@ -70,7 +70,7 @@ Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
 ## Agent Backend 契约
 
-第一阶段已暴露 Settings 摘要、dry-run 诊断和 task workspace 契约产物。当前 `agent_response.json` 标记为 `not_invoked`，后续真实外部后端运行时必须遵守：
+已暴露 Settings 摘要、dry-run 诊断和 task workspace 后端输入/响应产物。当前 `agent_response.json` 由 `claude_agent_sdk` adapter 调用后写入，真实后端运行时必须遵守：
 
 - Server 生成 `analysis_package.json` 和 `agent_request.json`。
 - 后端只返回 `agent_response.json`。

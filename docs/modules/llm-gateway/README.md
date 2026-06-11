@@ -1,13 +1,13 @@
 # LLM Gateway 方案
 
-该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Orchestrator 负责。LLM Gateway 现在也是 `internal_llm` Agent Backend 的实现基础，外部 Claude Agent SDK、Codex/Claude Code/OpenCode 后端由 Agent Backend Adapter 另行接入。
+该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Orchestrator 负责。Log Analysis 的运行后端已切换为 `claude_agent_sdk`，LLM Gateway 不再作为 Agent Backend fallback。
 
 ## 职责
 
 LLM Gateway 负责：
 
 - OpenAI-compatible 等 Provider 适配
-- 将 Analysis Orchestrator 的当前状态和证据组装为 Prompt
+- 为 Case import、alias 和兼容恢复路径组装 Prompt
 - token 估算、证据排序和裁剪
 - 调用模型
 - 校验结构化响应 schema
@@ -21,11 +21,11 @@ LLM Gateway 不负责：
 - 直接调用工具、代码仓、文件系统或 SSH
 - 执行动作或审批
 - 保存隐藏思维链
-- 适配 Codex/Claude Code/OpenCode CLI 的交互协议
+- 适配 Claude Agent SDK、Codex/Claude Code/OpenCode CLI 的交互协议
 
 ## 当前实现
 
-当前作为 Server 内部 Rust 模块实现了 `internal_llm` 后端的单次最终结果生成和多轮 action decision：
+当前作为 Server 内部 Rust 模块保留单次最终结果生成、Case import、alias 和结构化 parser 能力：
 
 ```text
 question + session_text_input.json + system_context.json + manifest.json + grep_results.json + metadata_context.json + tool_results
@@ -44,9 +44,9 @@ question + session_text_input.json + system_context.json + manifest.json + grep_
 
 该分支不拼接 shell，不允许用户覆盖 binary path 或 argv。当前环境不要求接入真实二进制，已通过单元测试中的 mock binary 验证最终结果生成和 `PLAN_ANALYSIS` action decision 都能解析 stdout JSON。
 
-Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAnswer 双模式入口。`final_answer` 直接持久化结果，`search_logs` 和 `run_tool` 执行动作后回到下一轮，直到最终答案、预算耗尽或重复 fingerprint 被阻止。当前不记录 Provider request id；该能力留给后续审计阶段。当前会对最终结果和 action decision 的解析/schema 错误各做一次受控修正重试，HTTP、鉴权、限流和超时错误不重试。
+Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 `claude_agent_sdk` adapter。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
-同一阶段会在调用 LLM Gateway 前刷新 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，用于后续外部成熟 agent 后端接入。LLM Gateway 不读取或执行这些外部契约文件。
+`analysis_package.json`、`agent_request.json` 和 `agent_response.json` 由 Analysis Orchestrator 与 Agent Backend Adapter 管理。LLM Gateway 不读取或执行这些后端输入/响应文件。
 
 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。`PLAN_ANALYSIS` 期望双模式 `action | final_answer` 外层结构；如果真实模型直接返回裸最终结果 JSON，或把最终结果多包一层 `result` / `answer` / `finalAnswer`，Gateway 会将其规范化为 `final_answer` 并继续执行同一套 evidence 校验。多个 JSON object、无 JSON object 或最终结果核心 schema 不合法仍会拒绝。
 
@@ -137,7 +137,7 @@ llm:
 
 ## 结构化响应
 
-当前 Task Executor 已在 `PLAN_ANALYSIS` 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、LLM 调用、action 数和重复 fingerprint。用户追问和审批恢复 API 已启用。
+当前 Task Executor 已在 `PLAN_ANALYSIS` 通过 `claude_agent_sdk` adapter 启用多轮 `action | final_answer` 响应，并由 Analysis 预算控制轮数、后端调用、action 数和重复 fingerprint。用户追问和审批恢复 API 已启用。
 
 第一版已支持 action：
 

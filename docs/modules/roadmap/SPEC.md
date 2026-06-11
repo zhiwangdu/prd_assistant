@@ -10,7 +10,7 @@
 
 ## 下一阶段优先级
 
-1. 接入真实 Claude Agent SDK adapter PoC，让 `agent_response.json` 从 `not_invoked` 占位变为实际结构化输出。
+1. 完善真实 Claude Agent SDK adapter 的结构化输出、用量审计和错误分类。
 2. 围绕现有上传、Metadata、Tool Runner、Tools、Agent Backend、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
 3. 接入真实 `flux_query_analyzer`，并扩展 `influxql_analyzer` compare mode delta 字段映射。
 4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。

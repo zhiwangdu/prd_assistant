@@ -802,6 +802,7 @@ pub fn record_llm_call_completed(
     )
 }
 
+#[allow(dead_code)]
 pub fn record_llm_call_schema_retry(
     workspace: &Path,
     phase: TaskPhase,

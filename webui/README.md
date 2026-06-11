@@ -19,8 +19,8 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。
 - `Session draft` 和统一 Evidence Timeline 支持展开/收起；启动分析 run 后草稿自动收起，task 运行完成后 timeline 自动收起并只展示最终结果或失败摘要。
 - WebUI 选择 Session 时会 best-effort 调用本机 Native Agent `PUT http://127.0.0.1:17321/workspace/current` 设置活动 Session；失败只提示本地 Agent 未连接，不影响 WebUI 上传。
-- Session 内新增 unified Evidence Timeline，合并 session events 和 task `analysis_events.jsonl`，显示 upload、Metadata、Case recall、grep、tool output、LLM call、model decision、用户追问/审批和 final result。
-- `Task execution` 读取 `/api/tasks/:task_id/analysis`，实时展示 Analysis loop revision、预算、事件摘要、LLM callId/attempt/schema retry、model decision、action 和 evidence。
+- Session 内新增 unified Evidence Timeline，合并 session events 和 task `analysis_events.jsonl`，显示 upload、Metadata、Case recall、grep、tool output、Agent backend call、model decision、用户追问/审批和 final result。
+- `Task execution` 读取 `/api/tasks/:task_id/analysis`，实时展示 Analysis loop revision、预算、事件摘要、backend callId/attempt、model decision、action 和 evidence。
 - 成功任务展示 `session_text_input.json` 中的 Session 对话框输入，最终结果引用 `session_text_input.json#question` 时可滚动定位到该输入。
 - `Task execution` 在 `WAITING_FOR_USER` 展示待补充问题并提交回答，在 `WAITING_FOR_APPROVAL` 展示待审批 action、risk、input，并支持批准或拒绝后继续任务。
 - 用户可填写分析问题；任务成功后展示单次 LLM 生成的摘要、症状、可能根因、检查项、修复建议、缺失信息和置信度。
@@ -30,7 +30,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 页面顶部提供 `LLM debug` 开关，调用 Server runtime debug API 控制 LLM response content 是否打印到 Server 日志。
 - 创建任务时可填写 `instanceId` / `nodeId`，任务详情展示 Server 解析后的关联 ID；`clusterId` 不再作为用户输入。
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
-- 成功任务展示 Agent contract 面板，包括 `analysis_package.json`、`agent_request.json`、`agent_response.json` 路径、默认后端、执行模式和当前 `not_invoked` 状态；该面板用于外部成熟 agent 后端接入审计，当前不表示已执行 Claude/Codex/OpenCode。
+- 成功任务展示 Claude Code backend 面板，包括 `analysis_package.json`、`agent_request.json`、`agent_response.json` 路径、默认后端、执行模式、真实运行状态、usage/cost、耗时和错误。
 - 成功任务展示 Tool Runner 产物，包括工具名、状态、退出码、耗时、摘要、结构化 findings 和 stdout/stderr 路径。
 - Tools 页面复用上传和 Server task 轮询，`pprof_analyzer` 可上传 `.pprof` / `.prof` / `.profile` / `.pb.gz`，展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 - 根因 evidence ref 可滚动定位到对应 grep match。

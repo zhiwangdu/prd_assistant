@@ -107,7 +107,7 @@ export LOGAGENT_TOOL_INFLUXQL_ANALYZER=/abs/path/to/influxql_analyzer
 cargo run -p logagent-server -- --config examples/server-tools.yaml
 ```
 
-`server-tools.yaml` 使用 stub LLM，便于单独验证 Tool Runner。上传 `.flux` 或包含 `flux/planner` 关键词的日志会触发 `flux_query_analyzer`；上传 `.jsonl` 或包含 `influxql`、`"query"`、`select`、`show series`、`show measurements` 关键词的日志会触发 `influxql_analyzer`。
+`server-tools.yaml` 可配合 mock `claude_agent_sdk` adapter 单独验证 Tool Runner。上传 `.flux` 或包含 `flux/planner` 关键词的日志会触发 `flux_query_analyzer`；上传 `.jsonl` 或包含 `influxql`、`"query"`、`select`、`show series`、`show measurements` 关键词的日志会触发 `influxql_analyzer`。
 
 只验证真实 InfluxQL 工具时：
 

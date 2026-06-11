@@ -44,6 +44,7 @@ pub struct LlmGateway {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LlmCallEvent {
     pub call_id: String,
     pub call_kind: &'static str,
@@ -1065,7 +1066,7 @@ fn parse_action_decision_response(response: ChatResponse) -> anyhow::Result<Agen
     parse_action_decision_content(content)
 }
 
-fn parse_action_decision_content(content: &str) -> anyhow::Result<AgentDecision> {
+pub fn parse_action_decision_content(content: &str) -> anyhow::Result<AgentDecision> {
     let content = extract_result_json(content)?;
     let decision = parse_agent_decision_json(content)?;
     validate_agent_decision(&decision)?;
@@ -2198,7 +2199,7 @@ fn validate_agent_decision(decision: &AgentDecision) -> anyhow::Result<()> {
     }
 }
 
-fn validate_agent_decision_with_evidence(
+pub fn validate_agent_decision_with_evidence(
     decision: &AgentDecision,
     grep: &GrepResults,
     case_context: Option<&serde_json::Value>,

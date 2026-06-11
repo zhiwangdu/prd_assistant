@@ -7,7 +7,10 @@ use crate::{
     domain::models::{GrepResults, Manifest, TaskRecord},
     services::tool_runner::ToolRunRecord,
     stores::analysis_state::AnalysisSnapshotResponse,
-    support::{config::AgentBackendSettings, error::AppError},
+    support::{
+        config::{AgentBackendSettings, ToolsSettings},
+        error::AppError,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -21,6 +24,7 @@ pub struct AgentContractInput<'a> {
     pub tool_results: &'a [ToolRunRecord],
     pub analysis_snapshot: &'a AnalysisSnapshotResponse,
     pub agent_backends: &'a AgentBackendSettings,
+    pub tools: &'a ToolsSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +49,7 @@ pub async fn write_agent_contracts(
         "schemaVersion": 1,
         "generatedAt": now,
         "purpose": "diagnostic_evidence_package",
-        "runtimeStatus": "contract_only_not_invoked",
+        "runtimeStatus": "ready_for_backend",
         "task": {
             "taskId": input.task.task_id,
             "taskKind": input.task.task_kind,
@@ -70,6 +74,7 @@ pub async fn write_agent_contracts(
             "systemContext": input.system_context,
             "caseContextPath": input.case_context.map(|_| "case_context.json"),
             "caseContext": input.case_context,
+            "toolCapabilities": tool_capabilities(input.tools),
             "toolResults": input.tool_results,
         },
         "analysisState": {
@@ -94,7 +99,7 @@ pub async fn write_agent_contracts(
             "backendId": backend.name,
             "backendType": backend.backend_type.as_str(),
             "executionMode": backend.backend_type.execution_mode(),
-            "runtimeStatus": "contract_only_not_invoked",
+            "runtimeStatus": "pending_backend_call",
             "timeoutSeconds": backend.timeout_seconds,
             "maxInputBytes": backend.max_input_bytes,
             "maxOutputBytes": backend.max_output_bytes,
@@ -135,23 +140,9 @@ pub async fn write_agent_contracts(
             "remoteCollectionRequiresApproval": true,
         }
     });
-    let response = serde_json::json!({
-        "schemaVersion": 1,
-        "generatedAt": now,
-        "backendId": backend.name,
-        "backendType": backend.backend_type.as_str(),
-        "runtimeStatus": "not_invoked",
-        "reason": "LogAgent currently freezes the external agent contract while the production runtime still uses internal_llm for PLAN_ANALYSIS.",
-        "expectedShape": {
-            "type": "final_answer|action",
-            "result": "AnalysisResult when type=final_answer",
-            "action": "AgentAction-compatible decision when type=action"
-        }
-    });
 
     write_json_atomic(workspace.join("analysis_package.json"), &package).await?;
     write_json_atomic(workspace.join("agent_request.json"), &request).await?;
-    write_json_atomic(workspace.join("agent_response.json"), &response).await?;
 
     Ok(AgentContractArtifacts {
         analysis_package_path: "analysis_package.json".to_string(),
@@ -160,7 +151,7 @@ pub async fn write_agent_contracts(
     })
 }
 
-async fn write_json_atomic<T: Serialize>(path: PathBuf, value: &T) -> Result<(), AppError> {
+pub async fn write_json_atomic<T: Serialize>(path: PathBuf, value: &T) -> Result<(), AppError> {
     let tmp = path.with_extension("json.tmp");
     let encoded = serde_json::to_vec_pretty(value)
         .map_err(|err| AppError::internal(format!("failed to encode agent contract: {err}")))?;
@@ -171,4 +162,27 @@ async fn write_json_atomic<T: Serialize>(path: PathBuf, value: &T) -> Result<(),
         .await
         .map_err(|err| AppError::internal(format!("failed to persist agent contract: {err}")))?;
     Ok(())
+}
+
+fn tool_capabilities(settings: &ToolsSettings) -> Vec<serde_json::Value> {
+    settings
+        .tools
+        .values()
+        .filter(|tool| tool.enabled)
+        .map(|tool| {
+            serde_json::json!({
+                "toolId": tool.name,
+                "actionType": "run_tool",
+                "timeoutSeconds": tool.timeout_seconds,
+                "maxOutputBytes": tool.max_output_bytes,
+                "maxInputFiles": tool.max_input_files,
+                "match": {
+                    "filePatterns": tool.match_settings.file_patterns,
+                    "keywords": tool.match_settings.keywords,
+                },
+                "findingEvidenceRef": "tool_results/<action_id>/result.json#findings/<index>",
+                "executionBoundary": "server_tool_runner_whitelist"
+            })
+        })
+        .collect()
 }

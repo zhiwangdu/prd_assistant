@@ -2,7 +2,7 @@
 
 ## 目标
 
-为 Analysis Orchestrator 提供受约束、可替换的 `internal_llm` 模型推理后端，将任务上下文转换为结构化 action 或最终答案候选。Claude Agent SDK、Codex、Claude Code、OpenCode 等成熟 agent 后端不直接归入 LLM Gateway，而通过 Agent Backend Adapter 接入。
+为 LogAgent 提供受约束、可替换的模型辅助能力，用于 Case import、alias 生成和兼容恢复路径的结构化结果生成。Log Analysis 的运行后端已切换为 `claude_agent_sdk`，Claude Agent SDK、Codex、Claude Code、OpenCode 等成熟 agent 后端不归入 LLM Gateway，而通过 Agent Backend Adapter 接入。
 
 ## 当前状态
 
@@ -16,18 +16,18 @@
 - System Context 背景资源 Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
 - 最终结果 schema、confidence、session text、grep evidence ref 和 tool finding evidence ref 校验。
-- ActionDecision / FinalAnswer 双模式 schema 和 parser。
+- AgentDecision / FinalAnswer 双模式 schema 和 parser，供 Agent Backend Adapter 复用。
 - ActionDecision 当前允许 `search_logs`、`run_tool`、`ask_user`、`collect_environment` 和 `final_answer`，并校验 action input 的基础结构；`collect_code_evidence` 暂不开放。
-- `PLAN_ANALYSIS` 中真实模型直接返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
+- Agent Backend 返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为 `final_answer` 并继续做 evidence ref 校验。
 - 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果和 action decision 解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
 - 成功 task 的 alias 生成调用，输出 `{"alias":"..."}`，用于 UI 展示而不是分析证据。
 - `result.json` / `result.md` 持久化。
-- Task Executor 在 `PLAN_ANALYSIS` 阶段已循环调用双模式 action decision，并由 Analysis 预算和重复 fingerprint 防护终止。
+- Task Executor 在 `PLAN_ANALYSIS` 阶段已改为调用 `claude_agent_sdk` adapter，并复用本模块的双模式 decision parser、evidence ref 校验、Analysis 预算和重复 fingerprint 防护。
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
-- Agent Backend 诊断接口已由独立 adapter registry 提供，LLM Gateway 仍只负责 `internal_llm`。
-- 外部后端契约文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `agent_request.json` / `agent_response.json`。
+- Agent Backend 诊断接口已由独立 adapter registry 提供，LLM Gateway 不负责 Agent Backend runtime。
+- 后端输入/响应文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `agent_request.json` / `agent_response.json`。
 
 ## 当前输入
 

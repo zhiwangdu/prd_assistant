@@ -72,5 +72,5 @@ metadata_adapter
 - Prompt preview 能展示实际将注入的背景资源。
 - 创建 Log Analysis run 后 workspace 包含 `system_context.json`。
 - Session timeline 包含 `system_context_recorded`。
-- Agent Backend 输入包含 System Context 摘要；当前 `internal_llm` 后端会把它注入 LLM Prompt。
+- Agent Backend 输入包含 System Context 摘要；当前 `claude_agent_sdk` 后端会通过 `analysis_package.json` 接收这些背景资源。
 - Metadata 原有 API 和 WebUI 拓扑展示保持可用。

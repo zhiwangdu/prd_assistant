@@ -815,7 +815,10 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{
+        os::unix::fs::PermissionsExt,
+        sync::atomic::{AtomicU64, Ordering},
+    };
     use tower::ServiceExt;
 
     use crate::{
@@ -825,7 +828,8 @@ mod tests {
         http,
         services::metadata::MetadataImportRequest,
         support::config::{
-            AnalysisSettings, AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
+            AgentBackendSettings, AgentBackendSettingsEntry, AgentBackendType, AnalysisSettings,
+            AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
     };
@@ -1400,17 +1404,17 @@ mod tests {
         .unwrap();
         std::fs::write(
             workspace.join("analysis_package.json"),
-            r#"{"schemaVersion":1,"runtimeStatus":"contract_only_not_invoked"}"#,
+            r#"{"schemaVersion":1,"runtimeStatus":"ready_for_backend"}"#,
         )
         .unwrap();
         std::fs::write(
             workspace.join("agent_request.json"),
-            r#"{"schemaVersion":1,"backend":{"backendId":"internal_llm","backendType":"internal_llm","executionMode":"llm_gateway","runtimeStatus":"contract_only_not_invoked"}}"#,
+            r#"{"schemaVersion":1,"backend":{"backendId":"claude_agent_sdk","backendType":"claude_agent_sdk","executionMode":"agent_sdk_adapter","runtimeStatus":"pending_backend_call"}}"#,
         )
         .unwrap();
         std::fs::write(
             workspace.join("agent_response.json"),
-            r#"{"schemaVersion":1,"runtimeStatus":"not_invoked"}"#,
+            r#"{"schemaVersion":1,"runtimeStatus":"succeeded"}"#,
         )
         .unwrap();
         let now = Utc::now();
@@ -1471,10 +1475,13 @@ mod tests {
         assert_eq!(body["toolResults"][0]["status"], "OK");
         assert_eq!(
             body["analysisPackage"]["runtimeStatus"],
-            "contract_only_not_invoked"
+            "ready_for_backend"
         );
-        assert_eq!(body["agentRequest"]["backend"]["backendId"], "internal_llm");
-        assert_eq!(body["agentResponse"]["runtimeStatus"], "not_invoked");
+        assert_eq!(
+            body["agentRequest"]["backend"]["backendId"],
+            "claude_agent_sdk"
+        );
+        assert_eq!(body["agentResponse"]["runtimeStatus"], "succeeded");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1605,17 +1612,23 @@ mod tests {
 
     #[tokio::test]
     async fn llm_failure_marks_plan_analysis_phase() {
-        let (state, root) = test_state_with_llm(LlmSettings {
-            provider: LlmProvider::OpenAiCompatible,
-            base_url: Some("not a valid URL".to_string()),
-            api_key: Some("test-key".to_string()),
-            binary_path: None,
-            binary_max_output_bytes: 1024 * 1024,
-            model: "test-model".to_string(),
-            request_timeout_seconds: 1,
-            max_input_chars: 60_000,
-            max_output_tokens: 100,
-        });
+        let (state, root) = test_state_with_adapter(
+            LlmSettings {
+                provider: LlmProvider::OpenAiCompatible,
+                base_url: Some("not a valid URL".to_string()),
+                api_key: Some("test-key".to_string()),
+                binary_path: None,
+                binary_max_output_bytes: 1024 * 1024,
+                model: "test-model".to_string(),
+                request_timeout_seconds: 1,
+                max_input_chars: 60_000,
+                max_output_tokens: 100,
+            },
+            r#"#!/usr/bin/env bash
+echo adapter failed >&2
+exit 17
+"#,
+        );
         create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_failure", UploadStatus::Complete).await;
         let app = http::router(state.clone()).with_state(state);
@@ -1806,12 +1819,50 @@ nodes:
     }
 
     fn test_state_with_llm(llm: LlmSettings) -> (Arc<AppState>, std::path::PathBuf) {
+        test_state_with_adapter(llm, DEFAULT_MOCK_CLAUDE_ADAPTER)
+    }
+
+    const DEFAULT_MOCK_CLAUDE_ADAPTER: &str = r#"#!/usr/bin/env bash
+set -euo pipefail
+package="analysis_package.json"
+if grep -q 'ASK_USER_MVP' "$package" && ! grep -q 'msg-test-1' "$package"; then
+  cat <<'JSON'
+{"decision":{"type":"action","decision":{"type":"ask_user","reason":"need time window from user","input":{"question":"请补充异常时间窗口","answerFormat":"time range","required":true},"risk":"SAFE_READ_ONLY","fingerprint":"ask-user-time-window"}}}
+JSON
+  exit 0
+fi
+if grep -q 'APPROVAL_MVP' "$package" && ! grep -q 'environment_evidence.json' "$package"; then
+  cat <<'JSON'
+{"decision":{"type":"action","decision":{"type":"collect_environment","reason":"need approved environment evidence","input":{"scope":"node","commands":["uptime"]},"risk":"REQUIRES_APPROVAL","fingerprint":"collect-env-uptime"}}}
+JSON
+  exit 0
+fi
+if grep -q '"matches": \[\]' "$package" || grep -q '"matches":\[\]' "$package"; then
+  evidence='session_text_input.json#question'
+else
+  evidence='grep_results.json#matches/0'
+fi
+cat <<JSON
+{"decision":{"type":"final_answer","result":{"summary":"Why did the sample fail? mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"current task evidence explains the failure","evidenceRefs":["$evidence"]}],"nextChecks":["check current evidence"],"fixSuggestions":["fix the reported issue"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":32,"outputTokens":18},"cost":{"usd":0.001}}
+JSON
+"#;
+
+    fn test_state_with_adapter(
+        llm: LlmSettings,
+        adapter_content: &str,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
         static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
         let root = std::env::temp_dir().join(format!(
             "logagent-task-api-{}-{}",
             std::process::id(),
             NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
+        let adapter = root.join("mock_claude_agent_sdk.sh");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&adapter, adapter_content).unwrap();
+        let mut permissions = std::fs::metadata(&adapter).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&adapter, permissions).unwrap();
         let config = Arc::new(AppConfig {
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
@@ -1832,7 +1883,23 @@ nodes:
             },
             tools: ToolsSettings::default(),
             llm,
-            agent_backends: crate::support::config::AgentBackendSettings::default(),
+            agent_backends: AgentBackendSettings {
+                default_backend: "claude_agent_sdk".to_string(),
+                backends: [(
+                    "claude_agent_sdk".to_string(),
+                    AgentBackendSettingsEntry {
+                        name: "claude_agent_sdk".to_string(),
+                        backend_type: AgentBackendType::ClaudeAgentSdk,
+                        enabled: true,
+                        command_path: Some(adapter),
+                        timeout_seconds: 5,
+                        max_input_bytes: 1024 * 1024,
+                        max_output_bytes: 1024 * 1024,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            },
             analysis: test_analysis_settings(),
             embedding: test_embedding_settings(),
         });

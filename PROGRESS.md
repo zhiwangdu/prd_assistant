@@ -635,6 +635,17 @@ Current product-loop Case Store slice verification:
 - `npm run build`
 - `scripts/smoke-product-loop.sh` passed with upload `upl_1780939967830_1`, task `task_1780939967836_2`, case `case_1780939968869_3`, and recall task `task_1780939968874_4`.
 
+## 2026-06-11 Claude SDK Backend Runtime Switch
+
+- Log Analysis `PLAN_ANALYSIS` no longer uses the self-built `internal_llm` agent loop. The executor now refreshes `analysis_package.json` and `agent_request.json`, invokes the configured `claude_agent_sdk` adapter, validates the returned `AgentDecision`, and writes a real `agent_response.json`.
+- `agent_response.json` now records `runtimeStatus`, raw decision, `normalizedDecision`, usage/cost, duration, and errors. Adapter failures, non-JSON stdout, illegal actions, or invalid evidence refs fail the task without fallback.
+- Config defaults now require `claude_agent_sdk`; missing `LOGAGENT_AGENT_CLAUDE_SDK_PATH` or a configured absolute `command_path` fails startup. `internal_llm` is no longer a supported agent backend type.
+- Tool capability metadata is now included in `analysis_package.json` so Claude can request `run_tool` using Server-managed whitelist execution and canonical finding refs.
+- WebUI now labels results as `Agent analysis` and shows a `Claude Code backend` panel with real backend status, usage/cost, duration, errors, and artifact paths instead of the old contract-only panel.
+- Added mock Claude SDK adapter tests for final answers, `run_tool`, `ask_user`, invalid evidence refs, non-zero adapter exits, and executor multi-round search/budget behavior.
+- Updated root, Server, WebUI, Agent Backends, Analysis Agent, LLM Gateway, Config, System Context, Interfaces, Roadmap, Tool Runner, and Testing docs to remove the old `internal_llm` default/runtime language.
+- Verification for this slice passed: `cargo fmt --check`, `cargo check`, `cargo test` (native 1 + server 113 tests), `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, and `npm --prefix webui run build`.
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:

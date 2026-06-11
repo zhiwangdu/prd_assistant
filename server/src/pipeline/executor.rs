@@ -21,11 +21,15 @@ use crate::{
     },
     services::metadata::TaskMetadataContext,
     services::{
+        agent_backend::AgentBackendDecisionInput,
         agent_contracts::{write_agent_contracts, AgentContractInput},
-        llm_gateway::{ActionDecision, AgentDecision, LlmCallEvent, LlmCallEventType},
+        llm_gateway::{ActionDecision, AgentDecision},
     },
     stores::analysis_state,
-    support::config::{AnalysisSettings, LogAnalyzerSettings},
+    support::{
+        config::{AnalysisSettings, LogAnalyzerSettings},
+        id::next_id,
+    },
 };
 
 #[derive(Debug)]
@@ -242,6 +246,7 @@ async fn plan_analysis_phase(
                 tool_results: &tool_results,
                 analysis_snapshot: &snapshot,
                 agent_backends: &state.config.agent_backends,
+                tools: &state.config.tools,
             },
         )
         .await?;
@@ -251,20 +256,33 @@ async fn plan_analysis_phase(
                 &state.config.agent_backends.default_backend,
             )?;
         }
-        let question_context = question_with_analysis_context(&task.question, &snapshot.state);
+        let call_id = next_id("agentcall");
+        let backend_id = state.config.agent_backends.default_backend.clone();
+        analysis_state::record_llm_call_started(
+            &workspace,
+            TaskPhase::PlanAnalysis,
+            call_id.clone(),
+            "agent_backend_decision".to_string(),
+            1,
+            backend_id.clone(),
+        )?;
         let decision = state
-            .llm
-            .decide_next_action_with_events(
-                &question_context,
-                &manifest,
-                &grep,
-                metadata_context.as_ref(),
-                system_context.as_ref(),
-                case_context.as_ref(),
-                &tool_results,
-                |event| record_llm_call_event(&workspace, event),
-            )
+            .agent_backends
+            .decide_next(AgentBackendDecisionInput {
+                workspace: &workspace,
+                grep_results: &grep,
+                case_context: case_context.as_ref(),
+                tool_results: &tool_results,
+            })
             .await?;
+        analysis_state::record_llm_call_completed(
+            &workspace,
+            TaskPhase::PlanAnalysis,
+            call_id,
+            "agent_backend_decision".to_string(),
+            1,
+            backend_id,
+        )?;
         record_model_decision(&workspace, &decision)?;
         match decision {
             AgentDecision::Action { decision } => {
@@ -299,41 +317,6 @@ async fn plan_analysis_phase(
                 return Ok(DispatchOutcome::Complete);
             }
         }
-    }
-}
-
-fn record_llm_call_event(workspace: &std::path::Path, event: LlmCallEvent) {
-    let result = match event.event_type {
-        LlmCallEventType::Started => analysis_state::record_llm_call_started(
-            workspace,
-            TaskPhase::PlanAnalysis,
-            event.call_id,
-            event.call_kind.to_string(),
-            event.attempt,
-            event.model,
-        ),
-        LlmCallEventType::Completed => analysis_state::record_llm_call_completed(
-            workspace,
-            TaskPhase::PlanAnalysis,
-            event.call_id,
-            event.call_kind.to_string(),
-            event.attempt,
-            event.model,
-        ),
-        LlmCallEventType::SchemaRetry => analysis_state::record_llm_call_schema_retry(
-            workspace,
-            TaskPhase::PlanAnalysis,
-            event.call_id,
-            event.call_kind.to_string(),
-            event.attempt,
-            event.model,
-            event
-                .error
-                .unwrap_or_else(|| "unknown schema error".to_string()),
-        ),
-    };
-    if let Err(err) = result {
-        warn!("failed to record LLM call event: {err}");
     }
 }
 
@@ -638,40 +621,6 @@ fn action_from_decision(task: &TaskRecord, decision: ActionDecision) -> AgentAct
     }
 }
 
-fn question_with_analysis_context(question: &str, state: &analysis_state::AnalysisState) -> String {
-    let mut value = question.to_string();
-    if !state.user_messages.is_empty() {
-        value.push_str("\n\nUser messages:\n");
-        for message in state.user_messages.iter().rev().take(5).rev() {
-            value.push_str(&format!(
-                "- {}: {}\n",
-                message.question_id.as_deref().unwrap_or("message"),
-                message.content
-            ));
-        }
-    }
-    let extra_evidence = state
-        .evidence
-        .iter()
-        .filter(|evidence| {
-            matches!(
-                evidence.evidence_type,
-                analysis_state::AnalysisEvidenceType::EnvironmentEvidence
-            )
-        })
-        .collect::<Vec<_>>();
-    if !extra_evidence.is_empty() {
-        value.push_str("\nEnvironment evidence:\n");
-        for evidence in extra_evidence.iter().rev().take(5).rev() {
-            value.push_str(&format!(
-                "- {}: {}\n",
-                evidence.artifact_path, evidence.summary
-            ));
-        }
-    }
-    value
-}
-
 fn record_model_decision(
     workspace: &std::path::Path,
     decision: &AgentDecision,
@@ -792,7 +741,8 @@ mod tests {
         domain::models::{TaskInput, TaskSource, TaskStatus},
         pipeline::{extract_task, prepare_pipeline_run, search_task},
         support::config::{
-            AnalysisSettings, AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
+            AgentBackendSettings, AgentBackendSettingsEntry, AgentBackendType, AnalysisSettings,
+            AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
             LogAnalyzerSettings, ServerSettings, StorageSettings, ToolMatchSettings, ToolSettings,
             ToolsSettings,
         },
@@ -876,13 +826,22 @@ mod tests {
         assert!(stdout.contains("extracted/sample/sample.log"));
         let snapshot = analysis_state::read_snapshot(&fixture.workspace).unwrap();
         assert_eq!(snapshot.state.budget.rounds, 1);
-        assert_eq!(snapshot.state.budget.llm_calls, 0);
+        assert_eq!(snapshot.state.budget.llm_calls, 1);
+        assert!(fixture.workspace.join("agent_response.json").exists());
     }
 
     #[tokio::test]
     async fn plan_analysis_executes_stub_search_action_before_result() {
         let fixture = Fixture::new_with_log(TaskPhase::Extract, "INFO start\nWARN slow\n");
-        let state = fixture.state();
+        let adapter = fixture.write_tool(
+            "search_adapter.sh",
+            r#"#!/usr/bin/env bash
+cat <<'JSON'
+{"decision":{"type":"action","decision":{"type":"search_logs","reason":"need broader error keywords","input":{"keywords":["error","timeout","failed"],"maxMatches":50},"risk":"SAFE_READ_ONLY","fingerprint":"search:error-timeout-failed"}},"usage":{"inputTokens":10,"outputTokens":5},"cost":{"usd":0.001}}
+JSON
+"#,
+        );
+        let state = fixture.state_with_adapter(adapter);
         let mut task = fixture.task(TaskPhase::Extract);
         task.status = TaskStatus::Queued;
         task.phase = None;
@@ -950,6 +909,26 @@ mod tests {
         }
 
         fn state_with_tools(&self, tools: ToolsSettings) -> Arc<AppState> {
+            let adapter = self.write_tool(
+                "final_adapter.sh",
+                r#"#!/usr/bin/env bash
+cat <<'JSON'
+{"decision":{"type":"final_answer","result":{"summary":"mock summary","symptoms":["failure"],"likelyRootCauses":[{"cause":"log contains an error","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check logs"],"fixSuggestions":["fix error"],"missingInformation":[],"confidence":"high"}},"usage":{"inputTokens":12,"outputTokens":8},"cost":{"usd":0.002}}
+JSON
+"#,
+            );
+            self.state_with_tools_and_adapter(tools, adapter)
+        }
+
+        fn state_with_adapter(&self, adapter: PathBuf) -> Arc<AppState> {
+            self.state_with_tools_and_adapter(ToolsSettings::default(), adapter)
+        }
+
+        fn state_with_tools_and_adapter(
+            &self,
+            tools: ToolsSettings,
+            adapter: PathBuf,
+        ) -> Arc<AppState> {
             let config = Arc::new(AppConfig {
                 server: ServerSettings {
                     bind: "127.0.0.1:0".to_string(),
@@ -978,7 +957,23 @@ mod tests {
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
                 },
-                agent_backends: crate::support::config::AgentBackendSettings::default(),
+                agent_backends: AgentBackendSettings {
+                    default_backend: "claude_agent_sdk".to_string(),
+                    backends: [(
+                        "claude_agent_sdk".to_string(),
+                        AgentBackendSettingsEntry {
+                            name: "claude_agent_sdk".to_string(),
+                            backend_type: AgentBackendType::ClaudeAgentSdk,
+                            enabled: true,
+                            command_path: Some(adapter),
+                            timeout_seconds: 5,
+                            max_input_bytes: 1024 * 1024,
+                            max_output_bytes: 1024 * 1024,
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
                 analysis: AnalysisSettings {
                     max_rounds: 4,
                     max_llm_calls: 4,

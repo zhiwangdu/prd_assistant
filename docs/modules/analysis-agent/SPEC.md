@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 第一阶段已提供配置、诊断接口和外部后端契约产物，但现有分析执行仍默认使用 `internal_llm`。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 Claude Agent SDK action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 已提供配置、诊断接口和后端输入/响应产物；现有分析执行默认且唯一调用 `claude_agent_sdk`。
 
 已落地：
 
@@ -18,9 +18,9 @@
 - grep/tool/final result/failure 的基础事件记录
 - model decision 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
-- LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
+- AgentDecision / FinalAnswer 双模式 schema 和 parser
 - Agent Backend 配置摘要和 dry-run 诊断
-- `analysis_package.json`、`agent_request.json`、`agent_response.json` 契约产物
+- `analysis_package.json`、`agent_request.json` 和真实 `agent_response.json`
 - Domain Adapter 内置 registry
 - 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
 - `ask_user` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
@@ -43,8 +43,7 @@
 - `analysis_state.json`
 - `analysis_events.jsonl`
 - 用户新增消息或审批决定
-- LLM Gateway 的结构化决策
-- 后续 Agent Backend 的结构化决策
+- Claude Agent SDK adapter 的结构化决策
 
 ## 输出
 
@@ -52,7 +51,7 @@
 - 追加的 `analysis_events.jsonl`
 - 一个待 Server 处理的结构化 action
 - 终态时的 `result.json` 和 `result.md`
-- 外部 backend 接入契约：`analysis_package.json` / `agent_request.json` / `agent_response.json`
+- Claude Agent SDK backend 输入/响应：`analysis_package.json` / `agent_request.json` / `agent_response.json`
 
 当前 `/analysis` 响应包含：
 
@@ -147,7 +146,7 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 
 ## 验收标准
 
-- 能在两轮以上的 stub 决策中执行动作并合并新证据。
+- 能在两轮以上的 mock Claude SDK 决策中执行动作并合并新证据。
 - 重复动作和预算耗尽能确定终止。
 - 能进入 `WAITING_FOR_USER`，接收回答后恢复。
 - 能进入 `WAITING_FOR_APPROVAL`，批准或拒绝后继续。

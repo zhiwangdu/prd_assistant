@@ -53,11 +53,12 @@ llm:
   max_output_tokens: 4096
 
 agent_backends:
-  default_backend: "internal_llm"
+  default_backend: "claude_agent_sdk"
   backends:
-    internal_llm:
-      type: "internal_llm"
+    claude_agent_sdk:
+      type: "claude_agent_sdk"
       enabled: true
+      command_path_env: "LOGAGENT_AGENT_CLAUDE_SDK_PATH"
     codex_cli:
       type: "codex_cli"
       enabled: false
@@ -66,10 +67,6 @@ agent_backends:
       type: "claude_code_cli"
       enabled: false
       command_path_env: "LOGAGENT_AGENT_CLAUDE_CODE_PATH"
-    claude_agent_sdk:
-      type: "claude_agent_sdk"
-      enabled: false
-      command_path_env: "LOGAGENT_AGENT_CLAUDE_SDK_PATH"
     opencode_cli:
       type: "opencode_cli"
       enabled: false

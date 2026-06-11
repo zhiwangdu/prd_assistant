@@ -131,7 +131,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 已启用多轮 LLM action loop，受轮数、LLM 调用、action 数和重复 fingerprint 预算限制；`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 或 `REQUIRES_APPROVAL` 动作会进入 `WAITING_FOR_APPROVAL`。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 直接调用默认 `claude_agent_sdk` adapter，受轮数、后端调用、action 数和重复 fingerprint 预算限制；`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 或 `REQUIRES_APPROVAL` 动作会进入 `WAITING_FOR_APPROVAL`。
 
 ## 数据目录
 
@@ -277,30 +277,30 @@ MVP 要求：
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
 - `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；当前固定调用 `/usr/bin/influxql-analyzer`，真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
-- Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、LLM call started/completed/schema retry、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
+- Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、Agent backend call started/completed、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；同时解析 Session 选择的 `systemContextIds` 和默认启用资源，固化 `system_context.json`。旧 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理这些上下文快照。
-- task 创建时按用户问题通过 Memory 召回本地已确认 Case，写入 `session_text_input.json` 和 `case_context.json`；artifacts API 返回 `textInput` 和 `caseContext`，LLM Prompt 会把用户输入作为 `session_text_input.json#question` 证据，并把历史 Case 作为参考上下文。Case 兼容 API 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
+- task 创建时按用户问题通过 Memory 召回本地已确认 Case，写入 `session_text_input.json` 和 `case_context.json`；artifacts API 返回 `textInput` 和 `caseContext`，Agent Backend 输入会把用户输入作为 `session_text_input.json#question` 证据，并把历史 Case 作为参考上下文。Case 兼容 API 当前使用 schema v2，`sourceType=task` 记录绑定任务结果，`sourceType=manual` 记录由用户手工录入且不包含 `taskId/sourceResultPath`。
 - Memory 当前只启用 `memoryType=case`。Server 启动时会把 `storage.data_dir/cases/*.json` idempotent 导入 `storage.data_dir/memory/memory.sqlite`，搜索优先使用 SQLite FTS/BM25 并合并关键词重叠分数；FTS 不可用时回退到关键词重叠。旧 JSON 文件不会被删除，新增和更新 Case 仍同步写 JSON 作为回滚源。
 - Memory 管理页的手工录入路径已升级为 LLM-assisted import：Server 将未确认草稿持久化到 `storage.data_dir/case_imports`，只支持粘贴文本和 UTF-8 文本类文件，PDF/DOCX 暂不解析；缺少 `title`、`symptom`、`rootCause` 或 `solution` 时通过连续对话补齐。
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。每轮决策前会刷新 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，用于外部成熟 agent 后端契约；当前这些文件标记为 `contract_only_not_invoked`，默认仍循环调用 `internal_llm` 后端生成 `action | final_answer` 决策。`search_logs` 会用模型给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。每轮决策前会刷新 `analysis_package.json` 和 `agent_request.json`，随后调用 `claude_agent_sdk` adapter，并把真实响应写入 `agent_response.json`。后端只能返回 `action | final_answer` 结构化决策；`search_logs` 会用后端给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
 - `PLAN_ANALYSIS` 支持 `ask_user` 和 `collect_environment`：前者写入 `pendingUserPrompts` 并等待用户回答，后者写入 `pendingApprovals` 并等待批准/拒绝。当前批准环境采集后写入 mock `environment_evidence/<action_id>/result.json`，真实 SSH/SCP 执行器后续替换。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
-- `GENERATE_RESULT` 仍保留为兼容恢复和兜底路径，Prompt 包含 manifest、grep、Metadata 摘要和 Tool Runner summary/findings；最终结果解析/schema 错误会追加修正提示并重试一次，仍失败时任务进入 `FAILED / GENERATE_RESULT`。`PLAN_ANALYSIS` 的 action decision 解析/schema 错误也会追加修正提示并重试一次，仍失败时任务进入 `FAILED / PLAN_ANALYSIS`。
-- LLM Gateway 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
-- LLM Gateway 允许最终结果引用用户在 Session 对话框中输入的文本，格式为 `session_text_input.json#question`。
-- LLM Gateway 允许最终结果引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
-- LLM Gateway 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
-- LLM Gateway 会把真实模型返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
-- LLM Gateway 会把 `PLAN_ANALYSIS` 中真实模型返回的裸最终结果 JSON，或多包一层的 `final_answer.result.result` / `answer` / `finalAnswer`，规范化为真正的 `final_answer`；缺少 `summary` 等核心字段的结果仍会拒绝。
-- stub Provider 用于默认开发和自动测试；真实 Provider 使用 OpenAI-compatible Chat Completions。
+- `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。
+- Agent Backend parser 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
+- Agent Backend final answer 允许引用用户在 Session 对话框中输入的文本，格式为 `session_text_input.json#question`。
+- Agent Backend final answer 允许引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
+- Agent Backend parser 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
+- Agent Backend parser 会把真实后端返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
+- Agent Backend parser 会把裸最终结果 JSON，或多包一层的 `final_answer.result.result` / `answer` / `finalAnswer`，规范化为真正的 `final_answer`；缺少 `summary` 等核心字段的结果仍会拒绝。
+- stub Provider 仅用于 LLM Gateway 辅助能力和自动测试；Log Analysis 开发和 CI 使用 mock `claude_agent_sdk` adapter。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - `llm.provider: "binary"` 时从 `llm.binary_path` 或 `llm.binary_path_env` 读取绝对路径，使用参数数组调用二进制，不拼接 shell，不依赖当前环境存在真实模型二进制。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。
 - LLM 解析/schema 错误会返回最新失败原因和上一轮失败原因；Provider HTTP、鉴权、限流和超时错误不重试。
-- `PLAN_ANALYSIS` 的真实模型调用会生成 `llmcall_*` callId；Task error、debug 日志和 analysis events 都会带上该 callId，便于定位失败轮次。
+- `PLAN_ANALYSIS` 的真实后端调用会生成 `agentcall_*` callId；Task error、debug 日志、analysis events 和 `agent_response.json` 可用于定位失败轮次。
 - LLM 输出日志 debug 开关默认关闭、只保存在 Server 进程内。开启后仅把模型 response content 打印到 Server stderr，不打印 prompt 或 API Key。
 
 Server 的 multipart body limit 使用 `storage.max_upload_bytes`。如果 Native Agent 上传稍大的文件时报：
@@ -359,7 +359,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 `llm_call_started`、`llm_call_completed` 和 `llm_call_schema_retry` 事件，事件 details 包含 `callId`、`callKind`、`attempt`、`model` 和可选 `error`。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext`、`analysisPackage`、`agentRequest`、`agentResponse` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`analysisPackage` / `agentRequest` / `agentResponse` 分别来自外部后端契约文件；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 backend call started/completed 和 model decision 事件，事件 details 包含 `callId`、`callKind`、`attempt` 和 backend id。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext`、`analysisPackage`、`agentRequest`、`agentResponse` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`analysisPackage` / `agentRequest` / `agentResponse` 分别来自 Claude SDK 后端输入和真实响应文件；`agentResponse` 包含 runtime status、原始 decision、normalizedDecision、usage/cost、耗时和错误；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 

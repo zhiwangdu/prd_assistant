@@ -141,6 +141,11 @@ type AgentRequestArtifact = {
 type AgentResponseArtifact = {
   runtimeStatus?: string;
   reason?: string;
+  durationMs?: number;
+  normalizedDecision?: unknown;
+  usage?: unknown;
+  cost?: unknown;
+  error?: string | null;
 };
 type SystemContextSummary = {
   contextId: string;
@@ -646,7 +651,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                       <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID (optional)" />
                       <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
                     </div>
-                    <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 LLM 分析的问题" />
+                    <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 Agent 分析的问题" />
                     <SystemContextPicker contexts={systemContexts} selectedIds={selectedContextIds} onChange={setSelectedContextIds} />
                     <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
                       <UploadCloud className="mb-2 h-7 w-7" />
@@ -706,7 +711,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
 
       {artifacts?.metadataContext ? <MetadataContextView context={artifacts.metadataContext} /> : null}
       {artifacts?.systemContext ? <SystemContextSnapshotView context={artifacts.systemContext} /> : null}
-      {artifacts?.analysisPackage || artifacts?.agentRequest || artifacts?.agentResponse ? <AgentContractView artifacts={artifacts} /> : null}
+      {artifacts?.analysisPackage || artifacts?.agentRequest || artifacts?.agentResponse ? <AgentBackendPanel artifacts={artifacts} /> : null}
       {artifacts?.textInput ? <Evidence title="Session text input" count={1}><DataLine id="session-text-input" title="Question" detail={artifacts.textInput.question ?? ""} /></Evidence> : null}
       {artifacts?.caseContext ? <TaskCaseContextView context={artifacts.caseContext} /> : null}
       {artifacts?.toolResults?.length ? <Evidence title="Tool results" count={artifacts.toolResults.length}>{artifacts.toolResults.map((result) => <ToolResultLine key={result.actionId} result={result} />)}</Evidence> : null}
@@ -839,7 +844,7 @@ function SessionTimeline({ events, expanded, snapshot, task, taskResult, onToggl
             <CardDescription>{snapshot ? `revision ${snapshot.state.revision} · ${snapshot.state.status} · phase ${snapshot.state.currentPhase ?? "none"}` : "Session and task events"}</CardDescription>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {expanded && snapshot ? <div className="flex flex-wrap gap-2 text-xs"><Badge variant="secondary">rounds {snapshot.state.budget.rounds}</Badge><Badge variant="secondary">LLM {snapshot.state.budget.llmCalls}</Badge><Badge variant="secondary">actions {snapshot.state.budget.actions}</Badge><Badge variant="secondary">evidence {snapshot.state.evidence.length}</Badge></div> : null}
+            {expanded && snapshot ? <div className="flex flex-wrap gap-2 text-xs"><Badge variant="secondary">rounds {snapshot.state.budget.rounds}</Badge><Badge variant="secondary">backend {snapshot.state.budget.llmCalls}</Badge><Badge variant="secondary">actions {snapshot.state.budget.actions}</Badge><Badge variant="secondary">evidence {snapshot.state.evidence.length}</Badge></div> : null}
             <Button className="h-8 px-2" variant="outline" onClick={onToggle} aria-label={expanded ? "Collapse Evidence timeline" : "Expand Evidence timeline"}>
               {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </Button>
@@ -903,7 +908,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function AnalysisResultView({ result }: { result: AnalysisResult }) {
-  return <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>LLM analysis result</CardTitle><Badge variant="secondary">confidence: {result.confidence}</Badge></div><CardDescription>{result.summary}</CardDescription></CardHeader><CardContent className="grid gap-5 lg:grid-cols-2"><ResultList title="Symptoms" items={result.symptoms} /><div><h3 className="mb-2 text-sm font-semibold">Likely root causes</h3>{result.likelyRootCauses.length ? result.likelyRootCauses.map((cause, index) => <div className="mb-2 rounded-lg border border-border p-3" key={`${cause.cause}:${index}`}><p className="text-sm">{cause.cause}</p><div className="mt-2 flex flex-wrap gap-2">{cause.evidenceRefs.map((reference) => <button className="font-mono text-xs text-primary underline" key={reference} onClick={() => scrollToEvidence(reference)}>{reference}</button>)}</div></div>) : <p className="text-sm text-muted-foreground">当前证据不足以提出根因。</p>}</div><ResultList title="Next checks" items={result.nextChecks} /><ResultList title="Fix suggestions" items={result.fixSuggestions} /><ResultList title="Missing information" items={result.missingInformation} /></CardContent></Card>;
+  return <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Agent analysis</CardTitle><Badge variant="secondary">confidence: {result.confidence}</Badge></div><CardDescription>{result.summary}</CardDescription></CardHeader><CardContent className="grid gap-5 lg:grid-cols-2"><ResultList title="Symptoms" items={result.symptoms} /><div><h3 className="mb-2 text-sm font-semibold">Likely root causes</h3>{result.likelyRootCauses.length ? result.likelyRootCauses.map((cause, index) => <div className="mb-2 rounded-lg border border-border p-3" key={`${cause.cause}:${index}`}><p className="text-sm">{cause.cause}</p><div className="mt-2 flex flex-wrap gap-2">{cause.evidenceRefs.map((reference) => <button className="font-mono text-xs text-primary underline" key={reference} onClick={() => scrollToEvidence(reference)}>{reference}</button>)}</div></div>) : <p className="text-sm text-muted-foreground">当前证据不足以提出根因。</p>}</div><ResultList title="Next checks" items={result.nextChecks} /><ResultList title="Fix suggestions" items={result.fixSuggestions} /><ResultList title="Missing information" items={result.missingInformation} /></CardContent></Card>;
 }
 
 function MetadataContextView({ context }: { context: MetadataContext }) {
@@ -937,12 +942,13 @@ function SystemContextSnapshotView({ context }: { context: SystemContextBundle }
   );
 }
 
-function AgentContractView({ artifacts }: { artifacts: Artifacts }) {
+function AgentBackendPanel({ artifacts }: { artifacts: Artifacts }) {
   const backend = artifacts.agentRequest?.backend;
   const rows = [
     ["Backend", [backend?.backendId, backend?.backendType].filter(Boolean).join(" · ") || "-"],
     ["Execution mode", backend?.executionMode ?? "-"],
     ["Runtime status", artifacts.agentResponse?.runtimeStatus ?? artifacts.analysisPackage?.runtimeStatus ?? backend?.runtimeStatus ?? "-"],
+    ["Duration", typeof artifacts.agentResponse?.durationMs === "number" ? `${artifacts.agentResponse.durationMs} ms` : "-"],
     ["Package", artifacts.analysisPackagePath ?? "-"],
     ["Request", artifacts.agentRequestPath ?? "-"],
     ["Response", artifacts.agentResponsePath ?? "-"]
@@ -950,16 +956,20 @@ function AgentContractView({ artifacts }: { artifacts: Artifacts }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Agent contract</CardTitle>
-        <CardDescription>外部成熟 agent 后端的证据包和请求/响应契约；当前先冻结契约，主分析路径仍使用内部后端。</CardDescription>
+        <CardTitle>Claude Code backend</CardTitle>
+        <CardDescription>Agent backend receives the evidence package and returns a structured action or final answer.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-        {rows.map(([label, value]) => (
-          <div className="rounded-lg border border-border p-3" key={label}>
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 break-all text-sm">{value}</p>
-          </div>
-        ))}
+      <CardContent className="space-y-3">
+        <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          {rows.map(([label, value]) => (
+            <div className="rounded-lg border border-border p-3" key={label}>
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="mt-1 break-all text-sm">{value}</p>
+            </div>
+          ))}
+        </div>
+        {artifacts.agentResponse?.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{artifacts.agentResponse.error}</div> : null}
+        {artifacts.agentResponse?.usage || artifacts.agentResponse?.cost ? <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify({ usage: artifacts.agentResponse.usage, cost: artifacts.agentResponse.cost }, null, 2)}</pre> : null}
       </CardContent>
     </Card>
   );

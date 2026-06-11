@@ -99,11 +99,11 @@ impl Default for AgentBackendSettings {
     fn default() -> Self {
         let mut backends = BTreeMap::new();
         backends.insert(
-            "internal_llm".to_string(),
+            "claude_agent_sdk".to_string(),
             AgentBackendSettingsEntry {
-                name: "internal_llm".to_string(),
-                backend_type: AgentBackendType::InternalLlm,
-                enabled: true,
+                name: "claude_agent_sdk".to_string(),
+                backend_type: AgentBackendType::ClaudeAgentSdk,
+                enabled: false,
                 command_path: None,
                 timeout_seconds: default_agent_backend_timeout_seconds(),
                 max_input_bytes: default_agent_backend_max_input_bytes(),
@@ -111,7 +111,7 @@ impl Default for AgentBackendSettings {
             },
         );
         Self {
-            default_backend: "internal_llm".to_string(),
+            default_backend: "claude_agent_sdk".to_string(),
             backends,
         }
     }
@@ -119,7 +119,6 @@ impl Default for AgentBackendSettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentBackendType {
-    InternalLlm,
     CodexCli,
     ClaudeCodeCli,
     ClaudeAgentSdk,
@@ -129,7 +128,6 @@ pub enum AgentBackendType {
 impl AgentBackendType {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::InternalLlm => "internal_llm",
             Self::CodexCli => "codex_cli",
             Self::ClaudeCodeCli => "claude_code_cli",
             Self::ClaudeAgentSdk => "claude_agent_sdk",
@@ -139,7 +137,6 @@ impl AgentBackendType {
 
     pub fn execution_mode(self) -> &'static str {
         match self {
-            Self::InternalLlm => "llm_gateway",
             Self::ClaudeAgentSdk => "agent_sdk_adapter",
             Self::CodexCli | Self::ClaudeCodeCli | Self::OpencodeCli => "external_cli_adapter",
         }
@@ -564,20 +561,6 @@ fn resolve_agent_backends(
             },
         );
     }
-    if !backends.contains_key("internal_llm") {
-        backends.insert(
-            "internal_llm".to_string(),
-            AgentBackendSettingsEntry {
-                name: "internal_llm".to_string(),
-                backend_type: AgentBackendType::InternalLlm,
-                enabled: true,
-                command_path: None,
-                timeout_seconds: default_agent_backend_timeout_seconds(),
-                max_input_bytes: default_agent_backend_max_input_bytes(),
-                max_output_bytes: default_agent_backend_max_output_bytes(),
-            },
-        );
-    }
     let default_backend = raw.default_backend.trim();
     if default_backend.is_empty() {
         anyhow::bail!("agent_backends.default_backend must not be empty");
@@ -596,10 +579,10 @@ fn resolve_agent_backends(
 
 fn resolve_agent_backend_command_path(
     name: &str,
-    backend_type: AgentBackendType,
+    _backend_type: AgentBackendType,
     backend: &AgentBackendConfig,
 ) -> anyhow::Result<Option<PathBuf>> {
-    if backend_type == AgentBackendType::InternalLlm || !backend.enabled {
+    if !backend.enabled {
         return Ok(None);
     }
     let path = if let Some(path) = &backend.command_path {
@@ -629,7 +612,6 @@ fn resolve_agent_backend_command_path(
 
 fn parse_agent_backend_type(value: &str) -> anyhow::Result<AgentBackendType> {
     match value {
-        "internal_llm" => Ok(AgentBackendType::InternalLlm),
         "codex_cli" => Ok(AgentBackendType::CodexCli),
         "claude_code_cli" => Ok(AgentBackendType::ClaudeCodeCli),
         "claude_agent_sdk" => Ok(AgentBackendType::ClaudeAgentSdk),
@@ -814,12 +796,12 @@ fn default_llm_config() -> LlmConfig {
 fn default_agent_backends_config() -> AgentBackendsConfig {
     let mut backends = BTreeMap::new();
     backends.insert(
-        "internal_llm".to_string(),
+        "claude_agent_sdk".to_string(),
         AgentBackendConfig {
             backend_type: default_agent_backend_type(),
             enabled: true,
             command_path: None,
-            command_path_env: None,
+            command_path_env: Some("LOGAGENT_AGENT_CLAUDE_SDK_PATH".to_string()),
             timeout_seconds: default_agent_backend_timeout_seconds(),
             max_input_bytes: default_agent_backend_max_input_bytes(),
             max_output_bytes: default_agent_backend_max_output_bytes(),
@@ -867,11 +849,11 @@ fn default_tool_max_input_files() -> usize {
 }
 
 fn default_agent_backend_id() -> String {
-    "internal_llm".to_string()
+    "claude_agent_sdk".to_string()
 }
 
 fn default_agent_backend_type() -> String {
-    "internal_llm".to_string()
+    "claude_agent_sdk".to_string()
 }
 
 fn default_agent_backend_enabled() -> bool {
@@ -1035,13 +1017,41 @@ mod tests {
 
     #[test]
     fn resolves_default_agent_backend_config() {
-        let settings = resolve_agent_backends(None).unwrap();
+        temp_env_set(
+            "LOGAGENT_AGENT_CLAUDE_SDK_PATH",
+            "/opt/bin/claude-sdk",
+            || {
+                let settings = resolve_agent_backends(None).unwrap();
 
-        assert_eq!(settings.default_backend, "internal_llm");
-        let backend = settings.backends.get("internal_llm").unwrap();
-        assert_eq!(backend.backend_type, AgentBackendType::InternalLlm);
-        assert!(backend.enabled);
-        assert!(backend.command_path.is_none());
+                assert_eq!(settings.default_backend, "claude_agent_sdk");
+                let backend = settings.backends.get("claude_agent_sdk").unwrap();
+                assert_eq!(backend.backend_type, AgentBackendType::ClaudeAgentSdk);
+                assert!(backend.enabled);
+                assert_eq!(
+                    backend.command_path.as_ref().unwrap(),
+                    &PathBuf::from("/opt/bin/claude-sdk")
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn rejects_missing_default_claude_agent_sdk_config() {
+        let parsed = serde_yaml::from_str::<ConfigFile>(
+            r#"
+agent_backends:
+  default_backend: claude_agent_sdk
+  backends:
+    claude_agent_sdk:
+      type: claude_agent_sdk
+      command_path_env: LOGAGENT_TEST_MISSING_CLAUDE_SDK_PATH
+"#,
+        )
+        .unwrap();
+        assert!(resolve_agent_backends(parsed.agent_backends)
+            .unwrap_err()
+            .to_string()
+            .contains("LOGAGENT_TEST_MISSING_CLAUDE_SDK_PATH"));
     }
 
     #[test]
