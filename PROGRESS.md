@@ -646,6 +646,13 @@ Current product-loop Case Store slice verification:
 - Updated root, Server, WebUI, Agent Backends, Analysis Agent, LLM Gateway, Config, System Context, Interfaces, Roadmap, Tool Runner, and Testing docs to remove the old `internal_llm` default/runtime language.
 - Verification for this slice passed: `cargo fmt --check`, `cargo check`, `cargo test` (native 1 + server 113 tests), `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, and `npm --prefix webui run build`.
 
+- Fixed direct Claude Code CLI execution for `claude_agent_sdk`: when `LOGAGENT_AGENT_CLAUDE_SDK_PATH` points to a `claude` / `claude.exe` binary, Server now invokes `claude --print --output-format json --json-schema ... --tools "" --no-session-persistence <prompt>` instead of the custom adapter-only `run --request ...` protocol. Non-`claude` command paths continue to use the custom LogAgent adapter protocol.
+- Agent response parsing now accepts Claude CLI JSON envelopes by parsing the `result` field, records `total_cost_usd` as `cost.usd`, and still rejects failed CLI envelopes, invalid decisions, and invalid evidence refs without fallback.
+- Added a mock direct `claude` CLI unit test to ensure `--request` is not passed to the native CLI and Claude envelope output normalizes to `final_answer`.
+- Updated deploy templates so `claude_agent_sdk` is the default backend and `.env.example` documents `LOGAGENT_AGENT_CLAUDE_SDK_PATH` as the absolute `claude` CLI path. The local runtime `/home/duzhiwang/workspace/data/prd_assistant/deploy/logagent.yaml` was also updated with an explicit `agent_backends` block.
+- Updated `deploy/logagentctl.sh` to load runtime `.env` with auto-export semantics so background Server processes receive `LOGAGENT_AGENT_CLAUDE_SDK_PATH` and other configured environment variables. The local runtime `logagentctl.sh` and `.env` were adjusted, the runtime server binary was rebuilt/installed, and `/health` returned `{"status":"ok"}` after a normal control-script start.
+- Verification for the Claude CLI backend fix passed: `cargo fmt --check`, `cargo check`, `cargo test` (native 1 + server 114 tests), `bash -n deploy/logagentctl.sh deploy/rebuild-install.sh /home/duzhiwang/workspace/data/prd_assistant/deploy/logagentctl.sh`, and repeated runtime `/health` checks through `logagentctl.sh status`.
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:

@@ -175,7 +175,7 @@ flowchart TD
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 真实 Agent Backend 调用会记录 callId、attempt 和完成事件。
-- Log Analysis run 会在每轮 `PLAN_ANALYSIS` 前刷新 `analysis_package.json` 和 `agent_request.json`，随后调用 `claude_agent_sdk` adapter 并写出真实 `agent_response.json`，其中包含状态、原始/规范化 decision、usage/cost、耗时和错误。
+- Log Analysis run 会在每轮 `PLAN_ANALYSIS` 前刷新 `analysis_package.json` 和 `agent_request.json`，随后调用 `claude_agent_sdk` 后端并写出真实 `agent_response.json`，其中包含状态、原始/规范化 decision、usage/cost、耗时和错误。`claude_agent_sdk` 的命令路径可直接指向 Claude Code CLI `claude` 二进制，Server 会用 `claude --print --output-format json --json-schema ... --tools ""` 调用；非 `claude` 文件名仍按自定义 adapter 协议 `<command_path> run --request agent_request.json --package analysis_package.json` 调用。
 - Analysis Orchestrator 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Orchestrator 已支持 `collect_environment` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；当前批准后生成 mock `environment_evidence`，真实 SSH/SCP 采集后续接入。
 - Memory MVP 已支持 `memoryType=case`、兼容 Case schema v2 API、成功任务人工确认、LLM-assisted 文本导入手工 Case、SQLite/FTS 本地索引、legacy JSON 启动导入、关键词 fallback 召回和禁用。

@@ -14,7 +14,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
 - `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会预创建 Memory/Case 相关运行目录，包括 `data/memory`、`data/cases` 和 `data/case_imports`。
-- `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块和禁用的成熟 agent adapter 配置，保留 `LOGAGENT_EMBEDDING_API_KEY` 与 `LOGAGENT_AGENT_*_PATH` 接入点但当前不强制设置。
+- `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块和默认启用的 `claude_agent_sdk` 后端配置；`LOGAGENT_AGENT_CLAUDE_SDK_PATH` 默认应指向 `which claude` 输出的绝对路径，Server 会以 Claude Code CLI 非交互 JSON 模式调用。其它 `LOGAGENT_AGENT_*_PATH` 仍作为预留后端接入点。
 - Native Agent 本机启动并连接远端 Server。
 - 示例配置支持 50992 测试端口。
 

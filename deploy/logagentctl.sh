@@ -7,7 +7,9 @@ ENV_FILE="${LOGAGENT_ENV_FILE:-$SCRIPT_DIR/.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck source=/dev/null
+  set -a
   source "$ENV_FILE"
+  set +a
 fi
 
 APP_DIR="${LOGAGENT_APP_DIR:-$DEFAULT_APP_DIR}"

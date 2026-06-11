@@ -6,7 +6,7 @@ Agent Backends 是 LogAgent 接入成熟 agent 产品的适配层。LogAgent 不
 
 当前配置支持的后端类型：
 
-- `claude_agent_sdk`：Log Analysis 唯一默认运行后端，通过本地 adapter 命令封装 Claude Agent SDK。
+- `claude_agent_sdk`：Log Analysis 唯一默认运行后端，可直接调用 Claude Code CLI `claude` 二进制，也可调用本地自定义 adapter 命令封装 Claude Agent SDK。
 - `codex_cli`：预留 Codex CLI 适配。
 - `claude_code_cli`：预留 Claude Code CLI 适配。
 - `opencode_cli`：预留 OpenCode CLI 适配。
@@ -22,7 +22,7 @@ GET /api/settings/agent-backends
 POST /api/settings/agent-backends/:backend_id/test
 ```
 
-`claude_agent_sdk` 是默认启用后端。未配置 adapter 路径、adapter 调用失败、返回非法 action 或返回非法 evidence ref 时，Log Analysis task 失败，不自动 fallback。
+`claude_agent_sdk` 是默认启用后端。未配置命令路径、Claude CLI 或 adapter 调用失败、返回非法 action 或返回非法 evidence ref 时，Log Analysis task 失败，不自动 fallback。
 
 ## 配置示例
 
@@ -47,9 +47,10 @@ agent_backends:
 
 - Server 仍然是唯一执行边界，负责任务状态、证据持久化、工具白名单、审批和幂等。
 - 成熟 agent 后端不能直接修改 LogAgent 状态，不能绕过 Server 执行 shell、SSH、工具或文件访问。
-- `claude_agent_sdk` adapter 只能消费 Server 生成的 `analysis_package.json` / `agent_request.json`，并通过 stdout 返回结构化 action 或 final answer；Server 写入真实 `agent_response.json`。
+- `claude_agent_sdk` 后端只能消费 Server 生成的 `analysis_package.json` / `agent_request.json`，并通过 stdout 返回结构化 action 或 final answer；Server 写入真实 `agent_response.json`。
 - 首版不开放 Claude 内置 Bash/Read/Grep/Write/Edit。后续如需后端工具访问，只通过 LogAgent MCP/adapter 暴露受控只读能力；实际工具执行仍回到 Server Action Executor。
-- adapter 调用协议为在 task workspace 中执行：`<command_path> run --request agent_request.json --package analysis_package.json`。
+- 当命令文件名为 `claude` 或 `claude.exe` 时，Server 在 task workspace 中直接执行 Claude Code CLI：`<command_path> --print --output-format json --json-schema <AgentDecision schema> --tools "" --no-session-persistence <prompt>`。因此 `LOGAGENT_AGENT_CLAUDE_SDK_PATH` 通常应设置为 `which claude` 的绝对路径。
+- 当命令文件名不是 `claude` / `claude.exe` 时，Server 保留自定义 adapter 协议：`<command_path> run --request agent_request.json --package analysis_package.json`。
 
 ## 后续计划
 

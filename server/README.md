@@ -131,7 +131,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 直接调用默认 `claude_agent_sdk` adapter，受轮数、后端调用、action 数和重复 fingerprint 预算限制；`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 或 `REQUIRES_APPROVAL` 动作会进入 `WAITING_FOR_APPROVAL`。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 直接调用默认 `claude_agent_sdk` 后端（Claude Code CLI 或自定义 adapter），受轮数、后端调用、action 数和重复 fingerprint 预算限制；`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 或 `REQUIRES_APPROVAL` 动作会进入 `WAITING_FOR_APPROVAL`。
 
 ## 数据目录
 
@@ -285,17 +285,17 @@ MVP 要求：
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。每轮决策前会刷新 `analysis_package.json` 和 `agent_request.json`，随后调用 `claude_agent_sdk` adapter，并把真实响应写入 `agent_response.json`。后端只能返回 `action | final_answer` 结构化决策；`search_logs` 会用后端给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。每轮决策前会刷新 `analysis_package.json` 和 `agent_request.json`，随后调用 `claude_agent_sdk` 后端，并把真实响应写入 `agent_response.json`。`LOGAGENT_AGENT_CLAUDE_SDK_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --tools ""` 调用并解析 CLI envelope。非 `claude` 文件名仍按自定义 adapter 协议 `run --request agent_request.json --package analysis_package.json` 调用。后端只能返回 `action | final_answer` 结构化决策；`search_logs` 会用后端给出的关键词重建 `grep_results.json` 并回到下一轮，`run_tool` 会通过同一 Tool Runner 执行通道写入 `tool_results` 并回到下一轮，`final_answer` 会直接持久化为 `result.json` / `result.md` 并成功结束。
 - `PLAN_ANALYSIS` 支持 `ask_user` 和 `collect_environment`：前者写入 `pendingUserPrompts` 并等待用户回答，后者写入 `pendingApprovals` 并等待批准/拒绝。当前批准环境采集后写入 mock `environment_evidence/<action_id>/result.json`，真实 SSH/SCP 执行器后续替换。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
-- `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。
+- `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 Claude CLI 或 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。
 - Agent Backend parser 会把可追踪的行号/索引范围 evidence ref 规范化为 `grep_results.json#matches/<index>`；无法映射的引用仍按 schema 错误处理。
 - Agent Backend final answer 允许引用用户在 Session 对话框中输入的文本，格式为 `session_text_input.json#question`。
 - Agent Backend final answer 允许引用 Tool Runner finding，格式为 `tool_results/<action_id>/result.json#findings/<index>`；未知 action 或越界 finding 会按 schema 错误处理。
 - Agent Backend parser 会把可追踪的字符串形式 root cause，例如 `原因（evidenceRefs: [matches/0-3]）`，规范化为对象形式。
 - Agent Backend parser 会把真实后端返回的单字符串列表字段规范化为单元素数组，例如 `missingInformation: "..."`。
 - Agent Backend parser 会把裸最终结果 JSON，或多包一层的 `final_answer.result.result` / `answer` / `finalAnswer`，规范化为真正的 `final_answer`；缺少 `summary` 等核心字段的结果仍会拒绝。
-- stub Provider 仅用于 LLM Gateway 辅助能力和自动测试；Log Analysis 开发和 CI 使用 mock `claude_agent_sdk` adapter。
+- stub Provider 仅用于 LLM Gateway 辅助能力和自动测试；Log Analysis 开发和 CI 使用 mock `claude_agent_sdk` adapter 或 mock `claude` CLI。
 - LLM 模型可通过 `llm.model_env` 引用环境变量；未配置时继续使用静态 `llm.model`。
 - `llm.provider: "binary"` 时从 `llm.binary_path` 或 `llm.binary_path_env` 读取绝对路径，使用参数数组调用二进制，不拼接 shell，不依赖当前环境存在真实模型二进制。
 - OpenAI-compatible 响应可为纯 JSON、完整 JSON Markdown 代码围栏，或包含唯一顶层 JSON object 的自然语言响应；多个 JSON object、无 JSON object 或 schema 不合法时按协议错误处理。

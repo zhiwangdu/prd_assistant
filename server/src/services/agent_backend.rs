@@ -274,6 +274,24 @@ async fn run_adapter_command(
     backend: &AgentBackendSettingsEntry,
     workspace: &Path,
 ) -> anyhow::Result<String> {
+    if is_direct_claude_cli(command_path) {
+        return run_claude_cli_command(command_path, backend, workspace).await;
+    }
+    run_logagent_adapter_command(command_path, backend, workspace).await
+}
+
+fn is_direct_claude_cli(command_path: &Path) -> bool {
+    command_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "claude" || name == "claude.exe")
+}
+
+async fn run_logagent_adapter_command(
+    command_path: &Path,
+    backend: &AgentBackendSettingsEntry,
+    workspace: &Path,
+) -> anyhow::Result<String> {
     let child = Command::new(command_path)
         .arg("run")
         .arg("--request")
@@ -320,17 +338,241 @@ async fn run_adapter_command(
     String::from_utf8(output.stdout).context("claude_agent_sdk adapter stdout is not valid UTF-8")
 }
 
+async fn run_claude_cli_command(
+    command_path: &Path,
+    backend: &AgentBackendSettingsEntry,
+    workspace: &Path,
+) -> anyhow::Result<String> {
+    let prompt = build_claude_cli_prompt(workspace)
+        .await
+        .context("failed to build Claude Code CLI prompt")?;
+    let schema = agent_decision_json_schema();
+    let child = Command::new(command_path)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("json")
+        .arg("--json-schema")
+        .arg(schema.to_string())
+        .arg("--tools")
+        .arg("")
+        .arg("--no-session-persistence")
+        .arg(prompt)
+        .current_dir(workspace)
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to spawn Claude Code CLI {}", command_path.display()))?;
+    let output = timeout(
+        std::time::Duration::from_secs(backend.timeout_seconds),
+        child.wait_with_output(),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "Claude Code CLI timed out after {} seconds",
+            backend.timeout_seconds
+        )
+    })?
+    .context("failed to wait for Claude Code CLI")?;
+    if output.stdout.len() > backend.max_output_bytes {
+        anyhow::bail!(
+            "Claude Code CLI stdout exceeded {} bytes",
+            backend.max_output_bytes
+        );
+    }
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(truncate_bytes(&output.stderr, 4096));
+        anyhow::bail!(
+            "Claude Code CLI exited with status {}: {}",
+            output.status,
+            stderr.trim()
+        );
+    }
+    String::from_utf8(output.stdout).context("Claude Code CLI stdout is not valid UTF-8")
+}
+
+async fn build_claude_cli_prompt(workspace: &Path) -> anyhow::Result<String> {
+    let request = tokio::fs::read_to_string(workspace.join("agent_request.json"))
+        .await
+        .context("failed to read agent_request.json")?;
+    let package = tokio::fs::read_to_string(workspace.join("analysis_package.json"))
+        .await
+        .context("failed to read analysis_package.json")?;
+    Ok(format!(
+        r#"You are the LogAgent analysis backend.
+
+Return exactly one JSON object matching the provided schema. Do not return Markdown, code fences, prose, or hidden reasoning.
+
+Execution boundary:
+- You must not use Claude Code built-in file, shell, edit, grep, read, write, network, or MCP tools.
+- You may only request Server-managed actions by returning an `action` decision.
+- The Server validates tool allowlists, action inputs, evidence refs, approvals, timeouts, and output limits.
+- System Context is background only and must not be used as final evidence.
+- Historical Cases can guide analysis, but final conclusions still need current-task evidence.
+
+Allowed top-level decisions:
+- `{{"type":"action","decision":{{...}}}}`
+- `{{"type":"final_answer","result":{{...}}}}`
+
+Allowed actions:
+- `search_logs`: choose search keywords for the Server to run.
+- `run_tool`: request one configured tool from analysis_package.evidence.toolCapabilities.
+- `ask_user`: request missing information from the user.
+- `collect_environment`: request approved environment collection.
+
+Evidence refs in final answers must use only current allowed refs such as:
+- `session_text_input.json#question`
+- `grep_results.json#matches/<index>`
+- `case_context.json#cases/<index>` when recalled
+- `tool_results/<action_id>/result.json#findings/<index>`
+
+agent_request.json:
+{request}
+
+analysis_package.json:
+{package}
+"#
+    ))
+}
+
+fn agent_decision_json_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "type": { "const": "action" },
+                    "decision": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "enum": [
+                                    "search_logs",
+                                    "run_tool",
+                                    "ask_user",
+                                    "collect_environment"
+                                ]
+                            },
+                            "reason": { "type": "string" },
+                            "input": { "type": "object" },
+                            "risk": {
+                                "enum": [
+                                    "SAFE_READ_ONLY",
+                                    "REQUIRES_APPROVAL"
+                                ]
+                            },
+                            "fingerprint": { "type": "string" }
+                        },
+                        "required": ["type", "reason", "input", "risk", "fingerprint"],
+                        "additionalProperties": true
+                    }
+                },
+                "required": ["type", "decision"],
+                "additionalProperties": true
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "type": { "const": "final_answer" },
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "summary": { "type": "string" },
+                            "symptoms": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "likelyRootCauses": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "cause": { "type": "string" },
+                                        "evidenceRefs": {
+                                            "type": "array",
+                                            "items": { "type": "string" }
+                                        }
+                                    },
+                                    "required": ["cause", "evidenceRefs"],
+                                    "additionalProperties": true
+                                }
+                            },
+                            "nextChecks": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "fixSuggestions": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "missingInformation": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "confidence": {
+                                "enum": ["low", "medium", "high"]
+                            }
+                        },
+                        "required": [
+                            "summary",
+                            "symptoms",
+                            "likelyRootCauses",
+                            "nextChecks",
+                            "fixSuggestions",
+                            "missingInformation",
+                            "confidence"
+                        ],
+                        "additionalProperties": true
+                    }
+                },
+                "required": ["type", "result"],
+                "additionalProperties": true
+            }
+        ]
+    })
+}
+
 fn parse_adapter_decision(stdout: &str) -> anyhow::Result<(AgentDecision, serde_json::Value)> {
     let raw_response: serde_json::Value =
         serde_json::from_str(stdout.trim()).context("adapter stdout is not JSON")?;
+    if raw_response
+        .get("is_error")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        anyhow::bail!(
+            "Claude Code CLI returned an error result: {}",
+            raw_response
+                .get("result")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing result")
+        );
+    }
     let candidate = raw_response
         .get("normalizedDecision")
         .filter(|value| !value.is_null())
         .or_else(|| raw_response.get("decision"))
         .filter(|value| !value.is_null())
+        .or_else(|| raw_response.get("result"))
+        .filter(|value| !value.is_null())
         .unwrap_or(&raw_response);
-    let decision = parse_action_decision_content(&serde_json::to_string(candidate)?)?;
+    let decision_content = match candidate {
+        serde_json::Value::String(value) => strip_json_code_fence(value).to_string(),
+        value => serde_json::to_string(value)?,
+    };
+    let decision = parse_action_decision_content(&decision_content)?;
     Ok((decision, raw_response))
+}
+
+fn strip_json_code_fence(value: &str) -> &str {
+    let trimmed = value.trim();
+    let Some(rest) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let rest = rest.strip_prefix("json").unwrap_or(rest).trim_start();
+    rest.strip_suffix("```").unwrap_or(rest).trim()
 }
 
 async fn write_success_agent_response(
@@ -347,13 +589,31 @@ async fn write_success_agent_response(
         "backendType": backend.backend_type.as_str(),
         "runtimeStatus": "succeeded",
         "durationMs": duration_ms,
-        "decision": raw_response.get("decision").unwrap_or(raw_response),
+        "decision": raw_decision_value(raw_response),
         "normalizedDecision": decision,
-        "usage": raw_response.get("usage"),
-        "cost": raw_response.get("cost"),
+        "usage": raw_response.get("usage").cloned().unwrap_or(serde_json::Value::Null),
+        "cost": raw_response
+            .get("cost")
+            .cloned()
+            .or_else(|| {
+                raw_response
+                    .get("total_cost_usd")
+                    .cloned()
+                    .map(|usd| serde_json::json!({ "usd": usd }))
+            })
+            .unwrap_or(serde_json::Value::Null),
         "error": null,
     });
     write_json_atomic(workspace.join("agent_response.json"), &response).await
+}
+
+fn raw_decision_value(raw_response: &serde_json::Value) -> serde_json::Value {
+    raw_response
+        .get("decision")
+        .or_else(|| raw_response.get("normalizedDecision"))
+        .or_else(|| raw_response.get("result"))
+        .cloned()
+        .unwrap_or_else(|| raw_response.clone())
 }
 
 async fn write_failed_agent_response(
@@ -390,9 +650,12 @@ mod tests {
     use std::{
         collections::BTreeMap,
         fs,
+        io::Write,
         os::unix::fs::PermissionsExt,
         path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
+        process,
+        sync::atomic::{AtomicU64, Ordering},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     use crate::{
@@ -437,6 +700,54 @@ JSON
         assert_eq!(response["backendType"], "claude_agent_sdk");
         assert_eq!(response["normalizedDecision"]["type"], "final_answer");
         assert_eq!(response["usage"]["inputTokens"], 11);
+    }
+
+    #[tokio::test]
+    async fn direct_claude_cli_returns_final_answer_envelope() {
+        let fixture = Fixture::new();
+        let adapter = fixture.write_adapter(
+            "claude",
+            r#"#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "--request" ]; then
+    echo "unexpected --request" >&2
+    exit 2
+  fi
+done
+printf '%s\n' "$*" > claude_args.txt
+cat <<'JSON'
+{"type":"result","subtype":"success","is_error":false,"result":"{\"type\":\"final_answer\",\"result\":{\"summary\":\"direct cli summary\",\"symptoms\":[\"timeout\"],\"likelyRootCauses\":[{\"cause\":\"timeout in logs\",\"evidenceRefs\":[\"grep_results.json#matches/0\"]}],\"nextChecks\":[\"check timeout\"],\"fixSuggestions\":[\"increase timeout\"],\"missingInformation\":[],\"confidence\":\"medium\"}}","usage":{"input_tokens":22},"total_cost_usd":0.02}
+JSON
+"#,
+        );
+        let decision = fixture
+            .registry(adapter)
+            .decide_next(fixture.input())
+            .await
+            .unwrap();
+
+        match decision {
+            AgentDecision::FinalAnswer { result } => {
+                assert_eq!(result.summary, "direct cli summary");
+                assert!(matches!(result.confidence, Confidence::Medium));
+            }
+            AgentDecision::Action { .. } => panic!("expected final_answer"),
+        }
+
+        let args = fs::read_to_string(fixture.workspace.join("claude_args.txt")).unwrap();
+        assert!(args.contains("--print"));
+        assert!(args.contains("--output-format"));
+        assert!(args.contains("--json-schema"));
+        assert!(args.contains("--tools"));
+        assert!(!args.contains("--request"));
+        let response: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(fixture.workspace.join("agent_response.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(response["runtimeStatus"], "succeeded");
+        assert_eq!(response["normalizedDecision"]["type"], "final_answer");
+        assert_eq!(response["usage"]["input_tokens"], 22);
+        assert_eq!(response["cost"]["usd"], 0.02);
     }
 
     #[tokio::test]
@@ -549,13 +860,19 @@ exit 12
         grep: GrepResults,
     }
 
+    static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
     impl Fixture {
         fn new() -> Self {
-            let suffix = SystemTime::now()
+            let nanos = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let root = std::env::temp_dir().join(format!("logagent-agent-backend-{suffix}"));
+            let id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir().join(format!(
+                "logagent-agent-backend-{}-{id}-{nanos}",
+                process::id()
+            ));
             let workspace = root.join("workspace");
             fs::create_dir_all(&workspace).unwrap();
             fs::write(workspace.join("analysis_package.json"), "{}").unwrap();
@@ -605,10 +922,14 @@ exit 12
 
         fn write_adapter(&self, filename: &str, content: &str) -> PathBuf {
             let path = self.root.join(filename);
-            fs::write(&path, content).unwrap();
+            let mut file = fs::File::create(&path).unwrap();
+            file.write_all(content.as_bytes()).unwrap();
+            file.sync_all().unwrap();
+            drop(file);
             let mut permissions = fs::metadata(&path).unwrap().permissions();
             permissions.set_mode(0o755);
             fs::set_permissions(&path, permissions).unwrap();
+            std::thread::sleep(Duration::from_millis(10));
             path
         }
     }
