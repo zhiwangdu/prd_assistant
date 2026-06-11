@@ -20,8 +20,8 @@ import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
 import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
-import { buildTopology } from "./topology";
-import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters } from "./types";
+import { FOCUSED_GRAPH_LIMIT, buildFocusedTopology, buildTopologyIndex, filterTopologyRows } from "./topology";
+import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters, TopologyFocus, TopologySummaryRow } from "./types";
 import { buildViewModel } from "./view-model";
 
 type Props = { apiKey: string };
@@ -442,6 +442,7 @@ function PartitionsView({ vm }: { vm: MetadataViewModel }) {
 }
 
 function TopologyView({ vm }: { vm: MetadataViewModel }) {
+  type TopologyViewMode = "overview" | "focused" | "details";
   const [filters, setFilters] = useState<TopologyFilters>({
     database: "",
     dataNodeId: "",
@@ -451,42 +452,141 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
     showShards: true,
     showIndexes: true
   });
+  const [mode, setMode] = useState<TopologyViewMode>("overview");
   const [selected, setSelected] = useState<TopologyEntity | null>(null);
-  const graph = useMemo(() => buildTopology(vm, filters), [vm, filters]);
-  const databases = vm.cluster.databases ?? [];
-  const dataNodes = vm.nodes.filter((node) => node.kind === "data");
+  const [selectedRow, setSelectedRow] = useState<TopologySummaryRow | null>(null);
+  const [focus, setFocus] = useState<TopologyFocus | null>(null);
+  const index = useMemo(() => buildTopologyIndex(vm), [vm]);
+  const rows = useMemo(() => filterTopologyRows(index.rows, filters), [index.rows, filters]);
+  const graph = useMemo(() => focus ? buildFocusedTopology(vm, filters, focus) : null, [vm, filters, focus]);
 
   function patchFilter<K extends keyof TopologyFilters>(key: K, value: TopologyFilters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
     setSelected(null);
   }
 
+  function selectRow(row: TopologySummaryRow, nextMode: TopologyViewMode = mode) {
+    const nextFocus = { database: row.database, dataNodeId: String(row.ownerNodeId ?? -1), ptId: String(row.ptId) };
+    setSelectedRow(row);
+    setSelected(null);
+    setFocus(nextFocus);
+    setMode(nextMode);
+  }
+
+  function resetFilters() {
+    setFilters({ database: "", dataNodeId: "", startTime: "", endTime: "", onlyAbnormal: false, showShards: true, showIndexes: true });
+    setSelected(null);
+    setSelectedRow(null);
+    setFocus(null);
+    setMode("overview");
+  }
+
   return (
     <Card>
-      <CardHeader><CardTitle>DataNode-centric DBPT topology</CardTitle><CardDescription>DataNode 容器内按 Database / PT 展示 Shard 和 Index 分配；Owners 数字均为 PT ID</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Topology explorer</CardTitle><CardDescription>默认展示异常优先的 PT 聚合概览；选择 DataNode / Database / PT 后再渲染小范围关系图。</CardDescription></CardHeader>
       <CardContent>
         <div className="mb-4 grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-4">
-          <FilterSelect label="Database" value={filters.database} onChange={(value) => patchFilter("database", value)} options={databases.map((database) => ({ value: database.name, label: database.name }))} />
-          <FilterSelect label="DataNode" value={filters.dataNodeId} onChange={(value) => patchFilter("dataNodeId", value)} options={dataNodes.map((node) => ({ value: String(node.rawNodeId), label: `DataNode ${node.rawNodeId} · ${node.host ?? "-"}` }))} />
+          <FilterSelect label="Database" value={filters.database} onChange={(value) => patchFilter("database", value)} options={index.databases} />
+          <FilterSelect label="DataNode" value={filters.dataNodeId} onChange={(value) => patchFilter("dataNodeId", value)} options={index.dataNodes} />
           <FilterInput label="Start time" type="datetime-local" value={filters.startTime} onChange={(value) => patchFilter("startTime", value)} />
           <FilterInput label="End time" type="datetime-local" value={filters.endTime} onChange={(value) => patchFilter("endTime", value)} />
           <FilterCheck label="Only abnormal" checked={filters.onlyAbnormal} onChange={(value) => patchFilter("onlyAbnormal", value)} />
           <FilterCheck label="Show shards" checked={filters.showShards} onChange={(value) => patchFilter("showShards", value)} />
           <FilterCheck label="Show indexes" checked={filters.showIndexes} onChange={(value) => patchFilter("showIndexes", value)} />
-          <div className="flex items-end"><Button className="w-full" variant="outline" onClick={() => setFilters({ database: "", dataNodeId: "", startTime: "", endTime: "", onlyAbnormal: false, showShards: true, showIndexes: true })}>Reset filters</Button></div>
+          <div className="flex items-end"><Button className="w-full" variant="outline" onClick={resetFilters}>Reset filters</Button></div>
         </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="h-[760px] overflow-hidden rounded-lg border border-border bg-slate-50">
-            <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.15} maxZoom={1.8} nodesDraggable onNodeClick={(_, node) => setSelected(graph.entities.get(node.id) ?? null)}>
-              <Background color="#cbd5e1" gap={20} />
-              <MiniMap pannable zoomable />
-              <Controls />
-            </ReactFlow>
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <Metric label="Visible PTs" value={rows.length} compact />
+          <Metric label="Abnormal PTs" value={rows.filter((row) => row.abnormal).length} compact />
+          <Metric label="ShardGroups" value={rows.reduce((total, row) => total + row.shardGroups, 0)} compact />
+          <Metric label="Indexes" value={rows.reduce((total, row) => total + row.indexes, 0)} compact />
+        </div>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button variant={mode === "overview" ? "default" : "outline"} onClick={() => setMode("overview")}>Overview</Button>
+          <Button variant={mode === "focused" ? "default" : "outline"} onClick={() => setMode("focused")}>Focused graph</Button>
+          <Button variant={mode === "details" ? "default" : "outline"} onClick={() => setMode("details")}>Details</Button>
+        </div>
+        {mode === "overview" ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <TopologyOverviewTable rows={rows} selectedRow={selectedRow} onSelect={(row) => selectRow(row, "details")} onGraph={(row) => selectRow(row, "focused")} />
+            <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
           </div>
-          <TopologyDetails entity={selected} />
-        </div>
+        ) : mode === "focused" ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <FocusedGraph graph={graph} onSelect={setSelected} />
+            <TopologyDetails entity={selected} row={selectedRow} />
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <TopologyOverviewTable rows={rows} selectedRow={selectedRow} onSelect={(row) => selectRow(row, "details")} onGraph={(row) => selectRow(row, "focused")} compact />
+            <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function TopologyOverviewTable({
+  rows,
+  selectedRow,
+  onSelect,
+  onGraph,
+  compact
+}: {
+  rows: TopologySummaryRow[];
+  selectedRow: TopologySummaryRow | null;
+  onSelect: (row: TopologySummaryRow) => void;
+  onGraph: (row: TopologySummaryRow) => void;
+  compact?: boolean;
+}) {
+  const visibleRows = rows.slice(0, compact ? 300 : 500);
+  if (!rows.length) return <EmptyState>当前筛选条件下没有 PT 拓扑数据。</EmptyState>;
+  return (
+    <div className="space-y-2">
+      {rows.length > visibleRows.length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">当前筛选命中 {rows.length} 行，列表只展示前 {visibleRows.length} 行；请继续按 Database、DataNode 或时间范围缩小。</div>}
+      <div className="overflow-x-auto rounded-lg border border-border bg-white">
+        <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr>{["Status", "Database", "PT", "Owner", "ShardGroups", "Shards", "IndexGroups", "Indexes", "Range", "Actions"].map((header) => <th key={header} className="border-b border-border px-3 py-2.5">{header}</th>)}</tr></thead>
+          <tbody>{visibleRows.map((row) => (
+            <tr key={row.id} className={`border-b border-border last:border-0 hover:bg-slate-50/70 ${selectedRow?.id === row.id ? "bg-teal-50/60" : ""}`}>
+              <td className="px-3 py-2.5">{row.abnormal ? <Badge variant="destructive">{row.diagnosticCount ? `${row.diagnosticCount} issue(s)` : "Abnormal"}</Badge> : <Badge variant="success">OK</Badge>}</td>
+              <td className="px-3 py-2.5 font-medium">{row.database}</td>
+              <td className="px-3 py-2.5">PT {row.ptId}</td>
+              <td className="px-3 py-2.5">DataNode {valueOrDash(row.ownerNodeId)}<p className="text-xs text-muted-foreground">{valueOrDash(row.ownerHost)}</p></td>
+              <td className="px-3 py-2.5">{row.shardGroups}</td>
+              <td className="px-3 py-2.5">{row.shards}</td>
+              <td className="px-3 py-2.5">{row.indexGroups}</td>
+              <td className="px-3 py-2.5">{row.indexes}</td>
+              <td className="px-3 py-2.5 text-xs text-muted-foreground">{timeRange(row.startTime, row.endTime)}</td>
+              <td className="px-3 py-2.5">
+                <div className="flex gap-2">
+                  <Button className="h-8 px-3" variant="outline" onClick={() => onSelect(row)}>Details</Button>
+                  <Button className="h-8 px-3" variant="outline" onClick={() => onGraph(row)}>Graph</Button>
+                </div>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FocusedGraph({ graph, onSelect }: { graph: ReturnType<typeof buildFocusedTopology> | null; onSelect: (entity: TopologyEntity | null) => void }) {
+  if (!graph) return <EmptyState>从 Overview 选择一个 PT 后渲染 Focused graph。</EmptyState>;
+  if (graph.limited) {
+    return <EmptyState>当前焦点包含 {graph.totalElements} 个图元素，超过 {FOCUSED_GRAPH_LIMIT} 上限。请关闭 Shard/Index 展示，或继续按时间范围缩小。</EmptyState>;
+  }
+  if (!graph.nodes.length) return <EmptyState>当前焦点没有可渲染的拓扑实体。</EmptyState>;
+  return (
+    <div className="h-[760px] overflow-hidden rounded-lg border border-border bg-slate-50">
+      <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.15} maxZoom={1.8} nodesDraggable onNodeClick={(_, node) => onSelect(graph.entities.get(node.id) ?? null)} onlyRenderVisibleElements>
+        <Background color="#cbd5e1" gap={20} />
+        <MiniMap pannable zoomable />
+        <Controls />
+      </ReactFlow>
+    </div>
   );
 }
 
@@ -502,9 +602,34 @@ function FilterCheck({ label, checked, onChange }: { label: string; checked: boo
   return <label className="flex h-10 items-center gap-2 self-end rounded-md border border-border bg-white px-3 text-sm"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 }
 
-function TopologyDetails({ entity }: { entity: TopologyEntity | null }) {
+function TopologyRowDetails({ row, diagnosticsByEntity }: { row: TopologySummaryRow | null; diagnosticsByEntity: Map<string, Diagnostic[]> }) {
+  if (!row) {
+    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">选择 Overview 中的 PT 行查看聚合指标、异常和时间范围。</aside>;
+  }
+  const diagnostics = diagnosticsByEntity.get(`pt:${row.database}:${row.ptId}`) ?? [];
+  return (
+    <aside className="max-h-[760px] overflow-auto rounded-lg border border-border bg-white">
+      <div className="sticky top-0 border-b border-border bg-white p-4">
+        <div className="flex items-center justify-between gap-2"><strong>{row.database} / PT {row.ptId}</strong>{row.abnormal && <Badge variant="destructive">Abnormal</Badge>}</div>
+        <p className="mt-1 text-xs text-muted-foreground">Owner DataNode {valueOrDash(row.ownerNodeId)} · {valueOrDash(row.ownerHost)}</p>
+      </div>
+      <div className="space-y-5 p-4">
+        <section className="grid gap-3 sm:grid-cols-2">
+          <Metric label="ShardGroups" value={row.shardGroups} compact />
+          <Metric label="Shards" value={row.shards} compact />
+          <Metric label="IndexGroups" value={row.indexGroups} compact />
+          <Metric label="Indexes" value={row.indexes} compact />
+        </section>
+        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Range</h4><p className="text-sm">{timeRange(row.startTime, row.endTime)}</p></section>
+        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagnostics</h4>{diagnostics.length ? <div className="space-y-2">{diagnostics.map((diagnostic) => <div key={`${diagnostic.code}:${diagnostic.detail}`} className="rounded-md border border-border p-2 text-xs"><Badge variant={diagnostic.severity === "error" ? "destructive" : "warning"}>{diagnostic.code}</Badge><p className="mt-1 text-slate-700">{diagnostic.title}</p><p className="mt-1 text-muted-foreground">{diagnostic.detail}</p></div>)}</div> : <p className="text-sm text-muted-foreground">No direct PT diagnostics</p>}</section>
+      </div>
+    </aside>
+  );
+}
+
+function TopologyDetails({ entity, row }: { entity: TopologyEntity | null; row?: TopologySummaryRow | null }) {
   if (!entity) {
-    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">点击 DataNode、Database、DBPT、ShardGroup、Shard、IndexGroup 或 Index 查看完整字段和关联对象。</aside>;
+    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">{row ? `${row.database} / PT ${row.ptId} 已作为 Focused graph 范围。点击图中实体查看完整字段和关联对象。` : "从 Overview 选择一个 PT 后进入 Focused graph。"}</aside>;
   }
   return (
     <aside className="max-h-[760px] overflow-auto rounded-lg border border-border bg-white">
@@ -518,6 +643,10 @@ function TopologyDetails({ entity }: { entity: TopologyEntity | null }) {
       </div>
     </aside>
   );
+}
+
+function timeRange(start?: string | null, end?: string | null) {
+  return `${start?.slice(0, 19) ?? "-"} -> ${end?.slice(0, 19) ?? "-"}`;
 }
 
 function KeyValueList({ value }: { value: Record<string, unknown> }) {

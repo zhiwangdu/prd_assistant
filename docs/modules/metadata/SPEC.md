@@ -285,9 +285,11 @@ metadata_context.json
 - Metadata 页面展示已导入 Instance 列表，读取已存快照时只要求 InstanceID。
 - InstanceID 输入旁展示备注名输入框；列表中备注单行省略，Overview 展示备注字段。
 - Shard/Index Owners 按 PT ID 解析，经 PtView 关联 DataNode。
-- Topology 主链固定为 `DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index`。
-- DataNode 是一级大容器；缺失 DataNode/PT 使用异常虚拟容器展示。
-- Topology 支持 Database、DataNode、时间范围、仅异常、Shard/Index 显隐筛选和详情面板。
+- Topology 默认展示异常优先的 PT 聚合概览，按 DataNode、Database、PT 汇总 ShardGroup、Shard、IndexGroup、Index、诊断数量和时间范围。
+- 选择具体 PT 后才渲染 Focused Graph，主链为 `DataNode -> Database/PT -> ShardGroup/IndexGroup`，Shard/Index 可按需展开。
+- Focused Graph 超过 600 个图元素时阻止渲染，并提示用户缩小范围。
+- DataNode 是 Focused Graph 一级大容器；缺失 DataNode/PT 使用异常虚拟容器或异常聚合行展示。
+- Topology 支持 Database、DataNode、时间范围、仅异常、Shard/Index 显隐筛选、聚合详情和实体详情面板。
 - 实例查询。
 - 已导入 Instance 列表和按 InstanceID 查询拓扑快照。
 - 兼容集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
@@ -315,6 +317,8 @@ metadata_context.json
 - WebUI 能上传 `.json` 文件并得到导入预览。
 - WebUI 能粘贴 JSON 文本并得到导入预览。
 - 能在用户输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 拉取 openGemini metadata 并归一化展示。
+- Topology 大集群默认进入聚合概览，不渲染全量 React Flow 实体图。
+- 选择具体 PT 后能渲染小范围 Focused Graph；超出 600 个图元素时显示缩小范围提示。
 - 导入确认后 metadata store 可查询。
 - task 创建可关联 instance/node 上下文并返回固化快照。
 - README 和 SPEC 在字段、模板格式或 API 变更时同步更新。

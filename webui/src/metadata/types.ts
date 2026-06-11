@@ -154,6 +154,29 @@ export type TopologyFilters = {
   showIndexes: boolean;
 };
 
+export type TopologyFocus = {
+  database: string;
+  dataNodeId: string;
+  ptId: string;
+};
+
+export type TopologySummaryRow = {
+  id: string;
+  database: string;
+  ptId: number;
+  ownerNodeId?: number | null;
+  ownerHost?: string | null;
+  statusText?: string | null;
+  abnormal: boolean;
+  diagnosticCount: number;
+  shardGroups: number;
+  shards: number;
+  indexGroups: number;
+  indexes: number;
+  startTime?: string | null;
+  endTime?: string | null;
+};
+
 export type TopologyEntityKind =
   | "dataNode"
   | "database"

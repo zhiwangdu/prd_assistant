@@ -200,8 +200,10 @@ Authorization: Bearer <api-key>
 - Instance 列表展示备注名并保持单行省略，Overview 展示完整备注字段。
 - 按实例 ID 查询。
 - 读取已存快照时使用 InstanceID，不再要求用户输入 ClusterID。
-- 展示 DataNode 分栏容器，内部按 Database/DBPT 分组展示 ShardGroup/Shard、IndexGroup/Index。
-- 支持拓扑筛选、异常高亮和实体详情面板。
+- Topology 默认展示异常优先的 PT 聚合概览，按 DataNode、Database、PT 汇总 ShardGroup、Shard、IndexGroup、Index 和诊断数量。
+- 选择具体 PT 后才渲染小范围 Focused Graph；图中展示 DataNode、Database、DBPT、ShardGroup/IndexGroup，Shard/Index 可按需展开。
+- Focused Graph 超过 600 个图元素时阻止渲染，并提示用户缩小范围。
+- 支持拓扑筛选、异常高亮、聚合详情和实体详情面板。
 - 展示 `PtView` 分区归属和状态。
 - 展示 `Databases`、保留策略、表结构 schema 和 shard group 摘要。
 - 展示产品、版本、环境、标签。

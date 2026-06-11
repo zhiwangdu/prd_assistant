@@ -37,6 +37,15 @@ WEBUI Tools
 
 ## Implemented
 
+### Metadata Topology Explorer
+
+- WebUI Metadata Topology no longer builds a full React Flow graph by default. It now derives a topology index and starts with an abnormal-first PT overview table.
+- The overview groups by DataNode / Database / PT and shows ShardGroup, Shard, IndexGroup, Index, diagnostic count, owner and time range summaries.
+- Focused Graph renders React Flow only after a user selects a specific PT, and it blocks graph rendering when the selected scope would exceed 600 graph elements.
+- The right-side details panel now supports both aggregate PT details and individual graph entity fields/relations.
+- Updated WebUI and Metadata module docs/specs for the overview-first topology behavior.
+- Verification: `cd webui && npm run typecheck`, `cd webui && npm run lint`, `cd webui && npm run build`, and `git diff --check` pass; in-app Browser was unavailable for visual verification.
+
 ### Metadata Import UX
 
 - WebUI Metadata tab now exposes three explicit import paths in the management panel: realtime openGemini `/getdata` URL loading, `.json` file upload, and manual JSON text paste.
