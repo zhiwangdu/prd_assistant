@@ -154,12 +154,6 @@ export type TopologyFilters = {
   showIndexes: boolean;
 };
 
-export type TopologyFocus = {
-  database: string;
-  dataNodeId: string;
-  ptId: string;
-};
-
 export type TopologySummaryRow = {
   id: string;
   database: string;
@@ -175,25 +169,20 @@ export type TopologySummaryRow = {
   indexes: number;
   startTime?: string | null;
   endTime?: string | null;
-};
-
-export type TopologyEntityKind =
-  | "dataNode"
-  | "database"
-  | "dbpt"
-  | "shardGroup"
-  | "shard"
-  | "indexGroup"
-  | "index";
-
-export type TopologyEntity = {
-  id: string;
-  kind: TopologyEntityKind;
-  title: string;
-  subtitle?: string;
-  abnormal: boolean;
-  fields: Record<string, unknown>;
-  relations: Array<{ type: string; target: string }>;
+  shardDetails: Array<{
+    rp: string;
+    shardGroupId: number;
+    startTime?: string | null;
+    endTime?: string | null;
+    shardId: number;
+    indexId?: number | null;
+    owners: number[];
+    tier?: number | null;
+    readOnly?: boolean | null;
+    markDelete?: boolean | null;
+    indexTier?: number | null;
+    indexMarkDelete?: boolean | null;
+  }>;
 };
 
 export type MetadataViewModel = MetadataSnapshotResponse & {

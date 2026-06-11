@@ -1,4 +1,3 @@
-import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import {
   AlertTriangle,
   Boxes,
@@ -20,8 +19,8 @@ import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
 import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
-import { FOCUSED_GRAPH_LIMIT, buildFocusedTopology, buildTopologyIndex, filterTopologyRows } from "./topology";
-import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyEntity, TopologyFilters, TopologyFocus, TopologySummaryRow } from "./types";
+import { buildTopologyIndex, filterTopologyRows } from "./topology";
+import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyFilters, TopologySummaryRow } from "./types";
 import { buildViewModel } from "./view-model";
 
 type Props = { apiKey: string };
@@ -442,7 +441,6 @@ function PartitionsView({ vm }: { vm: MetadataViewModel }) {
 }
 
 function TopologyView({ vm }: { vm: MetadataViewModel }) {
-  type TopologyViewMode = "overview" | "focused" | "details";
   const [filters, setFilters] = useState<TopologyFilters>({
     database: "",
     dataNodeId: "",
@@ -452,38 +450,23 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
     showShards: true,
     showIndexes: true
   });
-  const [mode, setMode] = useState<TopologyViewMode>("overview");
-  const [selected, setSelected] = useState<TopologyEntity | null>(null);
   const [selectedRow, setSelectedRow] = useState<TopologySummaryRow | null>(null);
-  const [focus, setFocus] = useState<TopologyFocus | null>(null);
   const index = useMemo(() => buildTopologyIndex(vm), [vm]);
   const rows = useMemo(() => filterTopologyRows(index.rows, filters), [index.rows, filters]);
-  const graph = useMemo(() => focus ? buildFocusedTopology(vm, filters, focus) : null, [vm, filters, focus]);
+  const groupedRows = useMemo(() => groupTopologyRows(rows), [rows]);
 
   function patchFilter<K extends keyof TopologyFilters>(key: K, value: TopologyFilters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
-    setSelected(null);
-  }
-
-  function selectRow(row: TopologySummaryRow, nextMode: TopologyViewMode = mode) {
-    const nextFocus = { database: row.database, dataNodeId: String(row.ownerNodeId ?? -1), ptId: String(row.ptId) };
-    setSelectedRow(row);
-    setSelected(null);
-    setFocus(nextFocus);
-    setMode(nextMode);
   }
 
   function resetFilters() {
     setFilters({ database: "", dataNodeId: "", startTime: "", endTime: "", onlyAbnormal: false, showShards: true, showIndexes: true });
-    setSelected(null);
     setSelectedRow(null);
-    setFocus(null);
-    setMode("overview");
   }
 
   return (
     <Card>
-      <CardHeader><CardTitle>Topology explorer</CardTitle><CardDescription>默认展示异常优先的 PT 聚合概览；选择 DataNode / Database / PT 后再渲染小范围关系图。</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Topology explorer</CardTitle><CardDescription>按 Database / DataNode / DBPT / Shards 级联展开，Shard 行包含时间范围和 Index 信息。</CardDescription></CardHeader>
       <CardContent>
         <div className="mb-4 grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-4">
           <FilterSelect label="Database" value={filters.database} onChange={(value) => patchFilter("database", value)} options={index.databases} />
@@ -491,8 +474,8 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
           <FilterInput label="Start time" type="datetime-local" value={filters.startTime} onChange={(value) => patchFilter("startTime", value)} />
           <FilterInput label="End time" type="datetime-local" value={filters.endTime} onChange={(value) => patchFilter("endTime", value)} />
           <FilterCheck label="Only abnormal" checked={filters.onlyAbnormal} onChange={(value) => patchFilter("onlyAbnormal", value)} />
-          <FilterCheck label="Show shards" checked={filters.showShards} onChange={(value) => patchFilter("showShards", value)} />
-          <FilterCheck label="Show indexes" checked={filters.showIndexes} onChange={(value) => patchFilter("showIndexes", value)} />
+          <FilterCheck label="Show shard rows" checked={filters.showShards} onChange={(value) => patchFilter("showShards", value)} />
+          <FilterCheck label="Show index info" checked={filters.showIndexes} onChange={(value) => patchFilter("showIndexes", value)} />
           <div className="flex items-end"><Button className="w-full" variant="outline" onClick={resetFilters}>Reset filters</Button></div>
         </div>
         <div className="mb-4 grid gap-3 md:grid-cols-4">
@@ -501,93 +484,108 @@ function TopologyView({ vm }: { vm: MetadataViewModel }) {
           <Metric label="ShardGroups" value={rows.reduce((total, row) => total + row.shardGroups, 0)} compact />
           <Metric label="Indexes" value={rows.reduce((total, row) => total + row.indexes, 0)} compact />
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Button variant={mode === "overview" ? "default" : "outline"} onClick={() => setMode("overview")}>Overview</Button>
-          <Button variant={mode === "focused" ? "default" : "outline"} onClick={() => setMode("focused")}>Focused graph</Button>
-          <Button variant={mode === "details" ? "default" : "outline"} onClick={() => setMode("details")}>Details</Button>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <TopologyCascade groups={groupedRows} selectedRow={selectedRow} showShards={filters.showShards} showIndexes={filters.showIndexes} onSelect={setSelectedRow} />
+          <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
         </div>
-        {mode === "overview" ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <TopologyOverviewTable rows={rows} selectedRow={selectedRow} onSelect={(row) => selectRow(row, "details")} onGraph={(row) => selectRow(row, "focused")} />
-            <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
-          </div>
-        ) : mode === "focused" ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <FocusedGraph graph={graph} onSelect={setSelected} />
-            <TopologyDetails entity={selected} row={selectedRow} />
-          </div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <TopologyOverviewTable rows={rows} selectedRow={selectedRow} onSelect={(row) => selectRow(row, "details")} onGraph={(row) => selectRow(row, "focused")} compact />
-            <TopologyRowDetails row={selectedRow} diagnosticsByEntity={index.diagnosticsByEntity} />
-          </div>
-        )}
       </CardContent>
     </Card>
   );
 }
 
-function TopologyOverviewTable({
-  rows,
+function TopologyCascade({
+  groups,
   selectedRow,
-  onSelect,
-  onGraph,
-  compact
+  showShards,
+  showIndexes,
+  onSelect
 }: {
-  rows: TopologySummaryRow[];
+  groups: Array<{ database: string; nodes: Array<{ ownerKey: string; ownerLabel: string; rows: TopologySummaryRow[] }> }>;
   selectedRow: TopologySummaryRow | null;
+  showShards: boolean;
+  showIndexes: boolean;
   onSelect: (row: TopologySummaryRow) => void;
-  onGraph: (row: TopologySummaryRow) => void;
-  compact?: boolean;
 }) {
-  const visibleRows = rows.slice(0, compact ? 300 : 500);
-  if (!rows.length) return <EmptyState>当前筛选条件下没有 PT 拓扑数据。</EmptyState>;
+  if (!groups.length) return <EmptyState>当前筛选条件下没有 PT 拓扑数据。</EmptyState>;
   return (
-    <div className="space-y-2">
-      {rows.length > visibleRows.length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">当前筛选命中 {rows.length} 行，列表只展示前 {visibleRows.length} 行；请继续按 Database、DataNode 或时间范围缩小。</div>}
-      <div className="overflow-x-auto rounded-lg border border-border bg-white">
-        <table className="w-full min-w-[980px] border-collapse text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground"><tr>{["Status", "Database", "PT", "Owner", "ShardGroups", "Shards", "IndexGroups", "Indexes", "Range", "Actions"].map((header) => <th key={header} className="border-b border-border px-3 py-2.5">{header}</th>)}</tr></thead>
-          <tbody>{visibleRows.map((row) => (
-            <tr key={row.id} className={`border-b border-border last:border-0 hover:bg-slate-50/70 ${selectedRow?.id === row.id ? "bg-teal-50/60" : ""}`}>
-              <td className="px-3 py-2.5">{row.abnormal ? <Badge variant="destructive">{row.diagnosticCount ? `${row.diagnosticCount} issue(s)` : "Abnormal"}</Badge> : <Badge variant="success">OK</Badge>}</td>
-              <td className="px-3 py-2.5 font-medium">{row.database}</td>
-              <td className="px-3 py-2.5">PT {row.ptId}</td>
-              <td className="px-3 py-2.5">DataNode {valueOrDash(row.ownerNodeId)}<p className="text-xs text-muted-foreground">{valueOrDash(row.ownerHost)}</p></td>
-              <td className="px-3 py-2.5">{row.shardGroups}</td>
-              <td className="px-3 py-2.5">{row.shards}</td>
-              <td className="px-3 py-2.5">{row.indexGroups}</td>
-              <td className="px-3 py-2.5">{row.indexes}</td>
-              <td className="px-3 py-2.5 text-xs text-muted-foreground">{timeRange(row.startTime, row.endTime)}</td>
-              <td className="px-3 py-2.5">
-                <div className="flex gap-2">
-                  <Button className="h-8 px-3" variant="outline" onClick={() => onSelect(row)}>Details</Button>
-                  <Button className="h-8 px-3" variant="outline" onClick={() => onGraph(row)}>Graph</Button>
+    <div className="space-y-3">
+      {groups.map((databaseGroup) => (
+        <details className="rounded-lg border border-border bg-white" key={databaseGroup.database} open={groups.length <= 3}>
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
+            {databaseGroup.database}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">{databaseGroup.nodes.reduce((total, node) => total + node.rows.length, 0)} PT(s)</span>
+          </summary>
+          <div className="space-y-3 border-t border-border p-3">
+            {databaseGroup.nodes.map((nodeGroup) => (
+              <details className="rounded-lg border border-border bg-slate-50" key={`${databaseGroup.database}:${nodeGroup.ownerKey}`} open={databaseGroup.nodes.length <= 4}>
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                  {nodeGroup.ownerLabel}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">{nodeGroup.rows.length} DBPT(s)</span>
+                </summary>
+                <div className="space-y-2 p-3">
+                  {nodeGroup.rows.map((row) => (
+                    <details className={`rounded-md border bg-white ${selectedRow?.id === row.id ? "border-primary" : "border-border"}`} key={row.id}>
+                      <summary className="cursor-pointer px-3 py-2 text-sm">
+                        <span className="font-medium">DBPT {row.ptId}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{row.shards} shard(s) · {row.indexes} index(es) · {timeRange(row.startTime, row.endTime)}</span>
+                        {row.abnormal && <span className="ml-2"><Badge variant="destructive">{row.diagnosticCount ? `${row.diagnosticCount} issue(s)` : "Abnormal"}</Badge></span>}
+                      </summary>
+                      <div className="space-y-3 border-t border-border p-3">
+                        <div className="grid gap-2 sm:grid-cols-4">
+                          <Metric label="ShardGroups" value={row.shardGroups} compact />
+                          <Metric label="Shards" value={row.shards} compact />
+                          <Metric label="IndexGroups" value={row.indexGroups} compact />
+                          <Metric label="Indexes" value={row.indexes} compact />
+                        </div>
+                        <Button className="h-8 px-3" variant="outline" onClick={() => onSelect(row)}>Show details</Button>
+                        {showShards ? <ShardDetailTable row={row} showIndexes={showIndexes} /> : <p className="text-sm text-muted-foreground">Shard rows hidden by filter.</p>}
+                      </div>
+                    </details>
+                  ))}
                 </div>
-              </td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
+              </details>
+            ))}
+          </div>
+        </details>
+      ))}
     </div>
   );
 }
 
-function FocusedGraph({ graph, onSelect }: { graph: ReturnType<typeof buildFocusedTopology> | null; onSelect: (entity: TopologyEntity | null) => void }) {
-  if (!graph) return <EmptyState>从 Overview 选择一个 PT 后渲染 Focused graph。</EmptyState>;
-  if (graph.limited) {
-    return <EmptyState>当前焦点包含 {graph.totalElements} 个图元素，超过 {FOCUSED_GRAPH_LIMIT} 上限。请关闭 Shard/Index 展示，或继续按时间范围缩小。</EmptyState>;
+function ShardDetailTable({ row, showIndexes }: { row: TopologySummaryRow; showIndexes: boolean }) {
+  return <Table headers={showIndexes ? ["RP", "ShardGroup", "Time range", "Shard", "Owners (PT IDs)", "IndexID", "Index tier", "Index deleted"] : ["RP", "ShardGroup", "Time range", "Shard", "Owners (PT IDs)"]} rows={row.shardDetails.map((item) => showIndexes ? [
+    item.rp,
+    item.shardGroupId,
+    timeRange(item.startTime, item.endTime),
+    item.shardId,
+    item.owners.join(", "),
+    item.indexId,
+    item.indexTier,
+    String(item.indexMarkDelete ?? false)
+  ] : [
+    item.rp,
+    item.shardGroupId,
+    timeRange(item.startTime, item.endTime),
+    item.shardId,
+    item.owners.join(", ")
+  ])} empty="No shard rows for this DBPT" />;
+}
+
+function groupTopologyRows(rows: TopologySummaryRow[]) {
+  const databaseMap = new Map<string, Map<string, { ownerKey: string; ownerLabel: string; rows: TopologySummaryRow[] }>>();
+  for (const row of rows) {
+    const nodeMap = databaseMap.get(row.database) ?? new Map<string, { ownerKey: string; ownerLabel: string; rows: TopologySummaryRow[] }>();
+    const ownerKey = String(row.ownerNodeId ?? "missing");
+    const ownerLabel = row.ownerNodeId == null ? "Missing DataNode" : `DataNode ${row.ownerNodeId} · ${row.ownerHost ?? "-"}`;
+    const group = nodeMap.get(ownerKey) ?? { ownerKey, ownerLabel, rows: [] };
+    group.rows.push(row);
+    nodeMap.set(ownerKey, group);
+    databaseMap.set(row.database, nodeMap);
   }
-  if (!graph.nodes.length) return <EmptyState>当前焦点没有可渲染的拓扑实体。</EmptyState>;
-  return (
-    <div className="h-[760px] overflow-hidden rounded-lg border border-border bg-slate-50">
-      <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.15} maxZoom={1.8} nodesDraggable onNodeClick={(_, node) => onSelect(graph.entities.get(node.id) ?? null)} onlyRenderVisibleElements>
-        <Background color="#cbd5e1" gap={20} />
-        <MiniMap pannable zoomable />
-        <Controls />
-      </ReactFlow>
-    </div>
-  );
+  return [...databaseMap.entries()].map(([database, nodeMap]) => ({
+    database,
+    nodes: [...nodeMap.values()].map((node) => ({ ...node, rows: node.rows.sort((left, right) => left.ptId - right.ptId) }))
+  }));
 }
 
 function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
@@ -604,7 +602,7 @@ function FilterCheck({ label, checked, onChange }: { label: string; checked: boo
 
 function TopologyRowDetails({ row, diagnosticsByEntity }: { row: TopologySummaryRow | null; diagnosticsByEntity: Map<string, Diagnostic[]> }) {
   if (!row) {
-    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">选择 Overview 中的 PT 行查看聚合指标、异常和时间范围。</aside>;
+    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">选择级联树中的 DBPT 查看聚合指标、异常和时间范围。</aside>;
   }
   const diagnostics = diagnosticsByEntity.get(`pt:${row.database}:${row.ptId}`) ?? [];
   return (
@@ -627,92 +625,126 @@ function TopologyRowDetails({ row, diagnosticsByEntity }: { row: TopologySummary
   );
 }
 
-function TopologyDetails({ entity, row }: { entity: TopologyEntity | null; row?: TopologySummaryRow | null }) {
-  if (!entity) {
-    return <aside className="rounded-lg border border-dashed border-border bg-white p-5 text-sm text-muted-foreground">{row ? `${row.database} / PT ${row.ptId} 已作为 Focused graph 范围。点击图中实体查看完整字段和关联对象。` : "从 Overview 选择一个 PT 后进入 Focused graph。"}</aside>;
-  }
-  return (
-    <aside className="max-h-[760px] overflow-auto rounded-lg border border-border bg-white">
-      <div className="sticky top-0 border-b border-border bg-white p-4">
-        <div className="flex items-center justify-between gap-2"><strong>{entity.title}</strong>{entity.abnormal && <Badge variant="destructive">Abnormal</Badge>}</div>
-        <p className="mt-1 text-xs text-muted-foreground">{entity.kind} · {entity.subtitle ?? entity.id}</p>
-      </div>
-      <div className="space-y-5 p-4">
-        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fields</h4><KeyValueList value={entity.fields} /></section>
-        <section><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Relations</h4>{entity.relations.length ? <div className="space-y-2">{entity.relations.map((relation, index) => <div key={`${relation.type}:${relation.target}:${index}`} className="rounded-md border border-border p-2 text-xs"><Badge variant="outline">{relation.type}</Badge><code className="mt-1 block break-all">{relation.target}</code></div>)}</div> : <p className="text-sm text-muted-foreground">No relations</p>}</section>
-      </div>
-    </aside>
-  );
-}
-
 function timeRange(start?: string | null, end?: string | null) {
   return `${start?.slice(0, 19) ?? "-"} -> ${end?.slice(0, 19) ?? "-"}`;
 }
 
-function KeyValueList({ value }: { value: Record<string, unknown> }) {
-  return <div className="space-y-2">{Object.entries(value).map(([key, item]) => <div key={key} className="grid gap-1 rounded-md bg-slate-50 p-2"><span className="text-xs text-muted-foreground">{key}</span><code className="whitespace-pre-wrap break-all text-xs">{typeof item === "object" ? JSON.stringify(item, null, 2) : valueOrDash(item)}</code></div>)}</div>;
-}
-
 function DatabasesView({ databases }: { databases: DatabaseDto[] }) {
-  return <div className="space-y-5">{databases.map((database) => (
-    <Card key={database.name}>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div><CardTitle>{database.name}</CardTitle><CardDescription>Default RP: {valueOrDash(database.defaultRetentionPolicy)} · ReplicaN: {valueOrDash(database.replicaN)}</CardDescription></div>
-          {database.markDeleted && <Badge variant="destructive">Marked deleted</Badge>}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">{(database.retentionPolicies ?? []).map((rp) => <RetentionPolicy key={rp.name} database={database.name} rp={rp} />)}</CardContent>
-    </Card>
-  ))}</div>;
-}
-
-function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPolicyDto }) {
-  const shards = (rp.shardGroups ?? []).flatMap((group) => group.shards ?? []);
+  if (!databases.length) return <EmptyState>No databases</EmptyState>;
   return (
-    <div className="rounded-lg border border-border p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <strong>{rp.name}</strong>
-        <Badge variant="outline">ReplicaN {valueOrDash(rp.replicaN)}</Badge>
-        <Badge variant="secondary">Duration {formatDuration(rp.duration)}</Badge>
-        <Badge variant="secondary">ShardGroup {formatDuration(rp.shardGroupDuration)}</Badge>
-        <Badge variant="secondary">IndexGroup {formatDuration(rp.indexGroupDuration)}</Badge>
-      </div>
-      <div className="space-y-4">
-        <div>
-          <h4 className="mb-2 text-sm font-semibold">ShardGroups and Shards</h4>
-          <Table headers={["Group", "Range", "Shard", "Owners (PT IDs)", "Tier", "IndexID", "ReadOnly", "MarkDelete"]} rows={(rp.shardGroups ?? []).flatMap((group) => (group.shards ?? []).map((shard) => [
-            group.id, `${group.startTime ?? "-"} → ${group.endTime ?? "-"}`, shard.id,
-            (shard.owners ?? []).join(", "), shard.tier, shard.indexId, String(shard.readOnly ?? false), String(shard.markDelete ?? false)
-          ]))} empty={`No Shards in ${database}/${rp.name}`} />
-        </div>
-        <div>
-          <h4 className="mb-2 text-sm font-semibold">Indexes</h4>
-          <Table headers={["IndexGroup", "Range", "Index", "Owners (PT IDs)", "Tier", "MarkDelete"]} rows={(rp.indexGroups ?? []).flatMap((group) => (group.indexes ?? []).map((index) => [
-            group.id, `${group.startTime ?? "-"} → ${group.endTime ?? "-"}`, index.id, (index.owners ?? []).join(", "), index.tier, String(index.markDelete ?? false)
-          ]))} empty={shards.length ? "Shards exist but no IndexGroups" : "No IndexGroups"} />
-        </div>
-      </div>
+    <div className="space-y-3">
+      {databases.map((database) => (
+        <details className="rounded-lg border border-border bg-white" key={database.name}>
+          <summary className="cursor-pointer px-4 py-3">
+            <span className="font-semibold">{database.name}</span>
+            <span className="ml-2 text-xs text-muted-foreground">default RP {valueOrDash(database.defaultRetentionPolicy)} · replica {valueOrDash(database.replicaN)} · {(database.retentionPolicies ?? []).length} RP(s)</span>
+            {database.markDeleted && <span className="ml-2"><Badge variant="destructive">Marked deleted</Badge></span>}
+          </summary>
+          <div className="space-y-3 border-t border-border p-3">
+            {(database.retentionPolicies ?? []).map((rp) => <RetentionPolicy key={rp.name} database={database.name} rp={rp} />)}
+          </div>
+        </details>
+      ))}
     </div>
   );
 }
 
-function SchemasView({ databases }: { databases: DatabaseDto[] }) {
-  const measurements = databases.flatMap((database) => (database.retentionPolicies ?? []).flatMap((rp) => (rp.measurements ?? []).map((measurement) => ({ database: database.name, rp: rp.name, measurement }))));
+function RetentionPolicy({ database, rp }: { database: string; rp: RetentionPolicyDto }) {
+  const shardCount = (rp.shardGroups ?? []).reduce((total, group) => total + (group.shards ?? []).length, 0);
+  const indexCount = (rp.indexGroups ?? []).reduce((total, group) => total + (group.indexes ?? []).length, 0);
   return (
-    <div className="space-y-5">{measurements.map(({ database, rp, measurement }) => (
-      <Card key={`${database}:${rp}:${measurement.name}`}>
-        <CardHeader>
-          <CardTitle>{measurement.logicalName ?? measurement.name}</CardTitle>
-          <CardDescription>{database} / {rp} · physical: {measurement.name} · version: {valueOrDash(measurement.version)} · shard key: {valueOrDash(measurement.shardKeyType)}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table headers={["Field", "Type", "Type code", "EndTime"]} rows={(measurement.schema ?? []).map((field) => [
-            field.name, fieldType(field.typ), field.typ, field.endTime
-          ])} empty="Measurement has no Schema" />
-        </CardContent>
-      </Card>
-    ))}</div>
+    <details className="rounded-lg border border-border bg-slate-50">
+      <summary className="cursor-pointer px-3 py-2">
+        <span className="font-medium">{rp.name}</span>
+        <span className="ml-2 text-xs text-muted-foreground">{(rp.shardGroups ?? []).length} shard group(s) · {shardCount} shard(s) · {(rp.indexGroups ?? []).length} index group(s) · {indexCount} index(es)</span>
+      </summary>
+      <div className="space-y-3 p-3">
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">ReplicaN {valueOrDash(rp.replicaN)}</Badge>
+          <Badge variant="secondary">Duration {formatDuration(rp.duration)}</Badge>
+          <Badge variant="secondary">ShardGroup {formatDuration(rp.shardGroupDuration)}</Badge>
+          <Badge variant="secondary">IndexGroup {formatDuration(rp.indexGroupDuration)}</Badge>
+        </div>
+        <details className="rounded-md border border-border bg-white">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">ShardGroups and Shards</summary>
+          <div className="space-y-2 border-t border-border p-3">
+            {(rp.shardGroups ?? []).length ? (rp.shardGroups ?? []).map((group) => (
+              <details className="rounded-md border border-border bg-slate-50" key={group.id}>
+                <summary className="cursor-pointer px-3 py-2 text-sm">ShardGroup {group.id}<span className="ml-2 text-xs text-muted-foreground">{timeRange(group.startTime, group.endTime)} · {(group.shards ?? []).length} shard(s)</span></summary>
+                <div className="border-t border-border p-3">
+                  <Table headers={["Shard", "Owners (PT IDs)", "Tier", "IndexID", "ReadOnly", "MarkDelete"]} rows={(group.shards ?? []).map((shard) => [
+                    shard.id, (shard.owners ?? []).join(", "), shard.tier, shard.indexId, String(shard.readOnly ?? false), String(shard.markDelete ?? false)
+                  ])} empty={`No Shards in ${database}/${rp.name}/ShardGroup ${group.id}`} />
+                </div>
+              </details>
+            )) : <EmptyState>No ShardGroups</EmptyState>}
+          </div>
+        </details>
+        <details className="rounded-md border border-border bg-white">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">IndexGroups and Indexes</summary>
+          <div className="space-y-2 border-t border-border p-3">
+            {(rp.indexGroups ?? []).length ? (rp.indexGroups ?? []).map((group) => (
+              <details className="rounded-md border border-border bg-slate-50" key={group.id}>
+                <summary className="cursor-pointer px-3 py-2 text-sm">IndexGroup {group.id}<span className="ml-2 text-xs text-muted-foreground">{timeRange(group.startTime, group.endTime)} · {(group.indexes ?? []).length} index(es)</span></summary>
+                <div className="border-t border-border p-3">
+                  <Table headers={["Index", "Owners (PT IDs)", "Tier", "MarkDelete"]} rows={(group.indexes ?? []).map((index) => [
+                    index.id, (index.owners ?? []).join(", "), index.tier, String(index.markDelete ?? false)
+                  ])} empty={`No Indexes in ${database}/${rp.name}/IndexGroup ${group.id}`} />
+                </div>
+              </details>
+            )) : <EmptyState>No IndexGroups</EmptyState>}
+          </div>
+        </details>
+      </div>
+    </details>
+  );
+}
+
+function SchemasView({ databases }: { databases: DatabaseDto[] }) {
+  const [databaseFilter, setDatabaseFilter] = useState("");
+  const [rpFilter, setRpFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const measurements = databases.flatMap((database) => (database.retentionPolicies ?? []).flatMap((rp) => (rp.measurements ?? []).map((measurement) => ({ database: database.name, rp: rp.name, measurement }))));
+  const rpOptions = [...new Set(databases.flatMap((database) => (database.retentionPolicies ?? []).map((rp) => rp.name)))].sort();
+  const normalizedQuery = query.trim().toLowerCase();
+  const hasFilter = Boolean(databaseFilter || rpFilter || normalizedQuery);
+  const matched = hasFilter ? measurements.filter(({ database, rp, measurement }) =>
+    (!databaseFilter || database === databaseFilter) &&
+    (!rpFilter || rp === rpFilter) &&
+    (!normalizedQuery ||
+      database.toLowerCase().includes(normalizedQuery) ||
+      rp.toLowerCase().includes(normalizedQuery) ||
+      measurement.name.toLowerCase().includes(normalizedQuery) ||
+      (measurement.logicalName ?? "").toLowerCase().includes(normalizedQuery) ||
+      (measurement.schema ?? []).some((field) => field.name.toLowerCase().includes(normalizedQuery)))
+  ) : [];
+  const visible = matched.slice(0, 100);
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 rounded-lg border border-border bg-slate-50 p-3 md:grid-cols-3">
+        <FilterSelect label="Database" value={databaseFilter} onChange={setDatabaseFilter} options={databases.map((database) => ({ value: database.name, label: database.name }))} />
+        <FilterSelect label="Retention policy" value={rpFilter} onChange={setRpFilter} options={rpOptions.map((rp) => ({ value: rp, label: rp }))} />
+        <FilterInput label="Measurement / field" type="search" value={query} onChange={setQuery} />
+      </div>
+      {!hasFilter ? <EmptyState>请输入 Database、RP 或 Measurement / field 过滤条件后展示 Schema，避免一次铺开全部表结构。</EmptyState> : visible.length ? (
+        <div className="space-y-3">
+          {matched.length > visible.length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">当前只展示前 {visible.length} 个匹配 schema；请继续缩小过滤条件。</div>}
+          {visible.map(({ database, rp, measurement }) => (
+            <details className="rounded-lg border border-border bg-white" key={`${database}:${rp}:${measurement.name}`}>
+              <summary className="cursor-pointer px-4 py-3">
+                <span className="font-semibold">{measurement.logicalName ?? measurement.name}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{database} / {rp} · physical {measurement.name} · {(measurement.schema ?? []).length} field(s)</span>
+              </summary>
+              <div className="border-t border-border p-3">
+                <Table headers={["Field", "Type", "Type code", "EndTime"]} rows={(measurement.schema ?? []).map((field) => [
+                  field.name, fieldType(field.typ), field.typ, field.endTime
+                ])} empty="Measurement has no Schema" />
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : <EmptyState>没有匹配的 Schema。</EmptyState>}
+    </div>
   );
 }
 

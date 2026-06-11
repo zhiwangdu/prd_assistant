@@ -37,12 +37,20 @@ WEBUI Tools
 
 ## Implemented
 
+### Metadata Cascading Views
+
+- Removed the WebUI Metadata graph rendering path and the `@xyflow/react` dependency; Topology is now rendered as a cascade instead of a React Flow graph.
+- Topology now expands as `Database -> DataNode -> DBPT -> Shards`, with each Shard row showing RP, ShardGroup, time range, Owners, IndexID and Index status information.
+- Databases now expands as `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index`, so large clusters no longer render every detail table at once.
+- Schemas now requires Database, RP, Measurement or field filtering before results render, preventing all schemas from being laid out by default.
+- Updated WebUI and Metadata module docs/specs for the cascading topology, database and schema views.
+- Verification: `cd webui && npm run typecheck`, `cd webui && npm run lint`, `cd webui && npm run build`, and `git diff --check` pass.
+
 ### Metadata Topology Explorer
 
-- WebUI Metadata Topology no longer builds a full React Flow graph by default. It now derives a topology index and starts with an abnormal-first PT overview table.
+- WebUI Metadata Topology no longer builds a full graph by default. It now derives a topology index and starts with an abnormal-first PT overview table.
 - The overview groups by DataNode / Database / PT and shows ShardGroup, Shard, IndexGroup, Index, diagnostic count, owner and time range summaries.
-- Focused Graph renders React Flow only after a user selects a specific PT, and it blocks graph rendering when the selected scope would exceed 600 graph elements.
-- The right-side details panel now supports both aggregate PT details and individual graph entity fields/relations.
+- The right-side details panel supports aggregate PT details.
 - Updated WebUI and Metadata module docs/specs for the overview-first topology behavior.
 - Verification: `cd webui && npm run typecheck`, `cd webui && npm run lint`, `cd webui && npm run build`, and `git diff --check` pass; in-app Browser was unavailable for visual verification.
 
@@ -375,7 +383,7 @@ tool_results/<action_id>/
 ### WEBUI
 
 - React + Vite + TypeScript + Tailwind CSS app under `webui/`.
-- Uses shadcn/ui composition primitives and React Flow.
+- Uses shadcn/ui composition primitives.
 - `npm run build` writes `webui/out`.
 - Served by Server at `/` from `webui/out`.
 - Supports:

@@ -2,7 +2,7 @@
 
 ## 当前实现
 
-WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS、shadcn/ui 组合组件和 React Flow。`npm run build` 输出到 `webui/out`，由 Rust Server 静态托管。
+WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组件。`npm run build` 输出到 `webui/out`，由 Rust Server 静态托管。
 
 当前页面：
 
@@ -51,13 +51,12 @@ Metadata 能力：
 - Overview：InstanceID、备注名、sourceClusterId、Term、Index、节点/DB/PT/Shard 数量、功能开关和全部 MaxID。
 - Nodes：MetaNode、DataNode、SqlNode 完整地址、状态、连接和 AZ 字段。
 - Partitions：Database、PtId、Owner DataNode、Status、Ver、RGID。
-- Topology：默认展示异常优先的 PT 聚合概览，按 DataNode、Database、时间范围和异常状态快速定位热点。
-- Focused Graph：选择具体 PT 后才渲染小范围 React Flow 关系图，展示 `DataNode -> Database -> DBPT -> ShardGroup/IndexGroup`，Shard/Index 可按需展开。
-- Focused Graph 超过 600 个图元素时阻止渲染并提示继续缩小范围，避免大集群页面卡顿。
-- 点击概览行或拓扑实体时在右侧展示聚合指标、异常和完整字段/关联对象。
+- Topology：按 `Database -> DataNode -> DBPT -> Shards` 级联展开，Shard 行展示 time range、IndexID 和 Index 状态信息。
+- Topology 支持 Database、DataNode、时间范围、仅异常、Shard 行和 Index 信息显隐筛选，不再渲染 Graph。
+- 点击 DBPT 时在右侧展示聚合指标、异常和时间范围。
 - 缺失 DataNode 或缺失 PT 使用红色虚拟容器/lane 展示，不会从拓扑中消失。
-- Databases：RP duration、ShardGroup、Shard、IndexGroup 和 Index 明细。
-- Schemas：通过 MstVersions 展示逻辑表和物理表映射及 Schema。
+- Databases：按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
+- Schemas：通过 Database、RP、Measurement/field 筛选后展示，不默认铺开全部 Schema。
 - Diagnostics：检查节点离线、连接状态、PT/Shard owner、默认 RP、ShardGroup、Schema 和 Index 引用。
 - Raw JSON：保留并筛选原始 `/getdata` JSON。
 
@@ -73,7 +72,7 @@ System Context 能力：
 
 ```text
 Shard.Owners / Index.Owners = PT ID
-DataNode -> Database/PT -> ShardGroup -> Shard -> IndexGroup -> Index
+Database -> DataNode -> DBPT -> Shards
 ```
 
 ## 文件结构
