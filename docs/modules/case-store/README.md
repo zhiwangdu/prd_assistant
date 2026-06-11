@@ -101,7 +101,7 @@ title + symptom + root_cause + solution
 后续：
 
 - 生成 embedding。
-- 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
+- 将 Case 引用升级为更正式的 analysis evidence bundle。
 - 接入 sqlite-vec 或迁移到 PostgreSQL + pgvector。
 
 ## 迭代位置
@@ -121,7 +121,7 @@ Case 合并、批量管理和 embedding 召回可以后续增强。
 
 1. 新任务开始分析前，根据用户问题、日志摘要和错误模式生成查询向量。
 2. 召回 Top 5 相似 Case。
-3. 将相似 Case 加入 Analysis Agent evidence bundle，由 LLM Gateway 作为参考输入。
+3. 将相似 Case 加入 analysis evidence bundle，由 Agent Backend 作为参考输入。
 4. 分析结果中标明历史 Case 只是参考，不替代当前任务证据。
 
-Case Store 只接收人工确认后的 Case。任务来源 Case 必须来自 Analysis Agent 最终结果并经过人工确认；手工录入 Case 由用户直接确认。中间假设、待验证信息、隐藏推理和被用户否定的结论不得沉淀为 Case。
+Case Store 只接收人工确认后的 Case。任务来源 Case 必须来自 Analysis Orchestrator 最终结果并经过人工确认；手工录入 Case 由用户直接确认。中间假设、待验证信息、隐藏推理和被用户否定的结论不得沉淀为 Case。

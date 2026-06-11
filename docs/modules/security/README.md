@@ -23,9 +23,11 @@
 - LLM Gateway 只返回结构化 action 或最终答案候选，不持有执行能力。
 - 不保存模型隐藏思维链，只保留决策摘要、事实、假设和证据引用。
 
-## Analysis Agent
+## Analysis Orchestrator / Agent Backend
 
 - Agent action 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
+- 外部 Agent Backend 只能通过配置中的 adapter 接入，不能直接执行 LogAgent 工具、SSH、文件系统或状态变更。
+- 第一阶段 Agent Backend dry-run 诊断只检查配置路径，不执行外部 CLI。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
 - SSH/SCP 环境采集默认需要用户批准。
 - 当前 `collect_environment` 在批准前只写入 pending approval，不执行采集；批准后的 MVP 路径只写入 mock evidence，真实 SSH/SCP 执行器后续仍必须受白名单约束。

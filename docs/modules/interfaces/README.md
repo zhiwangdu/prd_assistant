@@ -2,11 +2,11 @@
 
 ## 目标
 
-MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Agent 持有调查策略，证据模块只执行受约束能力，LLM Gateway 只提供模型推理。
+MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Orchestrator 持有证据包构建、预算和动作校验，Agent Backend 只提供推理/代码上下文分析，证据模块只执行受约束能力。
 
 ## 当前实现
 
-Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
+Server 已在 `server/src/contracts.rs` 落地第一版公共契约，并新增 Agent Backend / Domain Adapter 摘要接口：
 
 - `TaskContext`
 - `AgentAction` / `ActionKind` / `ActionRisk`
@@ -16,7 +16,9 @@ Server 已在 `server/src/contracts.rs` 落地第一版公共契约：
 
 Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版 `run_tool` action 和未来 LLM action 走同一执行接口。
 
-Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；后续 Analysis Agent 的 `run_tool` action 会逐步复用同一个工具 registry。
+Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；后续 Analysis Orchestrator 的 `run_tool` action 会逐步复用同一个工具 registry。
+
+Agent Backend 第一阶段只提供配置摘要和 dry-run 诊断，不改变现有 `PLAN_ANALYSIS` 执行路径。后续外部 CLI 后端必须通过 `analysis_package.json`、`agent_request.json` 和 `agent_response.json` 与 Server 通信，输出仍映射到现有 action/final answer 契约。
 
 ## 核心数据
 
@@ -68,6 +70,16 @@ pub trait AnalysisAgent {
 
 pub trait LlmGateway {
     async fn decide(&self, input: AnalysisPromptInput) -> anyhow::Result<LlmDecision>;
+}
+
+pub trait AgentBackend {
+    async fn run(&self, request: AgentBackendRequest)
+        -> anyhow::Result<AgentBackendResponse>;
+}
+
+pub trait DomainAdapter {
+    fn summarize(&self, task: &TaskContext, evidence: &EvidenceBundle)
+        -> anyhow::Result<DomainContext>;
 }
 
 pub trait LogAnalyzer {

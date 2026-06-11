@@ -51,3 +51,22 @@ llm:
   request_timeout_seconds: 120
   max_input_chars: 60000
   max_output_tokens: 4096
+
+agent_backends:
+  default_backend: "internal_llm"
+  backends:
+    internal_llm:
+      type: "internal_llm"
+      enabled: true
+    codex_cli:
+      type: "codex_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_CODEX_PATH"
+    claude_code_cli:
+      type: "claude_code_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_CLAUDE_CODE_PATH"
+    opencode_cli:
+      type: "opencode_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_OPENCODE_PATH"

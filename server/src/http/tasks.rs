@@ -1779,6 +1779,7 @@ nodes:
             },
             tools: ToolsSettings::default(),
             llm,
+            agent_backends: crate::support::config::AgentBackendSettings::default(),
             analysis: test_analysis_settings(),
             embedding: test_embedding_settings(),
         });

@@ -4,7 +4,7 @@
 
 Server 是 LogAgent 的任务管理、上传接收、证据流水线和 WEBUI 托管入口。
 
-Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 LLM Gateway 都不能直接调用 shell、SSH、文件系统或外部工具。
+Server 也是 Analysis Orchestrator 和 Agent Backend action 的唯一执行边界。Analysis Orchestrator、LLM Gateway 和外部 Agent Backend 都不能直接调用 shell、SSH、文件系统或外部工具。
 
 ## 当前状态
 
@@ -30,6 +30,8 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - LLM Gateway `binary` provider 预留分支，固定调用 `<binary_path> run <prompt>` 并解析 stdout JSON
 - runtime LLM output debug 开关和 `/api/debug/llm`
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`
+- Settings Agent Backend 诊断接口：`/api/settings/agent-backends`、`/api/settings/agent-backends/:backend_id/test`
+- Settings Domain Adapter 摘要接口：`/api/settings/domain-adapters`
 - task artifact 查询
 - metadata 查询和导入确认
 - System Context 资源管理、版本化 Prompt Pack、架构文档和 Prompt preview
@@ -38,7 +40,7 @@ Server 也是 Analysis Agent action 的唯一执行边界。Analysis Agent 和 L
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
-代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Metadata、LLM Gateway 和 Tools 插件等内部能力，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。HTTP API、配置结构、任务 schema 和 workspace artifact 路径保持不变。
+代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Metadata、Agent Backend、Domain Adapter、LLM Gateway 和 Tools 插件等内部能力，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。HTTP API、配置结构、任务 schema 和 workspace artifact 路径保持不变。
 
 ## HTTP 接口
 
@@ -96,6 +98,9 @@ PUT /api/debug/llm
 GET /api/settings/llm
 GET /api/settings/llm/models
 POST /api/settings/llm/chat
+GET /api/settings/agent-backends
+POST /api/settings/agent-backends/:backend_id/test
+GET /api/settings/domain-adapters
 GET /api/system-context/resources
 POST /api/system-context/resources
 GET /api/system-context/resources/:context_id
@@ -274,6 +279,10 @@ LLM Gateway 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或
 
 Settings LLM 诊断接口用于 WebUI 验证当前 Provider 连通性。`GET /api/settings/llm` 返回 provider、当前模型、超时、输入/输出限制和配置项是否存在；不返回 API Key、base URL 原文或 binary path。`GET /api/settings/llm/models` 调用当前 Provider 的模型列表能力，OpenAI-compatible Provider 调用 `<base_url>/models`，stub/binary Provider 返回配置模型。`POST /api/settings/llm/chat` 请求体为 `{"message":"..."}`，用当前 Provider 发送一条简单消息。模型列表和消息测试响应使用 `{ok,result,error}`；Provider HTTP、鉴权、限流、网络、超时或 JSON decode 异常写入 `error`。
 
+Settings Agent Backend 诊断接口用于验证成熟 agent 后端适配配置。`GET /api/settings/agent-backends` 返回默认后端、后端类型、启用状态、执行模式、超时和输入输出大小限制；不返回命令路径。当前支持 `internal_llm`、`codex_cli`、`claude_code_cli` 和 `opencode_cli`。`POST /api/settings/agent-backends/:backend_id/test` 使用 `{ok,result,error}` 响应；`internal_llm` 返回 ready，外部 CLI 第一阶段只检查配置命令路径存在且是普通文件，不执行命令。
+
+Settings Domain Adapter 接口用于展示领域诊断能力包。`GET /api/settings/domain-adapters` 返回内置 adapter 列表：`opengemini_influxdb` 为 active，`cassandra` 和 `rocksdb` 为 skeleton。
+
 Case import API 用于替代低效的 Case 手工录入表单。`POST /api/cases/imports` 接受 JSON `{text, filename?}` 或 multipart `file`，仅支持粘贴文本和 UTF-8 文本类文件（`.txt/.md/.log/.json/.yaml/.yml/.csv`）；PDF/DOCX 暂不解析。Server 调用 LLM Gateway 输出 `structuredCase`、`missingFields`、`assistantQuestion` 和 `readyToConfirm`，并持久化到 `storage.data_dir/case_imports/<draft_id>.json`。`title`、`symptom`、`rootCause` 和 `solution` 是确认保存的必填字段；缺失时通过 `POST /api/cases/imports/:draft_id/messages` 连续补充。用户可通过 `PATCH /api/cases/imports/:draft_id` 修正草稿，最后用 `POST /api/cases/imports/:draft_id/confirm` 创建 `sourceType=manual` Case。
 
 Memory 当前作为 Server 内部本地知识后端，主库为 `storage.data_dir/memory/memory.sqlite`，第一阶段仅启用 `memoryType=case`。`CaseStore` 仍暴露现有 `/api/cases*` API、`CaseRecord`、`CaseSearchHit` 和 `case_context.json` 结构。启动时 Server 会读取 `storage.data_dir/cases/*.json` 并按 `caseId` idempotent upsert 到 SQLite；旧 JSON 文件不删除，新增和更新 Case 也会同步写 JSON 作为回滚源。SQLite schema 包含 `memory_items`、`memory_chunks` 和 `memory_chunks_fts`；搜索先过滤 `memoryType=case`、`status=active` 和 `enabled`，再使用 FTS/BM25 分数合并关键词重叠分数。若 FTS 创建或查询失败，Server 记录 warning 并回退到关键词重叠召回。
@@ -343,7 +352,8 @@ analysis_events.jsonl
 persist task
   -> initial extract/search
   -> load analysis state
-  -> Analysis Agent next_step
+  -> build analysis package and domain context
+  -> Agent Backend decision
   -> validate action, budget, whitelist and approval policy
   -> execute or wait
   -> append event and update state revision
@@ -371,6 +381,14 @@ persist task
 - `llm.request_timeout_seconds`
 - `llm.max_input_chars`
 - `llm.max_output_tokens`
+- `agent_backends.default_backend`
+- `agent_backends.backends.<name>.type`
+- `agent_backends.backends.<name>.enabled`
+- `agent_backends.backends.<name>.command_path`
+- `agent_backends.backends.<name>.command_path_env`
+- `agent_backends.backends.<name>.timeout_seconds`
+- `agent_backends.backends.<name>.max_input_bytes`
+- `agent_backends.backends.<name>.max_output_bytes`
 - `analysis.max_rounds`，默认 4，非正值按 1
 - `analysis.max_llm_calls`，默认 4，非正值按 1
 - `analysis.max_actions`，默认 6，非正值按 1
@@ -394,11 +412,13 @@ persist task
 
 ## 待实现
 
-- 围绕当前上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环，包括稳定任务创建、证据展示、追问/审批交互、结果确认和可复用的本地 smoke 流程。
+- 固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，再接入一个真实成熟 agent CLI PoC。
+- 围绕当前上传、Metadata、Tool Runner、Agent Backend、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括稳定任务创建、证据展示、追问/审批交互、结果确认和可复用的本地 smoke 流程。
 - 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
 - `influxql_analyzer` compare mode 已增强 delta 字段映射，后续根据真实 compare smoke 继续调整。
-- 多轮 Analysis Agent 的产品化策略、模型用量和 Provider request id 审计。
-- Memory 已完成本地 SQLite schema、legacy JSON Case 导入、Case schema v2 兼容 API、本地 FTS/BM25 召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding/vector 召回和更正式的 Analysis Agent evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
+- 多轮 Analysis Orchestrator 的产品化策略、模型用量和 Provider request id 审计。
+- Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具规则。
+- Memory 已完成本地 SQLite schema、legacy JSON Case 导入、Case schema v2 兼容 API、本地 FTS/BM25 召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding/vector 召回和更正式的 analysis evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
 - Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
 
 ## 验收标准

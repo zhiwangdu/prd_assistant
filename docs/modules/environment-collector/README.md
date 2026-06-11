@@ -14,7 +14,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 Environment Collector 面向测试环境，允许任务跳过浏览器下载和本地上传，直接通过 SSH/SCP 从目标节点收集日志、配置和诊断信息。
 
-Analysis Agent 也可通过 `collect_environment` action 请求补充采集。该动作默认进入 `WAITING_FOR_APPROVAL`，只有用户批准后 Server 才能将其映射到已配置环境、节点、文件和命令白名单。
+Analysis Orchestrator 也可根据 Agent Backend 的 `collect_environment` action 请求补充采集。该动作默认进入 `WAITING_FOR_APPROVAL`，只有用户批准后 Server 才能将其映射到已配置环境、节点、文件和命令白名单。
 
 ## 适用场景
 
@@ -69,7 +69,7 @@ environments:
 4. 执行白名单诊断命令。
 5. 保存到任务 workspace。
 6. 生成 `environment_evidence.json` 和 `manifest.json`。
-7. 采集证据回填 Analysis Agent，继续同一任务。
+7. 采集证据回填 Analysis Orchestrator，继续同一任务。
 
 ## 连接管理
 
@@ -114,3 +114,4 @@ collected/
 - SSH key 不进入 LLM Prompt。
 - 不做通用远程运维平台。
 - action 和用户消息不能增加配置外节点、路径或命令。
+- Agent Backend 不能直接连接 SSH/SCP。

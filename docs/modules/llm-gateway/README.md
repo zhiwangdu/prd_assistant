@@ -1,13 +1,13 @@
 # LLM Gateway 方案
 
-该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Agent 负责。
+该文档已归档到 `docs/modules/llm-gateway/`。组件职责已收窄为 LLM Gateway；自主调查、多轮状态和用户追问由 Analysis Orchestrator 负责。LLM Gateway 现在也是 `internal_llm` Agent Backend 的实现基础，外部 Codex/Claude Code/OpenCode 后端由 Agent Backend Adapter 另行接入。
 
 ## 职责
 
 LLM Gateway 负责：
 
 - OpenAI-compatible 等 Provider 适配
-- 将 Analysis Agent 的当前状态和证据组装为 Prompt
+- 将 Analysis Orchestrator 的当前状态和证据组装为 Prompt
 - token 估算、证据排序和裁剪
 - 调用模型
 - 校验结构化响应 schema
@@ -21,10 +21,11 @@ LLM Gateway 不负责：
 - 直接调用工具、代码仓、文件系统或 SSH
 - 执行动作或审批
 - 保存隐藏思维链
+- 适配 Codex/Claude Code/OpenCode CLI 的交互协议
 
 ## 当前实现
 
-当前作为 Server 内部 Rust 模块实现了单次最终结果生成和多轮 action decision：
+当前作为 Server 内部 Rust 模块实现了 `internal_llm` 后端的单次最终结果生成和多轮 action decision：
 
 ```text
 question + session_text_input.json + system_context.json + manifest.json + grep_results.json + metadata_context.json + tool_results
@@ -35,7 +36,7 @@ question + session_text_input.json + system_context.json + manifest.json + grep_
   -> silent task alias generation for UI display
 ```
 
-`binary` provider 是预留的大模型调用分支。启用后 Gateway 会使用参数数组调用配置的二进制：
+`binary` provider 是预留的大模型调用分支，不等同于成熟 Agent Backend。启用后 Gateway 会使用参数数组调用配置的二进制：
 
 ```text
 <binary_path> run "<prompt>"
@@ -51,11 +52,14 @@ Task Executor 在 `PLAN_ANALYSIS` 阶段会循环调用 ActionDecision / FinalAn
 
 Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调用 `/api/debug/llm` 开启或关闭。开启后 Gateway 只把模型 response content 打印到 Server stderr，便于定位 schema 漂移；不会打印 prompt、API Key 或 HTTP headers。该开关默认关闭，Server 重启后恢复关闭。
 
-Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务：
+Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务和 agent backend 配置：
 
 - `GET /api/settings/llm`：返回 provider、模型、超时和输入/输出限制等摘要，不返回密钥。
 - `GET /api/settings/llm/models`：测试模型列表接口；OpenAI-compatible 调用 `/models`，stub/binary 返回配置模型。
 - `POST /api/settings/llm/chat`：发送一条简单 user message，返回模型响应。
+- `GET /api/settings/agent-backends`：返回 Agent Backend 配置摘要。
+- `POST /api/settings/agent-backends/:backend_id/test`：执行后端 dry-run 诊断。
+- `GET /api/settings/domain-adapters`：返回领域 adapter 摘要。
 
 诊断接口使用 `{ok,result,error}` 响应；Provider HTTP、鉴权、限流、网络、超时、JSON decode 等异常会写入 `error`，便于页面直接展示。
 
@@ -153,7 +157,7 @@ llm:
 - 简短决策依据
 - 证据引用
 
-Gateway 对未知动作、缺字段、无效枚举和超预算响应返回 schema 错误，由 Analysis Agent 决定重试或终止。
+Gateway 对未知动作、缺字段、无效枚举和超预算响应返回 schema 错误，由 Analysis Orchestrator 决定重试或终止。
 
 ## Prompt 约束
 

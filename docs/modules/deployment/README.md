@@ -103,4 +103,4 @@ cp logagent.example.yaml logagent.yaml
 
 第一版不拆。
 
-Analysis Agent 与 LLM Gateway 是进程内逻辑组件，但状态、事件和待处理请求必须持久化到 Server 数据目录，不能依赖进程内会话。Server 重启后恢复 `RUNNING` 和等待状态，避免重复执行已完成 action。
+Analysis Orchestrator、Agent Backend Adapter 与 LLM Gateway 是进程内逻辑组件，但状态、事件和待处理请求必须持久化到 Server 数据目录，不能依赖进程内会话。Server 重启后恢复 `RUNNING` 和等待状态，避免重复执行已完成 action。

@@ -2,7 +2,7 @@
 
 ## 目标
 
-为 Analysis Agent 提供受约束、可替换的模型推理后端，将任务上下文转换为结构化 action 或最终答案候选。
+为 Analysis Orchestrator 提供受约束、可替换的 `internal_llm` 模型推理后端，将任务上下文转换为结构化 action 或最终答案候选。Codex、Claude Code、OpenCode 等成熟 agent CLI 不直接归入 LLM Gateway，而通过 Agent Backend Adapter 接入。
 
 ## 当前状态
 
@@ -26,6 +26,7 @@
 - `result.json` / `result.md` 持久化。
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已循环调用双模式 action decision，并由 Analysis 预算和重复 fingerprint 防护终止。
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
+- Agent Backend 诊断接口已由独立 adapter registry 提供，LLM Gateway 仍只负责 `internal_llm`。
 
 ## 当前输入
 
@@ -131,6 +132,7 @@ binary provider 错误包括：
 - Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
 - 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
 - Gateway 无法直接访问 Tool Runner、Environment Collector 或任务状态存储。
+- Gateway 不负责外部成熟 agent CLI 的认证、进程交互和输出协议。
 - `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。
 - `/api/settings/llm` 可读取不含密钥的当前 LLM 配置摘要；`/api/settings/llm/models` 可测试模型列表获取；`/api/settings/llm/chat` 可发送简单消息并返回响应或完整异常文本。
 - `PLAN_ANALYSIS` 的真实 action decision 调用必须带 `llmcall_*` callId，并记录 started/completed/schema_retry 事件；schema retry 和最终错误必须能关联该 callId。

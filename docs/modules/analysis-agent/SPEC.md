@@ -2,11 +2,11 @@
 
 ## 目标
 
-提供可持久化、可恢复、可审计的单 Agent 调查闭环，在受限预算内自主请求证据、向用户追问并生成结构化结果。Agent 的执行上下文是一次 Session run 对应的 task workspace；Session 负责保存草稿、上传引用和多次 run 历史。
+提供可持久化、可恢复、可审计的单 Orchestrator 调查闭环，在受限预算内汇总证据、调用 Agent Backend、向用户追问并生成结构化结果。执行上下文是一次 Session run 对应的 task workspace；Session 负责保存草稿、上传引用和多次 run 历史。
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` 多轮 action loop、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Agent Backend 第一阶段已提供配置和诊断接口，但现有分析执行仍默认使用 `internal_llm`。
 
 已落地：
 
@@ -19,6 +19,8 @@
 - model decision 事件记录
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - LLM Gateway ActionDecision / FinalAnswer 双模式 schema 和 parser
+- Agent Backend 配置摘要和 dry-run 诊断
+- Domain Adapter 内置 registry
 - 多轮消费 `search_logs`、`run_tool` 或 `final_answer`
 - `ask_user` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
 - `collect_environment` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务；批准后当前写入 mock environment evidence
@@ -41,6 +43,7 @@
 - `analysis_events.jsonl`
 - 用户新增消息或审批决定
 - LLM Gateway 的结构化决策
+- 后续 Agent Backend 的结构化决策
 
 ## 输出
 
@@ -48,6 +51,7 @@
 - 追加的 `analysis_events.jsonl`
 - 一个待 Server 处理的结构化 action
 - 终态时的 `result.json` 和 `result.md`
+- 后续外部 backend 接入时的 `agent_request.json` / `agent_response.json`
 
 当前 `/analysis` 响应包含：
 
@@ -109,7 +113,7 @@ final_answer
 - `risk`
 - `fingerprint`
 
-Server 必须在执行前验证动作类型、输入 schema、白名单、预算和审批策略。LLM Gateway 不得绕过 Server 调用能力模块。
+Server 必须在执行前验证动作类型、输入 schema、白名单、预算和审批策略。LLM Gateway 和外部 Agent Backend 不得绕过 Server 调用能力模块。
 
 ## 用户追问
 
@@ -135,7 +139,7 @@ Server 必须在执行前验证动作类型、输入 schema、白名单、预算
 
 - 不保存或展示隐藏思维链。
 - 只记录简短决策依据、假设、事实和证据引用。
-- Agent 无文件系统、shell、网络或 SSH 的直接执行权限。
+- Orchestrator、LLM Gateway 和外部 Agent Backend 无文件系统、shell、网络或 SSH 的直接执行权限。
 - 远程采集默认需要用户批准。
 - 用户消息和日志内容均视为不可信输入，不能改变系统白名单或执行策略。
 - System Context 也视为背景参考输入，不能替代当前任务证据或改变 Server 侧 schema/白名单/审批策略。

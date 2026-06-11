@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, MessageSquareText, RefreshCw, Send, ServerCog } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, CheckCircle2, MessageSquareText, PlugZap, RefreshCw, Send, ServerCog } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, jsonHeaders } from "./metadata/api";
@@ -37,15 +37,59 @@ type LlmChatResult = {
   response: string;
 };
 
+type AgentBackendSummary = {
+  id: string;
+  backendType: string;
+  enabled: boolean;
+  defaultBackend: boolean;
+  commandConfigured: boolean;
+  timeoutSeconds: number;
+  maxInputBytes: number;
+  maxOutputBytes: number;
+  executionMode: string;
+};
+
+type AgentBackendsSummary = {
+  defaultBackend: string;
+  backends: AgentBackendSummary[];
+};
+
+type AgentBackendsResponse = { agentBackends: AgentBackendsSummary };
+
+type AgentBackendDiagnosticResult = {
+  backendId: string;
+  backendType: string;
+  enabled: boolean;
+  status: string;
+  executionMode: string;
+  details: string[];
+};
+
+type DomainAdapterSummary = {
+  id: string;
+  displayName: string;
+  status: string;
+  products: string[];
+  evidenceKinds: string[];
+  plannedTools: string[];
+  notes: string[];
+};
+
+type DomainAdaptersResponse = { domainAdapters: DomainAdapterSummary[] };
+
 export function SettingsView({ apiKey }: Props) {
   const [summary, setSummary] = useState<LlmSummary | null>(null);
+  const [agentBackends, setAgentBackends] = useState<AgentBackendsSummary | null>(null);
+  const [domainAdapters, setDomainAdapters] = useState<DomainAdapterSummary[]>([]);
   const [summaryStatus, setSummaryStatus] = useState("等待加载 LLM 设置");
   const [modelsResult, setModelsResult] = useState<LlmTestResponse<LlmModelsResult> | null>(null);
   const [chatResult, setChatResult] = useState<LlmTestResponse<LlmChatResult> | null>(null);
+  const [agentBackendResult, setAgentBackendResult] = useState<LlmTestResponse<AgentBackendDiagnosticResult> | null>(null);
   const [message, setMessage] = useState("hello");
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
+  const [testingBackendId, setTestingBackendId] = useState<string | null>(null);
 
   const loadSummary = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -54,15 +98,27 @@ export function SettingsView({ apiKey }: Props) {
       return;
     }
     setLoadingSummary(true);
-    setSummaryStatus("加载 LLM 设置中...");
+    setSummaryStatus("加载 Settings 中...");
     try {
-      const response = await requestJson<LlmSettingsResponse>("/api/settings/llm", {
-        headers: authHeaders(apiKey)
-      });
-      setSummary(response.llm);
-      setSummaryStatus("LLM 设置已加载");
+      const [llmResponse, backendResponse, domainResponse] = await Promise.all([
+        requestJson<LlmSettingsResponse>("/api/settings/llm", {
+          headers: authHeaders(apiKey)
+        }),
+        requestJson<AgentBackendsResponse>("/api/settings/agent-backends", {
+          headers: authHeaders(apiKey)
+        }),
+        requestJson<DomainAdaptersResponse>("/api/settings/domain-adapters", {
+          headers: authHeaders(apiKey)
+        })
+      ]);
+      setSummary(llmResponse.llm);
+      setAgentBackends(backendResponse.agentBackends);
+      setDomainAdapters(domainResponse.domainAdapters);
+      setSummaryStatus("Settings 已加载");
     } catch (reason) {
       setSummary(null);
+      setAgentBackends(null);
+      setDomainAdapters([]);
       setSummaryStatus(formatError(reason));
     } finally {
       setLoadingSummary(false);
@@ -111,6 +167,25 @@ export function SettingsView({ apiKey }: Props) {
     }
   }
 
+  async function testAgentBackend(backendId: string) {
+    if (!apiKey.trim()) {
+      setAgentBackendResult({ ok: false, error: "请先填写 API Key" });
+      return;
+    }
+    setTestingBackendId(backendId);
+    try {
+      const response = await requestJson<LlmTestResponse<AgentBackendDiagnosticResult>>(`/api/settings/agent-backends/${encodeURIComponent(backendId)}/test`, {
+        method: "POST",
+        headers: authHeaders(apiKey)
+      });
+      setAgentBackendResult(response);
+    } catch (reason) {
+      setAgentBackendResult({ ok: false, error: formatError(reason) });
+    } finally {
+      setTestingBackendId(null);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Card>
@@ -142,6 +217,87 @@ export function SettingsView({ apiKey }: Props) {
           <p className="mt-3 text-xs text-muted-foreground">{summaryStatus}</p>
         </CardContent>
       </Card>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Agent backends</CardTitle>
+                <CardDescription>成熟 agent 后端适配器，当前阶段只做配置和 dry-run 诊断。</CardDescription>
+              </div>
+              <Bot className="h-5 w-5 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {agentBackends ? (
+              <div className="space-y-3">
+                {agentBackends.backends.map((backend) => (
+                  <div key={backend.id} className="rounded-lg border border-border bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold">{backend.id}</p>
+                          <Badge variant="secondary">{backend.backendType}</Badge>
+                          {backend.defaultBackend ? <Badge>default</Badge> : null}
+                          <Badge variant={backend.enabled ? "success" : "secondary"}>{backend.enabled ? "enabled" : "disabled"}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {backend.executionMode} · timeout {backend.timeoutSeconds}s · command {backend.commandConfigured ? "configured" : "not configured"}
+                        </p>
+                      </div>
+                      <Button variant="outline" onClick={() => void testAgentBackend(backend.id)} disabled={!backend.enabled || testingBackendId === backend.id}>
+                        <PlugZap className={`mr-2 h-4 w-4 ${testingBackendId === backend.id ? "animate-pulse" : ""}`} />
+                        Test
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyState>{summaryStatus}</EmptyState>}
+            <TestResultView result={agentBackendResult} empty="选择一个 enabled backend 执行 dry-run 诊断。" renderSummary={(result) => (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <StatusBadge ok={result.ok} />
+                {result.result ? <Badge variant="secondary">{result.result.backendId}</Badge> : null}
+                {result.result ? <Badge variant="secondary">{result.result.status}</Badge> : null}
+              </div>
+            )} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Domain adapters</CardTitle>
+                <CardDescription>数据库和存储系统专项诊断能力包。</CardDescription>
+              </div>
+              <Boxes className="h-5 w-5 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {domainAdapters.length > 0 ? (
+              <div className="space-y-3">
+                {domainAdapters.map((adapter) => (
+                  <div key={adapter.id} className="rounded-lg border border-border bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{adapter.displayName}</p>
+                      <Badge variant={adapter.status === "active" ? "success" : "secondary"}>{adapter.status}</Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {adapter.products.map((product) => <Badge key={product} variant="secondary">{product}</Badge>)}
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">{adapter.notes[0] ?? "No notes"}</p>
+                    {adapter.plannedTools.length > 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground">Tools: {adapter.plannedTools.join(", ")}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyState>{summaryStatus}</EmptyState>}
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>

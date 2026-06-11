@@ -3,7 +3,10 @@ use tracing::warn;
 
 use crate::{
     pipeline::executor::TaskExecutor,
-    services::{llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner},
+    services::{
+        agent_backend::AgentBackendRegistry, domain_adapters::DomainAdapterRegistry,
+        llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner,
+    },
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
         session_store::AnalysisSessionStore, system_context_store::SystemContextStore,
@@ -24,6 +27,8 @@ pub struct AppState {
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub llm: LlmGateway,
+    pub agent_backends: AgentBackendRegistry,
+    pub domain_adapters: DomainAdapterRegistry,
     pub tool_runner: ToolRunner,
 }
 
@@ -49,6 +54,8 @@ impl AppState {
             sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,
+            agent_backends: AgentBackendRegistry::new(config.agent_backends.clone()),
+            domain_adapters: DomainAdapterRegistry::builtin(),
             tool_runner: ToolRunner::new(config.tools.clone()),
             config,
             uploads,

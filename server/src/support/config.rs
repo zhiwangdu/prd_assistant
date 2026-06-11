@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
     pub llm: LlmSettings,
+    pub agent_backends: AgentBackendSettings,
     pub analysis: AnalysisSettings,
     #[allow(dead_code)]
     pub embedding: EmbeddingSettings,
@@ -78,6 +79,71 @@ pub struct LlmSettings {
 }
 
 #[derive(Debug, Clone)]
+pub struct AgentBackendSettings {
+    pub default_backend: String,
+    pub backends: BTreeMap<String, AgentBackendSettingsEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentBackendSettingsEntry {
+    pub name: String,
+    pub backend_type: AgentBackendType,
+    pub enabled: bool,
+    pub command_path: Option<PathBuf>,
+    pub timeout_seconds: u64,
+    pub max_input_bytes: usize,
+    pub max_output_bytes: usize,
+}
+
+impl Default for AgentBackendSettings {
+    fn default() -> Self {
+        let mut backends = BTreeMap::new();
+        backends.insert(
+            "internal_llm".to_string(),
+            AgentBackendSettingsEntry {
+                name: "internal_llm".to_string(),
+                backend_type: AgentBackendType::InternalLlm,
+                enabled: true,
+                command_path: None,
+                timeout_seconds: default_agent_backend_timeout_seconds(),
+                max_input_bytes: default_agent_backend_max_input_bytes(),
+                max_output_bytes: default_agent_backend_max_output_bytes(),
+            },
+        );
+        Self {
+            default_backend: "internal_llm".to_string(),
+            backends,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentBackendType {
+    InternalLlm,
+    CodexCli,
+    ClaudeCodeCli,
+    OpencodeCli,
+}
+
+impl AgentBackendType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InternalLlm => "internal_llm",
+            Self::CodexCli => "codex_cli",
+            Self::ClaudeCodeCli => "claude_code_cli",
+            Self::OpencodeCli => "opencode_cli",
+        }
+    }
+
+    pub fn execution_mode(self) -> &'static str {
+        match self {
+            Self::InternalLlm => "llm_gateway",
+            Self::CodexCli | Self::ClaudeCodeCli | Self::OpencodeCli => "external_cli_adapter",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct AnalysisSettings {
     pub max_rounds: u32,
     pub max_llm_calls: u32,
@@ -128,6 +194,7 @@ struct ConfigFile {
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
     llm: Option<LlmConfig>,
+    agent_backends: Option<AgentBackendsConfig>,
     analysis: Option<AnalysisConfig>,
     embedding: Option<EmbeddingConfig>,
 }
@@ -219,6 +286,30 @@ struct LlmConfig {
     max_input_chars: usize,
     #[serde(default = "default_llm_max_output_tokens")]
     max_output_tokens: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AgentBackendsConfig {
+    #[serde(default = "default_agent_backend_id")]
+    default_backend: String,
+    #[serde(default)]
+    backends: BTreeMap<String, AgentBackendConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AgentBackendConfig {
+    #[serde(rename = "type", default = "default_agent_backend_type")]
+    backend_type: String,
+    #[serde(default = "default_agent_backend_enabled")]
+    enabled: bool,
+    command_path: Option<PathBuf>,
+    command_path_env: Option<String>,
+    #[serde(default = "default_agent_backend_timeout_seconds")]
+    timeout_seconds: u64,
+    #[serde(default = "default_agent_backend_max_input_bytes")]
+    max_input_bytes: usize,
+    #[serde(default = "default_agent_backend_max_output_bytes")]
+    max_output_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -331,6 +422,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             log_analyzer: None,
             tools: BTreeMap::new(),
             llm: None,
+            agent_backends: None,
             analysis: None,
             embedding: None,
         }
@@ -346,6 +438,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
+    let agent_backends = resolve_agent_backends(parsed.agent_backends)?;
     let analysis = parsed.analysis.unwrap_or_else(default_analysis_config);
     let embedding = parsed.embedding.unwrap_or_else(default_embedding_config);
 
@@ -428,6 +521,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_input_chars: llm.max_input_chars.max(1024),
             max_output_tokens: llm.max_output_tokens.max(1),
         },
+        agent_backends,
         analysis: AnalysisSettings {
             max_rounds: analysis.max_rounds.max(1),
             max_llm_calls: analysis.max_llm_calls.max(1),
@@ -442,6 +536,102 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             store: embedding.store,
         },
     }))
+}
+
+fn resolve_agent_backends(
+    raw: Option<AgentBackendsConfig>,
+) -> anyhow::Result<AgentBackendSettings> {
+    let raw = raw.unwrap_or_else(default_agent_backends_config);
+    let mut backends = BTreeMap::new();
+    for (name, backend) in raw.backends {
+        validate_tool_name(&name)
+            .with_context(|| format!("invalid agent_backends backend {name}"))?;
+        let backend_type = parse_agent_backend_type(&backend.backend_type)?;
+        let command_path = resolve_agent_backend_command_path(&name, backend_type, &backend)?;
+        backends.insert(
+            name.clone(),
+            AgentBackendSettingsEntry {
+                name,
+                backend_type,
+                enabled: backend.enabled,
+                command_path,
+                timeout_seconds: backend.timeout_seconds.max(1),
+                max_input_bytes: backend.max_input_bytes.max(1024),
+                max_output_bytes: backend.max_output_bytes.max(1024),
+            },
+        );
+    }
+    if !backends.contains_key("internal_llm") {
+        backends.insert(
+            "internal_llm".to_string(),
+            AgentBackendSettingsEntry {
+                name: "internal_llm".to_string(),
+                backend_type: AgentBackendType::InternalLlm,
+                enabled: true,
+                command_path: None,
+                timeout_seconds: default_agent_backend_timeout_seconds(),
+                max_input_bytes: default_agent_backend_max_input_bytes(),
+                max_output_bytes: default_agent_backend_max_output_bytes(),
+            },
+        );
+    }
+    let default_backend = raw.default_backend.trim();
+    if default_backend.is_empty() {
+        anyhow::bail!("agent_backends.default_backend must not be empty");
+    }
+    let Some(default_entry) = backends.get(default_backend) else {
+        anyhow::bail!("agent_backends.default_backend {default_backend} is not configured");
+    };
+    if !default_entry.enabled {
+        anyhow::bail!("agent_backends.default_backend {default_backend} must be enabled");
+    }
+    Ok(AgentBackendSettings {
+        default_backend: default_backend.to_string(),
+        backends,
+    })
+}
+
+fn resolve_agent_backend_command_path(
+    name: &str,
+    backend_type: AgentBackendType,
+    backend: &AgentBackendConfig,
+) -> anyhow::Result<Option<PathBuf>> {
+    if backend_type == AgentBackendType::InternalLlm || !backend.enabled {
+        return Ok(None);
+    }
+    let path = if let Some(path) = &backend.command_path {
+        path.clone()
+    } else {
+        let path_env = backend
+            .command_path_env
+            .as_deref()
+            .with_context(|| {
+                format!(
+                    "agent_backends.backends.{name}.command_path or command_path_env is required when enabled"
+                )
+            })?;
+        let value = env::var(path_env)
+            .with_context(|| format!("missing agent backend command path env var {path_env}"))?;
+        let value = value.trim();
+        if value.is_empty() {
+            anyhow::bail!("agent backend command path env var {path_env} must not be empty");
+        }
+        PathBuf::from(value)
+    };
+    if !path.is_absolute() {
+        anyhow::bail!("agent_backends.backends.{name}.command_path must be absolute");
+    }
+    Ok(Some(path))
+}
+
+fn parse_agent_backend_type(value: &str) -> anyhow::Result<AgentBackendType> {
+    match value {
+        "internal_llm" => Ok(AgentBackendType::InternalLlm),
+        "codex_cli" => Ok(AgentBackendType::CodexCli),
+        "claude_code_cli" => Ok(AgentBackendType::ClaudeCodeCli),
+        "opencode_cli" => Ok(AgentBackendType::OpencodeCli),
+        value => anyhow::bail!("unsupported agent backend type {value}"),
+    }
 }
 
 fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSettings> {
@@ -617,6 +807,26 @@ fn default_llm_config() -> LlmConfig {
     }
 }
 
+fn default_agent_backends_config() -> AgentBackendsConfig {
+    let mut backends = BTreeMap::new();
+    backends.insert(
+        "internal_llm".to_string(),
+        AgentBackendConfig {
+            backend_type: default_agent_backend_type(),
+            enabled: true,
+            command_path: None,
+            command_path_env: None,
+            timeout_seconds: default_agent_backend_timeout_seconds(),
+            max_input_bytes: default_agent_backend_max_input_bytes(),
+            max_output_bytes: default_agent_backend_max_output_bytes(),
+        },
+    );
+    AgentBackendsConfig {
+        default_backend: default_agent_backend_id(),
+        backends,
+    }
+}
+
 fn default_analysis_config() -> AnalysisConfig {
     AnalysisConfig {
         max_rounds: default_analysis_max_rounds(),
@@ -650,6 +860,30 @@ fn default_tool_max_output_bytes() -> usize {
 
 fn default_tool_max_input_files() -> usize {
     1
+}
+
+fn default_agent_backend_id() -> String {
+    "internal_llm".to_string()
+}
+
+fn default_agent_backend_type() -> String {
+    "internal_llm".to_string()
+}
+
+fn default_agent_backend_enabled() -> bool {
+    true
+}
+
+fn default_agent_backend_timeout_seconds() -> u64 {
+    120
+}
+
+fn default_agent_backend_max_input_bytes() -> usize {
+    256 * 1024
+}
+
+fn default_agent_backend_max_output_bytes() -> usize {
+    1024 * 1024
 }
 
 fn default_bind() -> String {
@@ -793,6 +1027,94 @@ mod tests {
             max_input_chars: 60_000,
             max_output_tokens: 4096,
         }
+    }
+
+    #[test]
+    fn resolves_default_agent_backend_config() {
+        let settings = resolve_agent_backends(None).unwrap();
+
+        assert_eq!(settings.default_backend, "internal_llm");
+        let backend = settings.backends.get("internal_llm").unwrap();
+        assert_eq!(backend.backend_type, AgentBackendType::InternalLlm);
+        assert!(backend.enabled);
+        assert!(backend.command_path.is_none());
+    }
+
+    #[test]
+    fn resolves_external_agent_backend_path_env_and_validates_default() {
+        temp_env_set("LOGAGENT_TEST_CODEX_PATH", "/opt/bin/codex", || {
+            let parsed = serde_yaml::from_str::<ConfigFile>(
+                r#"
+agent_backends:
+  default_backend: codex
+  backends:
+    codex:
+      type: codex_cli
+      command_path_env: LOGAGENT_TEST_CODEX_PATH
+      timeout_seconds: 30
+      max_input_bytes: 2048
+      max_output_bytes: 4096
+"#,
+            )
+            .unwrap();
+            let settings = resolve_agent_backends(parsed.agent_backends).unwrap();
+            let backend = settings.backends.get("codex").unwrap();
+            assert_eq!(settings.default_backend, "codex");
+            assert_eq!(backend.backend_type, AgentBackendType::CodexCli);
+            assert_eq!(
+                backend.command_path.as_ref().unwrap(),
+                &PathBuf::from("/opt/bin/codex")
+            );
+            assert_eq!(backend.timeout_seconds, 30);
+            assert_eq!(backend.max_input_bytes, 2048);
+            assert_eq!(backend.max_output_bytes, 4096);
+        });
+
+        let missing_default = serde_yaml::from_str::<ConfigFile>(
+            r#"
+agent_backends:
+  default_backend: missing
+"#,
+        )
+        .unwrap();
+        assert!(resolve_agent_backends(missing_default.agent_backends)
+            .unwrap_err()
+            .to_string()
+            .contains("is not configured"));
+    }
+
+    #[test]
+    fn rejects_enabled_external_agent_backend_without_absolute_command() {
+        let missing_command = serde_yaml::from_str::<ConfigFile>(
+            r#"
+agent_backends:
+  default_backend: codex
+  backends:
+    codex:
+      type: codex_cli
+"#,
+        )
+        .unwrap();
+        assert!(resolve_agent_backends(missing_command.agent_backends)
+            .unwrap_err()
+            .to_string()
+            .contains("command_path or command_path_env is required"));
+
+        let relative = serde_yaml::from_str::<ConfigFile>(
+            r#"
+agent_backends:
+  default_backend: codex
+  backends:
+    codex:
+      type: codex_cli
+      command_path: bin/codex
+"#,
+        )
+        .unwrap();
+        assert!(resolve_agent_backends(relative.agent_backends)
+            .unwrap_err()
+            .to_string()
+            .contains("must be absolute"));
     }
 
     #[test]

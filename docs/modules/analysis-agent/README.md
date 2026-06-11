@@ -2,21 +2,24 @@
 
 ## 定位
 
-Analysis Agent 是 LogAgent 的 task run 级调查编排器。用户可见的 Log Analysis 历史入口是 Session；每次点击分析会从 Session 当前输入创建一个新的 task workspace 快照，Analysis Agent 在该 task 内持续维护问题上下文，执行多轮“观察证据 -> 更新假设 -> 识别缺口 -> 请求动作 -> 合并结果”的分析循环，直到形成最终结论、等待用户输入或达到预算。
+Analysis Agent 正在收敛为 Analysis Orchestrator。用户可见的 Log Analysis 历史入口是 Session；每次点击分析会从 Session 当前输入创建一个新的 task workspace 快照，Orchestrator 在该 task 内汇总证据、领域上下文、预算和历史事件，然后调用可插拔 Agent Backend 生成结构化动作或最终答案。
 
-Analysis Agent 与 LLM Gateway 分离：
+新的职责边界：
 
-- Analysis Agent 管理状态、轮次、动作、预算、恢复和终止条件。
-- LLM Gateway 只负责模型适配、Prompt 组装、证据裁剪和结构化响应解析。
+- Analysis Orchestrator 管理状态、轮次、动作、预算、恢复和终止条件。
+- Agent Backend Adapter 调用 `internal_llm`、Codex CLI、Claude Code CLI 或 OpenCode CLI。
+- LLM Gateway 保留为 `internal_llm` 后端和模型适配能力。
+- Domain Adapter 提供 openGemini/InfluxDB、Cassandra、RocksDB 等领域证据摘要。
 - Server 是唯一动作执行者，负责权限、白名单、审批、持久化和模块调度。
 
-MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长期记忆。
+MVP 保持单 Orchestrator、任务级上下文，不实现 Multi-Agent 或用户级长期记忆，也不复制成熟 agent 产品的通用能力。
 
 ## 调查循环
 
 ```text
 用户问题 + 当前证据 + 历史事件
-  -> 生成本轮决策
+  -> Domain Adapter 生成领域摘要
+  -> Agent Backend 生成本轮决策
   -> Server 校验结构化动作
   -> 自动执行安全只读动作，或等待用户/审批
   -> 写入新证据和审计事件
@@ -29,6 +32,8 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 ## 当前实现状态
 
 已实现 Analysis State Store MVP，并启用 `PLAN_ANALYSIS` 多轮 LLM action loop。用户追问和审批恢复 API 已启用；真实 SSH/SCP 环境采集执行器尚未接入，当前批准后写入 mock environment evidence。
+
+第一阶段新增 Agent Backend 配置/诊断和 Domain Adapter registry，但现有任务执行路径仍默认使用 `internal_llm`，外部 CLI 后端尚不参与 `PLAN_ANALYSIS`。
 
 当前 Server 会在现有固定 pipeline 中持久化：
 
@@ -49,7 +54,7 @@ MVP 保持单 Agent、任务级上下文，不实现 Multi-Agent 或用户级长
 
 `GET /api/tasks/:task_id/analysis` 可读取当前 state 和事件流。`GET /api/sessions/:session_id/timeline` 会把 Session events 和该 Session 下 task 的 analysis events 合并为统一 evidence timeline。真实 `influxql_analyzer` 已可通过 Tool Runner 产生结构化 evidence；`flux_query_analyzer` 尚未接入真实 smoke 时可继续使用配置中的 mock/stub 工具替代，保证 action/event/evidence 链路稳定。
 
-LLM Gateway 已接入 `PLAN_ANALYSIS` 多轮决策。当前 `search_logs` 会按模型关键词重建 grep evidence 并进入下一轮，`run_tool` 会走白名单 Tool Runner 通道并进入下一轮，`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 会进入 `WAITING_FOR_APPROVAL`，`final_answer` 会直接持久化结果。循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 控制；达到预算或重复 fingerprint 上限时会生成低置信度结果并正常终止。
+当前 `internal_llm` 后端已通过 LLM Gateway 接入 `PLAN_ANALYSIS` 多轮决策。`search_logs` 会按模型关键词重建 grep evidence 并进入下一轮，`run_tool` 会走白名单 Tool Runner 通道并进入下一轮，`ask_user` 会进入 `WAITING_FOR_USER`，`collect_environment` 会进入 `WAITING_FOR_APPROVAL`，`final_answer` 会直接持久化结果。循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 控制；达到预算或重复 fingerprint 上限时会生成低置信度结果并正常终止。
 
 ## 上下文产物
 

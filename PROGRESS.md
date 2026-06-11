@@ -4,7 +4,7 @@ Last updated: 2026-06-11
 
 ## Status Summary
 
-LogAgent MVP has a working upload-to-bounded-multi-round-analysis loop and a documented path toward user questions, approvals, and richer evidence modules.
+LogAgent MVP has a working upload-to-bounded-multi-round-analysis loop and is being reframed as a diagnostic evidence workbench with pluggable mature agent backends and domain-specific adapters.
 
 Current runnable loop:
 
@@ -36,6 +36,20 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Agent Backend And Domain Adapter Direction
+
+- Reframed LogAgent as a diagnostic evidence workbench that can call mature agent backends instead of trying to replace Codex, Claude Code or OpenCode with a fully self-built general agent loop.
+- Added Server `agent_backends` config with default `internal_llm` and reserved `codex_cli`, `claude_code_cli` and `opencode_cli` backend types.
+- Added protected Settings APIs:
+  - `GET /api/settings/agent-backends`
+  - `POST /api/settings/agent-backends/:backend_id/test`
+  - `GET /api/settings/domain-adapters`
+- Agent backend diagnostics are first-stage dry-run checks: `internal_llm` returns ready; external CLI backends validate configured command paths but do not execute the CLI.
+- Added an in-process Domain Adapter registry with active `opengemini_influxdb` and skeleton `cassandra` / `rocksdb` adapters.
+- Extended WebUI Settings to show LLM diagnostics, Agent Backend summaries/dry-run results, and Domain Adapter status.
+- Added Agent Backends and Domain Adapters module docs, and updated root, Server, WebUI, config, interfaces, security, analysis, LLM Gateway, Tool Runner, Metadata, Code Evidence, Environment Collector, System Context and Roadmap docs for the new direction.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test` (106 server tests plus native-agent test pass), `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build` pass. Local Vite dev server started successfully, but in-app Browser visual smoke could not run because no browser instance was available.
 
 ### Settings LLM Diagnostics
 

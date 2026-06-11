@@ -13,6 +13,8 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `embedding`
 - `log_analyzer`
 - `tools`
+- `agent_backends`
+- `domain_adapters`（当前为内置 registry，暂不需要配置）
 - `code_repos`
 - `environments`
 - `metadata`
@@ -59,6 +61,25 @@ llm:
 #   max_input_chars: 60000
 #   max_output_tokens: 4096
 #   request_timeout_seconds: 120
+
+agent_backends:
+  default_backend: "internal_llm"
+  backends:
+    internal_llm:
+      type: "internal_llm"
+      enabled: true
+    codex_cli:
+      type: "codex_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_CODEX_PATH"
+    claude_code_cli:
+      type: "claude_code_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_CLAUDE_CODE_PATH"
+    opencode_cli:
+      type: "opencode_cli"
+      enabled: false
+      command_path_env: "LOGAGENT_AGENT_OPENCODE_PATH"
 
 tools:
   flux_query_analyzer:
@@ -170,6 +191,10 @@ metadata:
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
 - `llm.provider: "binary"` 为预留二进制模型调用分支；`binary_path` 或 `binary_path_env` 解析结果必须是绝对路径，运行时固定调用 `<binary_path> run <prompt>`，stdout 按结构化 LLM JSON 解析。
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
+- `agent_backends.default_backend` 默认 `internal_llm`，必须引用已启用后端。
+- `agent_backends.backends.<name>.type` 支持 `internal_llm`、`codex_cli`、`claude_code_cli`、`opencode_cli`。
+- 启用外部 CLI 后端时，`command_path` 或 `command_path_env` 必须解析为绝对路径；禁用后端不读取环境变量。
+- 第一阶段 Agent Backend 诊断只做配置和路径 dry-run，不执行真实 CLI。
 - 当前 `PLAN_ANALYSIS` 多轮循环受 `analysis.max_rounds`、`analysis.max_llm_calls`、`analysis.max_actions` 和 `analysis.max_repeated_action_fingerprints` 限制；非正值按 1 处理。
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。

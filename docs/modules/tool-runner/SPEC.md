@@ -2,7 +2,7 @@
 
 ## 目标
 
-Tool Runner 负责按白名单调用已有外部分析工具，把结果标准化为任务证据。
+Tool Runner 负责按白名单调用已有外部分析工具，把结果标准化为任务证据，供 Domain Adapter 和 Agent Backend 引用。
 
 ## 当前状态
 
@@ -97,7 +97,7 @@ tool_results/<action_id>/result.json#findings/<index>
 - 参数必须由模板和结构化输入生成，不能拼接任意用户命令。
 - 工具执行需要超时和输出大小限制。
 - 工作目录限制在 task workspace 或只读工具目录。
-- Analysis Agent 只能选择允许的工具和结构化参数，不能传入任意命令。
+- Agent Backend 只能选择允许的工具和结构化参数，不能传入任意命令。
 
 ## 验收标准
 

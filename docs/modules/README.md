@@ -4,7 +4,9 @@
 
 | 能力 | README | SPEC |
 |------|--------|------|
+| Agent Backends | [README](./agent-backends/README.md) | [SPEC](./agent-backends/SPEC.md) |
 | Analysis Agent | [README](./analysis-agent/README.md) | [SPEC](./analysis-agent/SPEC.md) |
+| Domain Adapters | [README](./domain-adapters/README.md) | [SPEC](./domain-adapters/SPEC.md) |
 | Memory | [README](./memory/README.md) | [SPEC](./memory/SPEC.md) |
 | Memory / Case Store compatibility | [README](./case-store/README.md) | [SPEC](./case-store/SPEC.md) |
 | Code Evidence | [README](./code-evidence/README.md) | [SPEC](./code-evidence/SPEC.md) |

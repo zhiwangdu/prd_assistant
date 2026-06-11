@@ -118,6 +118,18 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/settings/llm/models", get(settings::llm_models))
         .route("/api/settings/llm/chat", post(settings::llm_chat))
         .route(
+            "/api/settings/agent-backends",
+            get(settings::agent_backends),
+        )
+        .route(
+            "/api/settings/agent-backends/:backend_id/test",
+            post(settings::agent_backend_test),
+        )
+        .route(
+            "/api/settings/domain-adapters",
+            get(settings::domain_adapters),
+        )
+        .route(
             "/api/system-context/resources",
             get(system_context::list_resources).post(system_context::create_resource),
         )

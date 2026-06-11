@@ -936,6 +936,7 @@ mod tests {
                     max_input_chars: 60_000,
                     max_output_tokens: 100,
                 },
+                agent_backends: crate::support::config::AgentBackendSettings::default(),
                 analysis: AnalysisSettings {
                     max_rounds: 4,
                     max_llm_calls: 4,

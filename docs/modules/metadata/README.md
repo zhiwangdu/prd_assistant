@@ -6,7 +6,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 模块目标是管理实例 ID 对应的业务和部署元数据、集群节点信息，并把这些信息提供给后续日志分析、环境采集、代码证据和 WEBUI 展示。
 
-产品入口上，Metadata 已纳入 System Context：现有 Metadata Store/API 继续保持专业拓扑模型和诊断能力，System Context 通过只读 `metadata_instance` adapter 把已导入 Instance 摘要纳入通用背景资源目录，并在 task 创建时固化到 `system_context.json`。
+产品入口上，Metadata 已纳入 System Context 和 Domain Adapter：现有 Metadata Store/API 继续保持专业拓扑模型和诊断能力，System Context 通过只读 `metadata_instance` adapter 把已导入 Instance 摘要纳入通用背景资源目录，并在 task 创建时固化到 `system_context.json`；`opengemini_influxdb` Domain Adapter 把这些拓扑和 shard/index 线索作为专项诊断证据。
 
 已实现：
 
@@ -23,7 +23,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
-- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 LLM Gateway。
+- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 Agent Backend。
 
 暂未实现：
 
@@ -42,7 +42,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 不负责：
 
 - 不直接采集测试环境信息；采集由 Environment Collector 负责。
-- 不直接分析日志；调查由 Analysis Agent 编排，模型调用由 LLM Gateway 负责。
+- 不直接分析日志；调查由 Analysis Orchestrator 编排，推理由 Agent Backend 负责。
 - 不直接管理代码仓；代码版本证据由 Code Evidence 负责。
 
 ## 核心对象
@@ -263,4 +263,4 @@ data_dir/
 - Server task context。
 - Environment Collector 节点采集。
 - Code Evidence 产品版本定位。
-- Analysis Agent 的只读事实上下文。
+- Analysis Orchestrator 的只读事实上下文。

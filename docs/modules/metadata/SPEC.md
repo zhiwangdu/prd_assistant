@@ -4,7 +4,7 @@
 
 Metadata 模块管理实例、集群和节点元数据，为日志分析提供业务、部署和拓扑上下文。
 
-Metadata 在产品入口上归入 System Context。现有 `/api/metadata/*` API 和 Store 保持不变，System Context 通过 `metadata_instance` adapter 暴露可注入摘要，并随 task 创建固化到 `system_context.json`。
+Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/api/metadata/*` API 和 Store 保持不变，System Context 通过 `metadata_instance` adapter 暴露可注入摘要，并随 task 创建固化到 `system_context.json`；`opengemini_influxdb` Domain Adapter 使用 Metadata 作为拓扑和 shard/index 诊断证据来源。
 
 ## 当前状态
 
@@ -43,7 +43,7 @@ Metadata 在产品入口上归入 System Context。现有 `/api/metadata/*` API 
 - SSH/SCP 采集。
 - 日志解压和 grep。
 - 代码仓切换和检索。
-- Analysis Agent 调查和 LLM Gateway 调用。
+- Analysis Orchestrator 调查和 Agent Backend 调用。
 
 ## 数据模型草案
 
@@ -276,7 +276,7 @@ metadata_context.json
 - context 是创建时快照，后续 Metadata Store 更新不改变历史任务。
 - cluster `rawSnapshot` 不进入 task context。
 
-用于 Analysis Agent、Tool Runner、Code Evidence、Environment Collector 和 LLM Gateway 的受控证据输入。
+用于 Analysis Orchestrator、Agent Backend、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
 
 ## WEBUI
 

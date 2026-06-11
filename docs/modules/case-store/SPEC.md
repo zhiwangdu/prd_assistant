@@ -24,12 +24,12 @@ Memory 保存已确认故障 Case，并支持后续任务相似召回。现有 C
 
 - embedding 生成。
 - embedding / vector 召回。
-- 将 Case 引用升级为更正式的 Analysis Agent evidence bundle。
+- 将 Case 引用升级为更正式的 analysis evidence bundle。
 - Case 合并和批量管理。
 
 ## 输入
 
-- Analysis Agent 最终结果
+- Analysis Orchestrator 最终结果
 - 人工确认后的标题、现象、根因、解决方案
 - 手工录入的标题、现象、根因、解决方案
 - 关键证据引用

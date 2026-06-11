@@ -2,19 +2,20 @@
 
 ## 目标
 
-按“持久化基础 -> 证据能力 -> 调查闭环 -> 模型网关 -> 用户交互 -> Case”推进，避免把单次 LLM 调用误当作完整 Agent。
+按“持久化基础 -> 证据能力 -> Agent Backend 适配 -> Domain Adapter -> 用户交互 -> Case”推进。LogAgent 不复制成熟 agent 产品的通用能力，而是提供可审计证据工作台和领域诊断增强。
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 `influxql_analyzer` smoke、单次 LLM Gateway、Analysis Agent 用户追问/审批恢复 API 和静态 WebUI 托管。当前 `influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer`，可直接调用；真实 Environment Collector 尚未实现并延后。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 `influxql_analyzer` smoke、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Agent Backend 配置/诊断、Domain Adapter registry 和静态 WebUI 托管。当前 `influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer`，可直接调用；真实 Environment Collector 尚未实现并延后。
 
 ## 下一阶段优先级
 
-1. 按现有上传、Metadata、Tool Runner、Tools、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
-2. 接入真实 `flux_query_analyzer`，并扩展 `influxql_analyzer` compare mode delta 字段映射。
-3. Case Store 保存和召回，用人工确认结果形成可复用闭环。
-4. Code Evidence。
-5. Environment Collector，将当前 approval 后的 mock evidence 替换为真实 SSH/SCP 采集。
+1. 固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`，选择一个成熟 agent CLI 做受控 PoC。
+2. 围绕现有上传、Metadata、Tool Runner、Tools、Agent Backend、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
+3. 接入真实 `flux_query_analyzer`，并扩展 `influxql_analyzer` compare mode delta 字段映射。
+4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。
+5. Code Evidence。
+6. Environment Collector，将当前 approval 后的 mock evidence 替换为真实 SSH/SCP 采集。
 
 ## 阶段门槛
 

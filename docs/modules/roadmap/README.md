@@ -9,7 +9,9 @@
 | Tool Runner MVP | 已完成 |
 | Code Evidence | 4~6 天 |
 | Environment Collector | 4~6 天 |
-| Analysis Agent | 6~9 天 |
+| Analysis Orchestrator | 4~6 天 |
+| Agent Backend Adapter | 4~6 天 |
+| Domain Adapters | 持续迭代 |
 | LLM Gateway | 3~4 天 |
 | Case Store | 3~4 天 |
 | WebUI 调查交互 | 4~6 天 |
@@ -27,23 +29,22 @@
 
 - Tool Runner MVP 已接入 Server；真实 `influxql_analyzer` 已配置到 `/usr/bin/influxql-analyzer` 并可直接调用，下一步接入真实 `flux_query_analyzer` 并扩展 InfluxQL compare mode delta 映射。
 - Tools 页面 MVP 已接入 Server 和 WebUI，首个 `pprof_analyzer` 通过 `tool_run` task 复用上传、任务状态、workspace 和 artifact 机制；后续更多工具应按同一 registry/adapter 方式扩展。
-- 围绕现有上传、Metadata、Tool Runner、Analysis Agent 和 WebUI 流程补齐端到端产品闭环。
+- 围绕现有上传、Metadata、Tool Runner、Agent Backend、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
 - 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
 - 所有结果关联 `actionId` 并使用稳定证据引用。
 
-## 第 3 阶段：Analysis Agent 闭环
+## 第 3 阶段：Agent Backend 与 Domain Adapter
 
-- 实现任务级 `analysis_state.json` 和 `analysis_events.jsonl`。
-- 实现 facts、hypotheses、information gaps 和 action fingerprint。
-- 实现 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
-- `ask_user` 和 `collect_environment` 的等待/恢复 API 已完成；`collect_environment` 当前批准后写入 mock evidence。
+- 已新增 Agent Backend 配置、默认 `internal_llm`、外部 CLI 后端类型和 Settings dry-run 诊断。
+- 已新增 `opengemini_influxdb` active adapter，以及 Cassandra/RocksDB skeleton adapter。
+- 下一步固化 `analysis_package.json`、`agent_request.json` 和 `agent_response.json`。
+- 选择 Codex、Claude Code 或 OpenCode 中一个 CLI 做受控 PoC。
+- 外部后端输出仍映射到 `search_logs`、`run_tool`、`collect_code_evidence`、`collect_environment`、`ask_user`、`final_answer`。
 - 安全只读动作自动执行；远程采集默认等待批准。
-- 实现最大轮数、模型调用数、动作数、重复动作、token 和运行时间预算。
-- 实现重启恢复、幂等和预算终止。
 
 ## 第 4 阶段：LLM Gateway
 
-- Provider 配置和错误分类。
+- 作为 `internal_llm` Agent Backend 保留 Provider 配置和错误分类。
 - Prompt 组装、证据裁剪和 token 预算。
 - action/final answer 结构化输出校验。
 - LLM stub 和有限重试。
@@ -74,7 +75,8 @@
 - 更好的日志模式归一化。
 - 版本间 diff / commit 对比。
 - 更多测试环境采集模板。
+- Cassandra 和 RocksDB domain adapter 的真实 fixture、工具和 runbook。
 - 失败任务诊断和观测指标。
 - pgvector 迁移。
 
-MVP 保持单 Agent、任务级上下文和单 Rust Server，不引入 Multi-Agent、长期用户记忆、独立队列或 Worker。
+MVP 保持单 Orchestrator、任务级上下文和单 Rust Server，不引入 Multi-Agent、长期用户记忆、独立队列或 Worker，也不复制成熟 agent 产品的通用能力。

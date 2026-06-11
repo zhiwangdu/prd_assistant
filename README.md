@@ -4,7 +4,9 @@
 
 ## 目标
 
-LogAgent 是一个个人主导、业余时间可落地的日志分析助手 MVP。加入版本感知代码证据、测试环境采集、统一配置和测试策略后，第一版建议按 5~8 周规划，目标是把用户问题、日志包或测试环境采集结果整理成高质量证据，并结合工具输出、对应版本代码实现和历史 Case，输出结构化故障分析结果。
+LogAgent 是面向开发和运维诊断的证据工作台。它不再把自研通用 Agent Loop 作为核心差异化方向，而是把用户问题、日志包、元数据、工具结果、测试流水线、测试环境采集结果和历史 Case 整理成高质量证据包，再通过可插拔 Agent Backend 调用 Codex、Claude Code、OpenCode 或内部 LLM Gateway 生成结构化故障分析结果。
+
+当前重点场景是快速问题分析、日志分析、日常测试流水线失败分析和数据库/存储系统专项诊断。第一批领域继续覆盖 openGemini/InfluxDB，并新增 Cassandra、RocksDB 的 Domain Adapter 骨架。
 
 ## 技术选型原则
 
@@ -37,14 +39,15 @@ Rust -> C/C++ -> Go/Python/Java 等
   - 环境状态采集
     |
     v
-Analysis Agent 调查循环
-  - 维护任务级上下文、事实、假设和信息缺口
-  - 请求日志搜索、工具、代码、环境或用户补充
-  - 控制轮次、动作和 token 预算
+Analysis Orchestrator
+  - 汇总任务证据、领域上下文和预算
+  - 调用可插拔 Agent Backend
+  - 校验后端返回的结构化动作或最终答案
     |
     v
-LLM Gateway
-  - Prompt、证据裁剪、模型调用和结构化响应
+Agent Backend
+  - internal_llm / Codex CLI / Claude Code CLI / OpenCode CLI
+  - 推理、代码上下文分析和结构化响应
     |
     v
 人工确认
@@ -70,10 +73,11 @@ flowchart LR
     subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
         API["API / Auth / Task Manager"]
         Orchestrator["Pipeline / Action Executor"]
-        Agent["Analysis Agent<br/>上下文、假设、缺口、预算"]
-        Gateway["LLM Gateway<br/>Prompt、裁剪、结构化响应"]
+        Agent["Analysis Orchestrator<br/>证据包、预算、动作校验"]
+        Gateway["Agent Backend Adapter<br/>internal_llm / Codex / Claude / OpenCode"]
 
         subgraph Evidence["受控证据能力"]
+            Domains["Domain Adapters<br/>openGemini/InfluxDB、Cassandra、RocksDB"]
             SysCtx["System Context<br/>Prompt、架构、Runbook、Metadata adapter"]
             Log["Log Analyzer"]
             Tool["Tool Runner"]
@@ -86,7 +90,7 @@ flowchart LR
         Store[("Session Store / Task Store / Workspace<br/>session、runs、events、evidence、result")]
     end
 
-    Model["LLM Provider"]
+    Model["LLM / Mature Agent Backend"]
     Repos["已配置代码仓"]
     Tools["白名单诊断工具"]
 
@@ -100,6 +104,7 @@ flowchart LR
     Gateway --> Model
     Model --> Gateway
 
+    Orchestrator --> Domains
     Orchestrator --> Log
     Orchestrator --> SysCtx
     Orchestrator --> Tool
@@ -125,11 +130,12 @@ flowchart LR
 
 关键控制边界：
 
-- Analysis Agent 和 LLM Gateway 都不能直接执行工具、读取任意路径或连接 SSH。
+- Analysis Orchestrator、LLM Gateway 和外部 Agent Backend 都不能直接执行工具、读取任意路径或连接 SSH。
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
+- 外部 Agent Backend 第一阶段只做配置和诊断接口，后续必须通过 `agent_request.json` / `agent_response.json` 结构化契约接入。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
-- Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Agent 基于问题、Metadata、Case 和后续交互继续分析。
+- Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
 - Log Analysis run 会固化 `system_context.json`，把已启用的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
@@ -138,7 +144,7 @@ flowchart LR
 
 ## 项目目录
 
-根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Agent、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
+根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Agent Backends、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
 
 | 目录 | 职责 | Spec |
 |------|------|------|
@@ -155,8 +161,10 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 | 能力 | 文档 |
 |------|------|
+| Agent Backends | [README](./docs/modules/agent-backends/README.md) / [SPEC](./docs/modules/agent-backends/SPEC.md) |
 | Log Analyzer | [README](./docs/modules/log-analyzer/README.md) / [SPEC](./docs/modules/log-analyzer/SPEC.md) |
 | Tool Runner | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
+| Domain Adapters | [README](./docs/modules/domain-adapters/README.md) / [SPEC](./docs/modules/domain-adapters/SPEC.md) |
 | Metadata | [README](./docs/modules/metadata/README.md) / [SPEC](./docs/modules/metadata/SPEC.md) |
 | System Context | [README](./docs/modules/system-context/README.md) / [SPEC](./docs/modules/system-context/SPEC.md) |
 | Analysis Agent | [README](./docs/modules/analysis-agent/README.md) / [SPEC](./docs/modules/analysis-agent/SPEC.md) |
@@ -169,13 +177,13 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## MVP 边界
 
-第一版不做企业级日志平台，不引入 Elasticsearch/OpenSearch、CMDB、监控接入、通用远程运维、复杂权限体系和 Multi-Agent 编排。
+第一版不做企业级日志平台，不引入 Elasticsearch/OpenSearch、CMDB、监控接入、通用远程运维、复杂权限体系和 Multi-Agent 编排，也不尝试替代 Codex、Claude Code 或 OpenCode。
 
 关键边界：
 
 - 外部工具只允许白名单配置调用。
 - LLM 不能直接执行任意命令。
-- Analysis Agent 只产生结构化动作意图，所有动作由 Server 校验和执行。
+- Agent Backend 只产生结构化动作意图或最终答案，所有动作由 Server 校验和执行。
 - 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。
@@ -186,7 +194,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先沿着 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面、Analysis Agent 和 WebUI 逻辑补齐完整产品闭环：稳定恢复 Session、创建多次分析 run、固化通用背景资源、展示证据时间线、处理追问/审批、生成和确认结果，并沉淀可复用 Case。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Agent Backend Adapter + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，新增成熟 agent 后端适配配置/诊断接口，并把 openGemini/InfluxDB、Cassandra、RocksDB 作为领域能力包管理。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
 Code Evidence 和真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 `collect_environment` 仍保留审批流程和 mock evidence，用于验证交互闭环。
 

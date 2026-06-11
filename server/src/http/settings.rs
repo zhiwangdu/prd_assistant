@@ -1,11 +1,18 @@
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     app::AppState,
-    services::llm_gateway::{LlmChatTestResult, LlmModelsTestResult, LlmSettingsSummary},
+    services::{
+        agent_backend::{AgentBackendDiagnosticResult, AgentBackendsSummary},
+        domain_adapters::DomainAdapterSummary,
+        llm_gateway::{LlmChatTestResult, LlmModelsTestResult, LlmSettingsSummary},
+    },
     support::error::AppError,
 };
 
@@ -13,6 +20,18 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct LlmSettingsResponse {
     pub llm: LlmSettingsSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentBackendsSettingsResponse {
+    pub agent_backends: AgentBackendsSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainAdaptersResponse {
+    pub domain_adapters: Vec<DomainAdapterSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +51,38 @@ pub struct LlmChatTestRequest {
 pub async fn llm_settings(State(state): State<Arc<AppState>>) -> Json<LlmSettingsResponse> {
     Json(LlmSettingsResponse {
         llm: state.llm.settings_summary(),
+    })
+}
+
+pub async fn agent_backends(
+    State(state): State<Arc<AppState>>,
+) -> Json<AgentBackendsSettingsResponse> {
+    Json(AgentBackendsSettingsResponse {
+        agent_backends: state.agent_backends.summary(),
+    })
+}
+
+pub async fn agent_backend_test(
+    State(state): State<Arc<AppState>>,
+    Path(backend_id): Path<String>,
+) -> Json<LlmTestResponse<AgentBackendDiagnosticResult>> {
+    Json(match state.agent_backends.test_backend(&backend_id).await {
+        Ok(result) => LlmTestResponse {
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Err(error) => LlmTestResponse {
+            ok: false,
+            result: None,
+            error: Some(format!("{error:#}")),
+        },
+    })
+}
+
+pub async fn domain_adapters(State(state): State<Arc<AppState>>) -> Json<DomainAdaptersResponse> {
+    Json(DomainAdaptersResponse {
+        domain_adapters: state.domain_adapters.summaries(),
     })
 }
 
