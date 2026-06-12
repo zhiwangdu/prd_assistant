@@ -1204,7 +1204,9 @@ JSON
                     name: "diagnose".to_string(),
                     permission_mode: "dontAsk".to_string(),
                     tools: String::new(),
-                    allowed_tools: Vec::new(),
+                    allowed_tools: vec![
+                        crate::support::config::LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string()
+                    ],
                     disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
                     native_bash: false,
                     native_edit: false,

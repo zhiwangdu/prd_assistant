@@ -57,6 +57,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `claude_code.max_session_seconds`
 - `claude_code.max_output_bytes`
 - `claude_code.permission_profiles.<mode>.*`
+- `claude_code.permission_profiles.<mode>.allowed_tools` 会自动追加 `mcp__logagent__*`，保证任务 MCP tools 在 `dontAsk` 模式下可用。
 - `mcp.enabled`
 - `mcp.transport`
 - `tools.<name>.enabled`

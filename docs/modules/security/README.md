@@ -26,6 +26,7 @@
 ## Analysis Orchestrator / Claude Code MCP
 
 - Claude MCP tool call 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
+- Claude Code permission profile 自动允许 `mcp__logagent__*`，只开放任务专属 LogAgent MCP server；native built-in tools 仍由 `tools` / `allowed_tools` / `disallowed_tools` 控制。LogAgent 的用户审批只控制 Server 侧 approval-gated action，不能替代 Claude CLI 的 tool allowlist。
 - Claude Code 只能通过 `claude_code` 配置接入；领域能力只能通过 LogAgent MCP 调用，不能直接执行 LogAgent 工具、SSH、任务外文件系统或状态变更。
 - 只读 HTTP MCP 只面向个人本地 Claude Code 读取共享知识；它不能创建、读取、启动或恢复 Session，不能读取 task workspace，不能上传文件，不能运行 Tool Runner，不能审批或远程采集，不能修改 Case、Metadata、Skills 或 System Context。
 - 第一阶段 Claude Code dry-run 诊断只检查配置路径，不执行 CLI；`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 只是 workspace 内契约产物。`claude_prompt.md` 只保存短启动 prompt，证据包通过任务 MCP resource 读取；完整 Metadata 不进入 prompt/package，默认只暴露 outline。

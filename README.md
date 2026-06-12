@@ -199,6 +199,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 - 外部工具只允许白名单配置调用。
 - LLM Gateway 不能直接执行任意命令。
 - Claude Code 只能按 `analysisMode` permission profile 使用 native tools；领域证据和工具执行必须经过 LogAgent MCP/Server。
+- Server 会在每个 Claude Code permission profile 中自动允许任务专属 LogAgent MCP 工具命名空间 `mcp__logagent__*`；`diagnose` 仍通过 `--tools ""` 禁用 native tools。用户审批只控制 LogAgent 内部 approval-gated action，不能替代 Claude CLI 的 `allowedTools` 白名单。
 - 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。

@@ -38,6 +38,7 @@ mcp:
 
 - `claude_code.command_path` 或 `command_path_env` 必须解析为绝对路径。
 - `default_mode` 必须有 permission profile。
+- Server 自动把 `mcp__logagent__*` 注入所有 permission profile 的 `allowed_tools`，确保任务 MCP tools 在 `dontAsk` 模式下可用；`tools: ""` 仍只用于禁用 native built-in tools。
 - `mcp.transport` 当前只支持 `stdio`。
 - 旧 `agent_backends` 配置不再作为运行入口。
 

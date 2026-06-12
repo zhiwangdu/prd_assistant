@@ -110,6 +110,8 @@ pub struct PermissionProfileSettings {
     pub worktree_required: bool,
 }
 
+pub const LOGAGENT_MCP_ALLOWED_TOOL_GLOB: &str = "mcp__logagent__*";
+
 #[derive(Debug, Clone)]
 pub struct McpSettings {
     pub enabled: bool,
@@ -666,12 +668,13 @@ fn resolve_permission_profile(
         name: raw.name.unwrap_or_else(|| mode.as_str().to_string()),
         permission_mode: permission_mode.to_string(),
         tools: raw.tools,
-        allowed_tools: raw
-            .allowed_tools
-            .into_iter()
-            .map(|tool| tool.trim().to_string())
-            .filter(|tool| !tool.is_empty())
-            .collect(),
+        allowed_tools: with_logagent_mcp_allowed_tools(
+            raw.allowed_tools
+                .into_iter()
+                .map(|tool| tool.trim().to_string())
+                .filter(|tool| !tool.is_empty())
+                .collect(),
+        ),
         disallowed_tools: raw
             .disallowed_tools
             .into_iter()
@@ -1001,7 +1004,7 @@ fn default_permission_profiles() -> BTreeMap<AnalysisMode, PermissionProfileSett
                 name: "diagnose".to_string(),
                 permission_mode: "dontAsk".to_string(),
                 tools: String::new(),
-                allowed_tools: Vec::new(),
+                allowed_tools: logagent_mcp_allowed_tools(),
                 disallowed_tools: vec![
                     "Bash".to_string(),
                     "Edit".to_string(),
@@ -1020,7 +1023,11 @@ fn default_permission_profiles() -> BTreeMap<AnalysisMode, PermissionProfileSett
                 name: "code_investigation".to_string(),
                 permission_mode: "dontAsk".to_string(),
                 tools: "Read,Grep,Bash".to_string(),
-                allowed_tools: vec!["Read".to_string(), "Grep".to_string(), "Bash".to_string()],
+                allowed_tools: with_logagent_mcp_allowed_tools(vec![
+                    "Read".to_string(),
+                    "Grep".to_string(),
+                    "Bash".to_string(),
+                ]),
                 disallowed_tools: vec!["Edit".to_string(), "Write".to_string()],
                 native_bash: true,
                 native_edit: false,
@@ -1033,13 +1040,13 @@ fn default_permission_profiles() -> BTreeMap<AnalysisMode, PermissionProfileSett
                 name: "fix".to_string(),
                 permission_mode: "acceptEdits".to_string(),
                 tools: "Read,Grep,Bash,Edit,Write".to_string(),
-                allowed_tools: vec![
+                allowed_tools: with_logagent_mcp_allowed_tools(vec![
                     "Read".to_string(),
                     "Grep".to_string(),
                     "Bash".to_string(),
                     "Edit".to_string(),
                     "Write".to_string(),
-                ],
+                ]),
                 disallowed_tools: Vec::new(),
                 native_bash: true,
                 native_edit: true,
@@ -1047,6 +1054,20 @@ fn default_permission_profiles() -> BTreeMap<AnalysisMode, PermissionProfileSett
             },
         ),
     ])
+}
+
+fn logagent_mcp_allowed_tools() -> Vec<String> {
+    vec![LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string()]
+}
+
+fn with_logagent_mcp_allowed_tools(mut allowed_tools: Vec<String>) -> Vec<String> {
+    if !allowed_tools
+        .iter()
+        .any(|tool| tool == LOGAGENT_MCP_ALLOWED_TOOL_GLOB)
+    {
+        allowed_tools.push(LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string());
+    }
+    allowed_tools
 }
 
 fn default_bind() -> String {
@@ -1220,6 +1241,10 @@ mod tests {
                 .get(&AnalysisMode::Diagnose)
                 .unwrap();
             assert_eq!(diagnose.permission_mode, "dontAsk");
+            assert_eq!(
+                diagnose.allowed_tools,
+                vec![LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string()]
+            );
             assert!(!diagnose.native_bash);
             assert!(!diagnose.native_edit);
         });
@@ -1268,7 +1293,10 @@ claude_code:
         assert_eq!(settings.max_session_seconds, 30);
         assert_eq!(settings.max_output_bytes, 4096);
         assert_eq!(profile.permission_mode, "plan");
-        assert_eq!(profile.allowed_tools, vec!["Read", "Grep", "Bash"]);
+        assert_eq!(
+            profile.allowed_tools,
+            vec!["Read", "Grep", "Bash", LOGAGENT_MCP_ALLOWED_TOOL_GLOB]
+        );
         assert_eq!(profile.disallowed_tools, vec!["Edit", "Write"]);
         assert!(profile.native_bash);
         assert!(!profile.native_edit);

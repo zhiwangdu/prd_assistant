@@ -25,6 +25,7 @@
 - `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权 Claude Code 绕过 Server 执行领域命令、SSH 或状态写入；`claude_prompt.md` 只包含短启动指令，证据通过任务 MCP resource 读取，完整 Metadata 不进入 prompt/package。
 - `logagent.query_metadata` 只能读取当前 task workspace 的 `metadata_context.json`，按 section/filter/limit/cursor 写入 bounded `metadata_slices/<stable_id>.json` 背景上下文，不扩大 Claude native file `Read` 权限，也不新增最终 evidence ref 类型。
 - Claude MCP tool call 必须经过 Server schema、白名单、预算、幂等和审批校验。
+- Claude CLI `allowedTools` 必须包含任务 MCP 命名空间 `mcp__logagent__*`；Server 自动注入该 allowlist。用户审批 API 只恢复 LogAgent Server 侧等待状态，不能扩大 Claude CLI native tool 权限。
 - 只读 HTTP MCP 只能读取共享知识资源和只读 tools；禁止创建、读取、启动或恢复 Session，禁止读取 task workspace，禁止上传文件，禁止运行 Tool Runner，禁止审批、SSH/SCP 或修改 Case/Metadata/Skills/System Context。
 - `skills.zip` 不跟随 symlink，不允许路径逃逸；`tools.zip` 不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件，无法打包的 enabled 工具只能标记 skipped。
 - Environment Collector 只能访问配置节点和路径。

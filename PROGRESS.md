@@ -722,6 +722,13 @@ Current product-loop Case Store slice verification:
 - Metadata slices remain background context and are not accepted as final evidence refs.
 - Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server metadata`, `cargo test -p logagent-server mcp`, and `cargo test -- --test-threads=1` (native 1 + server 128 tests).
 
+## 2026-06-12 Claude MCP Permission Allowlist Fix
+
+- Root cause for repeated "LogAgent MCP tools are being denied because permission mode is don't ask" prompts: the Server launched Claude Code in `dontAsk` mode with `--tools ""` and no `--allowedTools` entry for the task MCP server. LogAgent user approvals cannot change Claude CLI's tool allowlist, so answering the prompt did not unblock MCP calls.
+- Every Claude Code permission profile now automatically includes `mcp__logagent__*` in `allowedTools`, while `diagnose` still keeps native built-in tools disabled through `--tools ""` and disallowed `Bash/Edit/Write/Read/Grep`.
+- The Claude startup prompt now tells the model that LogAgent MCP read tools are pre-authorized and should be used directly; `request_approval` remains reserved for approval-gated actions such as remote environment collection.
+- Verification passed: `cargo fmt --check`, `cargo check`, focused LogAgent Server config and Claude Code session tests, and `cargo test --quiet -- --test-threads=1` (native 1 + server 128 tests).
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:

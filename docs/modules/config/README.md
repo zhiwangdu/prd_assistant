@@ -193,7 +193,7 @@ metadata:
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
 - `claude_code.command_path` 或 `command_path_env` 必须解析为绝对路径；默认环境变量为 `LOGAGENT_CLAUDE_CODE_PATH`。
 - `claude_code.default_mode` 支持 `diagnose`、`code_investigation` 和 `fix`，默认 `diagnose`。
-- `claude_code.permission_profiles` 可覆盖各模式的 `permission_mode`、native tools、allowed/disallowed tools 和 worktree 要求。
+- `claude_code.permission_profiles` 可覆盖各模式的 `permission_mode`、native tools、allowed/disallowed tools 和 worktree 要求。Server 会自动给所有 profile 的 `allowed_tools` 追加 `mcp__logagent__*`，使 `dontAsk` 模式下的任务 MCP tools 不需要用户侧 Claude CLI 交互批准；`diagnose` 的 `tools: ""` 仍表示禁用 built-in native tools。
 - `mcp.enabled` 默认 true，`mcp.transport` 当前只支持 `stdio`。
 - `skills.enabled` 默认 true，`skills.roots` 默认 `skills`；相对路径优先按配置文件目录解析，目录不存在时回退到当前工作目录。
 - `skills.max_skill_chars` 控制写入 `system_context.json` 的 SKILL.md 注入片段上限，`skills.max_reference_chars` 控制 MCP 按需读取 reference 的正文上限。

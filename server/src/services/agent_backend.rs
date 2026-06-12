@@ -480,6 +480,7 @@ async fn build_claude_code_prompt(
         r#"You are Claude Code running as the LogAgent domain diagnostic enhancement layer.
 
 Use LogAgent MCP resources and tools for task evidence. Do not invent evidence refs. System Context, diagnostic skills, and skill_references/* are background only and must not be cited as final root cause evidence. Historical Cases can guide analysis, but current-task evidence must support final conclusions.
+LogAgent MCP tools are pre-authorized by the permission profile. Use search_logs, query_metadata, recall_cases, get_log_slice, and other LogAgent MCP read tools directly; do not ask the user to approve these MCP reads. Only request user approval for approval-gated actions such as remote environment collection.
 
 Mode: {mode}
 Permission profile: {profile}
@@ -493,7 +494,7 @@ Return exactly one JSON object matching the schema:
 - runtimeStatus="waiting_for_user" with pendingPrompt when user information is required.
 - runtimeStatus="waiting_for_approval" with pendingApproval when an approval-gated action is required.
 
-The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, or skill_references/* refs as final root cause evidence.
+The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, skill_references/*, or metadata_slices/* refs as final root cause evidence.
 "#,
         mode = analysis_mode.as_str(),
         profile = profile.name,
@@ -804,7 +805,10 @@ mod tests {
 
     use crate::{
         domain::models::{Confidence, GrepMatch, GrepResults},
-        support::config::{AnalysisMode, ClaudeCodeSettings, PermissionProfileSettings},
+        support::config::{
+            AnalysisMode, ClaudeCodeSettings, PermissionProfileSettings,
+            LOGAGENT_MCP_ALLOWED_TOOL_GLOB,
+        },
     };
 
     use super::*;
@@ -842,6 +846,7 @@ JSON
         assert!(args.contains("--strict-mcp-config"));
         assert!(args.contains("--json-schema"));
         assert!(args.contains("--permission-mode dontAsk"));
+        assert!(args.contains(&format!("--allowedTools {LOGAGENT_MCP_ALLOWED_TOOL_GLOB}")));
         assert!(!args.contains(PACKAGE_MARKER));
         let stdin = fs::read_to_string(fixture.workspace.join("claude_stdin.txt")).unwrap();
         assert!(stdin.contains("resources/list"));
@@ -1015,7 +1020,7 @@ JSON
                         name: "diagnose".to_string(),
                         permission_mode: "dontAsk".to_string(),
                         tools: String::new(),
-                        allowed_tools: Vec::new(),
+                        allowed_tools: vec![LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string()],
                         disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
                         native_bash: false,
                         native_edit: false,
