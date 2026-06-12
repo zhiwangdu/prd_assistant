@@ -150,6 +150,7 @@ flowchart LR
 - 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
 - Settings 提供只读 MCP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载入口。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
+- `WAITING_FOR_USER` 支持用户提交补充信息，也支持声明没有更多信息并请求基于当前证据直接生成最终结果；该意图会写入 `analysis_state.json` 并通过 `analysis_package.json` 约束下一轮 Claude Code 不再继续追问。
 - Log Analysis run 会固化 `system_context.json`，把已选择或自动匹配的 Diagnostic Skills 和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 和 Skill reference 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。

@@ -197,5 +197,5 @@ flowchart TD
 - 压缩包解压不能逃逸 workspace。
 - Claude Code 的 MCP tool 调用和最终 evidence refs 必须经过 schema、白名单、预算和审批校验；`system_context.json`、`diagnostic_skill`、`skill_references/*` 和 `metadata_slices/*` 只能作为背景，不能作为根因 evidence ref。
 - Claude Code permission profile 必须默认允许 `mcp__logagent__*`，否则 `dontAsk` 模式会拒绝任务 MCP tools；LogAgent 用户审批 API 只处理 Server 侧 action，不改变 Claude CLI tool allowlist。
-- 任务能从 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 接收输入并恢复。
+- 任务能从 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 接收输入并恢复；`WAITING_FOR_USER` 可通过 `resumeMode=finalize` 表示用户无更多补充信息，下一轮必须直接生成最终结果。
 - 后续每个功能变更必须同步更新对应模块 `README.md` 和 `SPEC.md`。

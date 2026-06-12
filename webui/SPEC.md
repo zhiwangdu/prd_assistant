@@ -70,6 +70,7 @@ Database
 - 状态展示使用 `QUEUED`、`RUNNING`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL`、`SUCCEEDED`、`FAILED`。
 - 执行阶段作为次级进度展示，不能由前端直接修改。
 - `WAITING_FOR_USER` 按 `questionId` 提交回答，重复提交使用幂等 key。
+- `WAITING_FOR_USER` 必须提供“没有更多信息，生成最终结果”入口，调用 message API 时传 `resumeMode: "finalize"`，使任务基于当前证据直接恢复到最终结果生成。
 - `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因。
 - 当前 WebUI 已在 Task execution 卡片内展示 pending prompt / pending approval，并通过 Server API 恢复任务。
 - 时间线来自服务端事件摘要，不渲染隐藏思维链或未经清洗的 Provider 原始响应。

@@ -9,7 +9,7 @@ use crate::{
         metadata::{metadata_context_outline, TaskMetadataContext},
         tool_runner::ToolRunRecord,
     },
-    stores::analysis_state::AnalysisSnapshotResponse,
+    stores::analysis_state::{AnalysisSnapshotResponse, UserMessageResumeMode},
     support::{
         config::{AnalysisMode, ClaudeCodeSettings, McpSettings, ToolsSettings},
         error::AppError,
@@ -78,6 +78,13 @@ pub async fn write_agent_contracts(
         })
         .unwrap_or_default();
     let metadata_context_outline = input.metadata_context.map(metadata_context_outline);
+    let finalize_requested = input
+        .analysis_snapshot
+        .state
+        .user_messages
+        .last()
+        .map(|message| message.resume_mode == UserMessageResumeMode::Finalize)
+        .unwrap_or(false);
     let package = serde_json::json!({
         "schemaVersion": 2,
         "generatedAt": now,
@@ -114,6 +121,7 @@ pub async fn write_agent_contracts(
         "analysisState": {
             "statePath": "analysis_state.json",
             "eventsPath": "analysis_events.jsonl",
+            "finalizeRequested": finalize_requested,
             "state": input.analysis_snapshot.state,
             "eventCount": input.analysis_snapshot.events.len(),
         },

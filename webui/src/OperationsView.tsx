@@ -1,4 +1,4 @@
-import { BookOpenCheck, BrainCircuit, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
+import { BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
@@ -6,6 +6,7 @@ import { type UploadResponse, uploadFile } from "./upload";
 
 type TaskStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
 type TaskPhase = "EXTRACT" | "SEARCH_LOGS" | "RUN_TOOL" | "PLAN_ANALYSIS" | "GENERATE_RESULT";
+type UserMessageResumeMode = "continue" | "finalize";
 type SessionStatus = "draft" | "ready" | "running" | "waiting_for_user" | "waiting_for_approval" | "succeeded" | "failed";
 type SessionSummary = {
   sessionId: string;
@@ -67,7 +68,7 @@ type AnalysisSnapshot = {
     budget: { rounds: number; llmCalls: number; actions: number };
     evidence: Array<{ evidenceType: string; artifactPath: string; summary: string; evidenceRefs: string[]; createdAt: string }>;
     actions: Array<{ actionId: string; actionType: string; status: string; summary: string; createdAt: string }>;
-    userMessages: Array<{ messageId: string; questionId?: string | null; content: string; createdAt: string }>;
+    userMessages: Array<{ messageId: string; questionId?: string | null; content: string; resumeMode?: UserMessageResumeMode; createdAt: string }>;
     pendingUserPrompts: PendingUserPrompt[];
     pendingApprovals: PendingApproval[];
   };
@@ -102,6 +103,7 @@ type AnalysisEvent = {
   details?: Record<string, unknown>;
   createdAt: string;
 };
+const FINALIZE_WITH_CURRENT_EVIDENCE_MESSAGE = "没有更多补充信息，请基于当前已有证据直接生成最终分析结果；如证据不足，请在缺失信息和置信度中说明。";
 type SessionTimelineEvent = {
   source: "session" | "task" | string;
   eventType: string;
@@ -527,9 +529,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     }
   }
 
-  async function submitUserMessage(prompt: PendingUserPrompt) {
+  async function submitUserMessage(prompt: PendingUserPrompt, resumeMode: UserMessageResumeMode = "continue") {
     if (!selectedTask) return;
-    const message = userAnswer.trim();
+    const message = userAnswer.trim() || (resumeMode === "finalize" ? FINALIZE_WITH_CURRENT_EVIDENCE_MESSAGE : "");
     if (!message) {
       setUploadStatus("请填写回答内容");
       return;
@@ -542,11 +544,12 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         body: JSON.stringify({
           questionId: prompt.questionId,
           message,
-          idempotencyKey: `webui-${prompt.questionId}-${Date.now()}`
+          resumeMode,
+          idempotencyKey: `webui-${prompt.questionId}-${resumeMode}-${Date.now()}`
         })
       });
       setUserAnswer("");
-      setUploadStatus("回答已提交，任务继续执行");
+      setUploadStatus(resumeMode === "finalize" ? "已请求基于当前证据生成最终结果" : "回答已提交，任务继续执行");
       if (selectedSession) await selectSession(selectedSession.sessionId, false, selectedTask.taskId);
     } catch (reason) {
       setUploadStatus(errorMessage(reason));
@@ -745,11 +748,11 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   );
 }
 
-function WaitingInteraction({ answer, approvalReason, loading, snapshot, status, onAnswerChange, onApprovalReasonChange, onSubmitAnswer, onSubmitApproval }: { answer: string; approvalReason: string; loading: boolean; snapshot: AnalysisSnapshot | null; status: TaskStatus; onAnswerChange: (value: string) => void; onApprovalReasonChange: (value: string) => void; onSubmitAnswer: (prompt: PendingUserPrompt) => void; onSubmitApproval: (approval: PendingApproval, decision: "approved" | "rejected") => void; }) {
+function WaitingInteraction({ answer, approvalReason, loading, snapshot, status, onAnswerChange, onApprovalReasonChange, onSubmitAnswer, onSubmitApproval }: { answer: string; approvalReason: string; loading: boolean; snapshot: AnalysisSnapshot | null; status: TaskStatus; onAnswerChange: (value: string) => void; onApprovalReasonChange: (value: string) => void; onSubmitAnswer: (prompt: PendingUserPrompt, resumeMode?: UserMessageResumeMode) => void; onSubmitApproval: (approval: PendingApproval, decision: "approved" | "rejected") => void; }) {
   if (status === "WAITING_FOR_USER") {
     const prompt = snapshot?.state.pendingUserPrompts[0];
     if (!prompt) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">任务正在等待用户输入，但 analysis state 中暂无 pending prompt。</div>;
-    return <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div><p className="text-sm font-medium text-amber-900">需要补充信息</p><p className="mt-1 text-sm text-amber-800">{prompt.question}</p><p className="mt-1 text-xs text-amber-700">reason: {prompt.reason} · format: {prompt.answerFormat ?? "free text"} · required: {prompt.required ? "yes" : "no"}</p></div><textarea className="min-h-20 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm" value={answer} onChange={(event) => onAnswerChange(event.target.value)} placeholder="填写补充信息后继续分析" /><Button disabled={loading} onClick={() => onSubmitAnswer(prompt)}>提交回答并继续</Button></div>;
+    return <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div><p className="text-sm font-medium text-amber-900">需要补充信息</p><p className="mt-1 text-sm text-amber-800">{prompt.question}</p><p className="mt-1 text-xs text-amber-700">reason: {prompt.reason} · format: {prompt.answerFormat ?? "free text"} · required: {prompt.required ? "yes" : "no"}</p></div><textarea className="min-h-20 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm" value={answer} onChange={(event) => onAnswerChange(event.target.value)} placeholder="填写补充信息后继续分析" /><div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={() => onSubmitAnswer(prompt)}>提交回答并继续</Button><Button disabled={loading} variant="outline" onClick={() => onSubmitAnswer(prompt, "finalize")}><CheckCircle2 className="mr-2 h-4 w-4" />没有更多信息，生成最终结果</Button></div></div>;
   }
   if (status === "WAITING_FOR_APPROVAL") {
     const approval = snapshot?.state.pendingApprovals[0];

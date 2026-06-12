@@ -24,7 +24,7 @@ use crate::{
     },
     services::skill_registry::ResolveSkillsInput,
     stores::{
-        analysis_state::{self, AnalysisSnapshotResponse},
+        analysis_state::{self, AnalysisSnapshotResponse, UserMessageResumeMode},
         system_context_store::system_context_bundle,
     },
     support::{error::AppError, id::next_id},
@@ -48,6 +48,8 @@ pub struct TaskMessageRequest {
     pub question_id: Option<String>,
     pub message: String,
     pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub resume_mode: UserMessageResumeMode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -454,6 +456,7 @@ pub async fn post_task_message(
         message_id.clone(),
         question_id.clone(),
         message,
+        req.resume_mode,
     )
     .map_err(|err| AppError::internal(format!("failed to record user message: {err}")))?;
     let resumed = state
@@ -1608,7 +1611,7 @@ mod tests {
         let (state, root) = test_state();
         create_test_session(&state, "sess_test").await;
         create_test_upload(&state, "upl_ask_user", UploadStatus::Complete).await;
-        let app = http::router(state.clone()).with_state(state);
+        let app = http::router(state.clone()).with_state(state.clone());
         let response = app
             .clone()
             .oneshot(
@@ -1642,7 +1645,7 @@ mod tests {
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
                     .body(Body::from(format!(
-                        r#"{{"questionId":"{question_id}","message":"异常发生在 10:00-10:30","idempotencyKey":"msg-test-1"}}"#
+                        r#"{{"questionId":"{question_id}","message":"没有更多补充信息，请直接生成最终结果。","resumeMode":"finalize","idempotencyKey":"msg-test-1"}}"#
                     )))
                     .unwrap(),
             )
@@ -1657,10 +1660,26 @@ mod tests {
             analysis["state"]["userMessages"][0]["messageId"],
             "msg-test-1"
         );
+        assert_eq!(
+            analysis["state"]["userMessages"][0]["resumeMode"],
+            "finalize"
+        );
         assert!(analysis["state"]["pendingUserPrompts"]
             .as_array()
             .unwrap()
             .is_empty());
+        let package: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                state
+                    .config
+                    .storage
+                    .workspace_dir(task_id)
+                    .join("analysis_package.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(package["analysisState"]["finalizeRequested"], true);
         let _ = std::fs::remove_dir_all(root);
     }
 

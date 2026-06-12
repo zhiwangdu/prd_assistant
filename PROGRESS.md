@@ -729,6 +729,13 @@ Current product-loop Case Store slice verification:
 - The Claude startup prompt now tells the model that LogAgent MCP read tools are pre-authorized and should be used directly; `request_approval` remains reserved for approval-gated actions such as remote environment collection.
 - Verification passed: `cargo fmt --check`, `cargo check`, focused LogAgent Server config and Claude Code session tests, and `cargo test --quiet -- --test-threads=1` (native 1 + server 128 tests).
 
+## 2026-06-12 Waiting Prompt Finalize Control
+
+- Added a `resumeMode` field to task user messages. The default `continue` keeps the existing answer-and-resume behavior; `finalize` records that the user has no more information and wants a final result from current evidence.
+- `analysis_package.json` now exposes `analysisState.finalizeRequested`, and the Claude startup prompt instructs Claude to return `completed` instead of asking the user again when that flag is true.
+- WebUI `Task execution` now shows a secondary `没有更多信息，生成最终结果` button in `WAITING_FOR_USER`, sending the finalize mode with a bounded default message when the answer box is empty.
+- Verification passed: `cargo fmt --check`, `cargo check --quiet`, focused `cargo test -p logagent-server task_message_resumes_waiting_for_user_task -- --test-threads=1`, `cargo test --quiet -- --test-threads=1` (native 1 + server 128 tests), `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:

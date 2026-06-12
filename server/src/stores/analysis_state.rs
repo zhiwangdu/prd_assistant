@@ -107,7 +107,17 @@ pub struct UserMessageRecord {
     pub message_id: String,
     pub question_id: Option<String>,
     pub content: String,
+    #[serde(default)]
+    pub resume_mode: UserMessageResumeMode,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UserMessageResumeMode {
+    #[default]
+    Continue,
+    Finalize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,22 +312,30 @@ pub fn record_user_message(
     message_id: String,
     question_id: Option<String>,
     content: String,
+    resume_mode: UserMessageResumeMode,
 ) -> anyhow::Result<()> {
+    let message = match resume_mode {
+        UserMessageResumeMode::Continue => match &question_id {
+            Some(question_id) => format!("user answered {question_id}"),
+            None => "user added message".to_string(),
+        },
+        UserMessageResumeMode::Finalize => {
+            "user requested final answer with no more input".to_string()
+        }
+    };
     append_event(
         workspace,
         AnalysisEventType::UserMessageReceived,
         Some(TaskPhase::PlanAnalysis),
         question_id.clone(),
-        match &question_id {
-            Some(question_id) => format!("user answered {question_id}"),
-            None => "user added message".to_string(),
-        },
+        message,
         Vec::new(),
         None,
         serde_json::json!({
             "messageId": message_id,
             "questionId": question_id,
             "content": content,
+            "resumeMode": resume_mode,
         }),
         |state| {
             state.status = AnalysisStatus::Running;
@@ -338,7 +356,12 @@ pub fn record_user_message(
                         .find(|action| action.action_id == action_id)
                     {
                         action.status = AnalysisActionStatus::Succeeded;
-                        action.summary = "user answered prompt".to_string();
+                        action.summary = match resume_mode {
+                            UserMessageResumeMode::Continue => "user answered prompt".to_string(),
+                            UserMessageResumeMode::Finalize => {
+                                "user requested final answer without more input".to_string()
+                            }
+                        };
                     }
                 }
             } else {
@@ -353,6 +376,7 @@ pub fn record_user_message(
                     message_id,
                     question_id,
                     content,
+                    resume_mode,
                     created_at: Utc::now(),
                 });
             }
