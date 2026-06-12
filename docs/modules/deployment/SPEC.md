@@ -15,6 +15,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
 - `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会预创建 Memory/Case 相关运行目录，包括 `data/memory`、`data/cases` 和 `data/case_imports`。
 - `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、默认 `claude_code` 配置和 `mcp.transport=stdio`；`LOGAGENT_CLAUDE_CODE_PATH` 默认应指向 `which claude` 输出的绝对路径，Server 会以 Claude Code CLI 非交互 JSON + MCP 模式调用。
+- Server 提供个人高级入口所需的受保护接口：`POST /api/mcp/readonly`、`GET /api/exports/skills.zip` 和 `GET /api/exports/tools.zip`。部署脚本不写入个人 Claude Code 配置，不做本地 bootstrap。
 - Native Agent 本机启动并连接远端 Server。
 - 示例配置支持 50992 测试端口。
 
@@ -50,6 +51,7 @@ WEBUI -> Server 同源 API
 - `$LOGAGENT_WORK_DIR/logs/logagent-server.log`
 - 环境变量密钥
 - 持久化 tasks、analysis state/events 和 workspaces 的数据目录
+- 通过受保护接口动态生成的 `skills.zip` 和 `tools.zip` 下载包
 
 ## 验收标准
 
@@ -61,3 +63,4 @@ WEBUI -> Server 同源 API
 - 远端 Server 监听 `0.0.0.0` 时 Native Agent 可上传。
 - README 和 SPEC 在部署方式或端口变更时同步更新。
 - Server 重启后能恢复等待中的任务，并安全处理执行中断的 MCP tool 副作用。
+- 个人只读 HTTP MCP 和导出下载可通过 API Key 访问；Tools 包 manifest 标明 Server OS/arch 和 skipped 工具。

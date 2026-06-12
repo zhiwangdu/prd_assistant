@@ -23,6 +23,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
 - `metadata_context.json` workspace 快照和 LLM 摘要。
+- 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表和 snapshot，不写入 Metadata Store。
 
 仍待实现：
 
@@ -184,6 +185,7 @@ POST /api/metadata/imports
 POST /api/metadata/imports/fetch
 GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
+POST /api/mcp/readonly
 ```
 
 导入请求建议：

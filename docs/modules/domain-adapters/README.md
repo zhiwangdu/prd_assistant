@@ -16,9 +16,11 @@ Domain Adapters 是 LogAgent 的领域差异化层。Claude Code 可以做通用
 
 ```http
 GET /api/settings/domain-adapters
+POST /api/mcp/readonly
 ```
 
 当前 registry 不改变任务执行路径，主要用于产品方向显式化和后续任务创建/自动识别的接口基础。
+只读 HTTP MCP 通过 `logagent://domain-adapters` 和 `logagent.list_domain_adapters` 暴露同一摘要，供个人本地 Claude Code 读取。
 
 ## 领域职责
 

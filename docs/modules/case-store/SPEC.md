@@ -55,6 +55,7 @@ POST /api/cases/imports/:draft_id/confirm
 GET /api/cases?query=<text>&limit=5&includeDisabled=false
 GET /api/cases/:case_id
 PATCH /api/cases/:case_id
+POST /api/mcp/readonly
 ```
 
 `POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。生成记录为 `sourceType=task`，必须包含 `taskId` 和 `sourceResultPath`。
@@ -70,6 +71,8 @@ workspaces/<task_id>/case_context.json
 ```
 
 `GET /api/tasks/:task_id/artifacts` 返回 `caseContextPath` 和 `caseContext`。LLM Gateway 会读取该上下文并加入 prompt，但历史 Case 只作为参考，不替代当前任务证据。
+
+只读 HTTP MCP 只允许读取 recent/search/get Case，不允许写入、确认、编辑或禁用 Case。
 
 ## 存储
 
@@ -125,6 +128,7 @@ SQLite 表：
 - 重复确认同一 task 时返回已有 Case，不创建重复记录。
 - `sourceType=task` Case 必须有 `taskId` 和 `sourceResultPath`；`sourceType=manual` Case 禁止带这两个字段。
 - 新任务 artifacts 能返回 `caseContext`，LLM prompt 包含历史 Case 参考段落。
+- 只读 HTTP MCP 可以搜索和读取 Case，且不能修改 Case Store。
 - WebUI 顶部 `Memory` 页面能完成手工录入、搜索、编辑和启用状态切换。
 - 启动迁移重复执行时不能创建重复 Case，legacy JSON 文件必须保留。
 - README 和 SPEC 在存储结构或召回策略变更时同步更新。

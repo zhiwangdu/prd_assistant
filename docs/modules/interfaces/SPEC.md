@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action。
 
 ## 公共产物
 
@@ -68,6 +68,29 @@ LogAgent MCP tools 支持：
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
+只读 HTTP MCP resources 支持：
+
+- `logagent://skills`
+- `logagent://skills/{skill_id}`
+- `logagent://metadata/instances`
+- `logagent://metadata/instances/{instance_id}/snapshot`
+- `logagent://cases/recent`
+- `logagent://tools/catalog`
+- `logagent://domain-adapters`
+
+只读 HTTP MCP tools 支持：
+
+- `logagent.search_cases`
+- `logagent.get_case`
+- `logagent.list_skills`
+- `logagent.get_skill`
+- `logagent.get_skill_reference`
+- `logagent.preview_system_context`
+- `logagent.list_metadata_instances`
+- `logagent.get_metadata_snapshot`
+- `logagent.list_tools`
+- `logagent.list_domain_adapters`
+
 第一版 Rust/JSON/MCP 契约要求：
 
 - MCP tool name 使用 `logagent.*` 前缀。
@@ -103,6 +126,7 @@ LogAgent MCP tools 支持：
 ## 验收标准
 
 - MCP tool 无法绕过 Server 直接执行。
+- 只读 HTTP MCP 无法创建/读取/恢复 Session，无法上传文件，无法读取 task workspace，无法运行 Tool Runner，无法修改 Case/Metadata/Skills/System Context。
 - Claude Code 无法绕过 Server 直接执行领域能力。
 - Domain Adapter 只能推荐证据组织和工具能力，不能放宽白名单或审批策略。
 - 等待状态可通过 message 或 decision 恢复。

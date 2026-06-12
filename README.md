@@ -4,7 +4,9 @@
 
 ## 目标
 
-LogAgent 是面向开发和运维诊断的证据工作台，也是 Claude Code 的领域诊断增强层。它不再维护自研通用 Agent Loop，而是把用户问题、日志包、Metadata、System Context、Domain Tools、测试环境采集结果和历史 Case 整理成可审计证据包，通过 LogAgent MCP server 暴露给 Claude Code，由 Claude Code 完成通用推理、代码理解和结构化诊断输出。
+LogAgent 是面向开发和运维诊断的证据工作台，也是 Claude Code 的领域诊断增强层。主入口是团队共享 Server 的 WebUI `Analyze`，用户通过浏览器完成日志、流水线和问题分析；高级入口是只读 HTTP MCP，个人本地 Claude Code 可连接共享 Server 读取 Skills、Metadata、Case、工具目录和领域能力摘要，用于纯本地分析。
+
+LogAgent 不接管个人本地 Claude Code 环境。Server 只提供受保护的只读 MCP endpoint、Skills 全量 zip、Tools 二进制快照 zip 和配置示例；本地 Claude Code 的安装、注册、API Key header 注入和工具包引用由个人环境处理。
 
 当前重点场景是快速问题分析、日志分析、日常测试流水线失败分析和数据库/存储系统专项诊断。第一批领域继续覆盖 openGemini/InfluxDB，并新增 Cassandra、RocksDB 的 Domain Adapter 骨架。
 
@@ -73,6 +75,7 @@ flowchart LR
 
     subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
         API["API / Auth / Task Manager"]
+        ReadonlyMcp["Read-only HTTP MCP<br/>Knowledge resources / tools"]
         Orchestrator["Pipeline / Action Executor"]
         Agent["Analysis Orchestrator<br/>证据包、MCP 配置、等待态"]
         Gateway["Claude Code Session Runner<br/>CLI + MCP config"]
@@ -99,6 +102,7 @@ flowchart LR
     Chrome --> Native
     Native -->|"上传日志 / 附加到当前 Session"| API
     User -->|"创建 Session、可选上传、启动 run、回答、审批"| API
+    User -.->|"个人 Claude Code 只读知识入口"| ReadonlyMcp
     API --> Orchestrator
     Orchestrator --> Agent
     Agent --> Gateway
@@ -106,6 +110,10 @@ flowchart LR
     Model --> Gateway
     Model --> Mcp
     Mcp --> Domains
+    ReadonlyMcp --> SysCtx
+    ReadonlyMcp --> Meta
+    ReadonlyMcp --> Cases
+    ReadonlyMcp --> Tool
 
     Orchestrator --> Domains
     Orchestrator --> Log
@@ -138,6 +146,9 @@ flowchart LR
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
 - `LOGAGENT_CLAUDE_CODE_PATH` 是默认 Claude Code CLI 路径来源。Log Analysis run 会写出 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 Claude session 语义的 `agent_response.json`。未配置或调用失败时任务失败，不自动 fallback。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
+- WebUI 主入口显示为 `Analyze`，仍使用 Session-first 分析能力，并继续默认调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
+- 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
+- Settings 提供只读 MCP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载入口。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
 - Log Analysis run 会固化 `system_context.json`，把已选择或自动匹配的 Diagnostic Skills 和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 和 Skill reference 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
@@ -153,8 +164,8 @@ flowchart LR
 |------|------|------|
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
 | [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
-| [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、内部能力和 API | [SPEC](./server/SPEC.md) |
-| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
+| [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、只读 HTTP MCP、导出包和 API | [SPEC](./server/SPEC.md) |
+| [webui](./webui/README.md) | Vite WebUI、Analyze、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |

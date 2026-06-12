@@ -8,14 +8,15 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部栏使用 `LogAgent Analysis Workbench` 作为全局产品名，覆盖证据、Memory、Skill-backed System Context、Metadata 和工具工作流，不再只强调 Metadata。
 
-- 顶部导航默认进入 `Log Analysis`，可见顺序固定为 `Log Analysis`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
-- `Log Analysis`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。
+- 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
+- `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。
-- `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断和 Domain Adapter 摘要，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
-- `Log Analysis` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
-- `Log Analysis` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
+- `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
+- `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
+- `Analyze` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
+- `Analyze` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。
 - `Session draft` 和统一 Evidence Timeline 支持展开/收起；启动分析 run 后草稿自动收起，task 运行完成后 timeline 自动收起并只展示最终结果或失败摘要。
 - WebUI 选择 Session 时会 best-effort 调用本机 Native Agent `PUT http://127.0.0.1:17321/workspace/current` 设置活动 Session；失败只提示本地 Agent 未连接，不影响 WebUI 上传。
@@ -228,3 +229,6 @@ Settings：
 - `GET /api/settings/agent-backends`
 - `POST /api/settings/agent-backends/:backend_id/test`
 - `GET /api/settings/domain-adapters`
+- `POST /api/mcp/readonly`
+- `GET /api/exports/skills.zip`
+- `GET /api/exports/tools.zip`

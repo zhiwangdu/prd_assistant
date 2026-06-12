@@ -24,6 +24,8 @@
 - Claude Code 只能通过 `claude_code` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI。
 - `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权 Claude Code 绕过 Server 执行领域命令、SSH 或状态写入。
 - Claude MCP tool call 必须经过 Server schema、白名单、预算、幂等和审批校验。
+- 只读 HTTP MCP 只能读取共享知识资源和只读 tools；禁止创建、读取、启动或恢复 Session，禁止读取 task workspace，禁止上传文件，禁止运行 Tool Runner，禁止审批、SSH/SCP 或修改 Case/Metadata/Skills/System Context。
+- `skills.zip` 不跟随 symlink，不允许路径逃逸；`tools.zip` 不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件，无法打包的 enabled 工具只能标记 skipped。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
 - Analysis Orchestrator 和 Claude Code 只能通过 structured outcome / MCP tools 表达意图，Server 是唯一领域执行者。
@@ -46,4 +48,6 @@
 - Prompt injection 不能改变工具、路径、仓库或环境白名单。
 - Prompt injection 不能改变 LLM binary provider 的可执行路径、subcommand 或 argv 结构。
 - Prompt injection 不能改变 Claude Code 命令路径、analysis mode、permission profile 或 MCP tool 白名单。
+- Prompt injection 不能把只读 HTTP MCP 升级为写入入口或工具执行入口。
+- 导出下载不能泄露密钥、环境变量值、上传文件或 task workspace。
 - README 和 SPEC 在安全策略变更时同步更新。

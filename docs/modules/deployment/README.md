@@ -76,6 +76,14 @@ cp logagent.example.yaml logagent.yaml
 
 `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。
 
+个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：
+
+- `POST /api/mcp/readonly`：只读 HTTP MCP 知识入口。
+- `GET /api/exports/skills.zip`：当前索引 Skills 全量包。
+- `GET /api/exports/tools.zip`：当前 enabled 工具的 Server 平台二进制快照包。
+
+这些接口都需要 `Authorization: Bearer <api-key>`。Tools 包只保证与 Server 所在 OS/arch 匹配；跨平台使用需要个人自行准备对应工具。
+
 生产或测试环境：
 
 - systemd 管理 `logagentd`

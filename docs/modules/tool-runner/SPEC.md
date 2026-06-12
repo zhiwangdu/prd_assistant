@@ -10,6 +10,11 @@ Server 已实现 Tool Runner MVP：配置白名单、规则版工具 action、Cl
 
 Server 也已实现面向 WebUI 手动执行的 Tools API。`tool_run` task 复用上传、workspace、TaskStore 和后台 Executor；首个 `pprof_analyzer` 通过 `tools.pprof_analyzer` 白名单配置调用 Go 可执行文件的 `tool pprof` 子命令，结果仍写入 `tool_results/<action_id>/`。
 
+Server 还提供只读工具目录和工具包导出：
+
+- `POST /api/mcp/readonly` 中的 `logagent://tools/catalog` 和 `logagent.list_tools` 只返回工具目录、configured args 和 match rules，不执行工具。
+- `GET /api/exports/tools.zip` 打包当前 enabled 且解析为普通可执行文件的工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、无执行权限或读取失败的工具在 manifest 标记 skipped。
+
 ## 首批工具
 
 - `flux_query_analyzer`
@@ -98,6 +103,7 @@ tool_results/<action_id>/result.json#findings/<index>
 - 工具执行需要超时和输出大小限制。
 - 工作目录限制在 task workspace 或只读工具目录。
 - Claude Code 只能通过 `logagent.run_domain_tool` 选择允许的工具和结构化参数，不能传入任意命令。
+- 只读 HTTP MCP 和 `tools.zip` 导出不能运行 Tool Runner，不能导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
 
 ## 验收标准
 
@@ -112,4 +118,5 @@ tool_results/<action_id>/result.json#findings/<index>
 - 同一工具的不同输入文件必须生成不同稳定 action id。
 - 重复 action id 幂等，结果可回填到同一分析 revision。
 - 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 Claude Code 分析结果。
+- `tools.zip` 覆盖可执行文件打包、wrapper/config 示例生成、缺失工具 skipped、sha256/size manifest。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

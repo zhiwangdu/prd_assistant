@@ -37,6 +37,8 @@ description: Diagnose openGemini clusters.
 GET /api/skills
 GET /api/skills/:skill_id
 POST /api/skills/preview
+POST /api/mcp/readonly
+GET /api/exports/skills.zip
 ```
 
 `POST /api/skills/preview` 请求：
@@ -98,6 +100,17 @@ skill_references/skill_ref_xxx.json
 
 并返回 `backgroundRef=skill_references/skill_ref_xxx.json#content`。
 
+只读 HTTP MCP 也暴露 Skill 读取能力：
+
+```text
+resources: logagent://skills, logagent://skills/{skill_id}
+tools: logagent.list_skills, logagent.get_skill, logagent.get_skill_reference
+```
+
+该入口不依赖 task snapshot，不写入 `skill_references/` artifact，只读取当前 registry 中已声明的 reference，并返回 `finalEvidenceAllowed=false`。
+
+`skills.zip` 必须打包当前 registry 中所有 Skill 目录的普通文件，保留相对目录结构，并在根目录写入 `manifest.json`。导出不得跟随 symlink，不得包含 Skill 目录外文件。
+
 ## 验收
 
 - 合法/非法 `SKILL.md`、缺失/非法 `logagent.json`、重复 `skillId` 能被测试覆盖。
@@ -105,4 +118,6 @@ skill_references/skill_ref_xxx.json
 - 显式 Skill、自动匹配 Skill、无 Metadata 仅显式 Skill 的 task 创建语义正确。
 - `system_context.json` schema v2 包含 selected skills + metadata adapter。
 - MCP reference 读取成功写 artifact，拒绝未选择 Skill、未声明 reference 和越界路径。
+- 只读 HTTP MCP Skill tool 可读取合法 reference，并拒绝未知 Skill、未声明 reference 和越界 path。
+- `skills.zip` 覆盖多 Skill、reference 文件、symlink 不跟随和 manifest 生成。
 - 最终结果 evidence ref 拒绝 Skill/System Context refs。

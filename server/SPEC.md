@@ -32,6 +32,8 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`
 - Settings Claude Code 诊断接口：`/api/settings/agent-backends`、`/api/settings/agent-backends/:backend_id/test`
 - Settings Domain Adapter 摘要接口：`/api/settings/domain-adapters`
+- 只读 HTTP MCP：`POST /api/mcp/readonly`
+- Skills / Tools 导出下载：`GET /api/exports/skills.zip`、`GET /api/exports/tools.zip`
 - Claude Code session 输入/响应产物：`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
 - task artifact 查询
 - metadata 查询和导入确认
@@ -102,6 +104,9 @@ POST /api/settings/llm/chat
 GET /api/settings/agent-backends
 POST /api/settings/agent-backends/:backend_id/test
 GET /api/settings/domain-adapters
+POST /api/mcp/readonly
+GET /api/exports/skills.zip
+GET /api/exports/tools.zip
 GET /api/skills
 GET /api/skills/:skill_id
 POST /api/skills/preview
@@ -141,6 +146,61 @@ Shard 和 Index 的 `owners` 是 PT ID，不是 NodeID。
 ```text
 Authorization: Bearer <api-key>
 ```
+
+## 只读 HTTP MCP 和导出
+
+`POST /api/mcp/readonly` 是面向个人本地 Claude Code 的高级只读入口，与 `logagent-server mcp --task-id ...` 的任务 stdio MCP 分离。HTTP MCP 只读取共享知识，不绑定 task，不读取 task workspace，不启动/恢复 Session，不上传文件，不运行 Tool Runner，不发起审批或远程 SSH/SCP，不修改 Case、Metadata、Skills 或 System Context。
+
+支持 JSON-RPC 方法：
+
+```text
+initialize
+resources/list
+resources/read
+tools/list
+tools/call
+```
+
+只读 resources：
+
+```text
+logagent://skills
+logagent://skills/{skill_id}
+logagent://metadata/instances
+logagent://metadata/instances/{instance_id}/snapshot
+logagent://cases/recent
+logagent://tools/catalog
+logagent://domain-adapters
+```
+
+只读 tools：
+
+```text
+logagent.search_cases
+logagent.get_case
+logagent.list_skills
+logagent.get_skill
+logagent.get_skill_reference
+logagent.preview_system_context
+logagent.list_metadata_instances
+logagent.get_metadata_snapshot
+logagent.list_tools
+logagent.list_domain_adapters
+```
+
+`GET /api/exports/skills.zip` 打包 Server 当前索引到的 Skill 普通文件，不跟随 symlink。包内根目录包含 `manifest.json`，每个 Skill 保留相对目录结构并记录 `skillId`、`displayName`、`revision`、`sourceRoot`、`sourcePath` 和文件列表。
+
+`GET /api/exports/tools.zip` 打包当前 enabled 且解析后是普通可执行文件的工具二进制。包结构固定为：
+
+```text
+tools-manifest.json
+README.md
+bin/<tool_id>/<binary_name>
+wrappers/<tool_id>.sh
+config/examples/<tool_id>.yaml
+```
+
+`tools-manifest.json` 记录 `toolId`、display name、configured args、match rules、Server OS/arch、binary filename、sha256、size、packaged/skipped 状态和 skipped reason。缺失、非普通文件、无执行权限或读取失败的工具只在 manifest 中标记 skipped，不让整个下载失败。导出包不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
 
 ## 数据目录
 

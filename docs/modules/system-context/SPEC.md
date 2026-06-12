@@ -25,9 +25,12 @@ POST /api/system-context/resources/:context_id/versions
 PATCH /api/system-context/resources/:context_id/versions/:version_id
 POST /api/system-context/resources/:context_id/versions/:version_id/activate
 POST /api/system-context/preview
+POST /api/mcp/readonly
 ```
 
 `GET /api/system-context/resources` 默认只返回 `metadata_instance` adapter。旧非 Metadata resources 不删除，但不作为新 UI 和新任务入口。
+
+`POST /api/mcp/readonly` 中的 `logagent.preview_system_context` 是只读预览入口，只返回将注入的 resource 摘要和 prompt preview，不创建 task，不写 workspace，不修改 Skill 或 Metadata。
 
 ## Resource Kind
 
@@ -73,4 +76,5 @@ knowledge_note
 - Session timeline 包含 `system_context_recorded`，并记录 Skill count / resource count。
 - Claude Code 输入包含 Diagnostic Skills 摘要和 Metadata adapter 摘要。
 - MCP `resources/read system_context` 可读取快照。
+- 只读 HTTP MCP `logagent.preview_system_context` 可预览 Skill-backed System Context，且不产生持久化副作用。
 - Metadata 原有 API 和 WebUI 拓扑展示保持可用。

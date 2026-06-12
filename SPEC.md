@@ -4,6 +4,11 @@
 
 LogAgent 把用户问题、日志包、元数据、工具结果、测试流水线或测试环境采集结果转换成可审计证据链。Server 负责证据采集、领域适配、状态、MCP 能力和执行边界；Claude Code 负责通用推理、代码上下文分析和结构化结果生成。
 
+产品入口分为两个层级：
+
+- WebUI `Analyze` 是团队主入口，负责 Session-first 分析、上传、用户追问、审批、Server 本机 Claude Code 调用和结果确认。
+- 只读 HTTP MCP 是个人高级入口，个人本地 Claude Code 可读取共享 Server 的 Case、System Context、Skills、Metadata、工具目录和 Domain Adapter 摘要；该入口不读取或操作 Session，不上传文件，不运行远程工具，不审批，不写入 Server 数据。
+
 当前产品方向是诊断证据工作台和 Claude Code 的领域诊断增强层，不替代 Claude Code，而是通过 LogAgent MCP server 提供日志、Metadata、System Context、Domain Tools、Case 和审批能力，并在 openGemini/InfluxDB、Cassandra、RocksDB 等领域提供专项增强。
 
 第一阶段目标是跑通：
@@ -151,6 +156,8 @@ flowchart TD
 - Upload session 持久化并支持重启续传。
 - Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
 - Skill-backed System Context 接入 task context，支持 Codex-compatible Diagnostic Skills、`logagent.json` 匹配 manifest、按需 MCP reference 读取和 Metadata adapter；创建 Log Analysis run 时写入 `system_context.json` 并进入 Claude Code 背景区。
+- Server 新增受保护只读 HTTP MCP：`POST /api/mcp/readonly`，支持 `initialize`、`resources/list`、`resources/read`、`tools/list` 和 `tools/call`，只暴露 Skills、Metadata、Case、工具目录和 Domain Adapter 等共享知识。
+- Server 新增受保护导出下载：`GET /api/exports/skills.zip` 和 `GET /api/exports/tools.zip`。`skills.zip` 打包当前索引 Skill 普通文件并跳过 symlink；`tools.zip` 对 enabled 且可执行的工具做平台二进制快照，缺失或不可执行工具只在 manifest 标记 skipped。
 - Claude Code Session Runner 已支持 `claude_code` 配置、`analysisMode=diagnose|code_investigation|fix`、Settings 摘要和 dry-run 诊断；旧 `agent_backends` 配置不再作为运行入口。
 - Domain Adapters 第一阶段已内置 `opengemini_influxdb` active adapter，以及 `cassandra`、`rocksdb` skeleton adapter，并通过 Settings API 暴露摘要。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
@@ -166,7 +173,7 @@ flowchart TD
 - 最终结果 evidence refs 支持历史 Case canonical 引用 `case_context.json#cases/<index>`；真实模型输出 `case_<id>` 或“历史案例 case_<id>”时会按当前 task 的 `case_context.json` 规范化。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；当前保留给 Case import、alias 生成和非 Agent Loop 的辅助结构化任务。Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口。
-- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，默认进入 Log Analysis，顶部导航顺序为 Log Analysis、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Tools 工具集页面、Settings Claude Code/LLM/Domain Adapter 诊断、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Tools 工具集页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 

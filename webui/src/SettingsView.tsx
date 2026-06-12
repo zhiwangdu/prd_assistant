@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, Boxes, CheckCircle2, MessageSquareText, PlugZap, RefreshCw, Send, ServerCog } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, CheckCircle2, Copy, Download, MessageSquareText, Network, PlugZap, RefreshCw, Send, ServerCog } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, jsonHeaders } from "./metadata/api";
@@ -88,10 +88,23 @@ export function SettingsView({ apiKey }: Props) {
   const [chatResult, setChatResult] = useState<LlmTestResponse<LlmChatResult> | null>(null);
   const [agentBackendResult, setAgentBackendResult] = useState<LlmTestResponse<AgentBackendDiagnosticResult> | null>(null);
   const [message, setMessage] = useState("hello");
+  const [personalStatus, setPersonalStatus] = useState("Ready");
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [testingBackendId, setTestingBackendId] = useState<string | null>(null);
+  const readonlyMcpUrl = `${window.location.origin}/api/mcp/readonly`;
+  const claudeConfigExample = JSON.stringify({
+    mcpServers: {
+      "logagent-readonly": {
+        type: "http",
+        url: readonlyMcpUrl,
+        headers: {
+          Authorization: "Bearer <LOGAGENT_API_KEY>"
+        }
+      }
+    }
+  }, null, 2);
 
   const loadSummary = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -188,6 +201,42 @@ export function SettingsView({ apiKey }: Props) {
     }
   }
 
+  async function copyPersonalConfig() {
+    try {
+      await navigator.clipboard.writeText(claudeConfigExample);
+      setPersonalStatus("Config example copied");
+    } catch (reason) {
+      setPersonalStatus(formatError(reason));
+    }
+  }
+
+  async function downloadExport(path: string, filename: string) {
+    if (!apiKey.trim()) {
+      setPersonalStatus("请先填写 API Key");
+      return;
+    }
+    setPersonalStatus(`Downloading ${filename}...`);
+    try {
+      const response = await fetch(path, { headers: authHeaders(apiKey) });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text}`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setPersonalStatus(`${filename} downloaded`);
+    } catch (reason) {
+      setPersonalStatus(formatError(reason));
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Card>
@@ -195,7 +244,7 @@ export function SettingsView({ apiKey }: Props) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle>Settings</CardTitle>
-              <CardDescription>当前先提供 LLM 服务接口连通性测试。</CardDescription>
+              <CardDescription>LLM、Claude Code、Domain Adapter 和个人只读入口。</CardDescription>
             </div>
             <Button variant="outline" onClick={() => void loadSummary()} disabled={loadingSummary}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loadingSummary ? "animate-spin" : ""}`} />
@@ -217,6 +266,43 @@ export function SettingsView({ apiKey }: Props) {
             </div>
           ) : <EmptyState>{summaryStatus}</EmptyState>}
           <p className="mt-3 text-xs text-muted-foreground">{summaryStatus}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>Personal Claude Code</CardTitle>
+              <CardDescription>本地 Claude Code 只读连接共享 Server 知识；Session、上传、审批和远程工具仍在 WebUI Analyze 中完成。</CardDescription>
+            </div>
+            <Network className="h-5 w-5 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <SettingMetric label="Read-only MCP URL" value={readonlyMcpUrl} />
+            <SettingMetric label="Header" value="Authorization: Bearer <api-key>" />
+            <SettingMetric label="Mode" value="read-only knowledge" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => void downloadExport("/api/exports/skills.zip", "skills.zip")}>
+              <Download className="mr-2 h-4 w-4" />
+              Skills ZIP
+            </Button>
+            <Button variant="outline" onClick={() => void downloadExport("/api/exports/tools.zip", "tools.zip")}>
+              <Download className="mr-2 h-4 w-4" />
+              Tools ZIP
+            </Button>
+            <Button variant="outline" onClick={() => void copyPersonalConfig()}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy config
+            </Button>
+          </div>
+          <pre className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+            {claudeConfigExample}
+          </pre>
+          <p className="text-xs text-muted-foreground">{personalStatus}</p>
         </CardContent>
       </Card>
 

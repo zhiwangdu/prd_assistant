@@ -16,6 +16,7 @@
 
 ```http
 GET /api/settings/domain-adapters
+POST /api/mcp/readonly
 ```
 
 响应包含：
@@ -27,6 +28,8 @@ GET /api/settings/domain-adapters
 - `evidenceKinds`
 - `plannedTools`
 - `notes`
+
+只读 HTTP MCP 使用 `logagent://domain-adapters` resource 和 `logagent.list_domain_adapters` tool 暴露相同摘要，不改变任务执行路径。
 
 ## 适配器能力模型
 
@@ -64,6 +67,7 @@ GET /api/settings/domain-adapters
 ## 验收标准
 
 - Settings 能列出三类 adapter。
+- 只读 HTTP MCP 能列出三类 adapter。
 - `opengemini_influxdb` 标记为 active。
 - `cassandra` 和 `rocksdb` 标记为 skeleton，不能误导为已具备完整诊断能力。
 - 新增产品领域时必须同步 README/SPEC，并至少提供 fixture 或最小验收场景。

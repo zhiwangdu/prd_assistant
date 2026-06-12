@@ -38,6 +38,18 @@ WEBUI Tools
 
 ## Implemented
 
+### Dual Entry: WebUI Analyze + Read-only HTTP MCP
+
+- Renamed the primary WebUI navigation entry from `Log Analysis` to `Analyze`; the underlying workflow remains Session-first and continues to use the Server machine's Claude Code, task-scoped stdio MCP config and Server local workspace.
+- Added protected read-only HTTP MCP at `POST /api/mcp/readonly` for personal local Claude Code knowledge access. It supports `initialize`, `resources/list`, `resources/read`, `tools/list` and `tools/call`.
+- Read-only MCP resources now cover Skills, Metadata instances/snapshots, recent Cases, Tools catalog and Domain Adapters. Read-only tools cover case search/get, skill list/get/reference, System Context preview, metadata list/snapshot, tool catalog and domain adapter list.
+- The read-only MCP is deliberately separated from `logagent-server mcp --task-id ...`: it does not read task workspaces, start or resume Sessions, upload files, request approval, run Tool Runner, SSH/SCP, or mutate Case/Metadata/Skills/System Context.
+- Added protected `GET /api/exports/skills.zip`; it packages all indexed Skill ordinary files, keeps relative Skill directory structure, writes `manifest.json`, and skips symlinks.
+- Added protected `GET /api/exports/tools.zip`; it packages enabled executable tool binaries for the Server OS/arch, wrappers, sanitized config examples and `tools-manifest.json`; missing, non-file, non-executable or unreadable tools are marked skipped without failing the download.
+- Added Settings `Personal Claude Code` block showing the read-only MCP URL, Authorization header hint, Claude Code HTTP MCP config example, and authenticated download buttons for Skills and Tools packages. It intentionally does not install, bootstrap or write local Claude Code configuration.
+- Updated root, Server, WebUI, Skills, System Context, Tool Runner, Metadata, Case Store, Domain Adapter, Interfaces, Deployment and Security docs/specs.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build` pass. A default parallel `cargo test -p logagent-server` run hit existing timeout-style failures, while the same server suite passed with `--test-threads=1`. Vite HTTP smoke returned `/`; in-app Browser smoke could not run because the `iab` browser was unavailable in this session.
+
 ### Skill-backed System Context
 
 - Reworked System Context semantics from editable long-lived Prompt Pack/Runbook/Architecture resources into task-level Skill-backed background snapshots.

@@ -11,7 +11,9 @@ use crate::{app::AppState, support::auth::require_api_key};
 
 mod cases;
 mod debug;
+mod exports;
 mod health;
+mod mcp_readonly;
 mod metadata;
 mod sessions;
 mod settings;
@@ -130,6 +132,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/settings/domain-adapters",
             get(settings::domain_adapters),
         )
+        .route("/api/mcp/readonly", post(mcp_readonly::readonly_mcp))
+        .route("/api/exports/skills.zip", get(exports::skills_zip))
+        .route("/api/exports/tools.zip", get(exports::tools_zip))
         .route("/api/skills", get(skills::list_skills))
         .route("/api/skills/preview", post(skills::preview_skills))
         .route("/api/skills/:skill_id", get(skills::get_skill))

@@ -24,6 +24,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
 - 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 Claude Code MCP resources。
+- 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances` 和 `logagent.get_metadata_snapshot` 暴露已导入 Metadata，供个人本地 Claude Code 读取；该入口不导入或修改 Metadata。
 
 暂未实现：
 

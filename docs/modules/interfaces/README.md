@@ -20,6 +20,8 @@ Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工
 
 Claude Code Session Runner 提供配置摘要、dry-run 诊断和 `analysis_package.json` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json` session 输入/响应产物。`PLAN_ANALYSIS` 当前直接调用 Claude Code CLI；structured outcome 必须映射到等待态或 final answer 契约。
 
+只读 HTTP MCP 是独立接口面，面向个人本地 Claude Code 读取共享知识，不绑定 task，不读取 workspace，不执行 action。它只暴露 Case、Skills、Metadata、Tools catalog 和 Domain Adapter 摘要等资源和只读 tools。
+
 ## 核心数据
 
 ```rust
@@ -136,6 +138,8 @@ tool_run
 
 ## MCP Tools
 
+任务 stdio MCP tools：
+
 ```text
 logagent.search_logs
 logagent.get_log_slice
@@ -147,5 +151,22 @@ logagent.request_approval
 ```
 
 所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。
+
+只读 HTTP MCP tools：
+
+```text
+logagent.search_cases
+logagent.get_case
+logagent.list_skills
+logagent.get_skill
+logagent.get_skill_reference
+logagent.preview_system_context
+logagent.list_metadata_instances
+logagent.get_metadata_snapshot
+logagent.list_tools
+logagent.list_domain_adapters
+```
+
+只读 HTTP MCP tools 不能写 workspace artifact，不能创建或恢复 Session，不能上传、审批或运行 Tool Runner。
 
 当前 Executor 已按持久化 phase 循环分派 handler，并在推进阶段时校验 expected phase。重启恢复保留中断 phase，为后续 `RUN_TOOL` 和 `PLAN_ANALYSIS` 分支提供基础。

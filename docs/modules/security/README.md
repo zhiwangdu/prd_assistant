@@ -27,6 +27,7 @@
 
 - Claude MCP tool call 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
 - Claude Code 只能通过 `claude_code` 配置接入；领域能力只能通过 LogAgent MCP 调用，不能直接执行 LogAgent 工具、SSH、任务外文件系统或状态变更。
+- 只读 HTTP MCP 只面向个人本地 Claude Code 读取共享知识；它不能创建、读取、启动或恢复 Session，不能读取 task workspace，不能上传文件，不能运行 Tool Runner，不能审批或远程采集，不能修改 Case、Metadata、Skills 或 System Context。
 - 第一阶段 Claude Code dry-run 诊断只检查配置路径，不执行 CLI；`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 只是 workspace 内契约产物。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
 - SSH/SCP 环境采集默认需要用户批准。
@@ -42,6 +43,7 @@
 - 限制外部工具执行时间、输出大小和可访问目录。
 - 工具执行结果要保留 exit code、stderr 和原始输出路径，方便审计。
 - Tools 页面创建的手动工具运行也必须走同一白名单和 workspace 边界。`pprof_analyzer` 只分析已上传到 Server 的本地 profile 文件，不接受 URL source，并把 `PPROF_TMPDIR` 设置到当前 task workspace 内。
+- `tools.zip` 导出只打包当前 enabled 且解析为普通可执行文件的工具二进制、wrapper 和示例配置；不导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。缺失或不可执行工具只在 manifest 标记 skipped。
 
 ## 代码仓
 

@@ -87,6 +87,24 @@ pub struct SkillReferenceRead {
 }
 
 #[derive(Debug, Clone)]
+pub struct SkillExportEntry {
+    pub skill_id: String,
+    pub display_name: String,
+    pub revision: String,
+    pub source_root: PathBuf,
+    pub source_path: PathBuf,
+    pub zip_dir: String,
+    pub files: Vec<SkillExportFile>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkillExportFile {
+    pub relative_path: String,
+    pub absolute_path: PathBuf,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolveSkillsInput<'a> {
     pub explicit_skill_ids: &'a [String],
     pub task_kind: TaskKind,
@@ -201,6 +219,25 @@ impl SkillRegistry {
             summary: skill.summary(),
             injection_content: skill.injection_content.clone(),
         })
+    }
+
+    pub fn export_entries(&self) -> anyhow::Result<Vec<SkillExportEntry>> {
+        let mut entries = Vec::new();
+        for skill in self.skills.values() {
+            let mut files = Vec::new();
+            collect_skill_export_files(&skill.skill_dir, &skill.skill_dir, &mut files)?;
+            files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+            entries.push(SkillExportEntry {
+                skill_id: skill.skill_id.clone(),
+                display_name: skill.display_name.clone(),
+                revision: skill.revision.clone(),
+                source_root: skill.source_root.clone(),
+                source_path: skill.skill_dir.clone(),
+                zip_dir: skill_zip_dir(skill)?,
+                files,
+            });
+        }
+        Ok(entries)
     }
 
     pub fn resolve_items(
@@ -327,6 +364,50 @@ impl SkillRegistry {
         let raw = tokio::fs::read_to_string(&reference.absolute_path)
             .await
             .with_context(|| format!("failed to read skill reference {}", requested.path))?;
+        let (content, truncated) = truncate_chars_with_flag(raw.trim(), self.max_reference_chars);
+        Ok(SkillReferenceRead {
+            skill_id: skill.skill_id.clone(),
+            skill_revision: skill.revision.clone(),
+            reference: reference.summary.clone(),
+            content,
+            truncated,
+        })
+    }
+
+    pub async fn read_reference(
+        &self,
+        skill_id: &str,
+        reference_id: Option<&str>,
+        reference_path: Option<&str>,
+    ) -> anyhow::Result<SkillReferenceRead> {
+        validate_skill_id_anyhow(skill_id)?;
+        let skill = self
+            .skills
+            .get(skill_id)
+            .ok_or_else(|| anyhow::anyhow!("skill {skill_id} is not available in registry"))?;
+        let reference = match (reference_id, reference_path) {
+            (Some(id), _) => skill
+                .references
+                .iter()
+                .find(|reference| reference.summary.reference_id == id)
+                .ok_or_else(|| anyhow::anyhow!("referenceId {id} is not declared by skill"))?,
+            (None, Some(path)) => {
+                validate_reference_path(path)?;
+                skill
+                    .references
+                    .iter()
+                    .find(|reference| reference.summary.path == path)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("reference path {path} is not declared by skill")
+                    })?
+            }
+            (None, None) => anyhow::bail!("referenceId or path is required"),
+        };
+        let raw = tokio::fs::read_to_string(&reference.absolute_path)
+            .await
+            .with_context(|| {
+                format!("failed to read skill reference {}", reference.summary.path)
+            })?;
         let (content, truncated) = truncate_chars_with_flag(raw.trim(), self.max_reference_chars);
         Ok(SkillReferenceRead {
             skill_id: skill.skill_id.clone(),
@@ -596,6 +677,64 @@ fn load_references(
         });
     }
     Ok(references)
+}
+
+fn collect_skill_export_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<SkillExportFile>,
+) -> anyhow::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        let file_type = metadata.file_type();
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            collect_skill_export_files(root, &path, out)?;
+        } else if file_type.is_file() {
+            out.push(SkillExportFile {
+                relative_path: safe_relative_path(root, &path)?,
+                absolute_path: path,
+                size: metadata.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn skill_zip_dir(skill: &DiagnosticSkill) -> anyhow::Result<String> {
+    let relative = safe_relative_path(&skill.source_root, &skill.skill_dir).unwrap_or_default();
+    if relative.is_empty() {
+        Ok(skill.skill_id.clone())
+    } else {
+        Ok(relative)
+    }
+}
+
+fn safe_relative_path(root: &Path, path: &Path) -> anyhow::Result<String> {
+    let relative = path
+        .strip_prefix(root)
+        .with_context(|| format!("{} escapes {}", path.display(), root.display()))?;
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(value) => {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("path contains invalid UTF-8"))?;
+                if value.is_empty() {
+                    anyhow::bail!("path contains empty segment");
+                }
+                parts.push(value.to_string());
+            }
+            Component::CurDir => {}
+            _ => anyhow::bail!("path contains unsafe segment"),
+        }
+    }
+    Ok(parts.join("/"))
 }
 
 fn validate_reference_path(path: &str) -> anyhow::Result<()> {
