@@ -18,17 +18,22 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - `claude_code` 配置块，读取 `LOGAGENT_CLAUDE_CODE_PATH` 或显式 `command_path`。
 - `mcp.enabled` / `mcp.transport=stdio` 配置。
 - `logagent-server mcp --config <logagent.yaml> --task-id <task_id> --mode <diagnose|code_investigation|fix>` stdio 子命令。
-- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`。
+- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，完整证据包由 Claude 通过 MCP `analysis_package` resource 读取。
 - 分模式 permission profile：默认 `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/受控 Bash，`fix` 预留 Edit/Write/Test 能力。
 - task 创建接受 `analysisMode`，默认来自 `claude_code.default_mode`。
 - 新 workspace artifacts：
   - `analysis_package.json`
+  - `claude_prompt.md`
   - `claude_mcp_config.json`
   - `claude_session.json`
   - `mcp_calls.jsonl`
   - `agent_response.json`，已重定义为 Claude Code session response。
-- `agent_response.json` 记录 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`structuredOutput`、usage/cost、MCP call path、native tool policy、duration、error 和 stdout preview。
+- `agent_response.json` 记录 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、MCP call path、native tool policy、duration、error 和 stdout preview。
 - Settings API 继续使用 `/api/settings/agent-backends` 作为前端兼容入口，但返回的是单一 `claude_code` 后端摘要。
+
+## CLI 与 Agent SDK 取舍
+
+当前生产路径继续使用 Claude Code CLI。CLI 已覆盖一次性 headless 运行、JSON schema 输出、MCP 配置、session resume 和 permission profile；Server 侧只需要把大 `analysis_package.json` 从启动 prompt 移到 MCP resource，即可避免 argv 和 stdin 大小问题。Claude Agent SDK 更适合作为后续 adapter PoC：当需要 SDK message streaming、SDK hooks、独立 session store 或长期服务化 agent runtime 时，再引入 TypeScript/Python sidecar，不作为本轮默认路径。
 
 ## 配置示例
 
@@ -80,6 +85,7 @@ Claude Code 必须返回结构化 session outcome：
 Resources：
 
 - task summary / artifact index
+- analysis package
 - manifest / grep results
 - metadata context
 - system context

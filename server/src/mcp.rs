@@ -164,6 +164,7 @@ async fn resources_list_result(
         ),
     ];
     for (name, description) in [
+        ("analysis_package", "Analysis package"),
         ("manifest", "Manifest"),
         ("grep_results", "Grep results"),
         ("metadata_context", "Metadata context"),
@@ -241,6 +242,7 @@ async fn read_json_resource(workspace: &Path, name: &str) -> anyhow::Result<serd
 
 fn resource_path(workspace: &Path, name: &str) -> PathBuf {
     match name {
+        "analysis_package" => workspace.join("analysis_package.json"),
         "manifest" => workspace.join("manifest.json"),
         "grep_results" => workspace.join("grep_results.json"),
         "metadata_context" => workspace.join("metadata_context.json"),
@@ -777,6 +779,31 @@ mod tests {
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ))
+    }
+
+    #[tokio::test]
+    async fn analysis_package_is_available_as_task_resource() {
+        let workspace = temp_dir("analysis-package-resource");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(
+            workspace.join("analysis_package.json"),
+            r#"{"schemaVersion":2,"purpose":"diagnostic_evidence_package"}"#,
+        )
+        .unwrap();
+
+        let listed = resources_list_result(&workspace, "task_1").await.unwrap();
+        let resources = listed["resources"].as_array().unwrap();
+        assert!(resources.iter().any(|resource| {
+            resource["name"] == "analysis_package"
+                && resource["uri"] == "logagent://task/task_1/analysis_package"
+        }));
+
+        let value = read_json_resource(&workspace, "analysis_package")
+            .await
+            .unwrap();
+        assert_eq!(value["purpose"], "diagnostic_evidence_package");
+
+        let _ = std::fs::remove_dir_all(workspace);
     }
 
     #[tokio::test]

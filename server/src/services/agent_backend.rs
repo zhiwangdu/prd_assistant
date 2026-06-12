@@ -3,7 +3,7 @@ use std::{path::Path, time::Instant};
 use anyhow::Context;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tokio::{process::Command, time::timeout};
+use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -18,6 +18,8 @@ use crate::{
         error::AppError,
     },
 };
+
+const CLAUDE_PROMPT_PATH: &str = "claude_prompt.md";
 
 #[derive(Debug, Clone)]
 pub struct AgentBackendRegistry {
@@ -369,9 +371,13 @@ async fn run_claude_code_command(
     workspace: &Path,
     resume_session_id: Option<&str>,
 ) -> anyhow::Result<String> {
-    let prompt = build_claude_code_prompt(workspace, analysis_mode, profile)
+    let prompt = build_claude_code_prompt(analysis_mode, profile)
         .await
         .context("failed to build Claude Code prompt")?;
+    let prompt_bytes = prompt.len() as u64;
+    tokio::fs::write(workspace.join(CLAUDE_PROMPT_PATH), &prompt)
+        .await
+        .context("failed to write Claude Code prompt artifact")?;
     info!(
         command = %command_path.display(),
         workspace = %workspace.display(),
@@ -379,6 +385,7 @@ async fn run_claude_code_command(
         permission_profile = %profile.name,
         resume_session_id = ?resume_session_id,
         timeout_seconds = settings.max_session_seconds,
+        prompt_bytes,
         "spawning Claude Code CLI"
     );
     let mut command = Command::new(command_path);
@@ -409,15 +416,24 @@ async fn run_claude_code_command(
         command.arg("--resume").arg(session_id);
     }
     command
-        .arg(prompt)
         .current_dir(workspace)
         .kill_on_drop(true)
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let child = command
+    let mut child = command
         .spawn()
         .with_context(|| format!("failed to spawn Claude Code CLI {}", command_path.display()))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .context("failed to open Claude Code stdin")?;
+    stdin
+        .write_all(prompt.as_bytes())
+        .await
+        .context("failed to write Claude Code prompt to stdin")?;
+    drop(stdin);
     let output = timeout(
         std::time::Duration::from_secs(settings.max_session_seconds),
         child.wait_with_output(),
@@ -457,16 +473,9 @@ async fn run_claude_code_command(
 }
 
 async fn build_claude_code_prompt(
-    workspace: &Path,
     analysis_mode: AnalysisMode,
     profile: &PermissionProfileSettings,
 ) -> anyhow::Result<String> {
-    let package = tokio::fs::read_to_string(workspace.join("analysis_package.json"))
-        .await
-        .context("failed to read analysis_package.json")?;
-    let user_messages = read_analysis_user_messages(workspace)
-        .await
-        .unwrap_or_default();
     Ok(format!(
         r#"You are Claude Code running as the LogAgent domain diagnostic enhancement layer.
 
@@ -477,37 +486,20 @@ Permission profile: {profile}
 Native Bash allowed: {native_bash}
 Native Edit allowed: {native_edit}
 
+Before analyzing, call MCP resources/list and then read the resource named analysis_package. Use that task package as the primary context. Read manifest, grep_results, metadata_context, system_context, case_context, and tool_results resources as needed instead of relying on this startup prompt for evidence.
+
 Return exactly one JSON object matching the schema:
 - runtimeStatus="completed" with finalAnswer when analysis can finish.
 - runtimeStatus="waiting_for_user" with pendingPrompt when user information is required.
 - runtimeStatus="waiting_for_approval" with pendingApproval when an approval-gated action is required.
 
 The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, or skill_references/* refs as final root cause evidence.
-
-Recent user messages from this task:
-{user_messages}
-
-analysis_package.json:
-{package}
 "#,
         mode = analysis_mode.as_str(),
         profile = profile.name,
         native_bash = profile.native_bash,
         native_edit = profile.native_edit,
-        user_messages = user_messages,
-        package = package,
     ))
-}
-
-async fn read_analysis_user_messages(workspace: &Path) -> anyhow::Result<String> {
-    let raw = tokio::fs::read_to_string(workspace.join("analysis_state.json")).await?;
-    let value: serde_json::Value = serde_json::from_str(&raw)?;
-    let messages = value
-        .get("userMessages")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-    Ok(serde_json::to_string_pretty(&messages)?)
 }
 
 fn claude_session_json_schema() -> serde_json::Value {
@@ -665,6 +657,7 @@ async fn write_claude_session_state(
     duration_ms: Option<u64>,
     error: Option<&str>,
 ) -> Result<(), AppError> {
+    let prompt_delivery = prompt_delivery_metadata(workspace).await;
     let value = serde_json::json!({
         "schemaVersion": 1,
         "generatedAt": Utc::now(),
@@ -674,6 +667,7 @@ async fn write_claude_session_state(
         "permissionProfile": profile.name,
         "mcpConfigPath": "claude_mcp_config.json",
         "lastClaudeResponsePath": "agent_response.json",
+        "promptDelivery": prompt_delivery,
         "durationMs": duration_ms,
         "nativeToolPolicy": native_tool_policy(profile),
         "error": error,
@@ -690,6 +684,7 @@ async fn write_success_agent_response(
     raw_response: &serde_json::Value,
     structured_output: &ClaudeStructuredOutput,
 ) -> Result<(), AppError> {
+    let prompt_delivery = prompt_delivery_metadata(workspace).await;
     let response = serde_json::json!({
         "schemaVersion": 2,
         "generatedAt": Utc::now(),
@@ -697,6 +692,7 @@ async fn write_success_agent_response(
         "claudeSessionId": claude_session_id,
         "analysisMode": analysis_mode,
         "permissionProfile": profile.name,
+        "promptDelivery": prompt_delivery,
         "structuredOutput": structured_output,
         "usage": raw_response.get("usage").cloned().unwrap_or(serde_json::Value::Null),
         "cost": raw_response
@@ -726,6 +722,7 @@ async fn write_failed_agent_response(
     error: &str,
     raw_stdout: Option<&str>,
 ) -> Result<(), AppError> {
+    let prompt_delivery = prompt_delivery_metadata(workspace).await;
     let response = serde_json::json!({
         "schemaVersion": 2,
         "generatedAt": Utc::now(),
@@ -733,6 +730,7 @@ async fn write_failed_agent_response(
         "claudeSessionId": null,
         "analysisMode": analysis_mode,
         "permissionProfile": profile.name,
+        "promptDelivery": prompt_delivery,
         "structuredOutput": null,
         "usage": null,
         "cost": null,
@@ -743,6 +741,20 @@ async fn write_failed_agent_response(
         "rawStdoutPreview": raw_stdout.map(|value| truncate_string(value, 16384)),
     });
     write_json_atomic(workspace.join("agent_response.json"), &response).await
+}
+
+async fn prompt_delivery_metadata(workspace: &Path) -> serde_json::Value {
+    let prompt_bytes = tokio::fs::metadata(workspace.join(CLAUDE_PROMPT_PATH))
+        .await
+        .ok()
+        .map(|metadata| metadata.len());
+    serde_json::json!({
+        "mode": "stdin_file",
+        "promptPath": CLAUDE_PROMPT_PATH,
+        "promptBytes": prompt_bytes,
+        "largeContextVia": "mcp_resource",
+        "analysisPackageResourceName": "analysis_package",
+    })
 }
 
 fn raw_session_id(raw_response: &serde_json::Value) -> Option<String> {
@@ -797,12 +809,15 @@ mod tests {
 
     use super::*;
 
+    const PACKAGE_MARKER: &str = "ANALYSIS_PACKAGE_BODY_SHOULD_NOT_BE_IN_PROMPT";
+
     #[tokio::test]
     async fn claude_code_session_returns_final_answer() {
         let fixture = Fixture::new();
         let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
 printf '%s\n' "$*" > claude_args.txt
+cat > claude_stdin.txt
 cat <<'JSON'
 {"type":"result","subtype":"success","is_error":false,"session_id":"sess-claude-1","structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"direct cli summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":["increase timeout"],"missingInformation":[],"confidence":"medium"}},"usage":{"input_tokens":22},"total_cost_usd":0.02}
 JSON
@@ -827,12 +842,25 @@ JSON
         assert!(args.contains("--strict-mcp-config"));
         assert!(args.contains("--json-schema"));
         assert!(args.contains("--permission-mode dontAsk"));
+        assert!(!args.contains(PACKAGE_MARKER));
+        let stdin = fs::read_to_string(fixture.workspace.join("claude_stdin.txt")).unwrap();
+        assert!(stdin.contains("resources/list"));
+        assert!(stdin.contains("analysis_package"));
+        assert!(!stdin.contains(PACKAGE_MARKER));
+        let prompt = fs::read_to_string(fixture.workspace.join(CLAUDE_PROMPT_PATH)).unwrap();
+        assert_eq!(stdin, prompt);
         let response: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(fixture.workspace.join("agent_response.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(response["runtimeStatus"], "succeeded");
         assert_eq!(response["claudeSessionId"], "sess-claude-1");
+        assert_eq!(response["promptDelivery"]["mode"], "stdin_file");
+        assert_eq!(response["promptDelivery"]["promptPath"], CLAUDE_PROMPT_PATH);
+        assert_eq!(
+            response["promptDelivery"]["largeContextVia"],
+            "mcp_resource"
+        );
         assert_eq!(response["structuredOutput"]["runtimeStatus"], "completed");
         assert_eq!(response["usage"]["input_tokens"], 22);
         assert_eq!(response["cost"]["usd"], 0.02);
@@ -840,10 +868,47 @@ JSON
     }
 
     #[tokio::test]
+    async fn claude_code_session_keeps_large_package_out_of_cli_prompt() {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.workspace.join("analysis_package.json"),
+            format!(
+                r#"{{"schemaVersion":2,"payload":"{}"}}"#,
+                "x".repeat(2 * 1024 * 1024)
+            ),
+        )
+        .unwrap();
+        let claude = fixture.write_claude(
+            r#"#!/usr/bin/env bash
+printf '%s\n' "$*" > claude_args.txt
+cat > claude_stdin.txt
+cat <<'JSON'
+{"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"large package summary","symptoms":["timeout"],"likelyRootCauses":[{"cause":"timeout in logs","evidenceRefs":["grep_results.json#matches/0"]}],"nextChecks":["check timeout"],"fixSuggestions":[],"missingInformation":[],"confidence":"low"}}}
+JSON
+"#,
+        );
+
+        let outcome = fixture
+            .registry(claude)
+            .decide_next(fixture.input(AnalysisMode::Diagnose))
+            .await
+            .unwrap();
+
+        assert!(matches!(outcome, ClaudeSessionOutcome::FinalAnswer { .. }));
+        let args = fs::read_to_string(fixture.workspace.join("claude_args.txt")).unwrap();
+        let stdin = fs::read_to_string(fixture.workspace.join("claude_stdin.txt")).unwrap();
+        assert!(args.len() < 16 * 1024);
+        assert!(stdin.len() < 16 * 1024);
+        assert!(stdin.contains("analysis_package"));
+        assert!(!stdin.contains(&"x".repeat(1024)));
+    }
+
+    #[tokio::test]
     async fn claude_code_session_returns_pending_prompt() {
         let fixture = Fixture::new();
         let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
+cat > /dev/null
 cat <<'JSON'
 {"structured_output":{"runtimeStatus":"waiting_for_user","pendingPrompt":{"questionId":"q1","question":"Which version?","reason":"need version","required":true,"answerFormat":"semver"}}}
 JSON
@@ -869,6 +934,7 @@ JSON
         let fixture = Fixture::new();
         let claude = fixture.write_claude(
             r#"#!/usr/bin/env bash
+cat > /dev/null
 cat <<'JSON'
 {"structured_output":{"runtimeStatus":"completed","finalAnswer":{"summary":"bad evidence","symptoms":["timeout"],"likelyRootCauses":[{"cause":"bad","evidenceRefs":["system_context.json#resources/0"]}],"nextChecks":[],"fixSuggestions":[],"missingInformation":[],"confidence":"low"}}}
 JSON
@@ -910,7 +976,11 @@ JSON
             ));
             let workspace = root.join("workspace");
             fs::create_dir_all(&workspace).unwrap();
-            fs::write(workspace.join("analysis_package.json"), "{}").unwrap();
+            fs::write(
+                workspace.join("analysis_package.json"),
+                format!(r#"{{"marker":"{PACKAGE_MARKER}"}}"#),
+            )
+            .unwrap();
             fs::write(workspace.join("claude_mcp_config.json"), "{}").unwrap();
             fs::write(
                 workspace.join("analysis_state.json"),

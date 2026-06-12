@@ -37,7 +37,7 @@
 
 - 已新增 `claude_code` 配置、`mcp` 配置、Claude Code session runner 和 Settings dry-run 诊断。
 - 已新增 `opengemini_influxdb` active adapter，以及 Cassandra/RocksDB skeleton adapter。
-- 已固化 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` session 输入/响应产物。
+- 已固化 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` session 输入/响应产物。
 - 下一步完善 Claude Code usage/cost、session resume、mode-specific native tool policy 和 MCP tool tests。
 - Claude 通过 MCP tools 请求日志、工具、Case、Metadata、用户追问和审批。
 - 安全只读动作自动执行；远程采集默认等待批准。

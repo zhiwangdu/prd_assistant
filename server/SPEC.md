@@ -34,7 +34,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - Settings Domain Adapter 摘要接口：`/api/settings/domain-adapters`
 - 只读 HTTP MCP：`POST /api/mcp/readonly`
 - Skills / Tools 导出下载：`GET /api/exports/skills.zip`、`GET /api/exports/tools.zip`
-- Claude Code session 输入/响应产物：`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
+- Claude Code session 输入/响应产物：`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
 - task artifact 查询
 - metadata 查询和导入确认
 - Skill-backed System Context、Codex-compatible Skill registry、Skill preview、按需 MCP reference 读取和 Metadata adapter
@@ -245,6 +245,7 @@ data_dir/
           stdout.txt
           stderr.txt
       analysis_package.json
+      claude_prompt.md
       claude_mcp_config.json
       claude_session.json
       mcp_calls.jsonl
@@ -319,7 +320,7 @@ background executor
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context、Diagnostic Skills 和 `skill_references/*` 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
+Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。Server 将短启动 prompt 写入 `claude_prompt.md` 并通过 stdin 传给 Claude CLI，完整 `analysis_package.json` 必须通过任务 MCP `analysis_package` resource 读取，避免大 prompt 进入 argv 或 stdin。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context、Diagnostic Skills 和 `skill_references/*` 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
 
 成功的 Log Analysis task 在 `result.json` / `result.md` 写入后，会用最终结果、用户问题、manifest 和 Metadata 摘要调用 LLM Gateway 生成短 `alias`。alias 调用不通过 Analysis State Store 的 LLM call event 回调，不写 `analysis_events.jsonl`，也不追加 Session timeline event。alias schema 错误会重试一次；Provider 或 schema 最终失败时，Server 使用最终 summary 或问题文本生成短标题，不让 core task 因命名失败而失败。
 
@@ -370,10 +371,11 @@ Settings Claude Code 诊断接口保留 `/api/settings/agent-backends` 路径作
 `PLAN_ANALYSIS` 在调用 Claude Code session 前会刷新输入并记录响应：
 
 - `analysis_package.json`：冻结用户问题、任务信息、manifest、grep、Metadata、System Context、Case、Tool results 和 analysis state 摘要。
+- `claude_prompt.md`：短启动 prompt，只包含角色、边界、schema 要求和读取 MCP `analysis_package` resource 的指令。
 - `claude_mcp_config.json`：声明 LogAgent MCP stdio server 命令、task id、analysis mode 和资源入口。
-- `claude_session.json`：记录 Claude session id、analysis mode、permission profile、MCP config path 和最近 response path。
+- `claude_session.json`：记录 Claude session id、analysis mode、permission profile、MCP config path、prompt delivery 和最近 response path。
 - `mcp_calls.jsonl`：追加 MCP resource/tool 调用审计。
-- `agent_response.json`：Claude Code session 实际响应记录，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`structuredOutput`、usage/cost、`durationMs`、MCP call path、native tool policy 和错误信息。
+- `agent_response.json`：Claude Code session 实际响应记录，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、`durationMs`、MCP call path、native tool policy 和错误信息。
 
 这些契约产物不包含密钥，不授权外部后端绕过 Server 执行命令、SSH 或写入 LogAgent 状态。成功任务的 `/api/tasks/:task_id/artifacts` 会返回对应 path 和 JSON 内容。
 

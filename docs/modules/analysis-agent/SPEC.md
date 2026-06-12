@@ -20,7 +20,7 @@
 - 重启恢复到中间 phase 时，如果缺少 analysis state，会按当前 task 生成最小快照继续执行
 - Claude structured outcome / FinalAnswer schema 和 parser
 - Claude Code 配置摘要和 dry-run 诊断
-- `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
+- `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
 - Domain Adapter 内置 registry
 - Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`
 - `request_user_input` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
@@ -49,7 +49,7 @@
 - 追加的 `analysis_events.jsonl`
 - Claude session response artifact 或待 Server 处理的等待 marker
 - 终态时的 `result.json` 和 `result.md`
-- Claude Code session 输入/响应：`analysis_package.json` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`
+- Claude Code session 输入/响应：`analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`
 
 当前 `/analysis` 响应包含：
 

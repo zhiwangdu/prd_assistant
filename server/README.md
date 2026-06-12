@@ -136,7 +136,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP tools 请求日志检索、日志切片、领域工具、Metadata、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP resources/tools 读取完整证据包、请求日志检索、日志切片、领域工具、Metadata、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
 
 ## 运行日志
 
@@ -194,6 +194,7 @@ RUST_LOG=logagent_server=info,tower_http=info
   code_evidence.json
   environment_evidence.json
   analysis_package.json
+  claude_prompt.md
   claude_mcp_config.json
   claude_session.json
   mcp_calls.jsonl
@@ -316,7 +317,7 @@ MVP 要求：
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。完整证据包不再内联到 CLI 参数或 stdin；Claude 通过任务 MCP `analysis_package` resource 读取。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。
 - `PLAN_ANALYSIS` 通过 Claude MCP `logagent.request_user_input` 和 `logagent.request_approval` 进入等待态。真实 SSH/SCP 执行器后续仍替换在 Environment Collector 内，且必须走审批。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 Claude CLI 或 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。
@@ -386,7 +387,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 Claude Code call started/completed、MCP waiting request 和 final result 事件，事件 details 包含 `callId`、`callKind`、`attempt`、analysis mode 和 session id。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext`、`analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls`、`agentResponse` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls` 和 `agentResponse` 分别来自 Claude Code session 输入、MCP 配置、session resume 状态、MCP 调用审计和真实响应文件；`agentResponse` 包含 runtime status、structured output、usage/cost、耗时、native tool policy 和错误；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_events.jsonl`。`PLAN_ANALYSIS` 会写入 Claude Code call started/completed、MCP waiting request 和 final result 事件，事件 details 包含 `callId`、`callKind`、`attempt`、analysis mode 和 session id。`WAITING_FOR_USER` 时 `state.pendingUserPrompts[]` 包含 `questionId`、`question`、`reason`、`required` 和 `answerFormat`；`WAITING_FOR_APPROVAL` 时 `state.pendingApprovals[]` 包含 `actionId`、`actionType`、`reason`、`risk`、`input` 和 `evidenceRefs`。artifacts 响应在成功日志分析任务中包含 `textInput`、`caseContext`、`analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls`、`agentResponse` 和 `toolResults`；`textInput` 来自 `session_text_input.json`，记录任务创建时的用户输入；`caseContext` 来自 `case_context.json`，记录任务创建时召回的历史 Case；`analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls` 和 `agentResponse` 分别来自 Claude Code session 输入、MCP 配置、session resume 状态、MCP 调用审计和真实响应文件；`agentResponse` 包含 runtime status、prompt delivery、structured output、usage/cost、耗时、native tool policy 和错误；`toolResults` 每项来自 `tool_results/<action_id>/result.json`。`toolResults[].findings` 是结构化工具发现，当前包含可选 `severity`、`file`、`line` 和必填 `message`。真实 `influxql_analyzer` findings 由 Report stdout 中的 `special_rules`、`parse_errors`、`realtime_query` 和命中规则的 fingerprint 生成。Tools 运行的 `result` 通过 `/api/tools/runs/:task_id/result` 读取，首版 `pprof_analyzer` 返回 profile type、sample index、total、top 函数表和 top/tree/raw/stderr artifact 路径。
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 

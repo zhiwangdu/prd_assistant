@@ -26,7 +26,7 @@
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已改为调用 Claude Code session runner，并复用本模块的最终结果 evidence ref 校验。
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
 - Claude Code 诊断接口已由 session runner registry 提供，LLM Gateway 不负责 Claude Code runtime。
-- session 输入/响应文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`。
+- session 输入/响应文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`。
 
 ## 当前输入
 

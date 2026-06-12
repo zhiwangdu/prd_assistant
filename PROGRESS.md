@@ -16,8 +16,9 @@ Chrome Extension, WEBUI upload, or WEBUI question-only Session
   -> simple grep evidence
   -> optional rule-based Tool Runner evidence
   -> analysis_state.json / analysis_events.jsonl audit snapshot
-  -> analysis_package.json / claude_mcp_config.json
-  -> Claude Code CLI --print --output-format json --json-schema --mcp-config
+  -> analysis_package.json / claude_prompt.md / claude_mcp_config.json
+  -> Claude Code CLI --print --output-format json --json-schema --mcp-config with short stdin prompt
+  -> Claude reads full evidence package through task MCP analysis_package resource
   -> LogAgent MCP resources/tools for logs, slices, tools, Metadata, Cases, prompts and approvals
   -> claude_session.json / mcp_calls.jsonl / agent_response.json
   -> completed final answer, WAITING_FOR_USER, WAITING_FOR_APPROVAL, or PLAN_ANALYSIS failure
@@ -37,6 +38,15 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Claude CLI Prompt Delivery
+
+- Changed Claude Code session runner prompt delivery from a full prompt argv argument to a short `claude_prompt.md` artifact piped through stdin.
+- Stopped inlining `analysis_package.json` into the Claude startup prompt. Claude now reads the full task evidence package through the task-scoped stdio MCP `analysis_package` resource.
+- Added `promptDelivery` metadata to `claude_session.json` and `agent_response.json`, recording `mode=stdin_file`, `promptPath=claude_prompt.md`, prompt byte size and `largeContextVia=mcp_resource`.
+- Added task MCP `analysis_package` resource backed by workspace `analysis_package.json`; existing permission profiles remain unchanged, so `diagnose` still does not need native file `Read`.
+- Kept Claude CLI as the production backend for this change. Claude Agent SDK remains a later adapter PoC option for SDK streaming/hooks/session runtime needs; it is not required to solve oversized prompt delivery.
+- Verification: `cargo fmt --check`, `cargo check`, focused `cargo test -p logagent-server agent_backend -- --test-threads=1`, focused MCP resource test, `cargo test -p logagent-server -- --test-threads=1`, and workspace `cargo test -- --test-threads=1` pass.
 
 ### Dual Entry: WebUI Analyze + Read-only HTTP MCP
 

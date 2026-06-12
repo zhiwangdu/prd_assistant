@@ -22,6 +22,7 @@ analysis_events.jsonl
 result.json
 result.md
 analysis_package.json
+claude_prompt.md
 claude_mcp_config.json
 claude_session.json
 mcp_calls.jsonl
@@ -102,8 +103,8 @@ LogAgent MCP tools 支持：
 
 已暴露 Settings 摘要、dry-run 诊断和 task workspace session 输入/响应产物。当前 `agent_response.json` 由 Claude Code runner 调用后写入，运行时必须遵守：
 
-- Server 生成 `analysis_package.json` 和 `claude_mcp_config.json`。
-- Claude Code 通过 MCP tools 请求领域能力。
+- Server 生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`。
+- Claude CLI argv/stdin 不能承载完整 `analysis_package.json`；Claude Code 通过 MCP resources/tools 获取证据和请求领域能力。
 - `agent_response.json` 只能表达 completed / waiting outcome。
 - Server 继续负责 MCP tool schema、白名单、预算、幂等、审批和 final evidence ref 校验。
 

@@ -46,7 +46,7 @@ question + session_text_input.json + system_context.json + manifest.json + grep_
 
 Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 Claude Code session runner。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
-`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 由 Analysis Orchestrator 与 Claude Code Session Runner 管理。LLM Gateway 不读取或执行这些 session 输入/响应文件。
+`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 由 Analysis Orchestrator 与 Claude Code Session Runner 管理。LLM Gateway 不读取或执行这些 session 输入/响应文件。
 
 响应解析接受纯 JSON、完整 JSON Markdown 代码围栏，或附带说明文本但只包含一个可解析顶层 JSON object 的响应。如果真实模型直接返回裸最终结果 JSON，或把最终结果多包一层 `result` / `answer` / `finalAnswer`，Gateway 会在兼容恢复路径中规范化为最终结果并继续执行同一套 evidence 校验。多个 JSON object、无 JSON object 或最终结果核心 schema 不合法仍会拒绝。
 

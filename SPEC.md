@@ -118,7 +118,7 @@ Claude Code 通过 LogAgent MCP tools 请求领域能力并返回结构化 sessi
 flowchart TD
     Start["任务已持久化<br/>QUEUED"] --> Initial["基础采集 / 解压 / 初始搜索"]
     Initial --> Running["RUNNING<br/>加载 analysis state 与 evidence"]
-    Running --> Package["生成 analysis_package.json<br/>claude_mcp_config.json"]
+    Running --> Package["生成 analysis_package.json<br/>claude_prompt.md<br/>claude_mcp_config.json"]
     Package --> Claude["Claude Code session<br/>MCP resources/tools"]
     Claude --> Mcp["LogAgent MCP<br/>写入 mcp_calls / evidence artifacts"]
     Mcp --> Claude
@@ -166,7 +166,7 @@ flowchart TD
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 的 Claude Code session 调用会记录 callId、attempt、session artifact 和完成事件。
-- Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI 并写出 `claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误。
+- Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后用短 stdin prompt 调用 Claude Code CLI，并由 Claude 通过任务 MCP `analysis_package` resource 读取完整证据包；`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` 记录 session、MCP 调用和响应。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误。
 - Analysis Orchestrator 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Orchestrator 已支持 Claude MCP `request_approval` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；真实 SSH/SCP 采集后续接入 Environment Collector。
 - Memory MVP 已支持 `memoryType=case`、兼容 Case schema v2 API、成功任务人工确认、LLM-assisted 文本导入手工 Case、SQLite/FTS 本地索引、legacy JSON 启动导入、关键词 fallback 召回和禁用。
