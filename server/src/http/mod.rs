@@ -15,6 +15,7 @@ mod health;
 mod metadata;
 mod sessions;
 mod settings;
+mod skills;
 mod system_context;
 mod tasks;
 mod tools;
@@ -129,6 +130,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/settings/domain-adapters",
             get(settings::domain_adapters),
         )
+        .route("/api/skills", get(skills::list_skills))
+        .route("/api/skills/preview", post(skills::preview_skills))
+        .route("/api/skills/:skill_id", get(skills::get_skill))
         .route(
             "/api/system-context/resources",
             get(system_context::list_resources).post(system_context::create_resource),

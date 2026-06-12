@@ -13,10 +13,12 @@ use tracing::{info, warn};
 use crate::{
     domain::{
         contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
-        models::{GrepResults, TaskRecord},
+        models::{GrepResults, SystemContextBundle, TaskRecord},
     },
     pipeline::{read_tool_results, search_task_with_settings},
-    services::{agent_contracts::write_json_atomic, tool_runner::ToolRunner},
+    services::{
+        agent_contracts::write_json_atomic, skill_registry::SkillRegistry, tool_runner::ToolRunner,
+    },
     stores::{analysis_state, case_store::CaseStore, task_store::TaskStore},
     support::{
         config::{AnalysisMode, AppConfig, LogAnalyzerSettings},
@@ -37,6 +39,7 @@ pub async fn run_stdio(
         .get(&task_id)
         .await
         .ok_or_else(|| anyhow::anyhow!("unknown taskId {task_id}"))?;
+    let skills = SkillRegistry::load(config.skills.clone())?;
     let workspace = config.storage.workspace_dir(&task_id);
     tokio::fs::create_dir_all(&workspace).await?;
     info!(
@@ -90,7 +93,7 @@ pub async fn run_stdio(
                     .pointer("/params/arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
-                call_tool(&config, &workspace, &task, mode, name, arguments).await
+                call_tool(&config, &skills, &workspace, &task, mode, name, arguments).await
             }
             "prompts/list" => Ok(json!({ "prompts": [] })),
             _ => Err(anyhow::anyhow!("unsupported MCP method {method}")),
@@ -334,6 +337,19 @@ fn tools_list_result() -> serde_json::Value {
                 "inputSchema": { "type": "object", "properties": {} }
             },
             {
+                "name": "logagent.get_skill_reference",
+                "description": "Read one reference declared by a diagnostic skill selected for this task. Returned refs are background only.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "skillId": { "type": "string" },
+                        "referenceId": { "type": "string" },
+                        "path": { "type": "string" }
+                    },
+                    "required": ["skillId"]
+                }
+            },
+            {
                 "name": "logagent.request_user_input",
                 "description": "Persist a request for user input for this task.",
                 "inputSchema": {
@@ -367,6 +383,7 @@ fn tools_list_result() -> serde_json::Value {
 
 async fn call_tool(
     config: &Arc<AppConfig>,
+    skills: &SkillRegistry,
     workspace: &Path,
     task: &TaskRecord,
     _mode: AnalysisMode,
@@ -386,6 +403,9 @@ async fn call_tool(
         }
         "logagent.get_metadata_topology" => {
             read_json_resource(workspace, "metadata_context").await?
+        }
+        "logagent.get_skill_reference" => {
+            get_skill_reference_tool(skills, workspace, arguments.clone()).await?
         }
         "logagent.request_user_input" => {
             waiting_marker_tool(workspace, "waiting_for_user", arguments.clone()).await?
@@ -573,6 +593,63 @@ async fn recall_cases_tool(
     }))
 }
 
+async fn get_skill_reference_tool(
+    skills: &SkillRegistry,
+    workspace: &Path,
+    arguments: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let skill_id = required_string(&arguments, "skillId")?;
+    let reference_id = optional_string(&arguments, "referenceId");
+    let reference_path = optional_string(&arguments, "path");
+    let bundle = read_json_resource(workspace, "system_context").await?;
+    let bundle: SystemContextBundle = serde_json::from_value(bundle)?;
+    let reference = skills
+        .read_reference_from_snapshot(
+            &bundle,
+            &skill_id,
+            reference_id.as_deref(),
+            reference_path.as_deref(),
+        )
+        .await?;
+    let selected_skill_id = reference.skill_id;
+    let selected_revision = reference.skill_revision;
+    let reference_summary = reference.reference;
+    let content = reference.content;
+    let truncated = reference.truncated;
+    let stable = stable_json_hash(&json!({
+        "skillId": selected_skill_id.clone(),
+        "revision": selected_revision.clone(),
+        "path": reference_summary.path.clone(),
+    }));
+    let artifact_path = format!("skill_references/skill_ref_{stable:016x}.json");
+    tokio::fs::create_dir_all(workspace.join("skill_references")).await?;
+    let background_ref = format!("{artifact_path}#content");
+    let artifact = json!({
+        "schemaVersion": 1,
+        "skillId": selected_skill_id,
+        "skillRevision": selected_revision,
+        "referenceId": reference_summary.reference_id,
+        "path": reference_summary.path,
+        "title": reference_summary.title,
+        "summary": reference_summary.summary,
+        "content": content,
+        "truncated": truncated,
+        "canonicalRef": background_ref,
+        "finalEvidenceAllowed": false,
+        "createdAt": Utc::now(),
+    });
+    write_json_atomic(workspace.join(&artifact_path), &artifact).await?;
+    Ok(json!({
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "evidenceRefs": [background_ref],
+        "finalEvidenceAllowed": false,
+        "title": artifact["title"],
+        "summary": artifact["summary"],
+        "truncated": artifact["truncated"],
+    }))
+}
+
 async fn waiting_marker_tool(
     workspace: &Path,
     status: &str,
@@ -633,6 +710,15 @@ fn required_string(arguments: &serde_json::Value, key: &str) -> anyhow::Result<S
         .ok_or_else(|| anyhow::anyhow!("{key} is required"))
 }
 
+fn optional_string(arguments: &serde_json::Value, key: &str) -> Option<String> {
+    arguments
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
 fn string_array_arg(arguments: &serde_json::Value, key: &str) -> anyhow::Result<Vec<String>> {
     let values = arguments
         .get(key)
@@ -675,4 +761,117 @@ fn stable_json_hash(value: &serde_json::Value) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     encoded.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        domain::models::TaskKind, services::skill_registry::ResolveSkillsInput,
+        stores::system_context_store::system_context_bundle, support::config::SkillSettings,
+    };
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "logagent-mcp-{name}-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ))
+    }
+
+    #[tokio::test]
+    async fn skill_reference_tool_writes_background_artifact_and_rejects_bad_refs() {
+        let root = temp_dir("skills");
+        let workspace = temp_dir("workspace");
+        let skill_dir = root.join("opengemini-diagnosis");
+        std::fs::create_dir_all(skill_dir.join("references")).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: openGemini Diagnosis\ndescription: Diagnose openGemini.\n---\nUse task evidence first.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("references/topology.md"),
+            "Topology reference content.",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("logagent.json"),
+            r#"{"schemaVersion":1,"skillId":"opengemini-diagnosis","products":["opengemini"],"taskKinds":["log_analysis"],"includeByDefault":true,"references":[{"path":"references/topology.md","title":"Topology","summary":"Topology rules"}]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let registry = SkillRegistry::load(SkillSettings {
+            enabled: true,
+            roots: vec![root.clone()],
+            max_skill_chars: 4000,
+            max_reference_chars: 20_000,
+        })
+        .unwrap();
+        let resources = registry
+            .resolve_items(ResolveSkillsInput {
+                explicit_skill_ids: &["opengemini-diagnosis".to_string()],
+                task_kind: TaskKind::LogAnalysis,
+                product: None,
+                version: None,
+                environment: None,
+            })
+            .unwrap();
+        write_json_atomic(
+            workspace.join("system_context.json"),
+            &system_context_bundle(resources),
+        )
+        .await
+        .unwrap();
+
+        let result = get_skill_reference_tool(
+            &registry,
+            &workspace,
+            json!({
+                "skillId": "opengemini-diagnosis",
+                "path": "references/topology.md"
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["finalEvidenceAllowed"], false);
+        let artifact_path = result["artifactPath"].as_str().unwrap();
+        assert!(artifact_path.starts_with("skill_references/skill_ref_"));
+        assert_eq!(result["backgroundRef"], format!("{artifact_path}#content"));
+        let artifact: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(workspace.join(artifact_path)).unwrap())
+                .unwrap();
+        assert_eq!(artifact["content"], "Topology reference content.");
+        assert_eq!(artifact["finalEvidenceAllowed"], false);
+
+        let bad_path = get_skill_reference_tool(
+            &registry,
+            &workspace,
+            json!({
+                "skillId": "opengemini-diagnosis",
+                "path": "../secret.md"
+            }),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(bad_path.contains("workspace-relative without traversal"));
+
+        let undeclared = get_skill_reference_tool(
+            &registry,
+            &workspace,
+            json!({
+                "skillId": "opengemini-diagnosis",
+                "path": "references/missing.md"
+            }),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(undeclared.contains("not declared"));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
 }

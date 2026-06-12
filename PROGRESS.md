@@ -38,6 +38,20 @@ WEBUI Tools
 
 ## Implemented
 
+### Skill-backed System Context
+
+- Reworked System Context semantics from editable long-lived Prompt Pack/Runbook/Architecture resources into task-level Skill-backed background snapshots.
+- Added Server `SkillRegistry` with `skills` config (`enabled`, `roots`, `max_skill_chars`, `max_reference_chars`), defaulting to repository `skills/`.
+- Added Codex-compatible initial Skills: `opengemini-diagnosis`, `influxql-analysis`, and `pprof-diagnosis`, each with `SKILL.md`, optional `logagent.json`, and declared `references/`.
+- Added protected Skills APIs: `GET /api/skills`, `GET /api/skills/:skill_id`, and `POST /api/skills/preview`.
+- Added `AnalysisSessionRecord.skillIds`; `systemContextIds` remains deserializable for old Sessions but no longer injects old non-Metadata resources into new tasks.
+- Log Analysis task creation now writes `system_context.json` schema v2 containing selected/auto-matched `diagnostic_skill` items plus Metadata adapter summaries.
+- Added MCP `logagent.get_skill_reference`, restricted to references declared by Skills already snapshotted in the current task; reads write `skill_references/<stable_id>.json` background artifacts.
+- Final result evidence validation now explicitly rejects `system_context.json`, `diagnostic_skill`, and `skill_references/*` as root-cause evidence refs.
+- WebUI `System Context` page now has `Skills` and `Metadata` tabs; Log Analysis draft uses a Skill picker backed by `/api/skills` and persists `skillIds`.
+- Updated root, Server, WebUI, System Context, Config, and new Skills docs, plus example configs.
+- Verification: `cargo fmt --check`, `cargo check`, `cargo test -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build` pass. Added focused Rust coverage for task Skill snapshots and MCP Skill reference artifacts. Local smoke with `examples/server-test.yaml` returned HTTP 200 for `/`, listed the three initial Skills from `/api/skills`, and previewed selected plus auto-matched Skills via `/api/skills/preview`.
+
 ### Server Observability
 
 - Added default Server tracing when `RUST_LOG` is unset: `logagent_server=info,tower_http=info`, with logs written to stderr so MCP stdio stdout remains JSON-RPC only.
@@ -151,7 +165,7 @@ WEBUI Tools
 - Updated `deploy/logagentctl.sh` and `deploy/rebuild-install.sh` to pre-create expected runtime data directories, including `data/memory`, `data/cases`, and `data/case_imports`, without deleting existing data.
 - Updated deploy README and deployment module docs to document `data/memory/memory.sqlite`, legacy Case JSON rollback files, and the current WebUI navigation.
 
-### System Context
+### Legacy System Context (superseded by Skill-backed System Context)
 
 - Added Server `SystemContextStore`, persisted under `storage.data_dir/system_context/resources`, for versioned Prompt Pack, Architecture Doc, Runbook, Glossary, Tool Capability and Knowledge Note resources.
 - Added protected System Context API: list/create/get/patch resources, add/patch/activate versions, and prompt preview.
@@ -161,6 +175,8 @@ WEBUI Tools
 - LLM Gateway now injects System Context as background reference for both final-result generation and action decisions; System Context cannot be used as final result evidence refs.
 - WebUI now has a top-level `System Context` page with resource library, version management, Prompt preview, Architecture Mermaid source preview and embedded Metadata tab; Log Analysis Session draft can select System Context resources and displays the frozen snapshot after a run.
 - Verification: `cargo fmt --check`, `cargo check`, `cargo test`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build` pass.
+
+This behavior is retained only for legacy data/API compatibility. New tasks and the current WebUI use the Skill-backed System Context flow documented above.
 
 ### Runtime Deploy Template
 

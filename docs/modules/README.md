@@ -19,5 +19,6 @@
 | Metadata | [README](./metadata/README.md) | [SPEC](./metadata/SPEC.md) |
 | Roadmap | [README](./roadmap/README.md) | [SPEC](./roadmap/SPEC.md) |
 | Security | [README](./security/README.md) | [SPEC](./security/SPEC.md) |
+| Skills | [README](./skills/README.md) | [SPEC](./skills/SPEC.md) |
 | System Context | [README](./system-context/README.md) | [SPEC](./system-context/SPEC.md) |
 | Tool Runner | [README](./tool-runner/README.md) | [SPEC](./tool-runner/SPEC.md) |

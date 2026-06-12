@@ -12,6 +12,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `llm`
 - `embedding`
 - `log_analyzer`
+- `skills`
 - `tools`
 - `claude_code`
 - `mcp`
@@ -43,6 +44,13 @@ storage:
   data_dir: "${LOGAGENT_APP_DIR}/data"
   max_upload_bytes: 2147483648
   max_files_per_task: 20
+
+skills:
+  enabled: true
+  roots:
+    - skills
+  max_skill_chars: 4000
+  max_reference_chars: 20000
 
 llm:
   provider: "openai_compatible"
@@ -187,6 +195,8 @@ metadata:
 - `claude_code.default_mode` 支持 `diagnose`、`code_investigation` 和 `fix`，默认 `diagnose`。
 - `claude_code.permission_profiles` 可覆盖各模式的 `permission_mode`、native tools、allowed/disallowed tools 和 worktree 要求。
 - `mcp.enabled` 默认 true，`mcp.transport` 当前只支持 `stdio`。
+- `skills.enabled` 默认 true，`skills.roots` 默认 `skills`；相对路径优先按配置文件目录解析，目录不存在时回退到当前工作目录。
+- `skills.max_skill_chars` 控制写入 `system_context.json` 的 SKILL.md 注入片段上限，`skills.max_reference_chars` 控制 MCP 按需读取 reference 的正文上限。
 - 当前 `PLAN_ANALYSIS` 只检查 session 轮数和 Claude 调用次数预算；日志搜索和领域工具执行由 Claude Code 通过 LogAgent MCP tools 请求并由 Server 持久化。
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。

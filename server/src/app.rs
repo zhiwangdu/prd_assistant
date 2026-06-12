@@ -5,7 +5,8 @@ use crate::{
     pipeline::executor::TaskExecutor,
     services::{
         agent_backend::AgentBackendRegistry, domain_adapters::DomainAdapterRegistry,
-        llm_gateway::LlmGateway, metadata::MetadataStore, tool_runner::ToolRunner,
+        llm_gateway::LlmGateway, metadata::MetadataStore, skill_registry::SkillRegistry,
+        tool_runner::ToolRunner,
     },
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
@@ -23,6 +24,7 @@ pub struct AppState {
     pub cases: CaseStore,
     pub case_imports: CaseImportStore,
     pub system_context: SystemContextStore,
+    pub skills: SkillRegistry,
     pub sessions: AnalysisSessionStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
@@ -47,6 +49,7 @@ impl AppState {
         )?;
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
+        let skills = SkillRegistry::load(config.skills.clone())?;
         let sessions = AnalysisSessionStore::load(
             config.storage.sessions_dir(),
             config.storage.session_workspaces_dir(),
@@ -56,6 +59,7 @@ impl AppState {
             cases,
             case_imports,
             system_context,
+            skills,
             sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             llm: LlmGateway::new(config.llm.clone())?,

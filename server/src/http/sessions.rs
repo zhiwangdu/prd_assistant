@@ -15,7 +15,10 @@ use crate::{
         AttachSessionUploadsRequest, CreateAnalysisSessionRequest, PatchAnalysisSessionRequest,
         SessionTimelineEvent, SessionTimelineResponse, TaskResponse, UploadStatus,
     },
-    http::tasks::{create_log_analysis_task, CreateLogAnalysisTaskInput},
+    http::{
+        skills::normalize_skill_ids,
+        tasks::{create_log_analysis_task, CreateLogAnalysisTaskInput},
+    },
     stores::{analysis_state, session_store::validate_session_id},
     support::{error::AppError, id::next_id},
 };
@@ -37,6 +40,7 @@ pub async fn create_session(
         instance_id: normalize_optional(req.instance_id),
         node_id: normalize_optional(req.node_id),
         system_context_ids: normalize_context_ids(req.system_context_ids)?,
+        skill_ids: normalize_skill_ids(req.skill_ids)?,
         upload_ids: Vec::new(),
         task_ids: Vec::new(),
         active_task_id: None,
@@ -53,6 +57,7 @@ pub async fn create_session(
         session_id = %record.session_id,
         question_chars = record.question.chars().count(),
         system_context_count = record.system_context_ids.len(),
+        skill_count = record.skill_ids.len(),
         "analysis session created"
     );
     Ok((StatusCode::CREATED, Json(record)))
@@ -135,6 +140,9 @@ pub async fn patch_session(
                 if let Some(system_context_ids) = req.system_context_ids {
                     session.system_context_ids = normalize_context_ids(system_context_ids)?;
                 }
+                if let Some(skill_ids) = req.skill_ids {
+                    session.skill_ids = normalize_skill_ids(skill_ids)?;
+                }
                 if let Some(status) = status {
                     session.status = status;
                 }
@@ -142,7 +150,7 @@ pub async fn patch_session(
             },
             "session_updated",
             "session draft updated".to_string(),
-            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/systemContextIds/status" }),
+            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/systemContextIds/skillIds/status" }),
         )
         .await
         .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
@@ -151,6 +159,7 @@ pub async fn patch_session(
         status = ?updated.status,
         upload_count = updated.upload_ids.len(),
         system_context_count = updated.system_context_ids.len(),
+        skill_count = updated.skill_ids.len(),
         "analysis session updated"
     );
     Ok(Json(updated))
@@ -234,7 +243,7 @@ pub async fn create_session_task(
             cluster_id: None,
             node_id: session.node_id.clone(),
             analysis_mode: state.config.claude_code.default_mode,
-            system_context_ids: session.system_context_ids.clone(),
+            skill_ids: session.skill_ids.clone(),
         },
     )
     .await?;

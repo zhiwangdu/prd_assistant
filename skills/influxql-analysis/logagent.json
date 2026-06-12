@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "skillId": "influxql-analysis",
+  "displayName": "InfluxQL analyzer guidance",
+  "products": ["opengemini", "influxdb"],
+  "domainAdapters": ["opengemini_influxdb"],
+  "toolIds": ["influxql_analyzer"],
+  "taskKinds": ["log_analysis"],
+  "includeByDefault": true,
+  "priority": 60,
+  "maxPromptChars": 2200,
+  "references": [
+    {
+      "path": "references/findings.md",
+      "title": "InfluxQL analyzer findings",
+      "summary": "How to interpret analyzer finding severity, JSONL input, and compare-mode deltas."
+    }
+  ]
+}

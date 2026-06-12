@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub server: ServerSettings,
     pub auth: AuthSettings,
     pub storage: StorageSettings,
+    pub skills: SkillSettings,
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
     pub llm: LlmSettings,
@@ -36,6 +37,14 @@ pub struct StorageSettings {
     pub data_dir: PathBuf,
     pub max_upload_bytes: u64,
     pub max_chunk_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkillSettings {
+    pub enabled: bool,
+    pub roots: Vec<PathBuf>,
+    pub max_skill_chars: usize,
+    pub max_reference_chars: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +212,7 @@ struct ConfigFile {
     server: Option<ServerConfig>,
     auth: Option<AuthConfig>,
     storage: Option<StorageConfig>,
+    skills: Option<SkillConfig>,
     log_analyzer: Option<LogAnalyzerConfig>,
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
@@ -244,6 +254,18 @@ struct StorageConfig {
     max_upload_bytes: u64,
     #[serde(default = "default_max_chunk_bytes")]
     max_chunk_bytes: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SkillConfig {
+    #[serde(default = "default_skills_enabled")]
+    enabled: bool,
+    #[serde(default = "default_skill_roots")]
+    roots: Vec<PathBuf>,
+    #[serde(default = "default_max_skill_chars")]
+    max_skill_chars: usize,
+    #[serde(default = "default_max_reference_chars")]
+    max_reference_chars: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -450,6 +472,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             server: None,
             auth: None,
             storage: None,
+            skills: None,
             log_analyzer: None,
             tools: BTreeMap::new(),
             llm: None,
@@ -465,6 +488,19 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     let server = parsed.server.unwrap_or_else(default_server_config);
     let auth = parsed.auth.unwrap_or_else(default_auth_config);
     let storage = parsed.storage.unwrap_or_else(default_storage_config);
+    let config_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let config_dir = config_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let skills = resolve_skills(
+        parsed.skills.unwrap_or_else(default_skill_config),
+        &config_dir,
+    )?;
     let analyzer = parsed
         .log_analyzer
         .unwrap_or_else(default_log_analyzer_config);
@@ -522,12 +558,6 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         LlmProvider::Binary => (None, None, Some(resolve_llm_binary_path(&llm)?)),
     };
 
-    let config_path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-
     Ok(Arc::new(AppConfig {
         config_path,
         server: ServerSettings {
@@ -541,6 +571,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_upload_bytes: storage.max_upload_bytes,
             max_chunk_bytes: storage.max_chunk_bytes,
         },
+        skills,
         log_analyzer: LogAnalyzerSettings {
             keywords: analyzer
                 .keywords
@@ -713,6 +744,32 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
     Ok(ToolsSettings { tools })
 }
 
+fn resolve_skills(raw: SkillConfig, config_dir: &std::path::Path) -> anyhow::Result<SkillSettings> {
+    let mut roots = Vec::new();
+    for root in raw.roots {
+        let root = expand_path_env_vars(root)?;
+        let root = if root.is_absolute() {
+            root
+        } else {
+            let config_relative = config_dir.join(&root);
+            if config_relative.exists() {
+                config_relative
+            } else {
+                std::env::current_dir()?.join(root)
+            }
+        };
+        if !roots.iter().any(|existing| existing == &root) {
+            roots.push(root);
+        }
+    }
+    Ok(SkillSettings {
+        enabled: raw.enabled,
+        roots,
+        max_skill_chars: raw.max_skill_chars.clamp(200, 40_000),
+        max_reference_chars: raw.max_reference_chars.clamp(200, 80_000),
+    })
+}
+
 fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
     if let Some(path) = &tool.path {
         return Ok(path.clone());
@@ -820,6 +877,15 @@ fn default_storage_config() -> StorageConfig {
         data_dir: default_data_dir(),
         max_upload_bytes: default_max_upload_bytes(),
         max_chunk_bytes: default_max_chunk_bytes(),
+    }
+}
+
+fn default_skill_config() -> SkillConfig {
+    SkillConfig {
+        enabled: default_skills_enabled(),
+        roots: default_skill_roots(),
+        max_skill_chars: default_max_skill_chars(),
+        max_reference_chars: default_max_reference_chars(),
     }
 }
 
@@ -1005,6 +1071,22 @@ fn default_max_upload_bytes() -> u64 {
 
 fn default_max_chunk_bytes() -> u64 {
     512 * 1024
+}
+
+fn default_skills_enabled() -> bool {
+    true
+}
+
+fn default_skill_roots() -> Vec<PathBuf> {
+    vec![PathBuf::from("skills")]
+}
+
+fn default_max_skill_chars() -> usize {
+    4000
+}
+
+fn default_max_reference_chars() -> usize {
+    20_000
 }
 
 fn default_max_matches() -> usize {

@@ -54,6 +54,7 @@ impl SystemContextStore {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn list(&self) -> Vec<SystemContextResource> {
         let mut resources = self
             .inner
@@ -338,7 +339,7 @@ impl SystemContextStore {
 
 pub fn system_context_bundle(items: Vec<SystemContextBundleItem>) -> SystemContextBundle {
     SystemContextBundle {
-        schema_version: 1,
+        schema_version: 2,
         resolved_at: Utc::now(),
         resources: items,
     }
@@ -383,6 +384,11 @@ pub fn metadata_adapter_item(
         source: "metadata_adapter".to_string(),
         prompt_priority: 50,
         prompt_chars: 4000,
+        skill_id: None,
+        revision: None,
+        source_root: None,
+        source_path: None,
+        references: Vec::new(),
     }
 }
 
@@ -472,6 +478,11 @@ fn bundle_item(
         source: source.to_string(),
         prompt_priority: version.prompt_policy.priority,
         prompt_chars: version.prompt_policy.max_chars,
+        skill_id: None,
+        revision: None,
+        source_root: None,
+        source_path: None,
+        references: Vec::new(),
     }
 }
 
@@ -508,6 +519,7 @@ fn optional_filter_matches(filter: Option<&str>, value: Option<&str>) -> bool {
     })
 }
 
+#[allow(dead_code)]
 pub fn resource_summaries_with_source(
     resources: Vec<SystemContextResource>,
     source: &'static str,
@@ -586,6 +598,7 @@ fn context_kind_label(kind: SystemContextKind) -> &'static str {
         SystemContextKind::ToolCapability => "tool_capability",
         SystemContextKind::MetadataInstance => "metadata_instance",
         SystemContextKind::KnowledgeNote => "knowledge_note",
+        SystemContextKind::DiagnosticSkill => "diagnostic_skill",
     }
 }
 

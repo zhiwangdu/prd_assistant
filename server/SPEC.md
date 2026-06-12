@@ -35,7 +35,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - Claude Code session 输入/响应产物：`analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
 - task artifact 查询
 - metadata 查询和导入确认
-- System Context 资源管理、版本化 Prompt Pack、架构文档和 Prompt preview
+- Skill-backed System Context、Codex-compatible Skill registry、Skill preview、按需 MCP reference 读取和 Metadata adapter
 - Memory SQLite store、Case Store schema v2 兼容 API、legacy JSON 启动导入、FTS/BM25 + 关键词 fallback 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
 - Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
 - upload pipeline
@@ -102,6 +102,9 @@ POST /api/settings/llm/chat
 GET /api/settings/agent-backends
 POST /api/settings/agent-backends/:backend_id/test
 GET /api/settings/domain-adapters
+GET /api/skills
+GET /api/skills/:skill_id
+POST /api/skills/preview
 GET /api/system-context/resources
 POST /api/system-context/resources
 GET /api/system-context/resources/:context_id
@@ -174,6 +177,8 @@ data_dir/
       grep_results.json
       metadata_context.json
       system_context.json
+      skill_references/
+        skill_ref_xxx.json
       tool_results/
         act_tool_xxx/
           result.json
@@ -209,7 +214,7 @@ storage.data_dir/uploads/<upload_id>/<filename>
 
 ## 当前任务模型与 Pipeline
 
-`AnalysisSessionRecord` 包含 `schemaVersion`、`sessionId`、`title`、`question`、`sourceUrl`、`instanceId`、`nodeId`、`systemContextIds`、`uploadIds`、`taskIds`、`activeTaskId`、`status` 和 RFC 3339 时间。Session status 使用 `draft`、`ready`、`running`、`waiting_for_user`、`waiting_for_approval`、`succeeded`、`failed`。
+`AnalysisSessionRecord` 包含 `schemaVersion`、`sessionId`、`title`、`question`、`sourceUrl`、`instanceId`、`nodeId`、兼容保留的 `systemContextIds`、新的 `skillIds`、`uploadIds`、`taskIds`、`activeTaskId`、`status` 和 RFC 3339 时间。Session status 使用 `draft`、`ready`、`running`、`waiting_for_user`、`waiting_for_approval`、`succeeded`、`failed`。
 
 `TaskRecord` 包含 `schemaVersion`、`taskKind`、任务 ID、可选 `alias`、`sessionId`、来源/上传 ID、raw 输入、来源 URL、用户问题、解析后的 instance/cluster/node ID、工具 ID/参数/结果路径、状态、阶段、attempts、错误、metadata/system context/artifact/result 路径和 RFC 3339 时间。`log_analysis` task 必须绑定 Session；`tool_run` task 不绑定 Session。
 
@@ -248,13 +253,13 @@ background executor
 
 `tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
-`POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `systemContextIds` and enabled matching resources are resolved when the task is created, written to `system_context.json`, and exposed through artifacts.
+`POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 
 `GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, text-only input recording, task creation, Metadata context summary, System Context resource count, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, Agent backend calls, model decisions, ask_user, approval, environment evidence and final result events.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
+Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context、Diagnostic Skills 和 `skill_references/*` 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
 
 成功的 Log Analysis task 在 `result.json` / `result.md` 写入后，会用最终结果、用户问题、manifest 和 Metadata 摘要调用 LLM Gateway 生成短 `alias`。alias 调用不通过 Analysis State Store 的 LLM call event 回调，不写 `analysis_events.jsonl`，也不追加 Session timeline event。alias schema 错误会重试一次；Provider 或 schema 最终失败时，Server 使用最终 summary 或问题文本生成短标题，不让 core task 因命名失败而失败。
 

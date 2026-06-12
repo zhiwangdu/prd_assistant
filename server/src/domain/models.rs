@@ -76,6 +76,8 @@ pub struct CreateTaskRequest {
     pub analysis_mode: Option<AnalysisMode>,
     #[serde(default)]
     pub system_context_ids: Vec<String>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -370,6 +372,8 @@ pub struct AnalysisSessionRecord {
     pub node_id: Option<String>,
     #[serde(default)]
     pub system_context_ids: Vec<String>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
     pub upload_ids: Vec<String>,
     pub task_ids: Vec<String>,
     pub active_task_id: Option<String>,
@@ -387,6 +391,7 @@ impl AnalysisSessionRecord {
             instance_id: self.instance_id.clone(),
             node_id: self.node_id.clone(),
             system_context_count: self.system_context_ids.len(),
+            skill_count: self.skill_ids.len(),
             upload_count: self.upload_ids.len(),
             task_count: self.task_ids.len(),
             active_task_id: self.active_task_id.clone(),
@@ -406,6 +411,7 @@ pub struct AnalysisSessionSummary {
     pub instance_id: Option<String>,
     pub node_id: Option<String>,
     pub system_context_count: usize,
+    pub skill_count: usize,
     pub upload_count: usize,
     pub task_count: usize,
     pub active_task_id: Option<String>,
@@ -430,6 +436,8 @@ pub struct CreateAnalysisSessionRequest {
     pub node_id: Option<String>,
     #[serde(default)]
     pub system_context_ids: Vec<String>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -445,6 +453,8 @@ pub struct PatchAnalysisSessionRequest {
     pub node_id: Option<Option<String>>,
     #[serde(default)]
     pub system_context_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub skill_ids: Option<Vec<String>>,
     pub status: Option<AnalysisSessionStatus>,
 }
 
@@ -458,6 +468,7 @@ pub enum SystemContextKind {
     ToolCapability,
     MetadataInstance,
     KnowledgeNote,
+    DiagnosticSkill,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -579,6 +590,7 @@ impl SystemContextResource {
             })
     }
 
+    #[allow(dead_code)]
     pub fn summary(&self, source: &'static str) -> SystemContextResourceSummary {
         let active = self.active_version();
         SystemContextResourceSummary {
@@ -726,6 +738,16 @@ pub struct SystemContextBundleItem {
     pub source: String,
     pub prompt_priority: i32,
     pub prompt_chars: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<SkillReferenceSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -733,6 +755,15 @@ pub struct SystemContextBundleItem {
 pub struct SystemContextPreviewResponse {
     pub resources: Vec<SystemContextBundleItem>,
     pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillReferenceSummary {
+    pub reference_id: String,
+    pub path: String,
+    pub title: String,
+    pub summary: String,
 }
 
 #[derive(Debug, Deserialize)]

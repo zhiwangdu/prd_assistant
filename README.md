@@ -32,7 +32,7 @@ Rust -> C/C++ -> Go/Python/Java 等
     v
 基础证据提取
   - rg 日志检索
-  - System Context 背景资源
+  - Skill-backed System Context 背景资源
   - 实例和集群元数据
   - 外部工具调用
   - 对应版本代码检索
@@ -80,7 +80,7 @@ flowchart LR
 
         subgraph Evidence["受控证据能力"]
             Domains["Domain Adapters<br/>openGemini/InfluxDB、Cassandra、RocksDB"]
-            SysCtx["System Context<br/>Prompt、架构、Runbook、Metadata adapter"]
+            SysCtx["System Context<br/>Diagnostic Skills、Metadata adapter"]
             Log["Log Analyzer"]
             Tool["Tool Runner"]
             Code["Code Evidence"]
@@ -139,7 +139,7 @@ flowchart LR
 - `LOGAGENT_CLAUDE_CODE_PATH` 是默认 Claude Code CLI 路径来源。Log Analysis run 会写出 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 Claude session 语义的 `agent_response.json`。未配置或调用失败时任务失败，不自动 fallback。
 - Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
-- Log Analysis run 会固化 `system_context.json`，把已启用的 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 不能替代当前任务证据。
+- Log Analysis run 会固化 `system_context.json`，把已选择或自动匹配的 Diagnostic Skills 和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 和 Skill reference 不能替代当前任务证据。
 - 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
 - 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
 - WebUI 可实时展示 Task execution、Claude Code session、MCP calls 和 evidence artifact；LLM response content 日志只能通过顶部 debug 开关手动开启。
@@ -154,7 +154,7 @@ flowchart LR
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
 | [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
 | [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、内部能力和 API | [SPEC](./server/SPEC.md) |
-| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
+| [webui](./webui/README.md) | Vite WebUI、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
@@ -169,6 +169,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 | Tool Runner | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
 | Domain Adapters | [README](./docs/modules/domain-adapters/README.md) / [SPEC](./docs/modules/domain-adapters/SPEC.md) |
 | Metadata | [README](./docs/modules/metadata/README.md) / [SPEC](./docs/modules/metadata/SPEC.md) |
+| Skills | [README](./docs/modules/skills/README.md) / [SPEC](./docs/modules/skills/SPEC.md) |
 | System Context | [README](./docs/modules/system-context/README.md) / [SPEC](./docs/modules/system-context/SPEC.md) |
 | Analysis Agent | [README](./docs/modules/analysis-agent/README.md) / [SPEC](./docs/modules/analysis-agent/SPEC.md) |
 | LLM Gateway | [README](./docs/modules/llm-gateway/README.md) / [SPEC](./docs/modules/llm-gateway/SPEC.md) |
@@ -197,7 +198,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、Metadata、Case recall、用户追问和审批；Server 继续负责白名单、审批、证据持久化和最终 evidence ref 校验。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、Metadata、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、审批、证据持久化和最终 evidence ref 校验。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已先接入 `pprof_analyzer` 示例工具，通过配置中的 Go 可执行文件运行 `go tool pprof`。
 
 Code Investigation 和 Fix 模式的真实代码 worktree、以及真实 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前远程采集仍通过 LogAgent approval gate 进入等待态。
 

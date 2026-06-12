@@ -470,7 +470,7 @@ async fn build_claude_code_prompt(
     Ok(format!(
         r#"You are Claude Code running as the LogAgent domain diagnostic enhancement layer.
 
-Use LogAgent MCP resources and tools for task evidence. Do not invent evidence refs. System Context is background only and must not be cited as final evidence. Historical Cases can guide analysis, but current-task evidence must support final conclusions.
+Use LogAgent MCP resources and tools for task evidence. Do not invent evidence refs. System Context, diagnostic skills, and skill_references/* are background only and must not be cited as final root cause evidence. Historical Cases can guide analysis, but current-task evidence must support final conclusions.
 
 Mode: {mode}
 Permission profile: {profile}
@@ -482,7 +482,7 @@ Return exactly one JSON object matching the schema:
 - runtimeStatus="waiting_for_user" with pendingPrompt when user information is required.
 - runtimeStatus="waiting_for_approval" with pendingApproval when an approval-gated action is required.
 
-The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, tool_results/<action_id>/result.json#findings/<index>, log_slices/<id>.json#lines, or MCP-written evidence refs returned by tools.
+The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, or skill_references/* refs as final root cause evidence.
 
 Recent user messages from this task:
 {user_messages}

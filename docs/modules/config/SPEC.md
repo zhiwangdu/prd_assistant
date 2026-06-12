@@ -33,6 +33,10 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `storage.data_dir`
 - `storage.max_upload_bytes`
 - `storage.max_chunk_bytes`
+- `skills.enabled`
+- `skills.roots`
+- `skills.max_skill_chars`
+- `skills.max_reference_chars`
 - `auth.api_keys`
 - `log_analyzer.keywords`
 - `log_analyzer.max_matches`
@@ -117,6 +121,8 @@ storage:
 - `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径。
 - `claude_code.default_mode` 仅支持 `diagnose`、`code_investigation` 和 `fix`。
 - `mcp.transport` 当前只支持 `stdio`。
+- `skills.enabled` 默认 true，`skills.roots` 默认 `skills`。
+- `skills.max_skill_chars` 和 `skills.max_reference_chars` 有下限和上限裁剪，避免过大 prompt 或 reference artifact。
 - 启用的 tool path 或 path_env 解析结果必须是绝对路径；非法工具名、相对路径、缺失/空 path_env 启动失败。
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。

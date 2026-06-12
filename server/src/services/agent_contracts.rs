@@ -50,6 +50,30 @@ pub async fn write_agent_contracts(
         .permission_profiles
         .get(&input.analysis_mode)
         .ok_or_else(|| AppError::internal("analysis mode permission profile is not configured"))?;
+    let diagnostic_skills = input
+        .system_context
+        .and_then(|context| context.get("resources"))
+        .and_then(|value| value.as_array())
+        .map(|resources| {
+            resources
+                .iter()
+                .filter(|resource| {
+                    resource.get("kind").and_then(|value| value.as_str())
+                        == Some("diagnostic_skill")
+                })
+                .map(|resource| {
+                    serde_json::json!({
+                        "skillId": resource.get("skillId"),
+                        "revision": resource.get("revision"),
+                        "title": resource.get("title"),
+                        "summary": resource.get("summary"),
+                        "references": resource.get("references"),
+                        "finalEvidenceAllowed": false,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let package = serde_json::json!({
         "schemaVersion": 2,
         "generatedAt": now,
@@ -78,6 +102,7 @@ pub async fn write_agent_contracts(
             "metadataContext": input.metadata_context,
             "systemContextPath": input.system_context.map(|_| "system_context.json"),
             "systemContext": input.system_context,
+            "diagnosticSkills": diagnostic_skills,
             "caseContextPath": input.case_context.map(|_| "case_context.json"),
             "caseContext": input.case_context,
             "toolCapabilities": tool_capabilities(input.tools),
@@ -101,6 +126,8 @@ pub async fn write_agent_contracts(
             "serverOwnsEvidencePersistence": true,
             "remoteCollectionRequiresApproval": true,
             "systemContextIsFinalEvidence": false,
+            "diagnosticSkillsAreFinalEvidence": false,
+            "skillReferencesAreFinalEvidence": false,
         },
     });
     let config_path = input

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "skillId": "pprof-diagnosis",
+  "displayName": "pprof diagnosis",
+  "products": ["opengemini", "influxdb"],
+  "domainAdapters": ["opengemini_influxdb"],
+  "toolIds": ["pprof_analyzer"],
+  "taskKinds": ["log_analysis"],
+  "includeByDefault": false,
+  "priority": 40,
+  "maxPromptChars": 1800,
+  "references": [
+    {
+      "path": "references/interpretation.md",
+      "title": "pprof interpretation",
+      "summary": "How to read top/tree/raw pprof output and connect CPU or heap findings to logs."
+    }
+  ]
+}

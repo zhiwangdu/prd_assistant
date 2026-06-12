@@ -14,6 +14,7 @@ type SessionSummary = {
   instanceId?: string | null;
   nodeId?: string | null;
   systemContextCount?: number;
+  skillCount?: number;
   uploadCount: number;
   taskCount: number;
   activeTaskId?: string | null;
@@ -25,6 +26,7 @@ type SessionRecord = Omit<SessionSummary, "uploadCount" | "taskCount"> & {
   schemaVersion: number;
   question: string;
   systemContextIds: string[];
+  skillIds: string[];
   uploadIds: string[];
   taskIds: string[];
 };
@@ -161,16 +163,20 @@ type ClaudeSessionArtifact = {
   lastClaudeResponsePath?: string;
   durationMs?: number | null;
 };
-type SystemContextSummary = {
-  contextId: string;
-  kind: string;
-  title: string;
-  enabled: boolean;
-  activeSummary?: string | null;
-  source: string;
+type SkillSummary = {
+  skillId: string;
+  displayName: string;
+  description: string;
+  managed: boolean;
+  includeByDefault: boolean;
+  priority: number;
+  revision: string;
+  products: string[];
+  toolIds: string[];
+  references: Array<{ referenceId: string; path: string; title: string; summary: string }>;
 };
 type SystemContextBundle = {
-  resources?: Array<{ contextId: string; kind: string; title: string; summary?: string | null; source: string }>;
+  resources?: Array<{ contextId: string; kind: string; title: string; summary?: string | null; source: string; skillId?: string | null; revision?: string | null; references?: Array<{ referenceId: string; path: string; title: string; summary: string }> }>;
 };
 type ToolResult = {
   tool: string;
@@ -245,8 +251,8 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
   const [question, setQuestion] = useState("分析日志中的主要异常、可能原因和建议检查项。");
   const [instanceId, setInstanceId] = useState("");
   const [nodeId, setNodeId] = useState("");
-  const [systemContexts, setSystemContexts] = useState<SystemContextSummary[]>([]);
-  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [uploadStatus, setUploadStatus] = useState("请选择或创建 Session");
   const [nativeStatus, setNativeStatus] = useState("Native Agent not checked");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -273,13 +279,13 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setSessions(result.sessions);
   }, [apiKey]);
 
-  const refreshSystemContexts = useCallback(async () => {
+  const refreshSkills = useCallback(async () => {
     if (!apiKey.trim()) {
-      setSystemContexts([]);
+      setSkills([]);
       return;
     }
-    const result = await fetchJson<{ resources: SystemContextSummary[] }>("/api/system-context/resources", { headers: authHeaders(apiKey) });
-    setSystemContexts(result.resources.filter((resource) => resource.kind !== "metadata_instance" && resource.enabled));
+    const result = await fetchJson<{ skills: SkillSummary[] }>("/api/skills", { headers: authHeaders(apiKey) });
+    setSkills(result.skills);
   }, [apiKey]);
 
   const refreshCases = useCallback(async (queryText: string) => {
@@ -350,7 +356,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       setSourceUrl(session.sourceUrl ?? "");
       setInstanceId(session.instanceId ?? "");
       setNodeId(session.nodeId ?? "");
-      setSelectedContextIds(session.systemContextIds ?? []);
+      setSelectedSkillIds(session.skillIds ?? []);
       setDraftExpanded(session.taskIds.length === 0);
       setNativeStatus("Setting Native Agent session...");
       await setNativeCurrentSession(session.sessionId)
@@ -373,9 +379,9 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
     setTimeline([]);
     setCases([]);
     void refreshSessions().catch((reason) => setUploadStatus(errorMessage(reason)));
-    void refreshSystemContexts().catch((reason) => setUploadStatus(errorMessage(reason)));
+    void refreshSkills().catch((reason) => setUploadStatus(errorMessage(reason)));
     void refreshCases("").catch((reason) => setCaseStatus(errorMessage(reason)));
-  }, [refreshCases, refreshSessions, refreshSystemContexts]);
+  }, [refreshCases, refreshSessions, refreshSkills]);
 
   useEffect(() => {
     if (!selectedSession || !apiKey.trim()) return;
@@ -385,7 +391,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       sourceUrl: sourceUrl.trim(),
       instanceId: instanceId.trim(),
       nodeId: nodeId.trim(),
-      systemContextIds: selectedContextIds
+      skillIds: selectedSkillIds
     };
     const unchanged =
       patch.title === selectedSession.title &&
@@ -393,7 +399,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       (patch.sourceUrl || "") === (selectedSession.sourceUrl ?? "") &&
       (patch.instanceId || "") === (selectedSession.instanceId ?? "") &&
       (patch.nodeId || "") === (selectedSession.nodeId ?? "") &&
-      sameStringList(patch.systemContextIds, selectedSession.systemContextIds ?? []);
+      sameStringList(patch.skillIds, selectedSession.skillIds ?? []);
     if (unchanged) return;
     const timer = window.setTimeout(() => {
       void fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(selectedSession.sessionId)}`, {
@@ -405,7 +411,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
           sourceUrl: patch.sourceUrl || null,
           instanceId: patch.instanceId || null,
           nodeId: patch.nodeId || null,
-          systemContextIds: patch.systemContextIds
+          skillIds: patch.skillIds
         })
       })
         .then((session) => {
@@ -415,7 +421,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
         .catch((reason) => setUploadStatus(errorMessage(reason)));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [apiKey, instanceId, nodeId, question, refreshSessions, selectedContextIds, selectedSession, sourceUrl, title]);
+  }, [apiKey, instanceId, nodeId, question, refreshSessions, selectedSkillIds, selectedSession, sourceUrl, title]);
 
   useEffect(() => {
     if (!taskResult) {
@@ -444,7 +450,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
       const session = await fetchJson<SessionRecord>("/api/sessions", {
         method: "POST",
         headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ title: "New session", question, systemContextIds: selectedContextIds })
+        body: JSON.stringify({ title: "New session", question, skillIds: selectedSkillIds })
       });
       setUploadStatus(`已创建 Session ${session.sessionId}`);
       await refreshSessions();
@@ -501,7 +507,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
           sourceUrl: sourceUrl.trim() || null,
           instanceId: instanceId.trim() || null,
           nodeId: nodeId.trim() || null,
-          systemContextIds: selectedContextIds
+          skillIds: selectedSkillIds
         })
       });
       setSelectedSession(savedSession);
@@ -666,7 +672,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                       <Input value={nodeId} onChange={(event) => setNodeId(event.target.value)} placeholder="Node ID (optional)" />
                     </div>
                     <textarea className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="希望 Agent 分析的问题" />
-                    <SystemContextPicker contexts={systemContexts} selectedIds={selectedContextIds} onChange={setSelectedContextIds} />
+                    <SkillPicker skills={skills} selectedIds={selectedSkillIds} onChange={setSelectedSkillIds} />
                     <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
                       <UploadCloud className="mb-2 h-7 w-7" />
                       {files.length ? `${files.length} file(s): ${files.map((file) => file.name).join(", ")}` : "选择 .log / .txt / .zip / .tar.gz / .tgz / .tar"}
@@ -684,7 +690,7 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                       </div>
                     </div>
                   </>
-                ) : <SessionDraftSummary session={selectedSession} title={title} question={question} sourceUrl={sourceUrl} instanceId={instanceId} nodeId={nodeId} selectedContextIds={selectedContextIds} uploadStatus={uploadStatus} />}
+                ) : <SessionDraftSummary session={selectedSession} title={title} question={question} sourceUrl={sourceUrl} instanceId={instanceId} nodeId={nodeId} selectedSkillIds={selectedSkillIds} uploadStatus={uploadStatus} />}
               </CardContent>
             </Card>
 
@@ -753,34 +759,34 @@ function WaitingInteraction({ answer, approvalReason, loading, snapshot, status,
   return null;
 }
 
-function SystemContextPicker({ contexts, selectedIds, onChange }: { contexts: SystemContextSummary[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+function SkillPicker({ skills, selectedIds, onChange }: { skills: SkillSummary[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium"><BrainCircuit className="mr-2 inline h-4 w-4 text-primary" />System Context</p>
-          <p className="text-xs text-muted-foreground">可选背景资源会随 run 固化到 system_context.json</p>
+          <p className="text-sm font-medium"><BrainCircuit className="mr-2 inline h-4 w-4 text-primary" />Diagnostic Skills</p>
+          <p className="text-xs text-muted-foreground">选中的 Skill 会随 run 固化到 system_context.json</p>
         </div>
         <Badge variant="secondary">{selectedIds.length} selected</Badge>
       </div>
-      {contexts.length ? (
+      {skills.length ? (
         <div className="grid gap-2 md:grid-cols-2">
-          {contexts.slice(0, 12).map((context) => {
-            const checked = selectedIds.includes(context.contextId);
+          {skills.slice(0, 12).map((skill) => {
+            const checked = selectedIds.includes(skill.skillId);
             return (
-              <label className={`rounded-md border p-3 text-sm ${checked ? "border-primary bg-slate-50" : "border-border bg-white"}`} key={context.contextId}>
+              <label className={`rounded-md border p-3 text-sm ${checked ? "border-primary bg-slate-50" : "border-border bg-white"}`} key={skill.skillId}>
                 <div className="flex items-start gap-2">
-                  <input className="mt-1 h-4 w-4 accent-teal-700" type="checkbox" checked={checked} onChange={() => onChange(toggleString(selectedIds, context.contextId))} />
+                  <input className="mt-1 h-4 w-4 accent-teal-700" type="checkbox" checked={checked} onChange={() => onChange(toggleString(selectedIds, skill.skillId))} />
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{context.title}</p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{context.kind} · {context.activeSummary ?? context.contextId}</p>
+                    <p className="truncate font-medium">{skill.displayName}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.skillId} · {skill.includeByDefault ? "auto" : "explicit"} · {skill.description}</p>
                   </div>
                 </div>
               </label>
             );
           })}
         </div>
-      ) : <p className="text-sm text-muted-foreground">暂无可选 System Context；自动匹配的 Prompt Pack 和 Metadata 仍会在创建 run 时固化。</p>}
+      ) : <p className="text-sm text-muted-foreground">暂无可选 Skill；Metadata adapter 仍会在创建 run 时按 Instance 固化。</p>}
     </div>
   );
 }
@@ -834,13 +840,13 @@ function Evidence({ title, count, children }: { title: string; count: number; ch
   return <Card><CardHeader><div className="flex items-center justify-between"><CardTitle>{title}</CardTitle><Badge variant="secondary">{count}</Badge></div></CardHeader><CardContent className="space-y-2">{count ? children : <EmptyState>暂无数据</EmptyState>}</CardContent></Card>;
 }
 
-function SessionDraftSummary({ session, title, question, sourceUrl, instanceId, nodeId, selectedContextIds, uploadStatus }: { session: SessionRecord; title: string; question: string; sourceUrl: string; instanceId: string; nodeId: string; selectedContextIds: string[]; uploadStatus: string }) {
+function SessionDraftSummary({ session, title, question, sourceUrl, instanceId, nodeId, selectedSkillIds, uploadStatus }: { session: SessionRecord; title: string; question: string; sourceUrl: string; instanceId: string; nodeId: string; selectedSkillIds: string[]; uploadStatus: string }) {
   const rows = [
     ["Title", title || session.title || "-"],
     ["Question", question || session.question || "-"],
     ["Source URL", sourceUrl || "-"],
     ["Metadata", `instance=${instanceId || "-"} · node=${nodeId || "-"}`],
-    ["System Context", `${selectedContextIds.length} selected`],
+    ["Skills", `${selectedSkillIds.length} selected`],
     ["Inputs", `${session.uploadIds.length} upload(s) · ${session.taskIds.length} run(s)`],
     ["Status", `${session.status} · ${uploadStatus}`]
   ];
@@ -934,23 +940,45 @@ function MetadataContextView({ context }: { context: MetadataContext }) {
 
 function SystemContextSnapshotView({ context }: { context: SystemContextBundle }) {
   const resources = context.resources ?? [];
+  const skillResources = resources.filter((resource) => resource.kind === "diagnostic_skill");
+  const metadataResources = resources.filter((resource) => resource.kind === "metadata_instance");
   return (
     <Card>
       <CardHeader>
         <CardTitle>System Context snapshot</CardTitle>
-        <CardDescription>任务创建时固化的通用背景资源，作为 prompt 背景参考</CardDescription>
+        <CardDescription>任务创建时固化的 Diagnostic Skills 和 Metadata adapter</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {resources.length ? resources.map((resource) => (
-          <div className="rounded-lg border border-border p-3" key={`${resource.contextId}:${resource.title}`}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">{resource.title}</span>
-              <Badge variant="secondary">{resource.kind}</Badge>
-              <span className="text-xs text-muted-foreground">{resource.source}</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">{resource.summary ?? resource.contextId}</p>
+      <CardContent className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Diagnostic Skills</p>
+          <div className="space-y-2">
+            {skillResources.length ? skillResources.map((resource) => (
+              <div className="rounded-lg border border-border p-3" key={`${resource.contextId}:${resource.title}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{resource.title}</span>
+                  <Badge variant="secondary">{resource.skillId ?? resource.kind}</Badge>
+                  <span className="text-xs text-muted-foreground">rev {resource.revision?.slice(0, 8) ?? "-"}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{resource.summary ?? resource.contextId}</p>
+                {resource.references?.length ? <p className="mt-1 text-xs text-muted-foreground">{resource.references.length} reference(s)</p> : null}
+              </div>
+            )) : <EmptyState>本次 run 未选择 Diagnostic Skill。</EmptyState>}
           </div>
-        )) : <EmptyState>本次 run 未固化 System Context。</EmptyState>}
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Metadata Context</p>
+          <div className="space-y-2">
+            {metadataResources.length ? metadataResources.map((resource) => (
+              <div className="rounded-lg border border-border p-3" key={`${resource.contextId}:${resource.title}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{resource.title}</span>
+                  <Badge variant="outline">{resource.kind}</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{resource.summary ?? resource.contextId}</p>
+              </div>
+            )) : <EmptyState>本次 run 未绑定 Metadata instance。</EmptyState>}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

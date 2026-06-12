@@ -13,15 +13,16 @@ use crate::support::config::AnalysisMode;
 use crate::{
     app::AppState,
     domain::models::{
-        default_task_question, AnalysisResult, CreateTaskRequest, TaskArtifactsResponse, TaskKind,
-        TaskListResponse, TaskRecord, TaskResponse, TaskResultResponse, TaskSource, TaskStatus,
-        UploadStatus,
+        default_task_question, AnalysisResult, CreateTaskRequest, SystemContextKind,
+        TaskArtifactsResponse, TaskKind, TaskListResponse, TaskRecord, TaskResponse,
+        TaskResultResponse, TaskSource, TaskStatus, UploadStatus,
     },
-    http::{sessions::normalize_context_ids, system_context::resolve_task_system_context},
+    http::system_context::metadata_context_bundle_item,
     pipeline::{
         prepare_raw_snapshot, write_case_context, write_metadata_context, write_session_text_input,
         write_system_context,
     },
+    services::skill_registry::ResolveSkillsInput,
     stores::{
         analysis_state::{self, AnalysisSnapshotResponse},
         system_context_store::system_context_bundle,
@@ -38,7 +39,7 @@ pub struct CreateLogAnalysisTaskInput {
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     pub analysis_mode: AnalysisMode,
-    pub system_context_ids: Vec<String>,
+    pub skill_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,11 +76,13 @@ pub async fn create_task(
         .get(&session_id)
         .await
         .ok_or_else(|| AppError::bad_request(format!("unknown sessionId {session_id}")))?;
+    let upload_ids = task_upload_ids(&req);
+    let _legacy_system_context_ids = req.system_context_ids;
     let record = create_log_analysis_task(
         state.clone(),
         CreateLogAnalysisTaskInput {
             session_id,
-            upload_ids: task_upload_ids(&req),
+            upload_ids,
             source_url: req.source_url,
             question: req.question,
             instance_id: req.instance_id,
@@ -88,7 +91,7 @@ pub async fn create_task(
             analysis_mode: req
                 .analysis_mode
                 .unwrap_or(state.config.claude_code.default_mode),
-            system_context_ids: req.system_context_ids,
+            skill_ids: req.skill_ids,
         },
     )
     .await?;
@@ -147,14 +150,17 @@ pub async fn create_log_analysis_task(
     let workspace = state.config.storage.workspace_dir(&task_id);
     let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
     let metadata_context_path = write_metadata_context(&workspace, &metadata_context).await?;
-    let system_context_ids = normalize_context_ids(input.system_context_ids)?;
-    let system_context_items = resolve_task_system_context(
-        &state,
-        TaskKind::LogAnalysis,
-        &system_context_ids,
-        Some(&metadata_context),
-    )
-    .await;
+    let explicit_skill_ids = crate::http::skills::normalize_skill_ids(input.skill_ids)?;
+    let mut system_context_items = state.skills.resolve_items(ResolveSkillsInput {
+        explicit_skill_ids: &explicit_skill_ids,
+        task_kind: TaskKind::LogAnalysis,
+        product: metadata_context.product.as_deref(),
+        version: metadata_context.version.as_deref(),
+        environment: metadata_context.environment.as_deref(),
+    })?;
+    if metadata_context.instance_id.is_some() {
+        system_context_items.push(metadata_context_bundle_item(&metadata_context));
+    }
     let system_context = system_context_bundle(system_context_items);
     let system_context_path = write_system_context(&workspace, &system_context).await?;
     let question = normalize_question(input.question, state.config.llm.max_input_chars / 2)?;
@@ -192,12 +198,15 @@ pub async fn create_log_analysis_task(
             Some(system_context_path.display().to_string()),
             serde_json::json!({
                 "resourceCount": system_context.resources.len(),
+                "skillCount": system_context.resources.iter().filter(|item| item.kind == SystemContextKind::DiagnosticSkill).count(),
                 "resources": system_context.resources.iter().map(|item| serde_json::json!({
                     "contextId": item.context_id,
                     "versionId": item.version_id,
                     "kind": item.kind,
                     "title": item.title,
                     "source": item.source,
+                    "skillId": item.skill_id,
+                    "revision": item.revision,
                 })).collect::<Vec<_>>(),
             }),
         )
@@ -924,7 +933,8 @@ mod tests {
         support::config::{
             AnalysisMode, AnalysisSettings, AppConfig, AuthSettings, ClaudeCodeSettings,
             EmbeddingSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, McpSettings,
-            PermissionProfileSettings, ServerSettings, StorageSettings, ToolsSettings,
+            PermissionProfileSettings, ServerSettings, SkillSettings, StorageSettings,
+            ToolsSettings,
         },
     };
 
@@ -1912,6 +1922,144 @@ nodes:
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[tokio::test]
+    async fn task_api_snapshots_explicit_and_auto_skills() {
+        let skill_root = std::env::temp_dir().join(format!(
+            "logagent-task-api-skills-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        write_test_skill(
+            &skill_root,
+            "auto-open",
+            "auto-open",
+            "Auto openGemini",
+            true,
+            30,
+            Some("references/auto.md"),
+        );
+        write_test_skill(
+            &skill_root,
+            "explicit-only",
+            "explicit-only",
+            "Explicit only",
+            false,
+            10,
+            None,
+        );
+        let (state, root) = test_state_with_adapter_and_skills(
+            LlmSettings {
+                provider: LlmProvider::Stub,
+                base_url: None,
+                api_key: None,
+                binary_path: None,
+                binary_max_output_bytes: 1024 * 1024,
+                model: "stub".to_string(),
+                request_timeout_seconds: 1,
+                max_input_chars: 60_000,
+                max_output_tokens: 100,
+            },
+            DEFAULT_MOCK_CLAUDE_ADAPTER,
+            SkillSettings {
+                enabled: true,
+                roots: vec![skill_root.clone()],
+                max_skill_chars: 4000,
+                max_reference_chars: 20_000,
+            },
+        );
+        create_test_session(&state, "sess_test").await;
+        create_test_upload(&state, "upl_skills", UploadStatus::Complete).await;
+        let preview = state
+            .metadata
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: r#"
+instances:
+  - instanceId: i-1
+    clusterId: c-1
+    nodeId: n-1
+    product: opengemini
+    version: 1.3.0
+    environment: test
+clusters:
+  - clusterId: c-1
+    product: opengemini
+    nodes: [n-1]
+nodes:
+  - nodeId: n-1
+    instanceId: i-1
+    role: data
+    status: active
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        state
+            .metadata
+            .confirm_import(&preview.import_id)
+            .await
+            .unwrap();
+        let app = http::router(state.clone()).with_state(state.clone());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tasks")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"sessionId":"sess_test","uploadId":"upl_skills","instanceId":"i-1","skillIds":["explicit-only"]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = created["taskId"].as_str().unwrap();
+        let _terminal = wait_for_task_status(&app, task_id, "SUCCEEDED").await;
+
+        let artifacts = app
+            .oneshot(
+                Request::get(format!("/api/tasks/{task_id}/artifacts"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(artifacts.status(), StatusCode::OK);
+        let body = to_bytes(artifacts.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let system_context = &body["systemContext"];
+        assert_eq!(system_context["schemaVersion"], 2);
+        let resources = system_context["resources"].as_array().unwrap();
+        let skill_ids = resources
+            .iter()
+            .filter(|resource| resource["kind"] == "diagnostic_skill")
+            .filter_map(|resource| resource["skillId"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(skill_ids, vec!["auto-open", "explicit-only"]);
+        let metadata = resources
+            .iter()
+            .find(|resource| resource["kind"] == "metadata_instance")
+            .expect("metadata adapter is snapshotted");
+        assert_eq!(metadata["title"], "Metadata instance i-1");
+        let auto_skill = resources
+            .iter()
+            .find(|resource| resource["skillId"] == "auto-open")
+            .unwrap();
+        assert_eq!(auto_skill["references"].as_array().unwrap().len(), 1);
+        assert!(auto_skill["revision"].as_str().unwrap().len() >= 8);
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(skill_root);
+    }
+
     fn test_state() -> (Arc<AppState>, std::path::PathBuf) {
         test_state_with_llm(LlmSettings {
             provider: LlmProvider::Stub,
@@ -1959,6 +2107,23 @@ JSON
         llm: LlmSettings,
         adapter_content: &str,
     ) -> (Arc<AppState>, std::path::PathBuf) {
+        test_state_with_adapter_and_skills(
+            llm,
+            adapter_content,
+            SkillSettings {
+                enabled: false,
+                roots: Vec::new(),
+                max_skill_chars: 4000,
+                max_reference_chars: 20_000,
+            },
+        )
+    }
+
+    fn test_state_with_adapter_and_skills(
+        llm: LlmSettings,
+        adapter_content: &str,
+        skills: SkillSettings,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
         static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
         let root = std::env::temp_dir().join(format!(
             "logagent-task-api-{}-{}",
@@ -1986,6 +2151,7 @@ JSON
                 max_upload_bytes: 1024 * 1024,
                 max_chunk_bytes: 512 * 1024,
             },
+            skills,
             log_analyzer: LogAnalyzerSettings {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
@@ -1999,6 +2165,55 @@ JSON
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
+    }
+
+    fn write_test_skill(
+        root: &std::path::Path,
+        dir_name: &str,
+        skill_id: &str,
+        display_name: &str,
+        include_by_default: bool,
+        priority: i32,
+        reference_path: Option<&str>,
+    ) {
+        let skill_dir = root.join(dir_name);
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            format!(
+                "---\nname: {display_name}\ndescription: {display_name} diagnostics.\n---\nUse current task evidence first.\n"
+            ),
+        )
+        .unwrap();
+        let references = if let Some(reference_path) = reference_path {
+            let reference_file = skill_dir.join(reference_path);
+            std::fs::create_dir_all(reference_file.parent().unwrap()).unwrap();
+            std::fs::write(&reference_file, "Reference content.").unwrap();
+            serde_json::json!([
+                {
+                    "path": reference_path,
+                    "title": "Reference",
+                    "summary": "Reference summary"
+                }
+            ])
+        } else {
+            serde_json::json!([])
+        };
+        let manifest = serde_json::json!({
+            "schemaVersion": 1,
+            "skillId": skill_id,
+            "displayName": display_name,
+            "products": ["opengemini"],
+            "taskKinds": ["log_analysis"],
+            "includeByDefault": include_by_default,
+            "priority": priority,
+            "references": references
+        });
+        std::fs::write(
+            skill_dir.join("logagent.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
     }
 
     fn test_analysis_settings() -> AnalysisSettings {
@@ -2078,6 +2293,7 @@ JSON
                 instance_id: None,
                 node_id: None,
                 system_context_ids: Vec::new(),
+                skill_ids: Vec::new(),
                 upload_ids: Vec::new(),
                 task_ids: Vec::new(),
                 active_task_id: None,

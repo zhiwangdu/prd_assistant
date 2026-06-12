@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "skillId": "opengemini-diagnosis",
+  "displayName": "openGemini diagnosis",
+  "products": ["opengemini", "influxdb"],
+  "domainAdapters": ["opengemini_influxdb"],
+  "toolIds": ["influxql_analyzer", "flux_query_analyzer"],
+  "taskKinds": ["log_analysis"],
+  "includeByDefault": true,
+  "priority": 80,
+  "maxPromptChars": 2400,
+  "references": [
+    {
+      "path": "references/topology.md",
+      "title": "PT, Shard, and Index topology",
+      "summary": "How to interpret openGemini metadata topology, owner IDs, and abnormal states."
+    },
+    {
+      "path": "references/common-failure-paths.md",
+      "title": "Common diagnostic paths",
+      "summary": "Common openGemini symptom-to-check paths for metadata, storage, query, and cluster issues."
+    }
+  ]
+}

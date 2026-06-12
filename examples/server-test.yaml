@@ -8,6 +8,13 @@ storage:
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
+skills:
+  enabled: true
+  roots:
+    - skills
+  max_skill_chars: 4000
+  max_reference_chars: 20000
+
 auth:
   api_keys:
     - name: "native-agent"

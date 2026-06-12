@@ -18,8 +18,8 @@ use crate::{
     },
     services::metadata::{MetadataInstanceSummary, TaskMetadataContext},
     stores::system_context_store::{
-        metadata_adapter_item, render_system_context_prompt, resource_summaries_with_source,
-        system_context_bundle, validate_context_id_for_api,
+        metadata_adapter_item, render_system_context_prompt, system_context_bundle,
+        validate_context_id_for_api,
     },
     support::error::AppError,
 };
@@ -27,9 +27,7 @@ use crate::{
 pub async fn list_resources(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SystemContextListResponse>, AppError> {
-    let mut resources =
-        resource_summaries_with_source(state.system_context.list().await, "system_context");
-    resources.extend(metadata_resource_summaries(&state).await);
+    let mut resources = metadata_resource_summaries(&state).await;
     resources.sort_by(|left, right| {
         left.kind
             .cmp(&right.kind)
@@ -167,31 +165,9 @@ pub async fn preview(
     }))
 }
 
-pub async fn resolve_task_system_context(
-    state: &AppState,
-    task_kind: TaskKind,
-    explicit_context_ids: &[String],
-    metadata_context: Option<&TaskMetadataContext>,
-) -> Vec<SystemContextBundleItem> {
-    let mut resources = state
-        .system_context
-        .resolve_items(
-            explicit_context_ids,
-            task_kind,
-            metadata_context.and_then(|context| context.product.as_deref()),
-            metadata_context.and_then(|context| context.version.as_deref()),
-            metadata_context.and_then(|context| context.environment.as_deref()),
-        )
-        .await;
-    if let Some(metadata_context) = metadata_context {
-        if metadata_context.instance_id.is_some() {
-            resources.push(metadata_context_bundle_item(metadata_context));
-        }
-    }
-    resources
-}
-
-fn metadata_context_bundle_item(metadata: &TaskMetadataContext) -> SystemContextBundleItem {
+pub(crate) fn metadata_context_bundle_item(
+    metadata: &TaskMetadataContext,
+) -> SystemContextBundleItem {
     let instance = metadata.instance_id.as_deref().unwrap_or("unknown");
     let title = format!("Metadata instance {instance}");
     let summary = format!(

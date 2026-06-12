@@ -392,6 +392,16 @@ fn validate_loaded_session(session: &AnalysisSessionRecord) -> anyhow::Result<()
             anyhow::bail!("session {} contains invalid uploadId", session.session_id);
         }
     }
+    for skill_id in &session.skill_ids {
+        let valid = !skill_id.is_empty()
+            && skill_id.len() <= 120
+            && skill_id.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-' || byte == b'.'
+            });
+        if !valid {
+            anyhow::bail!("session {} contains invalid skillId", session.session_id);
+        }
+    }
     for task_id in &session.task_ids {
         if !task_id.starts_with("task_") {
             anyhow::bail!("session {} contains invalid taskId", session.session_id);
@@ -423,6 +433,7 @@ mod tests {
             instance_id: None,
             node_id: None,
             system_context_ids: Vec::new(),
+            skill_ids: Vec::new(),
             upload_ids: Vec::new(),
             task_ids: Vec::new(),
             active_task_id: None,
