@@ -23,6 +23,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
 - `metadata_context.json` workspace 快照和 LLM 摘要。
+- Claude Code 初始 evidence package 和任务 MCP `metadata_context` resource 只暴露 `metadataContextOutline`；完整 Metadata 需通过 `logagent.query_metadata` 按 section/filter/分页读取 bounded slice。
 - 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表和 snapshot，不写入 Metadata Store。
 
 仍待实现：
@@ -267,6 +268,7 @@ Task workspace 写入：
 
 ```text
 metadata_context.json
+metadata_slices/<stable_id>.json
 ```
 
 解析规则：
@@ -277,6 +279,9 @@ metadata_context.json
 - 显式 ID 冲突或未知时返回 `400`。
 - context 是创建时快照，后续 Metadata Store 更新不改变历史任务。
 - cluster `rawSnapshot` 不进入 task context。
+- `analysis_package.json` 不内联完整 context，只写 `metadataContextOutline`，包含 `metadataContextPath`、选中 ID、产品/版本/环境、section count 和查询入口。
+- 任务 MCP `resources/read metadata_context` 和 `logagent.get_metadata_topology` 返回 outline；`logagent.query_metadata` 支持 `section`、`database`、`retentionPolicy`、`measurement`、`nodeId`、`ownerNodeId`、`ptId`、`shardId`、`indexId`、`limit`、`cursor`。
+- `logagent.query_metadata` section 覆盖 `overview | nodes | databases | retention_policies | measurements | fields | shard_groups | shards | index_groups | indexes | partition_views`，返回 bounded `items`、`total`、`nextCursor`、`truncated` 和 `backgroundRef`，并写入 `metadata_slices/<stable_id>.json` / `mcp_calls.jsonl`。
 
 用于 Analysis Orchestrator、Claude Code、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
 
@@ -311,6 +316,7 @@ metadata_context.json
 - 模板导入只解析数据，不执行模板内容。
 - SSH 地址和别名只作为数据保存，不直接触发连接。
 - 导入前必须预览并确认。
+- Metadata slice 默认是背景上下文，不新增最终 evidence ref 类型；最终答案仍不能引用 `metadata_slices/*` 作为根因证据。
 
 ## 验收标准
 
@@ -324,6 +330,8 @@ metadata_context.json
 - WebUI 能上传 `.json` 文件并得到导入预览。
 - WebUI 能粘贴 JSON 文本并得到导入预览。
 - 能在用户输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 拉取 openGemini metadata 并归一化展示。
+- `analysis_package.json` 不包含完整 databases/measurements/shards/indexes payload，任务 MCP `metadata_context` resource 返回 outline/counts。
+- `logagent.query_metadata` 能按 database/RP/measurement/shard/partition filters 和 limit/cursor 返回 bounded slice，非法 section/filter 返回错误。
 - Metadata Explorer 大集群通过级联展开可读，不渲染 Graph。
 - Metadata Explorer 能在 `Node / DBPT / Shards` 和 `DB / RP / Shards / Indexes` 两个视角间切换。
 - Schemas 页面默认选择非 `_internal` DB 和首个 RP，DB 变化后 RP 选项联动更新，field type 展示为实际类型。

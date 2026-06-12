@@ -14,6 +14,7 @@ Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvide
 manifest.json
 grep_results.json
 metadata_context.json
+metadata_slices/*.json
 tool_results/*.json
 code_evidence/*.json
 environment_evidence/*.json
@@ -66,6 +67,7 @@ LogAgent MCP tools 支持：
 - `logagent.run_domain_tool`
 - `logagent.recall_cases`
 - `logagent.get_metadata_topology`
+- `logagent.query_metadata`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
@@ -105,6 +107,7 @@ LogAgent MCP tools 支持：
 
 - Server 生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`。
 - Claude CLI argv/stdin 不能承载完整 `analysis_package.json`；Claude Code 通过 MCP resources/tools 获取证据和请求领域能力。
+- `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 不能承载完整 Metadata payload；只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json` 背景 slice。
 - `agent_response.json` 只能表达 completed / waiting outcome。
 - Server 继续负责 MCP tool schema、白名单、预算、幂等、审批和 final evidence ref 校验。
 

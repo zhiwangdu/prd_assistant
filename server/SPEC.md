@@ -35,6 +35,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - 只读 HTTP MCP：`POST /api/mcp/readonly`
 - Skills / Tools 导出下载：`GET /api/exports/skills.zip`、`GET /api/exports/tools.zip`
 - Claude Code session 输入/响应产物：`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
+- Claude Code session 的 Metadata 按需加载：`analysis_package.json` 只包含 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 返回 outline，`logagent.query_metadata` 按 section/filter/limit/cursor 写入 `metadata_slices/<stable_id>.json`
 - task artifact 查询
 - metadata 查询和导入确认
 - Skill-backed System Context、Codex-compatible Skill registry、Skill preview、按需 MCP reference 读取和 Metadata adapter
@@ -236,6 +237,7 @@ data_dir/
       manifest.json
       grep_results.json
       metadata_context.json
+      metadata_slices/
       system_context.json
       skill_references/
         skill_ref_xxx.json
@@ -300,7 +302,7 @@ background executor
       - refresh analysis_package.json
       - write claude_mcp_config.json
       - start/resume Claude Code with --mcp-config
-      - MCP tools write mcp_calls.jsonl and evidence artifacts
+      - MCP tools write mcp_calls.jsonl and evidence/background artifacts
       - completed: validate final evidence refs, persist result.json/result.md and SUCCEEDED
       - waiting_for_user: persist pendingUserPrompts and WAITING_FOR_USER
       - waiting_for_approval: persist pendingApprovals and WAITING_FOR_APPROVAL
@@ -316,11 +318,11 @@ background executor
 
 `POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 
-`GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, text-only input recording, task creation, Metadata context summary, System Context resource count, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, Agent backend calls, model decisions, ask_user, approval, environment evidence and final result events.
+`GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, text-only input recording, task creation, Metadata context summary, System Context resource count, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, Agent backend calls, model decisions, ask_user, approval, environment evidence and final result events. Metadata slice reads are audited in `mcp_calls.jsonl` and write `metadata_slices/<stable_id>.json` as background context.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
-Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。Server 将短启动 prompt 写入 `claude_prompt.md` 并通过 stdin 传给 Claude CLI，完整 `analysis_package.json` 必须通过任务 MCP `analysis_package` resource 读取，避免大 prompt 进入 argv 或 stdin。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context、Diagnostic Skills 和 `skill_references/*` 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
+Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_output`、`structuredOutput`、`result` 或根对象中的 structured outcome。允许的 outcome 为 `completed`、`waiting_for_user` 和 `waiting_for_approval`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 使用 `--print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config` 调用，并按 `analysisMode` permission profile 传入 native tool policy。Server 将短启动 prompt 写入 `claude_prompt.md` 并通过 stdin 传给 Claude CLI，`analysis_package.json` 必须通过任务 MCP `analysis_package` resource 读取，避免大 prompt 进入 argv 或 stdin；其中 Metadata 只包含 outline/counts，不包含完整 databases、measurements、shards 或 indexes payload。完整 `metadata_context.json` 仍保存在 workspace，Claude 需要细节时调用 `logagent.query_metadata`，参数支持 `section`、`database`、`retentionPolicy`、`measurement`、`nodeId`、`ownerNodeId`、`ptId`、`shardId`、`indexId`、`limit`、`cursor`，返回 bounded `items`、`total`、`nextCursor`、`truncated` 和 `backgroundRef`。最终结果允许引用 `session_text_input.json#question`、`grep_results.json#matches/<index>`、`case_context.json#cases/<index>` 或 `tool_results/<action_id>/result.json#findings/<index>`；System Context、Diagnostic Skills、`skill_references/*` 和 `metadata_slices/*` 只能作为背景，不能作为最终 evidence ref；缺少 `summary` 等核心字段、越界 Case 或越界 finding 会拒绝。Claude CLI 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 都会写入失败的 `agent_response.json` 和 `claude_session.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。LLM Gateway 仍保留 stub、OpenAI-compatible Chat Completions 和预留 binary provider，用于 Case import、alias 和兼容恢复的 `GENERATE_RESULT` 辅助路径。
 
 成功的 Log Analysis task 在 `result.json` / `result.md` 写入后，会用最终结果、用户问题、manifest 和 Metadata 摘要调用 LLM Gateway 生成短 `alias`。alias 调用不通过 Analysis State Store 的 LLM call event 回调，不写 `analysis_events.jsonl`，也不追加 Session timeline event。alias schema 错误会重试一次；Provider 或 schema 最终失败时，Server 使用最终 summary 或问题文本生成短标题，不让 core task 因命名失败而失败。
 
@@ -370,7 +372,7 @@ Settings Claude Code 诊断接口保留 `/api/settings/agent-backends` 路径作
 
 `PLAN_ANALYSIS` 在调用 Claude Code session 前会刷新输入并记录响应：
 
-- `analysis_package.json`：冻结用户问题、任务信息、manifest、grep、Metadata、System Context、Case、Tool results 和 analysis state 摘要。
+- `analysis_package.json`：冻结用户问题、任务信息、manifest、grep、Metadata outline、System Context、Case、Tool results 和 analysis state 摘要；不内联完整 `metadata_context.json`。
 - `claude_prompt.md`：短启动 prompt，只包含角色、边界、schema 要求和读取 MCP `analysis_package` resource 的指令。
 - `claude_mcp_config.json`：声明 LogAgent MCP stdio server 命令、task id、analysis mode 和资源入口。
 - `claude_session.json`：记录 Claude session id、analysis mode、permission profile、MCP config path、prompt delivery 和最近 response path。
@@ -528,8 +530,8 @@ persist task
 - `/health` 正常。
 - `/` 从 `webui/out` 返回 WEBUI。
 - 上传 sample.log、多个文件或只填写 Session 问题后都能创建 task 并读取 artifacts。
-- Metadata 以 `instanceId` 作为用户主键；openGemini 导入必须由用户提供 InstanceID，原始 `ClusterID` 仅作为 `sourceClusterId` 标签保留。ID 自动补全且冲突时拒绝；workspace 保存 `metadata_context.json`，artifacts API 返回快照。
-- pipeline 重跑保留 Metadata 快照，LLM Prompt 包含裁剪后的 Metadata 摘要。
+- Metadata 以 `instanceId` 作为用户主键；openGemini 导入必须由用户提供 InstanceID，原始 `ClusterID` 仅作为 `sourceClusterId` 标签保留。ID 自动补全且冲突时拒绝；workspace 保存完整 `metadata_context.json`，artifacts API 返回快照。
+- pipeline 重跑保留 Metadata 快照，Claude package/MCP 默认 resource 只包含 Metadata outline/counts；`logagent.query_metadata` 的 limit/cursor/filter 必须生效，非法 section/filter 必须失败。
 - Executor 从 `SEARCH_LOGS` 或 `GENERATE_RESULT` 中断恢复时保留 phase、attempts 加一且不退回 `EXTRACT`。
 - `RUN_TOOL` 无工具匹配时必须无副作用跳过；有匹配工具时必须生成 `tool_results` 并进入 `GENERATE_RESULT`。
 - 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。

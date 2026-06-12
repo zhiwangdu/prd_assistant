@@ -263,10 +263,6 @@ async fn plan_analysis_phase(
             None => None,
         };
         let snapshot = analysis_state::read_snapshot(&workspace)?;
-        let metadata_context_value = metadata_context
-            .as_ref()
-            .map(serde_json::to_value)
-            .transpose()?;
         let system_context_value = system_context
             .as_ref()
             .map(serde_json::to_value)
@@ -278,7 +274,7 @@ async fn plan_analysis_phase(
                 task: &task,
                 manifest: &manifest,
                 grep_results: &grep,
-                metadata_context: metadata_context_value.as_ref(),
+                metadata_context: metadata_context.as_ref(),
                 system_context: system_context_value.as_ref(),
                 case_context: case_context.as_ref(),
                 tool_results: &tool_results,

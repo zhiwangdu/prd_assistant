@@ -154,7 +154,7 @@ flowchart TD
 - Log Analysis task schema 强制带 `sessionId`；旧的无 Session task 不再兼容展示。
 - Server 持久化任务并在后台执行，支持重启恢复。
 - Upload session 持久化并支持重启续传。
-- Metadata 接入 task context，写入 `metadata_context.json` 并进入 LLM Prompt。
+- Metadata 接入 task context，完整写入 workspace `metadata_context.json`；Claude Code 初始 `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 按 section/filter/分页读取。
 - Skill-backed System Context 接入 task context，支持 Codex-compatible Diagnostic Skills、`logagent.json` 匹配 manifest、按需 MCP reference 读取和 Metadata adapter；创建 Log Analysis run 时写入 `system_context.json` 并进入 Claude Code 背景区。
 - Server 新增受保护只读 HTTP MCP：`POST /api/mcp/readonly`，支持 `initialize`、`resources/list`、`resources/read`、`tools/list` 和 `tools/call`，只暴露 Skills、Metadata、Case、工具目录和 Domain Adapter 等共享知识。
 - Server 新增受保护导出下载：`GET /api/exports/skills.zip` 和 `GET /api/exports/tools.zip`。`skills.zip` 打包当前索引 Skill 普通文件并跳过 symlink；`tools.zip` 对 enabled 且可执行的工具做平台二进制快照，缺失或不可执行工具只在 manifest 标记 skipped。
@@ -166,7 +166,7 @@ flowchart TD
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 的 Claude Code session 调用会记录 callId、attempt、session artifact 和完成事件。
-- Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后用短 stdin prompt 调用 Claude Code CLI，并由 Claude 通过任务 MCP `analysis_package` resource 读取完整证据包；`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` 记录 session、MCP 调用和响应。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误。
+- Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后用短 stdin prompt 调用 Claude Code CLI，并由 Claude 通过任务 MCP `analysis_package` resource 读取证据包；其中 Metadata 只包含 outline/counts，不内联完整 databases/measurements/shards/indexes。`logagent.get_metadata_topology` 作为兼容 alias 返回 outline，`logagent.query_metadata` 会写入 `metadata_slices/<stable_id>.json` 并审计到 `mcp_calls.jsonl`。`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` 记录 session、MCP 调用和响应。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误。
 - Analysis Orchestrator 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
 - Analysis Orchestrator 已支持 Claude MCP `request_approval` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；真实 SSH/SCP 采集后续接入 Environment Collector。
 - Memory MVP 已支持 `memoryType=case`、兼容 Case schema v2 API、成功任务人工确认、LLM-assisted 文本导入手工 Case、SQLite/FTS 本地索引、legacy JSON 启动导入、关键词 fallback 召回和禁用。
@@ -195,6 +195,6 @@ flowchart TD
 - WEBUI 能完成上传、创建任务、读取证据。
 - API 受 API Key 保护，密钥不写入日志或产物。
 - 压缩包解压不能逃逸 workspace。
-- Claude Code 的 MCP tool 调用和最终 evidence refs 必须经过 schema、白名单、预算和审批校验；`system_context.json`、`diagnostic_skill` 和 `skill_references/*` 只能作为背景，不能作为根因 evidence ref。
+- Claude Code 的 MCP tool 调用和最终 evidence refs 必须经过 schema、白名单、预算和审批校验；`system_context.json`、`diagnostic_skill`、`skill_references/*` 和 `metadata_slices/*` 只能作为背景，不能作为根因 evidence ref。
 - 任务能从 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 接收输入并恢复。
 - 后续每个功能变更必须同步更新对应模块 `README.md` 和 `SPEC.md`。

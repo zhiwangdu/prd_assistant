@@ -2,6 +2,7 @@ use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
 use crate::support::{config::AppConfig, error::AppError, id::next_id};
@@ -200,6 +201,265 @@ pub struct TaskMetadataContext {
     pub cluster: Option<ClusterMetadata>,
     pub node: Option<NodeMetadata>,
     pub cluster_nodes: Vec<NodeMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetadataSection {
+    Overview,
+    Nodes,
+    Databases,
+    RetentionPolicies,
+    Measurements,
+    Fields,
+    ShardGroups,
+    Shards,
+    IndexGroups,
+    Indexes,
+    PartitionViews,
+}
+
+impl MetadataSection {
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "overview" => Ok(Self::Overview),
+            "nodes" => Ok(Self::Nodes),
+            "databases" => Ok(Self::Databases),
+            "retention_policies" => Ok(Self::RetentionPolicies),
+            "measurements" => Ok(Self::Measurements),
+            "fields" => Ok(Self::Fields),
+            "shard_groups" => Ok(Self::ShardGroups),
+            "shards" => Ok(Self::Shards),
+            "index_groups" => Ok(Self::IndexGroups),
+            "indexes" => Ok(Self::Indexes),
+            "partition_views" => Ok(Self::PartitionViews),
+            other => anyhow::bail!("unsupported metadata section {other}"),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Nodes => "nodes",
+            Self::Databases => "databases",
+            Self::RetentionPolicies => "retention_policies",
+            Self::Measurements => "measurements",
+            Self::Fields => "fields",
+            Self::ShardGroups => "shard_groups",
+            Self::Shards => "shards",
+            Self::IndexGroups => "index_groups",
+            Self::Indexes => "indexes",
+            Self::PartitionViews => "partition_views",
+        }
+    }
+
+    fn supports_filter(self, filter: &str) -> bool {
+        match self {
+            Self::Overview => false,
+            Self::Nodes => matches!(filter, "nodeId"),
+            Self::Databases => matches!(filter, "database"),
+            Self::RetentionPolicies => matches!(filter, "database" | "retentionPolicy"),
+            Self::Measurements | Self::Fields => {
+                matches!(filter, "database" | "retentionPolicy" | "measurement")
+            }
+            Self::ShardGroups | Self::Shards => matches!(
+                filter,
+                "database" | "retentionPolicy" | "ownerNodeId" | "ptId" | "shardId"
+            ),
+            Self::IndexGroups | Self::Indexes => matches!(
+                filter,
+                "database" | "retentionPolicy" | "ownerNodeId" | "ptId" | "indexId"
+            ),
+            Self::PartitionViews => matches!(filter, "database" | "ownerNodeId" | "ptId"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MetadataSliceQuery {
+    pub section: MetadataSection,
+    pub database: Option<String>,
+    pub retention_policy: Option<String>,
+    pub measurement: Option<String>,
+    pub node_id: Option<String>,
+    pub owner_node_id: Option<u64>,
+    pub pt_id: Option<u64>,
+    pub shard_id: Option<u64>,
+    pub index_id: Option<u64>,
+    pub limit: usize,
+    pub cursor: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSliceResult {
+    pub schema_version: u32,
+    pub section: String,
+    pub filters: Value,
+    pub limit: usize,
+    pub cursor: Option<String>,
+    pub total: usize,
+    pub next_cursor: Option<String>,
+    pub truncated: bool,
+    pub items: Vec<Value>,
+}
+
+#[derive(Debug, Default)]
+struct MetadataCounts {
+    nodes: usize,
+    databases: usize,
+    retention_policies: usize,
+    measurements: usize,
+    fields: usize,
+    shard_groups: usize,
+    shards: usize,
+    index_groups: usize,
+    indexes: usize,
+    partition_views: usize,
+}
+
+pub fn metadata_context_outline(context: &TaskMetadataContext) -> Value {
+    let counts = metadata_counts(context);
+    json!({
+        "schemaVersion": 1,
+        "kind": "metadata_context_outline",
+        "metadataContextPath": "metadata_context.json",
+        "fullContextInPackage": false,
+        "fullContextAccess": {
+            "tool": "logagent.query_metadata",
+            "resource": "logagent://task/<task_id>/metadata_context",
+            "note": "resources/read metadata_context returns this outline; use logagent.query_metadata for bounded metadata slices."
+        },
+        "selected": {
+            "instanceId": &context.instance_id,
+            "clusterId": &context.cluster_id,
+            "nodeId": &context.node_id
+        },
+        "product": &context.product,
+        "version": &context.version,
+        "environment": &context.environment,
+        "resolvedAt": &context.resolved_at,
+        "counts": {
+            "nodes": counts.nodes,
+            "databases": counts.databases,
+            "retentionPolicies": counts.retention_policies,
+            "measurements": counts.measurements,
+            "fields": counts.fields,
+            "shardGroups": counts.shard_groups,
+            "shards": counts.shards,
+            "indexGroups": counts.index_groups,
+            "indexes": counts.indexes,
+            "partitionViews": counts.partition_views
+        },
+        "sections": {
+            "overview": section_outline(1, &[]),
+            "nodes": section_outline(counts.nodes, &["nodeId"]),
+            "databases": section_outline(counts.databases, &["database"]),
+            "retention_policies": section_outline(counts.retention_policies, &["database", "retentionPolicy"]),
+            "measurements": section_outline(counts.measurements, &["database", "retentionPolicy", "measurement"]),
+            "fields": section_outline(counts.fields, &["database", "retentionPolicy", "measurement"]),
+            "shard_groups": section_outline(counts.shard_groups, &["database", "retentionPolicy", "ownerNodeId", "ptId", "shardId"]),
+            "shards": section_outline(counts.shards, &["database", "retentionPolicy", "ownerNodeId", "ptId", "shardId"]),
+            "index_groups": section_outline(counts.index_groups, &["database", "retentionPolicy", "ownerNodeId", "ptId", "indexId"]),
+            "indexes": section_outline(counts.indexes, &["database", "retentionPolicy", "ownerNodeId", "ptId", "indexId"]),
+            "partition_views": section_outline(counts.partition_views, &["database", "ownerNodeId", "ptId"])
+        },
+        "finalEvidenceAllowed": false
+    })
+}
+
+pub fn metadata_slice_query_from_value(value: &Value) -> anyhow::Result<MetadataSliceQuery> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("metadata query arguments must be an object"))?;
+    for key in object.keys() {
+        if !matches!(
+            key.as_str(),
+            "section"
+                | "database"
+                | "retentionPolicy"
+                | "measurement"
+                | "nodeId"
+                | "ownerNodeId"
+                | "ptId"
+                | "shardId"
+                | "indexId"
+                | "limit"
+                | "cursor"
+        ) {
+            anyhow::bail!("unsupported metadata query argument {key}");
+        }
+    }
+    let section = object
+        .get("section")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("section is required"))
+        .and_then(MetadataSection::parse)?;
+    let limit = match object.get("limit") {
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("limit must be an integer"))?,
+        None => 50,
+    };
+    if !(1..=200).contains(&limit) {
+        anyhow::bail!("limit must be between 1 and 200");
+    }
+    let cursor = match object.get("cursor") {
+        Some(Value::String(value)) => value
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| anyhow::anyhow!("cursor must be a non-negative integer offset"))?,
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("cursor must be a non-negative integer offset"))?
+            as usize,
+        None => 0,
+    };
+    let query = MetadataSliceQuery {
+        section,
+        database: optional_string_filter(object.get("database"), "database")?,
+        retention_policy: optional_string_filter(object.get("retentionPolicy"), "retentionPolicy")?,
+        measurement: optional_string_filter(object.get("measurement"), "measurement")?,
+        node_id: optional_string_filter(object.get("nodeId"), "nodeId")?,
+        owner_node_id: optional_u64_filter(object.get("ownerNodeId"), "ownerNodeId")?,
+        pt_id: optional_u64_filter(object.get("ptId"), "ptId")?,
+        shard_id: optional_u64_filter(object.get("shardId"), "shardId")?,
+        index_id: optional_u64_filter(object.get("indexId"), "indexId")?,
+        limit: limit as usize,
+        cursor,
+    };
+    validate_metadata_query_filters(&query)?;
+    Ok(query)
+}
+
+pub fn query_metadata_context(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<MetadataSliceResult> {
+    validate_metadata_query_filters(query)?;
+    let all_items = metadata_items_for_section(context, query)?;
+    let total = all_items.len();
+    if query.cursor > total {
+        anyhow::bail!("cursor is beyond the result set");
+    }
+    let end = query.cursor.saturating_add(query.limit).min(total);
+    let items = all_items
+        .into_iter()
+        .skip(query.cursor)
+        .take(query.limit)
+        .collect::<Vec<_>>();
+    Ok(MetadataSliceResult {
+        schema_version: 1,
+        section: query.section.as_str().to_string(),
+        filters: metadata_query_filters(query),
+        limit: query.limit,
+        cursor: (query.cursor > 0).then(|| query.cursor.to_string()),
+        total,
+        next_cursor: (end < total).then(|| end.to_string()),
+        truncated: end < total,
+        items,
+    })
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -712,6 +972,583 @@ fn cluster_nodes(records: &MetadataRecords, cluster_id: &str) -> Vec<NodeMetadat
         .collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
     nodes
+}
+
+fn section_outline(count: usize, filters: &[&str]) -> Value {
+    json!({
+        "available": count > 0,
+        "count": count,
+        "query": {
+            "tool": "logagent.query_metadata",
+            "limitMax": 200,
+            "filters": filters
+        }
+    })
+}
+
+fn metadata_counts(context: &TaskMetadataContext) -> MetadataCounts {
+    let mut counts = MetadataCounts {
+        nodes: context.cluster_nodes.len(),
+        ..MetadataCounts::default()
+    };
+    if counts.nodes == 0 && context.node.is_some() {
+        counts.nodes = 1;
+    }
+    if let Some(cluster) = context.cluster.as_ref() {
+        counts.databases = cluster.databases.len();
+        counts.partition_views = cluster.partition_views.len();
+        for database in &cluster.databases {
+            counts.retention_policies += database.retention_policies.len();
+            for rp in &database.retention_policies {
+                counts.measurements += rp.measurements.len();
+                counts.fields += rp
+                    .measurements
+                    .iter()
+                    .map(|measurement| measurement.schema.len())
+                    .sum::<usize>();
+                counts.shard_groups += rp.shard_groups.len();
+                counts.shards += rp
+                    .shard_groups
+                    .iter()
+                    .map(|group| {
+                        if group.shards.is_empty() {
+                            group.shard_ids.len()
+                        } else {
+                            group.shards.len()
+                        }
+                    })
+                    .sum::<usize>();
+                counts.index_groups += rp.index_groups.len();
+                counts.indexes += rp
+                    .index_groups
+                    .iter()
+                    .map(|group| group.indexes.len())
+                    .sum::<usize>();
+            }
+        }
+    }
+    counts
+}
+
+fn optional_string_filter(value: Option<&Value>, name: &str) -> anyhow::Result<Option<String>> {
+    match value {
+        Some(Value::String(value)) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        Some(Value::Null) | None => Ok(None),
+        Some(_) => anyhow::bail!("{name} must be a string"),
+    }
+}
+
+fn optional_u64_filter(value: Option<&Value>, name: &str) -> anyhow::Result<Option<u64>> {
+    match value {
+        Some(Value::String(value)) => value
+            .trim()
+            .parse::<u64>()
+            .map(Some)
+            .map_err(|_| anyhow::anyhow!("{name} must be an unsigned integer")),
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("{name} must be an unsigned integer")),
+        Some(Value::Null) | None => Ok(None),
+        Some(_) => anyhow::bail!("{name} must be an unsigned integer"),
+    }
+}
+
+fn validate_metadata_query_filters(query: &MetadataSliceQuery) -> anyhow::Result<()> {
+    for (name, present) in [
+        ("database", query.database.is_some()),
+        ("retentionPolicy", query.retention_policy.is_some()),
+        ("measurement", query.measurement.is_some()),
+        ("nodeId", query.node_id.is_some()),
+        ("ownerNodeId", query.owner_node_id.is_some()),
+        ("ptId", query.pt_id.is_some()),
+        ("shardId", query.shard_id.is_some()),
+        ("indexId", query.index_id.is_some()),
+    ] {
+        if present && !query.section.supports_filter(name) {
+            anyhow::bail!(
+                "filter {name} is not supported for metadata section {}",
+                query.section.as_str()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn metadata_query_filters(query: &MetadataSliceQuery) -> Value {
+    json!({
+        "database": &query.database,
+        "retentionPolicy": &query.retention_policy,
+        "measurement": &query.measurement,
+        "nodeId": &query.node_id,
+        "ownerNodeId": query.owner_node_id,
+        "ptId": query.pt_id,
+        "shardId": query.shard_id,
+        "indexId": query.index_id,
+    })
+}
+
+fn metadata_items_for_section(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let items = match query.section {
+        MetadataSection::Overview => vec![metadata_context_outline(context)],
+        MetadataSection::Nodes => metadata_node_items(context, query)?,
+        MetadataSection::Databases => metadata_database_items(context, query)?,
+        MetadataSection::RetentionPolicies => metadata_retention_policy_items(context, query)?,
+        MetadataSection::Measurements => metadata_measurement_items(context, query)?,
+        MetadataSection::Fields => metadata_field_items(context, query)?,
+        MetadataSection::ShardGroups => metadata_shard_group_items(context, query)?,
+        MetadataSection::Shards => metadata_shard_items(context, query)?,
+        MetadataSection::IndexGroups => metadata_index_group_items(context, query)?,
+        MetadataSection::Indexes => metadata_index_items(context, query)?,
+        MetadataSection::PartitionViews => metadata_partition_view_items(context, query)?,
+    };
+    Ok(items)
+}
+
+fn metadata_node_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut nodes = context.cluster_nodes.clone();
+    if nodes.is_empty() {
+        if let Some(node) = context.node.as_ref() {
+            nodes.push(node.clone());
+        }
+    }
+    nodes
+        .into_iter()
+        .filter(|node| {
+            query
+                .node_id
+                .as_deref()
+                .map(|node_id| node.node_id == node_id)
+                .unwrap_or(true)
+        })
+        .map(|node| serde_json::to_value(node).map_err(Into::into))
+        .collect()
+}
+
+fn metadata_database_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        items.push(json!({
+            "name": &database.name,
+            "defaultRetentionPolicy": &database.default_retention_policy,
+            "replicaN": database.replica_n,
+            "markDeleted": database.mark_deleted,
+            "retentionPolicyCount": database.retention_policies.len()
+        }));
+    }
+    Ok(items)
+}
+
+fn metadata_retention_policy_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            items.push(json!({
+                "database": &database.name,
+                "name": &rp.name,
+                "replicaN": rp.replica_n,
+                "duration": rp.duration,
+                "shardGroupDuration": rp.shard_group_duration,
+                "indexGroupDuration": rp.index_group_duration,
+                "markDeleted": rp.mark_deleted,
+                "measurementCount": rp.measurements.len(),
+                "shardGroupCount": rp.shard_groups.len(),
+                "indexGroupCount": rp.index_groups.len()
+            }));
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_measurement_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for measurement in &rp.measurements {
+                if !measurement_matches(measurement, query) {
+                    continue;
+                }
+                items.push(json!({
+                    "database": &database.name,
+                    "retentionPolicy": &rp.name,
+                    "name": &measurement.name,
+                    "logicalName": &measurement.logical_name,
+                    "versionName": &measurement.version_name,
+                    "version": measurement.version,
+                    "shardKeyType": &measurement.shard_key_type,
+                    "markDeleted": measurement.mark_deleted,
+                    "engineType": measurement.engine_type,
+                    "fieldCount": measurement.schema.len()
+                }));
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_field_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for measurement in &rp.measurements {
+                if !measurement_matches(measurement, query) {
+                    continue;
+                }
+                for field in &measurement.schema {
+                    items.push(json!({
+                        "database": &database.name,
+                        "retentionPolicy": &rp.name,
+                        "measurement": &measurement.name,
+                        "name": &field.name,
+                        "typ": field.typ,
+                        "endTime": field.end_time
+                    }));
+                }
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_shard_group_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for group in &rp.shard_groups {
+                let shard_ids = shard_ids_for_group(group);
+                if query
+                    .shard_id
+                    .map(|shard_id| !shard_ids.contains(&shard_id))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                if !pt_owner_filters_match(context, &database.name, &group.owners, query) {
+                    continue;
+                }
+                items.push(json!({
+                    "database": &database.name,
+                    "retentionPolicy": &rp.name,
+                    "id": group.id,
+                    "startTime": &group.start_time,
+                    "endTime": &group.end_time,
+                    "shardIds": shard_ids,
+                    "owners": &group.owners,
+                    "shardCount": if group.shards.is_empty() { group.shard_ids.len() } else { group.shards.len() },
+                    "deletedAt": &group.deleted_at,
+                    "truncatedAt": &group.truncated_at,
+                    "engineType": group.engine_type,
+                    "version": group.version
+                }));
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_shard_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for group in &rp.shard_groups {
+                let shards = if group.shards.is_empty() {
+                    group
+                        .shard_ids
+                        .iter()
+                        .map(|shard_id| ShardMetadata {
+                            id: *shard_id,
+                            owners: group.owners.clone(),
+                            ..ShardMetadata::default()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    group.shards.clone()
+                };
+                for shard in shards {
+                    if query
+                        .shard_id
+                        .map(|shard_id| shard.id != shard_id)
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    let owners = if shard.owners.is_empty() {
+                        group.owners.as_slice()
+                    } else {
+                        shard.owners.as_slice()
+                    };
+                    if !pt_owner_filters_match(context, &database.name, owners, query) {
+                        continue;
+                    }
+                    items.push(json!({
+                        "database": &database.name,
+                        "retentionPolicy": &rp.name,
+                        "shardGroupId": group.id,
+                        "id": shard.id,
+                        "owners": owners,
+                        "min": shard.min,
+                        "max": shard.max,
+                        "tier": shard.tier,
+                        "indexId": shard.index_id,
+                        "downsampleId": shard.downsample_id,
+                        "downsampleLevel": shard.downsample_level,
+                        "readOnly": shard.read_only,
+                        "markDelete": shard.mark_delete
+                    }));
+                }
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_index_group_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for group in &rp.index_groups {
+                if query
+                    .index_id
+                    .map(|index_id| !group.indexes.iter().any(|index| index.id == index_id))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                if query.pt_id.is_some() || query.owner_node_id.is_some() {
+                    let owners = group
+                        .indexes
+                        .iter()
+                        .flat_map(|index| index.owners.iter().copied())
+                        .collect::<Vec<_>>();
+                    if !pt_owner_filters_match(context, &database.name, &owners, query) {
+                        continue;
+                    }
+                }
+                items.push(json!({
+                    "database": &database.name,
+                    "retentionPolicy": &rp.name,
+                    "id": group.id,
+                    "startTime": &group.start_time,
+                    "endTime": &group.end_time,
+                    "deletedAt": &group.deleted_at,
+                    "engineType": group.engine_type,
+                    "indexCount": group.indexes.len()
+                }));
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_index_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let mut items = Vec::new();
+    for database in databases(context) {
+        if !database_matches(database, query) {
+            continue;
+        }
+        for rp in &database.retention_policies {
+            if !retention_policy_matches(rp, query) {
+                continue;
+            }
+            for group in &rp.index_groups {
+                for index in &group.indexes {
+                    if query
+                        .index_id
+                        .map(|index_id| index.id != index_id)
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    if !pt_owner_filters_match(context, &database.name, &index.owners, query) {
+                        continue;
+                    }
+                    items.push(json!({
+                        "database": &database.name,
+                        "retentionPolicy": &rp.name,
+                        "indexGroupId": group.id,
+                        "id": index.id,
+                        "tier": index.tier,
+                        "owners": &index.owners,
+                        "markDelete": index.mark_delete
+                    }));
+                }
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn metadata_partition_view_items(
+    context: &TaskMetadataContext,
+    query: &MetadataSliceQuery,
+) -> anyhow::Result<Vec<Value>> {
+    let Some(cluster) = context.cluster.as_ref() else {
+        return Ok(Vec::new());
+    };
+    cluster
+        .partition_views
+        .iter()
+        .filter(|view| {
+            query
+                .database
+                .as_deref()
+                .map(|database| view.database == database)
+                .unwrap_or(true)
+                && query.pt_id.map(|pt_id| view.pt_id == pt_id).unwrap_or(true)
+                && query
+                    .owner_node_id
+                    .map(|owner_node_id| view.owner_node_id == Some(owner_node_id))
+                    .unwrap_or(true)
+        })
+        .map(|view| serde_json::to_value(view).map_err(Into::into))
+        .collect()
+}
+
+fn databases(context: &TaskMetadataContext) -> &[DatabaseMetadata] {
+    context
+        .cluster
+        .as_ref()
+        .map(|cluster| cluster.databases.as_slice())
+        .unwrap_or(&[])
+}
+
+fn database_matches(database: &DatabaseMetadata, query: &MetadataSliceQuery) -> bool {
+    query
+        .database
+        .as_deref()
+        .map(|filter| database.name == filter)
+        .unwrap_or(true)
+}
+
+fn retention_policy_matches(rp: &RetentionPolicyMetadata, query: &MetadataSliceQuery) -> bool {
+    query
+        .retention_policy
+        .as_deref()
+        .map(|filter| rp.name == filter)
+        .unwrap_or(true)
+}
+
+fn measurement_matches(measurement: &MeasurementMetadata, query: &MetadataSliceQuery) -> bool {
+    query
+        .measurement
+        .as_deref()
+        .map(|filter| {
+            measurement.name == filter || measurement.logical_name.as_deref() == Some(filter)
+        })
+        .unwrap_or(true)
+}
+
+fn shard_ids_for_group(group: &ShardGroupMetadata) -> Vec<u64> {
+    if group.shards.is_empty() {
+        group.shard_ids.clone()
+    } else {
+        group.shards.iter().map(|shard| shard.id).collect()
+    }
+}
+
+fn pt_owner_filters_match(
+    context: &TaskMetadataContext,
+    database: &str,
+    pt_ids: &[u64],
+    query: &MetadataSliceQuery,
+) -> bool {
+    if let Some(pt_id) = query.pt_id {
+        if !pt_ids.contains(&pt_id) {
+            return false;
+        }
+    }
+    if let Some(owner_node_id) = query.owner_node_id {
+        return pt_ids.iter().any(|pt_id| {
+            context
+                .cluster
+                .as_ref()
+                .map(|cluster| {
+                    cluster.partition_views.iter().any(|view| {
+                        view.database == database
+                            && view.pt_id == *pt_id
+                            && view.owner_node_id == Some(owner_node_id)
+                    })
+                })
+                .unwrap_or(false)
+        });
+    }
+    true
 }
 
 async fn fetch_metadata_content(url: &str) -> Result<String, AppError> {
@@ -1928,6 +2765,252 @@ clusters:
             data_node.labels.get("tcpHost").map(String::as_str),
             Some("127.0.0.1:8401")
         );
+    }
+
+    #[test]
+    fn metadata_outline_reports_counts_without_nested_payload() {
+        let context = metadata_context_fixture();
+        let outline = metadata_context_outline(&context);
+
+        assert_eq!(outline["kind"], "metadata_context_outline");
+        assert_eq!(outline["metadataContextPath"], "metadata_context.json");
+        assert_eq!(outline["fullContextInPackage"], false);
+        assert_eq!(outline["selected"]["instanceId"], "prod-a");
+        assert_eq!(outline["product"], "opengemini");
+        assert_eq!(outline["counts"]["nodes"], 2);
+        assert_eq!(outline["counts"]["databases"], 1);
+        assert_eq!(outline["counts"]["retentionPolicies"], 1);
+        assert_eq!(outline["counts"]["measurements"], 1);
+        assert_eq!(outline["counts"]["fields"], 2);
+        assert_eq!(outline["counts"]["shards"], 2);
+        assert_eq!(outline["counts"]["partitionViews"], 2);
+        assert!(outline.get("cluster").is_none());
+        let encoded = serde_json::to_string(&outline).unwrap();
+        assert!(!encoded.contains("cpu_0000"));
+        assert!(!encoded.contains("shardIds"));
+    }
+
+    #[test]
+    fn metadata_query_filters_and_pages_bounded_slices() {
+        let context = metadata_context_fixture();
+        let first_page = metadata_slice_query_from_value(&json!({
+            "section": "fields",
+            "database": "mydb",
+            "retentionPolicy": "autogen",
+            "measurement": "cpu",
+            "limit": 1
+        }))
+        .unwrap();
+        let result = query_metadata_context(&context, &first_page).unwrap();
+
+        assert_eq!(result.total, 2);
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.next_cursor.as_deref(), Some("1"));
+        assert!(result.truncated);
+        assert_eq!(result.items[0]["name"], "host");
+
+        let second_page = metadata_slice_query_from_value(&json!({
+            "section": "fields",
+            "database": "mydb",
+            "retentionPolicy": "autogen",
+            "measurement": "cpu",
+            "limit": 1,
+            "cursor": "1"
+        }))
+        .unwrap();
+        let result = query_metadata_context(&context, &second_page).unwrap();
+        assert_eq!(result.items[0]["name"], "usage");
+        assert_eq!(result.next_cursor, None);
+        assert!(!result.truncated);
+
+        let shard_query = metadata_slice_query_from_value(&json!({
+            "section": "shards",
+            "database": "mydb",
+            "ownerNodeId": 3
+        }))
+        .unwrap();
+        let shard_result = query_metadata_context(&context, &shard_query).unwrap();
+        assert_eq!(shard_result.total, 1);
+        assert_eq!(shard_result.items[0]["id"], 2);
+
+        let partition_query = metadata_slice_query_from_value(&json!({
+            "section": "partition_views",
+            "ptId": 0
+        }))
+        .unwrap();
+        let partition_result = query_metadata_context(&context, &partition_query).unwrap();
+        assert_eq!(partition_result.total, 1);
+        assert_eq!(partition_result.items[0]["ownerNodeId"], 2);
+    }
+
+    #[test]
+    fn metadata_query_rejects_invalid_section_filter_and_cursor() {
+        let context = metadata_context_fixture();
+        assert!(metadata_slice_query_from_value(&json!({
+            "section": "unknown"
+        }))
+        .unwrap_err()
+        .to_string()
+        .contains("unsupported metadata section"));
+
+        assert!(metadata_slice_query_from_value(&json!({
+            "section": "databases",
+            "nodeId": "prod-a:data-2"
+        }))
+        .unwrap_err()
+        .to_string()
+        .contains("not supported"));
+
+        let cursor_query = metadata_slice_query_from_value(&json!({
+            "section": "nodes",
+            "cursor": 99
+        }))
+        .unwrap();
+        assert!(query_metadata_context(&context, &cursor_query)
+            .unwrap_err()
+            .to_string()
+            .contains("cursor"));
+    }
+
+    fn metadata_context_fixture() -> TaskMetadataContext {
+        TaskMetadataContext {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            instance_id: Some("prod-a".to_string()),
+            cluster_id: Some("prod-a".to_string()),
+            node_id: Some("prod-a:data-2".to_string()),
+            product: Some("opengemini".to_string()),
+            version: Some("1.3.0".to_string()),
+            environment: Some("prod".to_string()),
+            instance: Some(InstanceMetadata {
+                instance_id: "prod-a".to_string(),
+                cluster_id: Some("prod-a".to_string()),
+                node_id: Some("prod-a:data-2".to_string()),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                ..InstanceMetadata::default()
+            }),
+            cluster: Some(ClusterMetadata {
+                cluster_id: "prod-a".to_string(),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                nodes: vec!["prod-a:data-2".to_string(), "prod-a:data-3".to_string()],
+                databases: vec![DatabaseMetadata {
+                    name: "mydb".to_string(),
+                    default_retention_policy: Some("autogen".to_string()),
+                    retention_policies: vec![RetentionPolicyMetadata {
+                        name: "autogen".to_string(),
+                        measurements: vec![MeasurementMetadata {
+                            name: "cpu_0000".to_string(),
+                            logical_name: Some("cpu".to_string()),
+                            version_name: Some("cpu_0000".to_string()),
+                            schema: vec![
+                                FieldSchemaMetadata {
+                                    name: "host".to_string(),
+                                    typ: Some(6),
+                                    end_time: None,
+                                },
+                                FieldSchemaMetadata {
+                                    name: "usage".to_string(),
+                                    typ: Some(3),
+                                    end_time: None,
+                                },
+                            ],
+                            ..MeasurementMetadata::default()
+                        }],
+                        shard_groups: vec![ShardGroupMetadata {
+                            id: 10,
+                            shard_ids: vec![1, 2],
+                            owners: vec![0, 1],
+                            shards: vec![
+                                ShardMetadata {
+                                    id: 1,
+                                    owners: vec![0],
+                                    index_id: Some(100),
+                                    ..ShardMetadata::default()
+                                },
+                                ShardMetadata {
+                                    id: 2,
+                                    owners: vec![1],
+                                    index_id: Some(101),
+                                    ..ShardMetadata::default()
+                                },
+                            ],
+                            ..ShardGroupMetadata::default()
+                        }],
+                        index_groups: vec![IndexGroupMetadata {
+                            id: 20,
+                            indexes: vec![
+                                IndexMetadata {
+                                    id: 100,
+                                    owners: vec![0],
+                                    tier: Some(0),
+                                    mark_delete: Some(false),
+                                },
+                                IndexMetadata {
+                                    id: 101,
+                                    owners: vec![1],
+                                    tier: Some(0),
+                                    mark_delete: Some(false),
+                                },
+                            ],
+                            ..IndexGroupMetadata::default()
+                        }],
+                        ..RetentionPolicyMetadata::default()
+                    }],
+                    ..DatabaseMetadata::default()
+                }],
+                partition_views: vec![
+                    PartitionViewMetadata {
+                        database: "mydb".to_string(),
+                        pt_id: 0,
+                        owner_node_id: Some(2),
+                        status: Some(0),
+                        status_text: "online".to_string(),
+                        version: Some(1),
+                        replica_group_id: Some(0),
+                    },
+                    PartitionViewMetadata {
+                        database: "mydb".to_string(),
+                        pt_id: 1,
+                        owner_node_id: Some(3),
+                        status: Some(0),
+                        status_text: "online".to_string(),
+                        version: Some(1),
+                        replica_group_id: Some(0),
+                    },
+                ],
+                ..ClusterMetadata::default()
+            }),
+            node: Some(NodeMetadata {
+                node_id: "prod-a:data-2".to_string(),
+                raw_node_id: Some(2),
+                instance_id: Some("prod-a".to_string()),
+                role: Some("data".to_string()),
+                status: Some("active".to_string()),
+                ..NodeMetadata::default()
+            }),
+            cluster_nodes: vec![
+                NodeMetadata {
+                    node_id: "prod-a:data-2".to_string(),
+                    raw_node_id: Some(2),
+                    instance_id: Some("prod-a".to_string()),
+                    role: Some("data".to_string()),
+                    status: Some("active".to_string()),
+                    ..NodeMetadata::default()
+                },
+                NodeMetadata {
+                    node_id: "prod-a:data-3".to_string(),
+                    raw_node_id: Some(3),
+                    instance_id: Some("prod-a".to_string()),
+                    role: Some("data".to_string()),
+                    status: Some("active".to_string()),
+                    ..NodeMetadata::default()
+                },
+            ],
+        }
     }
 
     struct Fixture {

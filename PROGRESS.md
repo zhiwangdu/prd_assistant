@@ -713,6 +713,15 @@ Current product-loop Case Store slice verification:
 - Fixed Claude CLI structured output parsing after real `PLAN_ANALYSIS` returned a valid Claude envelope whose user-visible `result` was `"Done."` and whose actual schema-constrained decision was in `structured_output`. Agent Backend parsing now checks `structured_output` / `structuredOutput` before `result`, and failed parse responses include a truncated `rawStdoutPreview` plus the full error chain for future diagnosis.
 - Verification for the structured output parser fix passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::agent_backend`, `cargo test` (native 1 + server 114 tests), runtime `rebuild-install.sh --server-only --no-restart`, and `logagentctl.sh status` returning `/health` `{"status":"ok"}`.
 
+## 2026-06-12 Metadata On-Demand Loading
+
+- `analysis_package.json` no longer embeds the full `metadataContext` payload. The Claude evidence package now writes `evidence.metadataContextOutline` with selected instance/cluster/node ids, product/version/environment, section counts, and `logagent.query_metadata` discovery info.
+- The full `metadata_context.json` remains in the task workspace and continues to be returned by the successful task artifacts API for WebUI and compatibility.
+- Task stdio MCP `resources/read metadata_context` and compatibility tool `logagent.get_metadata_topology` now return the outline instead of full metadata topology.
+- Added task MCP tool `logagent.query_metadata` with `section`, `database`, `retentionPolicy`, `measurement`, `nodeId`, `ownerNodeId`, `ptId`, `shardId`, `indexId`, `limit`, and `cursor` arguments. It returns bounded `items`, `total`, `nextCursor`, `truncated`, `backgroundRef`, writes `metadata_slices/<stable_id>.json`, and records calls in `mcp_calls.jsonl`.
+- Metadata slices remain background context and are not accepted as final evidence refs.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server metadata`, `cargo test -p logagent-server mcp`, and `cargo test -- --test-threads=1` (native 1 + server 128 tests).
+
 ## Planned Next
 
 1. Complete the current product loop around the existing upload, Metadata, Tool Runner, Analysis Agent, and WebUI flow:

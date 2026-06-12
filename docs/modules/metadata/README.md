@@ -23,7 +23,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
-- 将产品、版本、环境、节点状态、数据库和 PT 摘要提供给 Claude Code MCP resources。
+- 将产品、版本、环境和拓扑数量摘要提供给 Claude Code MCP resources；完整 Metadata 不再进入 `analysis_package.json` 或任务 MCP 默认 resource。
+- 任务 stdio MCP 新增 `logagent.query_metadata`，支持按 section/filter/limit/cursor 读取 bounded slice，并写入 `metadata_slices/<stable_id>.json` 审计背景上下文；`logagent.get_metadata_topology` 作为兼容 alias 返回 outline。
 - 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances` 和 `logagent.get_metadata_snapshot` 暴露已导入 Metadata，供个人本地 Claude Code 读取；该入口不导入或修改 Metadata。
 
 暂未实现：
@@ -222,6 +223,8 @@ Authorization: Bearer <api-key>
 这些字段进入 task context，后续用于日志分析和证据关联。只填写 `instanceId` 或 `nodeId` 时，Server 会从已确认 Metadata 自动推导关联 ID；显式 ID 与元数据关系冲突时拒绝创建任务。旧 `clusterId` 请求字段仍兼容，但 WebUI 不再暴露。
 
 任务创建时固化 `workspaces/<task_id>/metadata_context.json`。快照包含归一化 instance、cluster、node、cluster nodes、产品、版本和环境。为控制大小和避免重复，cluster `rawSnapshot` 不写入任务快照。
+
+Claude Code 初始上下文不再直接获得完整 `metadata_context.json`。`analysis_package.json` 的 `evidence.metadataContextOutline` 只包含 `metadataContextPath`、选中的 instance/cluster/node、产品/版本/环境、各 section 的 count/available 和可用查询入口。任务 MCP `resources/read metadata_context` 返回同样 outline；细节必须通过 `logagent.query_metadata` 读取，支持 `overview`、`nodes`、`databases`、`retention_policies`、`measurements`、`fields`、`shard_groups`、`shards`、`index_groups`、`indexes`、`partition_views`。slice 是背景上下文，不作为最终 evidence ref。
 
 ## 本地运行方式
 

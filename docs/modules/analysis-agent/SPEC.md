@@ -22,7 +22,7 @@
 - Claude Code 配置摘要和 dry-run 诊断
 - `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
 - Domain Adapter 内置 registry
-- Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`
+- Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`、`query_metadata`
 - `request_user_input` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
 - `request_approval` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
@@ -104,11 +104,13 @@ LogAgent MCP tools：
 - `logagent.get_log_slice`
 - `logagent.run_domain_tool`
 - `logagent.recall_cases`
-- `logagent.get_metadata_topology`
+- `logagent.get_metadata_topology`（兼容 alias，返回 Metadata outline）
+- `logagent.query_metadata`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
 Server 必须在执行前验证 MCP tool 名称、输入 schema、白名单、预算和审批策略。LLM Gateway 和 Claude Code 不得绕过 Server 调用能力模块。
+`analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只提供 Metadata outline；完整 `metadata_context.json` 保留在 workspace，必须通过 `logagent.query_metadata` 读取 bounded slice，slice 写入 `metadata_slices/<stable_id>.json` 并作为背景上下文处理。
 
 ## 用户追问
 

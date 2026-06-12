@@ -17,7 +17,13 @@ use crate::{
     },
     pipeline::{read_tool_results, search_task_with_settings},
     services::{
-        agent_contracts::write_json_atomic, skill_registry::SkillRegistry, tool_runner::ToolRunner,
+        agent_contracts::write_json_atomic,
+        metadata::{
+            metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
+            TaskMetadataContext,
+        },
+        skill_registry::SkillRegistry,
+        tool_runner::ToolRunner,
     },
     stores::{analysis_state, case_store::CaseStore, task_store::TaskStore},
     support::{
@@ -167,7 +173,7 @@ async fn resources_list_result(
         ("analysis_package", "Analysis package"),
         ("manifest", "Manifest"),
         ("grep_results", "Grep results"),
-        ("metadata_context", "Metadata context"),
+        ("metadata_context", "Metadata context outline"),
         ("system_context", "System context"),
         ("case_context", "Case context"),
         ("tool_results", "Tool results"),
@@ -212,6 +218,7 @@ async fn read_resource_result(
         }),
         "artifact_index" => artifact_index(workspace).await?,
         "tool_results" => json!({ "toolResults": read_tool_results(workspace).await? }),
+        "metadata_context" => read_metadata_context_outline(workspace).await?,
         other => read_json_resource(workspace, other).await?,
     };
     log_mcp_call(
@@ -335,8 +342,44 @@ fn tools_list_result() -> serde_json::Value {
             },
             {
                 "name": "logagent.get_metadata_topology",
-                "description": "Read the task metadata topology snapshot.",
+                "description": "Compatibility alias that returns the task metadata overview outline. Use logagent.query_metadata for bounded metadata slices.",
                 "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "logagent.query_metadata",
+                "description": "Read a bounded, paged slice from task metadata_context.json by section and filters. Returned slices are background context, not final evidence.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "section": {
+                            "type": "string",
+                            "enum": [
+                                "overview",
+                                "nodes",
+                                "databases",
+                                "retention_policies",
+                                "measurements",
+                                "fields",
+                                "shard_groups",
+                                "shards",
+                                "index_groups",
+                                "indexes",
+                                "partition_views"
+                            ]
+                        },
+                        "database": { "type": "string" },
+                        "retentionPolicy": { "type": "string" },
+                        "measurement": { "type": "string" },
+                        "nodeId": { "type": "string" },
+                        "ownerNodeId": { "type": "integer", "minimum": 0 },
+                        "ptId": { "type": "integer", "minimum": 0 },
+                        "shardId": { "type": "integer", "minimum": 0 },
+                        "indexId": { "type": "integer", "minimum": 0 },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+                        "cursor": { "type": ["string", "integer"] }
+                    },
+                    "required": ["section"]
+                }
             },
             {
                 "name": "logagent.get_skill_reference",
@@ -403,9 +446,8 @@ async fn call_tool(
         "logagent.recall_cases" => {
             recall_cases_tool(config.clone(), workspace, arguments.clone()).await?
         }
-        "logagent.get_metadata_topology" => {
-            read_json_resource(workspace, "metadata_context").await?
-        }
+        "logagent.get_metadata_topology" => read_metadata_context_outline(workspace).await?,
+        "logagent.query_metadata" => query_metadata_tool(workspace, arguments.clone()).await?,
         "logagent.get_skill_reference" => {
             get_skill_reference_tool(skills, workspace, arguments.clone()).await?
         }
@@ -595,6 +637,49 @@ async fn recall_cases_tool(
     }))
 }
 
+async fn read_metadata_context_outline(workspace: &Path) -> anyhow::Result<serde_json::Value> {
+    let context: TaskMetadataContext =
+        serde_json::from_value(read_json_resource(workspace, "metadata_context").await?)?;
+    Ok(metadata_context_outline(&context))
+}
+
+async fn query_metadata_tool(
+    workspace: &Path,
+    arguments: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let context: TaskMetadataContext =
+        serde_json::from_value(read_json_resource(workspace, "metadata_context").await?)?;
+    let query = metadata_slice_query_from_value(&arguments)?;
+    let slice = query_metadata_context(&context, &query)?;
+    let slice_id = format!("slice_{:016x}", stable_json_hash(&arguments));
+    let artifact_path = format!("metadata_slices/{slice_id}.json");
+    let background_ref = format!("{artifact_path}#items");
+    tokio::fs::create_dir_all(workspace.join("metadata_slices")).await?;
+    let mut result = serde_json::to_value(slice)?;
+    let object = result
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("metadata slice result must be a JSON object"))?;
+    object.insert(
+        "metadataContextPath".to_string(),
+        serde_json::Value::String("metadata_context.json".to_string()),
+    );
+    object.insert(
+        "artifactPath".to_string(),
+        serde_json::Value::String(artifact_path.clone()),
+    );
+    object.insert(
+        "backgroundRef".to_string(),
+        serde_json::Value::String(background_ref),
+    );
+    object.insert(
+        "finalEvidenceAllowed".to_string(),
+        serde_json::Value::Bool(false),
+    );
+    object.insert("createdAt".to_string(), json!(Utc::now()));
+    write_json_atomic(workspace.join(&artifact_path), &result).await?;
+    Ok(result)
+}
+
 async fn get_skill_reference_tool(
     skills: &SkillRegistry,
     workspace: &Path,
@@ -769,8 +854,20 @@ fn stable_json_hash(value: &serde_json::Value) -> u64 {
 mod tests {
     use super::*;
     use crate::{
-        domain::models::TaskKind, services::skill_registry::ResolveSkillsInput,
-        stores::system_context_store::system_context_bundle, support::config::SkillSettings,
+        domain::models::{TaskKind, TaskPhase, TaskRecord, TaskSource, TaskStatus},
+        services::{
+            metadata::{
+                ClusterMetadata, DatabaseMetadata, FieldSchemaMetadata, InstanceMetadata,
+                MeasurementMetadata, NodeMetadata, PartitionViewMetadata, RetentionPolicyMetadata,
+                ShardGroupMetadata, ShardMetadata, TaskMetadataContext,
+            },
+            skill_registry::ResolveSkillsInput,
+        },
+        stores::system_context_store::system_context_bundle,
+        support::config::{
+            AnalysisSettings, AppConfig, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
+            LogAnalyzerSettings, ServerSettings, SkillSettings, StorageSettings, ToolsSettings,
+        },
     };
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -803,6 +900,97 @@ mod tests {
             .unwrap();
         assert_eq!(value["purpose"], "diagnostic_evidence_package");
 
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn metadata_context_resource_returns_outline_not_full_payload() {
+        let workspace = temp_dir("metadata-outline-resource");
+        std::fs::create_dir_all(&workspace).unwrap();
+        write_json_atomic(
+            workspace.join("metadata_context.json"),
+            &metadata_context_fixture(),
+        )
+        .await
+        .unwrap();
+        let task = task_record("task_meta");
+
+        let result = read_resource_result(
+            &workspace,
+            &task,
+            "logagent://task/task_meta/metadata_context",
+        )
+        .await
+        .unwrap();
+        let text = result["contents"][0]["text"].as_str().unwrap();
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(value["kind"], "metadata_context_outline");
+        assert_eq!(value["counts"]["databases"], 1);
+        assert_eq!(value["counts"]["shards"], 2);
+        assert_eq!(value["fullContextInPackage"], false);
+        assert!(value.get("cluster").is_none());
+        let encoded = serde_json::to_string(&value).unwrap();
+        assert!(!encoded.contains("cpu_0000"));
+        assert!(!encoded.contains("shardIds"));
+
+        let alias = read_metadata_context_outline(&workspace).await.unwrap();
+        assert_eq!(alias["kind"], "metadata_context_outline");
+
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn query_metadata_tool_writes_bounded_slice_and_audit_call() {
+        let root = temp_dir("metadata-query-config");
+        let workspace = temp_dir("metadata-query-workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        write_json_atomic(
+            workspace.join("metadata_context.json"),
+            &metadata_context_fixture(),
+        )
+        .await
+        .unwrap();
+        let config = test_config(&root);
+        let skills = SkillRegistry::load(config.skills.clone()).unwrap();
+        let task = task_record("task_meta");
+
+        let result = call_tool(
+            &config,
+            &skills,
+            &workspace,
+            &task,
+            AnalysisMode::Diagnose,
+            "logagent.query_metadata",
+            json!({
+                "section": "shards",
+                "database": "mydb",
+                "ownerNodeId": 2,
+                "limit": 1
+            }),
+        )
+        .await
+        .unwrap();
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(value["section"], "shards");
+        assert_eq!(value["total"], 1);
+        assert_eq!(value["items"].as_array().unwrap().len(), 1);
+        assert_eq!(value["items"][0]["id"], 1);
+        assert_eq!(value["finalEvidenceAllowed"], false);
+        assert!(value["backgroundRef"]
+            .as_str()
+            .unwrap()
+            .starts_with("metadata_slices/slice_"));
+        let artifact_path = value["artifactPath"].as_str().unwrap();
+        assert!(workspace.join(artifact_path).exists());
+
+        let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
+        assert!(calls.contains("logagent.query_metadata"));
+        assert!(calls.contains("metadata_slices/slice_"));
+
+        let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(workspace);
     }
 
@@ -900,5 +1088,209 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    fn task_record(task_id: &str) -> TaskRecord {
+        let now = Utc::now();
+        TaskRecord {
+            schema_version: 4,
+            task_id: task_id.to_string(),
+            alias: None,
+            session_id: Some("sess_test".to_string()),
+            task_kind: TaskKind::LogAnalysis,
+            analysis_mode: AnalysisMode::Diagnose,
+            source: TaskSource::Upload,
+            upload_ids: Vec::new(),
+            inputs: Vec::new(),
+            source_url: None,
+            tool_id: None,
+            tool_params: serde_json::Value::Null,
+            tool_result_path: None,
+            instance_id: Some("prod-a".to_string()),
+            cluster_id: Some("prod-a".to_string()),
+            node_id: Some("prod-a:data-2".to_string()),
+            question: "why".to_string(),
+            status: TaskStatus::Running,
+            phase: Some(TaskPhase::PlanAnalysis),
+            attempts: 1,
+            error: None,
+            manifest_path: None,
+            grep_results_path: None,
+            metadata_context_path: Some("metadata_context.json".to_string()),
+            system_context_path: None,
+            result_json_path: None,
+            result_markdown_path: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn metadata_context_fixture() -> TaskMetadataContext {
+        TaskMetadataContext {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            instance_id: Some("prod-a".to_string()),
+            cluster_id: Some("prod-a".to_string()),
+            node_id: Some("prod-a:data-2".to_string()),
+            product: Some("opengemini".to_string()),
+            version: Some("1.3.0".to_string()),
+            environment: Some("prod".to_string()),
+            instance: Some(InstanceMetadata {
+                instance_id: "prod-a".to_string(),
+                cluster_id: Some("prod-a".to_string()),
+                node_id: Some("prod-a:data-2".to_string()),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                ..InstanceMetadata::default()
+            }),
+            cluster: Some(ClusterMetadata {
+                cluster_id: "prod-a".to_string(),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                nodes: vec!["prod-a:data-2".to_string(), "prod-a:data-3".to_string()],
+                databases: vec![DatabaseMetadata {
+                    name: "mydb".to_string(),
+                    default_retention_policy: Some("autogen".to_string()),
+                    retention_policies: vec![RetentionPolicyMetadata {
+                        name: "autogen".to_string(),
+                        measurements: vec![MeasurementMetadata {
+                            name: "cpu_0000".to_string(),
+                            logical_name: Some("cpu".to_string()),
+                            schema: vec![
+                                FieldSchemaMetadata {
+                                    name: "host".to_string(),
+                                    typ: Some(6),
+                                    end_time: None,
+                                },
+                                FieldSchemaMetadata {
+                                    name: "usage".to_string(),
+                                    typ: Some(3),
+                                    end_time: None,
+                                },
+                            ],
+                            ..MeasurementMetadata::default()
+                        }],
+                        shard_groups: vec![ShardGroupMetadata {
+                            id: 10,
+                            shard_ids: vec![1, 2],
+                            owners: vec![0, 1],
+                            shards: vec![
+                                ShardMetadata {
+                                    id: 1,
+                                    owners: vec![0],
+                                    index_id: Some(100),
+                                    ..ShardMetadata::default()
+                                },
+                                ShardMetadata {
+                                    id: 2,
+                                    owners: vec![1],
+                                    index_id: Some(101),
+                                    ..ShardMetadata::default()
+                                },
+                            ],
+                            ..ShardGroupMetadata::default()
+                        }],
+                        ..RetentionPolicyMetadata::default()
+                    }],
+                    ..DatabaseMetadata::default()
+                }],
+                partition_views: vec![
+                    PartitionViewMetadata {
+                        database: "mydb".to_string(),
+                        pt_id: 0,
+                        owner_node_id: Some(2),
+                        status: Some(0),
+                        status_text: "online".to_string(),
+                        version: Some(1),
+                        replica_group_id: Some(0),
+                    },
+                    PartitionViewMetadata {
+                        database: "mydb".to_string(),
+                        pt_id: 1,
+                        owner_node_id: Some(3),
+                        status: Some(0),
+                        status_text: "online".to_string(),
+                        version: Some(1),
+                        replica_group_id: Some(0),
+                    },
+                ],
+                ..ClusterMetadata::default()
+            }),
+            node: None,
+            cluster_nodes: vec![
+                NodeMetadata {
+                    node_id: "prod-a:data-2".to_string(),
+                    raw_node_id: Some(2),
+                    instance_id: Some("prod-a".to_string()),
+                    role: Some("data".to_string()),
+                    status: Some("active".to_string()),
+                    ..NodeMetadata::default()
+                },
+                NodeMetadata {
+                    node_id: "prod-a:data-3".to_string(),
+                    raw_node_id: Some(3),
+                    instance_id: Some("prod-a".to_string()),
+                    role: Some("data".to_string()),
+                    status: Some("active".to_string()),
+                    ..NodeMetadata::default()
+                },
+            ],
+        }
+    }
+
+    fn test_config(root: &Path) -> Arc<AppConfig> {
+        Arc::new(AppConfig {
+            config_path: root.join("logagent-test.yaml"),
+            server: ServerSettings {
+                bind: "127.0.0.1:0".to_string(),
+                public_base_url: "http://127.0.0.1:0".to_string(),
+                max_concurrent_tasks: 2,
+            },
+            auth: AuthSettings { api_keys: vec![] },
+            storage: StorageSettings {
+                data_dir: root.to_path_buf(),
+                max_upload_bytes: 1024 * 1024,
+                max_chunk_bytes: 512 * 1024,
+            },
+            skills: SkillSettings {
+                enabled: false,
+                roots: Vec::new(),
+                max_skill_chars: 4000,
+                max_reference_chars: 20_000,
+            },
+            log_analyzer: LogAnalyzerSettings {
+                keywords: vec!["error".to_string()],
+                max_matches: 20,
+            },
+            tools: ToolsSettings::default(),
+            llm: LlmSettings {
+                provider: LlmProvider::Stub,
+                base_url: None,
+                api_key: None,
+                binary_path: None,
+                binary_max_output_bytes: 1024 * 1024,
+                model: "stub".to_string(),
+                request_timeout_seconds: 1,
+                max_input_chars: 60_000,
+                max_output_tokens: 100,
+            },
+            claude_code: crate::support::config::ClaudeCodeSettings::default(),
+            mcp: crate::support::config::McpSettings::default(),
+            analysis: AnalysisSettings {
+                max_rounds: 4,
+                max_llm_calls: 4,
+                max_actions: 6,
+                max_repeated_action_fingerprints: 1,
+            },
+            embedding: EmbeddingSettings {
+                enabled: false,
+                provider: "openai_compatible".to_string(),
+                model: "text-embedding-3-small".to_string(),
+                api_key_env: None,
+                store: "sqlite".to_string(),
+            },
+        })
     }
 }

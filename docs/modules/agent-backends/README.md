@@ -18,7 +18,8 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - `claude_code` 配置块，读取 `LOGAGENT_CLAUDE_CODE_PATH` 或显式 `command_path`。
 - `mcp.enabled` / `mcp.transport=stdio` 配置。
 - `logagent-server mcp --config <logagent.yaml> --task-id <task_id> --mode <diagnose|code_investigation|fix>` stdio 子命令。
-- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，完整证据包由 Claude 通过 MCP `analysis_package` resource 读取。
+- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，证据包由 Claude 通过 MCP `analysis_package` resource 读取。
+- `analysis_package.json` 不再内联完整 Metadata；Claude 初始只看到 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 也返回 outline，细节通过 `logagent.query_metadata` 分页读取。
 - 分模式 permission profile：默认 `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/受控 Bash，`fix` 预留 Edit/Write/Test 能力。
 - task 创建接受 `analysisMode`，默认来自 `claude_code.default_mode`。
 - 新 workspace artifacts：
@@ -87,7 +88,7 @@ Resources：
 - task summary / artifact index
 - analysis package
 - manifest / grep results
-- metadata context
+- metadata context outline
 - system context
 - case context
 - tool results
@@ -98,8 +99,9 @@ Tools：
 - `logagent.get_log_slice`
 - `logagent.run_domain_tool`
 - `logagent.recall_cases`
-- `logagent.get_metadata_topology`
+- `logagent.get_metadata_topology`（兼容 alias，返回 overview outline）
+- `logagent.query_metadata`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
-每个 MCP tool call 追加到 `mcp_calls.jsonl`。会产生证据的工具同时写入对应 workspace artifact。
+每个 MCP tool call 追加到 `mcp_calls.jsonl`。会产生证据的工具同时写入对应 workspace artifact。`logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json`，该 slice 是背景上下文，不是最终 evidence ref。

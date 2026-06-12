@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::models::{GrepResults, Manifest, TaskRecord},
-    services::tool_runner::ToolRunRecord,
+    services::{
+        metadata::{metadata_context_outline, TaskMetadataContext},
+        tool_runner::ToolRunRecord,
+    },
     stores::analysis_state::AnalysisSnapshotResponse,
     support::{
         config::{AnalysisMode, ClaudeCodeSettings, McpSettings, ToolsSettings},
@@ -18,7 +21,7 @@ pub struct AgentContractInput<'a> {
     pub task: &'a TaskRecord,
     pub manifest: &'a Manifest,
     pub grep_results: &'a GrepResults,
-    pub metadata_context: Option<&'a serde_json::Value>,
+    pub metadata_context: Option<&'a TaskMetadataContext>,
     pub system_context: Option<&'a serde_json::Value>,
     pub case_context: Option<&'a serde_json::Value>,
     pub tool_results: &'a [ToolRunRecord],
@@ -74,6 +77,7 @@ pub async fn write_agent_contracts(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let metadata_context_outline = input.metadata_context.map(metadata_context_outline);
     let package = serde_json::json!({
         "schemaVersion": 2,
         "generatedAt": now,
@@ -98,8 +102,7 @@ pub async fn write_agent_contracts(
             "manifest": input.manifest,
             "grepResultsPath": "grep_results.json",
             "grepResults": input.grep_results,
-            "metadataContextPath": input.metadata_context.map(|_| "metadata_context.json"),
-            "metadataContext": input.metadata_context,
+            "metadataContextOutline": metadata_context_outline,
             "systemContextPath": input.system_context.map(|_| "system_context.json"),
             "systemContext": input.system_context,
             "diagnosticSkills": diagnostic_skills,
@@ -203,4 +206,177 @@ fn tool_capabilities(settings: &ToolsSettings) -> Vec<serde_json::Value> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        domain::models::{
+            GrepResults, Manifest, TaskKind, TaskPhase, TaskRecord, TaskSource, TaskStatus,
+        },
+        services::metadata::{
+            ClusterMetadata, DatabaseMetadata, FieldSchemaMetadata, InstanceMetadata,
+            MeasurementMetadata, RetentionPolicyMetadata, TaskMetadataContext,
+        },
+        stores::analysis_state,
+        support::config::{AnalysisMode, ClaudeCodeSettings, McpSettings},
+    };
+
+    #[tokio::test]
+    async fn analysis_package_uses_metadata_outline_instead_of_full_context() {
+        let workspace = temp_dir("agent-contracts-metadata-outline");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let task = task_record("task_meta");
+        analysis_state::initialize(&workspace, &task).unwrap();
+        let snapshot = analysis_state::read_snapshot(&workspace).unwrap();
+        let manifest = Manifest {
+            upload_id: String::new(),
+            upload_ids: Vec::new(),
+            uploads: Vec::new(),
+            task_id: task.task_id.clone(),
+            source: TaskSource::Upload,
+            filename: String::new(),
+            source_url: None,
+            files: Vec::new(),
+        };
+        let grep_results = GrepResults {
+            keywords: Vec::new(),
+            total_matches: 0,
+            matches: Vec::new(),
+        };
+        let metadata_context = metadata_context_fixture();
+
+        write_agent_contracts(
+            &workspace,
+            AgentContractInput {
+                task: &task,
+                manifest: &manifest,
+                grep_results: &grep_results,
+                metadata_context: Some(&metadata_context),
+                system_context: None,
+                case_context: None,
+                tool_results: &[],
+                analysis_snapshot: &snapshot,
+                claude_code: &ClaudeCodeSettings::default(),
+                mcp: &McpSettings::default(),
+                config_path: &workspace.join("logagent-test.yaml"),
+                analysis_mode: AnalysisMode::Diagnose,
+                tools: &ToolsSettings::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let package: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(workspace.join("analysis_package.json")).unwrap(),
+        )
+        .unwrap();
+        let evidence = package["evidence"].as_object().unwrap();
+        assert!(!evidence.contains_key("metadataContext"));
+        assert_eq!(
+            package["evidence"]["metadataContextOutline"]["kind"],
+            "metadata_context_outline"
+        );
+        assert_eq!(
+            package["evidence"]["metadataContextOutline"]["metadataContextPath"],
+            "metadata_context.json"
+        );
+        assert_eq!(
+            package["evidence"]["metadataContextOutline"]["counts"]["measurements"],
+            1
+        );
+        let encoded = serde_json::to_string(&package).unwrap();
+        assert!(!encoded.contains("cpu_0000"));
+        assert!(!encoded.contains("retentionPolicies\":["));
+
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "logagent-{name}-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ))
+    }
+
+    fn task_record(task_id: &str) -> TaskRecord {
+        let now = Utc::now();
+        TaskRecord {
+            schema_version: 4,
+            task_id: task_id.to_string(),
+            alias: None,
+            session_id: Some("sess_test".to_string()),
+            task_kind: TaskKind::LogAnalysis,
+            analysis_mode: AnalysisMode::Diagnose,
+            source: TaskSource::Upload,
+            upload_ids: Vec::new(),
+            inputs: Vec::new(),
+            source_url: None,
+            tool_id: None,
+            tool_params: serde_json::Value::Null,
+            tool_result_path: None,
+            instance_id: Some("prod-a".to_string()),
+            cluster_id: Some("prod-a".to_string()),
+            node_id: None,
+            question: "why".to_string(),
+            status: TaskStatus::Running,
+            phase: Some(TaskPhase::PlanAnalysis),
+            attempts: 1,
+            error: None,
+            manifest_path: None,
+            grep_results_path: None,
+            metadata_context_path: Some("metadata_context.json".to_string()),
+            system_context_path: None,
+            result_json_path: None,
+            result_markdown_path: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn metadata_context_fixture() -> TaskMetadataContext {
+        TaskMetadataContext {
+            schema_version: 1,
+            resolved_at: Utc::now(),
+            instance_id: Some("prod-a".to_string()),
+            cluster_id: Some("prod-a".to_string()),
+            node_id: None,
+            product: Some("opengemini".to_string()),
+            version: Some("1.3.0".to_string()),
+            environment: Some("prod".to_string()),
+            instance: Some(InstanceMetadata {
+                instance_id: "prod-a".to_string(),
+                cluster_id: Some("prod-a".to_string()),
+                product: Some("opengemini".to_string()),
+                version: Some("1.3.0".to_string()),
+                environment: Some("prod".to_string()),
+                ..InstanceMetadata::default()
+            }),
+            cluster: Some(ClusterMetadata {
+                cluster_id: "prod-a".to_string(),
+                databases: vec![DatabaseMetadata {
+                    name: "mydb".to_string(),
+                    retention_policies: vec![RetentionPolicyMetadata {
+                        name: "autogen".to_string(),
+                        measurements: vec![MeasurementMetadata {
+                            name: "cpu_0000".to_string(),
+                            schema: vec![FieldSchemaMetadata {
+                                name: "usage".to_string(),
+                                typ: Some(3),
+                                end_time: None,
+                            }],
+                            ..MeasurementMetadata::default()
+                        }],
+                        ..RetentionPolicyMetadata::default()
+                    }],
+                    ..DatabaseMetadata::default()
+                }],
+                ..ClusterMetadata::default()
+            }),
+            node: None,
+            cluster_nodes: Vec::new(),
+        }
+    }
 }

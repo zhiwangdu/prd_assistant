@@ -13,7 +13,8 @@
 - `analysisMode=diagnose|code_investigation|fix` task 字段。
 - `logagent-server mcp` stdio 子命令。
 - `PLAN_ANALYSIS` 生成 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`。
-- Claude Code runner 调用 `claude --print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config`，通过 stdin 传入短启动 prompt，并要求 Claude 通过 MCP `analysis_package` resource 读取完整证据包。
+- Claude Code runner 调用 `claude --print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config`，通过 stdin 传入短启动 prompt，并要求 Claude 通过 MCP `analysis_package` resource 读取证据包。
+- `analysis_package.json` 中 Metadata 只包含 `metadataContextOutline`，不内联完整 `metadata_context.json`；任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 返回 outline，`logagent.query_metadata` 负责按需分页读取 slice。
 - `agent_response.json` 作为 Claude Code session response。
 - `claude_session.json` 持久化 session id、mode、permission profile、prompt delivery 和 response artifact。
 - `mcp_calls.jsonl` 记录 MCP resource/tool 调用。
@@ -79,7 +80,7 @@ agent_response.json
 
 ## MCP
 
-MCP resources/read 和 tools/call 只能访问当前 task workspace 内的安全 artifact。`analysis_package` resource 映射到 workspace 内的 `analysis_package.json`，用于承载可能过大的证据上下文。`get_log_slice` 只允许 `raw/` 或 `extracted/` 下的 workspace-relative path，禁止绝对路径和 `..`。
+MCP resources/read 和 tools/call 只能访问当前 task workspace 内的安全 artifact。`analysis_package` resource 映射到 workspace 内的 `analysis_package.json`，用于承载证据上下文；其中 Metadata 只有 outline/counts，完整 `metadata_context.json` 不作为默认 resource 输出。`get_log_slice` 只允许 `raw/` 或 `extracted/` 下的 workspace-relative path，禁止绝对路径和 `..`。
 
 MCP tools：
 
@@ -87,7 +88,8 @@ MCP tools：
 - `logagent.get_log_slice`：写入 `log_slices/<id>.json`。
 - `logagent.run_domain_tool`：复用 Tool Runner 白名单。
 - `logagent.recall_cases`：只返回 active/enabled Case。
-- `logagent.get_metadata_topology`：读取 `metadata_context.json`。
+- `logagent.get_metadata_topology`：兼容 alias，返回 Metadata overview outline。
+- `logagent.query_metadata`：按 section/filter/limit/cursor 读取 bounded Metadata slice，写入 `metadata_slices/<stable_id>.json`，返回 `backgroundRef`。
 - `logagent.request_user_input`：写入等待 marker，由 Executor 进入 `WAITING_FOR_USER`。
 - `logagent.request_approval`：写入等待 marker，由 Executor 进入 `WAITING_FOR_APPROVAL`。
 
@@ -96,5 +98,6 @@ MCP tools：
 - 未配置 Claude Code command path 时启动失败。
 - `PLAN_ANALYSIS` artifact API 能返回 `analysisPackage`、`claudeMcpConfig`、`claudeSession`、`agentResponse` 和 `mcpCalls`。
 - 大 `analysis_package.json` 不能进入 Claude CLI argv 或启动 stdin；CLI stdin 只包含短 prompt 和 MCP resource 读取指令。
+- 大 Metadata payload 不能进入 `analysis_package.json` 或任务 MCP 默认 `metadata_context` resource；`query_metadata` 的 limit/cursor 生效，slice 只能作为背景上下文。
 - Claude Code 非零退出、超时、stdout 非 JSON、非法 structured output 或非法 evidence ref 会写入失败 `agent_response.json` 并使 task 失败。
 - `request_user_input` / `request_approval` 能持久化等待状态并由现有恢复 API 继续任务。

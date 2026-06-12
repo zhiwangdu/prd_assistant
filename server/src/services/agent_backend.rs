@@ -486,7 +486,7 @@ Permission profile: {profile}
 Native Bash allowed: {native_bash}
 Native Edit allowed: {native_edit}
 
-Before analyzing, call MCP resources/list and then read the resource named analysis_package. Use that task package as the primary context. Read manifest, grep_results, metadata_context, system_context, case_context, and tool_results resources as needed instead of relying on this startup prompt for evidence.
+Before analyzing, call MCP resources/list and then read the resource named analysis_package. Use that task package as the primary context. Read manifest, grep_results, metadata_context, system_context, case_context, and tool_results resources as needed instead of relying on this startup prompt for evidence. The metadata_context resource is an outline only; use logagent.query_metadata with section/filter/limit/cursor when you need bounded metadata details.
 
 Return exactly one JSON object matching the schema:
 - runtimeStatus="completed" with finalAnswer when analysis can finish.

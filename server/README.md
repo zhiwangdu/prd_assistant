@@ -136,7 +136,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`。
 
-当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP resources/tools 读取完整证据包、请求日志检索、日志切片、领域工具、Metadata、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP resources/tools 读取证据包、请求日志检索、日志切片、领域工具、按需分页 Metadata slice、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
 
 ## 运行日志
 
@@ -187,6 +187,7 @@ RUST_LOG=logagent_server=info,tower_http=info
   manifest.json
   error_summary.json
   metadata_context.json
+  metadata_slices/
   system_context.json
   skill_references/
   contexts.jsonl
@@ -293,7 +294,7 @@ MVP 要求：
 - 创建 Log Analysis task 支持 `uploadId` 单文件、`uploadIds` 批量文件或无上传的文本问题分析，但必须绑定 `sessionId`；有上传时先验证并复制到 workspace raw 快照，无上传时创建空 raw/input 快照，持久化 `QUEUED` 后以 `202 Accepted` 立即返回。
 - 每次 Session 创建 task run 时都会写入 task `sessionId`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
 - Task 状态进入 RUNNING、WAITING、SUCCEEDED 或 FAILED 时会同步更新所属 Session，并追加 `task_status_changed` event。
-- Task 创建时固化 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。
+- Task 创建时固化完整 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。Claude Code 初始 `analysis_package.json` 和任务 MCP `metadata_context` resource 只提供 Metadata outline/counts，细节必须通过 `logagent.query_metadata` 读取 bounded slice。
 - 后台执行器使用 `server.max_concurrent_tasks` 控制并发，默认 2。
 - 后台执行器按持久化 phase 循环分派单个幂等 handler；每个 handler 成功后使用期望 phase 校验原子推进到下一阶段。
 - Server 重启时将 `RUNNING` 重置为 `QUEUED` 但保留 phase，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
@@ -317,7 +318,7 @@ MVP 要求：
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。完整证据包不再内联到 CLI 参数或 stdin；Claude 通过任务 MCP `analysis_package` resource 读取。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。证据包不再内联到 CLI 参数或 stdin；Claude 通过任务 MCP `analysis_package` resource 读取，且 package 内的 Metadata 只保留 `metadataContextOutline`。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。
 - `PLAN_ANALYSIS` 通过 Claude MCP `logagent.request_user_input` 和 `logagent.request_approval` 进入等待态。真实 SSH/SCP 执行器后续仍替换在 Environment Collector 内，且必须走审批。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 Claude CLI 或 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。
@@ -466,7 +467,7 @@ UPLOADING -> COMPLETE
 `question` 可选；未提供时使用默认日志分析问题。长度上限为 `llm.max_input_chars / 2`。
 如果请求只提供 `sessionId` 和问题、不提供 `uploadId` / `uploadIds`，Server 会创建 `inputs=[]` 的文本问题分析任务；该任务仍会生成 `session_text_input.json`、`manifest.json` 和 `grep_results.json`，但文件列表和 grep matches 为空。
 
-Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应包含 `metadataContextPath` 和 `metadataContext`。
+Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应继续包含完整 `metadataContextPath` 和 `metadataContext`，用于 WebUI 和历史兼容。Claude Code 初始上下文不直接接收该完整 payload，只能通过 outline 和 `logagent.query_metadata` 按需读取。
 
 `GET /api/tasks/:task_id/artifacts` 仅允许 `SUCCEEDED`；其他状态返回 `409 Conflict`，JSON 中包含当前 `status`。未知任务返回 `404 Not Found`。
 

@@ -18,7 +18,7 @@ Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspac
 
 Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；Claude MCP `logagent.run_domain_tool` 复用同一个工具 registry。
 
-Claude Code Session Runner 提供配置摘要、dry-run 诊断和 `analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json` session 输入/响应产物。`PLAN_ANALYSIS` 当前直接调用 Claude Code CLI；CLI 只接收短 stdin prompt，完整证据包通过任务 MCP `analysis_package` resource 读取，structured outcome 必须映射到等待态或 final answer 契约。
+Claude Code Session Runner 提供配置摘要、dry-run 诊断和 `analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json` session 输入/响应产物。`PLAN_ANALYSIS` 当前直接调用 Claude Code CLI；CLI 只接收短 stdin prompt，证据包通过任务 MCP `analysis_package` resource 读取，structured outcome 必须映射到等待态或 final answer 契约。完整 Metadata 不进入 package，Claude 初始只看到 outline/counts，通过 `logagent.query_metadata` 按需分页读取 slice。
 
 只读 HTTP MCP 是独立接口面，面向个人本地 Claude Code 读取共享知识，不绑定 task，不读取 workspace，不执行 action。它只暴露 Case、Skills、Metadata、Tools catalog 和 Domain Adapter 摘要等资源和只读 tools。
 
@@ -146,11 +146,12 @@ logagent.get_log_slice
 logagent.run_domain_tool
 logagent.recall_cases
 logagent.get_metadata_topology
+logagent.query_metadata
 logagent.request_user_input
 logagent.request_approval
 ```
 
-所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。
+所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。`logagent.get_metadata_topology` 是兼容 alias，只返回 outline；`logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json`，返回 background ref，不新增最终 evidence ref 类型。
 
 只读 HTTP MCP tools：
 
