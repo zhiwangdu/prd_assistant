@@ -284,6 +284,20 @@ Claude Code stdout 必须返回 JSON envelope，Server 优先读取 `structured_
 
 `GET /api/debug/llm` 和 `PUT /api/debug/llm` 控制当前 Server 进程内的 LLM 输出日志开关。开关默认关闭，重启后不保留。开启后只打印模型 response content 到 Server stderr，不打印 prompt、API Key 或 HTTP headers。
 
+## 运行日志和安全约束
+
+Server 必须在未设置 `RUST_LOG` 时默认启用 `logagent_server=info,tower_http=info`，并把日志写入 stderr。该约束同样适用于 `logagent-server mcp` stdio 子命令，stdout 只能用于 JSON-RPC 响应。
+
+日志必须覆盖以下控制面事件：启动配置加载、AppState 初始化、未完成任务恢复、HTTP request/response/failure 摘要、上传生命周期、Session/Task/Tool run 创建、用户消息恢复、审批恢复、Executor phase 开始/完成/失败、Claude Code session 开始/完成/失败、MCP resource/tool 调用、Tool Runner 执行/复用/超时、Metadata/System Context/Case 写操作。
+
+日志级别：
+
+- `info` 用于成功生命周期事件和状态推进。
+- `warn` 用于 4xx/409 请求拒绝、预算耗尽、工具非零退出/超时和可回退问题。
+- `error` 用于 5xx、任务 phase 失败、Claude CLI 调用失败和工具启动失败。
+
+日志不得输出 Authorization、API Key、HTTP headers、请求正文、上传内容、Prompt、Claude stdout 或 LLM response content。唯一例外是 `/api/debug/llm` 开关显式开启后，Server 可按既有调试语义输出模型 response content，且仍不得输出 prompt、API Key 或 HTTP headers。
+
 Settings LLM 诊断接口用于 WebUI 验证当前 Provider 连通性。`GET /api/settings/llm` 返回 provider、当前模型、超时、输入/输出限制和配置项是否存在；不返回 API Key、base URL 原文或 binary path。`GET /api/settings/llm/models` 调用当前 Provider 的模型列表能力，OpenAI-compatible Provider 调用 `<base_url>/models`，stub/binary Provider 返回配置模型。`POST /api/settings/llm/chat` 请求体为 `{"message":"..."}`，用当前 Provider 发送一条简单消息。模型列表和消息测试响应使用 `{ok,result,error}`；Provider HTTP、鉴权、限流、网络、超时或 JSON decode 异常写入 `error`。
 
 Settings Claude Code 诊断接口保留 `/api/settings/agent-backends` 路径作为前端兼容入口，但语义是 Claude Code Session Runner 配置摘要。响应返回单一 `claude_code` 后端、默认分析模式、permission profile、超时和输出大小限制；不返回命令路径。`POST /api/settings/agent-backends/:backend_id/test` 使用 `{ok,result,error}` 响应；诊断检查 Claude Code 命令路径存在且是普通文件，不执行命令。

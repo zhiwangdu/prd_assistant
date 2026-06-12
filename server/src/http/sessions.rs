@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use tracing::info;
 
 use crate::{
     app::AppState,
@@ -48,6 +49,12 @@ pub async fn create_session(
         .create(record.clone())
         .await
         .map_err(|err| AppError::internal(format!("failed to persist session: {err}")))?;
+    info!(
+        session_id = %record.session_id,
+        question_chars = record.question.chars().count(),
+        system_context_count = record.system_context_ids.len(),
+        "analysis session created"
+    );
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -139,6 +146,13 @@ pub async fn patch_session(
         )
         .await
         .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
+    info!(
+        session_id = %session_id,
+        status = ?updated.status,
+        upload_count = updated.upload_ids.len(),
+        system_context_count = updated.system_context_ids.len(),
+        "analysis session updated"
+    );
     Ok(Json(updated))
 }
 
@@ -166,6 +180,12 @@ pub async fn attach_uploads(
         .attach_uploads(&session_id, &upload_ids)
         .await
         .map_err(|err| AppError::internal(format!("failed to attach uploads: {err}")))?;
+    info!(
+        session_id = %session_id,
+        upload_count = upload_ids.len(),
+        total_upload_count = session.upload_ids.len(),
+        "uploads attached to analysis session"
+    );
     Ok(Json(session))
 }
 
@@ -184,6 +204,12 @@ pub async fn detach_upload(
                 serde_json::json!({ "errorDetail": err.to_string() }),
             )
         })?;
+    info!(
+        session_id = %session_id,
+        upload_id = %upload_id,
+        total_upload_count = session.upload_ids.len(),
+        "upload detached from analysis session"
+    );
     Ok(Json(session))
 }
 
@@ -215,6 +241,12 @@ pub async fn create_session_task(
     state
         .executor
         .enqueue(state.clone(), record.task_id.clone());
+    info!(
+        session_id = %session_id,
+        task_id = %record.task_id,
+        upload_count = record.upload_ids.len(),
+        "analysis task created from session"
+    );
     Ok((
         StatusCode::ACCEPTED,
         Json(record.summary(&state.config.server.public_base_url)),

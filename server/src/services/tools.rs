@@ -8,6 +8,7 @@ use std::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::Duration};
+use tracing::{info, warn};
 
 use crate::{
     domain::models::{TaskRecord, ToolDescriptor},
@@ -194,6 +195,15 @@ async fn run_pprof_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<Path
         .map_err(|err| AppError::internal(format!("failed to create pprof temp dir: {err}")))?;
 
     let started = Instant::now();
+    info!(
+        task_id = %task.task_id,
+        action_id = %action_id,
+        input_file = %input.filename,
+        sample_index = %params.sample_index,
+        node_count = params.node_count,
+        generate_svg = params.generate_svg,
+        "starting pprof analyzer task"
+    );
     let mut warnings = Vec::new();
     let top = run_pprof_command(
         &workspace,
@@ -320,6 +330,24 @@ async fn run_pprof_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<Path
     };
     let result_path = result_dir.join("result.json");
     write_json(&result_path, &record)?;
+    if matches!(record.status, ToolTaskStatus::Ok) {
+        info!(
+            task_id = %task.task_id,
+            action_id = %record.action_id,
+            duration_ms = record.duration_ms,
+            result_path = %result_path.display(),
+            "pprof analyzer task completed"
+        );
+    } else {
+        warn!(
+            task_id = %task.task_id,
+            action_id = %record.action_id,
+            status = ?record.status,
+            duration_ms = record.duration_ms,
+            result_path = %result_path.display(),
+            "pprof analyzer task completed with warnings or errors"
+        );
+    }
     Ok(result_path)
 }
 

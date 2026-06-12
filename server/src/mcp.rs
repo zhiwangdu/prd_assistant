@@ -8,6 +8,7 @@ use anyhow::Context;
 use chrono::Utc;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
+use tracing::{info, warn};
 
 use crate::{
     domain::{
@@ -38,6 +39,12 @@ pub async fn run_stdio(
         .ok_or_else(|| anyhow::anyhow!("unknown taskId {task_id}"))?;
     let workspace = config.storage.workspace_dir(&task_id);
     tokio::fs::create_dir_all(&workspace).await?;
+    info!(
+        task_id = %task_id,
+        mode = %mode.as_str(),
+        workspace = %workspace.display(),
+        "MCP stdio server started"
+    );
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -89,8 +96,17 @@ pub async fn run_stdio(
             _ => Err(anyhow::anyhow!("unsupported MCP method {method}")),
         };
         match response {
-            Ok(result) => write_response(&mut stdout, id, json!({ "result": result }))?,
+            Ok(result) => {
+                info!(task_id = %task_id, method = %method, "MCP request succeeded");
+                write_response(&mut stdout, id, json!({ "result": result }))?
+            }
             Err(err) => {
+                warn!(
+                    task_id = %task_id,
+                    method = %method,
+                    error = %err,
+                    "MCP request failed"
+                );
                 write_response(&mut stdout, id, json_rpc_error(-32000, format!("{err:#}")))?
             }
         }
@@ -389,6 +405,7 @@ async fn call_tool(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let evidence_ref_count = evidence_refs.len();
     log_mcp_call(
         workspace,
         name,
@@ -398,6 +415,12 @@ async fn call_tool(
         evidence_refs,
     )
     .await?;
+    info!(
+        task_id = %task.task_id,
+        tool = %name,
+        evidence_ref_count,
+        "MCP tool call completed"
+    );
     Ok(json!({
         "content": [{ "type": "text", "text": serde_json::to_string_pretty(&result)? }],
         "isError": false

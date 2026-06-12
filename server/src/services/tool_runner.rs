@@ -9,6 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::Duration};
+use tracing::{error, info, warn};
 
 use crate::{
     domain::{
@@ -143,8 +144,16 @@ impl ToolRunner {
             .join("tool_results")
             .join(&action.action_id);
         let result_path = result_dir.join("result.json");
+        // Tool actions are deterministic by action_id; reuse the artifact on resume or retry.
         if result_path.exists() {
             let record = read_record(&result_path)?;
+            info!(
+                task_id = %context.task_id,
+                action_id = %action.action_id,
+                tool = %record.tool,
+                status = ?record.status,
+                "reusing existing tool result artifact"
+            );
             return artifact_from_record(&context.workspace, &result_path, record);
         }
 
@@ -152,6 +161,14 @@ impl ToolRunner {
         let stdout_path = result_dir.join("stdout.txt");
         let stderr_path = result_dir.join("stderr.txt");
         let (command, input_file) = build_command(context, action, tool, &input)?;
+        info!(
+            task_id = %context.task_id,
+            action_id = %action.action_id,
+            tool = %tool.name,
+            input_file = ?input_file,
+            timeout_seconds = tool.timeout_seconds,
+            "starting tool runner action"
+        );
         let started = Instant::now();
         let output = run_command(context, tool, &command).await;
         let duration_ms = started.elapsed().as_millis();
@@ -167,6 +184,24 @@ impl ToolRunner {
                 } else {
                     ToolRunStatus::Failed
                 };
+                if matches!(status, ToolRunStatus::Failed) {
+                    warn!(
+                        task_id = %context.task_id,
+                        action_id = %action.action_id,
+                        tool = %tool.name,
+                        exit_code = ?output.status.code(),
+                        duration_ms,
+                        "tool runner action exited unsuccessfully"
+                    );
+                } else {
+                    info!(
+                        task_id = %context.task_id,
+                        action_id = %action.action_id,
+                        tool = %tool.name,
+                        duration_ms,
+                        "tool runner action completed"
+                    );
+                }
                 let fallback_summary = match status {
                     ToolRunStatus::Ok => format!("tool {} completed successfully", tool.name),
                     ToolRunStatus::Failed => {
@@ -191,6 +226,14 @@ impl ToolRunner {
                 }
             }
             Err(ToolExecutionError::TimedOut) => {
+                warn!(
+                    task_id = %context.task_id,
+                    action_id = %action.action_id,
+                    tool = %tool.name,
+                    timeout_seconds = tool.timeout_seconds,
+                    duration_ms,
+                    "tool runner action timed out"
+                );
                 fs::write(&stdout_path, b"")?;
                 fs::write(&stderr_path, b"tool timed out")?;
                 ToolRunRecord {
@@ -213,6 +256,14 @@ impl ToolRunner {
                 }
             }
             Err(ToolExecutionError::Spawn(message)) => {
+                error!(
+                    task_id = %context.task_id,
+                    action_id = %action.action_id,
+                    tool = %tool.name,
+                    duration_ms,
+                    error = %message,
+                    "tool runner action failed to start"
+                );
                 fs::write(&stdout_path, b"")?;
                 fs::write(&stderr_path, message.as_bytes())?;
                 ToolRunRecord {

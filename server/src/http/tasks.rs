@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
+use tracing::info;
 
 use crate::support::config::AnalysisMode;
 use crate::{
@@ -94,6 +95,13 @@ pub async fn create_task(
     state
         .executor
         .enqueue(state.clone(), record.task_id.clone());
+    info!(
+        task_id = %record.task_id,
+        session_id = ?record.session_id,
+        upload_count = record.upload_ids.len(),
+        analysis_mode = %record.analysis_mode.as_str(),
+        "log analysis task created through compatibility API"
+    );
     Ok((
         StatusCode::ACCEPTED,
         Json(record.summary(&state.config.server.public_base_url)),
@@ -106,6 +114,12 @@ pub async fn create_log_analysis_task(
 ) -> Result<TaskRecord, AppError> {
     let session_id = input.session_id;
     let upload_ids = input.upload_ids;
+    info!(
+        session_id = %session_id,
+        upload_count = upload_ids.len(),
+        analysis_mode = %input.analysis_mode.as_str(),
+        "preparing log analysis task snapshot"
+    );
     let mut uploads = Vec::with_capacity(upload_ids.len());
     for upload_id in &upload_ids {
         let upload = state
@@ -263,6 +277,15 @@ pub async fn create_log_analysis_task(
         .add_task_run(&session_id, &task_id)
         .await
         .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
+    info!(
+        task_id = %task_id,
+        session_id = %session_id,
+        upload_count = record.upload_ids.len(),
+        input_count = record.inputs.len(),
+        case_recall_count = recalled_cases.len(),
+        system_context_count = system_context.resources.len(),
+        "log analysis task persisted"
+    );
     Ok(record)
 }
 
@@ -383,6 +406,11 @@ pub async fn post_task_message(
             .iter()
             .any(|record| record.message_id == key)
         {
+            info!(
+                task_id = %task_id,
+                idempotency_key = %key,
+                "duplicate user message ignored"
+            );
             return Ok(Json(task.summary(&state.config.server.public_base_url)));
         }
     }
@@ -412,8 +440,13 @@ pub async fn post_task_message(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| next_id("msg"));
-    analysis_state::record_user_message(&workspace, message_id, question_id, message)
-        .map_err(|err| AppError::internal(format!("failed to record user message: {err}")))?;
+    analysis_state::record_user_message(
+        &workspace,
+        message_id.clone(),
+        question_id.clone(),
+        message,
+    )
+    .map_err(|err| AppError::internal(format!("failed to record user message: {err}")))?;
     let resumed = state
         .tasks
         .resume_waiting(&task_id, TaskStatus::WaitingForUser)
@@ -430,6 +463,12 @@ pub async fn post_task_message(
         .await
         .map_err(|err| AppError::internal(format!("failed to sync session status: {err}")))?;
     state.executor.enqueue(state.clone(), task_id);
+    info!(
+        task_id = %resumed.task_id,
+        question_id = ?question_id,
+        message_id = %message_id,
+        "user message recorded and task resumed"
+    );
     Ok(Json(resumed.summary(&state.config.server.public_base_url)))
 }
 
@@ -465,6 +504,12 @@ pub async fn post_action_decision(
                     .and_then(|value| value.as_str())
                     == Some(key)
         }) {
+            info!(
+                task_id = %task_id,
+                action_id = %action_id,
+                idempotency_key = %key,
+                "duplicate approval decision ignored"
+            );
             return Ok(Json(task.summary(&state.config.server.public_base_url)));
         }
     }
@@ -514,6 +559,12 @@ pub async fn post_action_decision(
         .await
         .map_err(|err| AppError::internal(format!("failed to sync session status: {err}")))?;
     state.executor.enqueue(state.clone(), task_id);
+    info!(
+        task_id = %resumed.task_id,
+        action_id = %action_id,
+        approved,
+        "approval decision recorded and task resumed"
+    );
     Ok(Json(resumed.summary(&state.config.server.public_base_url)))
 }
 

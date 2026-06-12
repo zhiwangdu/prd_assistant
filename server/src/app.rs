@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     pipeline::executor::TaskExecutor,
@@ -34,6 +34,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: Arc<AppConfig>) -> anyhow::Result<Arc<Self>> {
+        info!(
+            data_dir = %config.storage.data_dir.display(),
+            max_concurrent_tasks = config.server.max_concurrent_tasks,
+            "initializing app state"
+        );
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
         let cases = CaseStore::load_with_memory(
@@ -46,7 +51,7 @@ impl AppState {
             config.storage.sessions_dir(),
             config.storage.session_workspaces_dir(),
         )?;
-        Ok(Arc::new(Self {
+        let state = Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             cases,
             case_imports,
@@ -60,7 +65,9 @@ impl AppState {
             config,
             uploads,
             tasks,
-        }))
+        });
+        info!("app state initialized");
+        Ok(state)
     }
 
     pub async fn recover_tasks(self: &Arc<Self>) -> anyhow::Result<()> {
@@ -80,7 +87,16 @@ impl AppState {
                 }
             }
         }
-        for task in self.tasks.recover_incomplete().await? {
+        let recoverable = self.tasks.recover_incomplete().await?;
+        info!(count = recoverable.len(), "recovering incomplete tasks");
+        for task in recoverable {
+            info!(
+                task_id = %task.task_id,
+                status = ?task.status,
+                phase = ?task.phase,
+                attempts = task.attempts,
+                "enqueueing recovered task"
+            );
             self.sessions.sync_task_status(&task).await?;
             self.executor.enqueue(self.clone(), task.task_id);
         }

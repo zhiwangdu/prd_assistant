@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     app::AppState,
@@ -40,6 +40,7 @@ impl TaskExecutor {
     }
 
     pub fn enqueue(&self, state: Arc<AppState>, task_id: String) {
+        info!(task_id = %task_id, "task enqueued");
         let permits = self.permits.clone();
         tokio::spawn(async move {
             let permit = match permits.acquire_owned().await {
@@ -50,6 +51,7 @@ impl TaskExecutor {
                 }
             };
             let _permit = permit;
+            info!(task_id = %task_id, "task execution started");
             if let Err(err) = execute(state.clone(), &task_id).await {
                 error!(task_id, "task execution failed: {err}");
             }
@@ -74,6 +76,13 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
             return Ok(());
         }
     };
+    info!(
+        task_id = %task.task_id,
+        task_kind = ?task.task_kind,
+        phase = ?task.phase,
+        attempt = task.attempts,
+        "task attempt started"
+    );
     sync_session_status(&state, &task).await;
 
     loop {
@@ -85,6 +94,12 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
             Ok(DispatchOutcome::Complete) => return Ok(()),
             Err(err) => {
                 let workspace = state.config.storage.workspace_dir(task_id);
+                error!(
+                    task_id = %task_id,
+                    phase = ?phase,
+                    error = %err,
+                    "task phase failed"
+                );
                 if let Err(record_err) =
                     analysis_state::record_failure(&workspace, Some(phase), err.to_string())
                 {
@@ -95,6 +110,11 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
                     .fail(task_id, Some(phase), err.to_string())
                     .await?;
                 sync_session_status(&state, &failed).await;
+                info!(
+                    task_id = %task_id,
+                    phase = ?phase,
+                    "task marked failed"
+                );
                 return Ok(());
             }
         };
@@ -111,6 +131,14 @@ async fn dispatch_phase(
     task: TaskRecord,
     phase: TaskPhase,
 ) -> anyhow::Result<DispatchOutcome> {
+    info!(
+        task_id = %task.task_id,
+        phase = ?phase,
+        task_kind = ?task.task_kind,
+        "task phase started"
+    );
+    // Phase dispatch is intentionally driven by persisted task.phase so recovered tasks
+    // resume at the last durable boundary instead of replaying the whole pipeline.
     match phase {
         TaskPhase::Extract => {
             let workspace = state.config.storage.workspace_dir(&task.task_id);
@@ -152,6 +180,11 @@ async fn dispatch_phase(
                     .succeed_tool_run(&task.task_id, TaskPhase::RunTool, result_path)
                     .await?;
                 sync_session_status(&state, &completed).await;
+                info!(
+                    task_id = %completed.task_id,
+                    tool_id = ?completed.tool_id,
+                    "tool run task succeeded"
+                );
                 return Ok(DispatchOutcome::Complete);
             }
             let workspace = state.config.storage.workspace_dir(&task.task_id);
@@ -188,6 +221,11 @@ async fn plan_analysis_phase(
     analysis_state::ensure_initialized(&workspace, &task)?;
 
     loop {
+        info!(
+            task_id = %task.task_id,
+            phase = ?TaskPhase::PlanAnalysis,
+            "planning analysis round"
+        );
         let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
         let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
         let tool_results = read_tool_results(&workspace).await?;
@@ -207,6 +245,11 @@ async fn plan_analysis_phase(
             }
         };
         if let Some(reason) = analysis_budget_exhausted(&workspace, &state.config.analysis)? {
+            warn!(
+                task_id = %task.task_id,
+                reason = %reason,
+                "analysis budget exhausted"
+            );
             return complete_with_budget_limited_result(state, &task, &grep, reason).await;
         }
         let metadata_context = match task.metadata_context_path.as_deref() {
@@ -250,6 +293,10 @@ async fn plan_analysis_phase(
         .await?;
         if !contracts_existed {
             analysis_state::record_agent_contracts(&workspace, "claude_code")?;
+            info!(
+                task_id = %task.task_id,
+                "agent contracts written"
+            );
         }
         let call_id = next_id("agentcall");
         let backend_id = "claude_code".to_string();
@@ -303,10 +350,20 @@ async fn plan_analysis_phase(
         )?;
         record_claude_outcome(&workspace, &decision)?;
         if let Some(waiting_action) = read_mcp_waiting_marker(&task, &workspace).await? {
+            info!(
+                task_id = %task.task_id,
+                action_id = %waiting_action.action_id,
+                action_kind = ?waiting_action.kind,
+                "MCP waiting marker converted to task action"
+            );
             return wait_for_agent_action(state.clone(), &task, waiting_action).await;
         }
         match decision {
             ClaudeSessionOutcome::FinalAnswer { result } => {
+                info!(
+                    task_id = %task.task_id,
+                    "Claude Code returned final answer"
+                );
                 let result = result.into_result(&grep, case_context.as_ref(), &tool_results)?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
                 let completed = complete_successful_log_analysis(
@@ -320,10 +377,21 @@ async fn plan_analysis_phase(
                 return Ok(DispatchOutcome::Complete);
             }
             ClaudeSessionOutcome::WaitingForUser { prompt } => {
+                info!(
+                    task_id = %task.task_id,
+                    question_id = ?prompt.question_id,
+                    "Claude Code requested user input"
+                );
                 let action = ask_user_action_from_prompt(&task, prompt);
                 return wait_for_agent_action(state.clone(), &task, action).await;
             }
             ClaudeSessionOutcome::WaitingForApproval { approval } => {
+                info!(
+                    task_id = %task.task_id,
+                    action_id = ?approval.action_id,
+                    action_type = %approval.action_type,
+                    "Claude Code requested approval"
+                );
                 let action = approval_action_from_request(&task, approval);
                 return wait_for_agent_action(state.clone(), &task, action).await;
             }
@@ -335,6 +403,8 @@ async fn read_mcp_waiting_marker(
     task: &TaskRecord,
     workspace: &std::path::Path,
 ) -> anyhow::Result<Option<AgentAction>> {
+    // MCP tools cannot mutate TaskStore directly; they leave this marker for the executor
+    // to validate and translate into the persisted WAITING_* task states.
     let marker_path = workspace.join("mcp_waiting_request.json");
     let Some(marker) = read_optional_json::<serde_json::Value>(&marker_path).await? else {
         return Ok(None);
@@ -420,6 +490,12 @@ async fn complete_successful_log_analysis(
     output: ResultOutput,
 ) -> anyhow::Result<TaskRecord> {
     let workspace = state.config.storage.workspace_dir(&task.task_id);
+    info!(
+        task_id = %task.task_id,
+        phase = ?phase,
+        result_json_path = %output.result_json_path.display(),
+        "completing successful log analysis task"
+    );
     let result: AnalysisResult = read_json(&output.result_json_path).await?;
     let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
     let metadata_context = match task.metadata_context_path.as_deref() {
@@ -501,25 +577,43 @@ async fn wait_for_agent_action(
             analysis_state::record_pending_user_prompt(
                 &workspace,
                 &action,
-                question_id,
+                question_id.clone(),
                 question,
                 required,
                 answer_format,
             )?;
             let waiting = state.tasks.wait_for_user(&task.task_id).await?;
             sync_session_status(&state, &waiting).await;
+            info!(
+                task_id = %task.task_id,
+                action_id = %action.action_id,
+                question_id = %question_id,
+                "task is waiting for user input"
+            );
             Ok(DispatchOutcome::Complete)
         }
         ActionKind::CollectEnvironment if action.risk == ActionRisk::RequiresApproval => {
             analysis_state::record_pending_approval(&workspace, &action)?;
             let waiting = state.tasks.wait_for_approval(&task.task_id).await?;
             sync_session_status(&state, &waiting).await;
+            info!(
+                task_id = %task.task_id,
+                action_id = %action.action_id,
+                action_kind = ?action.kind,
+                "task is waiting for approval"
+            );
             Ok(DispatchOutcome::Complete)
         }
         _ if action.risk == ActionRisk::RequiresApproval => {
             analysis_state::record_pending_approval(&workspace, &action)?;
             let waiting = state.tasks.wait_for_approval(&task.task_id).await?;
             sync_session_status(&state, &waiting).await;
+            info!(
+                task_id = %task.task_id,
+                action_id = %action.action_id,
+                action_kind = ?action.kind,
+                "task is waiting for approval"
+            );
             Ok(DispatchOutcome::Complete)
         }
         _ => anyhow::bail!("action {:?} cannot enter waiting state", action.kind),
@@ -554,6 +648,11 @@ async fn complete_with_budget_limited_result(
     reason: String,
 ) -> anyhow::Result<DispatchOutcome> {
     let workspace = state.config.storage.workspace_dir(&task.task_id);
+    warn!(
+        task_id = %task.task_id,
+        reason = %reason,
+        "completing task with budget-limited result"
+    );
     let result = budget_limited_result(&task.question, grep, &reason);
     let output = persist_final_answer_decision_result(&workspace, result).await?;
     let completed =
@@ -729,7 +828,18 @@ async fn run_tool_phase(state: Arc<AppState>, task: &TaskRecord) -> anyhow::Resu
     let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
     let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
     let context = TaskContext::from_record(task, workspace, None);
-    for action in state.tool_runner.rule_based_actions(&manifest, &grep) {
+    let actions = state.tool_runner.rule_based_actions(&manifest, &grep);
+    info!(
+        task_id = %task.task_id,
+        action_count = actions.len(),
+        "rule-based tool actions selected"
+    );
+    for action in actions {
+        info!(
+            task_id = %task.task_id,
+            action_id = %action.action_id,
+            "executing rule-based tool action"
+        );
         let artifact = state.tool_runner.execute(&context, &action).await?;
         analysis_state::record_tool_artifact(&context.workspace, &action, &artifact)?;
     }
@@ -748,6 +858,12 @@ async fn continue_with(
     next: TaskPhase,
 ) -> anyhow::Result<DispatchOutcome> {
     let task = state.tasks.advance_phase(task_id, current, next).await?;
+    info!(
+        task_id = %task_id,
+        from_phase = ?current,
+        to_phase = ?next,
+        "task phase completed"
+    );
     sync_session_status(state, &task).await;
     Ok(DispatchOutcome::Continue(task))
 }

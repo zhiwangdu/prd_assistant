@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
+use tracing::info;
 
 use crate::{
     app::AppState,
@@ -122,6 +123,12 @@ pub async fn create_tool_run(
         .await
         .map_err(|err| AppError::internal(format!("failed to persist tool run: {err}")))?;
     state.executor.enqueue(state.clone(), task_id);
+    info!(
+        task_id = %record.task_id,
+        tool_id = ?record.tool_id,
+        upload_count = record.upload_ids.len(),
+        "manual tool run task created"
+    );
     Ok((
         StatusCode::ACCEPTED,
         Json(record.summary(&state.config.server.public_base_url)),

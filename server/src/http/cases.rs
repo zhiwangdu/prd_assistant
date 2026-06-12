@@ -8,6 +8,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{
     app::AppState,
@@ -138,6 +139,12 @@ pub async fn create_case_import(
 ) -> Result<(StatusCode, Json<CaseImportResponse>), AppError> {
     let input = read_case_import_input(state.clone(), req).await?;
     let session = create_import_session(&state, input, Vec::new()).await?;
+    info!(
+        draft_id = %session.draft_id,
+        status = ?session.status,
+        ready_to_confirm = session.ready_to_confirm,
+        "case import draft created"
+    );
     Ok((
         StatusCode::CREATED,
         Json(CaseImportResponse { draft: session }),
@@ -192,6 +199,12 @@ pub async fn post_case_import_message(
         state.case_imports.update(session).await.map_err(|err| {
             AppError::internal(format!("failed to update case import draft: {err}"))
         })?;
+    info!(
+        draft_id = %draft_id,
+        status = ?session.status,
+        ready_to_confirm = session.ready_to_confirm,
+        "case import message recorded"
+    );
     Ok(Json(CaseImportResponse { draft: session }))
 }
 
@@ -255,6 +268,12 @@ pub async fn update_case_import_draft(
         state.case_imports.update(session).await.map_err(|err| {
             AppError::internal(format!("failed to update case import draft: {err}"))
         })?;
+    info!(
+        draft_id = %draft_id,
+        status = ?session.status,
+        ready_to_confirm = session.ready_to_confirm,
+        "case import draft updated"
+    );
     Ok(Json(CaseImportResponse { draft: session }))
 }
 
@@ -272,6 +291,11 @@ pub async fn confirm_case_import(
             state.cases.get(case_id).await.ok_or_else(|| {
                 AppError::not_found(format!("unknown confirmed caseId {case_id}"))
             })?;
+        info!(
+            draft_id = %draft_id,
+            case_id = %case_id,
+            "case import confirmation reused existing case"
+        );
         return Ok((StatusCode::OK, Json(CaseResponse { case: record })));
     }
     session.missing_fields = compute_missing_fields(&session.structured_case);
@@ -309,6 +333,11 @@ pub async fn confirm_case_import(
         .update(session)
         .await
         .map_err(|err| AppError::internal(format!("failed to update case import draft: {err}")))?;
+    info!(
+        draft_id = %draft_id,
+        case_id = %record.case_id,
+        "case import confirmed"
+    );
     Ok((StatusCode::CREATED, Json(CaseResponse { case: record })))
 }
 
@@ -334,6 +363,11 @@ pub async fn create_manual_case(
         })
         .await
         .map_err(|err| AppError::bad_request(format!("failed to save case: {err}")))?;
+    info!(
+        case_id = %record.case_id,
+        enabled = record.enabled,
+        "manual case created"
+    );
     Ok((StatusCode::CREATED, Json(CaseResponse { case: record })))
 }
 
@@ -379,6 +413,11 @@ pub async fn confirm_task_case(
         })
         .await
         .map_err(|err| AppError::bad_request(format!("failed to save case: {err}")))?;
+    info!(
+        task_id = %task_id,
+        case_id = %record.case_id,
+        "task result confirmed as case"
+    );
     Ok((StatusCode::CREATED, Json(CaseResponse { case: record })))
 }
 
@@ -438,6 +477,11 @@ pub async fn update_case(
         )
         .await
         .map_err(|err| AppError::not_found(format!("failed to update case: {err}")))?;
+    info!(
+        case_id = %case_id,
+        enabled = record.enabled,
+        "case updated"
+    );
     Ok(Json(CaseResponse { case: record }))
 }
 

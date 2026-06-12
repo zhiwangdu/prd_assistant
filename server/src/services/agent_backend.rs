@@ -4,6 +4,7 @@ use anyhow::Context;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::{process::Command, time::timeout};
+use tracing::{error, info, warn};
 
 use crate::{
     domain::models::GrepResults,
@@ -198,6 +199,12 @@ impl AgentBackendRegistry {
             })?;
         let started = Instant::now();
         let resume_session_id = read_existing_claude_session_id(input.workspace).await?;
+        info!(
+            workspace = %input.workspace.display(),
+            analysis_mode = %input.analysis_mode.as_str(),
+            resume_session_id = ?resume_session_id,
+            "starting Claude Code session"
+        );
         write_claude_session_state(
             input.workspace,
             input.analysis_mode,
@@ -250,6 +257,13 @@ impl AgentBackendRegistry {
                                     Some(&error.to_string()),
                                 )
                                 .await?;
+                                error!(
+                                    workspace = %input.workspace.display(),
+                                    analysis_mode = %input.analysis_mode.as_str(),
+                                    duration_ms,
+                                    error = %error,
+                                    "Claude Code final answer failed evidence validation"
+                                );
                                 return Err(error);
                             }
                         }
@@ -275,6 +289,14 @@ impl AgentBackendRegistry {
                             None,
                         )
                         .await?;
+                        info!(
+                            workspace = %input.workspace.display(),
+                            analysis_mode = %input.analysis_mode.as_str(),
+                            claude_session_id = ?claude_session_id,
+                            runtime_status = %structured_output.runtime_status,
+                            duration_ms,
+                            "Claude Code session completed"
+                        );
                         Ok(outcome)
                     }
                     Err(error) => {
@@ -297,6 +319,12 @@ impl AgentBackendRegistry {
                             Some(&format!("{error:#}")),
                         )
                         .await?;
+                        error!(
+                            workspace = %input.workspace.display(),
+                            analysis_mode = %input.analysis_mode.as_str(),
+                            duration_ms,
+                            "Claude Code output parsing failed"
+                        );
                         Err(error)
                     }
                 }
@@ -321,6 +349,12 @@ impl AgentBackendRegistry {
                     Some(&format!("{error:#}")),
                 )
                 .await?;
+                error!(
+                    workspace = %input.workspace.display(),
+                    analysis_mode = %input.analysis_mode.as_str(),
+                    duration_ms,
+                    "Claude Code session failed"
+                );
                 Err(error)
             }
         }
@@ -338,6 +372,15 @@ async fn run_claude_code_command(
     let prompt = build_claude_code_prompt(workspace, analysis_mode, profile)
         .await
         .context("failed to build Claude Code prompt")?;
+    info!(
+        command = %command_path.display(),
+        workspace = %workspace.display(),
+        analysis_mode = %analysis_mode.as_str(),
+        permission_profile = %profile.name,
+        resume_session_id = ?resume_session_id,
+        timeout_seconds = settings.max_session_seconds,
+        "spawning Claude Code CLI"
+    );
     let mut command = Command::new(command_path);
     command
         .arg("--print")
@@ -388,17 +431,26 @@ async fn run_claude_code_command(
     })?
     .context("failed to wait for Claude Code session")?;
     if output.stdout.len() > settings.max_output_bytes {
+        warn!(
+            stdout_bytes = output.stdout.len(),
+            max_output_bytes = settings.max_output_bytes,
+            "Claude Code stdout exceeded configured limit"
+        );
         anyhow::bail!(
             "Claude Code stdout exceeded {} bytes",
             settings.max_output_bytes
         );
     }
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(truncate_bytes(&output.stderr, 4096));
+        error!(
+            status = %output.status,
+            stderr_bytes = output.stderr.len(),
+            "Claude Code CLI exited unsuccessfully"
+        );
         anyhow::bail!(
-            "Claude Code exited with status {}: {}",
+            "Claude Code exited with status {} (stderrBytes={})",
             output.status,
-            stderr.trim()
+            output.stderr.len()
         );
     }
     String::from_utf8(output.stdout).context("Claude Code stdout is not valid UTF-8")
@@ -556,8 +608,8 @@ fn parse_claude_session_output(
         serde_json::Value::String(value) => strip_json_code_fence(value).to_string(),
         value => serde_json::to_string(value)?,
     };
-    let structured: ClaudeStructuredOutput = serde_json::from_str(&content)
-        .with_context(|| format!("invalid Claude structured output: {content}"))?;
+    let structured: ClaudeStructuredOutput =
+        serde_json::from_str(&content).context("invalid Claude structured output")?;
     let status = structured.runtime_status.as_str();
     let outcome = match status {
         "completed" | "succeeded" | "final_answer" => ClaudeSessionOutcome::FinalAnswer {
@@ -719,14 +771,6 @@ fn default_required() -> bool {
 
 fn default_approval_action_type() -> String {
     "collect_environment".to_string()
-}
-
-fn truncate_bytes(value: &[u8], max: usize) -> &[u8] {
-    if value.len() <= max {
-        value
-    } else {
-        &value[..max]
-    }
 }
 
 fn truncate_string(value: &str, max: usize) -> String {

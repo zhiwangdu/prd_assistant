@@ -6,6 +6,7 @@ use axum::{
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tracing::{info, warn};
 
 use crate::{
     app::AppState,
@@ -21,6 +22,7 @@ pub async fn upload(
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<UploadResponse>, AppError> {
     let upload_id = next_id("upl");
+    info!(upload_id = %upload_id, "receiving multipart upload");
     let upload_dir = state.config.storage.upload_dir(&upload_id);
     tokio::fs::create_dir_all(&upload_dir)
         .await
@@ -62,6 +64,12 @@ pub async fn upload(
         {
             size += chunk.len() as u64;
             if size > state.config.storage.max_upload_bytes {
+                warn!(
+                    upload_id = %upload_id,
+                    size,
+                    max_upload_bytes = state.config.storage.max_upload_bytes,
+                    "multipart upload exceeded configured limit"
+                );
                 return Err(AppError::bad_request(format!(
                     "upload size {size} exceeds max_upload_bytes {}",
                     state.config.storage.max_upload_bytes
@@ -103,6 +111,12 @@ pub async fn upload(
         .await
         .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
+    info!(
+        upload_id = %upload_id,
+        filename = %filename,
+        size,
+        "multipart upload completed"
+    );
     Ok(Json(UploadResponse {
         upload_id,
         filename,
@@ -116,6 +130,7 @@ pub async fn batch_upload(
 ) -> Result<Json<BatchUploadResponse>, AppError> {
     let mut uploads = Vec::new();
     let mut total_size = 0_u64;
+    info!("receiving batch upload");
 
     while let Some(field) = multipart
         .next_field()
@@ -136,6 +151,10 @@ pub async fn batch_upload(
         return Err(AppError::bad_request("missing file fields"));
     }
 
+    info!(
+        upload_count = uploads.len(),
+        total_size, "batch upload completed"
+    );
     Ok(Json(BatchUploadResponse {
         uploads,
         total_size,
@@ -147,6 +166,12 @@ pub async fn init_upload(
     Json(req): Json<InitUploadRequest>,
 ) -> Result<Json<UploadResponse>, AppError> {
     if req.size > state.config.storage.max_upload_bytes {
+        warn!(
+            filename = %req.filename,
+            size = req.size,
+            max_upload_bytes = state.config.storage.max_upload_bytes,
+            "chunked upload init rejected by size limit"
+        );
         return Err(AppError::bad_request(format!(
             "upload size {} exceeds max_upload_bytes {}",
             req.size, state.config.storage.max_upload_bytes
@@ -182,6 +207,12 @@ pub async fn init_upload(
         .await
         .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
+    info!(
+        upload_id = %upload_id,
+        filename = %filename,
+        expected_size = req.size,
+        "chunked upload initialized"
+    );
     Ok(Json(UploadResponse {
         upload_id,
         filename,
@@ -194,6 +225,7 @@ async fn receive_upload_field(
     mut field: axum::extract::multipart::Field<'_>,
 ) -> Result<UploadResponse, AppError> {
     let upload_id = next_id("upl");
+    info!(upload_id = %upload_id, "receiving batch upload file field");
     let upload_dir = state.config.storage.upload_dir(&upload_id);
     tokio::fs::create_dir_all(&upload_dir)
         .await
@@ -213,6 +245,12 @@ async fn receive_upload_field(
     {
         size += chunk.len() as u64;
         if size > state.config.storage.max_upload_bytes {
+            warn!(
+                upload_id = %upload_id,
+                size,
+                max_upload_bytes = state.config.storage.max_upload_bytes,
+                "batch upload file exceeded configured limit"
+            );
             return Err(AppError::bad_request(format!(
                 "upload size {size} exceeds max_upload_bytes {}",
                 state.config.storage.max_upload_bytes
@@ -245,6 +283,12 @@ async fn receive_upload_field(
         .await
         .map_err(|err| AppError::internal(format!("failed to persist upload: {err}")))?;
 
+    info!(
+        upload_id = %upload_id,
+        filename = %filename,
+        size,
+        "batch upload file completed"
+    );
     Ok(UploadResponse {
         upload_id,
         filename,
@@ -259,6 +303,12 @@ pub async fn upload_chunk(
     body: Bytes,
 ) -> Result<Json<ChunkUploadResponse>, AppError> {
     if body.len() as u64 > state.config.storage.max_chunk_bytes {
+        warn!(
+            upload_id = %upload_id,
+            chunk_bytes = body.len(),
+            max_chunk_bytes = state.config.storage.max_chunk_bytes,
+            "chunk upload rejected by chunk size limit"
+        );
         return Err(AppError::bad_request(format!(
             "chunk size {} exceeds max_chunk_bytes {}",
             body.len(),
@@ -277,6 +327,13 @@ pub async fn upload_chunk(
         .await
         .map_err(|err| AppError::bad_request(err.to_string()))?;
 
+    info!(
+        upload_id = %upload_id,
+        offset = query.offset,
+        chunk_bytes = body.len(),
+        received_bytes = upload.size,
+        "chunk upload appended"
+    );
     Ok(Json(ChunkUploadResponse {
         upload_id,
         received_bytes: upload.size,
@@ -293,6 +350,12 @@ pub async fn complete_upload(
         .await
         .map_err(|err| AppError::bad_request(err.to_string()))?;
 
+    info!(
+        upload_id = %upload.upload_id,
+        filename = %upload.filename,
+        size = upload.size,
+        "chunked upload completed"
+    );
     Ok(Json(UploadResponse {
         upload_id: upload.upload_id,
         filename: upload.filename,

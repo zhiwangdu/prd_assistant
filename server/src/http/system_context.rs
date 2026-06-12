@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use tracing::info;
 
 use crate::{
     app::AppState,
@@ -47,6 +48,12 @@ pub async fn create_resource(
         ));
     }
     let resource = state.system_context.create(req).await?;
+    info!(
+        context_id = %resource.context_id,
+        kind = ?resource.kind,
+        active_version_id = ?resource.active_version_id,
+        "system context resource created"
+    );
     Ok((StatusCode::CREATED, Json(resource)))
 }
 
@@ -68,12 +75,16 @@ pub async fn patch_resource(
     Path(context_id): Path<String>,
     Json(req): Json<PatchSystemContextResourceRequest>,
 ) -> Result<Json<SystemContextResource>, AppError> {
-    Ok(Json(
-        state
-            .system_context
-            .update_resource(&context_id, req)
-            .await?,
-    ))
+    let resource = state
+        .system_context
+        .update_resource(&context_id, req)
+        .await?;
+    info!(
+        context_id = %resource.context_id,
+        enabled = resource.enabled,
+        "system context resource updated"
+    );
+    Ok(Json(resource))
 }
 
 pub async fn create_version(
@@ -85,6 +96,12 @@ pub async fn create_version(
         .system_context
         .create_version(&context_id, req)
         .await?;
+    info!(
+        context_id = %resource.context_id,
+        active_version_id = ?resource.active_version_id,
+        version_count = resource.versions.len(),
+        "system context version created"
+    );
     Ok((StatusCode::CREATED, Json(resource)))
 }
 
@@ -93,24 +110,32 @@ pub async fn patch_version(
     Path((context_id, version_id)): Path<(String, String)>,
     Json(req): Json<PatchSystemContextVersionRequest>,
 ) -> Result<Json<SystemContextResource>, AppError> {
-    Ok(Json(
-        state
-            .system_context
-            .update_version(&context_id, &version_id, req)
-            .await?,
-    ))
+    let resource = state
+        .system_context
+        .update_version(&context_id, &version_id, req)
+        .await?;
+    info!(
+        context_id = %context_id,
+        version_id = %version_id,
+        "system context version updated"
+    );
+    Ok(Json(resource))
 }
 
 pub async fn activate_version(
     State(state): State<Arc<AppState>>,
     Path((context_id, version_id)): Path<(String, String)>,
 ) -> Result<Json<SystemContextResource>, AppError> {
-    Ok(Json(
-        state
-            .system_context
-            .activate_version(&context_id, &version_id)
-            .await?,
-    ))
+    let resource = state
+        .system_context
+        .activate_version(&context_id, &version_id)
+        .await?;
+    info!(
+        context_id = %context_id,
+        version_id = %version_id,
+        "system context version activated"
+    );
+    Ok(Json(resource))
 }
 
 pub async fn preview(

@@ -133,6 +133,24 @@ FAILED
 
 当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP tools 请求日志检索、日志切片、领域工具、Metadata、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
 
+## 运行日志
+
+Server 使用 `tracing` 输出结构化运行日志。未设置 `RUST_LOG` 时默认启用：
+
+```bash
+RUST_LOG=logagent_server=info,tower_http=info
+```
+
+日志始终写到 stderr，避免 `logagent-server mcp` stdio 模式污染 JSON-RPC stdout。HTTP trace 会记录 method、URI、status 和 latency；业务日志覆盖上传、Session/Task 创建、用户消息恢复、审批恢复、phase 推进、Claude Code session、MCP 调用、Tool Runner、Metadata、System Context 和 Case 写操作。
+
+日志分级约定：
+
+- `info`：成功的生命周期事件、phase 切换、任务入队/恢复、工具/Claude session 完成摘要。
+- `warn`：4xx/409 请求拒绝、预算耗尽、工具非零退出或超时、可回退的 store/search 问题。
+- `error`：5xx 响应、任务 phase 失败、Claude CLI 调用失败、工具启动失败。
+
+普通运行日志不打印 Authorization、API Key、HTTP headers、请求正文、上传内容、Prompt 或 LLM 原文输出。LLM response content 只受 `/api/debug/llm` 运行期开关控制，默认关闭。
+
 ## 数据目录
 
 ```text

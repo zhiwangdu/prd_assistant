@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-11
+Last updated: 2026-06-12
 
 ## Status Summary
 
@@ -37,6 +37,15 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Server Observability
+
+- Added default Server tracing when `RUST_LOG` is unset: `logagent_server=info,tower_http=info`, with logs written to stderr so MCP stdio stdout remains JSON-RPC only.
+- Configured HTTP trace logging for request/response/failure summaries and changed `AppError` logging so 4xx/409 responses are warnings while 5xx responses are errors.
+- Added lifecycle logs for uploads, Sessions, Tasks, Tool runs, Case imports, Metadata imports, System Context writes, Executor phase transitions, waiting-state resumes, Claude Code sessions, MCP calls, Tool Runner execution/reuse, and pprof analyzer runs.
+- Added focused English comments around stderr logging for MCP safety, error-level mapping, persisted phase recovery, MCP waiting marker handoff, and Tool Runner idempotent artifact reuse.
+- Updated Server README/SPEC with logging defaults, level policy, covered events, and sensitive-data exclusions.
+- Verification: `cargo fmt --check`, `git diff --check`, `cargo check -p logagent-server`, and `cargo test -p logagent-server` pass.
 
 ### Claude Code MCP Session Runner
 

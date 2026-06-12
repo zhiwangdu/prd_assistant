@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(Debug)]
 pub struct AppError {
@@ -64,7 +64,12 @@ impl std::error::Error for AppError {}
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        error!(status = %self.status, message = %self.message);
+        // Client-visible 4xx failures are useful warnings, while 5xx means a server fault.
+        if self.status.is_server_error() {
+            error!(status = %self.status, message = %self.message, "request failed");
+        } else {
+            warn!(status = %self.status, message = %self.message, "request rejected");
+        }
         let mut headers = HeaderMap::new();
         headers.insert(
             header::CONTENT_TYPE,

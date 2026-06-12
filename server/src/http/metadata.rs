@@ -4,6 +4,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use tracing::info;
 
 use crate::{
     app::AppState,
@@ -46,7 +47,14 @@ pub async fn fetch_snapshot(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MetadataFetchImportRequest>,
 ) -> Result<Json<MetadataSnapshotResponse>, AppError> {
-    Ok(Json(state.metadata.fetch_snapshot(req).await?))
+    let response = state.metadata.fetch_snapshot(req).await?;
+    info!(
+        instance_id = ?response.instance.as_ref().map(|instance| instance.instance_id.as_str()),
+        cluster_id = %response.cluster.cluster_id,
+        node_count = response.nodes.len(),
+        "metadata snapshot fetched"
+    );
+    Ok(Json(response))
 }
 
 pub async fn get_cluster(
@@ -76,6 +84,11 @@ pub async fn create_import(
     Json(req): Json<MetadataImportRequest>,
 ) -> Result<Json<MetadataImportPreview>, AppError> {
     let preview = state.metadata.create_import_preview(req).await?;
+    info!(
+        import_id = %preview.import_id,
+        template_type = %preview.template_type,
+        "metadata import preview created"
+    );
     Ok(Json(preview))
 }
 
@@ -84,6 +97,11 @@ pub async fn fetch_import(
     Json(req): Json<MetadataFetchImportRequest>,
 ) -> Result<Json<MetadataImportPreview>, AppError> {
     let preview = state.metadata.fetch_import_preview(req).await?;
+    info!(
+        import_id = %preview.import_id,
+        template_type = %preview.template_type,
+        "metadata import preview fetched"
+    );
     Ok(Json(preview))
 }
 
@@ -104,5 +122,13 @@ pub async fn confirm_import(
     Path(import_id): Path<String>,
 ) -> Result<Json<MetadataConfirmResponse>, AppError> {
     let response = state.metadata.confirm_import(&import_id).await?;
+    info!(
+        import_id = %import_id,
+        applied = response.applied,
+        instances = response.summary.instances,
+        clusters = response.summary.clusters,
+        nodes = response.summary.nodes,
+        "metadata import confirmed"
+    );
     Ok(Json(response))
 }
