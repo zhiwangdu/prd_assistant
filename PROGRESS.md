@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-12
+Last updated: 2026-06-14
 
 ## Status Summary
 
@@ -38,6 +38,14 @@ WEBUI Tools
 ```
 
 ## Implemented
+
+### Architecture Review
+
+- Added `docs/architecture_review.md` with a current real architecture diagram, module-by-module implemented capability inventory, README/SPEC/roadmap gap analysis, and the top 10 extension-blocking architecture issues.
+- The review cites concrete code evidence by file and function, including the task executor, task/stdout MCP tools, final evidence validation, Metadata fetch/store behavior, Native Agent local boundary, Tool Runner/Tools split, and WebUI evidence navigation.
+- Reorganized the path from the current state to a complete MVP loop into P0/P1/P2 tasks, marking which tasks are suitable for Codex Implement mode and which require human environment/configuration input.
+- Added a suggested 2-week development rhythm focused first on evidence contract stability, action budget guardrails, failed artifact observability, tool platform cleanup, security hardening, Code Evidence, and Environment Collector.
+- Verification: docs-only change; `git diff --check` passed.
 
 ### Claude CLI Prompt Delivery
 
