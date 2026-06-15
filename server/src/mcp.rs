@@ -20,7 +20,7 @@ use crate::{
         agent_contracts::write_json_atomic,
         metadata::{
             metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
-            TaskMetadataContext,
+            MetadataFieldTypesRequest, MetadataStore, TaskMetadataContext,
         },
         skill_registry::SkillRegistry,
         tool_runner::ToolRunner,
@@ -382,6 +382,30 @@ fn tools_list_result() -> serde_json::Value {
                 }
             },
             {
+                "name": "logagent.get_metadata_field_types",
+                "description": "Look up field type metadata for one imported instance/database/measurement. Omit retentionPolicy to use the database default and omit field to return all fields. Returned data is background context, not final evidence.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "instanceId": { "type": "string" },
+                        "database": { "type": "string" },
+                        "measurement": { "type": "string" },
+                        "retentionPolicy": { "type": "string" },
+                        "field": {
+                            "oneOf": [
+                                { "type": "string" },
+                                {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "minItems": 1
+                                }
+                            ]
+                        }
+                    },
+                    "required": ["instanceId", "database", "measurement"]
+                }
+            },
+            {
                 "name": "logagent.get_skill_reference",
                 "description": "Read one reference declared by a diagnostic skill selected for this task. Returned refs are background only.",
                 "inputSchema": {
@@ -448,6 +472,9 @@ async fn call_tool(
         }
         "logagent.get_metadata_topology" => read_metadata_context_outline(workspace).await?,
         "logagent.query_metadata" => query_metadata_tool(workspace, arguments.clone()).await?,
+        "logagent.get_metadata_field_types" => {
+            get_metadata_field_types_tool(config.clone(), workspace, arguments.clone()).await?
+        }
         "logagent.get_skill_reference" => {
             get_skill_reference_tool(skills, workspace, arguments.clone()).await?
         }
@@ -680,6 +707,41 @@ async fn query_metadata_tool(
     Ok(result)
 }
 
+async fn get_metadata_field_types_tool(
+    config: Arc<AppConfig>,
+    workspace: &Path,
+    arguments: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let request: MetadataFieldTypesRequest = serde_json::from_value(arguments.clone())?;
+    let store = MetadataStore::new(config);
+    let response = store.get_metadata_field_types(request).await?;
+    let slice_id = format!("field_types_{:016x}", stable_json_hash(&arguments));
+    let artifact_path = format!("metadata_slices/{slice_id}.json");
+    let background_ref = format!("{artifact_path}#fields");
+    tokio::fs::create_dir_all(workspace.join("metadata_slices")).await?;
+    let mut result = serde_json::to_value(response)?;
+    let object = result
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("metadata field type result must be a JSON object"))?;
+    object.insert(
+        "artifactPath".to_string(),
+        serde_json::Value::String(artifact_path.clone()),
+    );
+    object.insert(
+        "backgroundRef".to_string(),
+        serde_json::Value::String(background_ref.clone()),
+    );
+    object.insert("createdAt".to_string(), json!(Utc::now()));
+    write_json_atomic(workspace.join(&artifact_path), &result).await?;
+    Ok(json!({
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "evidenceRefs": [background_ref],
+        "finalEvidenceAllowed": false,
+        "result": result,
+    }))
+}
+
 async fn get_skill_reference_tool(
     skills: &SkillRegistry,
     workspace: &Path,
@@ -858,8 +920,8 @@ mod tests {
         services::{
             metadata::{
                 ClusterMetadata, DatabaseMetadata, FieldSchemaMetadata, InstanceMetadata,
-                MeasurementMetadata, NodeMetadata, PartitionViewMetadata, RetentionPolicyMetadata,
-                ShardGroupMetadata, ShardMetadata, TaskMetadataContext,
+                MeasurementMetadata, MetadataImportRequest, NodeMetadata, PartitionViewMetadata,
+                RetentionPolicyMetadata, ShardGroupMetadata, ShardMetadata, TaskMetadataContext,
             },
             skill_registry::ResolveSkillsInput,
         },
@@ -989,6 +1051,92 @@ mod tests {
         let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
         assert!(calls.contains("logagent.query_metadata"));
         assert!(calls.contains("metadata_slices/slice_"));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn metadata_field_type_tool_reads_store_and_writes_background_artifact() {
+        let root = temp_dir("metadata-field-types-config");
+        let workspace = temp_dir("metadata-field-types-workspace");
+        std::fs::create_dir_all(root.join("metadata/imports")).unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+        let config = test_config(&root);
+        let store = MetadataStore::new(config.clone());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "json".to_string(),
+                filename: Some("metadata.json".to_string()),
+                instance_id: None,
+                remark: None,
+                content: json!({
+                    "instances": [{
+                        "instanceId": "prod-a",
+                        "clusterId": "prod-a"
+                    }],
+                    "clusters": [{
+                        "clusterId": "prod-a",
+                        "databases": [{
+                            "name": "mydb",
+                            "defaultRetentionPolicy": "autogen",
+                            "retentionPolicies": [{
+                                "name": "autogen",
+                                "measurements": [{
+                                    "name": "cpu_0000",
+                                    "logicalName": "cpu",
+                                    "versionName": "cpu_0000",
+                                    "schema": [
+                                        { "name": "host", "typ": 6 },
+                                        { "name": "usage", "typ": 3 }
+                                    ]
+                                }]
+                            }]
+                        }]
+                    }]
+                })
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+        let skills = SkillRegistry::load(config.skills.clone()).unwrap();
+        let task = task_record("task_meta");
+
+        let result = call_tool(
+            &config,
+            &skills,
+            &workspace,
+            &task,
+            AnalysisMode::Diagnose,
+            "logagent.get_metadata_field_types",
+            json!({
+                "instanceId": "prod-a",
+                "database": "mydb",
+                "measurement": "cpu",
+                "field": ["usage", "missing", "host"]
+            }),
+        )
+        .await
+        .unwrap();
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(value["result"]["retentionPolicy"], "autogen");
+        assert_eq!(value["result"]["defaultRetentionPolicyUsed"], true);
+        assert_eq!(value["result"]["measurement"], "cpu_0000");
+        assert_eq!(value["result"]["fields"][0]["name"], "usage");
+        assert_eq!(value["result"]["fields"][0]["typeLabel"], "float");
+        assert_eq!(value["result"]["fields"][1]["name"], "host");
+        assert_eq!(value["result"]["fields"][1]["typeLabel"], "tag");
+        assert_eq!(value["result"]["missingFields"][0], "missing");
+        assert_eq!(value["finalEvidenceAllowed"], false);
+        let artifact_path = value["artifactPath"].as_str().unwrap();
+        assert!(workspace.join(artifact_path).exists());
+
+        let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
+        assert!(calls.contains("logagent.get_metadata_field_types"));
+        assert!(calls.contains("metadata_slices/field_types_"));
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(workspace);

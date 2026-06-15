@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Metadata Field Type Lookup Tool
+
+- Added built-in MCP tool `logagent.get_metadata_field_types` for task stdio MCP and read-only HTTP MCP.
+- The tool requires `instanceId`, `database`, and `measurement`; `retentionPolicy` is optional and defaults to the DB default RP, while `field` may be omitted, a single string, or an array of field names.
+- Returned field entries include raw `typ`, mapped `typeLabel`, and `endTime`; the openGemini mapping is `0 unknown`, `1 int`, `2 uint`, `3 float`, `4 string`, `5 boolean`, `6 tag`, and `7 last`.
+- Task MCP lookups write `metadata_slices/field_types_<stable_id>.json`, audit the call in `mcp_calls.jsonl`, and remain background context only.
+- Verification passed: `cargo fmt --check`, `cargo check`, focused metadata/MCP/read-only MCP tests, `cargo test -p logagent-server -- --test-threads=1`, and `git diff --check`.
+
 ## 2026-06-15 Metadata Schema Field Type Mapping Fix
 
 - Fixed Metadata Schemas field type display by routing the table through a dedicated openGemini field type mapping helper.

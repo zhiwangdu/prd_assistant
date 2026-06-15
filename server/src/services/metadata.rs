@@ -303,6 +303,52 @@ pub struct MetadataSliceResult {
     pub items: Vec<Value>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataFieldTypesRequest {
+    pub instance_id: String,
+    pub database: String,
+    pub measurement: String,
+    pub retention_policy: Option<String>,
+    #[serde(default)]
+    pub field: Option<MetadataFieldSelector>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum MetadataFieldSelector {
+    One(String),
+    Many(Vec<String>),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataFieldTypesResponse {
+    pub schema_version: u32,
+    pub instance_id: String,
+    pub cluster_id: String,
+    pub database: String,
+    pub retention_policy: String,
+    pub default_retention_policy_used: bool,
+    pub measurement_input: String,
+    pub measurement: String,
+    pub logical_name: Option<String>,
+    pub version_name: Option<String>,
+    pub requested_fields: Option<Vec<String>>,
+    pub fields: Vec<MetadataFieldTypeInfo>,
+    pub missing_fields: Vec<String>,
+    pub final_evidence_allowed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataFieldTypeInfo {
+    pub name: String,
+    pub typ: Option<u64>,
+    pub type_label: String,
+    pub end_time: Option<u64>,
+}
+
 #[derive(Debug, Default)]
 struct MetadataCounts {
     nodes: usize,
@@ -680,6 +726,113 @@ impl MetadataStore {
             instance: Some(instance),
             cluster,
             nodes,
+        })
+    }
+
+    pub async fn get_metadata_field_types(
+        &self,
+        req: MetadataFieldTypesRequest,
+    ) -> Result<MetadataFieldTypesResponse, AppError> {
+        let instance_id = normalized_required(&req.instance_id, "instanceId")?;
+        let database_name = normalized_required(&req.database, "database")?;
+        let measurement_input = normalized_required(&req.measurement, "measurement")?;
+        let requested_retention_policy =
+            normalized_optional(req.retention_policy.as_deref(), "retentionPolicy")?;
+        let requested_fields = normalize_field_selector(req.field.as_ref())?;
+
+        let records = self.records.read().await;
+        let instance = records
+            .instances
+            .get(&instance_id)
+            .ok_or_else(|| AppError::bad_request(format!("unknown instanceId {instance_id}")))?;
+        let cluster_id = instance
+            .cluster_id
+            .as_deref()
+            .unwrap_or(instance.instance_id.as_str())
+            .to_string();
+        let cluster = records
+            .clusters
+            .get(&cluster_id)
+            .ok_or_else(|| AppError::bad_request("instanceId has no metadata snapshot"))?;
+        let database = cluster
+            .databases
+            .iter()
+            .find(|database| database.name == database_name)
+            .ok_or_else(|| {
+                AppError::bad_request(format!(
+                    "database {database_name} not found for instanceId {instance_id}"
+                ))
+            })?;
+
+        let (retention_policy_name, default_retention_policy_used) = if let Some(retention_policy) =
+            requested_retention_policy
+        {
+            (retention_policy, false)
+        } else {
+            let default = database
+                    .default_retention_policy
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        AppError::bad_request(format!(
+                            "database {database_name} has no default retention policy; retentionPolicy is required"
+                        ))
+                    })?;
+            (default.to_string(), true)
+        };
+        let retention_policy = database
+            .retention_policies
+            .iter()
+            .find(|rp| rp.name == retention_policy_name)
+            .ok_or_else(|| {
+                AppError::bad_request(format!(
+                    "retentionPolicy {retention_policy_name} not found in database {database_name}"
+                ))
+            })?;
+        let measurement = retention_policy
+            .measurements
+            .iter()
+            .find(|measurement| measurement_name_matches(measurement, &measurement_input))
+            .ok_or_else(|| {
+                AppError::bad_request(format!(
+                    "measurement {measurement_input} not found in {database_name}.{retention_policy_name}"
+                ))
+            })?;
+
+        let mut fields = Vec::new();
+        let mut missing_fields = Vec::new();
+        if let Some(requested_fields) = requested_fields.as_ref() {
+            for field_name in requested_fields {
+                if let Some(field) = measurement
+                    .schema
+                    .iter()
+                    .find(|field| field.name == *field_name)
+                {
+                    fields.push(field_type_info(field));
+                } else {
+                    missing_fields.push(field_name.clone());
+                }
+            }
+        } else {
+            fields = measurement.schema.iter().map(field_type_info).collect();
+        }
+
+        Ok(MetadataFieldTypesResponse {
+            schema_version: 1,
+            instance_id,
+            cluster_id,
+            database: database.name.clone(),
+            retention_policy: retention_policy.name.clone(),
+            default_retention_policy_used,
+            measurement_input,
+            measurement: measurement.name.clone(),
+            logical_name: measurement.logical_name.clone(),
+            version_name: measurement.version_name.clone(),
+            requested_fields,
+            fields,
+            missing_fields,
+            final_evidence_allowed: false,
         })
     }
 
@@ -1508,10 +1661,87 @@ fn measurement_matches(measurement: &MeasurementMetadata, query: &MetadataSliceQ
     query
         .measurement
         .as_deref()
-        .map(|filter| {
-            measurement.name == filter || measurement.logical_name.as_deref() == Some(filter)
-        })
+        .map(|filter| measurement_name_matches(measurement, filter))
         .unwrap_or(true)
+}
+
+fn measurement_name_matches(measurement: &MeasurementMetadata, filter: &str) -> bool {
+    measurement.name == filter
+        || measurement.logical_name.as_deref() == Some(filter)
+        || measurement.version_name.as_deref() == Some(filter)
+}
+
+fn normalized_required(value: &str, key: &str) -> Result<String, AppError> {
+    value
+        .trim()
+        .is_empty()
+        .then(|| AppError::bad_request(format!("{key} is required")))
+        .map_or_else(|| Ok(value.trim().to_string()), Err)
+}
+
+fn normalized_optional(value: Option<&str>, key: &str) -> Result<Option<String>, AppError> {
+    value
+        .map(|value| {
+            value
+                .trim()
+                .is_empty()
+                .then(|| AppError::bad_request(format!("{key} must be a non-empty string")))
+                .map_or_else(|| Ok(value.trim().to_string()), Err)
+        })
+        .transpose()
+}
+
+fn normalize_field_selector(
+    selector: Option<&MetadataFieldSelector>,
+) -> Result<Option<Vec<String>>, AppError> {
+    let Some(selector) = selector else {
+        return Ok(None);
+    };
+    let raw = match selector {
+        MetadataFieldSelector::One(value) => vec![value.as_str()],
+        MetadataFieldSelector::Many(values) => values.iter().map(String::as_str).collect(),
+    };
+    let mut fields = Vec::new();
+    for value in raw {
+        let field = value.trim();
+        if field.is_empty() {
+            return Err(AppError::bad_request(
+                "field entries must be non-empty strings",
+            ));
+        }
+        if !fields.iter().any(|existing| existing == field) {
+            fields.push(field.to_string());
+        }
+    }
+    if fields.is_empty() {
+        return Err(AppError::bad_request(
+            "field must be a non-empty string or array",
+        ));
+    }
+    Ok(Some(fields))
+}
+
+fn field_type_info(field: &FieldSchemaMetadata) -> MetadataFieldTypeInfo {
+    MetadataFieldTypeInfo {
+        name: field.name.clone(),
+        typ: field.typ,
+        type_label: metadata_field_type_label(field.typ),
+        end_time: field.end_time,
+    }
+}
+
+pub fn metadata_field_type_label(typ: Option<u64>) -> String {
+    match typ {
+        Some(0) | None => "unknown".to_string(),
+        Some(1) => "int".to_string(),
+        Some(2) => "uint".to_string(),
+        Some(3) => "float".to_string(),
+        Some(4) => "string".to_string(),
+        Some(5) => "boolean".to_string(),
+        Some(6) => "tag".to_string(),
+        Some(7) => "last".to_string(),
+        Some(value) => format!("type-{value}"),
+    }
 }
 
 fn shard_ids_for_group(group: &ShardGroupMetadata) -> Vec<u64> {
@@ -2751,6 +2981,54 @@ clusters:
         );
         assert!(cluster.raw_snapshot.is_some());
 
+        let selected_fields = store
+            .get_metadata_field_types(MetadataFieldTypesRequest {
+                instance_id: "prod-a".to_string(),
+                database: "mydb".to_string(),
+                measurement: "testmst".to_string(),
+                retention_policy: None,
+                field: Some(MetadataFieldSelector::Many(vec![
+                    "value".to_string(),
+                    "missing".to_string(),
+                    "tagk".to_string(),
+                ])),
+            })
+            .await
+            .unwrap();
+        assert_eq!(selected_fields.retention_policy, "autogen");
+        assert!(selected_fields.default_retention_policy_used);
+        assert_eq!(selected_fields.measurement, "testmst_0000");
+        assert_eq!(selected_fields.logical_name.as_deref(), Some("testmst"));
+        assert_eq!(
+            selected_fields
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("value", Some(3), "float"), ("tagk", Some(6), "tag")]
+        );
+        assert_eq!(selected_fields.missing_fields, vec!["missing"]);
+
+        let all_fields = store
+            .get_metadata_field_types(MetadataFieldTypesRequest {
+                instance_id: "prod-a".to_string(),
+                database: "mydb".to_string(),
+                measurement: "testmst_0000".to_string(),
+                retention_policy: Some("autogen".to_string()),
+                field: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            all_fields
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tagk", "value"]
+        );
+        assert!(!all_fields.default_retention_policy_used);
+
         let data_node = store
             .list_cluster_nodes("prod-a")
             .await
@@ -2870,6 +3148,19 @@ clusters:
             .unwrap_err()
             .to_string()
             .contains("cursor"));
+    }
+
+    #[test]
+    fn metadata_field_type_labels_follow_opengemini_mapping() {
+        let labels = (0..=7)
+            .map(|typ| metadata_field_type_label(Some(typ)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            vec!["unknown", "int", "uint", "float", "string", "boolean", "tag", "last"]
+        );
+        assert_eq!(metadata_field_type_label(None), "unknown");
+        assert_eq!(metadata_field_type_label(Some(99)), "type-99");
     }
 
     fn metadata_context_fixture() -> TaskMetadataContext {

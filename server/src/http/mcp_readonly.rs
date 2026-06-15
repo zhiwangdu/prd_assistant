@@ -8,7 +8,10 @@ use crate::{
     app::AppState,
     domain::models::TaskKind,
     http::{skills::normalize_skill_ids, system_context::metadata_context_bundle_item},
-    services::skill_registry::{ResolveSkillsInput, SkillPreviewRequest},
+    services::{
+        metadata::MetadataFieldTypesRequest,
+        skill_registry::{ResolveSkillsInput, SkillPreviewRequest},
+    },
     stores::system_context_store::{render_system_context_prompt, system_context_bundle},
     support::error::AppError,
 };
@@ -260,6 +263,26 @@ fn tools_list_result() -> Value {
                 "properties": { "instanceId": { "type": "string" } },
                 "required": ["instanceId"]
             })),
+            tool_schema("logagent.get_metadata_field_types", "Look up field type metadata for one imported instance/database/measurement. Omit retentionPolicy to use the database default and omit field to return all fields.", json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": { "type": "string" },
+                    "database": { "type": "string" },
+                    "measurement": { "type": "string" },
+                    "retentionPolicy": { "type": "string" },
+                    "field": {
+                        "oneOf": [
+                            { "type": "string" },
+                            {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "minItems": 1
+                            }
+                        ]
+                    }
+                },
+                "required": ["instanceId", "database", "measurement"]
+            })),
             tool_schema("logagent.list_tools", "List configured tool catalog metadata.", json!({
                 "type": "object",
                 "properties": {}
@@ -347,6 +370,10 @@ async fn call_tool(state: &AppState, name: &str, arguments: Value) -> anyhow::Re
         "logagent.get_metadata_snapshot" => {
             let instance_id = required_string(&arguments, "instanceId")?;
             json!({ "snapshot": state.metadata.get_instance_snapshot(&instance_id).await? })
+        }
+        "logagent.get_metadata_field_types" => {
+            let request = serde_json::from_value::<MetadataFieldTypesRequest>(arguments)?;
+            json!({ "result": state.metadata.get_metadata_field_types(request).await? })
         }
         "logagent.list_tools" => tool_catalog(state),
         "logagent.list_domain_adapters" => {
@@ -590,11 +617,34 @@ mod tests {
         let text = metadata["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("cluster-1"));
 
-        let rejected = post_mcp(
+        let field_types = post_mcp(
             &app,
             json!({
                 "jsonrpc": "2.0",
                 "id": 7,
+                "method": "tools/call",
+                "params": {
+                    "name": "logagent.get_metadata_field_types",
+                    "arguments": {
+                        "instanceId": "inst-1",
+                        "database": "mydb",
+                        "measurement": "cpu",
+                        "field": "usage"
+                    }
+                }
+            }),
+        )
+        .await;
+        let text = field_types["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        assert!(text.contains("\"typeLabel\": \"float\""));
+
+        let rejected = post_mcp(
+            &app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 8,
                 "method": "tools/call",
                 "params": {
                     "name": "logagent.run_domain_tool",
@@ -612,7 +662,7 @@ mod tests {
             &app,
             json!({
                 "jsonrpc": "2.0",
-                "id": 8,
+                "id": 9,
                 "method": "tools/call",
                 "params": {
                     "name": "logagent.get_skill_reference",
@@ -766,7 +816,22 @@ mod tests {
                         "product": "opengemini",
                         "version": "1.0",
                         "environment": "test",
-                        "nodes": ["node-1"]
+                        "nodes": ["node-1"],
+                        "databases": [{
+                            "name": "mydb",
+                            "defaultRetentionPolicy": "autogen",
+                            "retentionPolicies": [{
+                                "name": "autogen",
+                                "measurements": [{
+                                    "name": "cpu_0000",
+                                    "logicalName": "cpu",
+                                    "schema": [
+                                        { "name": "host", "typ": 6 },
+                                        { "name": "usage", "typ": 3 }
+                                    ]
+                                }]
+                            }]
+                        }]
                     }],
                     "nodes": [{
                         "nodeId": "node-1",
