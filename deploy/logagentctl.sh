@@ -5,6 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="${LOGAGENT_ENV_FILE:-$SCRIPT_DIR/.env}"
 
+if [[ -f "$HOME/.bashrc" ]]; then
+  # shellcheck source=/dev/null
+  set +u
+  set -a
+  source "$HOME/.bashrc" || true
+  set +a
+  set -u
+fi
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck source=/dev/null
   set -a

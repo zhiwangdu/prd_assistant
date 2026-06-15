@@ -8,6 +8,7 @@ Last updated: 2026-06-15
 - On macOS, after local Server and WebUI builds complete, the helper pings `192.168.31.128`; when reachable it SSHes to `duzhiwang@192.168.31.128`, runs `git pull --ff-only` in the remote source tree, then runs the remote runtime `deploy/rebuild-install.sh` plus `logagentctl.sh start/status`.
 - The helper can be disabled with `LOGAGENT_LAN_AUTO_DEPLOY=0` and supports overrides for remote address, SSH host, and runtime deploy directory.
 - `deploy/rebuild-install.sh` and the LAN auto-deploy SSH payload now load `$HOME/.cargo/env` when present so rustup-installed cargo is available in non-interactive SSH shells.
+- Runtime deploy scripts now best-effort load `$HOME/.bashrc` before deploy `.env`, matching the LAN server where LogAgent runtime environment variables live in `/home/duzhiwang/.bashrc`.
 - Deployment docs/specs were updated with the LAN auto-deploy behavior.
 - Verification passed: `bash -n scripts/auto-deploy-lan.sh`, `bash -n scripts/build-all.sh`, `LOGAGENT_LAN_AUTO_DEPLOY=0 scripts/auto-deploy-lan.sh`, and `git diff --check`.
 

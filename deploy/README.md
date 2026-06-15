@@ -44,7 +44,7 @@ cd /path/to/runtime/deploy
 cp .env.example .env
 ```
 
-Edit `.env`. `logagentctl.sh` and `rebuild-install.sh` load it automatically when present; you can also load it manually:
+Edit `.env`. `logagentctl.sh` and `rebuild-install.sh` load `$HOME/.bashrc` on a best-effort basis and then load `.env` when present; you can also load `.env` manually:
 
 ```bash
 set -a
@@ -126,7 +126,7 @@ Useful variants:
 
 The script builds `logagent-server`, creates the expected runtime data directories including `data/memory/`, replaces `$LOGAGENT_APP_DIR/bin/logagent-server`, syncs `webui/out`, and restarts only if the server was already running. It does not delete or migrate runtime data.
 
-`rebuild-install.sh` loads `$HOME/.cargo/env` when present, so Rust installed through rustup is available in non-interactive SSH shells.
+`rebuild-install.sh` loads `$HOME/.cargo/env` when present, so Rust installed through rustup is available in non-interactive SSH shells. `logagentctl.sh` also loads `$HOME/.bashrc`, so runtime-only environment variables such as `LOGAGENT_CLAUDE_CODE_PATH` may live there or in deploy `.env`.
 
 When developing from the Mac workspace, `scripts/build-all.sh` also runs `scripts/auto-deploy-lan.sh` after the local Server and WebUI build completes. The helper only runs on macOS, pings `192.168.31.128`, and when reachable SSHes to `duzhiwang@192.168.31.128`, runs `git pull --ff-only` in the remote source tree, then runs the remote runtime `deploy/rebuild-install.sh` and `logagentctl.sh start/status`.
 
