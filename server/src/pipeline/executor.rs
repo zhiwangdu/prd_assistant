@@ -67,6 +67,7 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
         .map(|task| match task.task_kind {
             TaskKind::LogAnalysis => TaskPhase::Extract,
             TaskKind::ToolRun => TaskPhase::RunTool,
+            TaskKind::RemoteCommandRun => TaskPhase::ExecuteRemoteCommand,
         })
         .unwrap_or(TaskPhase::Extract);
     let mut task = match state.tasks.start_attempt(task_id, initial_phase).await {
@@ -197,6 +198,44 @@ async fn dispatch_phase(
                 TaskPhase::PlanAnalysis,
             )
             .await
+        }
+        TaskPhase::ExecuteRemoteCommand => {
+            if task.task_kind != TaskKind::RemoteCommandRun {
+                anyhow::bail!("EXECUTE_REMOTE_COMMAND phase requires remote command task");
+            }
+            let executor_id = task
+                .remote_executor_id
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("remote command task is missing executor id"))?;
+            let executor = state
+                .executors
+                .get(executor_id)
+                .await
+                .ok_or_else(|| anyhow::anyhow!("unknown executor {executor_id}"))?;
+            let result_path = crate::services::remote_execution::run_remote_command_task(
+                state.config.clone(),
+                executor,
+                task.clone(),
+            )
+            .await?
+            .display()
+            .to_string();
+            let completed = state
+                .tasks
+                .succeed_remote_command_run(
+                    &task.task_id,
+                    TaskPhase::ExecuteRemoteCommand,
+                    result_path,
+                )
+                .await?;
+            sync_session_status(&state, &completed).await;
+            info!(
+                task_id = %completed.task_id,
+                executor_id = ?completed.remote_executor_id,
+                command_id = ?completed.remote_command_id,
+                "remote command task succeeded"
+            );
+            Ok(DispatchOutcome::Complete)
         }
         TaskPhase::PlanAnalysis => plan_analysis_phase(state.clone(), task).await,
         TaskPhase::GenerateResult => {
@@ -1097,6 +1136,7 @@ JSON
                     max_matches: 20,
                 },
                 tools,
+                remote_execution: crate::support::config::RemoteExecutionSettings::default(),
                 llm: LlmSettings {
                     provider: LlmProvider::Stub,
                     base_url: None,
@@ -1158,6 +1198,10 @@ JSON
                 tool_id: None,
                 tool_params: serde_json::Value::Null,
                 tool_result_path: None,
+                remote_executor_id: None,
+                remote_command_id: None,
+                remote_command_params: serde_json::Value::Null,
+                remote_result_path: None,
                 instance_id: None,
                 cluster_id: None,
                 node_id: None,

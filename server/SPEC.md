@@ -41,6 +41,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - Skill-backed System Context、Codex-compatible Skill registry、Skill preview、按需 MCP reference 读取和 Metadata adapter
 - Memory SQLite store、Case Store schema v2 兼容 API、legacy JSON 启动导入、FTS/BM25 + 关键词 fallback 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
 - Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
+- Remote Executor API、执行机 JSON store、`remote_command_run` task、`EXECUTE_REMOTE_COMMAND` phase 和白名单 SSH 命令执行；默认模板 `smoke_ls_root` 用于低风险 `ls -la /root` smoke
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
@@ -87,6 +88,16 @@ GET /api/tools/runs
 GET /api/tools/runs/:task_id
 GET /api/tools/runs/:task_id/result
 GET /api/tools/runs/:task_id/artifacts
+GET /api/executors
+POST /api/executors
+GET /api/executors/:executor_id
+PATCH /api/executors/:executor_id
+DELETE /api/executors/:executor_id
+GET /api/executor-command-templates
+GET /api/executor-runs
+POST /api/executor-runs
+GET /api/executor-runs/:task_id
+GET /api/executor-runs/:task_id/result
 POST /api/tasks/:task_id/case
 POST /api/cases
 POST /api/cases/imports
@@ -218,6 +229,8 @@ data_dir/
       session_events.jsonl
   tasks/
     task_xxx.json
+  executors/
+    executor_xxx.json
   memory/
     memory.sqlite
   cases/
@@ -246,6 +259,10 @@ data_dir/
           result.json
           stdout.txt
           stderr.txt
+      remote_command/
+        result.json
+        stdout.txt
+        stderr.txt
       analysis_package.json
       claude_prompt.md
       claude_mcp_config.json
@@ -521,6 +538,7 @@ persist task
 - Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具规则。
 - Memory 已完成本地 SQLite schema、legacy JSON Case 导入、Case schema v2 兼容 API、本地 FTS/BM25 召回、任务确认 Case 和手工 Case 创建；任务创建会写入 `case_context.json`，LLM prompt 会包含历史 Case 参考；后续补 embedding/vector 召回和更正式的 analysis evidence bundle。当前开发阶段不兼容旧 v1 Case JSON。
 - Code Evidence 和真实 Environment Collector 延后到产品闭环稳定后实现。
+- Remote Executor 当前只覆盖 WebUI 显式发起的白名单 SSH 命令；Analysis Agent 审批后的真实 Environment Collector 采集、SCP 文件拉取和多节点采集仍待接入。
 
 ## 验收标准
 
@@ -539,6 +557,7 @@ persist task
 - `GET /api/tasks/:task_id/artifacts` 返回 `textInput` 和 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
 - 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
+- Remote Executor 只能连接已纳管且启用的执行机，只能执行 `remote_execution.commands` 白名单模板；执行结果必须通过 `/api/executor-runs/:task_id/result` 返回 stdout/stderr preview 和 artifact path，且不能出现在 `/api/tasks` 日志分析列表中。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。
 - `POST /api/tasks/:task_id/case` 只能保存 `SUCCEEDED` 任务，重复确认同一任务不能生成重复 Case。

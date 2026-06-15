@@ -1,6 +1,7 @@
-import { FileArchive, Play, RefreshCw, UploadCloud } from "lucide-react";
+import { FileArchive, Play, RefreshCw, Server, UploadCloud, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { uploadFile } from "./upload";
 
@@ -68,6 +69,20 @@ type PprofTopEntry = {
 };
 
 export function ToolsView({ apiKey }: { apiKey: string }) {
+  const [section, setSection] = useState<"tools" | "executors">("tools");
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <Button variant={section === "tools" ? "default" : "outline"} onClick={() => setSection("tools")}><Wrench className="mr-2 h-4 w-4" />Tool plugins</Button>
+        <Button variant={section === "executors" ? "default" : "outline"} onClick={() => setSection("executors")}><Server className="mr-2 h-4 w-4" />Executors</Button>
+      </div>
+      {section === "tools" ? <ToolPluginsView apiKey={apiKey} /> : <ExecutorsView apiKey={apiKey} />}
+    </div>
+  );
+}
+
+function ToolPluginsView({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<ToolDescriptor[]>([]);
   const [selectedToolId, setSelectedToolId] = useState("pprof_analyzer");
   const [runs, setRuns] = useState<ToolRunSummary[]>([]);

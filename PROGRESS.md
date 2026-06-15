@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 ## Status Summary
 
@@ -37,7 +37,28 @@ WEBUI Tools
   -> /api/tools/runs polling and result display
 ```
 
+Current Remote Executor loop:
+
+```text
+WEBUI Tools / Executors
+  -> create or edit ECS executor records in Server JSON store
+  -> select a remote_execution command template
+  -> create taskKind=remote_command_run
+  -> background EXECUTE_REMOTE_COMMAND phase calls system ssh with BatchMode=yes
+  -> remote_command/result.json, stdout.txt, stderr.txt
+  -> /api/executor-runs polling and result display
+```
+
 ## Implemented
+
+### Remote Executor Framework
+
+- Added `remote_execution` Server config with system `ssh` path, host key policy, connect/command timeouts, output cap, and command templates. Empty command config defaults to `smoke_ls_root`, which runs `ls -la /root`.
+- Added WebUI-managed ECS executor records under `storage.data_dir/executors`, plus protected APIs for executor CRUD, command template discovery, remote run creation, run polling, and result reads.
+- Added `taskKind=remote_command_run`, `source=remote_executor`, and `EXECUTE_REMOTE_COMMAND` phase. Remote command runs reuse TaskStore, workspaces, background executor recovery, and write `remote_command/{result.json,stdout.txt,stderr.txt}`.
+- Added `Tools / Executors` WebUI subpage for executor create/edit/disable, template selection, SSH run creation, run history polling, stdout/stderr preview, and artifact paths. The UI does not expose free-form shell command input.
+- Updated Server, WebUI, Environment Collector, Config, Testing, Deploy, root docs/specs, and example configs. Full Environment Collector SCP collection and Analysis Agent approval mapping remain follow-up work.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -- --test-threads=1` (native 1 + server 129 tests), `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and direct low-risk SSH smoke `ssh root@112.74.50.120 ls -la /root`.
 
 ### Architecture Review
 

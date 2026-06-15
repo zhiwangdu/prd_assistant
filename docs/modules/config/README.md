@@ -14,6 +14,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `log_analyzer`
 - `skills`
 - `tools`
+- `remote_execution`
 - `claude_code`
 - `mcp`
 - `domain_adapters`（当前为内置 registry，暂不需要配置）
@@ -130,6 +131,20 @@ tools:
     max_output_bytes: 1048576
     max_input_files: 1
 
+remote_execution:
+  enabled: true
+  ssh_binary: "/usr/bin/ssh"
+  host_key_policy: "accept-new"
+  connect_timeout_seconds: 10
+  command_timeout_seconds: 30
+  max_output_bytes: 1048576
+  commands:
+    smoke_ls_root:
+      display_name: "Smoke: list /root"
+      description: "Low-risk SSH smoke command for managed ECS executors."
+      argv: ["ls", "-la", "/root"]
+      timeout_seconds: 10
+
 analysis:
   max_rounds: 4
   max_llm_calls: 4
@@ -205,4 +220,7 @@ metadata:
 - `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
+- `remote_execution.enabled` 默认 true；`ssh_binary` 启用时必须是绝对路径。
+- `remote_execution.host_key_policy` 仅支持 `accept-new`、`strict` 和 `no`，分别映射到 OpenSSH `StrictHostKeyChecking`。
+- `remote_execution.commands.<id>.argv` 是 WebUI 可选择的唯一远程命令来源；用户不能输入自由 shell 命令或扩展 argv。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

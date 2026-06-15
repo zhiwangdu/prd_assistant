@@ -100,6 +100,10 @@ pub async fn create_tool_run(
         tool_id: Some(tool_id),
         tool_params: normalized_params,
         tool_result_path: None,
+        remote_executor_id: None,
+        remote_command_id: None,
+        remote_command_params: serde_json::Value::Null,
+        remote_result_path: None,
         instance_id: None,
         cluster_id: None,
         node_id: None,
@@ -392,6 +396,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings { tools },
+            remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,
                 base_url: None,

@@ -4,6 +4,7 @@ pub mod domain_adapters;
 pub mod llm_gateway;
 pub mod log_analyzer;
 pub mod metadata;
+pub mod remote_execution;
 pub mod skill_registry;
 pub mod tool_runner;
 pub mod tools;

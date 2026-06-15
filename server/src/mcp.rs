@@ -1106,6 +1106,10 @@ mod tests {
             tool_id: None,
             tool_params: serde_json::Value::Null,
             tool_result_path: None,
+            remote_executor_id: None,
+            remote_command_id: None,
+            remote_command_params: serde_json::Value::Null,
+            remote_result_path: None,
             instance_id: Some("prod-a".to_string()),
             cluster_id: Some("prod-a".to_string()),
             node_id: Some("prod-a:data-2".to_string()),
@@ -1265,6 +1269,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings::default(),
+            remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,
                 base_url: None,

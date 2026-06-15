@@ -148,6 +148,121 @@ pub struct ToolRunArtifactsResponse {
     pub result: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteExecutorRecord {
+    pub schema_version: u32,
+    pub executor_id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub enabled: bool,
+    pub notes: Option<String>,
+    pub last_check: Option<RemoteExecutorCheck>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteExecutorCheck {
+    pub checked_at: DateTime<Utc>,
+    pub status: RemoteExecutorCheckStatus,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RemoteExecutorCheckStatus {
+    Ok,
+    Failed,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteExecutorListResponse {
+    pub executors: Vec<RemoteExecutorRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRemoteExecutorRequest {
+    pub name: String,
+    pub host: String,
+    #[serde(default = "default_remote_executor_port")]
+    pub port: u16,
+    pub user: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default = "default_remote_executor_enabled")]
+    pub enabled: bool,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchRemoteExecutorRequest {
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub notes: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommandTemplateDescriptor {
+    pub command_id: String,
+    pub display_name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub argv: Vec<String>,
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommandTemplateListResponse {
+    pub commands: Vec<RemoteCommandTemplateDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRemoteCommandRunRequest {
+    pub executor_id: String,
+    pub command_id: String,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommandRunsQuery {
+    pub executor_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommandRunListResponse {
+    pub runs: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommandRunResultResponse {
+    pub task_id: String,
+    pub executor_id: String,
+    pub command_id: String,
+    pub result_path: String,
+    pub result: serde_json::Value,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskArtifactsResponse {
@@ -209,6 +324,7 @@ pub enum TaskPhase {
     Extract,
     SearchLogs,
     RunTool,
+    ExecuteRemoteCommand,
     PlanAnalysis,
     GenerateResult,
 }
@@ -218,6 +334,7 @@ pub enum TaskPhase {
 pub enum TaskKind {
     LogAnalysis,
     ToolRun,
+    RemoteCommandRun,
 }
 
 pub fn default_task_kind() -> TaskKind {
@@ -229,10 +346,11 @@ pub struct HealthResponse {
     pub status: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskSource {
     Upload,
+    RemoteExecutor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,6 +392,14 @@ pub struct TaskRecord {
     pub tool_params: serde_json::Value,
     #[serde(default)]
     pub tool_result_path: Option<String>,
+    #[serde(default)]
+    pub remote_executor_id: Option<String>,
+    #[serde(default)]
+    pub remote_command_id: Option<String>,
+    #[serde(default)]
+    pub remote_command_params: serde_json::Value,
+    #[serde(default)]
+    pub remote_result_path: Option<String>,
     #[serde(default)]
     pub instance_id: Option<String>,
     #[serde(default)]
@@ -326,6 +452,14 @@ pub fn default_analysis_mode() -> AnalysisMode {
 
 pub fn default_task_question() -> String {
     "分析日志中的主要异常、可能原因和建议检查项。".to_string()
+}
+
+pub fn default_remote_executor_port() -> u16 {
+    22
+}
+
+pub fn default_remote_executor_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -70,6 +70,17 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
 - `tools.pprof_analyzer.path` / `path_env`，首版必须指向 Go 可执行文件，Server 固定追加 `tool pprof` 子命令。
+- `remote_execution.enabled`
+- `remote_execution.ssh_binary`
+- `remote_execution.host_key_policy`
+- `remote_execution.connect_timeout_seconds`
+- `remote_execution.command_timeout_seconds`
+- `remote_execution.max_output_bytes`
+- `remote_execution.commands.<command_id>.display_name`
+- `remote_execution.commands.<command_id>.description`
+- `remote_execution.commands.<command_id>.enabled`
+- `remote_execution.commands.<command_id>.argv`
+- `remote_execution.commands.<command_id>.timeout_seconds`
 - `analysis.max_rounds`
 - `analysis.max_llm_calls`
 - `analysis.max_actions`
@@ -78,7 +89,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 待扩展：
 
 - product/version 到代码仓 ref 映射
-- SSH/SCP 测试环境节点
+- SSH/SCP 测试环境节点到 Environment Collector 的批量采集映射；当前 Remote Executor 已支持 WebUI 显式执行机和白名单 SSH 命令模板。
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
 - LLM 多轮重试、用量和 request id 审计
 - Analysis Orchestrator 追问、运行时间和 approval 预算
@@ -130,6 +141,10 @@ storage:
 - 用户输入不能覆盖 tool path 或自由 argv。
 - `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地 smoke；当前真实工具路径固定为 `/usr/bin/influxql-analyzer`。
 - `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
+- `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
+- `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。
+- `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板必须有非空 argv。
+- WebUI Remote Executor 只能选择 `remote_execution.commands` 白名单模板，不能提交自由命令。
 - Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。

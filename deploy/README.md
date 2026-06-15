@@ -27,6 +27,7 @@ $LOGAGENT_APP_DIR/
     workspaces/
     cases/              # legacy Case JSON migration/rollback source
     case_imports/
+    executors/          # WebUI-managed ECS SSH executor records
     memory/
       memory.sqlite     # Memory SQLite index, currently memoryType=case
   webui/out/
@@ -79,6 +80,7 @@ Building from source with `rebuild-install.sh` needs:
 - Rust toolchain (`cargo`)
 - Node.js and npm
 - git and curl
+- OpenSSH client (`ssh`) when `remote_execution.enabled=true`
 - C/C++ build tools and pkg-config
 
 Quick install on macOS or common Linux distributions:
@@ -93,7 +95,7 @@ Preview without changing the host:
 ./install-deps.sh --dry-run
 ```
 
-Optional diagnostic tools are not installed by this script. Install and configure `go` only if enabling `pprof_analyzer`; install `influxql_analyzer` or `flux_query_analyzer` separately and set their configured paths when enabling those tools.
+Optional diagnostic tools are not installed by this script. Install and configure `go` only if enabling `pprof_analyzer`; install `influxql_analyzer` or `flux_query_analyzer` separately and set their configured paths when enabling those tools. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
 
 ## Configure
 
@@ -105,7 +107,7 @@ To reset from the sample:
 cp logagent.example.yaml logagent.yaml
 ```
 
-The sample config includes an `embedding` block with `enabled: false`, a `claude_code` block, and `mcp.transport=stdio`. `LOGAGENT_CLAUDE_CODE_PATH` points directly to the `claude` binary; the Server invokes it with `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
+The sample config includes an `embedding` block with `enabled: false`, a `remote_execution` block with the low-risk `smoke_ls_root` template, a `claude_code` block, and `mcp.transport=stdio`. `LOGAGENT_CLAUDE_CODE_PATH` points directly to the `claude` binary; the Server invokes it with `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config`. Memory currently uses local SQLite FTS/BM25 recall and writes the index to `data/memory/memory.sqlite`; legacy Case JSON files in `data/cases/` are kept as migration and rollback source.
 
 ## Build And Install
 

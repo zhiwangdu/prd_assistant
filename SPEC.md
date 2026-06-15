@@ -164,16 +164,17 @@ flowchart TD
 - Tool Runner MVP 支持白名单工具配置、规则版多输入工具 action、`RUN_TOOL` phase、Claude MCP `logagent.run_domain_tool`、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 `influxql-analyzer` Report stdout 已适配为结构化 findings 并通过本地 smoke，当前本机路径为 `/usr/bin/influxql-analyzer`。
 - Tools API MVP 支持 `tool_run` 任务、工具目录、手动创建工具运行、运行状态轮询、结果/artifact 查询；`/api/tasks` 默认只返回日志分析任务，工具运行通过 `/api/tools/runs` 查询。
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
+- Remote Executor MVP 支持 WebUI 纳管 ECS 执行机、读取白名单命令模板、创建 `remote_command_run` task、后台 `EXECUTE_REMOTE_COMMAND` phase 调用系统 `ssh` 执行模板 argv，并通过 `/api/executor-runs` 查询 stdout/stderr/result artifact；默认 `smoke_ls_root` 模板用于低风险 SSH smoke。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 的 Claude Code session 调用会记录 callId、attempt、session artifact 和完成事件。
 - Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后用短 stdin prompt 调用 Claude Code CLI，并由 Claude 通过任务 MCP `analysis_package` resource 读取证据包；其中 Metadata 只包含 outline/counts，不内联完整 databases/measurements/shards/indexes。`logagent.get_metadata_topology` 作为兼容 alias 返回 outline，`logagent.query_metadata` 会写入 `metadata_slices/<stable_id>.json` 并审计到 `mcp_calls.jsonl`。`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` 记录 session、MCP 调用和响应。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误。
 - Analysis Orchestrator 已支持 `ask_user` 进入 `WAITING_FOR_USER`，通过 `POST /api/tasks/:task_id/messages` 接收回答后恢复同一任务。
-- Analysis Orchestrator 已支持 Claude MCP `request_approval` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；真实 SSH/SCP 采集后续接入 Environment Collector。
+- Analysis Orchestrator 已支持 Claude MCP `request_approval` 进入 `WAITING_FOR_APPROVAL`，通过 `POST /api/tasks/:task_id/actions/:action_id/decision` 批准或拒绝后恢复；真实 SSH/SCP 采集后续基于 Remote Executor 接入 Environment Collector。
 - Memory MVP 已支持 `memoryType=case`、兼容 Case schema v2 API、成功任务人工确认、LLM-assisted 文本导入手工 Case、SQLite/FTS 本地索引、legacy JSON 启动导入、关键词 fallback 召回和禁用。
 - 最终结果 evidence refs 支持历史 Case canonical 引用 `case_context.json#cases/<index>`；真实模型输出 `case_<id>` 或“历史案例 case_<id>”时会按当前 task 的 `case_context.json` 规范化。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；当前保留给 Case import、alias 生成和非 Agent Loop 的辅助结构化任务。Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口。
-- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Tools 工具集页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 
@@ -187,7 +188,7 @@ flowchart TD
 - Memory embedding/vector 召回和自动注入 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
-- 测试环境通过 SSH/SCP 采集日志和运行环境信息。
+- 基于已落地的 Remote Executor，继续实现测试环境通过 SSH/SCP 采集日志和运行环境信息，并接入 Analysis Agent 审批动作。
 
 ## 全局验收
 

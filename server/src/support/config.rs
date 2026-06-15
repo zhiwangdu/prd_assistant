@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub skills: SkillSettings,
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
+    pub remote_execution: RemoteExecutionSettings,
     pub llm: LlmSettings,
     pub claude_code: ClaudeCodeSettings,
     pub mcp: McpSettings,
@@ -74,6 +75,41 @@ pub struct ToolSettings {
 pub struct ToolMatchSettings {
     pub file_patterns: Vec<String>,
     pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteExecutionSettings {
+    pub enabled: bool,
+    pub ssh_binary: PathBuf,
+    pub host_key_policy: String,
+    pub connect_timeout_seconds: u64,
+    pub command_timeout_seconds: u64,
+    pub max_output_bytes: usize,
+    pub commands: BTreeMap<String, RemoteCommandTemplateSettings>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteCommandTemplateSettings {
+    pub command_id: String,
+    pub display_name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub argv: Vec<String>,
+    pub timeout_seconds: Option<u64>,
+}
+
+impl Default for RemoteExecutionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_remote_execution_enabled(),
+            ssh_binary: default_ssh_binary(),
+            host_key_policy: default_remote_host_key_policy(),
+            connect_timeout_seconds: default_remote_connect_timeout(),
+            command_timeout_seconds: default_remote_command_timeout(),
+            max_output_bytes: default_remote_max_output_bytes(),
+            commands: default_remote_command_templates(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -218,6 +254,7 @@ struct ConfigFile {
     log_analyzer: Option<LogAnalyzerConfig>,
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
+    remote_execution: Option<RemoteExecutionConfig>,
     llm: Option<LlmConfig>,
     claude_code: Option<ClaudeCodeConfig>,
     mcp: Option<McpConfig>,
@@ -303,6 +340,34 @@ struct ToolMatchConfig {
     file_patterns: Vec<String>,
     #[serde(default)]
     keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteExecutionConfig {
+    #[serde(default = "default_remote_execution_enabled")]
+    enabled: bool,
+    #[serde(default = "default_ssh_binary")]
+    ssh_binary: PathBuf,
+    #[serde(default = "default_remote_host_key_policy")]
+    host_key_policy: String,
+    #[serde(default = "default_remote_connect_timeout")]
+    connect_timeout_seconds: u64,
+    #[serde(default = "default_remote_command_timeout")]
+    command_timeout_seconds: u64,
+    #[serde(default = "default_remote_max_output_bytes")]
+    max_output_bytes: usize,
+    #[serde(default)]
+    commands: BTreeMap<String, RemoteCommandTemplateConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteCommandTemplateConfig {
+    display_name: Option<String>,
+    description: Option<String>,
+    #[serde(default = "default_remote_command_enabled")]
+    enabled: bool,
+    argv: Vec<String>,
+    timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -402,6 +467,7 @@ impl AppConfig {
         fs::create_dir_all(self.storage.cases_dir())?;
         fs::create_dir_all(self.storage.memory_dir())?;
         fs::create_dir_all(self.storage.case_imports_dir())?;
+        fs::create_dir_all(self.storage.executors_dir())?;
         fs::create_dir_all(self.storage.metadata_dir())?;
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
         fs::create_dir_all(self.storage.system_context_dir())?;
@@ -454,6 +520,10 @@ impl StorageSettings {
         self.data_dir.join("case_imports")
     }
 
+    pub fn executors_dir(&self) -> PathBuf {
+        self.data_dir.join("executors")
+    }
+
     pub fn metadata_dir(&self) -> PathBuf {
         self.data_dir.join("metadata")
     }
@@ -477,6 +547,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             skills: None,
             log_analyzer: None,
             tools: BTreeMap::new(),
+            remote_execution: None,
             llm: None,
             claude_code: None,
             mcp: None,
@@ -507,6 +578,11 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .log_analyzer
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
+    let remote_execution = resolve_remote_execution(
+        parsed
+            .remote_execution
+            .unwrap_or_else(default_remote_execution_config),
+    )?;
     let llm = parsed.llm.unwrap_or_else(default_llm_config);
     let claude_code = resolve_claude_code(parsed.claude_code)?;
     let mcp = resolve_mcp(parsed.mcp.unwrap_or_else(default_mcp_config))?;
@@ -583,6 +659,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_matches: analyzer.max_matches,
         },
         tools,
+        remote_execution,
         llm: LlmSettings {
             provider,
             base_url,
@@ -745,6 +822,57 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
         );
     }
     Ok(ToolsSettings { tools })
+}
+
+fn resolve_remote_execution(raw: RemoteExecutionConfig) -> anyhow::Result<RemoteExecutionSettings> {
+    if raw.enabled && !raw.ssh_binary.is_absolute() {
+        anyhow::bail!("remote_execution.ssh_binary must be absolute when enabled");
+    }
+    let host_key_policy = raw.host_key_policy.trim();
+    if !matches!(host_key_policy, "accept-new" | "strict" | "no") {
+        anyhow::bail!("remote_execution.host_key_policy must be one of accept-new, strict, or no");
+    }
+    let commands = if raw.commands.is_empty() {
+        default_remote_command_templates()
+    } else {
+        raw.commands
+            .into_iter()
+            .map(|(command_id, command)| {
+                validate_remote_command_id(&command_id)?;
+                let argv = command
+                    .argv
+                    .into_iter()
+                    .map(|arg| arg.trim().to_string())
+                    .filter(|arg| !arg.is_empty())
+                    .collect::<Vec<_>>();
+                if argv.is_empty() {
+                    anyhow::bail!("remote_execution.commands.{command_id}.argv must not be empty");
+                }
+                Ok((
+                    command_id.clone(),
+                    RemoteCommandTemplateSettings {
+                        display_name: command
+                            .display_name
+                            .unwrap_or_else(|| command_id.replace('_', " ")),
+                        description: command.description.unwrap_or_default(),
+                        enabled: command.enabled,
+                        argv,
+                        timeout_seconds: command.timeout_seconds.map(|value| value.max(1)),
+                        command_id,
+                    },
+                ))
+            })
+            .collect::<anyhow::Result<BTreeMap<_, _>>>()?
+    };
+    Ok(RemoteExecutionSettings {
+        enabled: raw.enabled,
+        ssh_binary: raw.ssh_binary,
+        host_key_policy: host_key_policy.to_string(),
+        connect_timeout_seconds: raw.connect_timeout_seconds.max(1),
+        command_timeout_seconds: raw.command_timeout_seconds.max(1),
+        max_output_bytes: raw.max_output_bytes.max(1024),
+        commands,
+    })
 }
 
 fn resolve_skills(raw: SkillConfig, config_dir: &std::path::Path) -> anyhow::Result<SkillSettings> {
@@ -942,6 +1070,18 @@ fn default_analysis_config() -> AnalysisConfig {
     }
 }
 
+fn default_remote_execution_config() -> RemoteExecutionConfig {
+    RemoteExecutionConfig {
+        enabled: default_remote_execution_enabled(),
+        ssh_binary: default_ssh_binary(),
+        host_key_policy: default_remote_host_key_policy(),
+        connect_timeout_seconds: default_remote_connect_timeout(),
+        command_timeout_seconds: default_remote_command_timeout(),
+        max_output_bytes: default_remote_max_output_bytes(),
+        commands: BTreeMap::new(),
+    }
+}
+
 fn default_embedding_config() -> EmbeddingConfig {
     EmbeddingConfig {
         enabled: false,
@@ -966,6 +1106,60 @@ fn default_tool_max_output_bytes() -> usize {
 
 fn default_tool_max_input_files() -> usize {
     1
+}
+
+fn default_remote_execution_enabled() -> bool {
+    true
+}
+
+fn default_ssh_binary() -> PathBuf {
+    PathBuf::from("/usr/bin/ssh")
+}
+
+fn default_remote_host_key_policy() -> String {
+    "accept-new".to_string()
+}
+
+fn default_remote_connect_timeout() -> u64 {
+    10
+}
+
+fn default_remote_command_timeout() -> u64 {
+    30
+}
+
+fn default_remote_max_output_bytes() -> usize {
+    1024 * 1024
+}
+
+fn default_remote_command_enabled() -> bool {
+    true
+}
+
+fn default_remote_command_templates() -> BTreeMap<String, RemoteCommandTemplateSettings> {
+    BTreeMap::from([(
+        "smoke_ls_root".to_string(),
+        RemoteCommandTemplateSettings {
+            command_id: "smoke_ls_root".to_string(),
+            display_name: "Smoke: list /root".to_string(),
+            description: "Run a low-risk ls command to verify SSH execution.".to_string(),
+            enabled: true,
+            argv: vec!["ls".to_string(), "-la".to_string(), "/root".to_string()],
+            timeout_seconds: Some(10),
+        },
+    )])
+}
+
+fn validate_remote_command_id(command_id: &str) -> anyhow::Result<()> {
+    let valid = !command_id.is_empty()
+        && command_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        anyhow::bail!("invalid remote command id {command_id}")
+    }
 }
 
 fn default_claude_code_max_session_seconds() -> u64 {

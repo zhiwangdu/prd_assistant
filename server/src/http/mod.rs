@@ -11,6 +11,7 @@ use crate::{app::AppState, support::auth::require_api_key};
 
 mod cases;
 mod debug;
+mod executors;
 mod exports;
 mod health;
 mod mcp_readonly;
@@ -91,6 +92,32 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route(
             "/api/tools/runs/:task_id/artifacts",
             get(tools::tool_run_artifacts),
+        )
+        .route(
+            "/api/executors",
+            get(executors::list_executors).post(executors::create_executor),
+        )
+        .route(
+            "/api/executors/:executor_id",
+            get(executors::get_executor)
+                .patch(executors::patch_executor)
+                .delete(executors::delete_executor),
+        )
+        .route(
+            "/api/executor-command-templates",
+            get(executors::list_command_templates),
+        )
+        .route(
+            "/api/executor-runs",
+            get(executors::list_remote_runs).post(executors::create_remote_run),
+        )
+        .route(
+            "/api/executor-runs/:task_id",
+            get(executors::get_remote_run),
+        )
+        .route(
+            "/api/executor-runs/:task_id/result",
+            get(executors::remote_run_result),
         )
         .route(
             "/api/cases",

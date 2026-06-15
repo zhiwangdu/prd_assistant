@@ -528,6 +528,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings { tools },
+            remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,
                 base_url: None,

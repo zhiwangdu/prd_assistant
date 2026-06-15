@@ -163,6 +163,24 @@ impl TaskStore {
         .await
     }
 
+    pub async fn succeed_remote_command_run(
+        &self,
+        task_id: &str,
+        expected: TaskPhase,
+        remote_result_path: String,
+    ) -> anyhow::Result<TaskRecord> {
+        self.update(task_id, |task| {
+            ensure_running(task)?;
+            ensure_phase(task, expected)?;
+            task.status = TaskStatus::Succeeded;
+            task.phase = None;
+            task.error = None;
+            task.remote_result_path = Some(remote_result_path);
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn fail(
         &self,
         task_id: &str,
@@ -277,6 +295,41 @@ fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
             _ => anyhow::bail!("log analysis task {} is missing sessionId", task.task_id),
         }
     }
+    if task.task_kind == TaskKind::ToolRun && task.tool_id.as_deref().unwrap_or("").is_empty() {
+        anyhow::bail!("tool run task {} is missing toolId", task.task_id);
+    }
+    if task.task_kind == TaskKind::RemoteCommandRun {
+        if task.source != crate::domain::models::TaskSource::RemoteExecutor {
+            anyhow::bail!(
+                "remote command task {} must use remote executor source",
+                task.task_id
+            );
+        }
+        if task
+            .remote_executor_id
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            anyhow::bail!(
+                "remote command task {} is missing remoteExecutorId",
+                task.task_id
+            );
+        }
+        if task
+            .remote_command_id
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            anyhow::bail!(
+                "remote command task {} is missing remoteCommandId",
+                task.task_id
+            );
+        }
+    }
     if task.status == TaskStatus::Running && task.phase.is_none() {
         anyhow::bail!("RUNNING task {} is missing phase", task.task_id);
     }
@@ -321,6 +374,10 @@ mod tests {
             tool_id: None,
             tool_params: serde_json::Value::Null,
             tool_result_path: None,
+            remote_executor_id: None,
+            remote_command_id: None,
+            remote_command_params: serde_json::Value::Null,
+            remote_result_path: None,
             instance_id: None,
             cluster_id: None,
             node_id: None,

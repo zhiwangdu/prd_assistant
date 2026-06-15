@@ -803,6 +803,7 @@ fn task_kind_label(task_kind: TaskKind) -> &'static str {
     match task_kind {
         TaskKind::LogAnalysis => "log_analysis",
         TaskKind::ToolRun => "tool_run",
+        TaskKind::RemoteCommandRun => "remote_command_run",
     }
 }
 

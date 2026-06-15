@@ -12,7 +12,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；其中 Metadata tab 复用现有 openGemini 拓扑页面。
-- `Tools`：工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。
+- `Tools`：包含 `Tool plugins` 和 `Executors` 两个子页。Tool plugins 支持工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
@@ -33,7 +33,8 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
 - 成功任务展示 Claude Code session 面板，包括 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json` 路径、analysis mode、permission profile、session id、runtime status、usage/cost、耗时、MCP calls 和错误。
 - 成功任务展示 Tool Runner 产物，包括工具名、状态、退出码、耗时、摘要、结构化 findings 和 stdout/stderr 路径。
-- Tools 页面复用上传和 Server task 轮询，`pprof_analyzer` 可上传 `.pprof` / `.prof` / `.profile` / `.pb.gz`，展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+- Tools / Tool plugins 页面复用上传和 Server task 轮询，`pprof_analyzer` 可上传 `.pprof` / `.prof` / `.profile` / `.pb.gz`，展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+- Tools / Executors 页面调用 `/api/executors` 管理执行机，调用 `/api/executor-command-templates` 读取白名单命令模板，并通过 `/api/executor-runs` 发起和轮询 `remote_command_run`。首版使用内置 `smoke_ls_root` 模板做低风险 SSH smoke，不允许输入自由 shell 命令。
 - 根因 evidence ref 可滚动定位到对应 grep match。
 - 上传进度与后台 run 执行状态分别显示；刷新页面从 Server Session 恢复，不依赖浏览器任务 localStorage。
 
@@ -93,6 +94,7 @@ webui/
       view-model.ts
     App.tsx
     CasesView.tsx
+    ExecutorsView.tsx
     OperationsView.tsx
     ToolsView.tsx
     upload.ts
@@ -220,6 +222,16 @@ Tools：
 - `GET /api/tools/runs/:task_id`
 - `GET /api/tools/runs/:task_id/result`
 - `GET /api/tools/runs/:task_id/artifacts`
+- `GET /api/executors`
+- `POST /api/executors`
+- `GET /api/executors/:executor_id`
+- `PATCH /api/executors/:executor_id`
+- `DELETE /api/executors/:executor_id`
+- `GET /api/executor-command-templates`
+- `GET /api/executor-runs`
+- `POST /api/executor-runs`
+- `GET /api/executor-runs/:task_id`
+- `GET /api/executor-runs/:task_id/result`
 
 Settings：
 
