@@ -8,7 +8,7 @@ Last updated: 2026-06-15
 - Configured command tools are now runnable from the Tools page when enabled. Manual runs prepare `extracted/`, `manifest.json`, and `grep_results.json`, then execute the configured whitelist args through the existing ToolRunner. Users can leave `inputFiles=[]` for match-rule selection or provide safe `extracted/...` paths.
 - Built-in metadata tools remain read-only, non-editable, and non-exportable, but are now runnable from Tools without uploads. Results are persisted as `tool_run` artifacts and shown as JSON.
 - `pprof_analyzer` keeps its specialized parsed top-table result display; other tool results use a generic JSON viewer.
-- Verification passed so far: `cargo check -p logagent-server`, focused `http::tools`, `http::exports`, and `http::mcp_readonly` tests, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+- Verification passed: `cargo fmt --check`, `cargo check -p logagent-server`, focused `http::tools`, `http::exports`, and `http::mcp_readonly` tests, `cargo test -p logagent-server -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, `git diff --check`, and LAN auto deploy to `duzhiwang@192.168.31.128`.
 
 ## 2026-06-15 Built-in Tool Catalog Registration
 
