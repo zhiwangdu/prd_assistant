@@ -314,8 +314,8 @@ MVP 要求：
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
-- Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable` 和 `runnable` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出且不可手动运行。
-- Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
+- Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`paramsSchema` 和 `paramsTemplate` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出，但可通过页面手动运行。
+- Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；configured command tools 会在运行前生成 `extracted/`、`manifest.json` 和 `grep_results.json`，metadata built-ins 可无上传运行；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
 - `pprof_analyzer` 是首个 Tools 插件，通过配置的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 文本结果，并把 top 输出解析为结构化表格。
 - Remote Executor API 支持在 WebUI 纳管 ECS 执行机，持久化到 `executors/`，并通过 `remote_execution.commands` 白名单模板发起 `taskKind=remote_command_run`。SSH 调用使用 Server 侧系统 `ssh` 二进制、`BatchMode=yes`、配置化 host key policy 和 timeout；stdout/stderr/result 写入 `remote_command/`。`GET /api/tasks` 不混入 remote command run，运行历史从 `/api/executor-runs` 查询。
 - 默认内置 `smoke_ls_root` 低风险模板，执行 `ls -la /root`，用于验证 `root@112.74.50.120` 等已配置免密登录的执行机。
@@ -518,7 +518,7 @@ export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
 cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
 ```
 
-访问 `http://127.0.0.1:50997/`，在 Tools 页面上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz` 文件即可创建 `tool_run` 任务。
+访问 `http://127.0.0.1:50997/`，在 Tools 页面选择工具后按预填 JSON 参数模板运行；`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`，configured command tools 上传匹配文件，metadata built-ins 不需要上传。
 
 批量任务请求：
 

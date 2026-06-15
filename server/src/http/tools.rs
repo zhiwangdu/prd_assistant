@@ -61,9 +61,6 @@ pub async fn create_tool_run(
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    if upload_ids.is_empty() {
-        return Err(AppError::bad_request("missing uploadIds"));
-    }
     let normalized_params =
         tools::validate_tool_run_request(&state.config, &tool_id, upload_ids.len(), &req.params)?;
 
@@ -273,7 +270,7 @@ mod tests {
     #[tokio::test]
     async fn pprof_tool_run_reuses_uploads_tasks_and_result_api() {
         let (state, root) = test_state_with_pprof_tool();
-        create_test_upload(&state, "upl_pprof").await;
+        create_test_upload(&state, "upl_pprof", "sample.pb.gz").await;
         let app = http::router(state.clone()).with_state(state.clone());
 
         let list = app
@@ -306,30 +303,53 @@ mod tests {
         assert_eq!(metadata_field_types["readOnly"], true);
         assert_eq!(metadata_field_types["editable"], false);
         assert_eq!(metadata_field_types["exportable"], false);
-        assert_eq!(metadata_field_types["runnable"], false);
+        assert_eq!(metadata_field_types["runnable"], true);
+        assert!(metadata_field_types["paramsTemplate"].is_object());
         assert!(metadata_field_types["tags"]
             .as_array()
             .unwrap()
             .iter()
             .any(|tag| tag == "metadata"));
 
-        let read_only_run = app
+        let metadata_created = app
             .clone()
             .oneshot(
-                Request::post("/api/tools/logagent.get_metadata_field_types/runs")
+                Request::post("/api/tools/logagent.list_metadata_instances/runs")
                     .header("authorization", "Bearer test-key")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"uploadIds":["upl_pprof"],"params":{}}"#))
+                    .body(Body::from(r#"{"params":{}}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(read_only_run.status(), StatusCode::BAD_REQUEST);
-        let error = to_bytes(read_only_run.into_body(), usize::MAX)
+        assert_eq!(metadata_created.status(), StatusCode::ACCEPTED);
+        let metadata_body = to_bytes(metadata_created.into_body(), usize::MAX)
             .await
             .unwrap();
-        let error: serde_json::Value = serde_json::from_slice(&error).unwrap();
-        assert!(error["error"].as_str().unwrap().contains("read-only"));
+        let metadata_body: serde_json::Value = serde_json::from_slice(&metadata_body).unwrap();
+        let metadata_task_id = metadata_body["taskId"].as_str().unwrap();
+        wait_for_tool_run(&app, metadata_task_id, "SUCCEEDED").await;
+        let metadata_result = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tools/runs/{metadata_task_id}/result"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(metadata_result.status(), StatusCode::OK);
+        let metadata_result = to_bytes(metadata_result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let metadata_result: serde_json::Value = serde_json::from_slice(&metadata_result).unwrap();
+        assert_eq!(
+            metadata_result["toolId"],
+            "logagent.list_metadata_instances"
+        );
+        assert_eq!(metadata_result["result"]["status"], "OK");
+        assert!(metadata_result["result"]["result"]["instances"].is_array());
 
         let created = app
             .clone()
@@ -387,13 +407,87 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[tokio::test]
+    async fn configured_tool_run_extracts_upload_and_runs_command() {
+        let (state, root) = test_state_with_configured_tool();
+        create_test_upload(&state, "upl_log", "sample.log").await;
+        let app = http::router(state.clone()).with_state(state.clone());
+
+        let list = app
+            .clone()
+            .oneshot(
+                Request::get("/api/tools")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list.status(), StatusCode::OK);
+        let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let checker = body["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["toolId"] == "echo_checker")
+            .unwrap();
+        assert_eq!(checker["runnable"], true);
+        assert_eq!(
+            checker["paramsTemplate"]["inputFiles"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tools/echo_checker/runs")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"uploadIds":["upl_log"],"params":{"inputFiles":[]}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = body["taskId"].as_str().unwrap();
+
+        wait_for_tool_run(&app, task_id, "SUCCEEDED").await;
+        let result = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/tools/runs/{task_id}/result"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = to_bytes(result.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["toolId"], "echo_checker");
+        assert_eq!(body["result"]["status"], "OK");
+        assert_eq!(
+            body["result"]["results"][0]["result"]["summary"],
+            "manual ok"
+        );
+        assert!(body["result"]["results"][0]["result"]["inputFile"]
+            .as_str()
+            .unwrap()
+            .starts_with("extracted/sample/"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn test_state_with_pprof_tool() -> (Arc<AppState>, std::path::PathBuf) {
-        static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
-        let root = std::env::temp_dir().join(format!(
-            "logagent-tools-api-{}-{}",
-            std::process::id(),
-            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let root = test_root("logagent-tools-api-pprof");
         let tool_path = write_fake_go(&root);
         let mut tools = std::collections::BTreeMap::new();
         tools.insert(
@@ -409,6 +503,52 @@ mod tests {
                 match_settings: ToolMatchSettings::default(),
             },
         );
+        test_state_with_tools(root, tools)
+    }
+
+    fn test_state_with_configured_tool() -> (Arc<AppState>, std::path::PathBuf) {
+        let root = test_root("logagent-tools-api-configured");
+        let tool_path = write_fake_checker(&root);
+        let mut tools = std::collections::BTreeMap::new();
+        tools.insert(
+            "echo_checker".to_string(),
+            ToolSettings {
+                name: "echo_checker".to_string(),
+                enabled: true,
+                path: tool_path,
+                timeout_seconds: 5,
+                max_output_bytes: 1024 * 1024,
+                max_input_files: 2,
+                args: vec![
+                    "--input".to_string(),
+                    "{input_file}".to_string(),
+                    "--manifest".to_string(),
+                    "{manifest_path}".to_string(),
+                    "--grep".to_string(),
+                    "{grep_results_path}".to_string(),
+                ],
+                match_settings: ToolMatchSettings {
+                    file_patterns: vec!["*.log".to_string()],
+                    keywords: Vec::new(),
+                },
+            },
+        );
+        test_state_with_tools(root, tools)
+    }
+
+    fn test_root(prefix: &str) -> std::path::PathBuf {
+        static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
+        std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    fn test_state_with_tools(
+        root: std::path::PathBuf,
+        tools: std::collections::BTreeMap<String, ToolSettings>,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
         let config = Arc::new(AppConfig {
             config_path: root.join("logagent-test.yaml"),
             server: ServerSettings {
@@ -503,20 +643,54 @@ fi
         path
     }
 
-    async fn create_test_upload(state: &Arc<AppState>, upload_id: &str) {
+    fn write_fake_checker(root: &std::path::Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::create_dir_all(root).unwrap();
+        let path = root.join("fake-checker.sh");
+        std::fs::write(
+            &path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+input=""
+manifest=""
+grep=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --input) input="$2"; shift 2 ;;
+    --manifest) manifest="$2"; shift 2 ;;
+    --grep) grep="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+test -f "$input"
+test -f "$manifest"
+test -f "$grep"
+printf '{"summary":"manual ok","findings":[{"message":"checked input"}]}\n'
+"#,
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    async fn create_test_upload(state: &Arc<AppState>, upload_id: &str, filename: &str) {
         let upload_dir = state.config.storage.upload_dir(upload_id);
         std::fs::create_dir_all(&upload_dir).unwrap();
-        let path = upload_dir.join("sample.pb.gz");
-        std::fs::write(&path, b"fake pprof").unwrap();
+        let path = upload_dir.join(filename);
+        let content = b"fake upload";
+        std::fs::write(&path, content).unwrap();
         let now = Utc::now();
         state
             .uploads
             .create(UploadRecord {
                 schema_version: 1,
                 upload_id: upload_id.to_string(),
-                filename: "sample.pb.gz".to_string(),
-                size: 10,
-                expected_size: Some(10),
+                filename: filename.to_string(),
+                size: content.len() as u64,
+                expected_size: Some(content.len() as u64),
                 status: UploadStatus::Complete,
                 path,
                 created_at: now,

@@ -172,7 +172,7 @@ async fn dispatch_phase(
         TaskPhase::RunTool => {
             if task.task_kind == TaskKind::ToolRun {
                 let result_path =
-                    crate::services::tools::run_tool_task(state.config.clone(), task.clone())
+                    crate::services::tools::run_tool_task(state.clone(), task.clone())
                         .await?
                         .display()
                         .to_string();

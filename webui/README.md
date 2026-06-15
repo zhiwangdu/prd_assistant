@@ -33,7 +33,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
 - 成功任务展示 Claude Code session 面板，包括 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json` 路径、analysis mode、permission profile、session id、runtime status、usage/cost、耗时、MCP calls 和错误。
 - 成功任务展示 Tool Runner 产物，包括工具名、状态、退出码、耗时、摘要、结构化 findings 和 stdout/stderr 路径。
-- Tools / Tool plugins 页面复用上传和 Server task 轮询，按 `/api/tools` descriptor 的 `source/tags/readOnly/exportable/runnable` 展示 configured 与 built-in 工具差异；内置 metadata 工具显示只读详情和 input schema，`pprof_analyzer` 可上传 `.pprof` / `.prof` / `.profile` / `.pb.gz`，展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径。
+- Tools / Tool plugins 页面复用上传和 Server task 轮询，按 `/api/tools` descriptor 的 `source/tags/readOnly/exportable/runnable` 展示 configured 与 built-in 工具差异；所有 runnable 工具都按 `paramsTemplate` 预填 JSON 参数并允许手工修改后运行，metadata built-ins 不需要上传，configured command tools 上传匹配文件，`pprof_analyzer` 展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径，其他工具展示 JSON result。
 - Tools / Executors 页面调用 `/api/executors` 管理执行机，调用 `/api/executor-command-templates` 读取白名单命令模板，并通过 `/api/executor-runs` 发起和轮询 `remote_command_run`。首版使用内置 `smoke_ls_root` 模板做低风险 SSH smoke，不允许输入自由 shell 命令。
 - 根因 evidence ref 可滚动定位到对应 grep match。
 - 上传进度与后台 run 执行状态分别显示；刷新页面从 Server Session 恢复，不依赖浏览器任务 localStorage。

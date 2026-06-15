@@ -126,6 +126,7 @@ pub struct ToolDescriptor {
     pub min_files: usize,
     pub max_files: usize,
     pub params_schema: serde_json::Value,
+    pub params_template: serde_json::Value,
     pub output_views: Vec<String>,
 }
 

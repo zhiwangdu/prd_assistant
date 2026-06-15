@@ -1,6 +1,6 @@
 import { FileArchive, Play, RefreshCw, Server, UploadCloud, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { uploadFile } from "./upload";
@@ -21,6 +21,7 @@ type ToolDescriptor = {
   minFiles: number;
   maxFiles: number;
   paramsSchema?: Record<string, unknown>;
+  paramsTemplate?: Record<string, unknown>;
   outputViews: string[];
 };
 
@@ -42,7 +43,7 @@ type ToolRunResultResponse = {
   taskId: string;
   toolId: string;
   resultPath: string;
-  result: PprofResult;
+  result: unknown;
 };
 type PprofResult = {
   schemaVersion: number;
@@ -95,10 +96,8 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
   const [runs, setRuns] = useState<ToolRunSummary[]>([]);
   const [selectedRun, setSelectedRun] = useState<ToolRunRecord | null>(null);
   const [result, setResult] = useState<ToolRunResultResponse | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [sampleIndex, setSampleIndex] = useState("samples");
-  const [nodeCount, setNodeCount] = useState(50);
-  const [generateSvg, setGenerateSvg] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [paramsText, setParamsText] = useState("{}");
   const [status, setStatus] = useState("Tools ready");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -148,6 +147,13 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
   }, [refreshRuns, refreshTools]);
 
   useEffect(() => {
+    if (!selectedTool) return;
+    setFiles([]);
+    setUploadProgress(0);
+    setParamsText(formatJson(selectedTool.paramsTemplate ?? {}));
+  }, [selectedTool]);
+
+  useEffect(() => {
     if (!apiKey.trim()) return;
     const timer = window.setInterval(() => {
       void refreshRuns().catch(() => undefined);
@@ -175,27 +181,42 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
       setStatus(`${selectedTool.displayName} is not available for manual runs`);
       return;
     }
-    if (!file) {
-      setStatus("Choose a pprof file");
+    if (files.length < selectedTool.minFiles || files.length > selectedTool.maxFiles) {
+      setStatus(`Choose ${selectedTool.minFiles}..${selectedTool.maxFiles} file(s)`);
+      return;
+    }
+    let params: unknown;
+    try {
+      params = JSON.parse(paramsText);
+    } catch (reason) {
+      setStatus(`Invalid JSON params: ${errorMessage(reason)}`);
+      return;
+    }
+    if (!isJsonObject(params)) {
+      setStatus("Params must be a JSON object");
       return;
     }
     setLoading(true);
     setUploadProgress(0);
     setResult(null);
     try {
-      setStatus(`Uploading ${file.name}`);
-      const upload = await uploadFile(file, apiKey, (value) => setUploadProgress(Math.round(value * 100)));
-      setStatus("Upload complete, starting tool run");
+      const uploadIds: string[] = [];
+      for (const [index, nextFile] of files.entries()) {
+        setStatus(`Uploading ${nextFile.name}`);
+        const upload = await uploadFile(nextFile, apiKey, (value) => {
+          const completed = index + value;
+          setUploadProgress(Math.round((completed / Math.max(files.length, 1)) * 100));
+        });
+        uploadIds.push(upload.uploadId);
+      }
+      if (!files.length) setUploadProgress(100);
+      setStatus("Starting tool run");
       const run = await fetchJson<ToolRunSummary>(`/api/tools/${encodeURIComponent(selectedTool.toolId)}/runs`, {
         method: "POST",
         headers: jsonHeaders(apiKey),
         body: JSON.stringify({
-          uploadIds: [upload.uploadId],
-          params: {
-            sampleIndex,
-            nodeCount,
-            generateSvg
-          },
+          uploadIds,
+          params,
           idempotencyKey: `webui-${selectedTool.toolId}-${Date.now()}`
         })
       });
@@ -261,18 +282,30 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           <CardContent className="space-y-4">
             {selectedTool?.runnable ? (
               <>
-                <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
-                  <UploadCloud className="mb-2 h-7 w-7" />
-                  {file ? file.name : "Choose a Go pprof profile"}
-                  <input className="hidden" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-                </label>
-                <div className="grid gap-3 md:grid-cols-[1fr_160px_auto] md:items-center">
-                  <Input value={sampleIndex} onChange={(event) => setSampleIndex(event.target.value)} placeholder="sample index" />
-                  <Input type="number" min={1} max={200} value={nodeCount} onChange={(event) => setNodeCount(Number(event.target.value) || 50)} />
-                  <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm text-muted-foreground">
-                    <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={generateSvg} onChange={(event) => setGenerateSvg(event.target.checked)} />
-                    SVG
+                {selectedTool.maxFiles > 0 ? (
+                  <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 px-4 text-center text-sm text-muted-foreground">
+                    <UploadCloud className="mb-2 h-7 w-7" />
+                    {files.length ? files.map((nextFile) => nextFile.name).join(", ") : filePrompt(selectedTool)}
+                    <input
+                      accept={fileAccept(selectedTool)}
+                      className="hidden"
+                      multiple={selectedTool.maxFiles > 1}
+                      type="file"
+                      onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, selectedTool.maxFiles))}
+                    />
                   </label>
+                ) : null}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">Params JSON</p>
+                    <Button className="h-8 px-3" variant="outline" onClick={() => setParamsText(formatJson(selectedTool.paramsTemplate ?? {}))}><RefreshCw className="mr-2 h-4 w-4" />Reset template</Button>
+                  </div>
+                  <textarea
+                    className="min-h-48 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20"
+                    spellCheck={false}
+                    value={paramsText}
+                    onChange={(event) => setParamsText(event.target.value)}
+                  />
                 </div>
                 <div>
                   <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
@@ -321,7 +354,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                   {selectedRun.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedRun.error?.phase ? `${selectedRun.error.phase}: ` : ""}{selectedRun.error?.message ?? "Tool run failed"}</div> : null}
                   {!isTerminal(selectedRun.status) ? <p className="text-sm text-muted-foreground">Server is running the tool in the background.</p> : null}
                   {selectedRun.status === "SUCCEEDED" && !result ? <Button onClick={() => void selectRun(selectedRun.taskId)}>Load result</Button> : null}
-                  {result ? <PprofResultView result={result.result} resultPath={result.resultPath} /> : null}
+                  {result ? <ToolResultView result={result.result} resultPath={result.resultPath} toolId={result.toolId} /> : null}
                 </>
               ) : <EmptyState>Select or create a run to inspect status and artifacts.</EmptyState>}
             </CardContent>
@@ -372,6 +405,18 @@ function toolSubtitle(tool: ToolDescriptor) {
     return tool.acceptedSuffixes.join(", ");
   }
   return `${tool.backend} · no file input`;
+}
+
+function ToolResultView({ result, resultPath, toolId }: { result: unknown; resultPath: string; toolId: string }) {
+  if (toolId === "pprof_analyzer" && isPprofResult(result)) {
+    return <PprofResultView result={result} resultPath={resultPath} />;
+  }
+  return (
+    <div className="space-y-3">
+      <ArtifactPath label="Result" value={resultPath} />
+      <pre className="max-h-[560px] overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{formatJson(result)}</pre>
+    </div>
+  );
 }
 
 function PprofResultView({ result, resultPath }: { result: PprofResult; resultPath: string }) {
@@ -447,4 +492,31 @@ function formatPercent(value?: number | null) {
 
 function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
+}
+
+function isPprofResult(value: unknown): value is PprofResult {
+  if (!isJsonObject(value)) return false;
+  return value.toolId === "pprof_analyzer" && Array.isArray(value.top) && isJsonObject(value.artifacts);
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function filePrompt(tool: ToolDescriptor) {
+  if (tool.minFiles === tool.maxFiles) {
+    return `Choose ${tool.minFiles} file${tool.minFiles === 1 ? "" : "s"}`;
+  }
+  return `Choose ${tool.minFiles}..${tool.maxFiles} files`;
+}
+
+function fileAccept(tool: ToolDescriptor) {
+  return tool.acceptedSuffixes
+    .map((suffix) => suffix.startsWith("*") ? suffix.slice(1) : suffix)
+    .filter((suffix) => suffix.startsWith("."))
+    .join(",");
 }

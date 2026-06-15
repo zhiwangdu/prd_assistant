@@ -11,7 +11,13 @@ use tokio::{process::Command, time::Duration};
 use tracing::{info, warn};
 
 use crate::{
-    domain::models::{TaskRecord, ToolDescriptor, ToolSource},
+    app::AppState,
+    domain::{
+        contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
+        models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolSource},
+    },
+    pipeline::{extract_task, prepare_pipeline_run, search_task},
+    services::metadata::MetadataFieldTypesRequest,
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -33,6 +39,13 @@ pub struct PprofParams {
     pub node_count: usize,
     #[serde(default)]
     pub generate_svg: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfiguredToolParams {
+    #[serde(default)]
+    input_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,13 +162,23 @@ pub fn validate_tool_run_request(
             serde_json::to_value(parsed)
                 .map_err(|err| AppError::internal(format!("failed to encode pprof params: {err}")))
         }
+        METADATA_LIST_INSTANCES_ID => validate_metadata_list_params(params),
+        METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
+        METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
+        _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
 }
 
-pub async fn run_tool_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<PathBuf, AppError> {
+pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     match task.tool_id.as_deref() {
-        Some(PPROF_ANALYZER_ID) => run_pprof_task(config, task).await,
+        Some(PPROF_ANALYZER_ID) => run_pprof_task(state.config.clone(), task).await,
+        Some(
+            METADATA_LIST_INSTANCES_ID | METADATA_GET_SNAPSHOT_ID | METADATA_GET_FIELD_TYPES_ID,
+        ) => run_metadata_task(state, task).await,
+        Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
+            run_configured_tool_task(state, task).await
+        }
         Some(tool_id) => Err(AppError::bad_request(format!("unknown toolId {tool_id}"))),
         None => Err(AppError::bad_request("tool run task is missing toolId")),
     }
@@ -198,6 +221,7 @@ fn pprof_descriptor(config: &AppConfig) -> ToolDescriptor {
             "nodeCount": { "type": "integer", "default": 50, "minimum": 1, "maximum": 200 },
             "generateSvg": { "type": "boolean", "default": false }
         }),
+        params_template: pprof_params_template(),
         output_views: vec![
             "summary".to_string(),
             "top_table".to_string(),
@@ -221,9 +245,10 @@ fn configured_tool_descriptor(tool: &ToolSettings) -> ToolDescriptor {
         read_only: false,
         editable: true,
         exportable: tool.enabled,
-        runnable: false,
+        runnable: tool.enabled,
         tags: vec![
             "configured".to_string(),
+            "manual-run".to_string(),
             "tool-runner".to_string(),
             "external".to_string(),
         ],
@@ -254,6 +279,9 @@ fn configured_tool_descriptor(tool: &ToolSettings) -> ToolDescriptor {
                 }
             }
         }),
+        params_template: serde_json::json!({
+            "inputFiles": []
+        }),
         output_views: vec![
             "summary".to_string(),
             "findings".to_string(),
@@ -274,7 +302,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
             read_only: true,
             editable: false,
             exportable: false,
-            runnable: false,
+            runnable: true,
             tags: metadata_tags(),
             backend: "builtin".to_string(),
             accepted_suffixes: Vec::new(),
@@ -284,6 +312,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
                 "type": "object",
                 "properties": {}
             }),
+            params_template: serde_json::json!({}),
             output_views: vec!["json".to_string()],
         },
         ToolDescriptor {
@@ -295,7 +324,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
             read_only: true,
             editable: false,
             exportable: false,
-            runnable: false,
+            runnable: true,
             tags: metadata_tags(),
             backend: "builtin".to_string(),
             accepted_suffixes: Vec::new(),
@@ -307,6 +336,9 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
                     "instanceId": { "type": "string" }
                 },
                 "required": ["instanceId"]
+            }),
+            params_template: serde_json::json!({
+                "instanceId": ""
             }),
             output_views: vec!["json".to_string()],
         },
@@ -321,7 +353,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
             read_only: true,
             editable: false,
             exportable: false,
-            runnable: false,
+            runnable: true,
             tags: metadata_tags(),
             backend: "builtin".to_string(),
             accepted_suffixes: Vec::new(),
@@ -347,6 +379,13 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
                 },
                 "required": ["instanceId", "database", "measurement"]
             }),
+            params_template: serde_json::json!({
+                "instanceId": "",
+                "database": "",
+                "measurement": "",
+                "retentionPolicy": "",
+                "field": []
+            }),
             output_views: vec!["json".to_string()],
         },
     ]
@@ -357,7 +396,152 @@ fn metadata_tags() -> Vec<String> {
         "built-in".to_string(),
         "metadata".to_string(),
         "read-only".to_string(),
+        "manual-run".to_string(),
     ]
+}
+
+fn pprof_params_template() -> serde_json::Value {
+    serde_json::json!({
+        "sampleIndex": default_sample_index(),
+        "nodeCount": default_node_count(),
+        "generateSvg": false
+    })
+}
+
+fn validate_configured_tool_params(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    let params = parse_configured_tool_params(value)?;
+    serde_json::to_value(params).map_err(|err| {
+        AppError::internal(format!("failed to encode configured tool params: {err}"))
+    })
+}
+
+fn parse_configured_tool_params(
+    value: &serde_json::Value,
+) -> Result<ConfiguredToolParams, AppError> {
+    if value.is_null() {
+        return Ok(ConfiguredToolParams {
+            input_files: Vec::new(),
+        });
+    }
+    serde_json::from_value(value.clone())
+        .map_err(|err| AppError::bad_request(format!("invalid configured tool params: {err}")))
+}
+
+fn validate_metadata_list_params(value: &serde_json::Value) -> Result<serde_json::Value, AppError> {
+    if value.is_null() {
+        return Ok(serde_json::json!({}));
+    }
+    let object = value
+        .as_object()
+        .ok_or_else(|| AppError::bad_request("metadata list params must be an object"))?;
+    if object.is_empty() {
+        Ok(serde_json::json!({}))
+    } else {
+        Err(AppError::bad_request(
+            "metadata list params must not contain fields",
+        ))
+    }
+}
+
+fn validate_metadata_snapshot_params(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    let instance_id = required_string_param(value, "instanceId")?;
+    Ok(serde_json::json!({ "instanceId": instance_id }))
+}
+
+fn validate_metadata_field_types_params(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| AppError::bad_request("metadata field type params must be an object"))?;
+    let instance_id = required_string_param(value, "instanceId")?;
+    let database = required_string_param(value, "database")?;
+    let measurement = required_string_param(value, "measurement")?;
+    let mut normalized = serde_json::Map::new();
+    normalized.insert("instanceId".to_string(), serde_json::json!(instance_id));
+    normalized.insert("database".to_string(), serde_json::json!(database));
+    normalized.insert("measurement".to_string(), serde_json::json!(measurement));
+    if let Some(retention_policy) = object
+        .get("retentionPolicy")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        normalized.insert(
+            "retentionPolicy".to_string(),
+            serde_json::json!(retention_policy),
+        );
+    }
+    if let Some(field) = object.get("field") {
+        match field {
+            serde_json::Value::String(value) => {
+                let value = value.trim();
+                if !value.is_empty() {
+                    normalized.insert("field".to_string(), serde_json::json!(value));
+                }
+            }
+            serde_json::Value::Array(values) => {
+                let fields = values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .ok_or_else(|| {
+                                AppError::bad_request("field entries must be non-empty strings")
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if !fields.is_empty() {
+                    normalized.insert("field".to_string(), serde_json::json!(fields));
+                }
+            }
+            serde_json::Value::Null => {}
+            _ => {
+                return Err(AppError::bad_request(
+                    "field must be a string or string array",
+                ))
+            }
+        }
+    }
+    Ok(serde_json::Value::Object(normalized))
+}
+
+fn required_string_param(value: &serde_json::Value, key: &str) -> Result<String, AppError> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| AppError::bad_request(format!("{key} is required")))
+}
+
+fn safe_action_suffix(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn stable_hash_hex(value: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn display_name_from_id(tool_id: &str) -> String {
@@ -555,6 +739,243 @@ async fn run_pprof_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<Path
         );
     }
     Ok(result_path)
+}
+
+async fn run_metadata_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
+    let tool_id = task
+        .tool_id
+        .as_deref()
+        .ok_or_else(|| AppError::bad_request("tool run task is missing toolId"))?;
+    let tool_id = tool_id.to_string();
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let action_id = format!(
+        "act_tool_metadata_{}_{}",
+        safe_action_suffix(&tool_id),
+        task.task_id
+    );
+    let result_dir = workspace.join("tool_results").join(&action_id);
+    fs::create_dir_all(&result_dir)
+        .map_err(|err| AppError::internal(format!("failed to create tool result dir: {err}")))?;
+    let started = Instant::now();
+    let result = match tool_id.as_str() {
+        METADATA_LIST_INSTANCES_ID => {
+            validate_metadata_list_params(&task.tool_params)?;
+            serde_json::json!({ "instances": state.metadata.list_instances().await })
+        }
+        METADATA_GET_SNAPSHOT_ID => {
+            let instance_id = required_string_param(&task.tool_params, "instanceId")?;
+            serde_json::json!({ "snapshot": state.metadata.get_instance_snapshot(&instance_id).await? })
+        }
+        METADATA_GET_FIELD_TYPES_ID => {
+            let request: MetadataFieldTypesRequest =
+                serde_json::from_value(task.tool_params.clone()).map_err(|err| {
+                    AppError::bad_request(format!("invalid metadata field type params: {err}"))
+                })?;
+            serde_json::json!({ "result": state.metadata.get_metadata_field_types(request).await? })
+        }
+        _ => {
+            return Err(AppError::bad_request(format!(
+                "unknown metadata tool {tool_id}"
+            )))
+        }
+    };
+    let record = serde_json::json!({
+        "schemaVersion": 1,
+        "toolId": tool_id,
+        "actionId": action_id,
+        "status": "OK",
+        "params": task.tool_params,
+        "result": result,
+        "durationMs": started.elapsed().as_millis(),
+        "createdAt": Utc::now()
+    });
+    let result_path = result_dir.join("result.json");
+    write_json(&result_path, &record)?;
+    Ok(result_path)
+}
+
+async fn run_configured_tool_task(
+    state: Arc<AppState>,
+    task: TaskRecord,
+) -> Result<PathBuf, AppError> {
+    let tool_id = task
+        .tool_id
+        .as_deref()
+        .ok_or_else(|| AppError::bad_request("tool run task is missing toolId"))?
+        .to_string();
+    let tool = state
+        .config
+        .tools
+        .tools
+        .get(&tool_id)
+        .filter(|tool| tool.enabled)
+        .ok_or_else(|| AppError::bad_request(format!("tool {tool_id} is disabled")))?
+        .clone();
+    let params = parse_configured_tool_params(&task.tool_params)?;
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    prepare_pipeline_run(&workspace).await?;
+    extract_task(state.config.clone(), task.clone()).await?;
+    search_task(state.config.clone(), &task.task_id).await?;
+
+    let input_files = if params.input_files.is_empty() {
+        let manifest: Manifest = read_json_file_sync(&workspace.join("manifest.json"))?;
+        let grep: GrepResults = read_json_file_sync(&workspace.join("grep_results.json"))?;
+        let selected = state
+            .tool_runner
+            .rule_based_actions(&manifest, &grep)
+            .into_iter()
+            .filter(|action| {
+                action.input.get("tool").and_then(serde_json::Value::as_str)
+                    == Some(tool_id.as_str())
+            })
+            .filter_map(|action| {
+                action
+                    .input
+                    .get("inputFile")
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToString::to_string)
+            })
+            .collect::<Vec<_>>();
+        if selected.is_empty() {
+            return Err(AppError::bad_request(format!(
+                "tool {tool_id} did not match any extracted input file; set params.inputFiles explicitly"
+            )));
+        }
+        selected
+    } else {
+        params.input_files
+    };
+    if input_files.len() > tool.max_input_files {
+        return Err(AppError::bad_request(format!(
+            "tool {tool_id} accepts at most {} input file(s)",
+            tool.max_input_files
+        )));
+    }
+
+    let mut results = Vec::new();
+    let context = TaskContext::from_record(&task, workspace.clone(), None);
+    for input_file in normalized_input_files(input_files, &workspace)? {
+        let action = AgentAction {
+            schema_version: 1,
+            action_id: format!(
+                "act_tool_manual_{}_{}",
+                safe_action_suffix(&tool_id),
+                stable_hash_hex(&format!("{}:{input_file}", task.task_id))
+            ),
+            kind: ActionKind::RunTool,
+            reason: "manual tool run".to_string(),
+            evidence_refs: Vec::new(),
+            input: serde_json::json!({
+                "tool": tool_id,
+                "inputFile": input_file
+            }),
+            risk: ActionRisk::SafeReadOnly,
+            fingerprint: format!("manual_tool:{tool_id}:{input_file}"),
+        };
+        let artifact = state
+            .tool_runner
+            .execute(&context, &action)
+            .await
+            .map_err(|err| AppError::internal(format!("tool runner failed: {err:#}")))?;
+        let output: serde_json::Value =
+            read_json_file_sync(&workspace.join(&artifact.artifact_path))?;
+        results.push(serde_json::json!({
+            "actionId": action.action_id,
+            "inputFile": input_file,
+            "artifactPath": artifact.artifact_path,
+            "summary": artifact.summary,
+            "result": output
+        }));
+    }
+
+    let status = aggregate_tool_status(&results);
+    let action_id = format!(
+        "act_tool_manual_{}_{}",
+        safe_action_suffix(&tool_id),
+        task.task_id
+    );
+    let result_dir = workspace.join("tool_results").join(&action_id);
+    fs::create_dir_all(&result_dir)
+        .map_err(|err| AppError::internal(format!("failed to create tool result dir: {err}")))?;
+    let record = serde_json::json!({
+        "schemaVersion": 1,
+        "toolId": tool_id,
+        "actionId": action_id,
+        "status": status,
+        "params": task.tool_params,
+        "inputFiles": results
+            .iter()
+            .filter_map(|result| result.get("inputFile").cloned())
+            .collect::<Vec<_>>(),
+        "results": results,
+        "createdAt": Utc::now()
+    });
+    let result_path = result_dir.join("result.json");
+    write_json(&result_path, &record)?;
+    Ok(result_path)
+}
+
+fn normalized_input_files(
+    input_files: Vec<String>,
+    workspace: &Path,
+) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::new();
+    for input_file in input_files {
+        let trimmed = input_file.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::bad_request(
+                "params.inputFiles entries must be non-empty strings",
+            ));
+        }
+        if !trimmed.starts_with("extracted/") {
+            return Err(AppError::bad_request(
+                "params.inputFiles entries must be extracted/ relative paths",
+            ));
+        }
+        let path = validate_workspace_relative_path(trimmed)
+            .map_err(|_| AppError::bad_request("params.inputFiles contains unsafe path"))?;
+        if !workspace.join(path).is_file() {
+            return Err(AppError::bad_request(format!(
+                "params.inputFiles entry does not exist: {trimmed}"
+            )));
+        }
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    if normalized.is_empty() {
+        return Err(AppError::bad_request(
+            "tool run did not select any input files",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn aggregate_tool_status(results: &[serde_json::Value]) -> &'static str {
+    let mut failed = false;
+    for result in results {
+        let status = result
+            .get("result")
+            .and_then(|result| result.get("status"))
+            .and_then(serde_json::Value::as_str);
+        match status {
+            Some("TIMED_OUT") => return "TIMED_OUT",
+            Some("FAILED") => failed = true,
+            _ => {}
+        }
+    }
+    if failed {
+        "FAILED"
+    } else {
+        "OK"
+    }
+}
+
+fn read_json_file_sync<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
+    let raw = fs::read_to_string(path)
+        .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
+    serde_json::from_str(&raw)
+        .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
 }
 
 async fn run_pprof_command(

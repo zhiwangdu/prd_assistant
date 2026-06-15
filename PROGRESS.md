@@ -2,10 +2,18 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Manual Tools JSON Template Run
+
+- `/api/tools` descriptors now include `paramsTemplate`; WebUI Tools uses it to prefill editable JSON params for every runnable catalog tool.
+- Configured command tools are now runnable from the Tools page when enabled. Manual runs prepare `extracted/`, `manifest.json`, and `grep_results.json`, then execute the configured whitelist args through the existing ToolRunner. Users can leave `inputFiles=[]` for match-rule selection or provide safe `extracted/...` paths.
+- Built-in metadata tools remain read-only, non-editable, and non-exportable, but are now runnable from Tools without uploads. Results are persisted as `tool_run` artifacts and shown as JSON.
+- `pprof_analyzer` keeps its specialized parsed top-table result display; other tool results use a generic JSON viewer.
+- Verification passed so far: `cargo check -p logagent-server`, focused `http::tools`, `http::exports`, and `http::mcp_readonly` tests, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-15 Built-in Tool Catalog Registration
 
 - Registered the built-in metadata tools in the shared Tools catalog: `logagent.list_metadata_instances`, `logagent.get_metadata_snapshot`, and `logagent.get_metadata_field_types`.
-- Extended Tool descriptors with `source`, `tags`, `readOnly`, `editable`, `exportable`, and `runnable`; configured tools use `source=configured`, while built-ins use `source=built_in`, are read-only, cannot be edited, cannot be exported, and cannot be started through manual `/api/tools/:tool_id/runs`.
+- Extended Tool descriptors with `source`, `tags`, `readOnly`, `editable`, `exportable`, and `runnable`; configured tools use `source=configured`, while built-ins use `source=built_in`, are read-only, cannot be edited, and cannot be exported.
 - `/api/tools`, read-only MCP `logagent://tools/catalog`, and `logagent.list_tools` now use the same descriptor view. The catalog only shows real configured tools plus built-ins; an unconfigured pprof template no longer appears as a fake configured tool.
 - `tools.zip` remains limited to enabled configured executable tools, and tests assert built-in metadata tools are excluded from `tools-manifest.json`.
 - WebUI Tools / Tool plugins now displays configured vs built-in tags, read-only status, exportability, and input schema; only `runnable=true` tools show the upload/run form.
