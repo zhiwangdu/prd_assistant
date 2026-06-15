@@ -52,6 +52,8 @@ Metadata 能力：
 - JSON 文件和手动 JSON 文本通过 `/api/metadata/imports` 生成导入预览；完整 Metadata JSON 模板可包含多个 Instance，openGemini `/getdata` JSON 仍需填写 InstanceID。
 - 预览并确认写入 Server Metadata Store。
 - 展示已导入 Instance 列表和备注名；列表备注单行省略，并支持向左收缩/展开，避免长文本撑开布局，并按 InstanceID 读取已经持久化的快照。
+- 已导入 Instance 列表支持删除单条 metadata；导入区支持用已存 openGemini Raw JSON 手动刷新当前 Instance，刷新后重新读取列表和右侧快照。
+- 重复确认导入相同 InstanceID 时，Server 按新快照覆盖旧快照，不保留旧节点残留。
 - Overview：InstanceID、备注名、sourceClusterId、Term、Index、节点/DB/PT/Shard 数量、功能开关和全部 MaxID。
 - Nodes：MetaNode、DataNode、SqlNode 完整地址、状态、连接和 AZ 字段；MetaNode 状态固定显示 none，Data/SQL 节点按 none/alive/leaving/left/failed 映射。
 - Partitions：Database、PtId、Owner DataNode、Status、Ver、RGID。
@@ -159,7 +161,9 @@ npm run build
 Metadata：
 
 - `GET /api/metadata/instances`
+- `DELETE /api/metadata/instances/:instance_id`
 - `GET /api/metadata/instances/:instance_id/snapshot`
+- `POST /api/metadata/instances/:instance_id/refresh`
 - `POST /api/metadata/snapshots/fetch`
 - `GET /api/metadata/clusters/:cluster_id`
 - `GET /api/metadata/clusters/:cluster_id/nodes`

@@ -19,7 +19,8 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - 导入确认后写入 store。
 - openGemini 导入要求用户手工提供 `instanceId`，并以该值作为唯一业务键；原始 `ClusterID` 只作为 `sourceClusterId` 标签保留。
 - Instance 支持可选 `remark` 备注名；openGemini 拉取和导入请求可携带，空值不保存，服务端限制最长 120 个字符。
-- 已导入 Instance 列表和按 InstanceID 读取拓扑快照。
+- 已导入 Instance 列表、按 InstanceID 读取拓扑快照、按保存的 Raw JSON 手动刷新快照、删除单条 Instance。
+- 重复确认导入同一个 `instanceId` 时必须按新快照覆盖，并清理该实例旧 cluster/node 记录，避免 UI 和 task context 读到残留拓扑。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
 - `metadata_context.json` workspace 快照和 LLM 摘要。
@@ -174,12 +175,16 @@ upload template
 
 API 层保留 `templateType` 字段。
 
+确认导入写入 store 时，`instanceId` 是覆盖边界。若 store 中已存在同名 Instance，Server 先移除该 Instance 关联的旧 cluster 和 node 记录，再写入本次导入的新 instance/cluster/node。该行为用于支持重复导入同一集群的最新 `/getdata` 或模板快照，v1 不保留历史版本。
+
 ## API
 
 ```http
 GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+DELETE /api/metadata/instances/:instance_id
 GET /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -291,7 +296,8 @@ metadata_slices/<stable_id>.json
 
 - Metadata 页面已实现。
 - Metadata 页面包含 Overview、Nodes、Partitions、Metadata Explorer、Schemas、Diagnostics 和 Raw JSON。
-- Metadata 页面展示已导入 Instance 列表，读取已存快照时只要求 InstanceID。
+- Metadata 页面展示已导入 Instance 列表，读取已存快照时只要求 InstanceID；列表支持删除单条 Instance。
+- Metadata 页面必须提供 Raw JSON 刷新入口，对保存了 `rawSnapshot` 的 openGemini Instance 调用 Server 重新归一化并覆盖当前快照；无 Raw JSON 的模板快照应显示 Server 错误。
 - InstanceID 输入旁展示备注名输入框；列表中备注单行省略，Overview 展示备注字段。
 - Nodes 页面中 MetaNode 状态固定展示 none；Data/SQL 节点按 0 none、1 alive、2 leaving、3 left、4 failed 映射状态。
 - Shard/Index Owners 按 PT ID 解析，经 PtView 关联 DataNode。
@@ -340,6 +346,9 @@ metadata_slices/<stable_id>.json
 - Metadata Explorer 能在 `Node / DBPT / Shards` 和 `DB / RP / Shards / Indexes` 两个视角间切换。
 - Schemas 页面默认选择非 `_internal` DB 和首个 RP，DB 变化后 RP 选项联动更新，field type 展示为实际类型。
 - Raw JSON 大对象默认只展示顶层结构并按需展开，不导致页面卡死。
+- WebUI 能删除已导入 Instance，删除当前选中项后右侧快照清空并刷新列表。
+- WebUI 能对保存 Raw JSON 的 openGemini Instance 手动刷新，刷新后列表和右侧快照显示最新归一化结果。
+- 重复导入同一个 InstanceID 后，旧节点和旧 cluster 内容不会残留在列表、快照或 task metadata context 中。
 - 节点、分区、分片、索引和 Schema 表格下翻时表头固定在表格顶部。
 - 导入确认后 metadata store 可查询。
 - task 创建可关联 instance/node 上下文并返回固化快照。

@@ -19,7 +19,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - Server 侧从真实元数据 URL 拉取并预览。
 - openGemini 导入依赖用户手工输入 `instanceId`，并以 `instanceId` 作为唯一业务键；原始 `ClusterID` 仅保存在 `sourceClusterId` 标签中。
 - Instance 支持可选 `remark` 备注名，openGemini 实时加载和导入预览可随 `instanceId` 一起提交。
-- 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看。
+- 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看；重复导入同一个 `instanceId` 会按新快照覆盖，并清理旧 cluster/node 残留。
+- 已导入 openGemini Instance 可用保存的 `rawSnapshot` 手动刷新归一化快照，也可删除单条 Instance 及其对应 cluster/node 记录。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
@@ -143,6 +144,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 生成导入预览。
 - 用户确认后写入 Metadata Store。
 
+确认导入时以 `instanceId` 作为覆盖边界。重复导入同一个 Instance 会先清理该实例旧的 cluster/node 快照，再写入本次导入结果，v1 不保留历史版本。
+
 ## Server 接口
 
 已实现接口：
@@ -150,7 +153,9 @@ Metadata 模块已完成基础 Rust Server 实现。
 ```http
 GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+DELETE /api/metadata/instances/:instance_id
 GET /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -201,6 +206,7 @@ Authorization: Bearer <api-key>
 
 - 展示已确认导入的 Instance 列表。
 - Instance 列表展示备注名并保持单行省略，支持向左收缩/展开，Overview 展示完整备注字段。
+- Instance 列表支持删除单条 metadata；主导入区支持用已存 Raw JSON 手动刷新当前 Instance。
 - 按实例 ID 查询。
 - 读取已存快照时使用 InstanceID，不再要求用户输入 ClusterID。
 - Metadata Explorer 合并原 Topology 和 Databases，提供 `Node / DBPT / Shards` 与 `DB / RP / Shards / Indexes` 两个视角。

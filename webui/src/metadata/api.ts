@@ -20,6 +20,20 @@ export async function fetchStoredInstance(instanceId: string, apiKey: string): P
   });
 }
 
+export async function refreshStoredInstanceFromRaw(instanceId: string, apiKey: string): Promise<MetadataSnapshotResponse> {
+  return fetchJson<MetadataSnapshotResponse>(`/api/metadata/instances/${encodeURIComponent(instanceId)}/refresh`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function deleteStoredInstance(instanceId: string, apiKey: string) {
+  return fetchJson<{ instanceId: string; clusterId?: string | null; deleted: boolean; deletedNodes: number }>(`/api/metadata/instances/${encodeURIComponent(instanceId)}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
+  });
+}
+
 export type ImportPreview = {
   importId: string;
   summary: {

@@ -133,7 +133,9 @@ POST /api/system-context/resources/:context_id/versions/:version_id/activate
 POST /api/system-context/preview
 GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+DELETE /api/metadata/instances/:instance_id
 GET /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -143,7 +145,7 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
-Metadata 的用户主键为手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入列表、备注名和摘要计数，`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的 openGemini 拓扑快照。`POST /api/metadata/snapshots/fetch` 和 `POST /api/metadata/imports/fetch` 接受可选 `remark`，空值不保存，超过 120 个字符返回 `400`。旧 cluster 查询接口保留兼容；WebUI 不再要求用户输入 ClusterID。
+Metadata 的用户主键为手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入列表、备注名和摘要计数，`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的 openGemini 拓扑快照，`POST /api/metadata/instances/:instance_id/refresh` 使用已保存的 `rawSnapshot` 重新归一化并覆盖当前快照，`DELETE /api/metadata/instances/:instance_id` 删除该实例及其非共享 cluster/node 记录。`POST /api/metadata/snapshots/fetch` 和 `POST /api/metadata/imports/fetch` 接受可选 `remark`，空值不保存，超过 120 个字符返回 `400`。旧 cluster 查询接口保留兼容；WebUI 不再要求用户输入 ClusterID。重复确认导入同一个 `instanceId` 时，Server 必须先清理旧快照再写入新快照，v1 不保留历史版本。
 
 `GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
 

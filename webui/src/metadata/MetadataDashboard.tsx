@@ -14,12 +14,13 @@ import {
   Search,
   Server,
   TableProperties,
+  Trash2,
   UploadCloud
 } from "lucide-react";
 import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
-import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
+import { confirmImport, deleteStoredInstance, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, refreshStoredInstanceFromRaw, type ImportPreview } from "./api";
 import { openGeminiFieldTypeCode, openGeminiFieldTypeLabel } from "./field-types";
 import { buildTopologyIndex, filterTopologyRows } from "./topology";
 import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyFilters, TopologySummaryRow } from "./types";
@@ -79,6 +80,57 @@ export function MetadataDashboard({ apiKey }: Props) {
       setVm(buildViewModel(snapshot));
       setInstanceId(snapshot.instance?.instanceId ?? instanceId.trim());
       setInstanceRemark(snapshot.instance?.remark ?? "");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshFromStoredRaw() {
+    if (!apiKey.trim()) {
+      setError("请先填写 API Key");
+      return;
+    }
+    if (!instanceId.trim()) {
+      setError("请先填写 InstanceID");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const snapshot = await refreshStoredInstanceFromRaw(instanceId.trim(), apiKey);
+      setVm(buildViewModel(snapshot));
+      setInstanceId(snapshot.instance?.instanceId ?? instanceId.trim());
+      setInstanceRemark(snapshot.instance?.remark ?? "");
+      setImportPreview(null);
+      setImportMessage(`已根据 Raw JSON 刷新 ${snapshot.instance?.instanceId ?? instanceId.trim()}`);
+      await refreshInstances();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteImportedInstance(item: MetadataInstanceSummary) {
+    if (!apiKey.trim()) {
+      setError("请先填写 API Key");
+      return;
+    }
+    if (!window.confirm(`删除 metadata instance ${item.instanceId}？`)) return;
+    setLoading(true);
+    setError("");
+    try {
+      await deleteStoredInstance(item.instanceId, apiKey);
+      if (item.instanceId === instanceId.trim()) {
+        setVm(null);
+        setInstanceId("");
+        setInstanceRemark("");
+        setImportPreview(null);
+      }
+      setImportMessage(`已删除 metadata instance ${item.instanceId}`);
+      await refreshInstances();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -181,7 +233,11 @@ export function MetadataDashboard({ apiKey }: Props) {
               {importPreview ? "确认写入" : "预览导入"}
             </Button>
           </div>
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => void refreshFromStoredRaw()} disabled={loading || !instanceId.trim()}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Raw JSON 刷新
+            </Button>
             <Button variant="outline" onClick={() => void load("stored")} disabled={loading}>读取已存 Instance</Button>
           </div>
         </CardContent>
@@ -198,6 +254,7 @@ export function MetadataDashboard({ apiKey }: Props) {
           collapsed={instancesCollapsed}
           onToggleCollapsed={() => setInstancesCollapsed((value) => !value)}
           onRefresh={() => void refreshInstances()}
+          onDelete={(item) => void deleteImportedInstance(item)}
           onSelect={(item) => {
             setInstanceId(item.instanceId);
             setInstanceRemark(item.remark ?? "");
@@ -312,6 +369,7 @@ function ImportedInstancesPanel({
   collapsed,
   onToggleCollapsed,
   onRefresh,
+  onDelete,
   onSelect
 }: {
   instances: MetadataInstanceSummary[];
@@ -321,6 +379,7 @@ function ImportedInstancesPanel({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onRefresh: () => void;
+  onDelete: (item: MetadataInstanceSummary) => void;
   onSelect: (item: MetadataInstanceSummary) => void;
 }) {
   if (collapsed) {
@@ -361,24 +420,27 @@ function ImportedInstancesPanel({
       </CardHeader>
       <CardContent className="space-y-2">
         {instances.length ? instances.map((item) => (
-          <button
-            className={`w-full rounded-lg border p-3 text-left transition ${selectedInstanceId === item.instanceId ? "border-primary bg-slate-50" : "border-border hover:bg-slate-50"}`}
+          <div
+            className={`flex w-full items-start gap-2 rounded-lg border p-3 transition ${selectedInstanceId === item.instanceId ? "border-primary bg-slate-50" : "border-border hover:bg-slate-50"}`}
             key={item.instanceId}
-            onClick={() => onSelect(item)}
-            type="button"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium" title={item.instanceId}>{item.instanceId}</p>
-                  {item.remark && <span className="max-w-[150px] truncate rounded-md border border-border bg-white px-1.5 py-0.5 text-[11px] text-muted-foreground" title={item.remark}>{item.remark}</span>}
+            <button className="min-w-0 flex-1 text-left" onClick={() => onSelect(item)} type="button">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium" title={item.instanceId}>{item.instanceId}</p>
+                    {item.remark && <span className="max-w-[150px] truncate rounded-md border border-border bg-white px-1.5 py-0.5 text-[11px] text-muted-foreground" title={item.remark}>{item.remark}</span>}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.product ?? "unknown"} {item.version ?? ""} · {item.environment ?? "env -"}</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{item.product ?? "unknown"} {item.version ?? ""} · {item.environment ?? "env -"}</p>
+                <Badge variant="secondary">{item.nodeCount} nodes</Badge>
               </div>
-              <Badge variant="secondary">{item.nodeCount} nodes</Badge>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">{item.databaseCount} databases · {item.partitionViewCount} PT views</p>
-          </button>
+              <p className="mt-2 text-xs text-muted-foreground">{item.databaseCount} databases · {item.partitionViewCount} PT views</p>
+            </button>
+            <Button className="h-8 w-8 shrink-0 px-0 text-red-600 hover:text-red-700" variant="ghost" onClick={() => onDelete(item)} disabled={loading} title={`删除 ${item.instanceId}`}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         )) : <EmptyState>暂无已导入 Instance。</EmptyState>}
       </CardContent>
     </Card>

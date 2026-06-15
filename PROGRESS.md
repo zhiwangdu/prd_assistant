@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Metadata Raw Refresh And Delete
+
+- Stopped local `logagent-server` processes, including the existing screen-managed local service, before changing the code.
+- Added protected metadata instance maintenance APIs: `POST /api/metadata/instances/:instance_id/refresh` rebuilds the stored openGemini snapshot from its saved `rawSnapshot`, and `DELETE /api/metadata/instances/:instance_id` removes the instance plus its non-shared cluster/node records.
+- Metadata import confirmation now treats `instanceId` as the overwrite boundary. Re-importing the same instance replaces the old snapshot and clears stale cluster/node records instead of leaving residual topology behind.
+- System Context / Metadata WebUI now has a `Raw JSON 刷新` button and per-instance delete controls. Successful refresh/delete updates the imported list and right-side snapshot state.
+- Updated Server, WebUI, Metadata module, and root specs/readmes for Raw JSON refresh, deletion, and duplicate InstanceID overwrite behavior.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::metadata -- --test-threads=1`, `cargo test -p logagent-server -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-15 Metadata Schema Field Type Display Follow-up
 
 - Fixed the Metadata Schemas type renderer to resolve field type codes from `typ`, `type`, `Typ`, or `Type` and coerce numeric strings before mapping labels.

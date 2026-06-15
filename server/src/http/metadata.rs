@@ -9,8 +9,9 @@ use tracing::info;
 use crate::{
     app::AppState,
     services::metadata::{
-        MetadataConfirmResponse, MetadataFetchImportRequest, MetadataImportPreview,
-        MetadataImportRequest, MetadataInstanceSummary, MetadataSnapshotResponse,
+        MetadataConfirmResponse, MetadataDeleteResponse, MetadataFetchImportRequest,
+        MetadataImportPreview, MetadataImportRequest, MetadataInstanceSummary,
+        MetadataSnapshotResponse,
     },
     support::error::AppError,
 };
@@ -41,6 +42,37 @@ pub async fn get_instance_snapshot(
     Ok(Json(
         state.metadata.get_instance_snapshot(&instance_id).await?,
     ))
+}
+
+pub async fn refresh_instance_snapshot(
+    State(state): State<Arc<AppState>>,
+    Path(instance_id): Path<String>,
+) -> Result<Json<MetadataSnapshotResponse>, AppError> {
+    let response = state
+        .metadata
+        .refresh_instance_from_raw_snapshot(&instance_id)
+        .await?;
+    info!(
+        instance_id = ?response.instance.as_ref().map(|instance| instance.instance_id.as_str()),
+        cluster_id = %response.cluster.cluster_id,
+        node_count = response.nodes.len(),
+        "metadata instance refreshed from raw snapshot"
+    );
+    Ok(Json(response))
+}
+
+pub async fn delete_instance(
+    State(state): State<Arc<AppState>>,
+    Path(instance_id): Path<String>,
+) -> Result<Json<MetadataDeleteResponse>, AppError> {
+    let response = state.metadata.delete_instance(&instance_id).await?;
+    info!(
+        instance_id = %response.instance_id,
+        cluster_id = ?response.cluster_id,
+        deleted_nodes = response.deleted_nodes,
+        "metadata instance deleted"
+    );
+    Ok(Json(response))
 }
 
 pub async fn fetch_snapshot(

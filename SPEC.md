@@ -174,7 +174,7 @@ flowchart TD
 - 最终结果 evidence refs 支持历史 Case canonical 引用 `case_context.json#cases/<index>`；真实模型输出 `case_<id>` 或“历史案例 case_<id>”时会按当前 task 的 `case_context.json` 规范化。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；当前保留给 Case import、alias 生成和非 Agent Loop 的辅助结构化任务。Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口。
-- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择和 Markdown 导入、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
+- WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、草稿自动保存、Diagnostic Skill 选择和 Markdown 导入、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Metadata Raw JSON 手动刷新和单条删除、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
 

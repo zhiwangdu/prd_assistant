@@ -395,7 +395,9 @@ POST /api/skills/imports
 POST /api/skills/preview
 GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
+DELETE /api/metadata/instances/:instance_id
 GET /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
 GET /api/metadata/clusters/:cluster_id
 GET /api/metadata/clusters/:cluster_id/nodes
 POST /api/metadata/snapshots/fetch
@@ -409,7 +411,9 @@ analysis 响应可在任务存在后读取 `analysis_state.json` 和 `analysis_e
 
 message 和 approval decision 支持 `idempotencyKey`，重复提交同一 key 不会重复写入用户消息或审批决定。客户端不能直接把任务状态改成 `RUNNING`；只能通过上述 API 恢复等待任务。
 
-Metadata 的用户主键是手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入实例列表、备注名及节点、数据库和 PT view 计数；`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的拓扑快照。旧 `cluster` 查询接口保留为兼容和内部拓扑排查用途，不再作为 WebUI 主入口。
+Metadata 的用户主键是手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入实例列表、备注名及节点、数据库和 PT view 计数；`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的拓扑快照；`POST /api/metadata/instances/:instance_id/refresh` 使用该实例保存的 openGemini `rawSnapshot` 重新归一化并覆盖当前快照；`DELETE /api/metadata/instances/:instance_id` 删除该实例及其非共享 cluster/node 记录。旧 `cluster` 查询接口保留为兼容和内部拓扑排查用途，不再作为 WebUI 主入口。
+
+确认 metadata 导入时，重复的 `instanceId` 走覆盖逻辑：Server 会先清理该实例旧的 cluster/node 快照，再写入本次导入结果。v1 不保存历史版本，也不做增量合并。
 
 内置 MCP tool `logagent.get_metadata_field_types` 支持按 `instanceId`、`database`、`measurement` 查询字段类型；`retentionPolicy` 可选，省略时使用该 DB 的默认 RP；`field` 可省略、传单个字段名或字段名数组，省略时返回 measurement 下全部字段。返回包含 openGemini field type 枚举码和 `typeLabel`，其中 `0..7` 分别映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`，结果写入 `metadata_slices/` 并只作为背景上下文。
 

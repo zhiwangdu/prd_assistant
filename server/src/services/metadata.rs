@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -609,6 +614,15 @@ pub struct MetadataConfirmResponse {
     pub summary: MetadataImportSummary,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataDeleteResponse {
+    pub instance_id: String,
+    pub cluster_id: Option<String>,
+    pub deleted: bool,
+    pub deleted_nodes: usize,
+}
+
 #[derive(Debug, Default)]
 struct MetadataRecords {
     instances: HashMap<String, InstanceMetadata>,
@@ -709,26 +723,56 @@ impl MetadataStore {
         instance_id: &str,
     ) -> Result<MetadataSnapshotResponse, AppError> {
         let records = self.records.read().await;
-        let instance = records
-            .instances
-            .get(instance_id)
-            .cloned()
+        snapshot_from_records(&records, instance_id)
+    }
+
+    pub async fn delete_instance(
+        &self,
+        instance_id: &str,
+    ) -> Result<MetadataDeleteResponse, AppError> {
+        let mut records = self.records.write().await;
+        let removed = remove_instance_records(&mut records, instance_id)
             .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
-        let cluster_id = instance
-            .cluster_id
-            .as_deref()
-            .unwrap_or(instance.instance_id.as_str());
-        let cluster = records
-            .clusters
-            .get(cluster_id)
-            .cloned()
-            .ok_or_else(|| AppError::bad_request("instanceId has no metadata snapshot"))?;
-        let nodes = cluster_nodes(&records, cluster_id);
-        Ok(MetadataSnapshotResponse {
-            instance: Some(instance),
-            cluster,
-            nodes,
+        persist_records(&self.root, &records)?;
+        Ok(MetadataDeleteResponse {
+            instance_id: instance_id.to_string(),
+            cluster_id: removed.cluster_id,
+            deleted: true,
+            deleted_nodes: removed.deleted_nodes,
         })
+    }
+
+    pub async fn refresh_instance_from_raw_snapshot(
+        &self,
+        instance_id: &str,
+    ) -> Result<MetadataSnapshotResponse, AppError> {
+        let (raw_snapshot, remark) = {
+            let records = self.records.read().await;
+            let instance = records
+                .instances
+                .get(instance_id)
+                .cloned()
+                .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
+            let cluster_id = instance
+                .cluster_id
+                .as_deref()
+                .unwrap_or(instance.instance_id.as_str());
+            let cluster = records
+                .clusters
+                .get(cluster_id)
+                .ok_or_else(|| AppError::bad_request("instanceId has no metadata snapshot"))?;
+            let raw_snapshot = cluster.raw_snapshot.clone().ok_or_else(|| {
+                AppError::bad_request("metadata instance has no raw JSON snapshot")
+            })?;
+            (raw_snapshot, instance.remark)
+        };
+        let template =
+            normalize_opengemini_value(raw_snapshot, Some(instance_id), remark.as_deref())?;
+
+        let mut records = self.records.write().await;
+        apply_template_records(&mut records, template);
+        persist_records(&self.root, &records)?;
+        snapshot_from_records(&records, instance_id)
     }
 
     pub async fn get_metadata_field_types(
@@ -1070,17 +1114,7 @@ impl MetadataStore {
             ));
         }
 
-        for instance in pending.template.instances {
-            records
-                .instances
-                .insert(instance.instance_id.clone(), instance);
-        }
-        for cluster in pending.template.clusters {
-            records.clusters.insert(cluster.cluster_id.clone(), cluster);
-        }
-        for node in pending.template.nodes {
-            records.nodes.insert(node.node_id.clone(), node);
-        }
+        apply_template_records(&mut records, pending.template);
 
         persist_records(&self.root, &records)?;
         Ok(MetadataConfirmResponse {
@@ -1127,6 +1161,102 @@ fn cluster_nodes(records: &MetadataRecords, cluster_id: &str) -> Vec<NodeMetadat
         .collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
     nodes
+}
+
+fn snapshot_from_records(
+    records: &MetadataRecords,
+    instance_id: &str,
+) -> Result<MetadataSnapshotResponse, AppError> {
+    let instance = records
+        .instances
+        .get(instance_id)
+        .cloned()
+        .ok_or_else(|| AppError::bad_request("unknown instanceId"))?;
+    let cluster_id = instance
+        .cluster_id
+        .as_deref()
+        .unwrap_or(instance.instance_id.as_str());
+    let cluster = records
+        .clusters
+        .get(cluster_id)
+        .cloned()
+        .ok_or_else(|| AppError::bad_request("instanceId has no metadata snapshot"))?;
+    let nodes = cluster_nodes(records, cluster_id);
+    Ok(MetadataSnapshotResponse {
+        instance: Some(instance),
+        cluster,
+        nodes,
+    })
+}
+
+#[derive(Debug, Default)]
+struct RemovedMetadataRecords {
+    cluster_id: Option<String>,
+    deleted_nodes: usize,
+}
+
+fn apply_template_records(records: &mut MetadataRecords, template: MetadataTemplate) {
+    for instance_id in template
+        .instances
+        .iter()
+        .map(|instance| instance.instance_id.clone())
+        .collect::<Vec<_>>()
+    {
+        remove_instance_records(records, &instance_id);
+    }
+
+    for instance in template.instances {
+        records
+            .instances
+            .insert(instance.instance_id.clone(), instance);
+    }
+    for cluster in template.clusters {
+        records.clusters.insert(cluster.cluster_id.clone(), cluster);
+    }
+    for node in template.nodes {
+        records.nodes.insert(node.node_id.clone(), node);
+    }
+}
+
+fn remove_instance_records(
+    records: &mut MetadataRecords,
+    instance_id: &str,
+) -> Option<RemovedMetadataRecords> {
+    let instance = records.instances.remove(instance_id)?;
+    let cluster_id = instance
+        .cluster_id
+        .clone()
+        .or_else(|| Some(instance.instance_id.clone()));
+    let mut node_ids = HashSet::new();
+    if let Some(node_id) = instance.node_id {
+        node_ids.insert(node_id);
+    }
+    for (node_id, node) in &records.nodes {
+        if node.instance_id.as_deref() == Some(instance_id) {
+            node_ids.insert(node_id.clone());
+        }
+    }
+
+    if let Some(cluster_id) = cluster_id.as_deref() {
+        let cluster_is_shared = records
+            .instances
+            .values()
+            .any(|other| other.cluster_id.as_deref() == Some(cluster_id));
+        if !cluster_is_shared {
+            if let Some(cluster) = records.clusters.remove(cluster_id) {
+                node_ids.extend(cluster.nodes);
+            }
+        }
+    }
+
+    let deleted_nodes = node_ids
+        .iter()
+        .filter(|node_id| records.nodes.remove(*node_id).is_some())
+        .count();
+    Some(RemovedMetadataRecords {
+        cluster_id,
+        deleted_nodes,
+    })
 }
 
 fn section_outline(count: usize, filters: &[&str]) -> Value {
@@ -2793,6 +2923,155 @@ clusters:
 
         assert_eq!(preview.summary.errors, 1);
         assert!(store.confirm_import(&preview.import_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn repeated_import_replaces_existing_instance_snapshot() {
+        let fixture = Fixture::new("metadata-overwrite");
+        let store = MetadataStore::new(fixture.config());
+        let first = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: r#"
+instances:
+  - instanceId: i-1
+    clusterId: c-1
+clusters:
+  - clusterId: c-1
+    nodes:
+      - n-old
+nodes:
+  - nodeId: n-old
+    instanceId: i-1
+    role: old
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&first.import_id).await.unwrap();
+
+        let second = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: r#"
+instances:
+  - instanceId: i-1
+    clusterId: c-1
+clusters:
+  - clusterId: c-1
+    nodes:
+      - n-new
+nodes:
+  - nodeId: n-new
+    instanceId: i-1
+    role: new
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&second.import_id).await.unwrap();
+
+        let snapshot = store.get_instance_snapshot("i-1").await.unwrap();
+        assert_eq!(snapshot.cluster.nodes, vec!["n-new"]);
+        assert_eq!(snapshot.nodes.len(), 1);
+        assert_eq!(snapshot.nodes[0].node_id, "n-new");
+        assert!(store
+            .resolve_task_context(None, None, Some("n-old".to_string()))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_instance_rebuilds_from_stored_raw_snapshot() {
+        let fixture = Fixture::new("metadata-refresh-raw");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "opengemini".to_string(),
+                filename: Some("getdata.json".to_string()),
+                instance_id: Some("prod-refresh".to_string()),
+                remark: Some("刷新验证".to_string()),
+                content: serde_json::json!({
+                    "ClusterID": 100_u64,
+                    "DataNodes": [
+                        { "ID": 2, "Host": "127.0.0.1:8400", "Status": 1 }
+                    ]
+                })
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+        {
+            let mut records = store.records.write().await;
+            records
+                .clusters
+                .get_mut("prod-refresh")
+                .unwrap()
+                .nodes
+                .clear();
+            records.nodes.clear();
+        }
+
+        let snapshot = store
+            .refresh_instance_from_raw_snapshot("prod-refresh")
+            .await
+            .unwrap();
+        assert_eq!(
+            snapshot.instance.unwrap().remark.as_deref(),
+            Some("刷新验证")
+        );
+        assert_eq!(snapshot.cluster.nodes, vec!["prod-refresh:data-2"]);
+        assert_eq!(snapshot.nodes.len(), 1);
+        assert_eq!(snapshot.nodes[0].host.as_deref(), Some("127.0.0.1:8400"));
+    }
+
+    #[tokio::test]
+    async fn delete_instance_removes_snapshot_cluster_and_nodes() {
+        let fixture = Fixture::new("metadata-delete");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "yaml".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: r#"
+instances:
+  - instanceId: i-delete
+    clusterId: c-delete
+clusters:
+  - clusterId: c-delete
+    nodes:
+      - n-delete
+nodes:
+  - nodeId: n-delete
+    instanceId: i-delete
+"#
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+
+        let deleted = store.delete_instance("i-delete").await.unwrap();
+        assert!(deleted.deleted);
+        assert_eq!(deleted.cluster_id.as_deref(), Some("c-delete"));
+        assert_eq!(deleted.deleted_nodes, 1);
+        assert!(store.get_instance("i-delete").await.is_none());
+        assert!(store.get_cluster("c-delete").await.is_none());
+        assert!(store
+            .resolve_task_context(None, None, Some("n-delete".to_string()))
+            .await
+            .is_err());
     }
 
     #[tokio::test]

@@ -190,11 +190,15 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/metadata/instances", get(metadata::list_instances))
         .route(
             "/api/metadata/instances/:instance_id",
-            get(metadata::get_instance),
+            get(metadata::get_instance).delete(metadata::delete_instance),
         )
         .route(
             "/api/metadata/instances/:instance_id/snapshot",
             get(metadata::get_instance_snapshot),
+        )
+        .route(
+            "/api/metadata/instances/:instance_id/refresh",
+            post(metadata::refresh_instance_snapshot),
         )
         .route(
             "/api/metadata/clusters/:cluster_id",
