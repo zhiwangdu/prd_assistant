@@ -13,7 +13,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - 工作目录脚本通过 `LOGAGENT_WORK_DIR` 定位运行目录，支持初始化 `bin/config/data/logs/run/webui`、快速编译 Server、快速编译 WebUI、启动、停止、重启、状态和日志查看；缺少 `LOGAGENT_WORK_DIR` 时必须报错。
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本 best-effort 加载 `$HOME/.bashrc` 后自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm、Go，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
-- `scripts/build-tools.sh` 从 `third_party/` submodules 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers；`scripts/build-server.sh` 会安装到 `$LOGAGENT_WORK_DIR/bin/tools/`，`deploy/rebuild-install.sh` 会安装到 `$LOGAGENT_APP_DIR/bin/tools/`。
+- `scripts/build-tools.sh` 从 `third_party/` submodules 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers；`scripts/build-server.sh` 会安装到 `$LOGAGENT_WORK_DIR/bin/tools/`，`deploy/rebuild-install.sh` 会安装到 `$LOGAGENT_APP_DIR/bin/tools/`。构建前会调用 `scripts/configure-tool-submodules.sh`，支持通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 把 submodule clone 地址覆盖到本地 Git config，以便内网镜像环境初始化 submodule。
 - `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会预创建 Memory/Case 相关运行目录，包括 `data/memory`、`data/cases` 和 `data/case_imports`；`rebuild-install.sh` 在存在 `$HOME/.cargo/env` 时加载它，以支持非交互 SSH shell 下的 rustup cargo。
 - macOS 开发机上的 `scripts/build-all.sh` 在本地 Server/WebUI 编译完成后调用 `scripts/auto-deploy-lan.sh`；该脚本 ping `192.168.31.128`，连通时通过 SSH 到 `duzhiwang@192.168.31.128`，在远端源码目录执行 `git pull --ff-only`，再运行 runtime `deploy/rebuild-install.sh` 和 `logagentctl.sh start/status`。`LOGAGENT_LAN_AUTO_DEPLOY=0` 可关闭该行为。
 - `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、默认 `claude_code` 配置和 `mcp.transport=stdio`；`LOGAGENT_CLAUDE_CODE_PATH` 默认应指向 `which claude` 输出的绝对路径，Server 会以 Claude Code CLI 非交互 JSON + MCP 模式调用。
@@ -63,6 +63,7 @@ WEBUI -> Server 同源 API
 - deploy 模板启动前会创建 `data/memory`、`data/cases` 和 `data/case_imports`，且重建安装不能删除已有运行数据。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
 - 运行目录和 deploy rebuild 脚本会从 submodules 构建 source-built analyzers，并把默认配置中的工具路径指向对应构建产物。
+- 内网环境可以在不修改 `.gitmodules` 的情况下通过 `.env` 或环境变量指定 source-built analyzer submodule clone URL；`build-tools.sh` 和手工 `configure-tool-submodules.sh` 都必须把这些 URL 写入本地 Git config。
 - macOS 上运行 `scripts/build-all.sh` 后，若 `192.168.31.128` 可 ping 通，应自动触发远端 pull/rebuild/start；不可达时必须跳过远端部署且本地构建仍成功。
 - Native Agent `/health` 可访问。
 - 远端 Server 监听 `0.0.0.0` 时 Native Agent 可上传。

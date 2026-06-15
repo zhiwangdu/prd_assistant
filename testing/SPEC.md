@@ -80,7 +80,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - 任务持久化变更必须覆盖损坏 JSON、启动恢复、终态保护和 artifacts 状态约束。
 - Executor 变更必须覆盖每个已实现 phase 的中断恢复和陈旧 phase 推进拒绝。
 - Tool Runner 变更必须覆盖白名单、timeout、stdout/stderr、幂等和 artifacts 暴露。
-- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；单工具验证使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`。自动测试不得依赖预装真实工具二进制。
+- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；单工具验证使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`。这些 smoke 必须通过 `scripts/build-tools.sh` 初始化源码，并支持 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL` 指向内网 clone 地址；自动测试不得依赖预装真实工具二进制。
 - pprof Tools smoke 使用 `examples/server-pprof-tool.yaml` 和 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`，自动测试使用 fake Go 脚本。
 - Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只执行低风险 `ls -la /root`；自动测试使用 fake ssh 脚本。
 - `influxql_analyzer` compare mode parser 必须覆盖 batch summary、fingerprint delta 和 rule delta 的结构化 findings。

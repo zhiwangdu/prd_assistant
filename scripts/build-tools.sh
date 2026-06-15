@@ -16,6 +16,13 @@ Environment:
   LOGAGENT_TOOLS_BIN_DIR   Optional output directory. Overrides LOGAGENT_WORK_DIR.
   LOGAGENT_WORK_DIR        Optional runtime work directory; output goes to bin/tools/.
   LOGAGENT_GO_CACHE        Optional Go build cache. Defaults to /tmp/logagent-tools-gocache-<go-version>.
+  LOGAGENT_SUBMODULE_BASE_URL
+                            Optional repository namespace for all tool submodules.
+  LOGAGENT_SUBMODULE_INFLUXQL_URL
+  LOGAGENT_SUBMODULE_FLUX_URL
+  LOGAGENT_SUBMODULE_OPENGEMINI_URL
+  LOGAGENT_SUBMODULE_INFLUXDB_URL
+                            Optional clone URLs for individual tool submodules.
   LOGAGENT_OPENGEMINI_SRC_DIR
                             Optional openGemini checkout. Defaults to third_party/openGemini
                             or ../openGemini when present.
@@ -72,6 +79,9 @@ while (($# > 0)); do
 done
 
 repo_root="$(logagent_repo_root)"
+logagent_require_command git
+"$SCRIPT_DIR/configure-tool-submodules.sh"
+
 if [[ -z "$output_dir" ]]; then
   if [[ -n "${LOGAGENT_WORK_DIR:-}" ]]; then
     work_dir="$(logagent_require_work_dir)"
@@ -85,7 +95,6 @@ if [[ "$output_dir" != /* ]]; then
   output_dir="$repo_root/$output_dir"
 fi
 
-logagent_require_command git
 if [[ -z "$only_tool" || "$only_tool" == "influxql" || "$only_tool" == "opengemini" || "$only_tool" == "influxdb" ]]; then
   logagent_require_command go
 fi
@@ -109,7 +118,7 @@ if [[ -z "$only_tool" || "$only_tool" == "influxql" ]]; then
   fi
   if [[ ! -f "$influxql_dir/go.mod" ]]; then
     printf 'Missing InfluxQL analyzer source: %s\n' "$influxql_dir" >&2
-    printf 'Run: git submodule update --init --recursive third_party/influxql\n' >&2
+    printf 'Run: scripts/configure-tool-submodules.sh if using custom clone URLs, then git submodule update --init --recursive third_party/influxql\n' >&2
     exit 1
   fi
 
@@ -131,7 +140,7 @@ if [[ -z "$only_tool" || "$only_tool" == "flux" ]]; then
   fi
   if [[ ! -f "$flux_manifest" ]]; then
     printf 'Missing Flux analyzer source: %s\n' "$repo_root/third_party/flux" >&2
-    printf 'Run: git submodule update --init --recursive third_party/flux\n' >&2
+    printf 'Run: scripts/configure-tool-submodules.sh if using custom clone URLs, then git submodule update --init --recursive third_party/flux\n' >&2
     exit 1
   fi
 

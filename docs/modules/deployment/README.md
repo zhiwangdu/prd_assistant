@@ -58,7 +58,7 @@ export LOGAGENT_NATIVE_API_KEY=<secret>
 ./scripts/server-service.sh start|stop|restart|status|logs
 ```
 
-`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`，并调用 `build-tools.sh` 从 `third_party/` submodules 构建 `$LOGAGENT_WORK_DIR/bin/tools/` 下的源码引用诊断工具。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
+`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`，并调用 `build-tools.sh` 从 `third_party/` submodules 构建 `$LOGAGENT_WORK_DIR/bin/tools/` 下的源码引用诊断工具。`build-tools.sh` 会先读取 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL`，把自定义 clone 地址写入本地 Git submodule 配置，再按需初始化 submodule，适配无法访问 GitHub 的内网部署。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
 
 测试/长期运行环境也可以使用仓库根目录 `deploy/` 模板：
 
@@ -74,7 +74,7 @@ cp logagent.example.yaml logagent.yaml
 
 `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。部署脚本会预创建 `data/uploads`、`data/sessions`、`data/tasks`、`data/workspaces`、`data/cases`、`data/case_imports` 和 `data/memory`；其中 `data/memory/memory.sqlite` 是 Memory SQLite 主索引，`data/cases/*.json` 保留为 legacy Case 迁移和回滚源。
 
-`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。
+`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。`deploy/.env.example` 还提供 submodule 内网镜像变量：`LOGAGENT_SUBMODULE_BASE_URL` 适合四个工具仓库位于同一 Git namespace 的场景，单仓库变量 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL` 和 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 优先级更高。
 
 个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：
 

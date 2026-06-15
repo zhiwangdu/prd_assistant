@@ -5,14 +5,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-tool="${LOGAGENT_TOOL_FLUX_QUERY_ANALYZER:-$REPO_ROOT/third_party/flux/libflux/target/release/query_stats}"
+tool="${LOGAGENT_TOOL_FLUX_QUERY_ANALYZER:-$REPO_ROOT/target/tools/flux_query_analyzer}"
 if [[ ! -x "$tool" ]]; then
-  flux_manifest="$REPO_ROOT/third_party/flux/libflux/flux-core/Cargo.toml"
-  if [[ ! -f "$flux_manifest" ]]; then
-    printf 'Missing Flux submodule at third_party/flux. Run: git submodule update --init third_party/flux\n' >&2
-    exit 1
-  fi
-  cargo build --manifest-path "$flux_manifest" --features query-stats --release --bin query_stats
+  "$REPO_ROOT/scripts/build-tools.sh" --only flux --output-dir "$REPO_ROOT/target/tools" >/dev/null
 fi
 
 output="$("$tool" \

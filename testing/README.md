@@ -112,6 +112,7 @@ Mock adapter 必须支持脚本化多轮响应：
 
 - 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
 - 单独验证真实工具可使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`；这些脚本会从 submodules 构建对应工具并检查 stdout JSON。
+- 内网环境运行这些 smoke 前可设置 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；所有真实工具 smoke 都通过 `scripts/build-tools.sh` 初始化源码，因此会继承自定义 clone 地址。
 - 单独验证 pprof Tools 页面可使用 `examples/server-pprof-tool.yaml`，需要设置 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`。
 - Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只验证低风险 `ls -la /root`；自动测试使用 fake ssh 脚本，不依赖真实 ECS。
 - 手工真实工具验收需要为 `examples/server-tools.yaml` 设置对应 `LOGAGENT_TOOL_*` 路径环境变量，均可指向 `scripts/build-tools.sh` 的 `target/tools/` 产物。

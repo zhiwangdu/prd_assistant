@@ -448,7 +448,7 @@ tool_results/<action_id>/
 
 真实 `flux_query_analyzer` 适配：
 
-- 源码通过 `third_party/flux` submodule 引用 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支，CLI 入口为 `libflux/flux-core` 的 `query_stats` binary。
+- 源码通过 `third_party/flux` submodule 默认引用 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支，CLI 入口为 `libflux/flux-core` 的 `query_stats` binary；内网环境可用 `LOGAGENT_SUBMODULE_FLUX_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。
 - `scripts/build-tools.sh` 构建产物名为 `flux_query_analyzer`；默认输出到 `target/tools/flux_query_analyzer`，设置 `LOGAGENT_WORK_DIR` 时输出到 `$LOGAGENT_WORK_DIR/bin/tools/flux_query_analyzer`，runtime 部署输出到 `$LOGAGENT_APP_DIR/bin/tools/flux_query_analyzer`。
 - `examples/server-flux-tool.yaml` 只启用该工具，并通过 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 指向构建产物。
 - CLI 参数为 `--input {input_file} --format json --top-k 20 --max-input-lines 100000 --max-error-findings 20`。
@@ -457,7 +457,7 @@ tool_results/<action_id>/
 
 真实 `influxql_analyzer` 适配：
 
-- 源码通过 `third_party/influxql` submodule 引用 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支，CLI 入口为 `cmd/influxql-analyze`。
+- 源码通过 `third_party/influxql` submodule 默认引用 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支，CLI 入口为 `cmd/influxql-analyze`；内网环境可用 `LOGAGENT_SUBMODULE_INFLUXQL_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。
 - `scripts/build-tools.sh` 构建产物名为 `influxql-analyzer`；默认输出到 `target/tools/influxql-analyzer`，设置 `LOGAGENT_WORK_DIR` 时输出到 `$LOGAGENT_WORK_DIR/bin/tools/influxql-analyzer`，runtime 部署输出到 `$LOGAGENT_APP_DIR/bin/tools/influxql-analyzer`。
 - `examples/server-influxql-tool.yaml` 只启用该工具，并通过 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向构建产物。
 - CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
@@ -467,9 +467,9 @@ tool_results/<action_id>/
 
 真实 storage analyzer 适配：
 
-- `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用 `openGemini-tools` 分支，CLI 入口为 `app/opengemini-storage-analyzer`；构建产物名为 `opengemini-storage-analyzer`。
+- `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 默认引用 `openGemini-tools` 分支，CLI 入口为 `app/opengemini-storage-analyzer`；构建产物名为 `opengemini-storage-analyzer`；内网环境可用 `LOGAGENT_SUBMODULE_OPENGEMINI_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。
 - `opengemini_storage_analyzer` 参数为 `--input {input_file} --format json`，用于只读检查 `.tssp`、`.tssp.init` 和 TSI mergeset part 文件/目录。
-- `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用 `influxdb-tools` 分支，CLI 入口为 `cmd/influxdb_storage_analyzer`；构建产物名为 `influxdb_storage_analyzer`。
+- `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 默认引用 `influxdb-tools` 分支，CLI 入口为 `cmd/influxdb_storage_analyzer`；构建产物名为 `influxdb_storage_analyzer`；内网环境可用 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。
 - `influxdb_storage_analyzer` 参数为 `-input {input_file} -kind auto -max-samples 10`，用于只读检查 `.tsm`、`.tsi` 和 `_series` 目录。
 - 两个 storage analyzer stdout 都必须包含通用 `summary/findings`，不执行修复或写入输入数据；Tool Runner 只通过白名单路径调用。
 
