@@ -299,7 +299,7 @@ metadata_slices/<stable_id>.json
 - Explorer 支持 Database、DataNode、时间范围、仅异常、Shard 行/Index 信息显隐筛选和 DBPT 聚合详情面板。
 - `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
 - Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 筛选必须跟随 DB 联动，Measurement 或 field 搜索用于缩小结果。
-- Schema field type 必须解析为 unknown/int/uint/float/string/boolean/tag/last。
+- Schema field type 必须按 openGemini 枚举码解析：`Field_Type_Unknown=0`、`Field_Type_Int=1`、`Field_Type_UInt=2`、`Field_Type_Float=3`、`Field_Type_String=4`、`Field_Type_Boolean=5`、`Field_Type_Tag=6`、`Field_Type_Last=7`，对应展示为 unknown/int/uint/float/string/boolean/tag/last。
 - Metadata 明细表必须支持长列表局部滚动，并在滚动时固定表头。
 - Raw JSON 页面必须按需展开原始 JSON，不得在初始渲染时全量 stringify 大对象。
 - 实例查询。

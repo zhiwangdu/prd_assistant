@@ -20,6 +20,7 @@ import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
 import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
+import { openGeminiFieldTypeLabel } from "./field-types";
 import { buildTopologyIndex, filterTopologyRows } from "./topology";
 import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyFilters, TopologySummaryRow } from "./types";
 import { buildViewModel } from "./view-model";
@@ -844,7 +845,7 @@ function SchemasView({ databases }: { databases: DatabaseDto[] }) {
               </summary>
               <div className="border-t border-border p-3">
                 <Table headers={["Field", "Type", "Type code", "EndTime"]} rows={(measurement.schema ?? []).map((field) => [
-                  field.name, fieldType(field.typ), field.typ, field.endTime
+                  field.name, openGeminiFieldTypeLabel(field.typ), field.typ, field.endTime
                 ])} empty="Measurement has no Schema" />
               </div>
             </details>
@@ -976,21 +977,6 @@ function Table({ headers, rows, empty = "暂无数据" }: { headers: string[]; r
 
 function rawBoolean(vm: MetadataViewModel, key: string) {
   return (vm.cluster.rawSnapshot?.[key] as boolean | undefined) ?? false;
-}
-
-function fieldType(type?: number | null) {
-  if (type == null) return "unknown";
-  const types: Record<number, string> = {
-    0: "unknown",
-    1: "int",
-    2: "uint",
-    3: "float",
-    4: "string",
-    5: "boolean",
-    6: "tag",
-    7: "last"
-  };
-  return types[type] ?? `type-${type}`;
 }
 
 function dataSqlStatus(statusCode?: number | null): { label: string; variant: "success" | "warning" | "destructive" | "secondary" } {

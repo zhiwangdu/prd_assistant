@@ -60,7 +60,7 @@ Metadata 能力：
 - Explorer 支持 Database、DataNode、时间范围、仅异常、Shard 行和 Index 信息显隐筛选，不再渲染 Graph；点击 DBPT 时在右侧展示聚合指标、异常和时间范围。
 - 缺失 DataNode 或缺失 PT 使用红色虚拟容器/lane 展示，不会从拓扑中消失。
 - `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
-- Schemas：默认选择第一个非 `_internal` DB 及其第一个 RP，RP 选项跟随 DB 联动，Measurement/field 搜索用于缩小结果，field type 数字展示为实际类型。
+- Schemas：默认选择第一个非 `_internal` DB 及其第一个 RP，RP 选项跟随 DB 联动，Measurement/field 搜索用于缩小结果，field type 按 openGemini 码位展示为 `0 unknown`、`1 int`、`2 uint`、`3 float`、`4 string`、`5 boolean`、`6 tag`、`7 last`。
 - Metadata 明细表使用局部滚动和固定表头，浏览大量节点、分片、索引或字段时保留字段含义。
 - Diagnostics：检查节点离线、连接状态、PT/Shard owner、默认 RP、ShardGroup、Schema 和 Index 引用。
 - Raw JSON：按需展开原始 `/getdata` JSON，不在进入页面时全量 stringify 或渲染全部节点。

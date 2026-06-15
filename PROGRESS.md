@@ -2,6 +2,13 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Metadata Schema Field Type Mapping Fix
+
+- Fixed Metadata Schemas field type display by routing the table through a dedicated openGemini field type mapping helper.
+- The WebUI mapping is now explicit for `Field_Type_Unknown=0`, `Field_Type_Int=1`, `Field_Type_UInt=2`, `Field_Type_Float=3`, `Field_Type_String=4`, `Field_Type_Boolean=5`, `Field_Type_Tag=6`, and `Field_Type_Last=7`.
+- Updated WebUI and Metadata docs/specs with the exact enum-to-label mapping.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-15 System Context Skill Import
 
 - Added protected `POST /api/skills/imports` for Markdown Diagnostic Skill imports. The API writes `<skillId>/SKILL.md` and default `logagent.json` under the first configured `skills.roots`, reloads the Skill Registry snapshot, and returns the imported Skill detail.
