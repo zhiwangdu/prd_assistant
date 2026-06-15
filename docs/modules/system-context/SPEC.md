@@ -11,6 +11,7 @@ System Context 在每次 Log Analysis run 创建时固化 Skill-backed 背景快
 ```http
 GET /api/skills
 GET /api/skills/:skill_id
+POST /api/skills/imports
 POST /api/skills/preview
 ```
 
@@ -29,6 +30,8 @@ POST /api/mcp/readonly
 ```
 
 `GET /api/system-context/resources` 默认只返回 `metadata_instance` adapter。旧非 Metadata resources 不删除，但不作为新 UI 和新任务入口。
+
+`POST /api/skills/imports` 是 Skill 管理入口，不直接写 `system_context.json`；导入成功后的 Skill 可在后续 Session draft 中显式选择并固化到 task snapshot。
 
 `POST /api/mcp/readonly` 中的 `logagent.preview_system_context` 是只读预览入口，只返回将注入的 resource 摘要和 prompt preview，不创建 task，不写 workspace，不修改 Skill 或 Metadata。
 

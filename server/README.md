@@ -177,6 +177,7 @@ RUST_LOG=logagent_server=info,tower_http=info
   case_imports/
   code_worktrees/
   # 默认 Skill root 为仓库内 skills/；可通过 skills.roots 改为其他 Codex Skill 目录
+  # Skill 导入写入第一个配置的 skills.roots 下的 <skillId>/SKILL.md 和 logagent.json
 ```
 
 每个 Session 持久化到 `sessions/<session_id>.json`，事件追加到 `session_workspaces/<session_id>/session_events.jsonl`。每个任务持久化到 `tasks/<task_id>.json`。Memory 主索引持久化到 `memory/memory.sqlite`，legacy Case JSON 保留在 `cases/` 作为迁移/回滚源。写入使用同目录临时文件加 rename；启动时任何损坏的 Session/任务 JSON 都会导致 Server 明确启动失败。
@@ -267,7 +268,7 @@ MVP 要求：
 - `POST /api/mcp/readonly` 提供面向个人本地 Claude Code 的只读 HTTP MCP，支持读取 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 摘要，不操作 Session/task/workspace。
 - `GET /api/exports/skills.zip` 打包当前索引的 Skill 普通文件、references 和 `manifest.json`，跳过 symlink 和路径逃逸。
 - `GET /api/exports/tools.zip` 打包 enabled 且解析为普通可执行文件的工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、不可执行或读取失败的工具标记 skipped，不让下载失败。
-- `GET /api/skills`、`GET /api/skills/:skill_id` 和 `POST /api/skills/preview` 管理可选 Diagnostic Skills 和注入预览。
+- `GET /api/skills`、`GET /api/skills/:skill_id`、`POST /api/skills/imports` 和 `POST /api/skills/preview` 管理可选 Diagnostic Skills、Markdown 导入和注入预览。
 - `GET /api/system-context/resources` 默认只返回 Metadata adapter；旧非 Metadata resources 仍保存在数据目录但不再作为新任务入口。
 - `GET /api/settings/llm` 返回当前 LLM Provider 配置摘要，不包含密钥。
 - `GET /api/settings/llm/models` 测试当前 LLM Provider 的模型列表接口，返回 `{ok,result,error}` 诊断响应。
@@ -304,6 +305,7 @@ MVP 要求：
 - 每次 Session 创建 task run 时都会写入 task `sessionId`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
 - Task 状态进入 RUNNING、WAITING、SUCCEEDED 或 FAILED 时会同步更新所属 Session，并追加 `task_status_changed` event。
 - Task 创建时固化完整 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。Claude Code 初始 `analysis_package.json` 和任务 MCP `metadata_context` resource 只提供 Metadata outline/counts，细节必须通过 `logagent.query_metadata` 读取 bounded slice。
+- `POST /api/skills/imports` 接收 `skillId`、`name`、`description`、`markdown` 和可选 `filename`，在第一个可用 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，随后重载 Skill Registry；重复 ID、非法 ID、空字段、禁用 skills 或无可写 root 会被拒绝，当前版本不覆盖已有 Skill。
 - 后台执行器使用 `server.max_concurrent_tasks` 控制并发，默认 2。
 - 后台执行器按持久化 phase 循环分派单个幂等 handler；每个 handler 成功后使用期望 phase 校验原子推进到下一阶段。
 - Server 重启时将 `RUNNING` 重置为 `QUEUED` 但保留 phase，并与已有 `QUEUED` 一起按创建时间恢复；`SUCCEEDED`、`FAILED` 不自动重跑。
@@ -387,6 +389,10 @@ GET /api/cases/:case_id
 PATCH /api/cases/:case_id
 GET /api/debug/llm
 PUT /api/debug/llm
+GET /api/skills
+GET /api/skills/:skill_id
+POST /api/skills/imports
+POST /api/skills/preview
 GET /api/metadata/instances
 GET /api/metadata/instances/:instance_id
 GET /api/metadata/instances/:instance_id/snapshot

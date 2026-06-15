@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 
@@ -10,8 +11,8 @@ use crate::{
     domain::models::TaskKind,
     http::system_context::metadata_context_bundle_item,
     services::skill_registry::{
-        ResolveSkillsInput, SkillDetailResponse, SkillListResponse, SkillPreviewRequest,
-        SkillPreviewResponse,
+        ResolveSkillsInput, SkillDetailResponse, SkillImportRequest, SkillListResponse,
+        SkillPreviewRequest, SkillPreviewResponse,
     },
     stores::system_context_store::{render_system_context_prompt, system_context_bundle},
     support::error::AppError,
@@ -32,6 +33,14 @@ pub async fn get_skill(
         .get(skill_id.trim())
         .map(Json)
         .ok_or_else(|| AppError::not_found(format!("unknown skillId {}", skill_id.trim())))
+}
+
+pub async fn import_skill(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SkillImportRequest>,
+) -> Result<(StatusCode, Json<SkillDetailResponse>), AppError> {
+    let skill = state.skills.import_markdown(req)?;
+    Ok((StatusCode::CREATED, Json(skill)))
 }
 
 pub async fn preview_skills(

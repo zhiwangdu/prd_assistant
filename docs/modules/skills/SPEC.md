@@ -36,6 +36,7 @@ description: Diagnose openGemini clusters.
 ```http
 GET /api/skills
 GET /api/skills/:skill_id
+POST /api/skills/imports
 POST /api/skills/preview
 POST /api/mcp/readonly
 GET /api/exports/skills.zip
@@ -54,6 +55,27 @@ GET /api/exports/skills.zip
 ```
 
 响应返回将写入 task 的 `resources[]` 和 prompt preview。
+
+`POST /api/skills/imports` 请求：
+
+```json
+{
+  "skillId": "custom-runbook",
+  "name": "Custom Runbook",
+  "description": "Team-specific diagnostic steps.",
+  "markdown": "Use current task evidence first.",
+  "filename": "custom-runbook.md"
+}
+```
+
+响应返回导入后的 `SkillDetailResponse`。Server 必须：
+
+- 在第一个配置的 `skills.roots` 下写入 `<skillId>/SKILL.md` 和 `<skillId>/logagent.json`。
+- 用请求的 `name` / `description` 生成 `SKILL.md` frontmatter，并把 `markdown` 写为正文。
+- 生成默认 `logagent.json`：`schemaVersion=1`、`displayName=name`、`taskKinds=["log_analysis"]`、`includeByDefault=false`、`priority=0`、空 `references`。
+- 导入后重载整个 Skill Registry 并替换内存快照；如果重载失败，删除本次新建目录并保留旧快照。
+- 拒绝重复 `skillId`、非法 ID、空字段、禁用 skills、无可写 root，以及非 `.md/.markdown` 的可选 filename。
+- v1 不覆盖已有 Skill，不上传 references，不设置自动匹配字段；导入 Skill 仅通过用户显式选择进入 Analyze。
 
 ## Task Artifact
 
@@ -114,6 +136,8 @@ tools: logagent.list_skills, logagent.get_skill, logagent.get_skill_reference
 ## 验收
 
 - 合法/非法 `SKILL.md`、缺失/非法 `logagent.json`、重复 `skillId` 能被测试覆盖。
+- Markdown Skill 导入后，`GET /api/skills`、`GET /api/skills/:skill_id`、Analyze Skill resolve 和 `skills.zip` 都能读取最新 registry。
+- 导入重复 `skillId` 不覆盖已有目录；非法 ID、空 `name/description/markdown`、禁用 skills 和不可写 root 返回明确错误。
 - path traversal 和 root 外 reference 被拒绝。
 - 显式 Skill、自动匹配 Skill、无 Metadata 仅显式 Skill 的 task 创建语义正确。
 - `system_context.json` schema v2 包含 selected skills + metadata adapter。

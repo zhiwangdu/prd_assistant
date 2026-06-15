@@ -11,7 +11,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
 - `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
-- `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；其中 Metadata tab 复用现有 openGemini 拓扑页面。
+- `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：包含 `Tool plugins` 和 `Executors` 两个子页。Tool plugins 支持工具目录、手动工具运行、执行状态轮询和结果展示；首版支持 `pprof_analyzer`，长表格滚动时固定表头。Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
@@ -69,6 +69,8 @@ System Context 能力：
 
 - 列出 Server Skill Registry 中的 Diagnostic Skills。
 - 查看 Skill displayName、description、revision、匹配字段、reference 摘要和 SKILL.md 注入片段。
+- Refresh 旁的 Import 表单可填写 `skillId`、`name`、`description`，选择 `.md/.markdown` 文件或直接粘贴 Markdown；文件存在 Codex frontmatter 时会预填 name/description 并把正文写入编辑框。
+- 导入成功后自动刷新 Skills 列表、选中新 Skill，并可在 Analyze Session draft 中显式选择。
 - Metadata tab 继续提供 openGemini Metadata 导入、拓扑、诊断和 Raw JSON。
 - 旧 `/api/system-context/resources` 默认只作为 Metadata adapter 列表入口；旧非 Metadata resource 编辑入口不再展示。
 
@@ -168,6 +170,7 @@ System Context：
 
 - `GET /api/skills`
 - `GET /api/skills/:skill_id`
+- `POST /api/skills/imports`
 - `POST /api/skills/preview`
 - `GET /api/system-context/resources`
 - `POST /api/system-context/resources`

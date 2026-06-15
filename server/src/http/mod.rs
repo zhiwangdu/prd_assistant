@@ -163,6 +163,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/exports/skills.zip", get(exports::skills_zip))
         .route("/api/exports/tools.zip", get(exports::tools_zip))
         .route("/api/skills", get(skills::list_skills))
+        .route("/api/skills/imports", post(skills::import_skill))
         .route("/api/skills/preview", post(skills::preview_skills))
         .route("/api/skills/:skill_id", get(skills::get_skill))
         .route(

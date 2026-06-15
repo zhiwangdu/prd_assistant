@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 System Context Skill Import
+
+- Added protected `POST /api/skills/imports` for Markdown Diagnostic Skill imports. The API writes `<skillId>/SKILL.md` and default `logagent.json` under the first configured `skills.roots`, reloads the Skill Registry snapshot, and returns the imported Skill detail.
+- Skill Registry now uses a reloadable in-memory snapshot so Skills list/detail, Analyze Skill resolve, read-only MCP, and `skills.zip` use imported Skills without restarting Server. Reload failure rolls back the newly created import directory and keeps the old snapshot.
+- System Context / Skills WebUI now has an Import control beside Refresh. Users can choose `.md/.markdown` files or paste Markdown, frontmatter can prefill name/description, and successful imports refresh the list, select the new Skill, and close the form.
+- Updated Server, WebUI, Skills and System Context docs/specs with the import API, storage location, generated manifest defaults, v1 limitations, and UI behavior.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::skill_registry -- --test-threads=1`, `cargo test -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-15 WAITING_FOR_USER Finalize Button Fix
 
 - Fixed the Analyze task execution `WAITING_FOR_USER` finalize path: the parent callback now preserves the child component's `resumeMode: "finalize"` argument instead of dropping it and falling back to `continue`.

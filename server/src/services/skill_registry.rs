@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs,
     path::{Component, Path, PathBuf},
+    sync::{Arc, RwLock},
 };
 
 use anyhow::Context;
@@ -19,6 +20,12 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct SkillRegistry {
+    settings: SkillSettings,
+    inner: Arc<RwLock<SkillRegistrySnapshot>>,
+}
+
+#[derive(Debug, Clone)]
+struct SkillRegistrySnapshot {
     enabled: bool,
     max_reference_chars: usize,
     skills: BTreeMap<String, DiagnosticSkill>,
@@ -57,6 +64,16 @@ pub struct SkillDetailResponse {
     #[serde(flatten)]
     pub summary: SkillSummary,
     pub injection_content: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillImportRequest {
+    pub skill_id: String,
+    pub name: String,
+    pub description: String,
+    pub markdown: String,
+    pub filename: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -142,13 +159,13 @@ struct SkillReference {
     absolute_path: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SkillFrontMatter {
     name: String,
     description: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LogAgentSkillManifest {
     schema_version: u32,
@@ -181,49 +198,135 @@ struct LogAgentSkillReference {
 
 impl SkillRegistry {
     pub fn load(settings: SkillSettings) -> anyhow::Result<Self> {
-        let mut skills = BTreeMap::new();
-        if settings.enabled {
-            for root in &settings.roots {
-                if !root.exists() {
-                    warn!(root = %root.display(), "skill root does not exist");
-                    continue;
-                }
-                let canonical_root = root.canonicalize().with_context(|| {
-                    format!("failed to canonicalize skill root {}", root.display())
-                })?;
-                for skill_dir in discover_skill_dirs(&canonical_root)? {
-                    let skill =
-                        load_skill_dir(&canonical_root, &skill_dir, settings.max_skill_chars)
-                            .with_context(|| {
-                                format!("failed to load skill {}", skill_dir.display())
-                            })?;
-                    if skills.insert(skill.skill_id.clone(), skill).is_some() {
-                        anyhow::bail!("duplicate skillId in configured skill roots");
-                    }
-                }
+        let snapshot = load_snapshot(&settings)?;
+        Ok(Self {
+            settings,
+            inner: Arc::new(RwLock::new(snapshot)),
+        })
+    }
+
+    pub fn import_markdown(
+        &self,
+        input: SkillImportRequest,
+    ) -> Result<SkillDetailResponse, AppError> {
+        let skill_id = input.skill_id.trim().to_string();
+        validate_skill_id(&skill_id)?;
+        let name = require_import_field("name", input.name)?;
+        let description = require_import_field("description", input.description)?;
+        let markdown = require_import_field("markdown", input.markdown)?;
+        validate_import_filename(input.filename.as_deref())?;
+
+        let mut snapshot = self
+            .inner
+            .write()
+            .expect("skill registry lock poisoned during import");
+        if !snapshot.enabled {
+            return Err(AppError::bad_request(
+                "skills are disabled by configuration",
+            ));
+        }
+        if snapshot.skills.contains_key(&skill_id) {
+            return Err(AppError::conflict(
+                format!("skillId {skill_id} already exists"),
+                serde_json::json!({ "skillId": skill_id }),
+            ));
+        }
+        let configured_root = self
+            .settings
+            .roots
+            .first()
+            .ok_or_else(|| AppError::bad_request("skills have no configured roots"))?;
+        fs::create_dir_all(configured_root).map_err(|err| {
+            AppError::bad_request(format!(
+                "configured skill root is not writable: {} ({err})",
+                configured_root.display()
+            ))
+        })?;
+        let root = configured_root.canonicalize().map_err(|err| {
+            AppError::bad_request(format!(
+                "configured skill root is not writable: {} ({err})",
+                configured_root.display()
+            ))
+        })?;
+        let skill_dir = root.join(&skill_id);
+        if skill_dir.exists() {
+            return Err(AppError::conflict(
+                format!("skillId {skill_id} already exists"),
+                serde_json::json!({ "skillId": skill_id }),
+            ));
+        }
+        fs::create_dir(&skill_dir).map_err(|err| {
+            AppError::internal(format!(
+                "failed to create imported skill directory {}: {err}",
+                skill_dir.display()
+            ))
+        })?;
+
+        let write_result =
+            write_imported_skill(&skill_dir, &skill_id, &name, &description, &markdown);
+        if let Err(err) = write_result {
+            let _ = fs::remove_dir_all(&skill_dir);
+            return Err(err);
+        }
+
+        match load_snapshot(&self.settings) {
+            Ok(next_snapshot) => {
+                *snapshot = next_snapshot;
+                snapshot
+                    .skills
+                    .get(&skill_id)
+                    .map(|skill| SkillDetailResponse {
+                        summary: skill.summary(),
+                        injection_content: skill.injection_content.clone(),
+                    })
+                    .ok_or_else(|| {
+                        AppError::internal(format!(
+                            "imported skill {skill_id} was not found after registry reload"
+                        ))
+                    })
+            }
+            Err(err) => {
+                let _ = fs::remove_dir_all(&skill_dir);
+                Err(AppError::internal(format!(
+                    "failed to reload skills after import; import rolled back: {err:#}"
+                )))
             }
         }
-        Ok(Self {
-            enabled: settings.enabled,
-            max_reference_chars: settings.max_reference_chars,
-            skills,
-        })
     }
 
     pub fn list(&self) -> Vec<SkillSummary> {
-        self.skills.values().map(DiagnosticSkill::summary).collect()
+        let snapshot = self
+            .inner
+            .read()
+            .expect("skill registry lock poisoned during list");
+        snapshot
+            .skills
+            .values()
+            .map(DiagnosticSkill::summary)
+            .collect()
     }
 
     pub fn get(&self, skill_id: &str) -> Option<SkillDetailResponse> {
-        self.skills.get(skill_id).map(|skill| SkillDetailResponse {
-            summary: skill.summary(),
-            injection_content: skill.injection_content.clone(),
-        })
+        let snapshot = self
+            .inner
+            .read()
+            .expect("skill registry lock poisoned during get");
+        snapshot
+            .skills
+            .get(skill_id)
+            .map(|skill| SkillDetailResponse {
+                summary: skill.summary(),
+                injection_content: skill.injection_content.clone(),
+            })
     }
 
     pub fn export_entries(&self) -> anyhow::Result<Vec<SkillExportEntry>> {
+        let snapshot = self
+            .inner
+            .read()
+            .expect("skill registry lock poisoned during export");
         let mut entries = Vec::new();
-        for skill in self.skills.values() {
+        for skill in snapshot.skills.values() {
             let mut files = Vec::new();
             collect_skill_export_files(&skill.skill_dir, &skill.skill_dir, &mut files)?;
             files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
@@ -244,7 +347,11 @@ impl SkillRegistry {
         &self,
         input: ResolveSkillsInput<'_>,
     ) -> Result<Vec<SystemContextBundleItem>, AppError> {
-        if !self.enabled {
+        let snapshot = self
+            .inner
+            .read()
+            .expect("skill registry lock poisoned during resolve");
+        if !snapshot.enabled {
             if input.explicit_skill_ids.is_empty() {
                 return Ok(Vec::new());
             }
@@ -256,7 +363,7 @@ impl SkillRegistry {
         let mut seen = HashSet::<String>::new();
         for skill_id in input.explicit_skill_ids {
             validate_skill_id(skill_id)?;
-            let skill = self
+            let skill = snapshot
                 .skills
                 .get(skill_id)
                 .ok_or_else(|| AppError::bad_request(format!("unknown skillId {skill_id}")))?;
@@ -268,7 +375,7 @@ impl SkillRegistry {
         let allow_auto =
             input.product.is_some() || input.version.is_some() || input.environment.is_some();
         if allow_auto {
-            let mut automatic = self
+            let mut automatic = snapshot
                 .skills
                 .values()
                 .filter(|skill| {
@@ -325,10 +432,17 @@ impl SkillRegistry {
                     && item.skill_id.as_deref() == Some(skill_id)
             })
             .ok_or_else(|| anyhow::anyhow!("skill {skill_id} was not selected for this task"))?;
-        let skill = self
-            .skills
-            .get(skill_id)
-            .ok_or_else(|| anyhow::anyhow!("skill {skill_id} is not available in registry"))?;
+        let (skill, max_reference_chars) = {
+            let snapshot = self
+                .inner
+                .read()
+                .expect("skill registry lock poisoned during reference read");
+            let skill =
+                snapshot.skills.get(skill_id).cloned().ok_or_else(|| {
+                    anyhow::anyhow!("skill {skill_id} is not available in registry")
+                })?;
+            (skill, snapshot.max_reference_chars)
+        };
         if snapshot_item.revision.as_deref() != Some(skill.revision.as_str()) {
             anyhow::bail!(
                 "skill {skill_id} revision differs from the task snapshot; rerun the task to refresh skill references"
@@ -364,7 +478,7 @@ impl SkillRegistry {
         let raw = tokio::fs::read_to_string(&reference.absolute_path)
             .await
             .with_context(|| format!("failed to read skill reference {}", requested.path))?;
-        let (content, truncated) = truncate_chars_with_flag(raw.trim(), self.max_reference_chars);
+        let (content, truncated) = truncate_chars_with_flag(raw.trim(), max_reference_chars);
         Ok(SkillReferenceRead {
             skill_id: skill.skill_id.clone(),
             skill_revision: skill.revision.clone(),
@@ -381,10 +495,17 @@ impl SkillRegistry {
         reference_path: Option<&str>,
     ) -> anyhow::Result<SkillReferenceRead> {
         validate_skill_id_anyhow(skill_id)?;
-        let skill = self
-            .skills
-            .get(skill_id)
-            .ok_or_else(|| anyhow::anyhow!("skill {skill_id} is not available in registry"))?;
+        let (skill, max_reference_chars) = {
+            let snapshot = self
+                .inner
+                .read()
+                .expect("skill registry lock poisoned during reference read");
+            let skill =
+                snapshot.skills.get(skill_id).cloned().ok_or_else(|| {
+                    anyhow::anyhow!("skill {skill_id} is not available in registry")
+                })?;
+            (skill, snapshot.max_reference_chars)
+        };
         let reference = match (reference_id, reference_path) {
             (Some(id), _) => skill
                 .references
@@ -408,7 +529,7 @@ impl SkillRegistry {
             .with_context(|| {
                 format!("failed to read skill reference {}", reference.summary.path)
             })?;
-        let (content, truncated) = truncate_chars_with_flag(raw.trim(), self.max_reference_chars);
+        let (content, truncated) = truncate_chars_with_flag(raw.trim(), max_reference_chars);
         Ok(SkillReferenceRead {
             skill_id: skill.skill_id.clone(),
             skill_revision: skill.revision.clone(),
@@ -417,6 +538,72 @@ impl SkillRegistry {
             truncated,
         })
     }
+}
+
+fn load_snapshot(settings: &SkillSettings) -> anyhow::Result<SkillRegistrySnapshot> {
+    let mut skills = BTreeMap::new();
+    if settings.enabled {
+        for root in &settings.roots {
+            if !root.exists() {
+                warn!(root = %root.display(), "skill root does not exist");
+                continue;
+            }
+            let canonical_root = root
+                .canonicalize()
+                .with_context(|| format!("failed to canonicalize skill root {}", root.display()))?;
+            for skill_dir in discover_skill_dirs(&canonical_root)? {
+                let skill =
+                    load_skill_dir(&canonical_root, &skill_dir, settings.max_skill_chars)
+                        .with_context(|| format!("failed to load skill {}", skill_dir.display()))?;
+                if skills.insert(skill.skill_id.clone(), skill).is_some() {
+                    anyhow::bail!("duplicate skillId in configured skill roots");
+                }
+            }
+        }
+    }
+    Ok(SkillRegistrySnapshot {
+        enabled: settings.enabled,
+        max_reference_chars: settings.max_reference_chars,
+        skills,
+    })
+}
+
+fn write_imported_skill(
+    skill_dir: &Path,
+    skill_id: &str,
+    name: &str,
+    description: &str,
+    markdown: &str,
+) -> Result<(), AppError> {
+    let frontmatter = SkillFrontMatter {
+        name: name.to_string(),
+        description: description.to_string(),
+    };
+    let frontmatter = serde_yaml::to_string(&frontmatter).map_err(|err| {
+        AppError::internal(format!("failed to encode SKILL.md frontmatter: {err}"))
+    })?;
+    let skill_md = format!("---\n{frontmatter}---\n\n{}\n", markdown.trim());
+    fs::write(skill_dir.join("SKILL.md"), skill_md)
+        .map_err(|err| AppError::internal(format!("failed to write imported SKILL.md: {err}")))?;
+
+    let manifest = LogAgentSkillManifest {
+        schema_version: 1,
+        skill_id: skill_id.to_string(),
+        display_name: Some(name.to_string()),
+        products: Vec::new(),
+        domain_adapters: Vec::new(),
+        tool_ids: Vec::new(),
+        task_kinds: vec![task_kind_label(TaskKind::LogAnalysis).to_string()],
+        include_by_default: false,
+        priority: 0,
+        max_prompt_chars: None,
+        references: Vec::new(),
+    };
+    let manifest = serde_json::to_vec_pretty(&manifest)
+        .map_err(|err| AppError::internal(format!("failed to encode logagent.json: {err}")))?;
+    fs::write(skill_dir.join("logagent.json"), manifest)
+        .map_err(|err| AppError::internal(format!("failed to write logagent.json: {err}")))?;
+    Ok(())
 }
 
 impl DiagnosticSkill {
@@ -758,6 +945,7 @@ fn validate_skill_id(skill_id: &str) -> Result<(), AppError> {
 fn validate_skill_id_anyhow(skill_id: &str) -> anyhow::Result<()> {
     let valid = !skill_id.is_empty()
         && skill_id.len() <= 120
+        && skill_id.bytes().any(|byte| byte.is_ascii_alphanumeric())
         && skill_id.bytes().all(|byte| {
             byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-' || byte == b'.'
         });
@@ -765,6 +953,29 @@ fn validate_skill_id_anyhow(skill_id: &str) -> anyhow::Result<()> {
         Ok(())
     } else {
         anyhow::bail!("invalid skillId");
+    }
+}
+
+fn require_import_field(name: &str, value: String) -> Result<String, AppError> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        Err(AppError::bad_request(format!("{name} must not be empty")))
+    } else {
+        Ok(value)
+    }
+}
+
+fn validate_import_filename(filename: Option<&str>) -> Result<(), AppError> {
+    let Some(filename) = filename.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let lower = filename.to_ascii_lowercase();
+    if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        Ok(())
+    } else {
+        Err(AppError::bad_request(
+            "filename must end with .md or .markdown",
+        ))
     }
 }
 
@@ -881,6 +1092,16 @@ mod tests {
         }
     }
 
+    fn import_request(skill_id: &str) -> SkillImportRequest {
+        SkillImportRequest {
+            skill_id: skill_id.to_string(),
+            name: "Imported Skill".to_string(),
+            description: "Imported diagnostic guidance.".to_string(),
+            markdown: "Use current task evidence before background guidance.".to_string(),
+            filename: Some("imported.md".to_string()),
+        }
+    }
+
     #[test]
     fn loads_skill_with_manifest_and_revision() {
         let root = root("load");
@@ -992,6 +1213,118 @@ mod tests {
             .unwrap();
         }
         assert!(SkillRegistry::load(settings(root.clone())).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn imports_markdown_skill_and_reloads_registry() {
+        let root = root("import");
+        fs::create_dir_all(&root).unwrap();
+        let registry = SkillRegistry::load(settings(root.clone())).unwrap();
+
+        let detail = registry
+            .import_markdown(import_request("imported"))
+            .unwrap();
+        assert_eq!(detail.summary.skill_id, "imported");
+        assert_eq!(detail.summary.display_name, "Imported Skill");
+        assert!(detail.summary.managed);
+        assert!(!detail.summary.include_by_default);
+        assert_eq!(detail.summary.task_kinds, vec!["log_analysis"]);
+        assert!(detail.injection_content.contains("current task evidence"));
+
+        let skill_dir = root.join("imported");
+        assert!(skill_dir.join("SKILL.md").is_file());
+        assert!(skill_dir.join("logagent.json").is_file());
+        assert!(registry.get("imported").is_some());
+        assert_eq!(registry.list().len(), 1);
+
+        let items = registry
+            .resolve_items(ResolveSkillsInput {
+                explicit_skill_ids: &["imported".to_string()],
+                task_kind: TaskKind::LogAnalysis,
+                product: None,
+                version: None,
+                environment: None,
+            })
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].skill_id.as_deref(), Some("imported"));
+
+        let entries = registry.export_entries().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0]
+            .files
+            .iter()
+            .any(|file| file.relative_path == "SKILL.md"));
+        assert!(entries[0]
+            .files
+            .iter()
+            .any(|file| file.relative_path == "logagent.json"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn import_rejects_duplicate_without_overwriting() {
+        let root = root("import-duplicate");
+        fs::create_dir_all(&root).unwrap();
+        let registry = SkillRegistry::load(settings(root.clone())).unwrap();
+        registry
+            .import_markdown(import_request("imported"))
+            .unwrap();
+        let original = fs::read_to_string(root.join("imported/SKILL.md")).unwrap();
+
+        let mut duplicate = import_request("imported");
+        duplicate.markdown = "replacement".to_string();
+        let err = registry.import_markdown(duplicate).unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+        assert_eq!(
+            fs::read_to_string(root.join("imported/SKILL.md")).unwrap(),
+            original
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn import_rejects_invalid_and_empty_fields() {
+        let root = root("import-invalid");
+        fs::create_dir_all(&root).unwrap();
+        let registry = SkillRegistry::load(settings(root.clone())).unwrap();
+
+        let mut invalid_id = import_request("..");
+        assert!(registry.import_markdown(invalid_id.clone()).is_err());
+
+        invalid_id.skill_id = "valid".to_string();
+        invalid_id.name = " ".to_string();
+        assert!(registry.import_markdown(invalid_id.clone()).is_err());
+
+        invalid_id.name = "Valid".to_string();
+        invalid_id.description.clear();
+        assert!(registry.import_markdown(invalid_id.clone()).is_err());
+
+        invalid_id.description = "Valid description".to_string();
+        invalid_id.markdown = "\n".to_string();
+        assert!(registry.import_markdown(invalid_id.clone()).is_err());
+
+        invalid_id.markdown = "Body".to_string();
+        invalid_id.filename = Some("skill.txt".to_string());
+        assert!(registry.import_markdown(invalid_id).is_err());
+        assert!(!root.join("valid").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn import_rejects_disabled_skills() {
+        let root = root("import-disabled");
+        fs::create_dir_all(&root).unwrap();
+        let mut disabled = settings(root.clone());
+        disabled.enabled = false;
+        let registry = SkillRegistry::load(disabled).unwrap();
+
+        let err = registry
+            .import_markdown(import_request("imported"))
+            .unwrap_err();
+        assert!(err.to_string().contains("disabled"));
+        assert!(!root.join("imported").exists());
         let _ = fs::remove_dir_all(root);
     }
 }

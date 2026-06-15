@@ -38,7 +38,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - Claude Code session 的 Metadata 按需加载：`analysis_package.json` 只包含 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 返回 outline，`logagent.query_metadata` 按 section/filter/limit/cursor 写入 `metadata_slices/<stable_id>.json`
 - task artifact 查询
 - metadata 查询和导入确认
-- Skill-backed System Context、Codex-compatible Skill registry、Skill preview、按需 MCP reference 读取和 Metadata adapter
+- Skill-backed System Context、Codex-compatible Skill registry、Skill preview、Markdown Skill 导入、按需 MCP reference 读取和 Metadata adapter
 - Memory SQLite store、Case Store schema v2 兼容 API、legacy JSON 启动导入、FTS/BM25 + 关键词 fallback 召回、任务确认 Case、手工 Case 创建和 LLM-assisted 文本导入草稿
 - Tools API、`tool_run` task 和首个 `pprof_analyzer` 插件
 - Remote Executor API、执行机 JSON store、`remote_command_run` task、`EXECUTE_REMOTE_COMMAND` phase 和白名单 SSH 命令执行；默认模板 `smoke_ls_root` 用于低风险 `ls -la /root` smoke
@@ -121,6 +121,7 @@ GET /api/exports/skills.zip
 GET /api/exports/tools.zip
 GET /api/skills
 GET /api/skills/:skill_id
+POST /api/skills/imports
 POST /api/skills/preview
 GET /api/system-context/resources
 POST /api/system-context/resources
@@ -200,7 +201,9 @@ logagent.list_tools
 logagent.list_domain_adapters
 ```
 
-`GET /api/exports/skills.zip` 打包 Server 当前索引到的 Skill 普通文件，不跟随 symlink。包内根目录包含 `manifest.json`，每个 Skill 保留相对目录结构并记录 `skillId`、`displayName`、`revision`、`sourceRoot`、`sourcePath` 和文件列表。
+`POST /api/skills/imports` 接收 JSON：`skillId`、`name`、`description`、`markdown` 和可选 `filename`。Server 在第一个配置的 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，默认 manifest 使用 `schemaVersion=1`、`displayName=name`、`taskKinds=["log_analysis"]`、`includeByDefault=false`、`priority=0` 和空 `references`。导入成功后重载整个 Skill Registry，并返回导入后的 Skill detail；重复 `skillId`、非法 ID、空字段、禁用 skills、无可写 root 或非 `.md/.markdown` filename 会返回明确错误。当前版本不支持覆盖已有 Skill，也不支持上传 reference 文件。
+
+`GET /api/exports/skills.zip` 打包 Server 当前索引到的 Skill 普通文件，不跟随 symlink。包内根目录包含 `manifest.json`，每个 Skill 保留相对目录结构并记录 `skillId`、`displayName`、`revision`、`sourceRoot`、`sourcePath` 和文件列表。导入后的 Skill 重载成功后会出现在该导出包中。
 
 `GET /api/exports/tools.zip` 打包当前 enabled 且解析后是普通可执行文件的工具二进制。包结构固定为：
 
@@ -274,6 +277,8 @@ data_dir/
       result.json
       result.md
 ```
+
+Diagnostic Skills 默认来自仓库内 `skills/`；`POST /api/skills/imports` 会写入第一个配置的 `skills.roots`，目录结构为 `<root>/<skillId>/SKILL.md` 和 `<root>/<skillId>/logagent.json`，不写入 task workspace。
 
 ## Upload Store
 
