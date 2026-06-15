@@ -9,6 +9,10 @@ if [[ -f "$ENV_FILE" ]]; then
   # shellcheck source=/dev/null
   source "$ENV_FILE"
 fi
+if [[ -f "$HOME/.cargo/env" ]]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env"
+fi
 
 APP_DIR="${LOGAGENT_APP_DIR:-$DEFAULT_APP_DIR}"
 SRC_DIR="${LOGAGENT_SRC_DIR:-}"

@@ -32,6 +32,10 @@ if [[ -f "$HOME/.bashrc" ]]; then
   # shellcheck source=/dev/null
   source "$HOME/.bashrc" >/dev/null 2>&1 || true
 fi
+if [[ -f "$HOME/.cargo/env" ]]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env" >/dev/null 2>&1 || true
+fi
 if [[ -f "$deploy_dir/.env" ]]; then
   set -a
   # shellcheck source=/dev/null
