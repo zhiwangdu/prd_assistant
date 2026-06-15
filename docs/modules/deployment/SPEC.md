@@ -14,6 +14,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
 - `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会预创建 Memory/Case 相关运行目录，包括 `data/memory`、`data/cases` 和 `data/case_imports`。
+- macOS 开发机上的 `scripts/build-all.sh` 在本地 Server/WebUI 编译完成后调用 `scripts/auto-deploy-lan.sh`；该脚本 ping `192.168.31.128`，连通时通过 SSH 到 `duzhiwang@192.168.31.128`，在远端源码目录执行 `git pull --ff-only`，再运行 runtime `deploy/rebuild-install.sh` 和 `logagentctl.sh start/status`。`LOGAGENT_LAN_AUTO_DEPLOY=0` 可关闭该行为。
 - `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、默认 `claude_code` 配置和 `mcp.transport=stdio`；`LOGAGENT_CLAUDE_CODE_PATH` 默认应指向 `which claude` 输出的绝对路径，Server 会以 Claude Code CLI 非交互 JSON + MCP 模式调用。
 - Server 提供个人高级入口所需的受保护接口：`POST /api/mcp/readonly`、`GET /api/exports/skills.zip` 和 `GET /api/exports/tools.zip`。部署脚本不写入个人 Claude Code 配置，不做本地 bootstrap。
 - Native Agent 本机启动并连接远端 Server。
@@ -59,6 +60,7 @@ WEBUI -> Server 同源 API
 - `deploy/install-deps.sh --dry-run` 和 `--help` 可执行，不修改宿主。
 - deploy 模板启动前会创建 `data/memory`、`data/cases` 和 `data/case_imports`，且重建安装不能删除已有运行数据。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
+- macOS 上运行 `scripts/build-all.sh` 后，若 `192.168.31.128` 可 ping 通，应自动触发远端 pull/rebuild/start；不可达时必须跳过远端部署且本地构建仍成功。
 - Native Agent `/health` 可访问。
 - 远端 Server 监听 `0.0.0.0` 时 Native Agent 可上传。
 - README 和 SPEC 在部署方式或端口变更时同步更新。

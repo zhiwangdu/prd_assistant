@@ -6,3 +6,4 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 "$SCRIPT_DIR/build-server.sh"
 "$SCRIPT_DIR/build-webui.sh"
+"$SCRIPT_DIR/auto-deploy-lan.sh"
