@@ -23,7 +23,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - Session 内新增 unified Evidence Timeline，合并 session events 和 task `analysis_events.jsonl`，显示 upload、Metadata、Case recall、grep、tool output、Claude Code session、MCP waiting request、用户追问/审批和 final result。
 - `Task execution` 读取 `/api/tasks/:task_id/analysis`，实时展示 Analysis revision、预算、事件摘要、Claude callId/attempt、session outcome 和 evidence。
 - 成功任务展示 `session_text_input.json` 中的 Session 对话框输入，最终结果引用 `session_text_input.json#question` 时可滚动定位到该输入。
-- `Task execution` 在 `WAITING_FOR_USER` 展示待补充问题并提交回答，也提供“没有更多信息，生成最终结果”按钮；在 `WAITING_FOR_APPROVAL` 展示待审批 action、risk、input，并支持批准或拒绝后继续任务。
+- `Task execution` 在 `WAITING_FOR_USER` 展示待补充问题并提交回答，也提供“没有更多信息，直接生成最终结果”按钮；该按钮会以 `resumeMode: "finalize"` 提交，即使回答框为空也会请求基于当前证据生成最终结果。在 `WAITING_FOR_APPROVAL` 展示待审批 action、risk、input，并支持批准或拒绝后继续任务。
 - 用户可填写分析问题；任务成功后展示单次 LLM 生成的摘要、症状、可能根因、检查项、修复建议、缺失信息和置信度。
 - 成功任务支持编辑标题、现象、根因和解决方案后人工确认保存为 Case；同页可搜索相似 Case 并禁用不再召回的 Case。
 - 成功任务展示任务创建时固化的 `caseContext`，区分历史 Case 参考和实时 Case 搜索结果；Case 列表已适配 schema v2 并展示 `task` / `manual` 来源。

@@ -2,6 +2,12 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 WAITING_FOR_USER Finalize Button Fix
+
+- Fixed the Analyze task execution `WAITING_FOR_USER` finalize path: the parent callback now preserves the child component's `resumeMode: "finalize"` argument instead of dropping it and falling back to `continue`.
+- The finalize button label now matches the product wording `没有更多信息，直接生成最终结果`, and waiting interaction buttons explicitly use non-submit button semantics.
+- Verification passed: `cd webui && npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## Status Summary
 
 LogAgent MVP is now framed as a diagnostic evidence workbench and Claude Code domain enhancement layer. The self-built analysis action loop is no longer the running analysis path; `PLAN_ANALYSIS` prepares LogAgent evidence/MCP artifacts, starts or resumes Claude Code, and persists Claude session outcomes, MCP calls, waiting state and final evidence.

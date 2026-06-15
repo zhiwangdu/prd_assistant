@@ -710,7 +710,17 @@ export function OperationsView({ apiKey }: { apiKey: string }) {
                     <div className="flex items-center gap-2"><StatusBadge status={selectedTask.status} /><span className="text-sm text-muted-foreground">{selectedTask.phase ?? "No active phase"}</span></div>
                     {selectedTask.instanceId || selectedTask.nodeId ? <p className="text-xs text-muted-foreground">Metadata: instance={selectedTask.instanceId ?? "-"} · node={selectedTask.nodeId ?? "-"}</p> : null}
                     {selectedTask.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedTask.error?.phase ? `${selectedTask.error.phase}: ` : ""}{selectedTask.error?.message ?? "Task failed"}</div> : null}
-                    <WaitingInteraction answer={userAnswer} approvalReason={approvalReason} loading={loading} snapshot={analysisSnapshot} status={selectedTask.status} onAnswerChange={setUserAnswer} onApprovalReasonChange={setApprovalReason} onSubmitAnswer={(prompt) => void submitUserMessage(prompt)} onSubmitApproval={(approval, decision) => void submitApproval(approval, decision)} />
+                    <WaitingInteraction
+                      answer={userAnswer}
+                      approvalReason={approvalReason}
+                      loading={loading}
+                      snapshot={analysisSnapshot}
+                      status={selectedTask.status}
+                      onAnswerChange={setUserAnswer}
+                      onApprovalReasonChange={setApprovalReason}
+                      onSubmitAnswer={(prompt, resumeMode) => void submitUserMessage(prompt, resumeMode)}
+                      onSubmitApproval={(approval, decision) => void submitApproval(approval, decision)}
+                    />
                   </div>
                 ) : null}
               </CardContent>
@@ -752,12 +762,39 @@ function WaitingInteraction({ answer, approvalReason, loading, snapshot, status,
   if (status === "WAITING_FOR_USER") {
     const prompt = snapshot?.state.pendingUserPrompts[0];
     if (!prompt) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">任务正在等待用户输入，但 analysis state 中暂无 pending prompt。</div>;
-    return <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div><p className="text-sm font-medium text-amber-900">需要补充信息</p><p className="mt-1 text-sm text-amber-800">{prompt.question}</p><p className="mt-1 text-xs text-amber-700">reason: {prompt.reason} · format: {prompt.answerFormat ?? "free text"} · required: {prompt.required ? "yes" : "no"}</p></div><textarea className="min-h-20 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm" value={answer} onChange={(event) => onAnswerChange(event.target.value)} placeholder="填写补充信息后继续分析" /><div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={() => onSubmitAnswer(prompt)}>提交回答并继续</Button><Button disabled={loading} variant="outline" onClick={() => onSubmitAnswer(prompt, "finalize")}><CheckCircle2 className="mr-2 h-4 w-4" />没有更多信息，生成最终结果</Button></div></div>;
+    return (
+      <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div>
+          <p className="text-sm font-medium text-amber-900">需要补充信息</p>
+          <p className="mt-1 text-sm text-amber-800">{prompt.question}</p>
+          <p className="mt-1 text-xs text-amber-700">reason: {prompt.reason} · format: {prompt.answerFormat ?? "free text"} · required: {prompt.required ? "yes" : "no"}</p>
+        </div>
+        <textarea className="min-h-20 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm" value={answer} onChange={(event) => onAnswerChange(event.target.value)} placeholder="填写补充信息后继续分析" />
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={loading} type="button" onClick={() => onSubmitAnswer(prompt)}>提交回答并继续</Button>
+          <Button disabled={loading} type="button" variant="outline" onClick={() => onSubmitAnswer(prompt, "finalize")}><CheckCircle2 className="mr-2 h-4 w-4" />没有更多信息，直接生成最终结果</Button>
+        </div>
+      </div>
+    );
   }
   if (status === "WAITING_FOR_APPROVAL") {
     const approval = snapshot?.state.pendingApprovals[0];
     if (!approval) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">任务正在等待审批，但 analysis state 中暂无 pending approval。</div>;
-    return <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div><p className="text-sm font-medium text-amber-900">需要审批动作</p><p className="mt-1 text-sm text-amber-800">{approval.actionType} · {approval.actionId}</p><p className="mt-1 text-xs text-amber-700">risk: {approval.risk} · reason: {approval.reason}</p><pre className="mt-2 max-h-32 overflow-auto rounded bg-white p-2 text-xs text-slate-700">{JSON.stringify(approval.input, null, 2)}</pre></div><Input value={approvalReason} onChange={(event) => onApprovalReasonChange(event.target.value)} placeholder="审批备注或拒绝原因（可选）" /><div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={() => onSubmitApproval(approval, "approved")}>批准并继续</Button><Button disabled={loading} variant="outline" onClick={() => onSubmitApproval(approval, "rejected")}>拒绝并继续</Button></div></div>;
+    return (
+      <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div>
+          <p className="text-sm font-medium text-amber-900">需要审批动作</p>
+          <p className="mt-1 text-sm text-amber-800">{approval.actionType} · {approval.actionId}</p>
+          <p className="mt-1 text-xs text-amber-700">risk: {approval.risk} · reason: {approval.reason}</p>
+          <pre className="mt-2 max-h-32 overflow-auto rounded bg-white p-2 text-xs text-slate-700">{JSON.stringify(approval.input, null, 2)}</pre>
+        </div>
+        <Input value={approvalReason} onChange={(event) => onApprovalReasonChange(event.target.value)} placeholder="审批备注或拒绝原因（可选）" />
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={loading} type="button" onClick={() => onSubmitApproval(approval, "approved")}>批准并继续</Button>
+          <Button disabled={loading} type="button" variant="outline" onClick={() => onSubmitApproval(approval, "rejected")}>拒绝并继续</Button>
+        </div>
+      </div>
+    );
   }
   return null;
 }
