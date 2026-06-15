@@ -15,5 +15,6 @@ cd "$repo_root"
 cargo build --release -p logagent-server
 
 install -m 0755 "$repo_root/target/release/logagent-server" "$(logagent_server_bin "$work_dir")"
+"$SCRIPT_DIR/build-tools.sh"
 
 printf 'Installed Server binary: %s\n' "$(logagent_server_bin "$work_dir")"

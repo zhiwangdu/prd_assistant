@@ -1181,6 +1181,35 @@ JSON
     }
 
     #[test]
+    fn parses_flux_query_analyzer_logagent_json() {
+        let parsed = parse_tool_stdout(
+            br#"{
+  "schemaVersion": 1,
+  "tool": "flux_query_analyzer",
+  "summary": "flux query stats: rows=2, parseSuccess=1/2, uniqueTemplates=1, newTemplates=0, parseErrors=1, durationCoverage=1/2, p95=45ms",
+  "findings": [
+    {"severity": "high", "message": "Flux parse errors occurred 1 time(s); top error: expected RBRACE, got EOF"},
+    {"severity": "low", "message": "Top Flux template #1: count=1 (100.0%), p95=45ms, fingerprint=5703a1d8f757, query=from(bucket: \"\") |> range(start: -)"}
+  ],
+  "topQueries": [
+    {"fingerprintShort": "5703a1d8f757", "count": 1}
+  ]
+}"#,
+        );
+
+        assert_eq!(
+            parsed.summary.as_deref(),
+            Some("flux query stats: rows=2, parseSuccess=1/2, uniqueTemplates=1, newTemplates=0, parseErrors=1, durationCoverage=1/2, p95=45ms")
+        );
+        assert_eq!(parsed.findings.len(), 2);
+        assert_eq!(parsed.findings[0].severity.as_deref(), Some("high"));
+        assert!(parsed.findings[0]
+            .message
+            .contains("Flux parse errors occurred 1 time"));
+        assert!(parsed.findings[1].message.contains("Top Flux template #1"));
+    }
+
+    #[test]
     fn parses_influxql_analyzer_report_into_summary_and_findings() {
         let parsed = parse_tool_stdout(
             br#"{

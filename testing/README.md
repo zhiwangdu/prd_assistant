@@ -81,7 +81,7 @@ environment approval -> mock environment evidence -> Agent continuation -> resul
 - WebUI 检查覆盖等待用户输入和等待审批控件的类型/构建正确性。
 - Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 mock Claude SDK `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
-- Tool Runner 配置测试覆盖 `path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
+- Tool Runner 配置测试覆盖 `path` 的 `${ENV}` 展开、`path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 - Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换，以及 compare report 的基础 delta findings。
 - Tools API 单测覆盖 `pprof_analyzer` 目录发现、上传复用、`tool_run` task 创建、后台执行、结果 API，以及 `/api/tasks` 不混入工具运行。
 - Remote Executor API 单测覆盖执行机创建、白名单模板列表、`remote_command_run` task 创建、fake ssh 后台执行、result API，以及 `/api/tasks` 不混入 remote command run。
@@ -111,10 +111,10 @@ Mock adapter 必须支持脚本化多轮响应：
 真实工具调用只做手动验收：
 
 - 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
-- 单独验证真实 InfluxQL 工具可使用 `examples/server-influxql-tool.yaml`，当前会直接调用 `/usr/bin/influxql-analyzer`。
+- 单独验证真实工具可使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`；这些脚本会从 submodules 构建对应工具并检查 stdout JSON。
 - 单独验证 pprof Tools 页面可使用 `examples/server-pprof-tool.yaml`，需要设置 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`。
 - Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只验证低风险 `ls -la /root`；自动测试使用 fake ssh 脚本，不依赖真实 ECS。
-- 手工真实工具验收需要为 `examples/server-tools.yaml` 设置 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`；如临时改回环境变量路径，再设置 `LOGAGENT_TOOL_INFLUXQL_ANALYZER`。
+- 手工真实工具验收需要为 `examples/server-tools.yaml` 设置对应 `LOGAGENT_TOOL_*` 路径环境变量，均可指向 `scripts/build-tools.sh` 的 `target/tools/` 产物。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 
 完整产品闭环 smoke：
@@ -123,7 +123,7 @@ Mock adapter 必须支持脚本化多轮响应：
 scripts/smoke-product-loop.sh
 ```
 
-该脚本会临时启动 `examples/server-influxql-tool.yaml` 对应的 50999 Server，生成 InfluxQL JSONL fixture，验证上传、真实 `/usr/bin/influxql-analyzer` Tool Runner、任务成功、Case 保存，以及第二个任务的 `caseContext` 召回。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、`cargo` 和 `/usr/bin/influxql-analyzer`。
+`scripts/smoke-influxql-analyzer.sh` 会从 submodule 构建 analyzer 并验证 CLI Report JSON 与 stderr progress。`scripts/smoke-product-loop.sh` 会临时启动 `examples/server-influxql-tool.yaml` 对应的 50999 Server，生成 InfluxQL JSONL fixture，验证上传、真实源码构建的 InfluxQL Tool Runner、任务成功、Case 保存，以及第二个任务的 `caseContext` 召回。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、`cargo` 和 Go。Flux 和两个 storage smoke 分别验证 `summary/findings/topQueries` 或 storage analyzer tool id / high severity finding。
 
 ## 验收标准
 

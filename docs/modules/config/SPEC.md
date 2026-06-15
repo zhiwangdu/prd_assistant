@@ -107,11 +107,15 @@ auth:
       value_env: "LOGAGENT_NATIVE_API_KEY"
 ```
 
-路径类配置可使用 `${VAR}` 引用环境变量。当前 Server 已支持 `storage.data_dir` 展开，例如：
+路径类配置可使用 `${VAR}` 引用环境变量。当前 Server 已支持 `storage.data_dir`、`skills.roots[]` 和 `tools.<name>.path` 展开，例如：
 
 ```yaml
 storage:
   data_dir: "${LOGAGENT_APP_DIR}/data"
+
+tools:
+  influxql_analyzer:
+    path: "${LOGAGENT_APP_DIR}/bin/tools/influxql-analyzer"
 ```
 
 缺少被引用的环境变量、变量为空或占位符未闭合时，Server 启动失败。
@@ -119,7 +123,7 @@ storage:
 ## 验收标准
 
 - 缺少必要密钥环境变量时启动失败。
-- `storage.data_dir` 中的 `${VAR}` 能展开为环境变量值，缺失或空值时启动失败。
+- `storage.data_dir`、`skills.roots[]` 和 `tools.<name>.path` 中的 `${VAR}` 能展开为环境变量值，缺失或空值时启动失败。
 - 配置有默认值，但示例文件必须展示推荐值。
 - `native_agent.state_path` 默认 `~/.logagent/native-agent-state.json`，用于保存当前活动 `sessionId`。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
@@ -135,11 +139,11 @@ storage:
 - `mcp.transport` 当前只支持 `stdio`。
 - `skills.enabled` 默认 true，`skills.roots` 默认 `skills`。
 - `skills.max_skill_chars` 和 `skills.max_reference_chars` 有下限和上限裁剪，避免过大 prompt 或 reference artifact。
-- 启用的 tool path 或 path_env 解析结果必须是绝对路径；非法工具名、相对路径、缺失/空 path_env 启动失败。
+- 启用的 tool path 或 path_env 解析结果必须是绝对路径；固定 `path` 支持 `${ENV}` 展开；非法工具名、相对路径、缺失/空 path_env 启动失败。
 - `tools.<name>.max_input_files` 默认 1，非正值按 1 处理。
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
-- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地 smoke；当前真实工具路径固定为 `/usr/bin/influxql-analyzer`。
+- `examples/server-flux-tool.yaml`、`examples/server-influxql-tool.yaml`、`examples/server-opengemini-storage-tool.yaml` 和 `examples/server-influxdb-storage-tool.yaml` 分别只启用一个真实工具，用于本地 smoke；真实工具由 `scripts/build-tools.sh` 从 `third_party/` submodules 构建，并通过对应 `LOGAGENT_TOOL_*` 环境变量指向产物。
 - `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
 - `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
 - `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。

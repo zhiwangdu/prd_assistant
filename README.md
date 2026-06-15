@@ -171,6 +171,7 @@ flowchart LR
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
 | [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
 | [testing](./testing/README.md) | 测试 fixture、集成测试和 mock Claude CLI | [SPEC](./testing/SPEC.md) |
+| [third_party](./third_party) | 源码引用的诊断工具 submodules：InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers | - |
 
 Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/README.md)：
 
@@ -211,7 +212,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、审批、证据持久化和最终 evidence ref 校验。`influxql-analyzer` 已配置到 `/usr/bin/influxql-analyzer` 可直接调用，相关代码和文档在 `/home/duzhiwang/workspace/influxql`。Tools 页面已接入 `pprof_analyzer` 示例工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`；部署样例默认启用这些源码构建产物。Tools 页面已接入 `pprof_analyzer` 示例工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
 
 Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的远程采集仍通过 LogAgent approval gate 进入等待态并使用 mock evidence。
 

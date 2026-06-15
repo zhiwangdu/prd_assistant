@@ -58,7 +58,7 @@ export LOGAGENT_NATIVE_API_KEY=<secret>
 ./scripts/server-service.sh start|stop|restart|status|logs
 ```
 
-`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
+`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`，并调用 `build-tools.sh` 从 `third_party/` submodules 构建 `$LOGAGENT_WORK_DIR/bin/tools/` 下的源码引用诊断工具。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
 
 测试/长期运行环境也可以使用仓库根目录 `deploy/` 模板：
 
@@ -93,10 +93,10 @@ cp logagent.example.yaml logagent.yaml
 ## 系统依赖
 
 - 运行已构建 Server binary 不需要单独安装 SQLite；Server 使用 bundled SQLite。
-- 从源码运行 `deploy/rebuild-install.sh` 需要 `cargo`、Node.js/npm、`git`、`curl`、C/C++ 编译工具和 `pkg-config`。
+- 从源码运行 `deploy/rebuild-install.sh` 需要 `cargo`、Node.js/npm、Go、`git`、`curl`、C/C++ 编译工具和 `pkg-config`。
 - `deploy/install-deps.sh` 支持 macOS Homebrew、Debian/Ubuntu apt、Fedora dnf、RHEL/CentOS yum 和 Arch pacman，可快速安装通用构建依赖，并在缺少 `cargo` 时通过 rustup 安装最小 Rust toolchain。
 - `rg`、`ssh`、`scp` 后续 Environment Collector 和代码/环境采集会用到；当前核心上传分析链路不是硬依赖。
-- 已配置的外部分析工具，例如 `flux_query_analyzer`、`influxql_analyzer` 或 `go` for `pprof_analyzer`，按启用的工具单独安装和配置路径。
+- InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers 由 `third_party/` submodules 构建到 `bin/tools/`，部署样例默认启用；`pprof_analyzer` 运行时需要配置 Go 可执行文件。
 
 启动时应检查依赖是否存在，并在 WebUI/日志中暴露健康检查结果。
 

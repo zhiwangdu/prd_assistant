@@ -45,12 +45,8 @@ wait_for_task() {
 
 require_command cargo
 require_command curl
+require_command go
 require_command jq
-
-if [[ ! -x /usr/bin/influxql-analyzer ]]; then
-  printf 'Missing executable /usr/bin/influxql-analyzer\n' >&2
-  exit 1
-fi
 
 cd "$ROOT_DIR"
 
@@ -70,11 +66,15 @@ cat >"${tmp_dir}/queries.jsonl" <<'EOF'
 {"timestamp":"2026-06-08T00:00:01Z","query":"show series from cpu"}
 EOF
 
+printf 'Building InfluxQL analyzer...\n'
+"$ROOT_DIR/scripts/build-tools.sh" --only influxql --output-dir "$ROOT_DIR/target/tools" >/dev/null
+
 printf 'Building server...\n'
 cargo build -p logagent-server >/dev/null
 
 printf 'Starting smoke server on %s...\n' "$URL"
 LOGAGENT_NATIVE_API_KEY="$API_KEY" \
+  LOGAGENT_TOOL_INFLUXQL_ANALYZER="$ROOT_DIR/target/tools/influxql-analyzer" \
   target/debug/logagent-server --config examples/server-influxql-tool.yaml >"$LOG_FILE" 2>&1 &
 server_pid=$!
 

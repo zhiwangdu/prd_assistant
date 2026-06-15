@@ -34,15 +34,18 @@ impl DomainAdapterRegistry {
                         "metadata_context".to_string(),
                         "log_patterns".to_string(),
                         "query_tool_results".to_string(),
+                        "storage_file_tool_results".to_string(),
                         "case_context".to_string(),
                     ],
                     planned_tools: vec![
                         "influxql_analyzer".to_string(),
                         "flux_query_analyzer".to_string(),
+                        "opengemini_storage_analyzer".to_string(),
+                        "influxdb_storage_analyzer".to_string(),
                         "pprof_analyzer".to_string(),
                     ],
                     notes: vec![
-                        "Current default adapter; owns openGemini metadata, PT/shard/index views, and Influx query diagnostics.".to_string(),
+                        "Current default adapter; owns openGemini metadata, PT/shard/index views, Influx query diagnostics, and read-only storage file analysis.".to_string(),
                     ],
                 },
                 DomainAdapterSummary {
@@ -91,5 +94,33 @@ impl DomainAdapterRegistry {
 
     pub fn summaries(&self) -> Vec<DomainAdapterSummary> {
         self.adapters.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opengemini_adapter_lists_storage_analyzers() {
+        let registry = DomainAdapterRegistry::builtin();
+        let adapter = registry
+            .summaries()
+            .into_iter()
+            .find(|adapter| adapter.id == "opengemini_influxdb")
+            .expect("opengemini adapter");
+
+        assert!(adapter
+            .planned_tools
+            .iter()
+            .any(|tool| tool == "opengemini_storage_analyzer"));
+        assert!(adapter
+            .planned_tools
+            .iter()
+            .any(|tool| tool == "influxdb_storage_analyzer"));
+        assert!(adapter
+            .evidence_kinds
+            .iter()
+            .any(|kind| kind == "storage_file_tool_results"));
     }
 }

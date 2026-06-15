@@ -903,7 +903,7 @@ fn resolve_skills(raw: SkillConfig, config_dir: &std::path::Path) -> anyhow::Res
 
 fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
     if let Some(path) = &tool.path {
-        return Ok(path.clone());
+        return expand_path_env_vars(path.clone());
     }
     if !tool.enabled {
         return Ok(PathBuf::new());
@@ -1704,6 +1704,27 @@ tools:
         let tool = tools.tools.get("flux_query_analyzer").unwrap();
         assert!(!tool.enabled);
         assert_eq!(tool.path, PathBuf::new());
+    }
+
+    #[test]
+    fn expands_fixed_tool_path_placeholders() {
+        temp_env_set("LOGAGENT_TEST_TOOL_ROOT", "/opt/logagent", || {
+            let valid = serde_yaml::from_str::<ConfigFile>(
+                r#"
+tools:
+  influxql_analyzer:
+    path: ${LOGAGENT_TEST_TOOL_ROOT}/bin/tools/influxql-analyzer
+    args: ["-input", "{input_file}", "-output", "json"]
+"#,
+            )
+            .unwrap();
+            let tools = resolve_tools(valid.tools).unwrap();
+            let tool = tools.tools.get("influxql_analyzer").unwrap();
+            assert_eq!(
+                tool.path,
+                PathBuf::from("/opt/logagent/bin/tools/influxql-analyzer")
+            );
+        });
     }
 
     #[test]

@@ -84,6 +84,7 @@ fi
 
 BUILD_BIN="$SRC_DIR/target/debug/logagent-server"
 WEBUI_SRC="$SRC_DIR/webui/out"
+TOOLS_BIN_DIR="$APP_DIR/bin/tools"
 
 running=false
 if "$CONTROL" status >/dev/null 2>&1; then
@@ -92,6 +93,9 @@ fi
 
 echo "Building Rust server from $SRC_DIR..."
 cargo build --manifest-path "$SRC_DIR/Cargo.toml" -p logagent-server
+
+echo "Building source-referenced diagnostic tools..."
+LOGAGENT_TOOLS_BIN_DIR="$TOOLS_BIN_DIR" "$SRC_DIR/scripts/build-tools.sh"
 
 if [[ "$server_only" == false ]]; then
   echo "Building WebUI..."

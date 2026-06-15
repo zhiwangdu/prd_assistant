@@ -34,7 +34,7 @@
 - Server 单测覆盖 Tool Runner 配置校验、规则版多输入文件选择、稳定 action id、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
 - Server 单测覆盖真实 `influxql-analyzer` Report stdout 到 Tool Runner summary/findings 的转换，以及 compare report 的基础 delta findings。
 - Server 单测覆盖 Tools API、`pprof_analyzer` 手动 `tool_run` task、fake `go tool pprof` 执行和 pprof top 文本解析。
-- Server 单测覆盖 Tool Runner `path_env`、`max_input_files` 解析、缺失/空 env 拒绝以及禁用工具不读取 env。
+- Server 单测覆盖 Tool Runner 固定 `path` 的 `${ENV}` 展开、`path_env`、`max_input_files` 解析、缺失/空 env 拒绝以及禁用工具不读取 env。
 - Server 单测覆盖 Remote Executor API、执行机创建、白名单模板发现、`remote_command_run` task、fake ssh 执行、result API，以及 `/api/tasks` 不混入 remote command run。
 - 手工 smoke 验证过 WEBUI 上传、任务创建和 artifacts 查询。
 
@@ -80,7 +80,7 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 - 任务持久化变更必须覆盖损坏 JSON、启动恢复、终态保护和 artifacts 状态约束。
 - Executor 变更必须覆盖每个已实现 phase 的中断恢复和陈旧 phase 推进拒绝。
 - Tool Runner 变更必须覆盖白名单、timeout、stdout/stderr、幂等和 artifacts 暴露。
-- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；只验证 InfluxQL 工具时使用 `examples/server-influxql-tool.yaml`，当前直接调用 `/usr/bin/influxql-analyzer`。自动测试不得依赖真实工具二进制。
+- Tool Runner 真实工具 smoke 使用 `examples/server-tools.yaml` 和 `LOGAGENT_TOOL_*` 路径环境变量；单工具验证使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`。自动测试不得依赖预装真实工具二进制。
 - pprof Tools smoke 使用 `examples/server-pprof-tool.yaml` 和 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`，自动测试使用 fake Go 脚本。
 - Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只执行低风险 `ls -la /root`；自动测试使用 fake ssh 脚本。
 - `influxql_analyzer` compare mode parser 必须覆盖 batch summary、fingerprint delta 和 rule delta 的结构化 findings。

@@ -313,7 +313,7 @@ MVP 要求：
 - `RUNNING` 缺少 phase、`SUCCEEDED` 仍保留 phase 或未知 phase 枚举会使 Server 明确启动失败。
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
-- Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量；固定 `path` 支持 `${ENV}` 展开，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
 - Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`paramsSchema` 和 `paramsTemplate` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出，但可通过页面手动运行。当前内置 metadata tools 包括实例列表、snapshot、field types 和 tag fields 查询。
 - Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；configured command tools 会在运行前生成 `extracted/`、`manifest.json` 和 `grep_results.json`，metadata built-ins 可无上传运行；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
 - `pprof_analyzer` 是首个 Tools 插件，通过配置的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 文本结果，并把 top 输出解析为结构化表格。
@@ -322,7 +322,9 @@ MVP 要求：
 - 规则版 Tool Runner action id 使用工具名和输入文件稳定哈希，批量任务中同一工具的不同输入文件会写入不同 `tool_results/<action_id>/`。
 - Tool Runner 会从 JSON stdout 中提取 `summary` 和 `findings` 写入 `result.json`；非 JSON stdout 保持可追溯但不会导致任务失败。
 - `examples/server-tools.yaml` 提供 `flux_query_analyzer` / `influxql_analyzer` 的环境变量路径模板。
-- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；当前固定调用 `/usr/bin/influxql-analyzer`，真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
+- `examples/server-flux-tool.yaml` 只启用真实 `flux_query_analyzer`，用于本地单工具 smoke；先运行 `scripts/build-tools.sh` 生成 `target/tools/flux_query_analyzer`，再将 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 指向该文件。真实 CLI 参数为 `--input {input_file} --format json --top-k 20 --max-input-lines 100000 --max-error-findings 20`，stdout 输出 LogAgent 可直接解析的 `summary/findings` JSON。
+- `examples/server-influxql-tool.yaml` 只启用真实 `influxql_analyzer`，用于本地单工具 smoke；先运行 `scripts/build-tools.sh` 生成 `target/tools/influxql-analyzer`，再将 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向该文件。真实 CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
+- `examples/server-opengemini-storage-tool.yaml` 和 `examples/server-influxdb-storage-tool.yaml` 分别只启用 openGemini / InfluxDB storage analyzer，用于 TSSP/TSI mergeset 或 TSM/TSI/_series 单工具 smoke。
 - 真实 `influxql-analyzer` Report stdout 会标准化成 Tool Runner findings，包括 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`、parse error 和 realtime classification 发现。
 - Analysis State Store 写入 `analysis_state.json` 和 `analysis_events.jsonl`，记录 manifest、grep、tool action、Agent backend call started/completed、model decision、final result 和 failure 事件；真实工具未完成时可继续用 mock 工具验证 action/event/evidence 链路。
 - task 创建时解析可选 `instanceId` / `nodeId` 并保留 `metadata_context.json`；同时解析 Session 选择的 `skillIds` 和匹配的 managed Skills，固化 `system_context.json` schema v2。旧 `systemContextIds` 和 `clusterId` 请求字段仅兼容解析，pipeline 重跑不清理这些上下文快照。
@@ -520,7 +522,14 @@ export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
 cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
 ```
 
-访问 `http://127.0.0.1:50997/`，在 Tools 页面选择工具后按预填 JSON 参数模板运行；`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`，configured command tools 上传匹配文件，metadata built-ins 不需要上传。
+访问 `http://127.0.0.1:50997/`，在 Tools 页面选择工具后按预填 JSON 参数模板运行；`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`，configured command tools 上传匹配文件，metadata built-ins 不需要上传。Flux 工具的最小 stdout JSON smoke 可运行：
+
+```bash
+./scripts/smoke-flux-query-analyzer.sh
+./scripts/smoke-influxql-analyzer.sh
+./scripts/smoke-opengemini-storage-analyzer.sh
+./scripts/smoke-influxdb-storage-analyzer.sh
+```
 
 批量任务请求：
 

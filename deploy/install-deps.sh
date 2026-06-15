@@ -12,6 +12,7 @@ Installs common dependencies needed by deploy/rebuild-install.sh:
   - git, curl, ca-certificates
   - C/C++ build tools and pkg-config
   - nodejs and npm
+  - Go toolchain for source-referenced diagnostic tools
   - Rust toolchain through rustup when cargo is missing
 
 Runtime note:
@@ -74,22 +75,22 @@ have() {
 install_linux_deps() {
   if have apt-get; then
     run_sudo apt-get update
-    run_sudo apt-get install -y curl ca-certificates git build-essential pkg-config nodejs npm
+    run_sudo apt-get install -y curl ca-certificates git build-essential pkg-config nodejs npm golang-go
     return
   fi
   if have dnf; then
-    run_sudo dnf install -y curl ca-certificates git gcc gcc-c++ make pkgconf-pkg-config nodejs npm
+    run_sudo dnf install -y curl ca-certificates git gcc gcc-c++ make pkgconf-pkg-config nodejs npm golang
     return
   fi
   if have yum; then
-    run_sudo yum install -y curl ca-certificates git gcc gcc-c++ make pkgconfig nodejs npm
+    run_sudo yum install -y curl ca-certificates git gcc gcc-c++ make pkgconfig nodejs npm golang
     return
   fi
   if have pacman; then
-    run_sudo pacman -Sy --needed --noconfirm curl ca-certificates git base-devel pkgconf nodejs npm
+    run_sudo pacman -Sy --needed --noconfirm curl ca-certificates git base-devel pkgconf nodejs npm go
     return
   fi
-  echo "Unsupported Linux package manager. Install git, curl, C/C++ build tools, pkg-config, nodejs, npm, and Rust manually." >&2
+  echo "Unsupported Linux package manager. Install git, curl, C/C++ build tools, pkg-config, nodejs, npm, Go, and Rust manually." >&2
   exit 1
 }
 
@@ -100,9 +101,9 @@ install_macos_deps() {
   fi
   if have brew; then
     run brew update
-    run brew install git node pkg-config
+    run brew install git node pkg-config go
   else
-    echo "Homebrew is not installed. Install git, node/npm, pkg-config, and Rust manually, or install Homebrew first." >&2
+    echo "Homebrew is not installed. Install git, node/npm, pkg-config, Go, and Rust manually, or install Homebrew first." >&2
     exit 1
   fi
 }
@@ -146,7 +147,7 @@ install_rust_if_needed
 
 echo
 echo "Dependency check:"
-for command_name in git curl node npm cargo; do
+for command_name in git curl node npm go cargo; do
   if have "$command_name"; then
     echo "  ok  $command_name: $($command_name --version 2>/dev/null | head -n 1)"
   else
@@ -156,14 +157,9 @@ done
 
 echo
 echo "Optional tools:"
-if have go; then
-  echo "  ok  go: $(go version)"
-else
-  echo "  optional missing  go (needed only for pprof_analyzer)"
-fi
 if have rg; then
   echo "  ok  rg: $(rg --version | head -n 1)"
 else
   echo "  optional missing  rg"
 fi
-echo "  configure influxql_analyzer/flux_query_analyzer paths separately when enabling those tools."
+echo "  source-built analyzers are built by scripts/build-tools.sh from third_party/ submodules."

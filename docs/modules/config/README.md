@@ -104,7 +104,7 @@ tools:
 
   influxql_analyzer:
     enabled: true
-    path_env: LOGAGENT_TOOL_INFLUXQL_ANALYZER
+    path: "${LOGAGENT_APP_DIR}/bin/tools/influxql-analyzer"
     timeout_seconds: 30
     max_output_bytes: 1048576
     max_input_files: 3
@@ -196,7 +196,7 @@ metadata:
 ## 原则
 
 - 密钥不直接写入配置文件，只引用环境变量。
-- `storage.data_dir` 支持 `${VAR}` 环境变量展开；例如运行目录部署可使用 `${LOGAGENT_APP_DIR}/data`。缺少变量或变量为空时 Server 启动失败。
+- `storage.data_dir`、`skills.roots[]` 和 `tools.<name>.path` 支持 `${VAR}` 环境变量展开；例如运行目录部署可使用 `${LOGAGENT_APP_DIR}/data` 和 `${LOGAGENT_APP_DIR}/bin/tools/influxql-analyzer`。缺少变量或变量为空时 Server 启动失败。
 - `native_agent.state_path` 保存本机活动 Session，Chrome 导入默认附加到该 Session；缺省为 `~/.logagent/native-agent-state.json`。
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
@@ -214,9 +214,10 @@ metadata:
 - `skills.max_skill_chars` 控制写入 `system_context.json` 的 SKILL.md 注入片段上限，`skills.max_reference_chars` 控制 MCP 按需读取 reference 的正文上限。
 - 当前 `PLAN_ANALYSIS` 只检查 session 轮数和 Claude 调用次数预算；日志搜索和领域工具执行由 Claude Code 通过 LogAgent MCP tools 请求并由 Server 持久化。
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
-- `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
+- `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；固定 `path` 可使用 `${ENV}` 占位符；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
-- 真实 `influxql_analyzer` 推荐使用 `examples/server-influxql-tool.yaml` 验证；当前本机路径为 `/usr/bin/influxql-analyzer`，输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`。
+- 真实 `flux_query_analyzer`、`influxql_analyzer`、`opengemini_storage_analyzer` 和 `influxdb_storage_analyzer` 源码通过 `third_party/` submodules 引用，推荐运行 `scripts/build-tools.sh` 后用 `examples/server-*-tool.yaml` 或对应 smoke 脚本验证；deploy/runtime 配置可直接把 `path` 指到 `${LOGAGENT_APP_DIR}/bin/tools/...`。
+- `influxql_analyzer` 输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`；`flux_query_analyzer` 输入为 Flux 查询 JSONL/NDJSON，参数为 `--input {input_file} --format json` 加 bounded top/error 参数；两个 storage analyzers 输入为只读存储文件或目录。
 - `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。

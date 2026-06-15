@@ -1,0 +1,16 @@
+[submodule "third_party/influxql"]
+	path = third_party/influxql
+	url = git@github.com:zhiwangdu/influxql.git
+	branch = influxql-analyzer
+[submodule "third_party/flux"]
+	path = third_party/flux
+	url = git@github.com:zhiwangdu/flux.git
+	branch = feature/query-stats
+[submodule "third_party/openGemini"]
+	path = third_party/openGemini
+	url = git@github.com:zhiwangdu/openGemini.git
+	branch = openGemini-tools
+[submodule "third_party/influxdb"]
+	path = third_party/influxdb
+	url = git@github.com:zhiwangdu/influxdb.git
+	branch = influxdb-tools

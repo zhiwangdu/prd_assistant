@@ -85,6 +85,118 @@ log_analyzer:
     - refused
     - denied
     - verify
+    - flux
+    - influxql
+    - "\"query\""
+    - duration_ms
+    - select
+    - show
+    - query
+    - large_limit
+    - no_time_filter
+
+tools:
+  flux_query_analyzer:
+    enabled: true
+    path: "${work_dir}/bin/tools/flux_query_analyzer"
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 3
+    args:
+      - "--input"
+      - "{input_file}"
+      - "--format"
+      - "json"
+      - "--top-k"
+      - "20"
+      - "--max-input-lines"
+      - "100000"
+      - "--max-error-findings"
+      - "20"
+    match:
+      file_patterns:
+        - "*.jsonl"
+        - "*.ndjson"
+      keywords:
+        - "flux"
+        - "\"query\""
+        - "duration_ms"
+
+  influxql_analyzer:
+    enabled: true
+    path: "${work_dir}/bin/tools/influxql-analyzer"
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 3
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-output"
+      - "json"
+      - "-detail-limit"
+      - "5"
+    match:
+      file_patterns:
+        - "*.jsonl"
+      keywords:
+        - "influxql"
+        - "\"query\""
+        - "select"
+        - "show series"
+        - "show measurements"
+
+  opengemini_storage_analyzer:
+    enabled: true
+    path: "${work_dir}/bin/tools/opengemini-storage-analyzer"
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 10
+    args:
+      - "--input"
+      - "{input_file}"
+      - "--format"
+      - "json"
+    match:
+      file_patterns:
+        - "*.tssp"
+        - "*.tssp.init"
+        - "metadata.json"
+        - "metaindex.bin"
+        - "index.bin"
+        - "items.bin"
+        - "lens.bin"
+        - "*_mergeset.bf"
+        - "*_mergeset.bf.last"
+        - "*_mergeset.bf.init"
+      keywords:
+        - "tssp"
+        - "mergeset"
+        - "metadata.json"
+        - "invalid file"
+        - "open tssp"
+
+  influxdb_storage_analyzer:
+    enabled: true
+    path: "${work_dir}/bin/tools/influxdb_storage_analyzer"
+    timeout_seconds: 60
+    max_output_bytes: 1048576
+    max_input_files: 5
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-kind"
+      - "auto"
+      - "-max-samples"
+      - "10"
+    match:
+      file_patterns:
+        - "*.tsm"
+        - "*.tsi"
+      keywords:
+        - "_series"
+        - "tsm"
+        - "tsi"
+        - "series file"
 
 llm:
   provider: "stub"

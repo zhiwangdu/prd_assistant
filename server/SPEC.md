@@ -442,17 +442,36 @@ tool_results/<action_id>/
   stderr.txt
 ```
 
-工具路径可来自固定 `path` 或 `path_env` 环境变量；启用工具必须解析为绝对路径，禁用工具不读取 `path_env`。工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
+工具路径可来自固定 `path` 或 `path_env` 环境变量；固定 `path` 支持 `${ENV}` 展开；启用工具必须解析为绝对路径，禁用工具不读取 `path_env`。工具非零退出、timeout 或 spawn 失败都会生成 `ToolRunRecord`，不直接令任务失败。配置错误、非法 action 或 unsafe path 仍会使任务失败。
 
 当工具 stdout 是 JSON 时，Server 会解析 `summary` 和 `findings` 并写入 `tool_results/<action_id>/result.json`。`findings` 条目包含可选 `severity`、`file`、`line` 和必填 `message`。stdout 不是 JSON 或字段不匹配时不改变工具执行状态，仍保留 stdout/stderr 并使用通用 summary。
 
+真实 `flux_query_analyzer` 适配：
+
+- 源码通过 `third_party/flux` submodule 引用 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支，CLI 入口为 `libflux/flux-core` 的 `query_stats` binary。
+- `scripts/build-tools.sh` 构建产物名为 `flux_query_analyzer`；默认输出到 `target/tools/flux_query_analyzer`，设置 `LOGAGENT_WORK_DIR` 时输出到 `$LOGAGENT_WORK_DIR/bin/tools/flux_query_analyzer`，runtime 部署输出到 `$LOGAGENT_APP_DIR/bin/tools/flux_query_analyzer`。
+- `examples/server-flux-tool.yaml` 只启用该工具，并通过 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 指向构建产物。
+- CLI 参数为 `--input {input_file} --format json --top-k 20 --max-input-lines 100000 --max-error-findings 20`。
+- 输入文件应为 Flux 查询 NDJSON/JSONL，每行包含 `time`、`query` 和可选 `duration_ms`。
+- stdout JSON 必须包含通用 `summary/findings`，并通过 bounded `topQueries` 和 `parseErrors` 暴露 Top 模板和解析错误摘要；进度输出必须走 stderr。
+
 真实 `influxql_analyzer` 适配：
 
-- `examples/server-influxql-tool.yaml` 只启用该工具，当前固定路径为 `/usr/bin/influxql-analyzer`；该路径指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer`。
+- 源码通过 `third_party/influxql` submodule 引用 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支，CLI 入口为 `cmd/influxql-analyze`。
+- `scripts/build-tools.sh` 构建产物名为 `influxql-analyzer`；默认输出到 `target/tools/influxql-analyzer`，设置 `LOGAGENT_WORK_DIR` 时输出到 `$LOGAGENT_WORK_DIR/bin/tools/influxql-analyzer`，runtime 部署输出到 `$LOGAGENT_APP_DIR/bin/tools/influxql-analyzer`。
+- `examples/server-influxql-tool.yaml` 只启用该工具，并通过 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向构建产物。
 - CLI 参数为 `-input {input_file} -output json -detail-limit 5`。
 - 输入文件应为 JSONL 查询日志，每行至少包含 `query`，可选 `timestamp` 或 `time`。
 - Report stdout 的 `special_rules` 会生成结构化 findings，例如 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`。
 - `parse_errors` 和 `realtime_query` 会生成可引用 findings。
+
+真实 storage analyzer 适配：
+
+- `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用 `openGemini-tools` 分支，CLI 入口为 `app/opengemini-storage-analyzer`；构建产物名为 `opengemini-storage-analyzer`。
+- `opengemini_storage_analyzer` 参数为 `--input {input_file} --format json`，用于只读检查 `.tssp`、`.tssp.init` 和 TSI mergeset part 文件/目录。
+- `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用 `influxdb-tools` 分支，CLI 入口为 `cmd/influxdb_storage_analyzer`；构建产物名为 `influxdb_storage_analyzer`。
+- `influxdb_storage_analyzer` 参数为 `-input {input_file} -kind auto -max-samples 10`，用于只读检查 `.tsm`、`.tsi` 和 `_series` 目录。
+- 两个 storage analyzer stdout 都必须包含通用 `summary/findings`，不执行修复或写入输入数据；Tool Runner 只通过白名单路径调用。
 
 Tools `pprof_analyzer` 适配：
 
@@ -547,7 +566,7 @@ persist task
 
 - 完善 Claude Code session runner 的用量审计、错误分类、resume 和 mode-specific native tool policy。
 - 围绕当前上传、Metadata、Tool Runner、Claude Code MCP、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括稳定任务创建、证据展示、追问/审批交互、结果确认和可复用的本地 smoke 流程。
-- 更精确的 `flux_query_analyzer` 规则和真实工具输出字段映射。
+- 基于真实生产 Flux 查询日志继续扩展输入转换、模板风险规则和 baseline 新模板解释。
 - `influxql_analyzer` compare mode 已增强 delta 字段映射，后续根据真实 compare smoke 继续调整。
 - 多轮 Analysis Orchestrator 的产品化策略、模型用量和 Provider request id 审计。
 - Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具规则。
@@ -571,7 +590,9 @@ persist task
 - 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。
 - `GET /api/tasks/:task_id/artifacts` 返回 `textInput` 和 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
+- 真实 `flux_query_analyzer` stdout JSON 必须被通用 Tool Runner 解析为 `toolResults[].summary/findings`，且 `scripts/smoke-flux-query-analyzer.sh` 能验证 `summary/findings/topQueries`。
 - 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
+- `opengemini_storage_analyzer` 和 `influxdb_storage_analyzer` 必须通过 `scripts/build-tools.sh` 从 submodule 源码构建，并分别通过 smoke 脚本验证 stdout JSON 的 tool id 和 high severity finding。
 - Remote Executor 只能连接已纳管且启用的执行机，只能执行 `remote_execution.commands` 白名单模板；执行结果必须通过 `/api/executor-runs/:task_id/result` 返回 stdout/stderr preview 和 artifact path，且不能出现在 `/api/tasks` 日志分析列表中。
 - LLM Prompt 必须包含可裁剪的 Tool Runner summary/findings，并允许最终结果引用有效 tool finding evidence refs。
 - `GET /api/tasks/:task_id/analysis` 必须返回 analysis state 和 events；从中间 phase 恢复的旧任务缺少 state 时必须自动生成最小快照继续执行。

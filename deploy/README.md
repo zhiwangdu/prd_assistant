@@ -19,6 +19,11 @@ Runtime files stay one level above this directory:
 ```text
 $LOGAGENT_APP_DIR/
   bin/logagent-server
+  bin/tools/
+    influxql-analyzer
+    flux_query_analyzer
+    opengemini-storage-analyzer
+    influxdb_storage_analyzer
   data/
     uploads/
     sessions/
@@ -80,6 +85,7 @@ Building from source with `rebuild-install.sh` needs:
 - Rust toolchain (`cargo`)
 - Node.js and npm
 - git and curl
+- Go toolchain (`go`) for source-referenced diagnostic tools
 - OpenSSH client (`ssh`) when `remote_execution.enabled=true`
 - C/C++ build tools and pkg-config
 
@@ -95,7 +101,7 @@ Preview without changing the host:
 ./install-deps.sh --dry-run
 ```
 
-Optional diagnostic tools are not installed by this script. Install and configure `go` only if enabling `pprof_analyzer`; install `influxql_analyzer` or `flux_query_analyzer` separately and set their configured paths when enabling those tools. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
+InfluxQL, Flux, openGemini storage, and InfluxDB storage analyzers are built from `third_party/` submodules during `rebuild-install.sh` and installed to `$LOGAGENT_APP_DIR/bin/tools/`. `pprof_analyzer` uses the configured Go executable at runtime. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
 
 ## Configure
 
@@ -124,7 +130,7 @@ Useful variants:
 ./rebuild-install.sh --no-restart
 ```
 
-The script builds `logagent-server`, creates the expected runtime data directories including `data/memory/`, replaces `$LOGAGENT_APP_DIR/bin/logagent-server`, syncs `webui/out`, and restarts only if the server was already running. It does not delete or migrate runtime data.
+The script builds `logagent-server`, builds source-referenced diagnostic tools into `$LOGAGENT_APP_DIR/bin/tools/`, creates the expected runtime data directories including `data/memory/`, replaces `$LOGAGENT_APP_DIR/bin/logagent-server`, syncs `webui/out`, and restarts only if the server was already running. It does not delete or migrate runtime data.
 
 `rebuild-install.sh` loads `$HOME/.cargo/env` when present, so Rust installed through rustup is available in non-interactive SSH shells. `logagentctl.sh` also loads `$HOME/.bashrc`, so runtime-only environment variables such as `LOGAGENT_CLAUDE_CODE_PATH` may live there or in deploy `.env`.
 

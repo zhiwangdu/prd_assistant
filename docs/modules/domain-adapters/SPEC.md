@@ -46,7 +46,8 @@ POST /api/mcp/readonly
 
 `opengemini_influxdb`：
 
-- 继续承载现有 Metadata Explorer、PT/Shard/Index 诊断和 Influx query 工具链。
+- 继续承载现有 Metadata Explorer、PT/Shard/Index 诊断、Influx query 工具链，以及 openGemini/InfluxDB storage analyzer 工具链。
+- storage analyzer 证据只来自 Tool Runner 白名单执行结果，当前包括 openGemini TSSP/TSI mergeset 和 InfluxDB TSM/TSI/_series 只读检查。
 
 `cassandra`：
 

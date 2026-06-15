@@ -41,7 +41,8 @@ POST /api/mcp/readonly
 - openGemini `/getdata` 元数据。
 - DB/PT/Shard/Index 拓扑。
 - InfluxQL/Flux 查询分析。
-- `influxql_analyzer`、`flux_query_analyzer`、`pprof_analyzer`。
+- TSSP、TSI mergeset、TSM、TSI 和 `_series` 存储文件只读分析。
+- `influxql_analyzer`、`flux_query_analyzer`、`opengemini_storage_analyzer`、`influxdb_storage_analyzer`、`pprof_analyzer`。
 
 `cassandra`：
 

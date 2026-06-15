@@ -1,6 +1,16 @@
 # Development Progress
 
-Last updated: 2026-06-15
+Last updated: 2026-06-16
+
+## 2026-06-16 Source-built Domain Analyzer Tools
+
+- Added `third_party/` submodules for source-referenced tools: `influxql` branch `influxql-analyzer` at `d76501446edb0520dddf88951c985dc62dc671de`, `flux` branch `feature/query-stats` at pushed commit `182ee355aff98074feb952ae92e6eb561bc72076`, `openGemini` branch `openGemini-tools` at pushed commit `9fb4d6feafcc9990504b3112182184dc41b1ea76`, and `influxdb` branch `influxdb-tools` at pushed commit `20ecb454036c40730236c174dee1067e3c6f5760`.
+- Flux `query_stats` now supports LogAgent-friendly bounded stdout JSON via `--format json`, input/error caps, and real `--fail-on-parse-error`; stdout includes `summary/findings/topQueries/parseErrors`.
+- openGemini now has `opengemini-storage-analyzer` for read-only TSSP and TSI mergeset inspection; InfluxDB 1.x now has `influxdb_storage_analyzer` for read-only TSM, TSI, and `_series` inspection.
+- Added `scripts/build-tools.sh` to build all source-referenced tools into `target/tools/`, `$LOGAGENT_WORK_DIR/bin/tools/`, or deploy runtime `$LOGAGENT_APP_DIR/bin/tools/`; `scripts/build-server.sh` and `deploy/rebuild-install.sh` invoke it automatically.
+- Server tool fixed `path` now supports `${ENV}` expansion, so deploy/runtime configs can point directly at `${LOGAGENT_APP_DIR}/bin/tools/...` without extra path env vars.
+- Added dedicated example configs and smoke scripts for Flux, InfluxQL, openGemini storage, and InfluxDB storage analyzers; `scripts/smoke-product-loop.sh` now builds and uses the repo InfluxQL analyzer instead of `/usr/bin/influxql-analyzer`.
+- Updated root, Server, Tool Runner, Domain Adapter, Config, Deployment, and Testing docs/specs for source-built analyzers, storage analyzer tool IDs, config paths, and verification flow.
 
 ## 2026-06-15 Metadata Tag Fields Tool
 

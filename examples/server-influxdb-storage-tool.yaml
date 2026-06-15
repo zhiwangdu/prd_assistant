@@ -1,0 +1,73 @@
+server:
+  bind: "127.0.0.1:51001"
+  public_base_url: "http://127.0.0.1:51001"
+  max_concurrent_tasks: 2
+
+storage:
+  data_dir: "/tmp/logagent-server-influxdb-storage-tool"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+auth:
+  api_keys:
+    - name: "webui"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+log_analyzer:
+  max_matches: 200
+  keywords:
+    - error
+    - exception
+    - timeout
+    - fail
+    - failed
+    - panic
+    - fatal
+    - refused
+    - denied
+    - verify
+    - tsm
+    - tsi
+    - _series
+    - series file
+
+tools:
+  influxdb_storage_analyzer:
+    enabled: true
+    path_env: "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER"
+    timeout_seconds: 60
+    max_output_bytes: 1048576
+    max_input_files: 5
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-kind"
+      - "auto"
+      - "-max-samples"
+      - "10"
+    match:
+      file_patterns:
+        - "*.tsm"
+        - "*.tsi"
+      keywords:
+        - "_series"
+        - "tsm"
+        - "tsi"
+        - "series file"
+
+llm:
+  provider: "stub"
+  model: "stub"
+  request_timeout_seconds: 120
+  max_input_chars: 60000
+  max_output_tokens: 4096
+
+claude_code:
+  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
+  default_mode: "diagnose"
+  max_session_seconds: 120
+  max_output_bytes: 1048576
+
+mcp:
+  enabled: true
+  transport: "stdio"
