@@ -140,7 +140,7 @@ FAILED
 
 `RUNNING` 下另存执行阶段，例如 `EXTRACT`、`SEARCH_LOGS`、`PLAN_ANALYSIS` 和 `EXECUTE_ACTION`。等待状态接收用户输入或审批后恢复到 `RUNNING`；用户也可以在 `WAITING_FOR_USER` 用 `resumeMode=finalize` 表示没有更多补充信息，要求下一轮基于当前证据直接输出最终结果。
 
-当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP resources/tools 读取证据包、请求日志检索、日志切片、领域工具、按需分页 Metadata slice、Metadata field type 查询、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
+当前 dispatcher 已支持 `EXTRACT`、`SEARCH_LOGS`、`RUN_TOOL`、`PLAN_ANALYSIS` 和 `GENERATE_RESULT`。`PLAN_ANALYSIS` 会生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`，启动或恢复 Claude Code session；Claude 通过 LogAgent MCP resources/tools 读取证据包、请求日志检索、日志切片、领域工具、按需分页 Metadata slice、Metadata field/tag field 查询、Case recall、用户追问和审批。`request_user_input` 会进入 `WAITING_FOR_USER`，`request_approval` 会进入 `WAITING_FOR_APPROVAL`。
 
 ## 运行日志
 
@@ -265,7 +265,7 @@ MVP 要求：
 - `DELETE /api/sessions/:session_id/uploads/:upload_id` 从未运行中的 Session 移除 upload 引用，不删除 upload payload。
 - `POST /api/sessions/:session_id/tasks` 按当前 Session 创建新的 Log Analysis task 快照；Session 可以没有上传日志，仅凭问题文本启动分析。
 - `GET /api/sessions/:session_id/timeline` 合并 Session events 和该 Session 下 task 的 analysis events。
-- `POST /api/mcp/readonly` 提供面向个人本地 Claude Code 的只读 HTTP MCP，支持读取 Skills、Metadata、Metadata field type、Case、Tools catalog 和 Domain Adapter 摘要，不操作 Session/task/workspace。
+- `POST /api/mcp/readonly` 提供面向个人本地 Claude Code 的只读 HTTP MCP，支持读取 Skills、Metadata、Metadata field type/tag fields、Case、Tools catalog 和 Domain Adapter 摘要，不操作 Session/task/workspace。
 - `GET /api/exports/skills.zip` 打包当前索引的 Skill 普通文件、references 和 `manifest.json`，跳过 symlink 和路径逃逸。
 - `GET /api/exports/tools.zip` 打包 enabled 且解析为普通可执行文件的配置工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、不可执行或读取失败的工具标记 skipped，不让下载失败，内置工具不会进入导出包。
 - `GET /api/skills`、`GET /api/skills/:skill_id`、`POST /api/skills/imports` 和 `POST /api/skills/preview` 管理可选 Diagnostic Skills、Markdown 导入和注入预览。
@@ -304,7 +304,7 @@ MVP 要求：
 - 创建 Log Analysis task 支持 `uploadId` 单文件、`uploadIds` 批量文件或无上传的文本问题分析，但必须绑定 `sessionId`；有上传时先验证并复制到 workspace raw 快照，无上传时创建空 raw/input 快照，持久化 `QUEUED` 后以 `202 Accepted` 立即返回。
 - 每次 Session 创建 task run 时都会写入 task `sessionId`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
 - Task 状态进入 RUNNING、WAITING、SUCCEEDED 或 FAILED 时会同步更新所属 Session，并追加 `task_status_changed` event。
-- Task 创建时固化完整 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。Claude Code 初始 `analysis_package.json` 和任务 MCP `metadata_context` resource 只提供 Metadata outline/counts，细节必须通过 `logagent.query_metadata` 读取 bounded slice；需要指定 instance/database/measurement 的字段类型时可用 `logagent.get_metadata_field_types`。
+- Task 创建时固化完整 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。Claude Code 初始 `analysis_package.json` 和任务 MCP `metadata_context` resource 只提供 Metadata outline/counts，细节必须通过 `logagent.query_metadata` 读取 bounded slice；需要指定 instance/database/measurement 的字段类型时可用 `logagent.get_metadata_field_types`，只需要该 measurement 的 Tag 字段时可用 `logagent.get_metadata_tag_fields`。
 - `POST /api/skills/imports` 接收 `skillId`、`name`、`description`、`markdown` 和可选 `filename`，在第一个可用 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，随后重载 Skill Registry；重复 ID、非法 ID、空字段、禁用 skills 或无可写 root 会被拒绝，当前版本不覆盖已有 Skill。
 - 后台执行器使用 `server.max_concurrent_tasks` 控制并发，默认 2。
 - 后台执行器按持久化 phase 循环分派单个幂等 handler；每个 handler 成功后使用期望 phase 校验原子推进到下一阶段。
@@ -314,7 +314,7 @@ MVP 要求：
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
-- Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`paramsSchema` 和 `paramsTemplate` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出，但可通过页面手动运行。
+- Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`paramsSchema` 和 `paramsTemplate` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出，但可通过页面手动运行。当前内置 metadata tools 包括实例列表、snapshot、field types 和 tag fields 查询。
 - Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；configured command tools 会在运行前生成 `extracted/`、`manifest.json` 和 `grep_results.json`，metadata built-ins 可无上传运行；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
 - `pprof_analyzer` 是首个 Tools 插件，通过配置的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 文本结果，并把 top 输出解析为结构化表格。
 - Remote Executor API 支持在 WebUI 纳管 ECS 执行机，持久化到 `executors/`，并通过 `remote_execution.commands` 白名单模板发起 `taskKind=remote_command_run`。SSH 调用使用 Server 侧系统 `ssh` 二进制、`BatchMode=yes`、配置化 host key policy 和 timeout；stdout/stderr/result 写入 `remote_command/`。`GET /api/tasks` 不混入 remote command run，运行历史从 `/api/executor-runs` 查询。
@@ -418,6 +418,8 @@ Metadata 的用户主键是手工输入的 `instanceId`，可选 `remark` 作为
 
 内置 MCP tool `logagent.get_metadata_field_types` 支持按 `instanceId`、`database`、`measurement` 查询字段类型；`retentionPolicy` 可选，省略时使用该 DB 的默认 RP；`field` 可省略、传单个字段名或字段名数组，省略时返回 measurement 下全部字段。返回包含 openGemini field type 枚举码和 `typeLabel`，其中 `0..7` 分别映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`，结果写入 `metadata_slices/` 并只作为背景上下文。
 
+内置 MCP tool `logagent.get_metadata_tag_fields` 使用相同的 `instanceId` / `database` / `measurement` / 可选 `retentionPolicy` 定位规则，但不接受 `field` 参数，只返回 `typ=6` / `typeLabel=Tag` 的字段。返回结构仍与 field types 一致，`fields` 只包含 tag fields，`missingFields=[]`，`finalEvidenceAllowed=false`；任务 MCP 调用写入 `metadata_slices/tag_fields_<stable_id>.json`。
+
 `POST /api/metadata/snapshots/fetch` 只读拉取实时 `/getdata`，请求必须提供 `instanceId`，可选 `remark` 最长 120 个字符。Server 使用该 InstanceID 作为 store 唯一键和内部 snapshot key，原始 openGemini `ClusterID` 仅保存在 `labels.sourceClusterId`。响应返回 instance、备注名、完整节点字段、Raw JSON、Shard、IndexGroup、Index 和 MstVersions。Shard/Index `Owners` 按 PT ID 保存，关系通过 `PtView` 解析为 `Shard -> PT -> DataNode`。
 
 `POST /api/uploads` 使用 multipart：
@@ -491,7 +493,7 @@ UPLOADING -> COMPLETE
 `question` 可选；未提供时使用默认日志分析问题。长度上限为 `llm.max_input_chars / 2`。
 如果请求只提供 `sessionId` 和问题、不提供 `uploadId` / `uploadIds`，Server 会创建 `inputs=[]` 的文本问题分析任务；该任务仍会生成 `session_text_input.json`、`manifest.json` 和 `grep_results.json`，但文件列表和 grep matches 为空。
 
-Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应继续包含完整 `metadataContextPath` 和 `metadataContext`，用于 WebUI 和历史兼容。Claude Code 初始上下文不直接接收该完整 payload，只能通过 outline、`logagent.query_metadata` 和 `logagent.get_metadata_field_types` 按需读取。
+Metadata 选择以 `instanceId` 为主，`nodeId` 可选；旧 `clusterId` 字段仍被 Server 兼容解析但已从 WebUI 弃用。Server 会基于已确认 Metadata 补全关联 ID 并校验一致性，未知或冲突关系返回 `400`。任务详情返回解析后的 ID；成功任务的 artifacts 响应继续包含完整 `metadataContextPath` 和 `metadataContext`，用于 WebUI 和历史兼容。Claude Code 初始上下文不直接接收该完整 payload，只能通过 outline、`logagent.query_metadata`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields` 按需读取。
 
 `GET /api/tasks/:task_id/artifacts` 仅允许 `SUCCEEDED`；其他状态返回 `409 Conflict`，JSON 中包含当前 `status`。未知任务返回 `404 Not Found`。
 

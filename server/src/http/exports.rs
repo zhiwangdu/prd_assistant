@@ -471,6 +471,9 @@ mod tests {
         assert!(tools
             .iter()
             .all(|tool| tool["toolId"] != "logagent.get_metadata_field_types"));
+        assert!(tools
+            .iter()
+            .all(|tool| tool["toolId"] != "logagent.get_metadata_tag_fields"));
         let fake = tools
             .iter()
             .find(|tool| tool["toolId"] == "fake_tool")

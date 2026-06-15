@@ -99,6 +99,7 @@ tools:
 - 当前 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，该路径是指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer` 的符号链接；相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
 - 当前本机尚未找到 `flux_query_analyzer` / `flux-query-analyzer` 二进制，因此真实 Flux 工具 smoke 仍等待工具安装。
 - Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。`pprof_analyzer` 复用 `tools.<name>` 白名单配置和 workspace 产物目录，由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果；configured command tools 也可手动运行，Server 会先生成 `extracted/`、`manifest.json` 和 `grep_results.json`，再按白名单 args 模板调用工具；内置 metadata tools 可无上传运行并返回 JSON result。
+- 内置 metadata tools 当前包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields`。其中 tag fields 工具复用 field types 的 instance/database/measurement/RP 定位规则，但不提供 `field` 参数，只返回 Tag 类型字段。
 - 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、configured args、match rules 和内置 metadata 工具 descriptor；该入口不运行工具。
 - `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；内置工具不进入导出包。
 
@@ -136,7 +137,7 @@ export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
 cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
 ```
 
-访问 `http://127.0.0.1:50997/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；configured command tools 上传匹配文件并可在 `inputFiles` 中指定 `extracted/...` 路径；metadata built-ins 不需要上传。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
+访问 `http://127.0.0.1:50997/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；configured command tools 上传匹配文件并可在 `inputFiles` 中指定 `extracted/...` 路径；metadata built-ins 不需要上传，`logagent.get_metadata_tag_fields` 的模板只需要 `instanceId`、`database`、`measurement` 和可选 `retentionPolicy`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
 
 ## 输出结构
 

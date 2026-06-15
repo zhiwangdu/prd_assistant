@@ -20,7 +20,8 @@ use crate::{
         agent_contracts::write_json_atomic,
         metadata::{
             metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
-            MetadataFieldTypesRequest, MetadataStore, TaskMetadataContext,
+            MetadataFieldTypesRequest, MetadataStore, MetadataTagFieldsRequest,
+            TaskMetadataContext,
         },
         skill_registry::SkillRegistry,
         tool_runner::ToolRunner,
@@ -406,6 +407,20 @@ fn tools_list_result() -> serde_json::Value {
                 }
             },
             {
+                "name": "logagent.get_metadata_tag_fields",
+                "description": "List Tag type fields for one imported instance/database/measurement. Omit retentionPolicy to use the database default. Returned data is background context, not final evidence.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "instanceId": { "type": "string" },
+                        "database": { "type": "string" },
+                        "measurement": { "type": "string" },
+                        "retentionPolicy": { "type": "string" }
+                    },
+                    "required": ["instanceId", "database", "measurement"]
+                }
+            },
+            {
                 "name": "logagent.get_skill_reference",
                 "description": "Read one reference declared by a diagnostic skill selected for this task. Returned refs are background only.",
                 "inputSchema": {
@@ -474,6 +489,9 @@ async fn call_tool(
         "logagent.query_metadata" => query_metadata_tool(workspace, arguments.clone()).await?,
         "logagent.get_metadata_field_types" => {
             get_metadata_field_types_tool(config.clone(), workspace, arguments.clone()).await?
+        }
+        "logagent.get_metadata_tag_fields" => {
+            get_metadata_tag_fields_tool(config.clone(), workspace, arguments.clone()).await?
         }
         "logagent.get_skill_reference" => {
             get_skill_reference_tool(skills, workspace, arguments.clone()).await?
@@ -723,6 +741,41 @@ async fn get_metadata_field_types_tool(
     let object = result
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("metadata field type result must be a JSON object"))?;
+    object.insert(
+        "artifactPath".to_string(),
+        serde_json::Value::String(artifact_path.clone()),
+    );
+    object.insert(
+        "backgroundRef".to_string(),
+        serde_json::Value::String(background_ref.clone()),
+    );
+    object.insert("createdAt".to_string(), json!(Utc::now()));
+    write_json_atomic(workspace.join(&artifact_path), &result).await?;
+    Ok(json!({
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "evidenceRefs": [background_ref],
+        "finalEvidenceAllowed": false,
+        "result": result,
+    }))
+}
+
+async fn get_metadata_tag_fields_tool(
+    config: Arc<AppConfig>,
+    workspace: &Path,
+    arguments: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let request: MetadataTagFieldsRequest = serde_json::from_value(arguments.clone())?;
+    let store = MetadataStore::new(config);
+    let response = store.get_metadata_tag_fields(request).await?;
+    let slice_id = format!("tag_fields_{:016x}", stable_json_hash(&arguments));
+    let artifact_path = format!("metadata_slices/{slice_id}.json");
+    let background_ref = format!("{artifact_path}#fields");
+    tokio::fs::create_dir_all(workspace.join("metadata_slices")).await?;
+    let mut result = serde_json::to_value(response)?;
+    let object = result
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("metadata tag field result must be a JSON object"))?;
     object.insert(
         "artifactPath".to_string(),
         serde_json::Value::String(artifact_path.clone()),
@@ -1137,6 +1190,37 @@ mod tests {
         let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
         assert!(calls.contains("logagent.get_metadata_field_types"));
         assert!(calls.contains("metadata_slices/field_types_"));
+
+        let tag_result = call_tool(
+            &config,
+            &skills,
+            &workspace,
+            &task,
+            AnalysisMode::Diagnose,
+            "logagent.get_metadata_tag_fields",
+            json!({
+                "instanceId": "prod-a",
+                "database": "mydb",
+                "measurement": "cpu"
+            }),
+        )
+        .await
+        .unwrap();
+        let text = tag_result["content"][0]["text"].as_str().unwrap();
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["result"]["retentionPolicy"], "autogen");
+        assert_eq!(value["result"]["defaultRetentionPolicyUsed"], true);
+        assert_eq!(value["result"]["fields"].as_array().unwrap().len(), 1);
+        assert_eq!(value["result"]["fields"][0]["name"], "host");
+        assert_eq!(value["result"]["fields"][0]["typeLabel"], "Tag");
+        assert_eq!(value["finalEvidenceAllowed"], false);
+        let artifact_path = value["artifactPath"].as_str().unwrap();
+        assert!(artifact_path.starts_with("metadata_slices/tag_fields_"));
+        assert!(workspace.join(artifact_path).exists());
+
+        let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
+        assert!(calls.contains("logagent.get_metadata_tag_fields"));
+        assert!(calls.contains("metadata_slices/tag_fields_"));
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(workspace);

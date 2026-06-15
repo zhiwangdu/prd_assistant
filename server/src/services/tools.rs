@@ -17,7 +17,7 @@ use crate::{
         models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolSource},
     },
     pipeline::{extract_task, prepare_pipeline_run, search_task},
-    services::metadata::MetadataFieldTypesRequest,
+    services::metadata::{MetadataFieldTypesRequest, MetadataTagFieldsRequest},
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -29,6 +29,7 @@ pub const PPROF_ANALYZER_ID: &str = "pprof_analyzer";
 pub const METADATA_LIST_INSTANCES_ID: &str = "logagent.list_metadata_instances";
 pub const METADATA_GET_SNAPSHOT_ID: &str = "logagent.get_metadata_snapshot";
 pub const METADATA_GET_FIELD_TYPES_ID: &str = "logagent.get_metadata_field_types";
+pub const METADATA_GET_TAG_FIELDS_ID: &str = "logagent.get_metadata_tag_fields";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +166,7 @@ pub fn validate_tool_run_request(
         METADATA_LIST_INSTANCES_ID => validate_metadata_list_params(params),
         METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
         METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
+        METADATA_GET_TAG_FIELDS_ID => validate_metadata_tag_fields_params(params),
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
@@ -174,7 +176,10 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
     match task.tool_id.as_deref() {
         Some(PPROF_ANALYZER_ID) => run_pprof_task(state.config.clone(), task).await,
         Some(
-            METADATA_LIST_INSTANCES_ID | METADATA_GET_SNAPSHOT_ID | METADATA_GET_FIELD_TYPES_ID,
+            METADATA_LIST_INSTANCES_ID
+            | METADATA_GET_SNAPSHOT_ID
+            | METADATA_GET_FIELD_TYPES_ID
+            | METADATA_GET_TAG_FIELDS_ID,
         ) => run_metadata_task(state, task).await,
         Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
             run_configured_tool_task(state, task).await
@@ -388,6 +393,41 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
             }),
             output_views: vec!["json".to_string()],
         },
+        ToolDescriptor {
+            tool_id: METADATA_GET_TAG_FIELDS_ID.to_string(),
+            display_name: "Metadata tag fields".to_string(),
+            description:
+                "List Tag type fields for one imported instance, database and measurement."
+                    .to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: true,
+            tags: metadata_tags(),
+            backend: "builtin".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": { "type": "string" },
+                    "database": { "type": "string" },
+                    "measurement": { "type": "string" },
+                    "retentionPolicy": { "type": "string" }
+                },
+                "required": ["instanceId", "database", "measurement"]
+            }),
+            params_template: serde_json::json!({
+                "instanceId": "",
+                "database": "",
+                "measurement": "",
+                "retentionPolicy": ""
+            }),
+            output_views: vec!["json".to_string()],
+        },
     ]
 }
 
@@ -508,6 +548,38 @@ fn validate_metadata_field_types_params(
                 ))
             }
         }
+    }
+    Ok(serde_json::Value::Object(normalized))
+}
+
+fn validate_metadata_tag_fields_params(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| AppError::bad_request("metadata tag field params must be an object"))?;
+    if object.contains_key("field") {
+        return Err(AppError::bad_request(
+            "metadata tag field params do not support field",
+        ));
+    }
+    let instance_id = required_string_param(value, "instanceId")?;
+    let database = required_string_param(value, "database")?;
+    let measurement = required_string_param(value, "measurement")?;
+    let mut normalized = serde_json::Map::new();
+    normalized.insert("instanceId".to_string(), serde_json::json!(instance_id));
+    normalized.insert("database".to_string(), serde_json::json!(database));
+    normalized.insert("measurement".to_string(), serde_json::json!(measurement));
+    if let Some(retention_policy) = object
+        .get("retentionPolicy")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        normalized.insert(
+            "retentionPolicy".to_string(),
+            serde_json::json!(retention_policy),
+        );
     }
     Ok(serde_json::Value::Object(normalized))
 }
@@ -772,6 +844,13 @@ async fn run_metadata_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
                     AppError::bad_request(format!("invalid metadata field type params: {err}"))
                 })?;
             serde_json::json!({ "result": state.metadata.get_metadata_field_types(request).await? })
+        }
+        METADATA_GET_TAG_FIELDS_ID => {
+            let request: MetadataTagFieldsRequest =
+                serde_json::from_value(task.tool_params.clone()).map_err(|err| {
+                    AppError::bad_request(format!("invalid metadata tag field params: {err}"))
+                })?;
+            serde_json::json!({ "result": state.metadata.get_metadata_tag_fields(request).await? })
         }
         _ => {
             return Err(AppError::bad_request(format!(

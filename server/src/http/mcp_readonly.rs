@@ -9,7 +9,7 @@ use crate::{
     domain::models::TaskKind,
     http::{skills::normalize_skill_ids, system_context::metadata_context_bundle_item},
     services::{
-        metadata::MetadataFieldTypesRequest,
+        metadata::{MetadataFieldTypesRequest, MetadataTagFieldsRequest},
         skill_registry::{ResolveSkillsInput, SkillPreviewRequest},
     },
     stores::system_context_store::{render_system_context_prompt, system_context_bundle},
@@ -283,6 +283,16 @@ fn tools_list_result() -> Value {
                 },
                 "required": ["instanceId", "database", "measurement"]
             })),
+            tool_schema("logagent.get_metadata_tag_fields", "List Tag type fields for one imported instance/database/measurement. Omit retentionPolicy to use the database default.", json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": { "type": "string" },
+                    "database": { "type": "string" },
+                    "measurement": { "type": "string" },
+                    "retentionPolicy": { "type": "string" }
+                },
+                "required": ["instanceId", "database", "measurement"]
+            })),
             tool_schema("logagent.list_tools", "List configured tool catalog metadata.", json!({
                 "type": "object",
                 "properties": {}
@@ -374,6 +384,10 @@ async fn call_tool(state: &AppState, name: &str, arguments: Value) -> anyhow::Re
         "logagent.get_metadata_field_types" => {
             let request = serde_json::from_value::<MetadataFieldTypesRequest>(arguments)?;
             json!({ "result": state.metadata.get_metadata_field_types(request).await? })
+        }
+        "logagent.get_metadata_tag_fields" => {
+            let request = serde_json::from_value::<MetadataTagFieldsRequest>(arguments)?;
+            json!({ "result": state.metadata.get_metadata_tag_fields(request).await? })
         }
         "logagent.list_tools" => tool_catalog(state),
         "logagent.list_domain_adapters" => {
@@ -535,6 +549,20 @@ mod tests {
             "logagent-readonly"
         );
 
+        let tools_list = post_mcp(
+            &app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/list"
+            }),
+        )
+        .await;
+        let tools = tools_list["result"]["tools"].as_array().unwrap();
+        assert!(tools
+            .iter()
+            .any(|tool| tool["name"] == "logagent.get_metadata_tag_fields"));
+
         let listed = post_mcp(
             &app,
             json!({
@@ -640,6 +668,28 @@ mod tests {
             .unwrap();
         assert!(text.contains("\"typeLabel\": \"Float\""));
 
+        let tag_fields = post_mcp(
+            &app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "logagent.get_metadata_tag_fields",
+                    "arguments": {
+                        "instanceId": "inst-1",
+                        "database": "mydb",
+                        "measurement": "cpu"
+                    }
+                }
+            }),
+        )
+        .await;
+        let text = tag_fields["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"name\": \"host\""));
+        assert!(text.contains("\"typeLabel\": \"Tag\""));
+        assert!(!text.contains("\"name\": \"usage\""));
+
         let catalog = post_mcp(
             &app,
             json!({
@@ -657,6 +707,7 @@ mod tests {
         assert!(text.contains("\"toolId\": \"fake_tool\""));
         assert!(text.contains("\"source\": \"configured\""));
         assert!(text.contains("\"toolId\": \"logagent.get_metadata_field_types\""));
+        assert!(text.contains("\"toolId\": \"logagent.get_metadata_tag_fields\""));
         assert!(text.contains("\"source\": \"built_in\""));
         assert!(text.contains("\"exportable\": false"));
 

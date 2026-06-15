@@ -27,7 +27,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 将产品、版本、环境和拓扑数量摘要提供给 Claude Code MCP resources；完整 Metadata 不再进入 `analysis_package.json` 或任务 MCP 默认 resource。
 - 任务 stdio MCP 新增 `logagent.query_metadata`，支持按 section/filter/limit/cursor 读取 bounded slice，并写入 `metadata_slices/<stable_id>.json` 审计背景上下文；`logagent.get_metadata_topology` 作为兼容 alias 返回 outline。
 - 任务 stdio MCP 和只读 HTTP MCP 新增 `logagent.get_metadata_field_types`，支持从指定 `instanceId/database/measurement` 查询一个、多个或全部 field 的类型；省略 RP 时使用 DB 默认 RP。
-- 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances`、`logagent.get_metadata_snapshot` 和 `logagent.get_metadata_field_types` 暴露已导入 Metadata，供个人本地 Claude Code 读取；该入口不导入或修改 Metadata。
+- 任务 stdio MCP 和只读 HTTP MCP 新增 `logagent.get_metadata_tag_fields`，复用同一 instance/database/measurement/RP 定位逻辑，但只返回 `typ=6` / `typeLabel=Tag` 的字段，不支持 `field` 参数。
+- 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields` 暴露已导入 Metadata，供个人本地 Claude Code 读取；该入口不导入或修改 Metadata。
 
 暂未实现：
 
@@ -216,6 +217,7 @@ Authorization: Bearer <api-key>
 - `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
 - Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 跟随 DB 联动，Measurement/field 用于缩小表结构结果，field type 按 openGemini 枚举码解析为 `0 Unknown`、`1 Integer`、`2 Unsigned`、`3 Float`、`4 String`、`5 Boolean`、`6 Tag`、`7 Unknown`。
 - MCP `logagent.get_metadata_field_types` 使用同一类型映射：必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 field 和对应类型。
+- MCP `logagent.get_metadata_tag_fields` 使用同一类型映射和默认 RP 规则：必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，只返回 Tag 字段，返回结构与 field types 一致但 `missingFields=[]`。
 - 节点、分区、Explorer 和 Schemas 明细表使用局部滚动和固定表头，便于浏览大量行时识别字段含义。
 - Raw JSON 页面按需展开原始 JSON，不在进入页面时全量 stringify 大对象。
 - 展示产品、版本、环境、标签。
@@ -232,7 +234,7 @@ Authorization: Bearer <api-key>
 
 任务创建时固化 `workspaces/<task_id>/metadata_context.json`。快照包含归一化 instance、cluster、node、cluster nodes、产品、版本和环境。为控制大小和避免重复，cluster `rawSnapshot` 不写入任务快照。
 
-Claude Code 初始上下文不再直接获得完整 `metadata_context.json`。`analysis_package.json` 的 `evidence.metadataContextOutline` 只包含 `metadataContextPath`、选中的 instance/cluster/node、产品/版本/环境、各 section 的 count/available 和可用查询入口。任务 MCP `resources/read metadata_context` 返回同样 outline；细节必须通过 `logagent.query_metadata` 读取，支持 `overview`、`nodes`、`databases`、`retention_policies`、`measurements`、`fields`、`shard_groups`、`shards`、`index_groups`、`indexes`、`partition_views`。需要针对指定已导入 instance 精确查询 field 类型时使用 `logagent.get_metadata_field_types`，它写入 `metadata_slices/field_types_<stable_id>.json` 并返回 `typeLabel`。slice 是背景上下文，不作为最终 evidence ref。
+Claude Code 初始上下文不再直接获得完整 `metadata_context.json`。`analysis_package.json` 的 `evidence.metadataContextOutline` 只包含 `metadataContextPath`、选中的 instance/cluster/node、产品/版本/环境、各 section 的 count/available 和可用查询入口。任务 MCP `resources/read metadata_context` 返回同样 outline；细节必须通过 `logagent.query_metadata` 读取，支持 `overview`、`nodes`、`databases`、`retention_policies`、`measurements`、`fields`、`shard_groups`、`shards`、`index_groups`、`indexes`、`partition_views`。需要针对指定已导入 instance 精确查询 field 类型时使用 `logagent.get_metadata_field_types`，它写入 `metadata_slices/field_types_<stable_id>.json` 并返回 `typeLabel`；只需要该 measurement 的 Tag 字段时使用 `logagent.get_metadata_tag_fields`，它写入 `metadata_slices/tag_fields_<stable_id>.json`。slice 是背景上下文，不作为最终 evidence ref。
 
 ## 本地运行方式
 

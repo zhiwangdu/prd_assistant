@@ -26,7 +26,8 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - `metadata_context.json` workspace 快照和 LLM 摘要。
 - Claude Code 初始 evidence package 和任务 MCP `metadata_context` resource 只暴露 `metadataContextOutline`；完整 Metadata 需通过 `logagent.query_metadata` 按 section/filter/分页读取 bounded slice。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_field_types`，从指定 `instanceId/database/measurement` 查询 field 类型；RP 可省略并回退到 DB 默认 RP，field 可省略以返回全部字段。
-- 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot 和 field type，不写入 Metadata Store。
+- 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_tag_fields`，从指定 `instanceId/database/measurement` 返回全部 Tag 类型字段；RP 可省略并回退到 DB 默认 RP，不支持 `field` 参数。
+- 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store。
 
 仍待实现：
 
@@ -289,6 +290,7 @@ metadata_slices/<stable_id>.json
 - 任务 MCP `resources/read metadata_context` 和 `logagent.get_metadata_topology` 返回 outline；`logagent.query_metadata` 支持 `section`、`database`、`retentionPolicy`、`measurement`、`nodeId`、`ownerNodeId`、`ptId`、`shardId`、`indexId`、`limit`、`cursor`。
 - `logagent.query_metadata` section 覆盖 `overview | nodes | databases | retention_policies | measurements | fields | shard_groups | shards | index_groups | indexes | partition_views`，返回 bounded `items`、`total`、`nextCursor`、`truncated` 和 `backgroundRef`，并写入 `metadata_slices/<stable_id>.json` / `mcp_calls.jsonl`。
 - `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 fields，结果写入 `metadata_slices/field_types_<stable_id>.json`。
+- `logagent.get_metadata_tag_fields` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field`；结果复用 field types 响应结构，只保留 `typ=6` / `typeLabel=Tag` 的 fields，`missingFields=[]`，并写入 `metadata_slices/tag_fields_<stable_id>.json`。
 
 用于 Analysis Orchestrator、Claude Code、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
 
@@ -309,6 +311,7 @@ metadata_slices/<stable_id>.json
 - Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 筛选必须跟随 DB 联动，Measurement 或 field 搜索用于缩小结果。
 - Schema field type 必须按 openGemini 枚举码解析：`Field_Type_Unknown=0`、`Field_Type_Int=1`、`Field_Type_UInt=2`、`Field_Type_Float=3`、`Field_Type_String=4`、`Field_Type_Boolean=5`、`Field_Type_Tag=6`、`Field_Type_Last=7`，对应展示为 Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown。
 - MCP field type 查询返回相同映射的 `typeLabel`，未知扩展码保留原始 `typ` 并展示为 `Type <code>`。
+- MCP tag fields 查询只返回映射为 `Tag` 的字段，返回结构仍包含 `typ`、`typeLabel` 和 `finalEvidenceAllowed=false`。
 - Metadata 明细表必须支持长列表局部滚动，并在滚动时固定表头。
 - Raw JSON 页面必须按需展开原始 JSON，不得在初始渲染时全量 stringify 大对象。
 - 实例查询。
@@ -342,6 +345,7 @@ metadata_slices/<stable_id>.json
 - `analysis_package.json` 不包含完整 databases/measurements/shards/indexes payload，任务 MCP `metadata_context` resource 返回 outline/counts。
 - `logagent.query_metadata` 能按 database/RP/measurement/shard/partition filters 和 limit/cursor 返回 bounded slice，非法 section/filter 返回错误。
 - `logagent.get_metadata_field_types` 能按 instance/database/measurement 和可选 RP/field 返回指定字段类型，省略 RP 使用 DB 默认 RP，省略 field 返回全部字段。
+- `logagent.get_metadata_tag_fields` 能按 instance/database/measurement 和可选 RP 返回全部 Tag 字段，省略 RP 使用 DB 默认 RP，未知 instance/database/measurement 和无默认 RP 时与 field type 查询错误行为一致。
 - Metadata Explorer 大集群通过级联展开可读，不渲染 Graph。
 - Metadata Explorer 能在 `Node / DBPT / Shards` 和 `DB / RP / Shards / Indexes` 两个视角间切换。
 - Schemas 页面默认选择非 `_internal` DB 和首个 RP，DB 变化后 RP 选项联动更新，field type 展示为实际类型。

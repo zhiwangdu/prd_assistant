@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Metadata Tag Fields Tool
+
+- Added built-in metadata tool `logagent.get_metadata_tag_fields` for Tools API, read-only HTTP MCP, and task stdio MCP.
+- The tool requires `instanceId`, `database`, and `measurement`, accepts optional `retentionPolicy`, and intentionally does not support `field`; omitted RP uses the DB default RP exactly like `logagent.get_metadata_field_types`.
+- Returned JSON reuses the field-types response contract but filters `fields` to Tag entries (`typ=6` / `typeLabel=Tag`), keeps `missingFields=[]`, and sets `finalEvidenceAllowed=false`.
+- Manual no-upload Tools runs now persist `tool_run` results for the tag fields tool, and task MCP calls write background artifacts at `metadata_slices/tag_fields_<stable_id>.json` with audit entries in `mcp_calls.jsonl`.
+- Updated Server, Metadata, Tool Runner, and root specs/docs to distinguish arbitrary field type lookup from tag-only field lookup.
+- Verification passed: `cargo fmt --check`, `cargo check -p logagent-server`, focused metadata/task-MCP/read-only-MCP/Tools API tests, `cargo test -p logagent-server -- --test-threads=1` after rerunning one transient Remote Executor test, `cd webui && npm run lint`, `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-15 Manual Tools JSON Template Run
 
 - `/api/tools` descriptors now include `paramsTemplate`; WebUI Tools uses it to prefill editable JSON params for every runnable catalog tool.

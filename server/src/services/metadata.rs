@@ -322,6 +322,15 @@ pub struct MetadataFieldTypesRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MetadataTagFieldsRequest {
+    pub instance_id: String,
+    pub database: String,
+    pub measurement: String,
+    pub retention_policy: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum MetadataFieldSelector {
     One(String),
@@ -880,6 +889,26 @@ impl MetadataStore {
             missing_fields,
             final_evidence_allowed: false,
         })
+    }
+
+    pub async fn get_metadata_tag_fields(
+        &self,
+        req: MetadataTagFieldsRequest,
+    ) -> Result<MetadataFieldTypesResponse, AppError> {
+        let mut response = self
+            .get_metadata_field_types(MetadataFieldTypesRequest {
+                instance_id: req.instance_id,
+                database: req.database,
+                measurement: req.measurement,
+                retention_policy: req.retention_policy,
+                field: None,
+            })
+            .await?;
+        response
+            .fields
+            .retain(|field| field.typ == Some(6) || field.type_label == "Tag");
+        response.missing_fields.clear();
+        Ok(response)
     }
 
     pub async fn get_cluster(&self, cluster_id: &str) -> Option<ClusterMetadata> {
@@ -3139,6 +3168,85 @@ nodes:
                 ("host", Some(6), "Tag")
             ]
         );
+
+        let tag_fields = store
+            .get_metadata_tag_fields(MetadataTagFieldsRequest {
+                instance_id: "i-1".to_string(),
+                database: "mydb".to_string(),
+                measurement: "cpu".to_string(),
+                retention_policy: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            tag_fields
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("host", Some(6), "Tag")]
+        );
+        assert!(tag_fields.missing_fields.is_empty());
+    }
+
+    #[tokio::test]
+    async fn metadata_tag_fields_reuses_field_type_error_paths() {
+        let fixture = Fixture::new("metadata-tag-field-errors");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "json".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: serde_json::json!({
+                    "instances": [{
+                        "instanceId": "i-1",
+                        "clusterId": "c-1"
+                    }],
+                    "clusters": [{
+                        "clusterId": "c-1",
+                        "databases": [{
+                            "name": "mydb",
+                            "retentionPolicies": [{
+                                "name": "autogen",
+                                "measurements": [{
+                                    "name": "cpu",
+                                    "schema": [{ "name": "host", "typ": 6 }]
+                                }]
+                            }]
+                        }]
+                    }]
+                })
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+
+        let no_default = store
+            .get_metadata_tag_fields(MetadataTagFieldsRequest {
+                instance_id: "i-1".to_string(),
+                database: "mydb".to_string(),
+                measurement: "cpu".to_string(),
+                retention_policy: None,
+            })
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(no_default.contains("has no default retention policy"));
+
+        let unknown_measurement = store
+            .get_metadata_tag_fields(MetadataTagFieldsRequest {
+                instance_id: "i-1".to_string(),
+                database: "mydb".to_string(),
+                measurement: "mem".to_string(),
+                retention_policy: Some("autogen".to_string()),
+            })
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(unknown_measurement.contains("measurement mem not found"));
     }
 
     #[tokio::test]
@@ -3386,6 +3494,29 @@ nodes:
             vec!["tagk", "value"]
         );
         assert!(!all_fields.default_retention_policy_used);
+
+        let tag_fields = store
+            .get_metadata_tag_fields(MetadataTagFieldsRequest {
+                instance_id: "prod-a".to_string(),
+                database: "mydb".to_string(),
+                measurement: "testmst".to_string(),
+                retention_policy: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(tag_fields.retention_policy, "autogen");
+        assert!(tag_fields.default_retention_policy_used);
+        assert_eq!(tag_fields.measurement, "testmst_0000");
+        assert_eq!(
+            tag_fields
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("tagk", Some(6), "Tag")]
+        );
+        assert!(tag_fields.missing_fields.is_empty());
+        assert_eq!(tag_fields.final_evidence_allowed, false);
 
         let data_node = store
             .list_cluster_nodes("prod-a")
