@@ -202,7 +202,7 @@ logagent.list_tools
 logagent.list_domain_adapters
 ```
 
-`logagent.get_metadata_field_types` 参数为必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`。`retentionPolicy` 省略时使用 DB 默认 RP；`field` 可为字符串或字符串数组，省略时返回 measurement 全部 fields。返回字段包含 `typ` 和 `typeLabel`，openGemini 枚举码 `0..7` 映射为 `unknown/int/uint/float/string/boolean/tag/last`。
+`logagent.get_metadata_field_types` 参数为必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`。`retentionPolicy` 省略时使用 DB 默认 RP；`field` 可为字符串或字符串数组，省略时返回 measurement 全部 fields。返回字段包含 `typ` 和 `typeLabel`，openGemini 枚举码 `0..7` 映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`。
 
 `POST /api/skills/imports` 接收 JSON：`skillId`、`name`、`description`、`markdown` 和可选 `filename`。Server 在第一个配置的 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，默认 manifest 使用 `schemaVersion=1`、`displayName=name`、`taskKinds=["log_analysis"]`、`includeByDefault=false`、`priority=0` 和空 `references`。导入成功后重载整个 Skill Registry，并返回导入后的 Skill detail；重复 `skillId`、非法 ID、空字段、禁用 skills、无可写 root 或非 `.md/.markdown` filename 会返回明确错误。当前版本不支持覆盖已有 Skill，也不支持上传 reference 文件。
 

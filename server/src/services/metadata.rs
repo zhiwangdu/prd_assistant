@@ -114,7 +114,9 @@ pub struct MeasurementMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct FieldSchemaMetadata {
     pub name: String,
+    #[serde(alias = "Typ", alias = "Type", alias = "type")]
     pub typ: Option<u64>,
+    #[serde(alias = "EndTime")]
     pub end_time: Option<u64>,
 }
 
@@ -1732,15 +1734,15 @@ fn field_type_info(field: &FieldSchemaMetadata) -> MetadataFieldTypeInfo {
 
 pub fn metadata_field_type_label(typ: Option<u64>) -> String {
     match typ {
-        Some(0) | None => "unknown".to_string(),
-        Some(1) => "int".to_string(),
-        Some(2) => "uint".to_string(),
-        Some(3) => "float".to_string(),
-        Some(4) => "string".to_string(),
-        Some(5) => "boolean".to_string(),
-        Some(6) => "tag".to_string(),
-        Some(7) => "last".to_string(),
-        Some(value) => format!("type-{value}"),
+        Some(0) | None => "Unknown".to_string(),
+        Some(1) => "Integer".to_string(),
+        Some(2) => "Unsigned".to_string(),
+        Some(3) => "Float".to_string(),
+        Some(4) => "String".to_string(),
+        Some(5) => "Boolean".to_string(),
+        Some(6) => "Tag".to_string(),
+        Some(7) => "Unknown".to_string(),
+        Some(value) => format!("Type {value}"),
     }
 }
 
@@ -2134,12 +2136,22 @@ fn normalize_opengemini_schema(value: Option<&serde_json::Value>) -> Vec<FieldSc
         .iter()
         .map(|(name, field)| FieldSchemaMetadata {
             name: name.to_string(),
-            typ: field.get("Typ").and_then(serde_json::Value::as_u64),
+            typ: first_u64_field(field, &["Typ", "Type", "type", "typ"]),
             end_time: field.get("EndTime").and_then(serde_json::Value::as_u64),
         })
         .collect::<Vec<_>>();
     result.sort_by(|left, right| left.name.cmp(&right.name));
     result
+}
+
+fn first_u64_field(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    keys.iter().find_map(|key| {
+        value.get(*key).and_then(|field| {
+            field
+                .as_u64()
+                .or_else(|| field.as_str().and_then(|text| text.trim().parse().ok()))
+        })
+    })
 }
 
 fn normalize_opengemini_shard_groups(value: Option<&serde_json::Value>) -> Vec<ShardGroupMetadata> {
@@ -2784,6 +2796,73 @@ clusters:
     }
 
     #[tokio::test]
+    async fn parses_field_type_aliases_in_json_templates() {
+        let fixture = Fixture::new("metadata-field-type-aliases");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "json".to_string(),
+                filename: None,
+                instance_id: None,
+                remark: None,
+                content: serde_json::json!({
+                    "instances": [{
+                        "instanceId": "i-1",
+                        "clusterId": "c-1"
+                    }],
+                    "clusters": [{
+                        "clusterId": "c-1",
+                        "databases": [{
+                            "name": "mydb",
+                            "defaultRetentionPolicy": "autogen",
+                            "retentionPolicies": [{
+                                "name": "autogen",
+                                "measurements": [{
+                                    "name": "cpu",
+                                    "schema": [
+                                        { "name": "usage_int", "Typ": 1 },
+                                        { "name": "usage_uint", "Type": 2 },
+                                        { "name": "active", "type": 5 },
+                                        { "name": "host", "typ": 6 }
+                                    ]
+                                }]
+                            }]
+                        }]
+                    }]
+                })
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+
+        let fields = store
+            .get_metadata_field_types(MetadataFieldTypesRequest {
+                instance_id: "i-1".to_string(),
+                database: "mydb".to_string(),
+                measurement: "cpu".to_string(),
+                retention_policy: None,
+                field: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            fields
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("usage_int", Some(1), "Integer"),
+                ("usage_uint", Some(2), "Unsigned"),
+                ("active", Some(5), "Boolean"),
+                ("host", Some(6), "Tag")
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn normalizes_opengemini_getdata_snapshot() {
         let fixture = Fixture::new("metadata-opengemini");
         let store = MetadataStore::new(fixture.config());
@@ -3005,7 +3084,7 @@ clusters:
                 .iter()
                 .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
                 .collect::<Vec<_>>(),
-            vec![("value", Some(3), "float"), ("tagk", Some(6), "tag")]
+            vec![("value", Some(3), "Float"), ("tagk", Some(6), "Tag")]
         );
         assert_eq!(selected_fields.missing_fields, vec!["missing"]);
 
@@ -3157,10 +3236,10 @@ clusters:
             .collect::<Vec<_>>();
         assert_eq!(
             labels,
-            vec!["unknown", "int", "uint", "float", "string", "boolean", "tag", "last"]
+            vec!["Unknown", "Integer", "Unsigned", "Float", "String", "Boolean", "Tag", "Unknown"]
         );
-        assert_eq!(metadata_field_type_label(None), "unknown");
-        assert_eq!(metadata_field_type_label(Some(99)), "type-99");
+        assert_eq!(metadata_field_type_label(None), "Unknown");
+        assert_eq!(metadata_field_type_label(Some(99)), "Type 99");
     }
 
     fn metadata_context_fixture() -> TaskMetadataContext {

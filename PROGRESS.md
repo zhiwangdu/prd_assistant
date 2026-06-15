@@ -2,11 +2,18 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Metadata Schema Field Type Display Follow-up
+
+- Fixed the Metadata Schemas type renderer to resolve field type codes from `typ`, `type`, `Typ`, or `Type` and coerce numeric strings before mapping labels.
+- Updated the openGemini display mapping to match `FieldTypeName`: `0 Unknown`, `1 Integer`, `2 Unsigned`, `3 Float`, `4 String`, `5 Boolean`, `6 Tag`, and `7 Unknown`.
+- Metadata JSON template import now accepts `Typ`, `Type`, and `type` aliases for field type codes so newly imported schemas do not persist empty field types.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::metadata -- --test-threads=1`, `cargo test -p logagent-server mcp -- --test-threads=1`, `cargo test -p logagent-server -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-15 Metadata Field Type Lookup Tool
 
 - Added built-in MCP tool `logagent.get_metadata_field_types` for task stdio MCP and read-only HTTP MCP.
 - The tool requires `instanceId`, `database`, and `measurement`; `retentionPolicy` is optional and defaults to the DB default RP, while `field` may be omitted, a single string, or an array of field names.
-- Returned field entries include raw `typ`, mapped `typeLabel`, and `endTime`; the openGemini mapping is `0 unknown`, `1 int`, `2 uint`, `3 float`, `4 string`, `5 boolean`, `6 tag`, and `7 last`.
+- Returned field entries include raw `typ`, mapped `typeLabel`, and `endTime`; the openGemini mapping is `0 Unknown`, `1 Integer`, `2 Unsigned`, `3 Float`, `4 String`, `5 Boolean`, `6 Tag`, and `7 Unknown`.
 - Task MCP lookups write `metadata_slices/field_types_<stable_id>.json`, audit the call in `mcp_calls.jsonl`, and remain background context only.
 - Verification passed: `cargo fmt --check`, `cargo check`, focused metadata/MCP/read-only MCP tests, `cargo test -p logagent-server -- --test-threads=1`, and `git diff --check`.
 

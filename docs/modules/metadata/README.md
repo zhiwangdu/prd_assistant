@@ -208,7 +208,7 @@ Authorization: Bearer <api-key>
 - Explorer 支持拓扑筛选、异常高亮、Shard 行/Index 信息显隐和 DBPT 聚合详情面板。
 - 展示 `PtView` 分区归属和状态。
 - `DB / RP / Shards / Indexes` 视角按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开。
-- Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 跟随 DB 联动，Measurement/field 用于缩小表结构结果，field type 按 openGemini 枚举码解析为 `0 unknown`、`1 int`、`2 uint`、`3 float`、`4 string`、`5 boolean`、`6 tag`、`7 last`。
+- Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP，RP 跟随 DB 联动，Measurement/field 用于缩小表结构结果，field type 按 openGemini 枚举码解析为 `0 Unknown`、`1 Integer`、`2 Unsigned`、`3 Float`、`4 String`、`5 Boolean`、`6 Tag`、`7 Unknown`。
 - MCP `logagent.get_metadata_field_types` 使用同一类型映射：必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 field 和对应类型。
 - 节点、分区、Explorer 和 Schemas 明细表使用局部滚动和固定表头，便于浏览大量行时识别字段含义。
 - Raw JSON 页面按需展开原始 JSON，不在进入页面时全量 stringify 大对象。

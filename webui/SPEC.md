@@ -37,7 +37,7 @@ Database
 - 点击 DBPT 展示聚合指标、异常和时间范围。
 - DB / RP / Shards / Indexes 视角必须按 `Database -> RP -> ShardGroup/IndexGroup -> Shard/Index` 级联展开，不默认铺开全部明细表。
 - Schemas 页面默认选择第一个非 `_internal` DB 及其第一个 RP；如果只有 `_internal` 则选择 `_internal`；RP 筛选必须随 DB 联动，Measurement/field 筛选用于缩小结果。
-- Schema field type 必须按 openGemini 类型码展示：`Field_Type_Unknown=0` -> `unknown`、`Field_Type_Int=1` -> `int`、`Field_Type_UInt=2` -> `uint`、`Field_Type_Float=3` -> `float`、`Field_Type_String=4` -> `string`、`Field_Type_Boolean=5` -> `boolean`、`Field_Type_Tag=6` -> `tag`、`Field_Type_Last=7` -> `last`。
+- Schema field type 必须按 openGemini 类型码展示：`Field_Type_Unknown=0` -> `Unknown`、`Field_Type_Int=1` -> `Integer`、`Field_Type_UInt=2` -> `Unsigned`、`Field_Type_Float=3` -> `Float`、`Field_Type_String=4` -> `String`、`Field_Type_Boolean=5` -> `Boolean`、`Field_Type_Tag=6` -> `Tag`、`Field_Type_Last=7` -> `Unknown`。
 - Metadata 明细表必须在长列表滚动时固定表头，确保用户下翻大量节点、分片、索引或字段时仍能看到字段含义。
 - Diagnostics。
 

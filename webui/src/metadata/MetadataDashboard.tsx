@@ -20,7 +20,7 @@ import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui";
 import { formatDuration, valueOrDash } from "../lib/utils";
 import { confirmImport, fetchImportedInstances, fetchSnapshot, fetchStoredInstance, previewImport, previewTemplateImport, type ImportPreview } from "./api";
-import { openGeminiFieldTypeLabel } from "./field-types";
+import { openGeminiFieldTypeCode, openGeminiFieldTypeLabel } from "./field-types";
 import { buildTopologyIndex, filterTopologyRows } from "./topology";
 import type { DatabaseDto, Diagnostic, MetadataInstanceSummary, MetadataViewModel, NodeDto, RetentionPolicyDto, TopologyFilters, TopologySummaryRow } from "./types";
 import { buildViewModel } from "./view-model";
@@ -844,9 +844,10 @@ function SchemasView({ databases }: { databases: DatabaseDto[] }) {
                 <span className="ml-2 text-xs text-muted-foreground">{database} / {rp} · physical {measurement.name} · {(measurement.schema ?? []).length} field(s)</span>
               </summary>
               <div className="border-t border-border p-3">
-                <Table headers={["Field", "Type", "Type code", "EndTime"]} rows={(measurement.schema ?? []).map((field) => [
-                  field.name, openGeminiFieldTypeLabel(field.typ), field.typ, field.endTime
-                ])} empty="Measurement has no Schema" />
+                <Table headers={["Field", "Type", "Type code", "EndTime"]} rows={(measurement.schema ?? []).map((field) => {
+                  const typeCode = openGeminiFieldTypeCode(field);
+                  return [field.name, openGeminiFieldTypeLabel(field), typeCode, field.endTime];
+                })} empty="Measurement has no Schema" />
               </div>
             </details>
           ))}

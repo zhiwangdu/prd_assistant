@@ -1126,9 +1126,9 @@ mod tests {
         assert_eq!(value["result"]["defaultRetentionPolicyUsed"], true);
         assert_eq!(value["result"]["measurement"], "cpu_0000");
         assert_eq!(value["result"]["fields"][0]["name"], "usage");
-        assert_eq!(value["result"]["fields"][0]["typeLabel"], "float");
+        assert_eq!(value["result"]["fields"][0]["typeLabel"], "Float");
         assert_eq!(value["result"]["fields"][1]["name"], "host");
-        assert_eq!(value["result"]["fields"][1]["typeLabel"], "tag");
+        assert_eq!(value["result"]["fields"][1]["typeLabel"], "Tag");
         assert_eq!(value["result"]["missingFields"][0], "missing");
         assert_eq!(value["finalEvidenceAllowed"], false);
         let artifact_path = value["artifactPath"].as_str().unwrap();

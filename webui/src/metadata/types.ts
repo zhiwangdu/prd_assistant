@@ -93,7 +93,14 @@ export type MeasurementDto = {
   engineType?: number | null;
 };
 
-export type FieldDto = { name: string; typ?: number | null; endTime?: number | null };
+export type FieldDto = {
+  name: string;
+  typ?: number | string | null;
+  type?: number | string | null;
+  Typ?: number | string | null;
+  Type?: number | string | null;
+  endTime?: number | null;
+};
 
 export type ShardGroupDto = {
   id: number;

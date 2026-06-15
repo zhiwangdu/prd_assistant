@@ -638,7 +638,7 @@ mod tests {
         let text = field_types["result"]["content"][0]["text"]
             .as_str()
             .unwrap();
-        assert!(text.contains("\"typeLabel\": \"float\""));
+        assert!(text.contains("\"typeLabel\": \"Float\""));
 
         let rejected = post_mcp(
             &app,
