@@ -640,11 +640,31 @@ mod tests {
             .unwrap();
         assert!(text.contains("\"typeLabel\": \"Float\""));
 
-        let rejected = post_mcp(
+        let catalog = post_mcp(
             &app,
             json!({
                 "jsonrpc": "2.0",
                 "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "logagent.list_tools",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+        let text = catalog["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"toolId\": \"fake_tool\""));
+        assert!(text.contains("\"source\": \"configured\""));
+        assert!(text.contains("\"toolId\": \"logagent.get_metadata_field_types\""));
+        assert!(text.contains("\"source\": \"built_in\""));
+        assert!(text.contains("\"exportable\": false"));
+
+        let rejected = post_mcp(
+            &app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 9,
                 "method": "tools/call",
                 "params": {
                     "name": "logagent.run_domain_tool",
@@ -662,7 +682,7 @@ mod tests {
             &app,
             json!({
                 "jsonrpc": "2.0",
-                "id": 9,
+                "id": 10,
                 "method": "tools/call",
                 "params": {
                     "name": "logagent.get_skill_reference",

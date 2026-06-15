@@ -468,6 +468,9 @@ mod tests {
 
         let manifest = read_zip_json(&mut zip, "tools-manifest.json");
         let tools = manifest["tools"].as_array().unwrap();
+        assert!(tools
+            .iter()
+            .all(|tool| tool["toolId"] != "logagent.get_metadata_field_types"));
         let fake = tools
             .iter()
             .find(|tool| tool["toolId"] == "fake_tool")

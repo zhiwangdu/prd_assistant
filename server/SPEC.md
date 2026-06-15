@@ -204,6 +204,8 @@ logagent.list_tools
 logagent.list_domain_adapters
 ```
 
+工具目录由 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 共享同一批 descriptor。每个 descriptor 必须包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`backend`、`paramsSchema` 和 `outputViews`。手动配置的外部工具使用 `source=configured`；内置 metadata 工具使用 `source=built_in`，并且必须是只读、不可编辑、不可导出、不可通过 `POST /api/tools/:tool_id/runs` 手动运行。当前内置 metadata catalog tools 包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot` 和 `logagent.get_metadata_field_types`。
+
 `logagent.get_metadata_field_types` 参数为必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`。`retentionPolicy` 省略时使用 DB 默认 RP；`field` 可为字符串或字符串数组，省略时返回 measurement 全部 fields。返回字段包含 `typ` 和 `typeLabel`，openGemini 枚举码 `0..7` 映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`。
 
 `POST /api/skills/imports` 接收 JSON：`skillId`、`name`、`description`、`markdown` 和可选 `filename`。Server 在第一个配置的 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，默认 manifest 使用 `schemaVersion=1`、`displayName=name`、`taskKinds=["log_analysis"]`、`includeByDefault=false`、`priority=0` 和空 `references`。导入成功后重载整个 Skill Registry，并返回导入后的 Skill detail；重复 `skillId`、非法 ID、空字段、禁用 skills、无可写 root 或非 `.md/.markdown` filename 会返回明确错误。当前版本不支持覆盖已有 Skill，也不支持上传 reference 文件。
@@ -220,7 +222,7 @@ wrappers/<tool_id>.sh
 config/examples/<tool_id>.yaml
 ```
 
-`tools-manifest.json` 记录 `toolId`、display name、configured args、match rules、Server OS/arch、binary filename、sha256、size、packaged/skipped 状态和 skipped reason。缺失、非普通文件、无执行权限或读取失败的工具只在 manifest 中标记 skipped，不让整个下载失败。导出包不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
+`tools-manifest.json` 记录 `toolId`、display name、configured args、match rules、Server OS/arch、binary filename、sha256、size、packaged/skipped 状态和 skipped reason。缺失、非普通文件、无执行权限或读取失败的工具只在 manifest 中标记 skipped，不让整个下载失败。导出包只包含 enabled 且 `source=configured` 的可执行工具，不包含 `source=built_in` 的内置工具，不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
 
 ## 数据目录
 
@@ -341,7 +343,7 @@ background executor
   -> SUCCEEDED or FAILED
 ```
 
-`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
+`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动；首版不执行 `EXTRACT`、`SEARCH_LOGS` 或 LLM 阶段。只有 descriptor 中 `enabled=true` 且 `runnable=true` 的工具可通过该接口创建手动 run；内置只读工具和未适配手动运行的通用配置工具必须返回明确 400。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
 `POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 

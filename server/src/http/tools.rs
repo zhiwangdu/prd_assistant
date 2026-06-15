@@ -289,8 +289,47 @@ mod tests {
         assert_eq!(list.status(), StatusCode::OK);
         let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(body["tools"][0]["toolId"], "pprof_analyzer");
-        assert_eq!(body["tools"][0]["enabled"], true);
+        let tools = body["tools"].as_array().unwrap();
+        let pprof = tools
+            .iter()
+            .find(|tool| tool["toolId"] == "pprof_analyzer")
+            .unwrap();
+        assert_eq!(pprof["enabled"], true);
+        assert_eq!(pprof["source"], "configured");
+        assert_eq!(pprof["runnable"], true);
+        assert_eq!(pprof["exportable"], true);
+        let metadata_field_types = tools
+            .iter()
+            .find(|tool| tool["toolId"] == "logagent.get_metadata_field_types")
+            .unwrap();
+        assert_eq!(metadata_field_types["source"], "built_in");
+        assert_eq!(metadata_field_types["readOnly"], true);
+        assert_eq!(metadata_field_types["editable"], false);
+        assert_eq!(metadata_field_types["exportable"], false);
+        assert_eq!(metadata_field_types["runnable"], false);
+        assert!(metadata_field_types["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tag| tag == "metadata"));
+
+        let read_only_run = app
+            .clone()
+            .oneshot(
+                Request::post("/api/tools/logagent.get_metadata_field_types/runs")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"uploadIds":["upl_pprof"],"params":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read_only_run.status(), StatusCode::BAD_REQUEST);
+        let error = to_bytes(read_only_run.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let error: serde_json::Value = serde_json::from_slice(&error).unwrap();
+        assert!(error["error"].as_str().unwrap().contains("read-only"));
 
         let created = app
             .clone()

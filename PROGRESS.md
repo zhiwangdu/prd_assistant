@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-15
 
+## 2026-06-15 Built-in Tool Catalog Registration
+
+- Registered the built-in metadata tools in the shared Tools catalog: `logagent.list_metadata_instances`, `logagent.get_metadata_snapshot`, and `logagent.get_metadata_field_types`.
+- Extended Tool descriptors with `source`, `tags`, `readOnly`, `editable`, `exportable`, and `runnable`; configured tools use `source=configured`, while built-ins use `source=built_in`, are read-only, cannot be edited, cannot be exported, and cannot be started through manual `/api/tools/:tool_id/runs`.
+- `/api/tools`, read-only MCP `logagent://tools/catalog`, and `logagent.list_tools` now use the same descriptor view. The catalog only shows real configured tools plus built-ins; an unconfigured pprof template no longer appears as a fake configured tool.
+- `tools.zip` remains limited to enabled configured executable tools, and tests assert built-in metadata tools are excluded from `tools-manifest.json`.
+- WebUI Tools / Tool plugins now displays configured vs built-in tags, read-only status, exportability, and input schema; only `runnable=true` tools show the upload/run form.
+- Updated Server, WebUI, and Tool Runner docs/specs for the catalog fields, built-in metadata tools, and export/run restrictions.
+- Verification passed: `cargo fmt --check`, `cargo check -p logagent-server`, focused `http::tools`, `http::exports`, and `http::mcp_readonly` tests, `cargo test -p logagent-server -- --test-threads=1`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, `git diff --check`, and local `/api/tools` sanity check with `examples/server-test.yaml`.
+
 ## 2026-06-15 LAN Auto Deploy
 
 - Added `scripts/auto-deploy-lan.sh` and wired it into `scripts/build-all.sh`.

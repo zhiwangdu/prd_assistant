@@ -267,7 +267,7 @@ MVP 要求：
 - `GET /api/sessions/:session_id/timeline` 合并 Session events 和该 Session 下 task 的 analysis events。
 - `POST /api/mcp/readonly` 提供面向个人本地 Claude Code 的只读 HTTP MCP，支持读取 Skills、Metadata、Metadata field type、Case、Tools catalog 和 Domain Adapter 摘要，不操作 Session/task/workspace。
 - `GET /api/exports/skills.zip` 打包当前索引的 Skill 普通文件、references 和 `manifest.json`，跳过 symlink 和路径逃逸。
-- `GET /api/exports/tools.zip` 打包 enabled 且解析为普通可执行文件的工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、不可执行或读取失败的工具标记 skipped，不让下载失败。
+- `GET /api/exports/tools.zip` 打包 enabled 且解析为普通可执行文件的配置工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、不可执行或读取失败的工具标记 skipped，不让下载失败，内置工具不会进入导出包。
 - `GET /api/skills`、`GET /api/skills/:skill_id`、`POST /api/skills/imports` 和 `POST /api/skills/preview` 管理可选 Diagnostic Skills、Markdown 导入和注入预览。
 - `GET /api/system-context/resources` 默认只返回 Metadata adapter；旧非 Metadata resources 仍保存在数据目录但不再作为新任务入口。
 - `GET /api/settings/llm` 返回当前 LLM Provider 配置摘要，不包含密钥。
@@ -314,6 +314,7 @@ MVP 要求：
 - 小文件和批量 multipart 上传在写完 payload 后会显式 flush 文件，再持久化 `UploadRecord`，避免记录校验时读到未落盘的 0 字节 payload。
 - `RUN_TOOL` 阶段按 manifest/grep 对已配置工具生成规则版 `run_tool` action；manifest file pattern 优先，grep keyword 补充候选，每个工具最多选择 `max_input_files` 个输入文件；未匹配或未配置工具时直接进入 `PLAN_ANALYSIS`。
 - Tool Runner 只执行 `tools` 白名单中的绝对路径工具，路径可来自固定 `path` 或 `path_env` 环境变量，使用参数数组，不拼接 shell；stdout/stderr/result 写入 `tool_results/<action_id>/`。
+- Tools API 的 `GET /api/tools` 返回统一工具目录，包含 `source`、`tags`、`readOnly`、`editable`、`exportable` 和 `runnable` 字段；配置工具标记为 `source=configured`，内置 metadata 工具标记为 `source=built_in`、只读、不可编辑、不可导出且不可手动运行。
 - Tools API 支持手动 `tool_run` 任务，复用上传、raw snapshot、TaskStore、后台 Executor、状态轮询和 workspace；`GET /api/tasks` 默认只列出日志分析任务，工具运行从 `/api/tools/runs` 查询。
 - `pprof_analyzer` 是首个 Tools 插件，通过配置的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 文本结果，并把 top 输出解析为结构化表格。
 - Remote Executor API 支持在 WebUI 纳管 ECS 执行机，持久化到 `executors/`，并通过 `remote_execution.commands` 白名单模板发起 `taskKind=remote_command_run`。SSH 调用使用 Server 侧系统 `ssh` 二进制、`BatchMode=yes`、配置化 host key policy 和 timeout；stdout/stderr/result 写入 `remote_command/`。`GET /api/tasks` 不混入 remote command run，运行历史从 `/api/executor-runs` 查询。

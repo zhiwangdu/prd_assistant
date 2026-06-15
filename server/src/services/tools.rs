@@ -11,7 +11,7 @@ use tokio::{process::Command, time::Duration};
 use tracing::{info, warn};
 
 use crate::{
-    domain::models::{TaskRecord, ToolDescriptor},
+    domain::models::{TaskRecord, ToolDescriptor, ToolSource},
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -20,6 +20,9 @@ use crate::{
 };
 
 pub const PPROF_ANALYZER_ID: &str = "pprof_analyzer";
+pub const METADATA_LIST_INSTANCES_ID: &str = "logagent.list_metadata_instances";
+pub const METADATA_GET_SNAPSHOT_ID: &str = "logagent.get_metadata_snapshot";
+pub const METADATA_GET_FIELD_TYPES_ID: &str = "logagent.get_metadata_field_types";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,11 +93,29 @@ struct CommandRun {
 }
 
 pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
-    vec![pprof_descriptor(config)]
+    let mut descriptors = Vec::new();
+    for tool in config.tools.tools.values() {
+        if tool.name == PPROF_ANALYZER_ID {
+            descriptors.push(pprof_descriptor(config));
+        } else {
+            descriptors.push(configured_tool_descriptor(tool));
+        }
+    }
+    descriptors.extend(metadata_descriptors());
+    descriptors
 }
 
 pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescriptor> {
-    (tool_id == PPROF_ANALYZER_ID).then(|| pprof_descriptor(config))
+    if let Some(tool) = config.tools.tools.get(tool_id) {
+        return Some(if tool_id == PPROF_ANALYZER_ID {
+            pprof_descriptor(config)
+        } else {
+            configured_tool_descriptor(tool)
+        });
+    }
+    metadata_descriptors()
+        .into_iter()
+        .find(|descriptor| descriptor.tool_id == tool_id)
 }
 
 pub fn validate_tool_run_request(
@@ -107,6 +128,14 @@ pub fn validate_tool_run_request(
         .ok_or_else(|| AppError::not_found(format!("unknown toolId {tool_id}")))?;
     if !descriptor.enabled {
         return Err(AppError::bad_request(format!("tool {tool_id} is disabled")));
+    }
+    if !descriptor.runnable {
+        let reason = if descriptor.read_only {
+            "is read-only and cannot be run manually"
+        } else {
+            "does not support manual runs"
+        };
+        return Err(AppError::bad_request(format!("tool {tool_id} {reason}")));
     }
     if upload_count < descriptor.min_files || upload_count > descriptor.max_files {
         return Err(AppError::bad_request(format!(
@@ -145,6 +174,16 @@ fn pprof_descriptor(config: &AppConfig) -> ToolDescriptor {
         description: "Upload a Go pprof profile and inspect top functions plus raw/tree output."
             .to_string(),
         enabled,
+        source: ToolSource::Configured,
+        read_only: false,
+        editable: true,
+        exportable: enabled,
+        runnable: enabled,
+        tags: vec![
+            "configured".to_string(),
+            "manual-run".to_string(),
+            "pprof".to_string(),
+        ],
         backend: "command".to_string(),
         accepted_suffixes: vec![
             ".pprof".to_string(),
@@ -167,6 +206,173 @@ fn pprof_descriptor(config: &AppConfig) -> ToolDescriptor {
             "svg".to_string(),
         ],
     }
+}
+
+fn configured_tool_descriptor(tool: &ToolSettings) -> ToolDescriptor {
+    ToolDescriptor {
+        tool_id: tool.name.clone(),
+        display_name: display_name_from_id(&tool.name),
+        description: format!(
+            "Configured Tool Runner command with up to {} input file(s).",
+            tool.max_input_files
+        ),
+        enabled: tool.enabled,
+        source: ToolSource::Configured,
+        read_only: false,
+        editable: true,
+        exportable: tool.enabled,
+        runnable: false,
+        tags: vec![
+            "configured".to_string(),
+            "tool-runner".to_string(),
+            "external".to_string(),
+        ],
+        backend: "command".to_string(),
+        accepted_suffixes: tool.match_settings.file_patterns.clone(),
+        min_files: 1,
+        max_files: tool.max_input_files,
+        params_schema: serde_json::json!({
+            "configuredArgs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "readOnly": true,
+                "value": tool.args.clone()
+            },
+            "match": {
+                "type": "object",
+                "properties": {
+                    "filePatterns": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "value": tool.match_settings.file_patterns.clone()
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "value": tool.match_settings.keywords.clone()
+                    }
+                }
+            }
+        }),
+        output_views: vec![
+            "summary".to_string(),
+            "findings".to_string(),
+            "stdout".to_string(),
+            "stderr".to_string(),
+        ],
+    }
+}
+
+fn metadata_descriptors() -> Vec<ToolDescriptor> {
+    vec![
+        ToolDescriptor {
+            tool_id: METADATA_LIST_INSTANCES_ID.to_string(),
+            display_name: "Metadata instances".to_string(),
+            description: "List imported metadata instance summaries.".to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: false,
+            tags: metadata_tags(),
+            backend: "builtin".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema: serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }),
+            output_views: vec!["json".to_string()],
+        },
+        ToolDescriptor {
+            tool_id: METADATA_GET_SNAPSHOT_ID.to_string(),
+            display_name: "Metadata snapshot".to_string(),
+            description: "Read one imported metadata snapshot by instance id.".to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: false,
+            tags: metadata_tags(),
+            backend: "builtin".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": { "type": "string" }
+                },
+                "required": ["instanceId"]
+            }),
+            output_views: vec!["json".to_string()],
+        },
+        ToolDescriptor {
+            tool_id: METADATA_GET_FIELD_TYPES_ID.to_string(),
+            display_name: "Metadata field types".to_string(),
+            description:
+                "Look up field type metadata for one imported instance, database and measurement."
+                    .to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: false,
+            tags: metadata_tags(),
+            backend: "builtin".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": { "type": "string" },
+                    "database": { "type": "string" },
+                    "measurement": { "type": "string" },
+                    "retentionPolicy": { "type": "string" },
+                    "field": {
+                        "oneOf": [
+                            { "type": "string" },
+                            {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "minItems": 1
+                            }
+                        ]
+                    }
+                },
+                "required": ["instanceId", "database", "measurement"]
+            }),
+            output_views: vec!["json".to_string()],
+        },
+    ]
+}
+
+fn metadata_tags() -> Vec<String> {
+    vec![
+        "built-in".to_string(),
+        "metadata".to_string(),
+        "read-only".to_string(),
+    ]
+}
+
+fn display_name_from_id(tool_id: &str) -> String {
+    tool_id
+        .split(['_', '-', '.'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 async fn run_pprof_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<PathBuf, AppError> {

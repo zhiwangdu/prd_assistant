@@ -10,10 +10,17 @@ type ToolDescriptor = {
   displayName: string;
   description: string;
   enabled: boolean;
+  source: "built_in" | "configured";
+  readOnly: boolean;
+  editable: boolean;
+  exportable: boolean;
+  runnable: boolean;
+  tags: string[];
   backend: string;
   acceptedSuffixes: string[];
   minFiles: number;
   maxFiles: number;
+  paramsSchema?: Record<string, unknown>;
   outputViews: string[];
 };
 
@@ -164,6 +171,10 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
       setStatus(`${selectedTool.displayName} is disabled in server config`);
       return;
     }
+    if (!selectedTool.runnable) {
+      setStatus(`${selectedTool.displayName} is not available for manual runs`);
+      return;
+    }
     if (!file) {
       setStatus("Choose a pprof file");
       return;
@@ -205,7 +216,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Tool catalog</CardTitle>
-              <CardDescription>Configured plugins exposed by the Rust Server</CardDescription>
+              <CardDescription>Configured and built-in tools exposed by the Rust Server</CardDescription>
             </div>
             <Button className="h-8 px-3" variant="outline" onClick={() => void refreshTools()}><RefreshCw className="h-4 w-4" /></Button>
           </div>
@@ -218,9 +229,13 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                   <p className="text-sm font-medium">{tool.displayName}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{tool.toolId} · {tool.backend}</p>
                 </div>
-                <Badge variant={tool.enabled ? "success" : "destructive"}>{tool.enabled ? "enabled" : "disabled"}</Badge>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge variant={tool.enabled ? "success" : "destructive"}>{tool.enabled ? "enabled" : "disabled"}</Badge>
+                  <SourceBadge source={tool.source} />
+                </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{tool.description}</p>
+              <ToolTagList tags={tool.tags} />
             </button>
           )) : <EmptyState>No tools loaded.</EmptyState>}
         </CardContent>
@@ -232,33 +247,47 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <CardTitle>{selectedTool?.displayName ?? "Tools"}</CardTitle>
-                <CardDescription>{selectedTool ? selectedTool.acceptedSuffixes.join(", ") : "Select a tool to run"}</CardDescription>
+                <CardDescription>{selectedTool ? toolSubtitle(selectedTool) : "Select a tool to inspect"}</CardDescription>
               </div>
-              {selectedTool ? <Badge variant={selectedTool.enabled ? "success" : "destructive"}>{selectedTool.enabled ? "ready" : "disabled"}</Badge> : null}
+              {selectedTool ? (
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Badge variant={selectedTool.enabled ? "success" : "destructive"}>{selectedTool.enabled ? "ready" : "disabled"}</Badge>
+                  <SourceBadge source={selectedTool.source} />
+                  {selectedTool.readOnly ? <Badge variant="secondary">read-only</Badge> : null}
+                </div>
+              ) : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
-              <UploadCloud className="mb-2 h-7 w-7" />
-              {file ? file.name : "Choose a Go pprof profile"}
-              <input className="hidden" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-            </label>
-            <div className="grid gap-3 md:grid-cols-[1fr_160px_auto] md:items-center">
-              <Input value={sampleIndex} onChange={(event) => setSampleIndex(event.target.value)} placeholder="sample index" />
-              <Input type="number" min={1} max={200} value={nodeCount} onChange={(event) => setNodeCount(Number(event.target.value) || 50)} />
-              <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm text-muted-foreground">
-                <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={generateSvg} onChange={(event) => setGenerateSvg(event.target.checked)} />
-                SVG
-              </label>
-            </div>
-            <div>
-              <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
-              <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">{status}</span>
-              <Button disabled={loading || !selectedTool?.enabled} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />Run tool</Button>
-            </div>
+            {selectedTool?.runnable ? (
+              <>
+                <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 text-sm text-muted-foreground">
+                  <UploadCloud className="mb-2 h-7 w-7" />
+                  {file ? file.name : "Choose a Go pprof profile"}
+                  <input className="hidden" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+                </label>
+                <div className="grid gap-3 md:grid-cols-[1fr_160px_auto] md:items-center">
+                  <Input value={sampleIndex} onChange={(event) => setSampleIndex(event.target.value)} placeholder="sample index" />
+                  <Input type="number" min={1} max={200} value={nodeCount} onChange={(event) => setNodeCount(Number(event.target.value) || 50)} />
+                  <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm text-muted-foreground">
+                    <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={generateSvg} onChange={(event) => setGenerateSvg(event.target.checked)} />
+                    SVG
+                  </label>
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
+                  <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">{status}</span>
+                  <Button disabled={loading || !selectedTool?.enabled || !selectedTool?.runnable} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />Run tool</Button>
+                </div>
+              </>
+            ) : selectedTool ? (
+              <ToolDescriptorDetails tool={selectedTool} status={status} />
+            ) : (
+              <EmptyState>Select a tool to inspect.</EmptyState>
+            )}
           </CardContent>
         </Card>
 
@@ -301,6 +330,48 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
       </div>
     </div>
   );
+}
+
+function SourceBadge({ source }: { source: ToolDescriptor["source"] }) {
+  return <Badge variant={source === "built_in" ? "secondary" : "outline"}>{source === "built_in" ? "built-in" : "configured"}</Badge>;
+}
+
+function ToolTagList({ tags }: { tags: string[] }) {
+  if (!tags.length) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+    </div>
+  );
+}
+
+function ToolDescriptorDetails({ tool, status }: { tool: ToolDescriptor; status: string }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Source" value={tool.source === "built_in" ? "built-in" : "configured"} />
+        <Metric label="Manual run" value={tool.runnable ? "enabled" : "unavailable"} />
+        <Metric label="Editable" value={tool.editable ? "yes" : "no"} />
+        <Metric label="Exportable" value={tool.exportable ? "yes" : "no"} />
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-xs text-muted-foreground">Tags</p>
+        <ToolTagList tags={tool.tags} />
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-xs text-muted-foreground">Input schema</p>
+        <pre className="mt-2 max-h-72 overflow-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(tool.paramsSchema ?? {}, null, 2)}</pre>
+      </div>
+      <p className="text-sm text-muted-foreground">{status}</p>
+    </div>
+  );
+}
+
+function toolSubtitle(tool: ToolDescriptor) {
+  if (tool.acceptedSuffixes.length) {
+    return tool.acceptedSuffixes.join(", ");
+  }
+  return `${tool.backend} · no file input`;
 }
 
 function PprofResultView({ result, resultPath }: { result: PprofResult; resultPath: string }) {

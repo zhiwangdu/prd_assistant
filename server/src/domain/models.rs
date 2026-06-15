@@ -115,12 +115,25 @@ pub struct ToolDescriptor {
     pub display_name: String,
     pub description: String,
     pub enabled: bool,
+    pub source: ToolSource,
+    pub read_only: bool,
+    pub editable: bool,
+    pub exportable: bool,
+    pub runnable: bool,
+    pub tags: Vec<String>,
     pub backend: String,
     pub accepted_suffixes: Vec<String>,
     pub min_files: usize,
     pub max_files: usize,
     pub params_schema: serde_json::Value,
     pub output_views: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolSource {
+    BuiltIn,
+    Configured,
 }
 
 #[derive(Debug, Deserialize)]

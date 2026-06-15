@@ -78,6 +78,7 @@ tools:
 - stdout、stderr、exit code、耗时都要保存。
 - 工具失败不应导致整个任务失败，除非标记为必需。
 - 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
+- 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable`；内置工具使用 `source=built_in`，只读、不可编辑、不可导出且不可手动运行。
 
 ## 当前实现状态
 
@@ -97,9 +98,9 @@ tools:
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - 当前 `influxql-analyzer` 已安装到 `/usr/bin/influxql-analyzer`，该路径是指向 `/home/duzhiwang/workspace/influxql/influxql-analyzer` 的符号链接；相关文档和代码在 `/home/duzhiwang/workspace/influxql`。
 - 当前本机尚未找到 `flux_query_analyzer` / `flux-query-analyzer` 二进制，因此真实 Flux 工具 smoke 仍等待工具安装。
-- Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。首个 `pprof_analyzer` 复用 `tools.<name>` 白名单配置和 workspace 产物目录，但由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果。
-- 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露工具目录、configured args 和 match rules；该入口不运行工具。
-- `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败。
+- Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。首个 `pprof_analyzer` 复用 `tools.<name>` 白名单配置和 workspace 产物目录，但由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果；通用配置工具先进入 catalog，未适配手动运行前 `runnable=false`。
+- 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、configured args、match rules 和内置 metadata 工具 descriptor；该入口不运行工具。
+- `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；内置工具不进入导出包。
 
 ## 本地真实工具 smoke
 
