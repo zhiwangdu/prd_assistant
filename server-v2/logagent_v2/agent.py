@@ -3,6 +3,7 @@ from __future__ import annotations
 from .config import Settings
 from .evidence import build_initial_evidence
 from .final_answer import normalize_and_validate_final_answer
+from .llm import generate_agent_final_answer
 from .metadata import persist_metadata_context
 from .skills import persist_system_context
 from .store import JsonObject, Store
@@ -41,7 +42,9 @@ class AgentRuntime:
             run_id,
         )
         self.store.update_run_status(run_id, "running", "agent_round")
-        final_answer = self._stub_final_answer(workspace, evidence_bundle)
+        final_answer = generate_agent_final_answer(self.settings, workspace, evidence_bundle)
+        if final_answer is None:
+            final_answer = self._stub_final_answer(workspace, evidence_bundle)
         final_answer = normalize_and_validate_final_answer(
             self.settings, self.store, run_id, final_answer
         )
@@ -97,12 +100,12 @@ class AgentRuntime:
                 }
             ],
             "nextChecks": [
-                "Wire LangGraph model reasoning to inspect matched lines and request follow-up searches.",
+                "Enable the OpenAI-compatible Agent provider for model reasoning.",
                 "Add task MCP log search and log slice tools for iterative investigation.",
             ],
             "fixSuggestions": [],
             "missingInformation": [
-                "Full Agent reasoning and automatic Tool/Case follow-up planning are not wired yet."
+                "Full multi-round Agent planning and automatic Tool/Case follow-up are not wired yet."
             ],
             "confidence": "low",
             "evidenceRefs": [match["ref"] for match in top],

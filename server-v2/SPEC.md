@@ -47,8 +47,10 @@ Implemented in this slice:
   lines. Generated entries are compatible with the V1 `ToolInputEntry` shape
   and include V2 artifact ids for local execution.
 - `manifest.json` and `grep_results.json` artifact generation.
-- Stub Agent runtime that records initial question evidence, consumes the
-  initial evidence pipeline, and returns a low-confidence evidence summary.
+- Agent runtime that records initial question evidence, consumes the initial
+  evidence pipeline, and either returns a deterministic stub summary or calls a
+  single-round OpenAI-compatible provider for an evidence-validated JSON final
+  answer.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
 - Evidence listing for a run.
@@ -98,7 +100,8 @@ Implemented in this slice:
 
 Not yet implemented:
 
-- LangGraph provider integration.
+- Full LangGraph multi-round planning, tool loop, and resume-aware model
+  reasoning.
 - Additional analyzer materialized `tool_inputs/index.json` generation beyond
   generic InfluxQL/Flux JSONL and full multi-round model reasoning after resume.
 - WebUI Fetch management and WebUI cutover.
@@ -212,12 +215,12 @@ Run execution currently performs:
 ```text
 Workspace uploads
   -> safe archive scan / text file collection
-  -> optional node-package InfluxQL JSONL tool_inputs materialization
+  -> optional analyzer JSONL tool_inputs materialization
   -> manifest.json artifact
   -> bounded keyword grep
   -> grep_results.json artifact
   -> manifest and log_search evidence
-  -> low-confidence stub final answer
+  -> stub or OpenAI-compatible JSON final answer
 ```
 
 Supported archive formats are `.zip`, `.tar`, `.tar.gz`, and `.tgz`. Archive
@@ -640,6 +643,23 @@ The referenced artifact must exist and the match/finding index must be in
 range. Background context such as `manifest.json`, `system_context.json`,
 metadata slices, case context, and diagnostic skill references must stay
 readable context and cannot be cited as final root-cause evidence.
+
+## Agent Provider
+
+`LOGAGENT_V2_AGENT_PROVIDER=stub` is the default and keeps local deterministic
+behavior. `openai_compatible` posts a compact Chat Completions request to
+`<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions` with
+`LOGAGENT_V2_AGENT_MODEL`, optional `LOGAGENT_V2_AGENT_API_KEY`, and
+`LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`. The request includes the Workspace
+question/mode/language, manifest counts, a bounded initial grep preview, and
+allowed current-run evidence refs.
+
+The provider must return one JSON object matching the final answer schema. V2
+then runs the same normalization and evidence-ref validation used by the stub.
+Invalid JSON, unsupported refs, or provider HTTP errors fail the run. The
+single-round provider bridge does not yet perform LangGraph multi-round
+planning, resume-aware tool calls, automatic Case injection, or approval/user
+waiting decisions.
 
 ## Waiting States
 

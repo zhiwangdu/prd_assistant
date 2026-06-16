@@ -98,6 +98,83 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))
 
+    def test_agent_runtime_uses_openai_compatible_provider(self) -> None:
+        captured: dict[str, object] = {}
+
+        class AgentProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                captured["authorization"] = self.headers.get("Authorization")
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                captured["payload"] = payload
+                answer = {
+                    "summary": "model summary",
+                    "symptoms": ["timeout line"],
+                    "likelyRootCauses": [
+                        {
+                            "cause": "model cause",
+                            "evidenceRefs": ["grep_results.json#matches/0"],
+                        }
+                    ],
+                    "nextChecks": [],
+                    "fixSuggestions": [],
+                    "missingInformation": [],
+                    "confidence": "medium",
+                    "evidenceRefs": ["grep_results.json#matches/0"],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), AgentProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_api_key="secret",
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("why timeout?", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"query timeout on shard 1\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+                self.assertEqual(final_answer["summary"], "model summary")
+                self.assertEqual(final_answer["confidence"], "medium")
+                self.assertEqual(captured["authorization"], "Bearer secret")
+                request_payload = captured["payload"]
+                assert isinstance(request_payload, dict)
+                self.assertEqual(request_payload["model"], "mock-model")
+                self.assertIn("grep_results.json#matches/0", request_payload["messages"][1]["content"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_job_lock_prevents_duplicate_acquire(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "logagent.sqlite")

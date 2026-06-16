@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Provider Bridge
+
+- Added V2 Agent provider settings: `LOGAGENT_V2_AGENT_PROVIDER`, `LOGAGENT_V2_AGENT_BASE_URL`, `LOGAGENT_V2_AGENT_MODEL`, `LOGAGENT_V2_AGENT_API_KEY`, and `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`.
+- Added an OpenAI-compatible single-round Chat Completions provider that sends the Workspace question, manifest counts, bounded grep preview, and allowed current-run evidence refs.
+- AgentRuntime now uses the configured provider when `agent_provider=openai_compatible`; default `stub` behavior remains unchanged.
+- Provider output must be one JSON final-answer object and still passes existing normalization and evidence-ref validation before the run succeeds.
+- Added regression coverage with a mock OpenAI-compatible provider, including Authorization header, model payload, prompt evidence refs, and model-produced final answer.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Vector Recall
 
 - Added local hash-vector recall for V2 Case Memory without PostgreSQL, Redis, pgvector, or external embedding services.

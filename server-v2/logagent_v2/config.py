@@ -65,6 +65,11 @@ class Settings:
     fetch_max_response_bytes: int = 1024 * 1024
     fetch_max_redirects: int = 5
     fetch_secret_key: str | None = None
+    agent_provider: str = "stub"
+    agent_model: str | None = None
+    agent_base_url: str | None = None
+    agent_api_key: str | None = None
+    agent_timeout_seconds: int = 60
 
     @property
     def sqlite_path(self) -> Path:
@@ -120,6 +125,11 @@ class Settings:
         )
         fetch_max_redirects = int(os.environ.get("LOGAGENT_V2_FETCH_MAX_REDIRECTS", "5"))
         fetch_secret_key = os.environ.get("LOGAGENT_V2_FETCH_SECRET_KEY")
+        agent_provider = os.environ.get("LOGAGENT_V2_AGENT_PROVIDER", "stub")
+        agent_model = os.environ.get("LOGAGENT_V2_AGENT_MODEL")
+        agent_base_url = os.environ.get("LOGAGENT_V2_AGENT_BASE_URL")
+        agent_api_key = os.environ.get("LOGAGENT_V2_AGENT_API_KEY")
+        agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -139,6 +149,11 @@ class Settings:
             fetch_max_response_bytes=fetch_max_response_bytes,
             fetch_max_redirects=max(0, fetch_max_redirects),
             fetch_secret_key=fetch_secret_key,
+            agent_provider=agent_provider,
+            agent_model=agent_model,
+            agent_base_url=agent_base_url,
+            agent_api_key=agent_api_key,
+            agent_timeout_seconds=max(1, agent_timeout_seconds),
         )
 
 

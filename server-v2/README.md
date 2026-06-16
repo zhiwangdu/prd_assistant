@@ -46,9 +46,8 @@ slice provides the durable foundation for the V2 product model:
   `skills.zip` export.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
-- Stub agent runtime that exercises the lifecycle before LangGraph model
-  reasoning and tool execution are wired in. The stub now summarizes real
-  initial grep evidence when uploads are present.
+- Agent runtime with default stub final answer plus optional single-round
+  OpenAI-compatible provider for evidence-validated JSON final answers.
 
 ## Local Run
 
@@ -104,6 +103,11 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key for encrypted Fetch credential sets |
+| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub` or `openai_compatible` final-answer provider |
+| `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, e.g. `https://api.openai.com/v1` |
+| `LOGAGENT_V2_AGENT_MODEL` | unset | Model name for the OpenAI-compatible provider |
+| `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token for the OpenAI-compatible provider |
+| `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 
 Tool descriptor example:
 
@@ -199,6 +203,20 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond generic InfluxQL/Flux JSONL, WebUI, or full LangGraph model loop.
+
+## Agent Runtime
+
+By default V2 uses `LOGAGENT_V2_AGENT_PROVIDER=stub`, which produces the
+deterministic low-confidence evidence summary used by the foundation tests.
+`LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` sends a compact prompt with the
+Workspace question, manifest counts, initial grep preview, and allowed evidence
+refs to `<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider must
+return one JSON final-answer object; V2 normalizes it and rejects unsupported
+or non-current evidence refs before marking the run `succeeded`.
+
+This is a single-round provider bridge. Multi-round LangGraph planning,
+resume-aware tool loops, and automatic follow-up tool/case actions remain
+future work.
 
 ## Initial Evidence Pipeline
 
