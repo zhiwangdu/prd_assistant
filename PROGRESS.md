@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Endpoint Foundation
+
+- Added V2 Fetch endpoint settings: default disabled execution, explicit host/host:port allowlist, request timeout, and bounded response preview size.
+- Added SQLite-backed Fetch endpoint storage with create/list/read/update/delete helpers and redacted public endpoint previews.
+- Added protected Fetch APIs: `GET/POST /api/v2/fetch/endpoints`, `GET/PATCH/DELETE /api/v2/fetch/endpoints/:endpoint_id`, and `POST /api/v2/runs/:run_id/fetch/:endpoint_id`.
+- Added built-in Fetch catalog descriptor to `/api/v2/tools` and readonly MCP catalog output.
+- Added task MCP tools `logagent.list_fetch_endpoints` and `logagent.fetch`; execution writes `fetch_result` artifacts/evidence and returns controlled refs in the form `tool_results/<fetch_action_id>/result.json#response`.
+- Final-answer validation now accepts Fetch `#response` refs only when they point to current-run, final-allowed `fetch_result` evidence with a real response object.
+- Readonly MCP remains non-executing for Fetch; `tools/call logagent.fetch` is rejected there.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Skill-backed System Context Foundation
 
 - Added V2 filesystem Skill registry under `LOGAGENT_V2_DATA_DIR/skills` with Codex-compatible `SKILL.md`, optional `logagent.json`, revision hashing, declared references, and safe reference path validation.

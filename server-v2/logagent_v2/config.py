@@ -45,6 +45,10 @@ class Settings:
     job_poll_seconds: float = 1.0
     inline_worker: bool = True
     tools: tuple[ToolDefinition, ...] = ()
+    fetch_enabled: bool = False
+    fetch_allowed_hosts: tuple[str, ...] = ()
+    fetch_timeout_seconds: int = 20
+    fetch_max_response_bytes: int = 1024 * 1024
 
     @property
     def sqlite_path(self) -> Path:
@@ -88,6 +92,16 @@ class Settings:
         max_concurrent_jobs = int(os.environ.get("LOGAGENT_V2_MAX_CONCURRENT_JOBS", "2"))
         inline_worker = os.environ.get("LOGAGENT_V2_INLINE_WORKER", "1") != "0"
         tools = parse_tools_env(os.environ.get("LOGAGENT_V2_TOOLS_JSON"))
+        fetch_enabled = os.environ.get("LOGAGENT_V2_FETCH_ENABLED", "0") == "1"
+        fetch_allowed_hosts = tuple(
+            item.strip().lower()
+            for item in os.environ.get("LOGAGENT_V2_FETCH_ALLOWED_HOSTS", "").split(",")
+            if item.strip()
+        )
+        fetch_timeout_seconds = int(os.environ.get("LOGAGENT_V2_FETCH_TIMEOUT_SECONDS", "20"))
+        fetch_max_response_bytes = int(
+            os.environ.get("LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES", str(1024 * 1024))
+        )
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -101,6 +115,10 @@ class Settings:
             max_concurrent_jobs=max_concurrent_jobs,
             inline_worker=inline_worker,
             tools=tools,
+            fetch_enabled=fetch_enabled,
+            fetch_allowed_hosts=fetch_allowed_hosts,
+            fetch_timeout_seconds=fetch_timeout_seconds,
+            fetch_max_response_bytes=fetch_max_response_bytes,
         )
 
 

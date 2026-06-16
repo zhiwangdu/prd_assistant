@@ -6,8 +6,10 @@ import json
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
@@ -455,6 +457,151 @@ class StoreTests(unittest.TestCase):
             background_ref = dict(answer, evidenceRefs=["manifest.json#files/0"])
             with self.assertRaises(FinalAnswerValidationError):
                 normalize_and_validate_final_answer(settings, store, run["id"], background_ref)
+
+    def test_fetch_endpoint_runs_through_task_mcp_and_final_refs(self) -> None:
+        class FetchHandler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = json.dumps({"ok": True, "path": self.path}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("X-Api-Key", "response-secret")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), FetchHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("127.0.0.1",),
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                endpoint = store.create_fetch_endpoint(
+                    name="local metadata",
+                    method="GET",
+                    url=f"http://127.0.0.1:{server.server_port}/metadata?api_key=secret",
+                    headers={"Authorization": "Bearer secret", "X-Trace": "visible"},
+                    body="password=secret&keep=value",
+                    enabled=True,
+                )
+                workspace = store.create_workspace("fetch metadata", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+
+                list_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 20,
+                        "method": "tools/call",
+                        "params": {"name": "logagent.list_fetch_endpoints", "arguments": {}},
+                    },
+                )
+                listed = json.loads(list_response["result"]["content"][0]["text"])
+                self.assertEqual(
+                    listed["endpoints"][0]["headers"]["Authorization"], "__REDACTED__"
+                )
+                self.assertIn("api_key=__REDACTED__", listed["endpoints"][0]["url"])
+                self.assertEqual(
+                    listed["endpoints"][0]["bodyPreview"],
+                    "password=__REDACTED__&keep=value",
+                )
+
+                fetch_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 21,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": endpoint["id"]},
+                        },
+                    },
+                )
+                payload = json.loads(fetch_response["result"]["content"][0]["text"])
+                self.assertEqual(payload["result"]["response"]["statusCode"], 200)
+                self.assertEqual(
+                    payload["result"]["response"]["headers"]["X-Api-Key"], "__REDACTED__"
+                )
+                self.assertIn("api_key=__REDACTED__", payload["result"]["request"]["url"])
+                self.assertEqual(
+                    payload["result"]["request"]["bodyPreview"],
+                    "password=__REDACTED__&keep=value",
+                )
+                self.assertEqual(payload["evidence"]["kind"], "fetch_result")
+                self.assertTrue(payload["evidence"]["final_allowed"])
+
+                ref = payload["result"]["evidenceRef"]
+                answer = {
+                    "summary": "Fetch-backed answer.",
+                    "symptoms": [],
+                    "likelyRootCauses": [
+                        {"cause": "metadata confirms state", "evidenceRefs": [ref]}
+                    ],
+                    "nextChecks": [],
+                    "fixSuggestions": [],
+                    "missingInformation": [],
+                    "confidence": "medium",
+                    "evidenceRefs": [ref],
+                }
+                validated = normalize_and_validate_final_answer(
+                    settings, store, run["id"], answer
+                )
+                self.assertEqual(validated["evidenceRefs"], [ref])
+
+                readonly_fetch = readonly_mcp_response(
+                    settings,
+                    store,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 22,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": endpoint["id"]},
+                        },
+                    },
+                )
+                self.assertIn("error", readonly_fetch)
+
+                blocked_settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("example.com",),
+                )
+                blocked = task_mcp_response(
+                    blocked_settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 23,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": endpoint["id"]},
+                        },
+                    },
+                )
+                self.assertIn("not in allowlist", blocked["error"]["message"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_task_mcp_waiting_actions_are_persisted_and_resumable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

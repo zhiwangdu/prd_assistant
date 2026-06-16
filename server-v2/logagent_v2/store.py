@@ -193,12 +193,25 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS fetch_endpoints (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  method TEXT NOT NULL,
+                  url TEXT NOT NULL,
+                  headers_json TEXT NOT NULL,
+                  body TEXT,
+                  enabled INTEGER NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sched
                   ON jobs(status, next_run_at, locked_until);
                 CREATE INDEX IF NOT EXISTS idx_cases_task_id ON cases(task_id);
+                CREATE INDEX IF NOT EXISTS idx_fetch_endpoints_enabled ON fetch_endpoints(enabled);
                 """
             )
             self._ensure_column_tx(
@@ -776,6 +789,98 @@ class Store:
     def _case_from_row(self, row: sqlite3.Row) -> JsonObject:
         record = decode_json(row["record_json"], {})
         return record
+
+    def create_fetch_endpoint(
+        self,
+        name: str,
+        method: str,
+        url: str,
+        headers: JsonObject,
+        body: str | None,
+        enabled: bool,
+    ) -> JsonObject:
+        endpoint_id = new_id("fetch")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO fetch_endpoints(
+                  id, name, method, url, headers_json, body, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    endpoint_id,
+                    name,
+                    method,
+                    url,
+                    encode_json(headers),
+                    body,
+                    1 if enabled else 0,
+                    ts,
+                    ts,
+                ),
+            )
+        return self.get_fetch_endpoint(endpoint_id)
+
+    def list_fetch_endpoints(self) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM fetch_endpoints ORDER BY updated_at DESC, id ASC"
+            ).fetchall()
+        return [self._fetch_endpoint_from_row(row) for row in rows]
+
+    def get_fetch_endpoint(self, endpoint_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM fetch_endpoints WHERE id = ?", (endpoint_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown fetch endpoint {endpoint_id}")
+        return self._fetch_endpoint_from_row(row)
+
+    def update_fetch_endpoint(self, endpoint_id: str, updates: JsonObject) -> JsonObject:
+        current = self.get_fetch_endpoint(endpoint_id)
+        merged = dict(current)
+        for key, value in updates.items():
+            if key == "body":
+                merged[key] = value if isinstance(value, str) else None
+            elif value is not None:
+                merged[key] = value
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE fetch_endpoints
+                SET name = ?, method = ?, url = ?, headers_json = ?, body = ?,
+                    enabled = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    merged["name"],
+                    merged["method"],
+                    merged["url"],
+                    encode_json(merged.get("headers", {})),
+                    merged.get("body"),
+                    1 if merged.get("enabled", True) else 0,
+                    ts,
+                    endpoint_id,
+                ),
+            )
+        return self.get_fetch_endpoint(endpoint_id)
+
+    def delete_fetch_endpoint(self, endpoint_id: str) -> None:
+        with self.connect() as conn:
+            cursor = conn.execute("DELETE FROM fetch_endpoints WHERE id = ?", (endpoint_id,))
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown fetch endpoint {endpoint_id}")
+
+    def _fetch_endpoint_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        item["headers"] = decode_json(item.pop("headers_json"), {})
+        item["enabled"] = bool(item["enabled"])
+        item["createdAt"] = item.pop("created_at")
+        item["updatedAt"] = item.pop("updated_at")
+        return item
 
     def append_event(
         self, workspace_id: str, run_id: str | None, kind: str, payload: JsonObject

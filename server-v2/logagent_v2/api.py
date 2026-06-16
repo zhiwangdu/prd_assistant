@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import create_manual_case, create_task_case, update_case
 from .config import Settings
+from .fetch import (
+    execute_fetch_endpoint,
+    fetch_catalog_descriptor,
+    normalize_fetch_endpoint,
+    public_fetch_endpoint,
+)
 from .metadata import import_metadata, query_field_types
 from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
@@ -90,6 +96,24 @@ class SkillImportCreate(BaseModel):
 
 class SkillPreviewCreate(BaseModel):
     skillIds: list[str] = Field(default_factory=list, max_length=20)
+
+
+class FetchEndpointCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
+    url: str = Field(min_length=1, max_length=2000)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = Field(default=None, max_length=200000)
+    enabled: bool = True
+
+
+class FetchEndpointUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] | None = None
+    url: str | None = Field(default=None, max_length=2000)
+    headers: dict[str, str] | None = None
+    body: str | None = Field(default=None, max_length=200000)
+    enabled: bool | None = None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -237,7 +261,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
-        return {"tools": tool_descriptors(settings)}
+        return {"tools": [*tool_descriptors(settings), fetch_catalog_descriptor(settings)]}
 
     @app.get("/api/v2/skills")
     async def list_diagnostic_skills(_: Auth) -> dict:
@@ -274,6 +298,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             return preview_system_context(settings, payload.skillIds)
         except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/fetch/endpoints")
+    async def list_fetch_endpoints(_: Auth) -> dict:
+        return {
+            "enabled": settings.fetch_enabled,
+            "allowedHosts": list(settings.fetch_allowed_hosts),
+            "endpoints": [
+                public_fetch_endpoint(endpoint) for endpoint in store.list_fetch_endpoints()
+            ],
+        }
+
+    @app.post("/api/v2/fetch/endpoints")
+    async def create_fetch_endpoint(_: Auth, payload: FetchEndpointCreate) -> dict:
+        try:
+            endpoint = normalize_fetch_endpoint(payload.model_dump())
+            created = store.create_fetch_endpoint(
+                name=endpoint["name"],
+                method=endpoint["method"],
+                url=endpoint["url"],
+                headers=endpoint["headers"],
+                body=endpoint.get("body"),
+                enabled=endpoint["enabled"],
+            )
+            return public_fetch_endpoint(created)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/fetch/endpoints/{endpoint_id}")
+    async def get_fetch_endpoint(_: Auth, endpoint_id: str) -> dict:
+        try:
+            return public_fetch_endpoint(store.get_fetch_endpoint(endpoint_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.patch("/api/v2/fetch/endpoints/{endpoint_id}")
+    async def patch_fetch_endpoint(_: Auth, endpoint_id: str, payload: FetchEndpointUpdate) -> dict:
+        try:
+            current = store.get_fetch_endpoint(endpoint_id)
+            updates = {
+                key: value
+                for key, value in payload.model_dump(exclude_unset=True).items()
+                if key == "body" or value is not None
+            }
+            merged = dict(current)
+            merged.update(updates)
+            endpoint = normalize_fetch_endpoint(merged)
+            updated = store.update_fetch_endpoint(endpoint_id, endpoint)
+            return public_fetch_endpoint(updated)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.delete("/api/v2/fetch/endpoints/{endpoint_id}")
+    async def delete_fetch_endpoint(_: Auth, endpoint_id: str) -> dict:
+        try:
+            store.delete_fetch_endpoint(endpoint_id)
+            return {"deleted": True, "endpointId": endpoint_id}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/runs/{run_id}/fetch/{endpoint_id}")
+    async def run_fetch_endpoint(_: Auth, run_id: str, endpoint_id: str) -> dict:
+        try:
+            run = store.get_run(run_id)
+            return execute_fetch_endpoint(
+                settings=settings,
+                store=store,
+                workspace_id=run["workspace_id"],
+                run_id=run_id,
+                endpoint_id=endpoint_id,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/metadata/instances")

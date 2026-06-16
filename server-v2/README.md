@@ -19,6 +19,9 @@ slice provides the durable foundation for the V2 product model:
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`.
+- Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
+  default-off allowlist execution, task MCP `logagent.fetch`, and
+  `fetch_result` final evidence refs.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
   and `logagent.request_approval`.
 - Final answer schema normalization and evidence ref validation before a run
@@ -82,6 +85,10 @@ Environment variables:
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors |
+| `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
+| `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
+| `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
+| `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 
 Tool descriptor example:
 
@@ -132,6 +139,12 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+GET  /api/v2/fetch/endpoints
+POST /api/v2/fetch/endpoints
+GET  /api/v2/fetch/endpoints/:endpoint_id
+PATCH /api/v2/fetch/endpoints/:endpoint_id
+DELETE /api/v2/fetch/endpoints/:endpoint_id
+POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -144,9 +157,10 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs, rich Tool Runner input matching, Metadata preview/confirm and URL fetch,
-skills.zip export, richer Skill auto-matching, Case import drafts,
-FTS/embedding recall, WebUI, or full LangGraph model loop.
+inputs, rich Tool Runner input matching, Fetch cURL import and encrypted
+credential sets, Metadata preview/confirm and openGemini URL import, skills.zip
+export, richer Skill auto-matching, Case import drafts, FTS/embedding recall,
+WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -197,6 +211,8 @@ It currently supports:
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`
 - `tools/call logagent.run_domain_tool`
+- `tools/call logagent.list_fetch_endpoints`
+- `tools/call logagent.fetch`
 - `tools/call logagent.request_user_input`
 - `tools/call logagent.request_approval`
 
@@ -215,6 +231,15 @@ log_slices/<slice_id>.json#lines
 Configured tools can only be invoked by `toolId`; the model cannot provide an
 executable path, shell command, or argv. Tool stdout is parsed as JSON when
 possible and persisted as `tool_result` evidence.
+
+Fetch endpoints are configured through the protected HTTP API and are disabled
+for execution unless `LOGAGENT_V2_FETCH_ENABLED=1`. Execution is constrained to
+`http`/`https` URLs whose host or host:port exactly matches
+`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. Request URLs, sensitive headers, and
+sensitive JSON/form-style body preview fields are redacted in API, MCP, and
+artifact previews. The current V2 slice rejects redirect following by design
+and stores bounded response previews as
+`fetch_result` evidence.
 
 `request_user_input` and `request_approval` persist pending `actions` and move
 the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to
@@ -240,6 +265,7 @@ grep_results.json#matches/<index>
 log_searches/<search_id>.json#matches/<index>
 log_slices/<slice_id>.json#lines
 tool_results/<tool_id>/result.json#findings/<index>
+tool_results/<fetch_action_id>/result.json#response
 ```
 
 Background resources such as `manifest.json` are readable over task MCP but

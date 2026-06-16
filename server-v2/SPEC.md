@@ -59,6 +59,10 @@ Implemented in this slice:
 - Minimal configured Tool Runner. Tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
   task MCP `logagent.run_domain_tool`.
+- Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
+  through protected HTTP APIs, exposed as a built-in `/api/v2/tools` descriptor,
+  and executable through task MCP `logagent.fetch` only when enabled and
+  allowlisted.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted and user
   message/approval APIs can requeue the run.
@@ -82,8 +86,9 @@ Not yet implemented:
 - LangGraph provider integration.
 - Rich Tool Runner input matching, per-tool params schema, Case
   recall, and full multi-round model reasoning after resume.
-- Metadata preview/confirm flow, URL fetch, task context auto-selection, and
-  WebUI cutover.
+- Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
+  Fetch management, Metadata preview/confirm flow, openGemini URL import, task
+  context auto-selection, and WebUI cutover.
 - Skills export zip, richer automatic Skill matching, and WebUI System Context
   cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
@@ -131,6 +136,12 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+GET  /api/v2/fetch/endpoints
+POST /api/v2/fetch/endpoints
+GET  /api/v2/fetch/endpoints/:endpoint_id
+PATCH /api/v2/fetch/endpoints/:endpoint_id
+DELETE /api/v2/fetch/endpoints/:endpoint_id
+POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -161,6 +172,7 @@ SQLite tables:
 - `jobs`
 - `metadata_instances`
 - `cases`
+- `fetch_endpoints`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
@@ -249,6 +261,50 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+## Fetch Endpoints
+
+V2 Fetch endpoints are stored in SQLite table `fetch_endpoints` with name,
+method, URL, headers, optional body, enabled flag, and timestamps. The public
+API returns redacted endpoint previews; raw headers and bodies are only used by
+the server-side executor.
+
+Fetch execution is disabled by default. To execute endpoints, set:
+
+```text
+LOGAGENT_V2_FETCH_ENABLED=1
+LOGAGENT_V2_FETCH_ALLOWED_HOSTS=127.0.0.1,example.internal:8080
+```
+
+Only `http` and `https` URLs are supported. The requested host or host:port must
+exactly match the allowlist. Controlled headers such as `Host`,
+`Content-Length`, and `Connection` are rejected when endpoints are saved.
+Sensitive headers, query parameters, and JSON/form-style body preview fields
+containing token/secret/password/api key style names are redacted from API, MCP,
+and artifact previews.
+
+Task MCP exposes:
+
+```text
+logagent.list_fetch_endpoints
+logagent.fetch { endpointId }
+```
+
+`logagent.fetch` writes a `fetch_result` artifact/evidence item. Network errors
+produce a failed Fetch result rather than crashing the run. HTTP 4xx/5xx
+responses are stored as responses. Redirect following is intentionally disabled
+in this slice.
+
+Fetch response evidence refs use:
+
+```text
+tool_results/<fetch_action_id>/result.json#response
+```
+
+Final-answer validation accepts these refs only for current-run,
+`final_allowed=true`, `kind=fetch_result` evidence whose artifact contains a
+real `response` object. The readonly MCP endpoint may list the built-in Fetch
+catalog descriptor, but it does not expose or run `logagent.fetch`.
 
 ## Metadata
 

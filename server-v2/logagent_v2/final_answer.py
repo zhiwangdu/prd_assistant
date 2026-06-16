@@ -17,6 +17,7 @@ LOG_SLICE_RE = re.compile(r"^(log_slices/[A-Za-z0-9_-]+\.json)#lines$")
 TOOL_FINDING_RE = re.compile(
     r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#findings/(\d+)$"
 )
+FETCH_RESPONSE_RE = re.compile(r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#response$")
 
 
 class FinalAnswerValidationError(ValueError):
@@ -161,6 +162,15 @@ def is_valid_ref(
             for item in evidence_items
         )
 
+    fetch_response = FETCH_RESPONSE_RE.match(ref)
+    if fetch_response:
+        return any(
+            item["kind"] == "fetch_result"
+            and item["payload"].get("ref") == ref
+            and artifact_response_exists(settings, store, item)
+            for item in evidence_items
+        )
+
     return False
 
 
@@ -183,6 +193,10 @@ def artifact_ref_exists(
     ref: str,
 ) -> bool:
     return read_evidence_artifact(settings, store, evidence).get(field) == ref
+
+
+def artifact_response_exists(settings: Settings, store: Store, evidence: JsonObject) -> bool:
+    return isinstance(read_evidence_artifact(settings, store, evidence).get("response"), dict)
 
 
 def read_evidence_artifact(settings: Settings, store: Store, evidence: JsonObject) -> JsonObject:

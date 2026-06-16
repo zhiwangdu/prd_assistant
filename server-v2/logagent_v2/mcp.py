@@ -6,6 +6,7 @@ from .artifacts import resolve_artifact_path
 from .case_memory import call_case_tool, case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
+from .fetch import call_fetch_tool, fetch_catalog_descriptor, fetch_tool_descriptors
 from .metadata import call_metadata_tool, metadata_tool_descriptors
 from .skills import (
     get_skill,
@@ -22,6 +23,7 @@ from .tools import run_configured_tool, tool_descriptors
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
 CASE_TOOL_NAMES = {tool["name"] for tool in case_tool_descriptors()}
 SKILL_TOOL_NAMES = {tool["name"] for tool in skill_tool_descriptors()}
+FETCH_TOOL_NAMES = {tool["name"] for tool in fetch_tool_descriptors()}
 
 
 def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
@@ -51,6 +53,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     *metadata_tool_descriptors(),
                     *case_tool_descriptors(),
                     *skill_tool_descriptors(),
+                    *fetch_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -102,7 +105,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                         "name": "skills",
                         "description": "Imported V2 diagnostic skills",
                         "mimeType": "application/json",
-                    }
+                    },
                 ]
             }
         elif method == "tools/list":
@@ -129,7 +132,8 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                             "text": json.dumps(
                                 metadata_tool_descriptors()
                                 + case_tool_descriptors()
-                                + skill_tool_descriptors(),
+                                + skill_tool_descriptors()
+                                + [fetch_catalog_descriptor(settings)],
                                 ensure_ascii=True,
                             ),
                         }
@@ -174,6 +178,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                     metadata_tool_descriptors()
                     + case_tool_descriptors()
                     + skill_tool_descriptors()
+                    + [fetch_catalog_descriptor(settings)]
                 )
             elif uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
@@ -339,6 +344,16 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         }
     if name in SKILL_TOOL_NAMES:
         value = call_task_skill_tool(settings, store, run, name, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
+    if name in FETCH_TOOL_NAMES:
+        value = call_fetch_tool(settings, store, run, name, arguments)
         return {
             "content": [
                 {
