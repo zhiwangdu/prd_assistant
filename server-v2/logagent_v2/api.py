@@ -41,6 +41,7 @@ from .metadata import (
     query_field_types,
 )
 from .mcp import readonly_mcp_response, task_mcp_response
+from .results import get_run_result
 from .security import auth_dependency
 from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
@@ -267,6 +268,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             return {"evidence": store.list_evidence(run_id)}
         except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/runs/{run_id}/result")
+    async def get_result(_: Auth, run_id: str) -> dict:
+        try:
+            return get_run_result(settings, store, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/api/v2/runs/{run_id}/messages")

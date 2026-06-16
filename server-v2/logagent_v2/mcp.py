@@ -8,6 +8,7 @@ from .config import Settings
 from .evidence import get_log_slice, run_log_search
 from .fetch import call_fetch_tool, fetch_catalog_descriptor, fetch_tool_descriptors
 from .metadata import call_metadata_tool, metadata_tool_descriptors
+from .results import latest_evidence, read_text_artifact
 from .skills import (
     get_skill,
     list_skills,
@@ -231,15 +232,22 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "analysis_state", "Latest Analysis Agent state snapshot"),
         resource(run_id, "agent_request", "Latest Agent provider request"),
         resource(run_id, "agent_response", "Latest Agent provider response"),
+        resource(run_id, "result", "Final result JSON artifact"),
+        resource(run_id, "result_markdown", "Final result Markdown artifact", "text/markdown"),
     ]
 
 
-def resource(run_id: str, name: str, description: str) -> dict:
+def resource(
+    run_id: str,
+    name: str,
+    description: str,
+    mime_type: str = "application/json",
+) -> dict:
     return {
         "uri": f"logagent-v2://run/{run_id}/{name}",
         "name": name,
         "description": description,
-        "mimeType": "application/json",
+        "mimeType": mime_type,
     }
 
 
@@ -271,6 +279,20 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_request")
     elif name == "agent_response":
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_response")
+    elif name == "result":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "result")
+    elif name == "result_markdown":
+        evidence = latest_evidence(store, run["id"], "result_markdown")
+        text = read_text_artifact(settings, store, evidence["artifact_id"])
+        return {
+            "contents": [
+                {
+                    "uri": uri,
+                    "mimeType": "text/markdown",
+                    "text": text,
+                }
+            ]
+        }
     else:
         raise ValueError(f"unsupported task resource {name}")
     return {

@@ -62,7 +62,8 @@ Implemented in this slice:
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, and `agent_response` resources.
+  `agent_request`, `agent_response`, `result`, and `result_markdown`
+  resources.
 - Task MCP `logagent.search_logs`, which creates follow-up `log_search`
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
@@ -85,6 +86,8 @@ Implemented in this slice:
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
+- Final result persistence as `result.json` and `result.md` background
+  artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
   storage, field/tag type query APIs, per-run `metadata_context`
@@ -134,6 +137,7 @@ POST /api/v2/workspaces/:workspace_id/runs
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
+GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
@@ -228,6 +232,7 @@ Workspace uploads
   -> analysis_package.json bounded Agent context
   -> agent_request.json / agent_response.json / analysis_state.json audit
   -> stub or OpenAI-compatible JSON final answer
+  -> result.json and result.md artifacts
 ```
 
 Supported archive formats are `.zip`, `.tar`, `.tar.gz`, and `.tgz`. Archive
@@ -693,6 +698,12 @@ available, parsed final answer, normalized final answer, and validation status
 or failure details. `analysis_state` captures the latest round status and links
 the request and response artifact ids. These evidence rows are
 background-only (`final_allowed=false`) and exposed through task MCP resources.
+
+After final-answer validation succeeds, V2 writes `result.json` with schema
+version 1 and `result.md` as a Markdown rendering of the same final answer.
+Both are background evidence rows (`result` and `result_markdown`) and can be
+read through `GET /api/v2/runs/<run_id>/result` or task MCP resources
+`result` and `result_markdown`.
 
 ## Waiting States
 

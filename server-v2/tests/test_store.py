@@ -48,6 +48,7 @@ from logagent_v2.metadata import (
     preview_metadata_import_from_url,
     query_field_types,
 )
+from logagent_v2.results import get_run_result
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
 from logagent_v2.tools import (
@@ -94,6 +95,8 @@ class StoreTests(unittest.TestCase):
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "manifest" for item in evidence))
             self.assertTrue(any(item["kind"] == "log_search" for item in evidence))
+            self.assertTrue(any(item["kind"] == "result" for item in evidence))
+            self.assertTrue(any(item["kind"] == "result_markdown" for item in evidence))
             package_evidence = next(
                 item for item in evidence if item["kind"] == "analysis_package"
             )
@@ -128,6 +131,8 @@ class StoreTests(unittest.TestCase):
             self.assertIn("analysis_state", resource_names)
             self.assertIn("agent_request", resource_names)
             self.assertIn("agent_response", resource_names)
+            self.assertIn("result", resource_names)
+            self.assertIn("result_markdown", resource_names)
             state_response = task_mcp_response(
                 settings,
                 store,
@@ -173,6 +178,38 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["status"], "completed")
             self.assertEqual(response_doc["validation"]["status"], "passed")
             self.assertEqual(response_doc["validatedFinalAnswer"]["confidence"], "low")
+            result_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/result"},
+                },
+            )
+            result_doc = json.loads(result_response["result"]["contents"][0]["text"])
+            self.assertEqual(result_doc["finalAnswer"]["confidence"], "low")
+            markdown_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 8,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/result_markdown"},
+                },
+            )
+            markdown_content = markdown_response["result"]["contents"][0]
+            self.assertEqual(markdown_content["mimeType"], "text/markdown")
+            self.assertIn("# LogAgent Result", markdown_content["text"])
+            self.assertIn("grep_results.json#matches/0", markdown_content["text"])
+            run_result = get_run_result(settings, store, run["id"])
+            self.assertEqual(run_result["finalAnswer"]["confidence"], "low")
+            self.assertEqual(run_result["artifacts"]["json"]["content_type"], "application/json")
+            self.assertEqual(run_result["artifacts"]["markdown"]["content_type"], "text/markdown")
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))

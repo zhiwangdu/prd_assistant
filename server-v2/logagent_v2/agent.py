@@ -19,6 +19,7 @@ from .llm import (
 )
 from .mcp import call_task_tool
 from .metadata import persist_metadata_context
+from .results import persist_run_result
 from .skills import persist_system_context
 from .store import JsonObject, Store
 
@@ -72,6 +73,7 @@ class AgentRuntime:
             evidence_bundle=evidence_bundle,
             analysis_package_artifact_id=analysis_package["artifact"]["id"],
         )
+        persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer)
         return final_answer
 

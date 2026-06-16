@@ -34,6 +34,8 @@ slice provides the durable foundation for the V2 product model:
   and `logagent.request_approval`.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
+- Final result persistence as `result.json` and `result.md` artifacts, with
+  HTTP and task MCP read surfaces.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, preview/confirm drafts, field/tag type
   queries, per-run `metadata_context` auto-selection, HTTP API, and
@@ -152,6 +154,7 @@ POST /api/v2/workspaces/:workspace_id/runs
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
+GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
@@ -243,6 +246,10 @@ details plus final-answer validation status, and the state artifact records the
 latest round status. Task MCP exposes them as `agent_request`,
 `agent_response`, and `analysis_state` resources.
 
+Successful runs also write `result.json` and `result.md`. `GET
+/api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
+evidence metadata, while task MCP exposes `result` and `result_markdown`.
+
 ## Initial Evidence Pipeline
 
 When a run starts, V2 now reads all uploads attached to the Workspace and:
@@ -292,7 +299,7 @@ It currently supports:
 - `resources/list`
 - `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, and `agent_response`
+  `agent_request`, `agent_response`, `result`, and `result_markdown`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`

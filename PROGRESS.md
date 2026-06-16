@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Result Artifacts
+
+- Added final result persistence for succeeded V2 runs as `result.json` and `result.md` artifacts.
+- `result.json` stores schema version, run id, creation time, and the validated final answer; `result.md` renders the same answer for human review.
+- Added background evidence kinds `result` and `result_markdown` with `final_allowed=false`.
+- Added `GET /api/v2/runs/:run_id/result`, returning the stored final answer plus result artifact/evidence metadata.
+- Task MCP now lists and reads `result` and `result_markdown`; Markdown is returned with `text/markdown`.
+- `analysis_package.json` resource index now advertises result resources for post-run review.
+- Added regression coverage for result evidence, MCP JSON/Markdown resources, Markdown content, and result helper artifact metadata.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Context Tool Catalog
 
 - Expanded the provider-directed Agent tool loop from log search/slice to the advertised task MCP tool catalog.
