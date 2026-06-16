@@ -242,6 +242,38 @@ def response_from_http(settings: Settings, response: Any, status_code: int) -> J
     }
 
 
+def fetch_text(settings: Settings, url: str) -> JsonObject:
+    if not settings.fetch_enabled:
+        raise ValueError("metadata URL fetch is disabled")
+    validate_url_allowed(settings, url)
+    request = urllib.request.Request(url, method="GET")
+    opener = urllib.request.build_opener(NoRedirectHandler)
+    try:
+        with opener.open(request, timeout=settings.fetch_timeout_seconds) as response:
+            status_code = int(response.status)
+            raw = response.read(settings.fetch_max_response_bytes + 1)
+    except urllib.error.HTTPError as error:
+        status_code = int(error.code)
+        raw = error.read(min(settings.fetch_max_response_bytes + 1, 4096))
+        if 300 <= status_code < 400:
+            raise ValueError(f"metadata URL fetch redirects are disabled: HTTP {status_code}")
+        raise ValueError(
+            f"metadata URL fetch returned HTTP {status_code}: "
+            f"{raw[:500].decode('utf-8', errors='replace')}"
+        ) from error
+    truncated = len(raw) > settings.fetch_max_response_bytes
+    if truncated:
+        raise ValueError("metadata URL fetch response exceeds LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES")
+    if not 200 <= status_code < 300:
+        raise ValueError(f"metadata URL fetch returned HTTP {status_code}")
+    return {
+        "url": redact_url(url),
+        "statusCode": status_code,
+        "content": raw.decode("utf-8", errors="replace"),
+        "sizeBytes": len(raw),
+    }
+
+
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
         raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)

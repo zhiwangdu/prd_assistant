@@ -29,9 +29,9 @@ slice provides the durable foundation for the V2 product model:
   and `logagent.request_approval`.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
-- Metadata foundation with JSON/YAML/openGemini content import, SQLite snapshot
-  storage, preview/confirm drafts, field/tag type queries, HTTP API, and
-  readonly/task MCP tools.
+- Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
+  fetch, SQLite snapshot storage, preview/confirm drafts, field/tag type
+  queries, HTTP API, and readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   keyword recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
@@ -139,7 +139,9 @@ DELETE /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
+POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
@@ -172,9 +174,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
 matching, real analyzer-specific stdout adapters, Fetch cURL import and
-encrypted credential sets, Metadata openGemini URL import, skills.zip export,
-richer Skill auto-matching, Case import drafts, FTS/embedding recall, WebUI, or
-full LangGraph model loop.
+encrypted credential sets, skills.zip export, richer Skill auto-matching, Case
+import drafts, FTS/embedding recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -305,6 +306,7 @@ imports immediately; the safer product flow is:
 
 ```text
 POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/:import_id/confirm
 ```
@@ -312,6 +314,12 @@ POST /api/v2/metadata/imports/:import_id/confirm
 Preview parses and normalizes content, stores a draft with status `previewed`,
 and returns node/database counts without changing `metadata_instances`. Confirm
 upserts the normalized snapshot and marks the draft `confirmed`.
+
+URL fetch uses the same default-off Fetch boundary:
+`LOGAGENT_V2_FETCH_ENABLED=1`, exact host/host:port
+`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, timeout, and response size limit. Only GET is
+used, redirects are rejected in this V2 slice, and draft `sourceUrl` values are
+stored/displayed with sensitive query parameters redacted.
 
 Metadata import payloads accept:
 

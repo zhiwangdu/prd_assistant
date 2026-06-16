@@ -27,8 +27,10 @@ from logagent_v2.final_answer import (
 from logagent_v2.mcp import readonly_mcp_response, task_mcp_response
 from logagent_v2.metadata import (
     confirm_metadata_import,
+    import_metadata_from_url,
     import_metadata,
     preview_metadata_import,
+    preview_metadata_import_from_url,
     query_field_types,
 )
 from logagent_v2.skills import list_skills
@@ -755,6 +757,84 @@ class StoreTests(unittest.TestCase):
             instances = store.list_metadata_instances()
             self.assertEqual(instances[0]["instanceId"], "inst-preview")
             self.assertEqual(instances[0]["nodeCount"], 1)
+
+    def test_metadata_url_fetch_preview_confirm_uses_allowlist(self) -> None:
+        class MetadataHandler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = json.dumps(
+                    {
+                        "ClusterID": 99,
+                        "DataNodes": [{"ID": 1, "Host": "10.0.0.1"}],
+                        "Databases": {"db0": {"RetentionPolicies": {}}},
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), MetadataHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("127.0.0.1",),
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                url = f"http://127.0.0.1:{server.server_port}/getdata?token=secret"
+
+                preview = preview_metadata_import_from_url(
+                    settings,
+                    store,
+                    instance_id="inst-url",
+                    template_type="opengemini",
+                    url=url,
+                    remark="url import",
+                )
+                self.assertEqual(preview["fetch"]["statusCode"], 200)
+                self.assertIn("token=__REDACTED__", preview["import"]["sourceUrl"])
+                self.assertEqual(store.list_metadata_instances(), [])
+
+                confirmed = confirm_metadata_import(store, preview["import"]["importId"])
+                self.assertEqual(confirmed["instance"]["instanceId"], "inst-url")
+                self.assertEqual(store.list_metadata_instances()[0]["databaseCount"], 1)
+
+                direct = import_metadata_from_url(
+                    settings,
+                    store,
+                    instance_id="inst-url-direct",
+                    template_type="opengemini",
+                    url=url,
+                )
+                self.assertEqual(direct["instance"]["instanceId"], "inst-url-direct")
+
+                blocked_settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("example.com",),
+                )
+                with self.assertRaisesRegex(ValueError, "not in allowlist"):
+                    preview_metadata_import_from_url(
+                        blocked_settings,
+                        store,
+                        instance_id="blocked",
+                        template_type="opengemini",
+                        url=url,
+                    )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_task_mcp_waiting_actions_are_persisted_and_resumable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

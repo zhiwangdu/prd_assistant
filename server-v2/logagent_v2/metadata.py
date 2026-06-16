@@ -5,6 +5,7 @@ from typing import Any
 
 from .artifacts import write_artifact_bytes
 from .config import Settings
+from .fetch import fetch_text, redact_url
 from .store import JsonObject, Store
 
 
@@ -46,6 +47,7 @@ def preview_metadata_import(
     template_type: str,
     content: str,
     remark: str | None = None,
+    source_url: str | None = None,
 ) -> JsonObject:
     template_type = template_type.lower()
     raw = parse_metadata_content(template_type, content)
@@ -56,8 +58,55 @@ def preview_metadata_import(
         template_type=template_type,
         snapshot=snapshot,
         raw=raw,
+        source_url=redact_url(source_url) if source_url else None,
     )
     return {"import": metadata_import_preview(draft), "snapshot": snapshot}
+
+
+def preview_metadata_import_from_url(
+    settings: Settings,
+    store: Store,
+    instance_id: str,
+    template_type: str,
+    url: str,
+    remark: str | None = None,
+) -> JsonObject:
+    fetched = fetch_text(settings, url)
+    result = preview_metadata_import(
+        store=store,
+        instance_id=instance_id,
+        template_type=template_type,
+        content=fetched["content"],
+        remark=remark,
+        source_url=url,
+    )
+    result["fetch"] = {
+        "url": fetched["url"],
+        "statusCode": fetched["statusCode"],
+        "sizeBytes": fetched["sizeBytes"],
+    }
+    return result
+
+
+def import_metadata_from_url(
+    settings: Settings,
+    store: Store,
+    instance_id: str,
+    template_type: str,
+    url: str,
+    remark: str | None = None,
+) -> JsonObject:
+    preview = preview_metadata_import_from_url(
+        settings=settings,
+        store=store,
+        instance_id=instance_id,
+        template_type=template_type,
+        url=url,
+        remark=remark,
+    )
+    confirmed = confirm_metadata_import(store, preview["import"]["importId"])
+    confirmed["fetch"] = preview["fetch"]
+    return confirmed
 
 
 def confirm_metadata_import(store: Store, import_id: str) -> JsonObject:
@@ -86,6 +135,7 @@ def metadata_import_preview(draft: JsonObject) -> JsonObject:
         "templateType": draft["templateType"],
         "remark": draft.get("remark"),
         "status": draft["status"],
+        "sourceUrl": draft.get("sourceUrl"),
         "nodeCount": len(cluster.get("nodes", [])),
         "databaseCount": len(cluster.get("databases", [])),
         "createdAt": draft["createdAt"],

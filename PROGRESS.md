@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata URL Fetch
+
+- Added allowlisted Metadata URL fetch for preview and direct import, reusing `LOGAGENT_V2_FETCH_ENABLED`, `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, timeout, and response-size limits.
+- Added `POST /api/v2/metadata/imports/fetch/preview` to GET a metadata URL, parse/normalize the response, and create a preview draft without mutating confirmed instances.
+- Added `POST /api/v2/metadata/imports/fetch` as a direct fetch-and-confirm shortcut.
+- Metadata import drafts now track a redacted `sourceUrl`; sensitive query parameters are not exposed in previews.
+- Redirects are rejected in this V2 slice; HTTP errors and allowlist failures are returned as controlled errors.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Metadata Preview Confirm
 
 - Added SQLite-backed V2 `metadata_imports` drafts with `previewed` and `confirmed` statuses.

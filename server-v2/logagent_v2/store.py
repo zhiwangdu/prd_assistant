@@ -187,6 +187,7 @@ class Store:
                   instance_id TEXT NOT NULL,
                   remark TEXT,
                   template_type TEXT NOT NULL,
+                  source_url TEXT,
                   status TEXT NOT NULL,
                   snapshot_json TEXT NOT NULL,
                   raw_json TEXT NOT NULL,
@@ -231,6 +232,7 @@ class Store:
             self._ensure_column_tx(
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
+            self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str
@@ -717,6 +719,7 @@ class Store:
         template_type: str,
         snapshot: JsonObject,
         raw: JsonObject,
+        source_url: str | None = None,
     ) -> JsonObject:
         import_id = new_id("mdimp")
         ts = now_iso()
@@ -724,15 +727,16 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO metadata_imports(
-                  import_id, instance_id, remark, template_type, status,
+                  import_id, instance_id, remark, template_type, source_url, status,
                   snapshot_json, raw_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     import_id,
                     instance_id,
                     remark,
                     template_type,
+                    source_url,
                     "previewed",
                     encode_json(snapshot),
                     encode_json(raw),
@@ -784,6 +788,7 @@ class Store:
         item["importId"] = item.pop("import_id")
         item["instanceId"] = item.pop("instance_id")
         item["templateType"] = item.pop("template_type")
+        item["sourceUrl"] = item.pop("source_url", None)
         item["snapshot"] = decode_json(item.pop("snapshot_json"), {})
         item["raw"] = decode_json(item.pop("raw_json"), {})
         item["createdAt"] = item.pop("created_at")

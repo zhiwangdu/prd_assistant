@@ -74,8 +74,9 @@ Implemented in this slice:
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
-  preview/confirm draft workflow, SQLite snapshot storage, field/tag type query
-  APIs, readonly MCP tools, and task MCP background slices.
+  allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
+  storage, field/tag type query APIs, readonly MCP tools, and task MCP
+  background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, keyword recall, edit/disable API, readonly MCP search, and task
   MCP background case context.
@@ -92,8 +93,7 @@ Not yet implemented:
   matching, real analyzer-specific stdout adapters, per-tool params schema, and
   full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
-  Fetch management, Metadata openGemini URL import, task context
-  auto-selection, and WebUI cutover.
+  Fetch management, Metadata task context auto-selection, and WebUI cutover.
 - Skills export zip, richer automatic Skill matching, and WebUI System Context
   cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
@@ -132,7 +132,9 @@ DELETE /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
+POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
@@ -365,6 +367,7 @@ The product import flow is preview then confirm:
 
 ```text
 POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/:import_id/confirm
 ```
@@ -373,6 +376,13 @@ Preview parses and normalizes content into a draft with status `previewed` and
 returns summary counts. It does not mutate `metadata_instances`. Confirm upserts
 the draft snapshot into `metadata_instances` and marks the draft `confirmed`.
 `POST /api/v2/metadata/imports` remains as a direct immediate import shortcut.
+
+URL fetch import uses the same default-off Fetch boundary. It requires
+`LOGAGENT_V2_FETCH_ENABLED=1`, an exact host or host:port match in
+`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, and the shared Fetch timeout/response-size
+limits. V2 uses GET only, rejects redirects, redacts sensitive query parameters
+in draft `sourceUrl`, and then runs the fetched content through the same
+normalization and preview/confirm path.
 
 Current direct import request:
 

@@ -18,9 +18,11 @@ from .fetch import (
 )
 from .metadata import (
     confirm_metadata_import,
+    import_metadata_from_url,
     import_metadata,
     metadata_import_preview,
     preview_metadata_import,
+    preview_metadata_import_from_url,
     query_field_types,
 )
 from .mcp import readonly_mcp_response, task_mcp_response
@@ -53,6 +55,13 @@ class MetadataImportCreate(BaseModel):
     templateType: Literal["json", "yaml", "opengemini"] = "json"
     content: str = Field(min_length=1)
     filename: str | None = Field(default=None, max_length=300)
+    remark: str | None = Field(default=None, max_length=120)
+
+
+class MetadataImportFetchCreate(BaseModel):
+    instanceId: str = Field(min_length=1, max_length=200)
+    templateType: Literal["json", "yaml", "opengemini"] = "opengemini"
+    url: str = Field(min_length=1, max_length=2000)
     remark: str | None = Field(default=None, max_length=120)
 
 
@@ -440,12 +449,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/v2/metadata/imports/fetch/preview")
+    async def create_metadata_fetch_preview(
+        _: Auth, payload: MetadataImportFetchCreate
+    ) -> dict:
+        try:
+            return preview_metadata_import_from_url(
+                settings=settings,
+                store=store,
+                instance_id=payload.instanceId,
+                template_type=payload.templateType,
+                url=payload.url,
+                remark=payload.remark,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.post("/api/v2/metadata/imports/{import_id}/confirm")
     async def confirm_metadata_import_draft(_: Auth, import_id: str) -> dict:
         try:
             return confirm_metadata_import(store, import_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/imports/fetch")
+    async def create_metadata_fetch_import(
+        _: Auth, payload: MetadataImportFetchCreate
+    ) -> dict:
+        try:
+            return import_metadata_from_url(
+                settings=settings,
+                store=store,
+                instance_id=payload.instanceId,
+                template_type=payload.templateType,
+                url=payload.url,
+                remark=payload.remark,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/metadata/imports")
     async def create_metadata_import(_: Auth, payload: MetadataImportCreate) -> dict:
