@@ -2452,9 +2452,11 @@ fn validate_run_tool_input(input: &serde_json::Value) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("run_tool input.inputFile is required"))?;
     if input_file.starts_with('/')
         || input_file.contains("..")
-        || !input_file.starts_with("extracted/")
+        || (!input_file.starts_with("extracted/") && !input_file.starts_with("tool_inputs/"))
     {
-        anyhow::bail!("run_tool input.inputFile must be a safe extracted/ relative path");
+        anyhow::bail!(
+            "run_tool input.inputFile must be a safe extracted/ or tool_inputs/ relative path"
+        );
     }
     Ok(())
 }
@@ -3569,14 +3571,17 @@ JSON
                 size: 10,
                 raw_path: "raw/upl_1/sample.log".to_string(),
                 extracted_dir: "extracted/sample".to_string(),
+                ..ManifestUpload::default()
             }],
             task_id: "task_1".to_string(),
             source: TaskSource::Upload,
             filename: "sample.log".to_string(),
             source_url: None,
+            tool_inputs_path: None,
             files: vec![ManifestFile {
                 path: "sample/sample.log".to_string(),
                 size: 10,
+                ..ManifestFile::default()
             }],
         }
     }

@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -14,7 +15,7 @@ use crate::{
     app::AppState,
     domain::{
         contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
-        models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolSource},
+        models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolInputIndex, ToolSource},
     },
     pipeline::{extract_task, prepare_pipeline_run, search_task},
     services::fetch::{FetchRunParams, FETCH_TOOL_ID},
@@ -27,6 +28,7 @@ use crate::{
 };
 
 pub const PPROF_ANALYZER_ID: &str = "pprof_analyzer";
+pub const PREPROCESS_LOG_PACKAGE_ID: &str = "logagent.preprocess_log_package";
 pub const METADATA_LIST_INSTANCES_ID: &str = "logagent.list_metadata_instances";
 pub const METADATA_GET_SNAPSHOT_ID: &str = "logagent.get_metadata_snapshot";
 pub const METADATA_GET_FIELD_TYPES_ID: &str = "logagent.get_metadata_field_types";
@@ -116,6 +118,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
             descriptors.push(configured_tool_descriptor(tool));
         }
     }
+    descriptors.push(preprocess_log_package_descriptor());
     descriptors.extend(metadata_descriptors());
     descriptors.push(fetch_descriptor(config));
     descriptors
@@ -128,6 +131,9 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
         } else {
             configured_tool_descriptor(tool)
         });
+    }
+    if tool_id == PREPROCESS_LOG_PACKAGE_ID {
+        return Some(preprocess_log_package_descriptor());
     }
     metadata_descriptors()
         .into_iter()
@@ -166,6 +172,7 @@ pub fn validate_tool_run_request(
             serde_json::to_value(parsed)
                 .map_err(|err| AppError::internal(format!("failed to encode pprof params: {err}")))
         }
+        PREPROCESS_LOG_PACKAGE_ID => validate_preprocess_log_package_params(params),
         METADATA_LIST_INSTANCES_ID => validate_metadata_list_params(params),
         METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
         METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
@@ -179,6 +186,7 @@ pub fn validate_tool_run_request(
 pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     match task.tool_id.as_deref() {
         Some(PPROF_ANALYZER_ID) => run_pprof_task(state.config.clone(), task).await,
+        Some(PREPROCESS_LOG_PACKAGE_ID) => run_preprocess_log_package_task(state, task).await,
         Some(
             METADATA_LIST_INSTANCES_ID
             | METADATA_GET_SNAPSHOT_ID
@@ -191,6 +199,44 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
         }
         Some(tool_id) => Err(AppError::bad_request(format!("unknown toolId {tool_id}"))),
         None => Err(AppError::bad_request("tool run task is missing toolId")),
+    }
+}
+
+fn preprocess_log_package_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        tool_id: PREPROCESS_LOG_PACKAGE_ID.to_string(),
+        display_name: "Log package preprocessor".to_string(),
+        description:
+            "Expand node log packages, normalize rotated logs, and materialize analyzer inputs."
+                .to_string(),
+        enabled: true,
+        source: ToolSource::BuiltIn,
+        read_only: true,
+        editable: false,
+        exportable: false,
+        runnable: true,
+        tags: vec![
+            "built-in".to_string(),
+            "log".to_string(),
+            "preprocess".to_string(),
+            "manual-run".to_string(),
+        ],
+        backend: "builtin".to_string(),
+        accepted_suffixes: vec![".tar.gz".to_string()],
+        min_files: 1,
+        max_files: 100,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+        params_template: serde_json::json!({}),
+        output_views: vec![
+            "summary".to_string(),
+            "nodes".to_string(),
+            "log_groups".to_string(),
+            "tool_inputs".to_string(),
+            "warnings".to_string(),
+        ],
     }
 }
 
@@ -537,6 +583,12 @@ fn validate_metadata_list_params(value: &serde_json::Value) -> Result<serde_json
     }
 }
 
+fn validate_preprocess_log_package_params(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    validate_metadata_list_params(value)
+}
+
 fn validate_metadata_snapshot_params(
     value: &serde_json::Value,
 ) -> Result<serde_json::Value, AppError> {
@@ -881,6 +933,126 @@ async fn run_pprof_task(config: Arc<AppConfig>, task: TaskRecord) -> Result<Path
     Ok(result_path)
 }
 
+async fn run_preprocess_log_package_task(
+    state: Arc<AppState>,
+    task: TaskRecord,
+) -> Result<PathBuf, AppError> {
+    validate_preprocess_log_package_params(&task.tool_params)?;
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let started = Instant::now();
+    prepare_pipeline_run(&workspace).await?;
+    extract_task(state.config.clone(), task.clone()).await?;
+
+    let manifest: Manifest = read_json_file_sync(&workspace.join("manifest.json"))?;
+    let tool_input_index = manifest
+        .tool_inputs_path
+        .as_deref()
+        .and_then(|path| read_json_file_sync::<ToolInputIndex>(&workspace.join(path)).ok());
+
+    let mut nodes = BTreeMap::<String, serde_json::Value>::new();
+    for upload in &manifest.uploads {
+        let Some(node_id) = upload.node_id.as_deref() else {
+            continue;
+        };
+        let entry = nodes.entry(node_id.to_string()).or_insert_with(|| {
+            serde_json::json!({
+                "nodeId": node_id,
+                "instanceIds": [],
+                "packages": 0_u64,
+                "timestamps": [],
+                "logGroups": {},
+                "ignoredFileCount": 0_u64,
+                "warnings": []
+            })
+        });
+        entry["packages"] = serde_json::json!(entry["packages"].as_u64().unwrap_or(0) + 1);
+        if let Some(instance_id) = upload.instance_id.as_deref() {
+            push_json_string_unique(&mut entry["instanceIds"], instance_id);
+        }
+        if let Some(timestamp) = upload.package_timestamp.as_deref() {
+            push_json_string_unique(&mut entry["timestamps"], timestamp);
+        }
+        entry["ignoredFileCount"] = serde_json::json!(
+            entry["ignoredFileCount"].as_u64().unwrap_or(0) + upload.ignored_file_count
+        );
+        for warning in &upload.warnings {
+            push_json_string_unique(&mut entry["warnings"], warning);
+        }
+        for group in &upload.log_groups {
+            if !entry["logGroups"].is_object() {
+                entry["logGroups"] = serde_json::json!({});
+            }
+            let groups = entry["logGroups"]
+                .as_object_mut()
+                .expect("logGroups object");
+            let group_entry = groups.entry(group.name.clone()).or_insert_with(|| {
+                serde_json::json!({
+                    "fileCount": 0_u64,
+                    "compressedFileCount": 0_u64
+                })
+            });
+            group_entry["fileCount"] = serde_json::json!(
+                group_entry["fileCount"].as_u64().unwrap_or(0) + group.file_count
+            );
+            group_entry["compressedFileCount"] = serde_json::json!(
+                group_entry["compressedFileCount"].as_u64().unwrap_or(0)
+                    + group.compressed_file_count
+            );
+        }
+    }
+
+    let tool_inputs = tool_input_index
+        .as_ref()
+        .map(|index| {
+            index
+                .inputs
+                .iter()
+                .map(|input| {
+                    serde_json::json!({
+                        "path": input.path,
+                        "inputKind": input.input_kind,
+                        "scope": input.scope,
+                        "toolIds": input.tool_ids,
+                        "nodeId": input.node_id,
+                        "instanceId": input.instance_id,
+                        "packageTimestamp": input.package_timestamp,
+                        "logGroup": input.log_group,
+                        "recordCount": input.record_count,
+                        "sourceFiles": input.source_files,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let action_id = format!("act_tool_preprocess_{}", task.task_id);
+    let result_dir = workspace.join("tool_results").join(&action_id);
+    fs::create_dir_all(&result_dir)
+        .map_err(|err| AppError::internal(format!("failed to create tool result dir: {err}")))?;
+    let result = serde_json::json!({
+        "schemaVersion": 1,
+        "toolId": PREPROCESS_LOG_PACKAGE_ID,
+        "actionId": action_id,
+        "status": "OK",
+        "summary": format!(
+            "preprocessed {} upload(s), {} node(s), {} extracted file(s), {} materialized tool input(s)",
+            manifest.uploads.len(),
+            nodes.len(),
+            manifest.files.len(),
+            tool_inputs.len()
+        ),
+        "manifestPath": "manifest.json",
+        "toolInputsPath": manifest.tool_inputs_path,
+        "nodes": nodes.into_values().collect::<Vec<_>>(),
+        "toolInputs": tool_inputs,
+        "durationMs": started.elapsed().as_millis(),
+        "createdAt": Utc::now()
+    });
+    let result_path = result_dir.join("result.json");
+    write_json(&result_path, &result)?;
+    Ok(result_path)
+}
+
 async fn run_metadata_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     let tool_id = task
         .tool_id
@@ -969,7 +1141,7 @@ async fn run_configured_tool_task(
         let grep: GrepResults = read_json_file_sync(&workspace.join("grep_results.json"))?;
         let selected = state
             .tool_runner
-            .rule_based_actions(&manifest, &grep)
+            .rule_based_actions(&workspace, &manifest, &grep)
             .into_iter()
             .filter(|action| {
                 action.input.get("tool").and_then(serde_json::Value::as_str)
@@ -1074,9 +1246,9 @@ fn normalized_input_files(
                 "params.inputFiles entries must be non-empty strings",
             ));
         }
-        if !trimmed.starts_with("extracted/") {
+        if !trimmed.starts_with("extracted/") && !trimmed.starts_with("tool_inputs/") {
             return Err(AppError::bad_request(
-                "params.inputFiles entries must be extracted/ relative paths",
+                "params.inputFiles entries must be extracted/ or tool_inputs/ relative paths",
             ));
         }
         let path = validate_workspace_relative_path(trimmed)
@@ -1258,6 +1430,19 @@ fn append_command_stderr(buffer: &mut Vec<u8>, label: &str, run: &CommandRun) {
     buffer.extend_from_slice(&run.stderr);
     if !run.stderr.ends_with(b"\n") {
         buffer.push(b'\n');
+    }
+}
+
+fn push_json_string_unique(array_value: &mut serde_json::Value, value: &str) {
+    if !array_value.is_array() {
+        *array_value = serde_json::json!([]);
+    }
+    let array = array_value.as_array_mut().expect("array value");
+    if !array
+        .iter()
+        .any(|existing| existing.as_str() == Some(value))
+    {
+        array.push(serde_json::json!(value));
     }
 }
 

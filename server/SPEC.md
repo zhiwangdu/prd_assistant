@@ -24,6 +24,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
+- 节点日志包预处理：匹配 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` 的包会按节点/时间/日志类型展开，gzip 轮转日志可被 grep 和日志切片透明读取，并生成 `tool_inputs` 给后续 analyzer 使用
 - Fetch endpoint MVP：`fetch` 配置、cURL import、credential store、endpoint API、`logagent.fetch` MCP tool 和 response evidence ref
 - `PLAN_ANALYSIS` Claude Code session runner、MCP config 生成、等待态和 evidence ref 校验
 - `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复 API
@@ -222,6 +223,8 @@ logagent.list_domain_adapters
 
 工具目录由 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 共享同一批 descriptor。每个 descriptor 必须包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`backend`、`paramsSchema`、`paramsTemplate` 和 `outputViews`。手动配置的外部工具使用 `source=configured`；内置 metadata 工具使用 `source=built_in`，并且必须是只读、不可编辑、不可导出、可通过 `POST /api/tools/:tool_id/runs` 手动运行。当前内置 metadata catalog tools 包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields`。
 
+内置日志包预处理 catalog tool 为 `logagent.preprocess_log_package`，`source=built_in`、`backend=builtin`、只读、不可编辑、不可导出、支持 1..100 个 `.tar.gz` 上传。它复用 Analyze 的解压逻辑，写出 `manifest.json`、`tool_inputs/index.json` 和 `tool_results/<action_id>/result.json` 摘要。
+
 内置 Fetch catalog tool 为 `logagent.fetch`，`source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件，只有 `fetch.enabled=true` 时才 `runnable=true`。只读 HTTP MCP 可在工具目录看到 descriptor，但 `tools/call logagent.fetch` 必须被拒绝。
 
 Fetch endpoint API 使用 `storage.data_dir/fetch` 下的 endpoint JSON。`POST /api/fetch/imports/preview` 解析 DevTools “Copy as cURL (bash)” 常见格式并返回脱敏预览；`POST /api/fetch/endpoints` 保存 endpoint 和加密 credential set；`POST /api/fetch/endpoints/:fetch_id/runs` 创建 `taskKind=tool_run` 且 `toolId=logagent.fetch` 的后台 run；`GET /api/fetch/runs?fetchId=...` 是 `/api/tools/runs` 的便捷过滤视图。
@@ -289,6 +292,10 @@ data_dir/
         upl_xxx/
       extracted/
         package_name/
+      tool_inputs/
+        index.json
+        influxql_analyzer/
+        log_text/
       session_text_input.json
       manifest.json
       grep_results.json
@@ -379,7 +386,7 @@ background executor
   -> SUCCEEDED or FAILED
 ```
 
-`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求可引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动。只有 descriptor 中 `enabled=true` 且 `runnable=true` 的工具可通过该接口创建手动 run。`pprof_analyzer` 继续直接读取 raw profile；configured command tools 会先执行 extract/search 准备，生成 `extracted/`、`manifest.json` 和 `grep_results.json` 后再按白名单 args 模板运行；内置 metadata tools 可无上传运行并写入 JSON result。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
+`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求可引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动。只有 descriptor 中 `enabled=true` 且 `runnable=true` 的工具可通过该接口创建手动 run。`pprof_analyzer` 继续直接读取 raw profile；configured command tools 会先执行 extract/search 准备，生成 `extracted/`、`manifest.json`、`grep_results.json` 和可能的 `tool_inputs/index.json` 后再按白名单 args 模板运行；自动选择输入时优先使用 `tool_inputs` 中声明给该 toolId 的 materialized input，再回退到 manifest file pattern 和 grep keyword。内置 metadata tools 可无上传运行并写入 JSON result；`logagent.preprocess_log_package` 可手动批量运行并输出预处理摘要。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
 `POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 

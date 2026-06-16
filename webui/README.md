@@ -13,7 +13,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
-- `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
+- `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
@@ -35,7 +35,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
 - 成功任务展示 Claude Code session 面板，包括 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json` 路径、analysis mode、permission profile、session id、runtime status、usage/cost、耗时、MCP calls 和错误。
 - 成功任务展示 Tool Runner 产物，包括工具名、状态、退出码、耗时、摘要、结构化 findings 和 stdout/stderr 路径。
-- Tools / Tool plugins 页面复用上传和 Server task 轮询，按 `/api/tools` descriptor 的 `source/tags/readOnly/exportable/runnable` 展示 configured 与 built-in 工具差异；所有 runnable 工具都按 `paramsTemplate` 预填 JSON 参数并允许手工修改后运行，metadata built-ins 不需要上传，configured command tools 上传匹配文件，`pprof_analyzer` 展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径，其他工具展示 JSON result。
+- Tools / Tool plugins 页面复用上传和 Server task 轮询，按 `/api/tools` descriptor 的 `source/tags/readOnly/exportable/runnable` 展示 configured 与 built-in 工具差异；所有 runnable 工具都按 `paramsTemplate` 预填 JSON 参数并允许手工修改后运行，metadata built-ins 不需要上传，configured command tools 上传匹配文件，`logagent.preprocess_log_package` 接受多个 `.tar.gz` 日志包，`pprof_analyzer` 展示 profile type、total、top 函数表和 top/tree/raw/stderr artifact 路径，其他工具展示 JSON result。
 - Tools / Fetch 页面调用 `/api/fetch/*` 管理 Server 内置 Fetch endpoint。预览、endpoint 详情和运行结果都只展示脱敏 request/response；运行结果读取 `/api/tools/runs/:task_id/result` 中的 `tool=logagent.fetch` artifact。
 - Tools / Executors 页面调用 `/api/executors` 管理执行机，调用 `/api/executor-command-templates` 读取白名单命令模板，并通过 `/api/executor-runs` 发起和轮询 `remote_command_run`。首版使用内置 `smoke_ls_root` 模板做低风险 SSH smoke，不允许输入自由 shell 命令。
 - 根因 evidence ref 可滚动定位到对应 grep match。

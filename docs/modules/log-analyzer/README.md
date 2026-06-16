@@ -46,6 +46,7 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 - `manifest.json`
 - `error_summary.json`
 - `contexts.jsonl`
+- `tool_inputs/index.json`
 - `log_searches/<action_id>.json`
 
 ## 支持格式
@@ -65,6 +66,36 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 extracted/<文件基名>/
 ```
 
+匹配以下包名的节点日志包使用专用预处理：
+
+```text
+<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz
+```
+
+这类包按节点和采集时间展开，不再套文件基名目录：
+
+```text
+extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/...
+```
+
+目录映射：
+
+- `/var/chroot/gemini/log/tsdb/**` -> `tsdb`
+- `/var/chroot/gemini/log/stream/**` -> `stream`
+- `/home/Ruby/log/**` -> `agent`
+
+日志轮转按目录语义处理：目录下所有普通文件都纳入对应 log group，不依赖 `.log`、`.log.gz` 或其他后缀。gzip 文件用 magic bytes 识别，初始 grep 和 `logagent.get_log_slice` 都透明解码；解码失败的 gzip 文件保留在 manifest 中并记录 warning，检索时跳过。
+
+预处理还会生成 analyzer-ready 输入：
+
+```text
+tool_inputs/index.json
+tool_inputs/log_text/<nodeId>/<timestamp>/<logGroup>.jsonl
+tool_inputs/influxql_analyzer/<nodeId>/<timestamp>.jsonl
+```
+
+`log_text` JSONL 是通用逐行文本流；`influxql_analyzer` JSONL 只包含能明确提取 `query` 的记录，供 Tool Runner 优先传给 `influxql_analyzer`。
+
 如果 Log Analysis Session 没有上传日志，Server pipeline 仍会创建 `raw/` 和 `extracted/` 目录，并生成 `session_text_input.json`、空文件列表的 `manifest.json` 和空 matches 的 `grep_results.json`，让 Analysis Orchestrator 可以基于用户问题、Metadata、Case 和后续交互继续运行。
 
 ## manifest
@@ -74,8 +105,7 @@ extracted/<文件基名>/
   "files": [
     {
       "path": "redis.log",
-      "size": 2147483648,
-      "modifiedAt": "2026-05-30T10:00:00Z"
+      "size": 2147483648
     }
   ]
 }

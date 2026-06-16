@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Log Package Preprocessor
+
+- Added Server-native preprocessing for node log packages named `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`. Matching uploads now expand to `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/` and record package/node metadata in `manifest.json`.
+- Log rotation is handled by directory membership, not filename suffix. All ordinary files under the three supported log directories are kept; gzip content is detected by magic bytes so rotated files with arbitrary names can be searched and sliced.
+- Generated analyzer-ready materialized inputs under `tool_inputs/`, including a shared `tool_inputs/index.json`, generic `log_text` JSONL, and `influxql_analyzer` JSONL containing only lines where a query can be extracted.
+- Tool Runner selection now prefers `tool_inputs/index.json` entries for the current toolId before falling back to manifest file patterns and grep keywords. Manual configured tool runs can explicitly use safe `tool_inputs/...` paths.
+- Added built-in runnable catalog tool `logagent.preprocess_log_package` so the same preprocessing can be run from WebUI Tools as a `tool_run` task and viewed as a JSON result artifact.
+- Updated root, Server, WebUI, Log Analyzer, Tool Runner, Interfaces, and Security docs/specs.
+- Verification passed: `cargo fmt --check`, `cargo check`, focused Log Analyzer tests, focused pipeline preprocessing test, focused Tool Runner materialized-input test, `cargo test -- --test-threads=1`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and `git diff --check`.
+
 ## 2026-06-16 Fetch Endpoint MVP
 
 - Added Server-managed Fetch endpoints behind a new `fetch` config section. Fetch is disabled by default; enabling it requires a 32-byte base64 secret key from `fetch.secret_key_env` and an explicit `fetch.allowed_hosts` HTTP/HTTPS allowlist.

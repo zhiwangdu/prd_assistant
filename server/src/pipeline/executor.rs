@@ -863,8 +863,10 @@ async fn run_tool_phase(state: Arc<AppState>, task: &TaskRecord) -> anyhow::Resu
     let workspace = state.config.storage.workspace_dir(&task.task_id);
     let manifest = read_json::<Manifest>(&workspace.join("manifest.json")).await?;
     let grep = read_json::<GrepResults>(&workspace.join("grep_results.json")).await?;
-    let context = TaskContext::from_record(task, workspace, None);
-    let actions = state.tool_runner.rule_based_actions(&manifest, &grep);
+    let context = TaskContext::from_record(task, workspace.clone(), None);
+    let actions = state
+        .tool_runner
+        .rule_based_actions(&workspace, &manifest, &grep);
     info!(
         task_id = %task.task_id,
         action_count = actions.len(),

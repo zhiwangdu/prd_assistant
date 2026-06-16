@@ -15,6 +15,8 @@ manifest.json
 grep_results.json
 metadata_context.json
 metadata_slices/*.json
+tool_inputs/index.json
+tool_inputs/**/*.jsonl
 tool_results/*.json
 tool_results/*/response_body.bin
 code_evidence/*.json
@@ -40,7 +42,7 @@ Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
 - `log_analysis`：完整上传、解压、grep、Tool Runner、Analysis Orchestrator、Claude Code session result 流程。
 - `log_analysis` 必须绑定 `sessionId`。
-- `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，不绑定 Session，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。内置 `logagent.fetch` 也使用 `tool_run`，但无需上传文件，结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`。
+- `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，不绑定 Session，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。内置 `logagent.preprocess_log_package` 使用同一任务类型生成预处理摘要和 `tool_inputs`；内置 `logagent.fetch` 也使用 `tool_run`，但无需上传文件，结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`。
 
 ## 状态契约
 

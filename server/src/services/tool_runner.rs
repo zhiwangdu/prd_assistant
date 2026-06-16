@@ -17,7 +17,7 @@ use crate::{
             ActionKind, ActionRisk, AgentAction, EvidenceArtifact, EvidenceProvider, EvidenceRef,
             EvidenceSummary, EvidenceType, TaskContext,
         },
-        models::{GrepResults, Manifest},
+        models::{GrepResults, Manifest, ToolInputIndex},
     },
     support::{
         config::{ToolSettings, ToolsSettings},
@@ -87,10 +87,15 @@ impl ToolRunner {
         Self { settings }
     }
 
-    pub fn rule_based_actions(&self, manifest: &Manifest, grep: &GrepResults) -> Vec<AgentAction> {
+    pub fn rule_based_actions(
+        &self,
+        workspace: &Path,
+        manifest: &Manifest,
+        grep: &GrepResults,
+    ) -> Vec<AgentAction> {
         let mut actions = Vec::new();
         for tool in self.settings.tools.values().filter(|tool| tool.enabled) {
-            for input_file in select_input_files(tool, manifest, grep) {
+            for input_file in select_input_files(tool, workspace, manifest, grep) {
                 let action_id = format!(
                     "act_tool_{}_{}",
                     safe_action_suffix(&tool.name),
@@ -298,9 +303,25 @@ impl EvidenceProvider for ToolRunner {
     }
 }
 
-fn select_input_files(tool: &ToolSettings, manifest: &Manifest, grep: &GrepResults) -> Vec<String> {
+fn select_input_files(
+    tool: &ToolSettings,
+    workspace: &Path,
+    manifest: &Manifest,
+    grep: &GrepResults,
+) -> Vec<String> {
     let limit = tool.max_input_files.max(1);
     let mut selected = Vec::new();
+
+    for input_file in select_materialized_inputs(tool, workspace, manifest) {
+        if selected.len() >= limit {
+            return selected;
+        }
+        push_selected_path(&mut selected, &input_file);
+    }
+    if selected.len() >= limit {
+        selected.truncate(limit);
+        return selected;
+    }
 
     for file in &manifest.files {
         if selected.len() >= limit {
@@ -348,10 +369,45 @@ fn select_input_files(tool: &ToolSettings, manifest: &Manifest, grep: &GrepResul
     selected
 }
 
+fn select_materialized_inputs(
+    tool: &ToolSettings,
+    workspace: &Path,
+    manifest: &Manifest,
+) -> Vec<String> {
+    let Some(index_path) = manifest.tool_inputs_path.as_deref() else {
+        return Vec::new();
+    };
+    let Ok(path) = validate_workspace_relative_path(index_path) else {
+        return Vec::new();
+    };
+    let absolute = workspace.join(path);
+    let Ok(raw) = fs::read_to_string(&absolute) else {
+        return Vec::new();
+    };
+    let Ok(index) = serde_json::from_str::<ToolInputIndex>(&raw) else {
+        return Vec::new();
+    };
+    index
+        .inputs
+        .into_iter()
+        .filter(|entry| entry.tool_ids.iter().any(|tool_id| tool_id == &tool.name))
+        .filter(|entry| {
+            validate_workspace_relative_path(&entry.path)
+                .map(|path| workspace.join(path).is_file())
+                .unwrap_or(false)
+        })
+        .map(|entry| entry.path)
+        .collect()
+}
+
 fn push_selected(selected: &mut Vec<String>, manifest_path: &str) {
     let input_file = format!("extracted/{manifest_path}");
-    if !selected.iter().any(|value| value == &input_file) {
-        selected.push(input_file);
+    push_selected_path(selected, &input_file);
+}
+
+fn push_selected_path(selected: &mut Vec<String>, input_file: &str) {
+    if !selected.iter().any(|value| value == input_file) {
+        selected.push(input_file.to_string());
     }
 }
 
@@ -1095,7 +1151,9 @@ mod tests {
     use crate::{
         domain::{
             contracts::EvidenceProvider,
-            models::{GrepMatch, ManifestFile, ManifestUpload, TaskSource},
+            models::{
+                GrepMatch, ManifestFile, ManifestUpload, TaskSource, ToolInputEntry, ToolInputIndex,
+            },
         },
         support::config::{ToolMatchSettings, ToolSettings, ToolsSettings},
     };
@@ -1314,8 +1372,9 @@ JSON
 
     #[test]
     fn selects_rule_based_actions_from_manifest_or_grep() {
+        let fixture = Fixture::new("tool-runner-select-rule");
         let runner = ToolRunner::new(settings(PathBuf::from("/bin/echo"), 5));
-        let actions = runner.rule_based_actions(&manifest(), &grep());
+        let actions = runner.rule_based_actions(&fixture.workspace, &manifest(), &grep());
         assert_eq!(actions.len(), 1);
         assert_eq!(
             actions[0].action_id,
@@ -1327,6 +1386,57 @@ JSON
         let input = actions[0].decode_input::<ToolActionInput>().unwrap();
         assert_eq!(input.tool, "fake");
         assert_eq!(input.input_file.as_deref(), Some("extracted/sample.log"));
+    }
+
+    #[test]
+    fn rule_based_actions_prefer_materialized_tool_inputs() {
+        let fixture = Fixture::new("tool-runner-select-materialized");
+        std::fs::create_dir_all(
+            fixture
+                .workspace
+                .join("tool_inputs/influxql_analyzer/node123"),
+        )
+        .unwrap();
+        std::fs::write(
+            fixture
+                .workspace
+                .join("tool_inputs/influxql_analyzer/node123/ts.jsonl"),
+            r#"{"query":"select * from cpu"}"#,
+        )
+        .unwrap();
+        let index = ToolInputIndex {
+            schema_version: 1,
+            generated_by: "test".to_string(),
+            inputs: vec![ToolInputEntry {
+                path: "tool_inputs/influxql_analyzer/node123/ts.jsonl".to_string(),
+                input_kind: "influxql_jsonl".to_string(),
+                scope: "package".to_string(),
+                tool_ids: vec!["fake".to_string()],
+                node_id: Some("node123".to_string()),
+                instance_id: None,
+                package_timestamp: Some("ts".to_string()),
+                log_group: None,
+                source_files: vec!["extracted/node123/ts/tsdb/influxdb.log".to_string()],
+                record_count: 1,
+            }],
+        };
+        std::fs::write(
+            fixture.workspace.join("tool_inputs/index.json"),
+            serde_json::to_vec_pretty(&index).unwrap(),
+        )
+        .unwrap();
+        let mut manifest = manifest();
+        manifest.tool_inputs_path = Some("tool_inputs/index.json".to_string());
+        let runner = ToolRunner::new(settings(PathBuf::from("/bin/echo"), 5));
+
+        let actions = runner.rule_based_actions(&fixture.workspace, &manifest, &grep());
+
+        assert_eq!(actions.len(), 1);
+        let input = actions[0].decode_input::<ToolActionInput>().unwrap();
+        assert_eq!(
+            input.input_file.as_deref(),
+            Some("tool_inputs/influxql_analyzer/node123/ts.jsonl")
+        );
     }
 
     #[test]
@@ -1342,14 +1452,17 @@ JSON
                 ManifestFile {
                     path: "queries/one.flux".to_string(),
                     size: 1,
+                    ..ManifestFile::default()
                 },
                 ManifestFile {
                     path: "queries/two.sql".to_string(),
                     size: 1,
+                    ..ManifestFile::default()
                 },
                 ManifestFile {
                     path: "queries/three.sql".to_string(),
                     size: 1,
+                    ..ManifestFile::default()
                 },
             ],
             ..manifest()
@@ -1373,7 +1486,8 @@ JSON
             ],
         };
 
-        let actions = runner.rule_based_actions(&manifest, &grep);
+        let fixture = Fixture::new("tool-runner-select-multiple");
+        let actions = runner.rule_based_actions(&fixture.workspace, &manifest, &grep);
 
         assert_eq!(actions.len(), 2);
         let inputs = actions
@@ -1452,14 +1566,17 @@ JSON
                 size: 12,
                 raw_path: "raw/upl_1/sample.log".to_string(),
                 extracted_dir: "extracted/sample".to_string(),
+                ..ManifestUpload::default()
             }],
             task_id: "task_1".to_string(),
             source: TaskSource::Upload,
             filename: "sample.log".to_string(),
             source_url: None,
+            tool_inputs_path: None,
             files: vec![ManifestFile {
                 path: "sample.log".to_string(),
                 size: 12,
+                ..ManifestFile::default()
             }],
         }
     }

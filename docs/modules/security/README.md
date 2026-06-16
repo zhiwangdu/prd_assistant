@@ -47,6 +47,8 @@
 - 限制外部工具执行时间、输出大小和可访问目录。
 - 工具执行结果要保留 exit code、stderr 和原始输出路径，方便审计。
 - Tools 页面创建的手动工具运行也必须走同一白名单和 workspace 边界。`pprof_analyzer` 只分析已上传到 Server 的本地 profile 文件，不接受 URL source，并把 `PPROF_TMPDIR` 设置到当前 task workspace 内。
+- 节点日志包预处理只从包内三类日志目录生成 `extracted/` 和 `tool_inputs/`：`/var/chroot/gemini/log/tsdb`、`/var/chroot/gemini/log/stream`、`/home/Ruby/log`。其他普通文件忽略并统计；archive 中的 `..`、Windows drive、symlink/hardlink 和特殊文件会被拒绝。
+- Tool Runner 可消费 `tool_inputs/...`，但路径仍必须是当前 workspace 相对路径，不能由用户或 Claude Code 传入任意文件系统路径。
 - 内置 Fetch tool 不调用外部命令，执行边界来自 `fetch.enabled`、32-byte base64 secret key、`fetch.allowed_hosts`、请求/响应大小限制、timeout 和 redirect 限制。每次请求和每个 redirect hop 都必须命中 `http/https` allowlist，跨 host redirect 不转发 Authorization/Cookie。
 - Fetch cURL import 和运行时 header override 必须拒绝 `Host`、`Content-Length`、`Transfer-Encoding`、`Connection` 等受控 header，拒绝 form/upload/proxy/cert/resolve/connect-to 等扩大网络或文件边界的参数。
 - `tools.zip` 导出只打包当前 enabled 且解析为普通可执行文件的工具二进制、wrapper 和示例配置；不导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。缺失或不可执行工具只在 manifest 标记 skipped。

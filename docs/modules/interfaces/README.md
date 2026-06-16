@@ -14,7 +14,7 @@ Server 已在 `server/src/domain/contracts.rs` 落地第一版公共契约，并
 - `EvidenceArtifact` / `EvidenceType` / `EvidenceSummary`
 - `EvidenceProvider`
 
-Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版工具 action、Tools 页面手动运行和 Claude MCP `logagent.run_domain_tool` 走同一执行接口。Fetch endpoint 复用 `tool_run` / `tool_results` 产物面，但执行契约由 Server 内置 Fetch service 提供：endpoint 和密文 credential set 持久化在 `storage.data_dir/fetch`，任务 MCP `logagent.fetch` 写入 `tool_results/<action_id>/result.json#response`。
+Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版工具 action、Tools 页面手动运行和 Claude MCP `logagent.run_domain_tool` 走同一执行接口。日志包预处理会写入 `tool_inputs/index.json`，声明后续工具可消费的 materialized input。Fetch endpoint 复用 `tool_run` / `tool_results` 产物面，但执行契约由 Server 内置 Fetch service 提供：endpoint 和密文 credential set 持久化在 `storage.data_dir/fetch`，任务 MCP `logagent.fetch` 写入 `tool_results/<action_id>/result.json#response`。
 
 Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；Claude MCP `logagent.run_domain_tool` 复用同一个工具 registry。
 

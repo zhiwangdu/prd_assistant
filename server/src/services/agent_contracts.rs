@@ -247,6 +247,7 @@ mod tests {
             source: TaskSource::Upload,
             filename: String::new(),
             source_url: None,
+            tool_inputs_path: None,
             files: Vec::new(),
         };
         let grep_results = GrepResults {

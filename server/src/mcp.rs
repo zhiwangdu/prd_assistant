@@ -22,6 +22,7 @@ use crate::{
     services::{
         agent_contracts::write_json_atomic,
         fetch::{execute_fetch_to_artifacts, FetchRunParams},
+        log_analyzer::read_log_slice,
         metadata::{
             metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
             MetadataFieldTypesRequest, MetadataStore, MetadataTagFieldsRequest,
@@ -639,14 +640,12 @@ async fn get_log_slice_tool(
     if end < start || end.saturating_sub(start) > 500 {
         anyhow::bail!("line range must be ordered and contain at most 500 lines");
     }
-    let raw = tokio::fs::read_to_string(workspace.join(&path)).await?;
-    let lines = raw
-        .lines()
-        .enumerate()
-        .filter_map(|(index, text)| {
-            let line = index + 1;
-            (line >= start && line <= end).then(|| json!({ "line": line, "text": text }))
-        })
+    let source_path = workspace.join(&path);
+    let lines = tokio::task::spawn_blocking(move || read_log_slice(&source_path, start, end))
+        .await
+        .map_err(|err| anyhow::anyhow!("log slice worker panicked: {err}"))??
+        .into_iter()
+        .map(|(line, text)| json!({ "line": line, "text": text }))
         .collect::<Vec<_>>();
     let slice_id = format!("slice_{}", stable_json_hash(&arguments));
     let artifact_path = format!("log_slices/{slice_id}.json");
