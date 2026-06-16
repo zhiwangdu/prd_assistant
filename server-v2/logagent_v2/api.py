@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Uploa
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
+from .analysis import get_run_analysis
 from .artifacts import (
     resolve_artifact_path,
     safe_filename,
@@ -453,6 +454,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def list_run_artifacts(_: Auth, run_id: str) -> dict:
         try:
             return store.list_run_artifacts(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/runs/{run_id}/analysis")
+    async def get_analysis(_: Auth, run_id: str) -> dict:
+        try:
+            return get_run_analysis(settings, store, run_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

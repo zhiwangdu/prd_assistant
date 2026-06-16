@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
+from logagent_v2.analysis import get_run_analysis
 from logagent_v2.artifacts import (
     resolve_artifact_path,
     safe_filename,
@@ -231,6 +232,18 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(
                 all(item["artifact_id"] for item in run_artifacts["evidenceArtifacts"])
             )
+            analysis = get_run_analysis(settings, store, run["id"])
+            self.assertEqual(analysis["run"]["id"], run["id"])
+            self.assertEqual(analysis["workspace"]["id"], workspace["id"])
+            self.assertTrue(analysis["timeline"])
+            self.assertTrue(analysis["evidence"])
+            self.assertEqual(analysis["resources"]["analysis_state"]["status"], "succeeded")
+            self.assertEqual(analysis["resources"]["agent_response"]["status"], "completed")
+            self.assertEqual(
+                analysis["resources"]["analysis_package"]["allowedEvidenceRefs"],
+                ["grep_results.json#matches/0"],
+            )
+            self.assertEqual(analysis["result"]["finalAnswer"]["confidence"], "low")
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))

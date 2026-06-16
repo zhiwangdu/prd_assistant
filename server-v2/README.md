@@ -166,6 +166,7 @@ GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
 GET  /api/v2/runs/:run_id/artifacts
+GET  /api/v2/runs/:run_id/analysis
 GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions

@@ -63,6 +63,8 @@ Implemented in this slice:
 - Artifact download.
 - Evidence and artifact listing for a run, including uploaded input artifacts
   and evidence artifact outputs.
+- Run analysis summary endpoint combining run metadata, timeline, evidence,
+  artifacts, analysis resources, and final result for WebUI inspection.
 - Read-only MCP placeholder with `initialize`, `resources/list`,
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
@@ -152,6 +154,7 @@ GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
 GET  /api/v2/runs/:run_id/artifacts
+GET  /api/v2/runs/:run_id/analysis
 GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions

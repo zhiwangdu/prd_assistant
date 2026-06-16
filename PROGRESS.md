@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Run Analysis Summary
+
+- Added `GET /api/v2/runs/:run_id/analysis` as the V2 counterpart to Rust Server task analysis reads.
+- Added `get_run_analysis`, which combines run/workspace metadata, timeline, evidence, artifact listing, analysis state, analysis package, Agent request/response, System/Metadata context, and final result when present.
+- Missing optional analysis resources return `null` so queued, running, failed, and succeeded runs can share the same inspection surface.
+- Added regression coverage for analysis summary contents after a succeeded stub run.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Run Artifact Listing
 
 - Added `Store.list_run_artifacts` to enumerate both Workspace upload artifacts and run evidence artifacts for a run.
