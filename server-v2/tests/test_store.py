@@ -465,6 +465,80 @@ class StoreTests(unittest.TestCase):
             )
             self.assertEqual(validated["evidenceRefs"], [ref])
 
+    def test_tool_runner_falls_back_to_manifest_and_grep_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "first=p.read_text().splitlines()[0];"
+                "print(json.dumps({'summary':first,'findings':[{'message':p.name}]}))"
+            )
+            tool = ToolDefinition(
+                id="fallback_tool",
+                display_name="Fallback Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                max_input_files=2,
+                match_file_patterns=("*.log",),
+                match_keywords=("select",),
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("select query issue", "diagnose", "en-US")
+
+            zip_path = Path(tmp) / "queries.zip"
+            with zipfile.ZipFile(zip_path, "w") as archive:
+                archive.writestr("queries/one.log", "plain log line\n")
+                archive.writestr("queries/two.txt", "select * from cpu\n")
+                archive.writestr("queries/three.txt", "select * from mem\n")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                zip_path.name,
+                zip_path.read_bytes(),
+                "application/zip",
+            )
+            store.create_upload(workspace["id"], zip_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            tool_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "fallback_tool"},
+                    },
+                },
+            )
+            payload = json.loads(tool_response["result"]["content"][0]["text"])
+            inputs = [item["inputFile"] for item in payload["results"]]
+            self.assertEqual(
+                inputs,
+                ["extracted/queries/one.log", "extracted/queries/two.txt"],
+            )
+            summaries = [item["summary"] for item in payload["results"]]
+            self.assertEqual(summaries, ["plain log line", "select * from cpu"])
+            self.assertEqual(len(payload["evidenceItems"]), 2)
+            evidence = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_result"
+            ]
+            self.assertEqual(len(evidence), 2)
+            self.assertNotEqual(
+                evidence[0]["payload"]["actionId"], evidence[1]["payload"]["actionId"]
+            )
+
     def test_final_answer_evidence_refs_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(

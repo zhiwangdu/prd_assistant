@@ -62,7 +62,8 @@ Implemented in this slice:
 - Minimal configured Tool Runner. Tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
   task MCP `logagent.run_domain_tool`. Tools with `{input_file}` arguments
-  consume matching materialized tool inputs before execution.
+  consume matching materialized tool inputs before execution, then fall back to
+  manifest file patterns and initial grep keyword matches.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, exposed as a built-in `/api/v2/tools` descriptor,
   and executable through task MCP `logagent.fetch` only when enabled and
@@ -94,9 +95,8 @@ Not yet implemented:
 
 - LangGraph provider integration.
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
-  node-package InfluxQL JSONL, manifest/grep fallback Tool Runner input
-  matching, real analyzer-specific stdout adapters, per-tool params schema, and
-  full multi-round model reasoning after resume.
+  node-package InfluxQL JSONL, real analyzer-specific stdout adapters, per-tool
+  params schema, and full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
   Fetch management, Metadata task context auto-selection, and WebUI cutover.
 - Richer automatic Skill matching and WebUI System Context cutover.
@@ -332,9 +332,15 @@ evidence ref prefix becomes:
 tool_results/<tool_id>_<input_hash>/result.json#findings/
 ```
 
-If a tool requires `{input_file}` but no materialized input matches, execution
-fails with a controlled error. Manifest file-pattern and grep-keyword fallback
-selection is not yet implemented in V2.
+If no materialized input matches, V2 falls back to current-run text files.
+Manifest paths matching `match.filePatterns` are selected first. If capacity
+remains, initial `grep_results.json` matches whose line text contains one of
+`match.keywords` select additional files. Fallback files are materialized as
+run-local `logagent.v2.tool_input.text_file.v1` artifacts and exposed to tools
+as virtual `extracted/<manifest path>` inputs. Selection is de-duplicated,
+bounded by `maxInputFiles`, and preserves materialized-input priority.
+Multi-input MCP responses keep `result/evidence` for the primary execution and
+add `results[]` and `evidenceItems[]`.
 
 ## Fetch Endpoints
 

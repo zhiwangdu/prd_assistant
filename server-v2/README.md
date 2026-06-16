@@ -21,7 +21,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`; tools with `{input_file}` consume matching
-  materialized `tool_inputs` before execution.
+  materialized `tool_inputs` before execution, then fall back to manifest file
+  patterns and initial grep keyword matches.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   default-off allowlist execution, task MCP `logagent.fetch`, and
   `fetch_result` final evidence refs.
@@ -176,10 +177,10 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
-matching, real analyzer-specific stdout adapters, Fetch cURL import and
-encrypted credential sets, richer Skill auto-matching, Case import drafts,
-FTS/embedding recall, WebUI, or full LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, real analyzer-specific stdout
+adapters, Fetch cURL import and encrypted credential sets, richer Skill
+auto-matching, Case import drafts, FTS/embedding recall, WebUI, or full
+LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -262,6 +263,15 @@ the tool id and virtual input path, so final refs use:
 ```text
 tool_results/<tool_id>_<input_hash>/result.json#findings/<index>
 ```
+
+If no materialized input matches, V2 falls back to current-run text files:
+manifest paths matching the tool's `match.filePatterns` are selected first,
+then initial `grep_results.json` matches whose line text contains one of the
+tool's `match.keywords` supplement the selection. Fallback inputs are persisted
+as run-local tool input artifacts, exposed to the tool as virtual
+`extracted/<manifest path>` inputs, and bounded by `maxInputFiles`. Multi-input
+MCP calls keep `result/evidence` as the primary run and additionally return
+`results[]` and `evidenceItems[]`.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools.
 The archive contains `README.md`, `tools-manifest.json`, executable files under

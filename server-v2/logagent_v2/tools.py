@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+from fnmatch import fnmatchcase
 from hashlib import sha256
 from pathlib import Path
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings, ToolDefinition
+from .evidence import TextFile, collect_text_files
 from .store import JsonObject, Store
 
 
@@ -59,7 +61,7 @@ def run_configured_tool(
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
         raise ValueError(f"tool {tool_id} is disabled")
-    input_entries = select_tool_inputs(settings, store, run_id, tool)
+    input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool)
     if tool_requires_input(tool) and not input_entries:
         raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
     if input_entries:
@@ -163,6 +165,7 @@ def run_single_configured_tool(
 def select_tool_inputs(
     settings: Settings,
     store: Store,
+    workspace_id: str,
     run_id: str,
     tool: ToolDefinition,
 ) -> list[JsonObject]:
@@ -170,21 +173,64 @@ def select_tool_inputs(
         return []
     index = latest_tool_input_index(settings, store, run_id)
     inputs = index.get("inputs") if isinstance(index, dict) else None
-    if not isinstance(inputs, list):
-        return []
     selected = []
-    for entry in inputs:
-        if not isinstance(entry, dict):
-            continue
-        tool_ids = entry.get("toolIds")
-        if not isinstance(tool_ids, list) or tool.id not in tool_ids:
-            continue
-        if not isinstance(entry.get("artifactId"), str):
-            continue
-        selected.append(entry)
-        if len(selected) >= tool.max_input_files:
+    if isinstance(inputs, list):
+        for entry in inputs:
+            if not isinstance(entry, dict):
+                continue
+            tool_ids = entry.get("toolIds")
+            if not isinstance(tool_ids, list) or tool.id not in tool_ids:
+                continue
+            if not isinstance(entry.get("artifactId"), str):
+                continue
+            selected.append(entry)
+            if len(selected) >= tool.max_input_files:
+                break
+    if selected:
+        return selected
+    return select_fallback_tool_inputs(settings, store, workspace_id, run_id, tool)
+
+
+def select_fallback_tool_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    tool: ToolDefinition,
+) -> list[JsonObject]:
+    uploads = store.list_uploads(workspace_id)
+    text_files = collect_text_files(settings, uploads)
+    files_by_path = {text_file.path: text_file for text_file in text_files}
+    selected_paths: list[str] = []
+
+    for text_file in text_files:
+        if len(selected_paths) >= tool.max_input_files:
             break
-    return selected
+        if any(
+            matches_file_pattern(pattern, text_file.path, text_file.source_filename)
+            for pattern in tool.match_file_patterns
+        ):
+            push_selected_path(selected_paths, text_file.path)
+
+    if len(selected_paths) < tool.max_input_files and tool.match_keywords:
+        grep_results = latest_initial_grep_results(settings, store, run_id)
+        for match in grep_results.get("matches", []):
+            if len(selected_paths) >= tool.max_input_files:
+                break
+            if not isinstance(match, dict):
+                continue
+            path = match.get("path")
+            text = match.get("text")
+            if not isinstance(path, str) or path not in files_by_path:
+                continue
+            if not isinstance(text, str) or not matches_any_keyword(text, tool.match_keywords):
+                continue
+            push_selected_path(selected_paths, path)
+
+    return [
+        materialize_fallback_tool_input(settings, store, workspace_id, tool, files_by_path[path])
+        for path in selected_paths[: tool.max_input_files]
+    ]
 
 
 def latest_tool_input_index(settings: Settings, store: Store, run_id: str) -> JsonObject:
@@ -203,6 +249,94 @@ def latest_tool_input_index(settings: Settings, store: Store, run_id: str) -> Js
     except Exception:
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def latest_initial_grep_results(settings: Settings, store: Store, run_id: str) -> JsonObject:
+    candidates = [
+        item
+        for item in store.list_evidence(run_id)
+        if item["kind"] == "log_search" and item["payload"].get("path") == "grep_results.json"
+    ]
+    if not candidates:
+        return {}
+    artifact_id = candidates[-1].get("artifact_id")
+    if not artifact_id:
+        return {}
+    artifact = store.get_artifact(artifact_id)
+    path = resolve_artifact_path(settings, artifact["relative_path"])
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def materialize_fallback_tool_input(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    tool: ToolDefinition,
+    text_file: TextFile,
+) -> JsonObject:
+    virtual_path = fallback_virtual_path(text_file.path)
+    data = text_file.text.encode("utf-8")
+    digest = sha256(virtual_path.encode("utf-8")).hexdigest()[:12]
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{safe_action_segment(tool.id)}_{digest}.txt",
+        data=data,
+        content_type="text/plain",
+        schema_name="logagent.v2.tool_input.text_file.v1",
+        preview={
+            "path": virtual_path,
+            "toolId": tool.id,
+            "sourcePath": text_file.path,
+            "sizeBytes": len(data),
+        },
+    )
+    return {
+        "path": virtual_path,
+        "inputKind": "text_file",
+        "scope": "manifest_fallback",
+        "toolIds": [tool.id],
+        "sourceFiles": [text_file.path],
+        "sourceUploadId": text_file.source_upload_id,
+        "sourceFilename": text_file.source_filename,
+        "lineCount": len(text_file.text.splitlines()),
+        "artifactId": artifact["id"],
+        "artifactRelativePath": artifact["relative_path"],
+    }
+
+
+def fallback_virtual_path(manifest_path: str) -> str:
+    if manifest_path.startswith("extracted/") or manifest_path.startswith("tool_inputs/"):
+        return manifest_path
+    return f"extracted/{manifest_path}"
+
+
+def matches_file_pattern(pattern: str, path: str, source_filename: str) -> bool:
+    lowered_pattern = pattern.lower()
+    lowered_path = path.lower()
+    lowered_name = Path(path).name.lower()
+    lowered_source = source_filename.lower()
+    return (
+        lowered_pattern == "*"
+        or fnmatchcase(lowered_path, lowered_pattern)
+        or fnmatchcase(lowered_name, lowered_pattern)
+        or fnmatchcase(lowered_source, lowered_pattern)
+    )
+
+
+def matches_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def push_selected_path(selected_paths: list[str], path: str) -> None:
+    if path not in selected_paths:
+        selected_paths.append(path)
 
 
 def resolve_tool_input_path(

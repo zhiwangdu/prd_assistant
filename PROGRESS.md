@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Runner Fallback Inputs
+
+- Added V2 Tool Runner fallback input matching for configured tools whose args contain `{input_file}`.
+- Materialized `tool_inputs/index.json` entries still take priority; when none match, V2 selects current-run text files by `match.filePatterns`, then supplements with initial `grep_results.json` line matches containing `match.keywords`.
+- Fallback inputs are persisted as `logagent.v2.tool_input.text_file.v1` artifacts and exposed to tools as virtual `extracted/<manifest path>` inputs.
+- Multi-input task MCP `logagent.run_domain_tool` responses now preserve the primary `result/evidence` fields and also return `results[]` and `evidenceItems[]`.
+- Added regression coverage for pattern-first and grep-keyword fallback selection, multi-input execution, stable distinct action ids, and evidence creation.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tools Zip Export
 
 - Added V2 `GET /api/v2/exports/tools.zip` for exporting enabled configured subprocess tools.

@@ -502,11 +502,15 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
     if not isinstance(tool_id, str) or not tool_id:
         raise ValueError("logagent.run_domain_tool requires toolId")
     result = run_configured_tool(settings, store, run["workspace_id"], run["id"], tool_id)
+    payload = {
+        "result": result["result"],
+        "evidence": result["evidence"],
+    }
+    if "results" in result:
+        payload["results"] = result["results"]
+        payload["evidenceItems"] = result["evidenceItems"]
     text = json.dumps(
-        {
-            "result": result["result"],
-            "evidence": result["evidence"],
-        },
+        payload,
         ensure_ascii=True,
         indent=2,
     )
