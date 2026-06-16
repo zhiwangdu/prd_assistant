@@ -21,6 +21,7 @@ from logagent_v2.case_memory import (
 )
 from logagent_v2.config import Settings, ToolDefinition
 from logagent_v2.exports import build_skills_zip, build_tools_zip
+from logagent_v2.fetch import endpoint_from_curl, preview_curl_import
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
     normalize_and_validate_final_answer,
@@ -1008,6 +1009,46 @@ class StoreTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+    def test_fetch_curl_import_preview_redacts_sensitive_values(self) -> None:
+        curl = r"""curl 'https://api.example.com/v1/items?limit=10&api_key=secret-query' \
+  -H 'Authorization: Bearer secret-token' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"password":"secret-body","keep":"value"}' \
+  --compressed \
+  --location"""
+
+        preview = preview_curl_import(curl)
+        endpoint = preview["endpoint"]
+        self.assertEqual(endpoint["method"], "POST")
+        self.assertIn("api_key=__REDACTED__", endpoint["url"])
+        self.assertEqual(endpoint["headers"]["Authorization"], "__REDACTED__")
+        self.assertIn('"password": "__REDACTED__"', endpoint["bodyPreview"])
+        self.assertIn({"location": "query", "name": "api_key"}, preview["detectedSensitiveFields"])
+        self.assertIn(
+            {"location": "header", "name": "Authorization"},
+            preview["detectedSensitiveFields"],
+        )
+        self.assertIn(
+            {"location": "body", "name": "password"},
+            preview["detectedSensitiveFields"],
+        )
+
+        endpoint = endpoint_from_curl(curl, name="Imported API", enabled=False)
+        self.assertEqual(endpoint["name"], "Imported API")
+        self.assertEqual(endpoint["method"], "POST")
+        self.assertEqual(endpoint["headers"]["Authorization"], "Bearer secret-token")
+        self.assertIn("api_key=secret-query", endpoint["url"])
+        self.assertFalse(endpoint["enabled"])
+
+        head = endpoint_from_curl("curl -I https://api.example.com/health")
+        self.assertEqual(head["method"], "HEAD")
+
+        with self.assertRaisesRegex(ValueError, "unsupported curl flag --form"):
+            preview_curl_import("curl https://api.example.com --form file=@/tmp/a")
+
+        with self.assertRaisesRegex(ValueError, "controlled"):
+            endpoint_from_curl("curl https://api.example.com -H 'Host: evil.example.com'")
 
     def test_metadata_preview_confirm_import_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

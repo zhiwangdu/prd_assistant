@@ -26,8 +26,8 @@ slice provides the durable foundation for the V2 product model:
   InfluxQL analyzer report/compare stdout are normalized into
   `summary/findings`.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
-  default-off allowlist execution, task MCP `logagent.fetch`, and
-  `fetch_result` final evidence refs.
+  DevTools bash cURL import, default-off allowlist execution, task MCP
+  `logagent.fetch`, and `fetch_result` final evidence refs.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
   and `logagent.request_approval`.
 - Final answer schema normalization and evidence ref validation before a run
@@ -163,6 +163,8 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+POST /api/v2/fetch/imports/preview
+POST /api/v2/fetch/imports
 GET  /api/v2/fetch/endpoints
 POST /api/v2/fetch/endpoints
 GET  /api/v2/fetch/endpoints/:endpoint_id
@@ -181,9 +183,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, Fetch cURL import and encrypted
-credential sets, Case import drafts, embedding/vector recall, WebUI, or full
-LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, encrypted Fetch credential sets, Case
+import drafts, embedding/vector recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -288,12 +289,15 @@ commands are kept in the manifest with `skipped=true`; disabled tools and
 built-in tools are omitted. The export does not include API keys, endpoint
 credentials, runtime environment values, uploads, artifacts, or workspace data.
 
-Fetch endpoints are configured through the protected HTTP API and are disabled
-for execution unless `LOGAGENT_V2_FETCH_ENABLED=1`. Execution is constrained to
-`http`/`https` URLs whose host or host:port exactly matches
-`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. Request URLs, sensitive headers, and
-sensitive JSON/form-style body preview fields are redacted in API, MCP, and
-artifact previews. Redirects are followed manually up to
+Fetch endpoints are configured through the protected HTTP API or imported from
+DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
+`POST /api/v2/fetch/imports`. Supported cURL flags are limited to request
+method, headers, body, cookies, compression, HEAD, and location. Execution is
+disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
+URLs whose host or host:port exactly matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`.
+Request URLs, sensitive headers, and sensitive JSON/form-style body preview
+fields are redacted in API, MCP, and artifact previews. Redirects are followed
+manually up to
 `LOGAGENT_V2_FETCH_MAX_REDIRECTS`; every hop is revalidated against the same
 allowlist, and sensitive headers are stripped when redirecting across origin.
 Fetch stores bounded response previews as `fetch_result` evidence.

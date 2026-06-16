@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import time
 import urllib.error
 import urllib.parse
@@ -14,10 +15,10 @@ from .ids import new_id
 from .store import JsonObject, Store
 
 
-FETCH_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+FETCH_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
 SENSITIVE_HEADER_NAMES = {"authorization", "cookie", "x-api-key", "x-auth-token"}
 SENSITIVE_QUERY_TOKENS = ("token", "secret", "password", "api_key", "apikey", "session")
-CONTROLLED_HEADERS = {"host", "content-length", "connection"}
+CONTROLLED_HEADERS = {"host", "content-length", "transfer-encoding", "connection"}
 REDACTED = "__REDACTED__"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 SENSITIVE_ASSIGNMENT_RE = re.compile(
@@ -44,6 +45,168 @@ def normalize_fetch_endpoint(value: JsonObject) -> JsonObject:
     }
 
 
+def preview_curl_import(curl: str) -> JsonObject:
+    endpoint = endpoint_from_curl(curl, name="Preview", enabled=True)
+    return {
+        "schemaVersion": 1,
+        "endpoint": public_fetch_endpoint(endpoint),
+        "detectedSensitiveFields": detected_sensitive_fields(endpoint),
+        "unsupportedWarnings": [],
+    }
+
+
+def endpoint_from_curl(
+    curl: str,
+    name: str | None = None,
+    enabled: bool = True,
+) -> JsonObject:
+    parsed = parse_curl(curl)
+    method = parsed["method"] or ("POST" if parsed.get("body") is not None else "GET")
+    endpoint = {
+        "name": name or default_fetch_name(parsed["url"]),
+        "method": method,
+        "url": parsed["url"],
+        "headers": parsed["headers"],
+        "body": parsed.get("body"),
+        "enabled": enabled,
+    }
+    return normalize_fetch_endpoint(endpoint)
+
+
+def parse_curl(curl: str) -> JsonObject:
+    normalized = curl.replace("\\\r\n", " ").replace("\\\n", " ").replace("\\\r", " ")
+    normalized = normalized.strip()
+    if "`" in normalized or normalized.startswith("curl.exe "):
+        raise ValueError("only bash-style curl commands are supported")
+    try:
+        argv = shlex.split(normalized)
+    except ValueError as error:
+        raise ValueError(f"failed to parse bash curl command: {error}") from error
+    if not argv or not argv[0].endswith("curl"):
+        raise ValueError("curl command must start with curl")
+
+    method: str | None = None
+    url: str | None = None
+    headers: JsonObject = {}
+    body: str | None = None
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+
+        def next_value(flag: str) -> str:
+            nonlocal index
+            index += 1
+            if index >= len(argv):
+                raise ValueError(f"{flag} requires a value")
+            return argv[index]
+
+        if token in {"-X", "--request"}:
+            method = next_value(token)
+        elif token in {"-H", "--header"}:
+            name, value = parse_header(next_value(token))
+            headers[name] = value
+        elif token in {"-d", "--data", "--data-raw", "--data-binary", "--data-ascii"}:
+            body = next_value(token)
+        elif token in {"-b", "--cookie"}:
+            headers["Cookie"] = next_value(token)
+        elif token in {"-L", "--location", "--compressed"}:
+            pass
+        elif token in {"-I", "--head"}:
+            method = "HEAD"
+        elif token.startswith("--request="):
+            method = token.removeprefix("--request=")
+        elif token.startswith("--header="):
+            name, value = parse_header(token.removeprefix("--header="))
+            headers[name] = value
+        elif token.startswith("--data="):
+            body = token.removeprefix("--data=")
+        elif token.startswith("--data-raw="):
+            body = token.removeprefix("--data-raw=")
+        elif token.startswith("--data-binary="):
+            body = token.removeprefix("--data-binary=")
+        elif token.startswith("-X") and len(token) > 2:
+            method = token[2:]
+        elif token.startswith("-H") and len(token) > 2:
+            name, value = parse_header(token[2:])
+            headers[name] = value
+        elif token.startswith("-d") and len(token) > 2:
+            body = token[2:]
+        elif token.startswith("-b") and len(token) > 2:
+            headers["Cookie"] = token[2:]
+        elif token.startswith("-"):
+            raise ValueError(
+                f"unsupported curl flag {token}; supported flags are -X, -H, --data, "
+                "--cookie, --compressed, --head and --location"
+            )
+        else:
+            if url is not None:
+                raise ValueError("curl import contains more than one URL")
+            url = token
+        index += 1
+    if not url:
+        raise ValueError("curl import is missing URL")
+    validate_http_url(url)
+    return {"method": method, "url": url, "headers": headers, "body": body}
+
+
+def parse_header(value: str) -> tuple[str, str]:
+    if ":" not in value:
+        raise ValueError("header must use Name: value syntax")
+    name, header_value = value.split(":", 1)
+    name = name.strip()
+    if not name:
+        raise ValueError("header name must not be empty")
+    return name, header_value.lstrip()
+
+
+def validate_http_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("curl URL must be absolute http/https URL")
+
+
+def default_fetch_name(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return (parsed.hostname or "Imported Fetch")[:200]
+
+
+def detected_sensitive_fields(endpoint: JsonObject) -> list[JsonObject]:
+    fields = []
+    parsed = urllib.parse.urlsplit(endpoint["url"])
+    for key, _ in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
+        if is_sensitive_name(key):
+            fields.append({"location": "query", "name": key})
+    for key in endpoint.get("headers", {}):
+        if is_sensitive_header(str(key)):
+            fields.append({"location": "header", "name": str(key)})
+    body = endpoint.get("body")
+    if isinstance(body, str):
+        fields.extend(detect_sensitive_body_fields(body))
+    return fields
+
+
+def detect_sensitive_body_fields(body: str) -> list[JsonObject]:
+    stripped = body.strip()
+    fields = []
+    try:
+        value = json.loads(stripped)
+    except Exception:
+        value = None
+    if isinstance(value, dict):
+        for key in value:
+            if is_sensitive_name(str(key)):
+                fields.append({"location": "body", "name": str(key)})
+        return fields
+    if "=" in stripped and "\n" not in stripped:
+        for part in stripped.split("&"):
+            if not part:
+                continue
+            key = part.split("=", 1)[0]
+            if is_sensitive_name(key):
+                fields.append({"location": "body", "name": key})
+    return fields
+
+
 def normalize_headers(value: Any) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError("fetch endpoint headers must be an object")
@@ -63,7 +226,7 @@ def public_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
     result["url"] = redact_url(result["url"])
     result["headers"] = redact_headers(result.get("headers", {}))
     if result.get("body"):
-        result["bodyPreview"] = redact_text(str(result["body"])[:500])
+        result["bodyPreview"] = redact_body_preview(str(result["body"])[:500])
     result.pop("body", None)
     return result
 
@@ -172,7 +335,7 @@ def execute_fetch_endpoint(
             "method": endpoint["method"],
             "url": redact_url(endpoint["url"]),
             "headers": redact_headers(endpoint.get("headers", {})),
-            "bodyPreview": redact_text((endpoint.get("body") or "")[:500]),
+            "bodyPreview": redact_body_preview((endpoint.get("body") or "")[:500]),
         },
         "response": response,
         "durationMs": duration_ms,
@@ -214,7 +377,11 @@ def execute_fetch_endpoint(
 
 def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject:
     body = endpoint.get("body")
-    data = body.encode("utf-8") if body is not None and endpoint["method"] != "GET" else None
+    data = (
+        body.encode("utf-8")
+        if body is not None and endpoint["method"] not in {"GET", "HEAD"}
+        else None
+    )
     opener = urllib.request.build_opener(NoRedirectHandler)
     method = endpoint["method"]
     url = endpoint["url"]
@@ -400,6 +567,10 @@ def redact_text(value: str) -> str:
             )
 
     return SENSITIVE_ASSIGNMENT_RE.sub(lambda match: match.group(1) + REDACTED, value)
+
+
+def redact_body_preview(value: str) -> str:
+    return redact_text(value)
 
 
 def redact_json(value: Any) -> Any:

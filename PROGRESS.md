@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch cURL Import
+
+- Added V2 DevTools bash cURL import helpers for Fetch endpoints.
+- Added protected APIs `POST /api/v2/fetch/imports/preview` and `POST /api/v2/fetch/imports`.
+- Supported cURL flags are limited to method, headers, data/body, cookie, compressed, HEAD, and location; unsupported flags such as form upload are rejected.
+- Import previews redact sensitive query, header, and JSON/form body fields and report detected sensitive fields.
+- V2 Fetch endpoint methods now accept `HEAD`; controlled headers now include `Transfer-Encoding`.
+- Added regression coverage for cURL parsing, redaction, sensitive field detection, direct endpoint creation data, HEAD import, unsupported flag rejection, and controlled header rejection.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case FTS Recall
 
 - Added a local SQLite FTS5 `cases_fts` index for Case Memory, synchronized on create/update and backfilled during store initialization.

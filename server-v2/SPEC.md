@@ -67,9 +67,9 @@ Implemented in this slice:
   and InfluxQL analyzer report/compare stdout are normalized into
   `summary/findings`.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
-  through protected HTTP APIs, exposed as a built-in `/api/v2/tools` descriptor,
-  and executable through task MCP `logagent.fetch` only when enabled and
-  allowlisted.
+  through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
+  built-in `/api/v2/tools` descriptor, and executable through task MCP
+  `logagent.fetch` only when enabled and allowlisted.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted and user
   message/approval APIs can requeue the run.
@@ -99,8 +99,8 @@ Not yet implemented:
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
   node-package InfluxQL JSONL, per-tool params schema, and full multi-round
   model reasoning after resume.
-- Fetch cURL import, encrypted credential sets, WebUI Fetch management,
-  Metadata task context auto-selection, and WebUI cutover.
+- Encrypted Fetch credential sets, WebUI Fetch management, Metadata task
+  context auto-selection, and WebUI cutover.
 - WebUI System Context cutover.
 - Case import drafts, embedding/vector recall, and WebUI Memory management.
 - WebUI V2 cutover.
@@ -154,6 +154,8 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+POST /api/v2/fetch/imports/preview
+POST /api/v2/fetch/imports
 GET  /api/v2/fetch/endpoints
 POST /api/v2/fetch/endpoints
 GET  /api/v2/fetch/endpoints/:endpoint_id
@@ -364,6 +366,21 @@ method, URL, headers, optional body, enabled flag, and timestamps. The public
 API returns redacted endpoint previews; raw headers and bodies are only used by
 the server-side executor.
 
+Endpoints can be created directly or imported from DevTools bash cURL commands:
+
+```text
+POST /api/v2/fetch/imports/preview
+POST /api/v2/fetch/imports
+```
+
+The cURL importer supports request method, headers, body, cookies,
+`--compressed`, `--head`, and `--location`. It rejects unsupported flags such as
+form uploads, proxy, cert, file, or resolver options rather than widening the
+network or filesystem boundary. Import previews redact sensitive query,
+header, and JSON/form body fields and return detected sensitive field
+locations. Encrypted credential sets are not implemented in V2 yet, so saved
+endpoints still use the existing endpoint storage path.
+
 Fetch execution is disabled by default. To execute endpoints, set:
 
 ```text
@@ -374,8 +391,8 @@ LOGAGENT_V2_FETCH_MAX_REDIRECTS=5
 
 Only `http` and `https` URLs are supported. The requested host or host:port must
 exactly match the allowlist. Controlled headers such as `Host`,
-`Content-Length`, and `Connection` are rejected when endpoints are saved.
-Sensitive headers, query parameters, and JSON/form-style body preview fields
+`Content-Length`, `Transfer-Encoding`, and `Connection` are rejected when
+endpoints are saved. Sensitive headers, query parameters, and JSON/form body fields
 containing token/secret/password/api key style names are redacted from API, MCP,
 and artifact previews.
 

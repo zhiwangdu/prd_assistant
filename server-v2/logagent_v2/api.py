@@ -11,9 +11,11 @@ from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import create_manual_case, create_task_case, update_case
 from .config import Settings
 from .fetch import (
+    endpoint_from_curl,
     execute_fetch_endpoint,
     fetch_catalog_descriptor,
     normalize_fetch_endpoint,
+    preview_curl_import,
     public_fetch_endpoint,
 )
 from .exports import build_skills_zip, build_tools_zip
@@ -116,16 +118,26 @@ class SkillPreviewCreate(BaseModel):
 
 class FetchEndpointCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"] = "GET"
     url: str = Field(min_length=1, max_length=2000)
     headers: dict[str, str] = Field(default_factory=dict)
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool = True
 
 
+class FetchCurlImportPreviewCreate(BaseModel):
+    curl: str = Field(min_length=1, max_length=200000)
+
+
+class FetchCurlImportCreate(BaseModel):
+    curl: str = Field(min_length=1, max_length=200000)
+    name: str | None = Field(default=None, max_length=200)
+    enabled: bool = True
+
+
 class FetchEndpointUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=200)
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] | None = None
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"] | None = None
     url: str | None = Field(default=None, max_length=2000)
     headers: dict[str, str] | None = None
     body: str | None = Field(default=None, max_length=200000)
@@ -349,6 +361,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 public_fetch_endpoint(endpoint) for endpoint in store.list_fetch_endpoints()
             ],
         }
+
+    @app.post("/api/v2/fetch/imports/preview")
+    async def preview_fetch_import(_: Auth, payload: FetchCurlImportPreviewCreate) -> dict:
+        try:
+            return preview_curl_import(payload.curl)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/fetch/imports")
+    async def create_fetch_import(_: Auth, payload: FetchCurlImportCreate) -> dict:
+        try:
+            endpoint = endpoint_from_curl(
+                payload.curl,
+                name=payload.name,
+                enabled=payload.enabled,
+            )
+            created = store.create_fetch_endpoint(
+                name=endpoint["name"],
+                method=endpoint["method"],
+                url=endpoint["url"],
+                headers=endpoint["headers"],
+                body=endpoint.get("body"),
+                enabled=endpoint["enabled"],
+            )
+            return public_fetch_endpoint(created)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/fetch/endpoints")
     async def create_fetch_endpoint(_: Auth, payload: FetchEndpointCreate) -> dict:
