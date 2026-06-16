@@ -59,6 +59,10 @@ def keyword_score(tokens: set[str], text: str) -> int:
     return sum(1 for token in tokens if token in lowered)
 
 
+def quote_fts_token(token: str) -> str:
+    return '"' + token.replace('"', '""') + '"'
+
+
 class Store:
     def __init__(self, sqlite_path: Path):
         self.sqlite_path = sqlite_path
@@ -233,6 +237,7 @@ class Store:
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
+            self._ensure_case_fts_tx(conn)
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str
@@ -242,6 +247,46 @@ class Store:
         }
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _ensure_case_fts_tx(self, conn: sqlite3.Connection) -> None:
+        try:
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts
+                USING fts5(case_id UNINDEXED, searchable_text, tokenize='unicode61')
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO cases_fts(rowid, case_id, searchable_text)
+                SELECT c.rowid, c.case_id, c.searchable_text
+                FROM cases c
+                LEFT JOIN cases_fts f ON f.rowid = c.rowid
+                WHERE f.rowid IS NULL
+                """
+            )
+        except sqlite3.OperationalError:
+            return
+
+    def _upsert_case_fts_tx(
+        self, conn: sqlite3.Connection, case_id: str, searchable_text: str
+    ) -> None:
+        try:
+            row = conn.execute(
+                "SELECT rowid FROM cases WHERE case_id = ?", (case_id,)
+            ).fetchone()
+            if row is None:
+                return
+            conn.execute("DELETE FROM cases_fts WHERE rowid = ?", (row["rowid"],))
+            conn.execute(
+                """
+                INSERT INTO cases_fts(rowid, case_id, searchable_text)
+                VALUES (?, ?, ?)
+                """,
+                (row["rowid"], case_id, searchable_text),
+            )
+        except sqlite3.OperationalError:
+            return
 
     def _workspace_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
@@ -817,6 +862,7 @@ class Store:
                     record["updatedAt"],
                 ),
             )
+            self._upsert_case_fts_tx(conn, case_id, searchable_text)
         return self.get_case(case_id)
 
     def get_case(self, case_id: str) -> JsonObject:
@@ -854,6 +900,7 @@ class Store:
                     case_id,
                 ),
             )
+            self._upsert_case_fts_tx(conn, case_id, searchable_text)
         return self.get_case(case_id)
 
     def search_cases(
@@ -862,6 +909,12 @@ class Store:
         limit: int,
         include_disabled: bool = False,
     ) -> list[JsonObject]:
+        limit = max(1, min(limit, 50))
+        tokens = case_tokens(query or "")
+        if tokens:
+            fts_results = self._search_cases_fts(query or "", limit, include_disabled)
+            if fts_results is not None:
+                return fts_results
         with self.connect() as conn:
             rows = conn.execute(
                 """
@@ -872,7 +925,6 @@ class Store:
                 (1 if include_disabled else 0,),
             ).fetchall()
         cases = [self._case_from_row(row) for row in rows]
-        tokens = case_tokens(query or "")
         scored = []
         for record in cases:
             text = case_searchable_text(record)
@@ -881,9 +933,43 @@ class Store:
                 continue
             hit = dict(record)
             hit["score"] = score
+            hit["searchBackend"] = "keyword" if tokens else "recent"
             scored.append(hit)
         scored.sort(key=lambda item: (item["score"], item["updatedAt"]), reverse=True)
-        return scored[: max(1, min(limit, 50))]
+        return scored[:limit]
+
+    def _search_cases_fts(
+        self,
+        query: str,
+        limit: int,
+        include_disabled: bool,
+    ) -> list[JsonObject] | None:
+        tokens = case_tokens(query)
+        if not tokens:
+            return None
+        fts_query = " OR ".join(quote_fts_token(token) for token in tokens)
+        try:
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT c.*, bm25(cases_fts) AS rank
+                    FROM cases_fts
+                    JOIN cases c ON c.rowid = cases_fts.rowid
+                    WHERE cases_fts MATCH ? AND (? OR c.enabled = 1)
+                    ORDER BY rank ASC, c.updated_at DESC, c.case_id ASC
+                    LIMIT ?
+                    """,
+                    (fts_query, 1 if include_disabled else 0, limit),
+                ).fetchall()
+        except sqlite3.OperationalError:
+            return None
+        results = []
+        for row in rows:
+            hit = self._case_from_row(row)
+            hit["score"] = round(float(row["rank"]) * -1.0, 6)
+            hit["searchBackend"] = "fts5"
+            results.append(hit)
+        return results
 
     def _case_from_row(self, row: sqlite3.Row) -> JsonObject:
         record = decode_json(row["record_json"], {})

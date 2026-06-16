@@ -36,7 +36,7 @@ slice provides the durable foundation for the V2 product model:
   fetch, SQLite snapshot storage, preview/confirm drafts, field/tag type
   queries, HTTP API, and readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
-  keyword recall, edit/disable API, and readonly/task MCP search.
+  SQLite FTS5/BM25 recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
   `system_context` run snapshot, readonly/task MCP reference reading, and
@@ -182,7 +182,7 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, Fetch cURL import and encrypted
-credential sets, Case import drafts, FTS/embedding recall, WebUI, or full
+credential sets, Case import drafts, embedding/vector recall, WebUI, or full
 LangGraph model loop.
 
 ## Initial Evidence Pipeline
@@ -400,8 +400,11 @@ V2 stores confirmed cases in SQLite table `cases` using Case schema v2:
 Manual cases are created through `POST /api/v2/cases`. Succeeded runs can be
 confirmed through `POST /api/v2/runs/:run_id/case`; repeated confirmation of the
 same run returns the existing task case. Cases can be searched with keyword
-overlap, read by ID, edited, or disabled. Disabled cases are hidden unless the
-caller sets `includeDisabled=true`.
+queries, read by ID, edited, or disabled. Query search uses local SQLite
+FTS5/BM25 over title, symptom, root cause, solution, product/version/
+environment, instance/node, and evidence refs, with token-overlap fallback if
+FTS5 is unavailable. Disabled cases are hidden unless the caller sets
+`includeDisabled=true`.
 
 Readonly MCP and task MCP expose:
 

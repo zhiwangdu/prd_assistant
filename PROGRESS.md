@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case FTS Recall
+
+- Added a local SQLite FTS5 `cases_fts` index for Case Memory, synchronized on create/update and backfilled during store initialization.
+- `Store.search_cases` now prefers FTS5 `MATCH` with `bm25` ranking when a query is present, while retaining token-overlap fallback if FTS5 is unavailable.
+- Search results include `searchBackend` (`fts5`, `keyword`, or `recent`) and a score.
+- Added regression coverage for FTS-backed ranking and index updates after case edits.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Skill Auto Matching
 
 - Added V2 automatic Skill selection when a Workspace has no explicit `skillIds`.

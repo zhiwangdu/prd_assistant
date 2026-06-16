@@ -81,8 +81,8 @@ Implemented in this slice:
   storage, field/tag type query APIs, readonly MCP tools, and task MCP
   background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
-  confirmation, keyword recall, edit/disable API, readonly MCP search, and task
-  MCP background case context.
+  confirmation, SQLite FTS5/BM25 recall, edit/disable API, readonly MCP search,
+  and task MCP background case context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
@@ -102,8 +102,7 @@ Not yet implemented:
 - Fetch cURL import, encrypted credential sets, WebUI Fetch management,
   Metadata task context auto-selection, and WebUI cutover.
 - WebUI System Context cutover.
-- Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
-  management.
+- Case import drafts, embedding/vector recall, and WebUI Memory management.
 - WebUI V2 cutover.
 
 ## API
@@ -484,10 +483,12 @@ Supported sources:
   `succeeded` and have a final answer. Repeated confirmation of one run returns
   the existing task Case instead of creating duplicates.
 
-Search is intentionally dependency-light in this slice: V2 uses token overlap
-against `title`, `symptom`, `rootCause`, `solution`, product/version/environment,
-instance/node, and evidence refs. Disabled cases are excluded by default and can
-be included with `includeDisabled=true`.
+Search is dependency-light and local: V2 maintains a SQLite FTS5 table beside
+`cases` and ranks query matches with `bm25`. The indexed text covers `title`,
+`symptom`, `rootCause`, `solution`, product/version/environment, instance/node,
+and evidence refs. If FTS5 is unavailable, V2 falls back to token-overlap
+scoring. Disabled cases are excluded by default and can be included with
+`includeDisabled=true`.
 
 Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`. Task MCP
 exposes the same tools and writes results as `case_context` evidence with

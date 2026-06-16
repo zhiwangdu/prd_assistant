@@ -1387,6 +1387,45 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(len(case_context), 1)
             self.assertFalse(case_context[0]["final_allowed"])
 
+    def test_case_search_uses_fts_and_updates_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            shard_case = create_manual_case(
+                store,
+                {
+                    "title": "Shard ownership changed",
+                    "symptom": "query timeout after shard owner movement",
+                    "rootCause": "pt owner moved during rebalance",
+                    "solution": "verify pt view and rebalance state",
+                },
+            )
+            create_manual_case(
+                store,
+                {
+                    "title": "Backup retention issue",
+                    "symptom": "backup lag",
+                    "rootCause": "retention policy backlog",
+                    "solution": "adjust retention workers",
+                },
+            )
+
+            hits = store.search_cases("shard owner", limit=5)
+            self.assertEqual(hits[0]["caseId"], shard_case["caseId"])
+            self.assertEqual(hits[0]["searchBackend"], "fts5")
+
+            update_case_record(
+                store,
+                shard_case["caseId"],
+                {
+                    "title": "Backup worker issue",
+                    "symptom": "backup lag",
+                    "rootCause": "retention backlog",
+                    "solution": "adjust retention workers",
+                },
+            )
+            self.assertEqual(store.search_cases("shard owner", limit=5), [])
+
     def test_skill_system_context_and_reference_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
