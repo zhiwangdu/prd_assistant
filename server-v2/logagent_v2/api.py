@@ -260,6 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.settings = settings
         app.state.store = store
+        app.state.job_recovery = store.recover_interrupted_jobs()
         if settings.inline_worker:
             await runner.start()
         yield

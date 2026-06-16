@@ -8,7 +8,8 @@ slice provides the durable foundation for the V2 product model:
 - Static WebUI hosting from `webui/out` with SPA fallback for non-API routes.
 - SQLite WAL storage under one local data directory.
 - Local artifact storage for uploads and future evidence files.
-- DB-backed job queue for restartable background runs.
+- DB-backed job queue for restartable background runs, with startup recovery
+  for interrupted analysis and remote command jobs.
 - Workspace, Run, TimelineEvent, Evidence, Artifact, Upload, Action, and Job
   schema foundations.
 - Workspace update and soft-delete lifecycle; deleted Workspaces are hidden from
@@ -326,6 +327,15 @@ This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond generic InfluxQL/Flux JSONL or the full LangGraph model loop. The
 Python server can serve the current static WebUI build, while full WebUI cutover
 remains a separate product step.
+
+## Job Recovery
+
+On startup, V2 scans DB-backed jobs left in `running` state by a prior process.
+Interrupted non-terminal `run_analysis` jobs reset their Run to `queued`, append
+`run.recovered`, and become immediately acquirable. Interrupted remote command
+jobs reset their remote run to `QUEUED`. If the associated Run or remote run is
+already terminal or waiting for user/approval, the stale job is marked
+`succeeded` instead of rerunning.
 
 ## Agent Runtime
 

@@ -47,6 +47,9 @@ Implemented in this slice:
   upload storage as local artifacts.
 - Run creation and queued `run_analysis` job.
 - Inline DB-backed worker.
+- Startup recovery for interrupted DB-backed jobs: non-terminal analysis and
+  remote command jobs are requeued immediately, while stale jobs for terminal or
+  waiting runs are completed without rerun.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - Node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`; supported log
@@ -911,3 +914,5 @@ The current slice is accepted when:
 - `PYTHONPATH=. python3 -m unittest discover tests` passes.
 - A Workspace can be created, an upload stored, a Run queued, and the inline
   worker can complete the stub Agent result.
+- Interrupted `running` jobs are recovered on startup without waiting for the
+  previous lock timeout.

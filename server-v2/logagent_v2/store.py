@@ -2111,6 +2111,153 @@ class Store:
                 (status, next_run_at, error[:2000], ts, job["id"]),
             )
 
+    def recover_interrupted_jobs(self) -> JsonObject:
+        ts = now_iso()
+        summary = {
+            "runAnalysisRequeued": 0,
+            "runAnalysisCompleted": 0,
+            "remoteRunsRequeued": 0,
+            "remoteRunsCompleted": 0,
+            "failedJobs": 0,
+        }
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE status = 'running'
+                ORDER BY updated_at ASC, id ASC
+                """
+            ).fetchall()
+            for row in rows:
+                payload = decode_json(row["payload_json"], {})
+                if row["kind"] == "run_analysis":
+                    self._recover_run_analysis_job_tx(conn, row, payload, ts, summary)
+                elif row["kind"] == "remote_command_run":
+                    self._recover_remote_run_job_tx(conn, row, payload, ts, summary)
+                else:
+                    self._mark_job_failed_tx(
+                        conn,
+                        row["id"],
+                        "unknown interrupted job kind",
+                        ts,
+                    )
+                    summary["failedJobs"] += 1
+        return summary
+
+    def _recover_run_analysis_job_tx(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        payload: JsonObject,
+        ts: str,
+        summary: JsonObject,
+    ) -> None:
+        run_id = payload.get("run_id")
+        if not isinstance(run_id, str):
+            self._mark_job_failed_tx(conn, row["id"], "run_analysis job missing run_id", ts)
+            summary["failedJobs"] += 1
+            return
+        run = conn.execute(
+            "SELECT id, workspace_id, status FROM runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if run is None:
+            self._mark_job_failed_tx(conn, row["id"], f"unknown run {run_id}", ts)
+            summary["failedJobs"] += 1
+            return
+        if run["status"] in {"succeeded", "failed", "waiting_for_user", "waiting_for_approval"}:
+            self._mark_job_succeeded_tx(conn, row["id"], ts)
+            summary["runAnalysisCompleted"] += 1
+            return
+        conn.execute(
+            """
+            UPDATE runs
+            SET status = 'queued', phase = 'queued', final_answer_json = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, run_id),
+        )
+        self._mark_job_queued_tx(conn, row["id"], ts)
+        self._append_event_tx(
+            conn,
+            run["workspace_id"],
+            run_id,
+            "run.recovered",
+            {"jobId": row["id"], "previousStatus": run["status"]},
+            ts,
+        )
+        summary["runAnalysisRequeued"] += 1
+
+    def _recover_remote_run_job_tx(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        payload: JsonObject,
+        ts: str,
+        summary: JsonObject,
+    ) -> None:
+        run_id = payload.get("run_id")
+        if not isinstance(run_id, str):
+            self._mark_job_failed_tx(conn, row["id"], "remote job missing run_id", ts)
+            summary["failedJobs"] += 1
+            return
+        remote_run = conn.execute(
+            "SELECT id, status FROM remote_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if remote_run is None:
+            self._mark_job_failed_tx(conn, row["id"], f"unknown remote run {run_id}", ts)
+            summary["failedJobs"] += 1
+            return
+        if remote_run["status"] in {"SUCCEEDED", "FAILED"}:
+            self._mark_job_succeeded_tx(conn, row["id"], ts)
+            summary["remoteRunsCompleted"] += 1
+            return
+        conn.execute(
+            """
+            UPDATE remote_runs
+            SET status = 'QUEUED', phase = 'QUEUED', updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, run_id),
+        )
+        self._mark_job_queued_tx(conn, row["id"], ts)
+        summary["remoteRunsRequeued"] += 1
+
+    def _mark_job_queued_tx(self, conn: sqlite3.Connection, job_id: str, ts: str) -> None:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = 'queued', locked_by = NULL, locked_until = NULL,
+                next_run_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, ts, job_id),
+        )
+
+    def _mark_job_succeeded_tx(self, conn: sqlite3.Connection, job_id: str, ts: str) -> None:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = 'succeeded', locked_by = NULL, locked_until = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, job_id),
+        )
+
+    def _mark_job_failed_tx(
+        self, conn: sqlite3.Connection, job_id: str, error: str, ts: str
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = 'failed', locked_by = NULL, locked_until = NULL,
+                last_error = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (error[:2000], ts, job_id),
+        )
+
     def _enqueue_run_tx(
         self,
         conn: sqlite3.Connection,

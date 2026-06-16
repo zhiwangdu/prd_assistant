@@ -967,6 +967,62 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(len(first), 1)
             self.assertEqual(second, [])
 
+    def test_interrupted_run_analysis_job_is_requeued_on_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            workspace = store.create_workspace("question", "diagnose", "zh-CN")
+            run = store.create_run(workspace["id"])
+            first = store.acquire_jobs("worker-a", limit=1)
+            self.assertEqual(first[0]["kind"], "run_analysis")
+            store.update_run_status(run["id"], "running", "agent_round")
+
+            recovery = store.recover_interrupted_jobs()
+
+            self.assertEqual(recovery["runAnalysisRequeued"], 1)
+            recovered_run = store.get_run(run["id"])
+            self.assertEqual(recovered_run["status"], "queued")
+            self.assertEqual(recovered_run["phase"], "queued")
+            events = store.list_timeline(run["id"])
+            self.assertTrue(any(event["kind"] == "run.recovered" for event in events))
+            reacquired = store.acquire_jobs("worker-b", limit=1)
+            self.assertEqual(len(reacquired), 1)
+            self.assertEqual(reacquired[0]["id"], first[0]["id"])
+
+    def test_interrupted_remote_command_job_is_requeued_on_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            executor = store.create_remote_executor(
+                {
+                    "name": "remote",
+                    "host": "127.0.0.1",
+                    "port": 22,
+                    "user": "root",
+                    "tags": [],
+                    "enabled": True,
+                    "notes": None,
+                }
+            )
+            run = store.create_remote_run(
+                executor["executorId"],
+                "smoke_ls_root",
+                "Smoke on remote",
+            )
+            first = store.acquire_jobs("worker-a", limit=1)
+            self.assertEqual(first[0]["kind"], "remote_command_run")
+            store.mark_remote_run_running(run["taskId"], "EXECUTE_REMOTE_COMMAND")
+
+            recovery = store.recover_interrupted_jobs()
+
+            self.assertEqual(recovery["remoteRunsRequeued"], 1)
+            recovered_run = store.get_remote_run(run["taskId"])
+            self.assertEqual(recovered_run["status"], "QUEUED")
+            self.assertEqual(recovered_run["phase"], "QUEUED")
+            reacquired = store.acquire_jobs("worker-b", limit=1)
+            self.assertEqual(len(reacquired), 1)
+            self.assertEqual(reacquired[0]["id"], first[0]["id"])
+
     def test_zip_upload_is_indexed_and_unsafe_paths_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

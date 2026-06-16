@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Startup Job Recovery
+
+- Added `Store.recover_interrupted_jobs()` for DB-backed jobs left in `running`
+  by a prior process.
+- Requeues non-terminal V2 analysis runs immediately, appends `run.recovered`,
+  and resets interrupted remote command runs to `QUEUED`.
+- Marks stale jobs for succeeded/failed/waiting runs as completed instead of
+  rerunning them.
+- Wired recovery into FastAPI startup before the inline worker begins polling.
+- Added regression coverage for interrupted analysis and remote command job
+  recovery.
+- Updated server-v2 docs and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`,
+  `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Static WebUI Hosting
 
 - Added V2 `GET /` static WebUI hosting from `webui/out`, configurable through
