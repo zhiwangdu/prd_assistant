@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
-from .mcp import readonly_mcp_response
+from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
 from .store import Store
 from .worker import JobRunner
@@ -168,6 +168,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v2/mcp/readonly")
     async def readonly_mcp(_: Auth, request: dict) -> dict:
         return readonly_mcp_response(store, request)
+
+    @app.post("/api/v2/mcp/task/{run_id}")
+    async def task_mcp(_: Auth, run_id: str, request: dict) -> dict:
+        return task_mcp_response(settings, store, run_id, request)
 
     return app
 

@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 import zipfile
+import json
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.artifacts import write_artifact_bytes
 from logagent_v2.config import Settings
+from logagent_v2.mcp import task_mcp_response
 from logagent_v2.store import Store
 
 
@@ -107,6 +109,68 @@ class StoreTests(unittest.TestCase):
             bad_run = store.create_run(bad_workspace["id"])
             with self.assertRaises(ValueError):
                 AgentRuntime(settings, store).run_analysis(bad_workspace["id"], bad_run["id"])
+
+    def test_task_mcp_reads_resources_and_runs_follow_up_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("slow query", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "query.log",
+                b"slow query on cpu\ncache miss warning\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "query.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            listed = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
+            )
+            names = {item["name"] for item in listed["result"]["resources"]}
+            self.assertIn("manifest", names)
+            self.assertIn("grep_results", names)
+
+            manifest = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/manifest"},
+                },
+            )
+            manifest_body = json.loads(manifest["result"]["contents"][0]["text"])
+            self.assertEqual(manifest_body["fileCount"], 1)
+
+            search = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_logs",
+                        "arguments": {"keywords": ["cache"]},
+                    },
+                },
+            )
+            payload = json.loads(search["result"]["content"][0]["text"])
+            self.assertEqual(payload["search"]["totalMatches"], 1)
+            self.assertTrue(payload["search"]["matches"][0]["ref"].startswith("log_searches/"))
+            self.assertIn("#matches/0", payload["search"]["matches"][0]["ref"])
 
 
 if __name__ == "__main__":

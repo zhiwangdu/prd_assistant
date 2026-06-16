@@ -13,6 +13,8 @@ slice provides the durable foundation for the V2 product model:
 - Initial evidence pipeline for uploaded text files and supported archives.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
+- Task MCP endpoint with summary/evidence/manifest/grep resources and
+  `logagent.search_logs` follow-up search.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -83,6 +85,7 @@ GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
 POST /api/v2/mcp/readonly
+POST /api/v2/mcp/task/:run_id
 ```
 
 ## Verification
@@ -109,3 +112,25 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - records `manifest` and `log_search` evidence items; and
 - lets the current stub Agent final answer reference
   `grep_results.json#matches/<index>` when matches exist.
+
+## MCP
+
+The V2 task MCP endpoint is available at:
+
+```http
+POST /api/v2/mcp/task/:run_id
+```
+
+It currently supports:
+
+- `initialize`
+- `resources/list`
+- `resources/read` for `summary`, `evidence`, `manifest`, and `grep_results`
+- `tools/list`
+- `tools/call logagent.search_logs`
+
+Follow-up searches write a `log_search` evidence row and return stable refs:
+
+```text
+log_searches/<search_id>.json#matches/<index>
+```

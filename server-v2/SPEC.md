@@ -46,12 +46,17 @@ Implemented in this slice:
 - Evidence listing for a run.
 - Read-only MCP placeholder with `initialize`, `resources/list`,
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
+- Task MCP endpoint with `summary`, `evidence`, `manifest`, and `grep_results`
+  resources.
+- Task MCP `logagent.search_logs`, which creates follow-up `log_search`
+  evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 
 Not yet implemented:
 
 - V1-compatible node log package preprocessing and log slicing.
 - LangGraph provider integration.
-- Task MCP tools.
+- Additional task MCP tools such as `get_log_slice`, `run_domain_tool`,
+  Metadata, Case recall, user prompt, and approval.
 - Tool Runner execution.
 - Metadata import/query.
 - Skill-backed System Context.
@@ -84,6 +89,7 @@ GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
 POST /api/v2/mcp/readonly
+POST /api/v2/mcp/task/:run_id
 ```
 
 ## Storage
@@ -144,6 +150,14 @@ grep_results.json#matches/<index>
 
 These refs are current-task evidence. Manifest evidence is background and not
 final evidence.
+
+Follow-up task MCP searches use:
+
+```text
+log_searches/<search_id>.json#matches/<index>
+```
+
+Each follow-up search persists a `log_search` evidence item and a JSON artifact.
 
 ## Security
 

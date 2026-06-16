@@ -14,6 +14,7 @@ from typing import Iterable
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
+from .ids import new_id
 from .store import JsonObject, Store
 
 
@@ -55,7 +56,12 @@ def build_initial_evidence(
     text_files = collect_text_files(settings, uploads)
     keywords = search_keywords(workspace["question"])
     manifest = build_manifest(workspace_id, run_id, uploads, text_files)
-    grep_results = grep_text_files(text_files, keywords, settings.max_grep_matches)
+    grep_results = grep_text_files(
+        text_files,
+        keywords,
+        settings.max_grep_matches,
+        ref_base="grep_results.json#matches/",
+    )
 
     manifest_artifact = write_json_artifact(
         settings,
@@ -107,6 +113,50 @@ def build_initial_evidence(
         "manifestArtifact": manifest_artifact,
         "grepArtifact": grep_artifact,
     }
+
+
+def run_log_search(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    keywords: list[str],
+) -> JsonObject:
+    uploads = store.list_uploads(workspace_id)
+    text_files = collect_text_files(settings, uploads)
+    search_id = new_id("logsearch")
+    artifact_path = f"log_searches/{search_id}.json"
+    results = grep_text_files(
+        text_files,
+        keywords,
+        settings.max_grep_matches,
+        ref_base=f"{artifact_path}#matches/",
+    )
+    results["searchId"] = search_id
+    results["path"] = artifact_path
+    artifact = write_json_artifact(
+        settings,
+        store,
+        workspace_id,
+        f"{search_id}.json",
+        results,
+        schema_name="logagent.v2.log_search.v1",
+    )
+    evidence = store.create_evidence(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        kind="log_search",
+        final_allowed=True,
+        summary=f"Follow-up log search found {results['totalMatches']} matches.",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": artifact_path,
+            "totalMatches": results["totalMatches"],
+            "evidenceRefPrefix": f"{artifact_path}#matches/",
+        },
+    )
+    return {"search": results, "artifact": artifact, "evidence": evidence}
 
 
 def collect_text_files(settings: Settings, uploads: list[JsonObject]) -> list[TextFile]:
@@ -234,7 +284,10 @@ def search_keywords(question: str) -> list[str]:
 
 
 def grep_text_files(
-    text_files: Iterable[TextFile], keywords: list[str], max_matches: int
+    text_files: Iterable[TextFile],
+    keywords: list[str],
+    max_matches: int,
+    ref_base: str,
 ) -> JsonObject:
     lowered_keywords = [(keyword, keyword.lower()) for keyword in keywords]
     matches: list[JsonObject] = []
@@ -250,7 +303,7 @@ def grep_text_files(
                 matches.append(
                     {
                         "index": index,
-                        "ref": f"grep_results.json#matches/{index}",
+                        "ref": f"{ref_base}{index}",
                         "path": text_file.path,
                         "sourceUploadId": text_file.source_upload_id,
                         "lineNumber": line_number,
@@ -328,4 +381,3 @@ def write_json_artifact(
             "sizeBytes": len(encoded),
         },
     )
-

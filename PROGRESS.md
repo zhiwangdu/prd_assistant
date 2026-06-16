@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-17 V2 Task MCP Log Search
+
+- Added V2 task MCP endpoint `POST /api/v2/mcp/task/:run_id`.
+- Task MCP now supports `initialize`, `resources/list`, `resources/read`, `tools/list`, and `tools/call`.
+- Exposed run-scoped `summary`, `evidence`, `manifest`, and `grep_results` resources over MCP.
+- Implemented `logagent.search_logs` follow-up search for current Workspace uploads. Each search creates a `log_search` evidence item and returns stable refs in the form `log_searches/<search_id>.json#matches/<index>`.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Initial Evidence Pipeline
 
 - Continued the `rewrite/logagent-v2` clean-room migration toward Rust Server feature parity.
