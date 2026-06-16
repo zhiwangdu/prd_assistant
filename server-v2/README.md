@@ -23,7 +23,8 @@ slice provides the durable foundation for the V2 product model:
   InfluxQL query lines plus generic file-level InfluxQL and Flux query lines,
   with analyzer JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
-- Read-only MCP discovery placeholder.
+- Read-only MCP endpoint with tool catalog, Metadata, Case Memory, Skill
+  registry, and Domain Adapter resources/tools.
 - Task MCP endpoint with summary/evidence/manifest/grep/analysis_package plus
   Agent audit resources and `logagent.search_logs` follow-up search plus
   `logagent.get_log_slice`.

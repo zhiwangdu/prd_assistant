@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Status Documentation Cleanup
+
+- Updated server-v2 docs to reflect the implemented readonly MCP resources and
+  tools instead of calling it a placeholder.
+- Collapsed stale WebUI bridge "not yet" items into the remaining full WebUI V2
+  cutover work.
+- Verification passed: `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Timeline Event Kind
 
 - Fixed the V2 Analyze timeline event label to use the Python V2 backend

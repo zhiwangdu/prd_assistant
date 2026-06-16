@@ -74,8 +74,9 @@ Implemented in this slice:
   and evidence artifact outputs.
 - Run analysis summary endpoint combining run metadata, timeline, evidence,
   artifacts, analysis resources, and final result for WebUI inspection.
-- Read-only MCP placeholder with `initialize`, `resources/list`,
-  `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
+- Read-only MCP endpoint with `initialize`, `resources/list`, `resources/read`,
+  `tools/list`, and tools/resources for tool catalog, Metadata, Case Memory,
+  Skill registry, and Domain Adapter summaries.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
   `agent_request`, `agent_response`, `result`, and `result_markdown`
@@ -138,10 +139,8 @@ Not yet implemented:
   the current bounded `interactionContext` handoff.
 - Additional analyzer materialized `tool_inputs/index.json` generation beyond
   generic InfluxQL/Flux JSONL.
-- WebUI Fetch management and WebUI cutover.
-- WebUI System Context cutover.
-- WebUI Memory management.
-- WebUI V2 cutover.
+- Full WebUI V2 cutover that replaces the legacy Rust-compatible panels instead
+  of running V2 bridge panels alongside them.
 
 ## API
 
