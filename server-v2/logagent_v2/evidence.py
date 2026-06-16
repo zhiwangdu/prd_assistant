@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import posixpath
@@ -33,6 +34,11 @@ TEXT_SUFFIXES = {
 }
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 BASE_KEYWORDS = ["error", "fail", "fatal", "panic", "exception", "timeout", "warn", "slow"]
+NODE_LOG_PACKAGE_RE = re.compile(
+    r"^(?P<package_id>[^_]+)_(?P<instance_id>[^_]+)_(?P<node_id>[^_]+)_"
+    r"(?P<timestamp>[^_]+)_logs\.(?:tar\.gz|tgz)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,17 @@ class TextFile:
     size_bytes: int
     sha256: str
     text: str
+    original_path: str | None = None
+    log_group: str | None = None
+    node_package: JsonObject | None = None
+
+
+@dataclass(frozen=True)
+class NodeLogPackage:
+    package_id: str
+    instance_id: str
+    node_id: str
+    timestamp: str
 
 
 def build_initial_evidence(
@@ -295,6 +312,7 @@ def read_tar_text_files(
 ) -> tuple[list[TextFile], int]:
     result: list[TextFile] = []
     total_bytes = 0
+    node_package = parse_node_log_package(upload["filename"])
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as archive:
         for index, member in enumerate(archive):
             if index >= settings.max_archive_files:
@@ -302,7 +320,14 @@ def read_tar_text_files(
             if not member.isfile():
                 continue
             path = safe_archive_path(member.name)
-            if not is_text_path(path):
+            logical_path = path
+            log_group: str | None = None
+            if node_package is not None:
+                classified = classify_node_log_member(path, node_package)
+                if classified is None:
+                    continue
+                logical_path, log_group = classified
+            elif not is_text_path(path):
                 continue
             if member.size > settings.max_text_file_bytes:
                 continue
@@ -312,8 +337,23 @@ def read_tar_text_files(
             data = extracted.read(settings.max_text_file_bytes + 1)
             if len(data) > settings.max_text_file_bytes:
                 continue
-            total_bytes += len(data)
-            result.append(text_file_from_bytes(settings, upload, path, data))
+            decoded = decode_log_bytes(data, settings.max_text_file_bytes)
+            if decoded is None:
+                continue
+            total_bytes += len(decoded)
+            result.append(
+                text_file_from_bytes(
+                    settings,
+                    upload,
+                    logical_path,
+                    decoded,
+                    original_path=path,
+                    log_group=log_group,
+                    node_package=node_package,
+                )
+            )
+    if node_package is not None and not result:
+        raise ValueError("node log package contains no supported log directories")
     return result, total_bytes
 
 
@@ -326,7 +366,13 @@ def safe_archive_path(path: str) -> str:
 
 
 def text_file_from_bytes(
-    settings: Settings, upload: JsonObject, path: str, data: bytes
+    settings: Settings,
+    upload: JsonObject,
+    path: str,
+    data: bytes,
+    original_path: str | None = None,
+    log_group: str | None = None,
+    node_package: NodeLogPackage | None = None,
 ) -> TextFile:
     if len(data) > settings.max_text_file_bytes:
         raise ValueError(f"text file {path} exceeds LOGAGENT_V2_MAX_TEXT_FILE_BYTES")
@@ -337,7 +383,79 @@ def text_file_from_bytes(
         size_bytes=len(data),
         sha256=sha256(data).hexdigest(),
         text=data.decode("utf-8", errors="replace"),
+        original_path=original_path,
+        log_group=log_group,
+        node_package=node_package_payload(node_package),
     )
+
+
+def parse_node_log_package(filename: str) -> NodeLogPackage | None:
+    match = NODE_LOG_PACKAGE_RE.match(filename)
+    if match is None:
+        return None
+    return NodeLogPackage(
+        package_id=match.group("package_id"),
+        instance_id=match.group("instance_id"),
+        node_id=match.group("node_id"),
+        timestamp=match.group("timestamp"),
+    )
+
+
+def classify_node_log_member(
+    path: str, node_package: NodeLogPackage
+) -> tuple[str, str] | None:
+    parts = PurePosixPath(path).parts
+    markers = (
+        (("var", "chroot", "gemini", "log", "tsdb"), "tsdb"),
+        (("var", "chroot", "gemini", "log", "stream"), "stream"),
+        (("home", "Ruby", "log"), "agent"),
+    )
+    for marker, group in markers:
+        start = find_subsequence(parts, marker)
+        if start is None:
+            continue
+        tail = parts[start + len(marker) :]
+        if not tail:
+            return None
+        relative_tail = "/".join(tail)
+        return (
+            f"extracted/{node_package.node_id}/{node_package.timestamp}/{group}/{relative_tail}",
+            group,
+        )
+    return None
+
+
+def find_subsequence(parts: tuple[str, ...], marker: tuple[str, ...]) -> int | None:
+    if len(parts) < len(marker):
+        return None
+    for index in range(0, len(parts) - len(marker) + 1):
+        if parts[index : index + len(marker)] == marker:
+            return index
+    return None
+
+
+def decode_log_bytes(data: bytes, max_bytes: int) -> bytes | None:
+    if not data.startswith(b"\x1f\x8b"):
+        return data
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as archive:
+            decoded = archive.read(max_bytes + 1)
+    except OSError:
+        return data
+    if len(decoded) > max_bytes:
+        return None
+    return decoded
+
+
+def node_package_payload(node_package: NodeLogPackage | None) -> JsonObject | None:
+    if node_package is None:
+        return None
+    return {
+        "packageId": node_package.package_id,
+        "instanceId": node_package.instance_id,
+        "nodeId": node_package.node_id,
+        "timestamp": node_package.timestamp,
+    }
 
 
 def search_keywords(question: str) -> list[str]:
@@ -396,6 +514,22 @@ def grep_text_files(
 def build_manifest(
     workspace_id: str, run_id: str, uploads: list[JsonObject], text_files: list[TextFile]
 ) -> JsonObject:
+    files = []
+    for text_file in text_files:
+        item = {
+            "path": text_file.path,
+            "sourceUploadId": text_file.source_upload_id,
+            "sourceFilename": text_file.source_filename,
+            "sizeBytes": text_file.size_bytes,
+            "sha256": text_file.sha256,
+        }
+        if text_file.original_path:
+            item["originalPath"] = text_file.original_path
+        if text_file.log_group:
+            item["logGroup"] = text_file.log_group
+        if text_file.node_package:
+            item["nodePackage"] = text_file.node_package
+        files.append(item)
     return {
         "schemaVersion": 1,
         "workspaceId": workspace_id,
@@ -412,16 +546,7 @@ def build_manifest(
             }
             for upload in uploads
         ],
-        "files": [
-            {
-                "path": text_file.path,
-                "sourceUploadId": text_file.source_upload_id,
-                "sourceFilename": text_file.source_filename,
-                "sizeBytes": text_file.size_bytes,
-                "sha256": text_file.sha256,
-            }
-            for text_file in text_files
-        ],
+        "files": files,
     }
 
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import sys
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -113,6 +116,103 @@ class StoreTests(unittest.TestCase):
             store.create_upload(bad_workspace["id"], "bad.zip", bad_artifact["id"])
             bad_run = store.create_run(bad_workspace["id"])
             with self.assertRaises(ValueError):
+                AgentRuntime(settings, store).run_analysis(bad_workspace["id"], bad_run["id"])
+
+    def test_node_log_package_is_classified_and_gzip_rotation_is_read(self) -> None:
+        def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("stream timeout warning", "diagnose", "en-US")
+
+            tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617120000_logs.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as archive:
+                add_file(
+                    archive,
+                    "wrapper/var/chroot/gemini/log/tsdb/query.log",
+                    b"tsdb query timeout\n",
+                )
+                add_file(
+                    archive,
+                    "wrapper/var/chroot/gemini/log/stream/stream.rotate.1",
+                    gzip.compress(b"stream warning from rotated gzip\n"),
+                )
+                add_file(
+                    archive,
+                    "wrapper/home/Ruby/log/agent-current",
+                    b"agent error line\n",
+                )
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                tar_path.name,
+                tar_path.read_bytes(),
+                "application/gzip",
+            )
+            store.create_upload(workspace["id"], tar_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            manifest_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 11,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/manifest"},
+                },
+            )
+            manifest = json.loads(manifest_response["result"]["contents"][0]["text"])
+            paths = {item["path"] for item in manifest["files"]}
+            self.assertEqual(manifest["fileCount"], 3)
+            self.assertIn("extracted/NodeA/20260617120000/tsdb/query.log", paths)
+            self.assertIn("extracted/NodeA/20260617120000/stream/stream.rotate.1", paths)
+            self.assertIn("extracted/NodeA/20260617120000/agent/agent-current", paths)
+            groups = {item["path"]: item["logGroup"] for item in manifest["files"]}
+            self.assertEqual(
+                groups["extracted/NodeA/20260617120000/stream/stream.rotate.1"], "stream"
+            )
+
+            grep_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/grep_results"},
+                },
+            )
+            grep_results = json.loads(grep_response["result"]["contents"][0]["text"])
+            self.assertTrue(
+                any("rotated gzip" in match["text"] for match in grep_results["matches"])
+            )
+
+            bad_workspace = store.create_workspace("bad node package", "diagnose", "en-US")
+            bad_tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617130000_logs.tar.gz"
+            with tarfile.open(bad_tar_path, "w:gz") as archive:
+                add_file(archive, "wrapper/other.log", b"error outside supported dirs\n")
+            bad_artifact = write_artifact_bytes(
+                settings,
+                store,
+                bad_workspace["id"],
+                bad_tar_path.name,
+                bad_tar_path.read_bytes(),
+                "application/gzip",
+            )
+            store.create_upload(bad_workspace["id"], bad_tar_path.name, bad_artifact["id"])
+            bad_run = store.create_run(bad_workspace["id"])
+            with self.assertRaisesRegex(ValueError, "no supported log directories"):
                 AgentRuntime(settings, store).run_analysis(bad_workspace["id"], bad_run["id"])
 
     def test_task_mcp_reads_resources_and_runs_follow_up_search(self) -> None:

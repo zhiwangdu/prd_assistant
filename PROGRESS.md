@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Node Log Package Preprocessor
+
+- Added V2 preprocessing for node log packages named `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` or `.tgz`.
+- Tar scanning now classifies wrapped `var/chroot/gemini/log/tsdb`, `var/chroot/gemini/log/stream`, and `home/Ruby/log` members into stable `extracted/<nodeId>/<timestamp>/<group>/...` paths.
+- Node package rotated files are accepted by directory membership instead of suffix, and gzip content is decoded by magic bytes before manifest and grep indexing.
+- Matching node packages with no supported log directories now fail clearly instead of producing an empty successful manifest.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Final Evidence Validation
 
 - Added V2 final answer normalization and validation before a run can be marked `succeeded`.

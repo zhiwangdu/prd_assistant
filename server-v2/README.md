@@ -11,6 +11,8 @@ slice provides the durable foundation for the V2 product model:
 - Workspace, Run, TimelineEvent, Evidence, Artifact, Upload, Action, and Job
   schema foundations.
 - Initial evidence pipeline for uploaded text files and supported archives.
+- V1-style node log package preprocessing for
+  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
 - Task MCP endpoint with summary/evidence/manifest/grep resources and
@@ -118,9 +120,9 @@ python3 -m compileall logagent_v2
 PYTHONPATH=. python3 -m unittest discover tests
 ```
 
-This V2 slice intentionally does not yet migrate the V1 node log package
-preprocessor, rich Tool Runner input matching, Metadata, Skills, Memory, WebUI,
-or full LangGraph model loop.
+This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
+inputs, rich Tool Runner input matching, Metadata, Skills, Memory, WebUI, or
+full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -130,12 +132,29 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
   `.yaml`, `.yml`, `.conf`, and `.cfg` files;
 - scans `.zip`, `.tar`, `.tar.gz`, and `.tgz` packages without writing archive
   members to arbitrary filesystem paths;
+- recognizes openGemini-style node log packages named
+  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`;
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts;
 - records `manifest` and `log_search` evidence items; and
 - lets the current stub Agent final answer reference
   `grep_results.json#matches/<index>` when matches exist.
+
+Node log packages are classified by archive path components, so wrapper
+directories and `./` entries are tolerated. Files under
+`var/chroot/gemini/log/tsdb`, `var/chroot/gemini/log/stream`, and
+`home/Ruby/log` become:
+
+```text
+extracted/<nodeId>/<timestamp>/tsdb/<relative-file>
+extracted/<nodeId>/<timestamp>/stream/<relative-file>
+extracted/<nodeId>/<timestamp>/agent/<relative-file>
+```
+
+Rotated files are accepted by directory membership rather than filename suffix,
+and gzip content is decoded by magic bytes before grep indexing. A node package
+with no supported log directory fails instead of producing an empty manifest.
 
 ## MCP
 

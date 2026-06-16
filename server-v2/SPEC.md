@@ -38,6 +38,10 @@ Implemented in this slice:
 - Run creation and queued `run_analysis` job.
 - Inline DB-backed worker.
 - Initial evidence pipeline for uploaded text files and supported archives.
+- Node log package preprocessing for
+  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`; supported log
+  directories are classified into stable `extracted/<node>/<timestamp>/<group>`
+  paths, and gzip-rotated files are decoded by magic bytes.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Stub Agent runtime that records initial question evidence, consumes the
   initial evidence pipeline, and returns a low-confidence evidence summary.
@@ -64,7 +68,7 @@ Implemented in this slice:
 
 Not yet implemented:
 
-- V1-compatible node log package preprocessing and log slicing.
+- V1-compatible analyzer materialized `tool_inputs/index.json` generation.
 - LangGraph provider integration.
 - Rich Tool Runner input matching, per-tool params schema, Metadata, Case
   recall, and full multi-round model reasoning after resume.
@@ -160,6 +164,30 @@ grep_results.json#matches/<index>
 
 These refs are current-task evidence. Manifest evidence is background and not
 final evidence.
+
+Node log packages named
+`<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` or `.tgz` are a
+special tar scan mode. Archive members can live below a wrapper directory; V2
+searches normalized path components for supported log roots:
+
+```text
+var/chroot/gemini/log/tsdb
+var/chroot/gemini/log/stream
+home/Ruby/log
+```
+
+Files under those roots are accepted regardless of suffix, decoded as gzip when
+the bytes start with gzip magic, and exposed in manifest/search paths as:
+
+```text
+extracted/<nodeId>/<timestamp>/tsdb/<relative-file>
+extracted/<nodeId>/<timestamp>/stream/<relative-file>
+extracted/<nodeId>/<timestamp>/agent/<relative-file>
+```
+
+Each manifest file entry records `originalPath`, `logGroup`, and `nodePackage`
+metadata. A matching node package with no supported log directories is rejected
+with a clear error so an empty manifest is not treated as a successful import.
 
 Follow-up task MCP searches use:
 
