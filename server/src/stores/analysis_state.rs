@@ -550,12 +550,20 @@ pub fn record_manifest(workspace: &Path, task_id: &str) -> anyhow::Result<()> {
 }
 
 pub fn record_log_search(workspace: &Path, grep: &GrepResults) -> anyhow::Result<()> {
+    record_log_search_artifact(workspace, "grep_results.json", grep)
+}
+
+pub fn record_log_search_artifact(
+    workspace: &Path,
+    artifact_path: &str,
+    grep: &GrepResults,
+) -> anyhow::Result<()> {
     let evidence_refs = (0..grep.matches.len())
-        .map(|index| format!("grep_results.json#matches/{index}"))
+        .map(|index| format!("{artifact_path}#matches/{index}"))
         .collect::<Vec<_>>();
     let evidence = AnalysisEvidenceRecord {
         evidence_type: AnalysisEvidenceType::LogSearch,
-        artifact_path: "grep_results.json".to_string(),
+        artifact_path: artifact_path.to_string(),
         action_id: None,
         summary: format!("grep search recorded {} matches", grep.matches.len()),
         evidence_refs,

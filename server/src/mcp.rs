@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     io::{self, BufRead, Write},
     path::{Component, Path, PathBuf},
     sync::Arc,
@@ -16,13 +17,13 @@ use crate::{
             ActionKind, ActionRisk, AgentAction, EvidenceArtifact, EvidenceProvider,
             EvidenceSummary, EvidenceType, TaskContext,
         },
-        models::{GrepResults, SystemContextBundle, TaskRecord},
+        models::{SystemContextBundle, TaskRecord},
     },
-    pipeline::{read_tool_results, search_task_with_settings},
+    pipeline::read_tool_results,
     services::{
         agent_contracts::write_json_atomic,
         fetch::{execute_fetch_to_artifacts, FetchRunParams},
-        log_analyzer::read_log_slice,
+        log_analyzer::{read_log_slice, LogAnalyzer},
         metadata::{
             metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
             MetadataFieldTypesRequest, MetadataStore, MetadataTagFieldsRequest,
@@ -314,7 +315,7 @@ fn tools_list_result() -> serde_json::Value {
         "tools": [
             {
                 "name": "logagent.search_logs",
-                "description": "Search task logs with LogAgent grep and persist grep_results.json.",
+                "description": "Search task logs with LogAgent grep, persist a stable log_searches artifact, and return matched lines. Inspect matches text before drawing conclusions.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -588,9 +589,9 @@ async fn call_tool(
 }
 
 async fn search_logs_tool(
-    config: Arc<AppConfig>,
+    _config: Arc<AppConfig>,
     workspace: &Path,
-    task: &TaskRecord,
+    _task: &TaskRecord,
     arguments: serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
     let keywords = string_array_arg(&arguments, "keywords")?;
@@ -599,25 +600,59 @@ async fn search_logs_tool(
         .and_then(|value| value.as_u64())
         .unwrap_or(50)
         .clamp(1, 200) as usize;
-    search_task_with_settings(
-        config,
-        &task.task_id,
-        LogAnalyzerSettings {
-            keywords,
-            max_matches,
-        },
-    )
-    .await?;
-    let raw = tokio::fs::read_to_string(workspace.join("grep_results.json")).await?;
-    let grep: GrepResults = serde_json::from_str(&raw)?;
-    analysis_state::record_log_search(workspace, &grep)?;
+    let settings = LogAnalyzerSettings {
+        keywords: keywords.clone(),
+        max_matches,
+    };
+    let extracted_dir = workspace.join("extracted");
+    let grep = tokio::task::spawn_blocking(move || {
+        let analyzer = LogAnalyzer::new(settings);
+        analyzer.run_simple_grep(&extracted_dir)
+    })
+    .await
+    .map_err(|err| anyhow::anyhow!("log search worker panicked: {err}"))??;
+    let search_id = next_id("logsearch");
+    let artifact_path = format!("log_searches/{search_id}.json");
+    tokio::fs::create_dir_all(workspace.join("log_searches")).await?;
+    write_json_atomic(workspace.join(&artifact_path), &grep).await?;
+    analysis_state::record_log_search_artifact(workspace, &artifact_path, &grep)?;
     let evidence_refs = (0..grep.matches.len())
-        .map(|index| format!("grep_results.json#matches/{index}"))
+        .map(|index| format!("{artifact_path}#matches/{index}"))
+        .collect::<Vec<_>>();
+    let mut keyword_counts = BTreeMap::<String, usize>::new();
+    let mut matched_keywords = BTreeSet::<String>::new();
+    for item in &grep.matches {
+        *keyword_counts.entry(item.keyword.clone()).or_insert(0) += 1;
+        matched_keywords.insert(item.keyword.to_ascii_lowercase());
+    }
+    let unmatched_keywords = keywords
+        .iter()
+        .filter(|keyword| !matched_keywords.contains(&keyword.to_ascii_lowercase()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let matches = grep
+        .matches
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            json!({
+                "index": index,
+                "evidenceRef": format!("{artifact_path}#matches/{index}"),
+                "file": item.file,
+                "line": item.line,
+                "keyword": item.keyword,
+                "text": item.text,
+            })
+        })
         .collect::<Vec<_>>();
     Ok(json!({
-        "artifactPath": "grep_results.json",
+        "artifactPath": artifact_path,
         "totalMatches": grep.total_matches,
+        "keywordCounts": keyword_counts,
+        "unmatchedKeywords": unmatched_keywords,
+        "matches": matches,
         "evidenceRefs": evidence_refs,
+        "note": "Use matches[].text to justify conclusions; totalMatches alone is not evidence of a specific exception type or technology stack.",
     }))
 }
 
@@ -1115,7 +1150,7 @@ fn stable_json_hash(value: &serde_json::Value) -> u64 {
 mod tests {
     use super::*;
     use crate::{
-        domain::models::{TaskKind, TaskPhase, TaskRecord, TaskSource, TaskStatus},
+        domain::models::{GrepResults, TaskKind, TaskPhase, TaskRecord, TaskSource, TaskStatus},
         services::{
             metadata::{
                 ClusterMetadata, DatabaseMetadata, FieldSchemaMetadata, InstanceMetadata,
@@ -1252,6 +1287,63 @@ mod tests {
         let calls = std::fs::read_to_string(workspace.join("mcp_calls.jsonl")).unwrap();
         assert!(calls.contains("logagent.query_metadata"));
         assert!(calls.contains("metadata_slices/slice_"));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn search_logs_tool_returns_stable_matches_without_overwriting_initial_grep() {
+        let root = temp_dir("search-logs-config");
+        let workspace = temp_dir("search-logs-workspace");
+        std::fs::create_dir_all(workspace.join("extracted/node/tsdb")).unwrap();
+        std::fs::write(
+            workspace.join("extracted/node/tsdb/store.log"),
+            "info lib/memory/memory.go:42 limiting caches to 10 bytes\n\
+             error dial tcp 127.0.0.1:8088: connect: connection refused\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("grep_results.json"),
+            r#"{"keywords":["initial"],"totalMatches":1,"matches":[{"file":"initial.log","line":1,"keyword":"initial","text":"initial evidence"}]}"#,
+        )
+        .unwrap();
+        let config = test_config(&root);
+        let task = task_record("task_search");
+        analysis_state::initialize(&workspace, &task).unwrap();
+
+        let value = search_logs_tool(
+            config,
+            &workspace,
+            &task,
+            json!({
+                "keywords": ["memory", "java.lang.OutOfMemoryError"],
+                "maxMatches": 10
+            }),
+        )
+        .await
+        .unwrap();
+
+        let artifact_path = value["artifactPath"].as_str().unwrap();
+        assert!(artifact_path.starts_with("log_searches/logsearch_"));
+        assert_eq!(value["totalMatches"], 1);
+        assert_eq!(value["keywordCounts"]["memory"], 1);
+        assert_eq!(value["unmatchedKeywords"][0], "java.lang.OutOfMemoryError");
+        assert_eq!(
+            value["matches"][0]["evidenceRef"],
+            format!("{artifact_path}#matches/0")
+        );
+        assert!(value["matches"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("lib/memory/memory.go"));
+        assert!(workspace.join(artifact_path).exists());
+
+        let initial: GrepResults = serde_json::from_str(
+            &std::fs::read_to_string(workspace.join("grep_results.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(initial.matches[0].text, "initial evidence");
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(workspace);

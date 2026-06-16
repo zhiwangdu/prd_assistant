@@ -150,6 +150,7 @@ flowchart LR
 - 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
 - Fetch endpoint 只在 `fetch.enabled=true` 且配置 allowlist 和 32-byte base64 secret key 后可用。Server 从 DevTools bash cURL 导入 endpoint，Authorization、Cookie、token/api_key 类 query/body 字段进入加密 credential set；WebUI、API、日志和 artifact 只展示脱敏值。任务 MCP 可调用 `logagent.fetch`，只读 HTTP MCP 不开放 fetch 执行。
 - Log Analyzer 会自动识别节点日志包 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`，按 `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/` 展开三类日志目录；archive 内允许存在顶层包装目录和 `./` 等目录项，只要文件路径中包含 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 即可归类。轮转 gzip 透明读取，并生成 `tool_inputs/index.json` 供 `influxql_analyzer` 等工具作为独占自动输入消费。
+- 任务 MCP `logagent.search_logs` 不覆盖初始 `grep_results.json`；每次后续搜索写入稳定 `log_searches/logsearch_*.json`，返回命中行正文、按关键词计数、未命中关键词和 `log_searches/...#matches/<index>` evidence ref。Claude Code prompt 要求检查命中行正文，不能只按 `totalMatches` 推断异常类型或技术栈。
 - `logagent.huawei_cloud_package_sync` 是默认关闭的内置手动工具；启用后只接受一个已上传包，把包流式 PUT 到配置的 Huawei OBS，再执行用户提交的 GaussDB update/query SQL，并把 OBS HEAD 与查询摘要写入 `tool_results/<action_id>/result.json`。OBS/GaussDB 密钥只从环境变量读取，不进入 artifact。
 - Settings 提供只读 MCP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载入口。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。

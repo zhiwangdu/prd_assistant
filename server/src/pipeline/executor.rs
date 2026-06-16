@@ -400,7 +400,12 @@ async fn plan_analysis_phase(
                     task_id = %task.task_id,
                     "Claude Code returned final answer"
                 );
-                let result = result.into_result(&grep, case_context.as_ref(), &tool_results)?;
+                let result = result.into_result_with_workspace(
+                    &workspace,
+                    &grep,
+                    case_context.as_ref(),
+                    &tool_results,
+                )?;
                 let output = persist_final_answer_decision_result(&workspace, result).await?;
                 let completed = complete_successful_log_analysis(
                     &state,

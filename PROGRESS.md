@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Stable MCP Log Search Evidence
+
+- Investigated `sess_1781622184222_1` / `task_1781622204486_5`: the uploaded openGemini node packages were extracted successfully and the real analyzer found query issues, but Claude Code later issued broad MCP searches such as `memory`, `at `, and Java exception names. The previous `logagent.search_logs` response returned only counts and `grep_results.json#matches/*` refs, so the model misread benign `lib/memory/memory.go` and ordinary English/Go log lines as JVM/OOM/NPE evidence.
+- Changed task MCP `logagent.search_logs` to write each subsequent search to stable `log_searches/logsearch_*.json` artifacts, return matched line text, `keywordCounts`, `unmatchedKeywords`, and `log_searches/...#matches/<index>` refs, and stop overwriting the initial `grep_results.json`.
+- Extended Claude Code / LLM final evidence validation to accept stable log search refs and reject unknown log search artifacts or out-of-range matches. Updated the Claude startup prompt to require inspecting `matches[].text` and to forbid inferring exception types or technology stacks from `totalMatches` alone.
+- Updated root, Server, Log Analyzer, Analysis Agent, and LLM Gateway docs/specs.
+- Verification passed: `cargo fmt`; focused tests for MCP stable search artifacts, LLM log search evidence refs, and Claude evidence rejection.
+
 ## 2026-06-16 Claude Code Session Timeout
 
 - Increased the default and recommended `claude_code.max_session_seconds` from 120 seconds to 600 seconds so `PLAN_ANALYSIS` has enough time for Claude Code MCP evidence reads and tool calls on larger log packages.

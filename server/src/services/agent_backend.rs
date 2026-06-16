@@ -10,7 +10,7 @@ use crate::{
     domain::models::{AnalysisLanguage, GrepResults},
     services::{
         agent_contracts::write_json_atomic,
-        llm_gateway::{validate_final_answer_with_evidence, FinalAnswerDecision},
+        llm_gateway::{validate_final_answer_with_workspace_evidence, FinalAnswerDecision},
         tool_runner::ToolRunRecord,
     },
     support::{
@@ -237,8 +237,9 @@ impl AgentBackendRegistry {
                 match parsed {
                     Ok((outcome, raw_response, structured_output)) => {
                         if let ClaudeSessionOutcome::FinalAnswer { result } = &outcome {
-                            if let Err(error) = validate_final_answer_with_evidence(
+                            if let Err(error) = validate_final_answer_with_workspace_evidence(
                                 result,
+                                input.workspace,
                                 input.grep_results,
                                 input.case_context,
                                 input.tool_results,
@@ -496,6 +497,7 @@ Native Bash allowed: {native_bash}
 Native Edit allowed: {native_edit}
 
 Before analyzing, call MCP resources/list and then read the resource named analysis_package. Use that task package as the primary context. Read manifest, grep_results, metadata_context, system_context, case_context, and tool_results resources as needed instead of relying on this startup prompt for evidence. The metadata_context resource is an outline only; use logagent.query_metadata with section/filter/limit/cursor when you need bounded metadata details.
+When you call logagent.search_logs, inspect the returned matches text and keywordCounts. Do not infer an exception type, technology stack, or root cause from totalMatches alone. Broad keywords such as memory, at, thread, or process may match benign log lines.
 If analysis_package.analysisState.finalizeRequested is true, the user has explicitly said there is no more information to provide. Do not call request_user_input and do not return runtimeStatus="waiting_for_user"; return runtimeStatus="completed" with the best finalAnswer possible from current evidence, using low confidence and missingInformation when evidence is insufficient.
 
 Return exactly one JSON object matching the schema:
@@ -503,7 +505,7 @@ Return exactly one JSON object matching the schema:
 - runtimeStatus="waiting_for_user" with pendingPrompt when user information is required.
 - runtimeStatus="waiting_for_approval" with pendingApproval when an approval-gated action is required.
 
-The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, skill_references/*, or metadata_slices/* refs as final root cause evidence.
+The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, log_searches/<search_id>.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, skill_references/*, or metadata_slices/* refs as final root cause evidence.
 "#,
         mode = analysis_mode.as_str(),
         language = analysis_language.as_str(),

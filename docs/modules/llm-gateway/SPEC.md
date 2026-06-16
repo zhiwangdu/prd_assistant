@@ -15,10 +15,10 @@
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - System Context 背景资源 Prompt 和字符数裁剪。
 - tool result summary/findings Prompt 和字符数裁剪。
-- 最终结果 schema、confidence、session text、grep evidence ref 和 tool finding evidence ref 校验。
+- 最终结果 schema、confidence、session text、初始 grep evidence ref、稳定 log search evidence ref 和 tool finding evidence ref 校验。
 - FinalAnswer schema 和 parser，供 Claude Code runner 与兼容恢复路径复用。
 - Claude Code 返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为最终结果并继续做 evidence ref 校验。
-- 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`。
+- 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`；任务 MCP 后续搜索可直接引用稳定 `log_searches/<search_id>.json#matches/<index>`，未知 artifact 或越界 match 会拒绝。
 - 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
 - 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
 - 成功 task 的 alias 生成调用，输出 `{"alias":"..."}`，用于 UI 展示而不是分析证据。
@@ -33,14 +33,14 @@
 - 用户问题。
 - `session_text_input.json#question` 用户输入文本证据。
 - manifest 文件摘要。
-- grep match 索引、文件、行号、关键词和文本。
+- 初始 grep match 以及 MCP 后续 `log_searches` match 的索引、文件、行号、关键词和文本。
 - task 创建时固化的 Metadata 摘要，包括产品、版本、环境、节点状态、数据库和 PT 统计。
 - task 创建时固化的 System Context 摘要，包括 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter。
 - Tool Runner 的工具名、状态、退出码、耗时、summary 和 findings。
 
 ## 当前输出
 
-结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、grep match 或 tool finding 引用。
+结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、初始 grep match、稳定 log search match 或 tool finding 引用。
 根因证据也可以引用当前 task 创建时固化的历史 Case context，canonical 格式为：
 
 - `case_context.json#cases/<index>`

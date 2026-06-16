@@ -39,7 +39,7 @@ log_analyzer:
 
 Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 
-它同时是 Analysis Orchestrator 的日志证据提供方。除初始关键词扫描外，还必须支持 Server 根据 Claude MCP `logagent.search_logs` 发起受限的后续检索；检索范围只能位于当前 task workspace。
+它同时是 Analysis Orchestrator 的日志证据提供方。除初始关键词扫描外，还支持 Server 根据 Claude MCP `logagent.search_logs` 发起受限的后续检索；检索范围只能位于当前 task workspace。后续检索不会覆盖初始 `grep_results.json`，而是写入稳定 `log_searches/logsearch_*.json` 并返回命中行正文、按关键词计数和未命中关键词，避免模型只根据计数误判异常类型。
 
 核心产物：
 
@@ -47,7 +47,7 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 - `error_summary.json`
 - `contexts.jsonl`
 - `tool_inputs/index.json`
-- `log_searches/<action_id>.json`
+- `log_searches/<search_id>.json`
 
 ## 支持格式
 
