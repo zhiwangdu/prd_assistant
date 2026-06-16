@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Analyze Case Save
+
+- Added a V2 Analyze Case save panel for succeeded runs with final answers.
+- Prefills title, symptom, root cause, solution, and evidence refs from the V2
+  final answer, allows editing, and calls `POST /api/v2/runs/:run_id/case`.
+- Added `confirmV2RunCase` to `webui/src/v2-api.ts`.
+- Updated WebUI docs and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Startup Job Recovery
 
 - Added `Store.recover_interrupted_jobs()` for DB-backed jobs left in `running`

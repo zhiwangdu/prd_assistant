@@ -1,10 +1,11 @@
-import { CheckCircle2, Download, FileArchive, MessageSquare, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, Download, FileArchive, MessageSquare, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import type { UiLanguage } from "./i18n";
 import {
   createV2Run,
   createV2Workspace,
+  confirmV2RunCase,
   decideV2Action,
   deleteV2Workspace,
   downloadV2Artifact,
@@ -17,6 +18,8 @@ import {
   updateV2Workspace,
   uploadV2Files,
   type V2Action,
+  type V2CaseDraft,
+  type V2CaseRecord,
   type V2EvidenceArtifact,
   type V2FinalAnswer,
   type V2Mode,
@@ -28,6 +31,13 @@ import {
 } from "./v2-api";
 
 type BridgeCopy = (typeof copyByLanguage)[UiLanguage];
+type RunCaseDraft = {
+  title: string;
+  symptom: string;
+  rootCause: string;
+  solution: string;
+  evidenceRefsText: string;
+};
 
 const copyByLanguage = {
   "zh-CN": {
@@ -77,6 +87,15 @@ const copyByLanguage = {
     nextChecks: "后续检查",
     fixSuggestions: "修复建议",
     missingInformation: "缺失信息",
+    saveAsCase: "沉淀为 V2 Case",
+    caseDescription: "成功 Run 可以人工确认后写入 V2 Memory，供后续相似问题召回。",
+    saveCase: "保存 Case",
+    savedCase: (caseId: string) => `已保存 V2 Case ${caseId}`,
+    caseTitle: "标题",
+    caseSymptom: "现象",
+    caseRootCause: "根因",
+    caseSolution: "解决方案",
+    caseEvidenceRefs: "Evidence refs",
     noResult: "Run 尚未生成最终结果。",
     waitingAction: "等待动作",
     answerPlaceholder: "补充 V2 Agent 需要的信息",
@@ -149,6 +168,15 @@ const copyByLanguage = {
     nextChecks: "Next checks",
     fixSuggestions: "Fix suggestions",
     missingInformation: "Missing information",
+    saveAsCase: "Save as V2 Case",
+    caseDescription: "A succeeded run can be confirmed into V2 Memory for future recall.",
+    saveCase: "Save Case",
+    savedCase: (caseId: string) => `Saved V2 Case ${caseId}`,
+    caseTitle: "Title",
+    caseSymptom: "Symptom",
+    caseRootCause: "Root cause",
+    caseSolution: "Solution",
+    caseEvidenceRefs: "Evidence refs",
     noResult: "The run has no final result yet.",
     waitingAction: "Waiting action",
     answerPlaceholder: "Provide the information requested by the V2 Agent",
@@ -189,6 +217,9 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const [analysis, setAnalysis] = useState<V2RunAnalysis | null>(null);
   const [waitingMessage, setWaitingMessage] = useState("");
   const [decisionReason, setDecisionReason] = useState("");
+  const [caseDraft, setCaseDraft] = useState<RunCaseDraft>(emptyRunCaseDraft());
+  const [caseDraftRunId, setCaseDraftRunId] = useState("");
+  const [savedCase, setSavedCase] = useState<V2CaseRecord | null>(null);
   const [status, setStatus] = useState<string>(copy.apiKeyRequired);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -414,6 +445,34 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? analysis?.workspace ?? null;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? analysis?.run ?? null;
   const finalAnswer = analysis?.result?.finalAnswer ?? analysis?.run.finalAnswer ?? null;
+  const selectedRunStatus = selectedRun?.status;
+  const selectedRunCaseId = selectedRun?.id ?? "";
+
+  useEffect(() => {
+    if (selectedRunStatus === "succeeded" && finalAnswer && caseDraftRunId !== selectedRunCaseId) {
+      setCaseDraft(caseDraftFromFinalAnswer(finalAnswer));
+      setSavedCase(null);
+      setCaseDraftRunId(selectedRunCaseId);
+    }
+    if (!selectedRunCaseId || selectedRunStatus !== "succeeded") {
+      setCaseDraftRunId("");
+      setSavedCase(null);
+    }
+  }, [caseDraftRunId, finalAnswer, selectedRunCaseId, selectedRunStatus]);
+
+  async function saveRunCase() {
+    if (!selectedRunId || !isCaseDraftComplete(caseDraft)) return;
+    setLoading(true);
+    try {
+      const record = await confirmV2RunCase(apiKey, selectedRunId, runCasePayload(caseDraft));
+      setSavedCase(record);
+      setStatus(copy.savedCase(record.caseId));
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Card>
@@ -514,6 +573,17 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           <TimelineView copy={copy} analysis={analysis} />
         </div>
 
+        {selectedRun?.status === "succeeded" && finalAnswer ? (
+          <RunCasePanel
+            copy={copy}
+            draft={caseDraft}
+            savedCase={savedCase}
+            loading={loading}
+            onDraftChange={setCaseDraft}
+            onSave={() => void saveRunCase()}
+          />
+        ) : null}
+
         {analysis ? (
           <ArtifactList
             copy={copy}
@@ -561,6 +631,78 @@ function RunList({ copy, runs, selectedRunId, onSelect }: { copy: BridgeCopy; ru
         )) : <EmptyState>{copy.noRuns}</EmptyState>}
       </div>
     </div>
+  );
+}
+
+function RunCasePanel({
+  copy,
+  draft,
+  savedCase,
+  loading,
+  onDraftChange,
+  onSave
+}: {
+  copy: BridgeCopy;
+  draft: RunCaseDraft;
+  savedCase: V2CaseRecord | null;
+  loading: boolean;
+  onDraftChange: (draft: RunCaseDraft) => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <BookOpenCheck className="h-5 w-5 text-primary" />
+            <h3 className="text-sm font-semibold">{copy.saveAsCase}</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{copy.caseDescription}</p>
+        </div>
+        {savedCase ? <Badge variant="success">{savedCase.caseId}</Badge> : null}
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1 text-xs text-muted-foreground">
+          {copy.caseTitle}
+          <input
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+            value={draft.title}
+            onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
+          />
+        </label>
+        <label className="space-y-1 text-xs text-muted-foreground">
+          {copy.caseEvidenceRefs}
+          <input
+            className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+            value={draft.evidenceRefsText}
+            onChange={(event) => onDraftChange({ ...draft, evidenceRefsText: event.target.value })}
+          />
+        </label>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <LabeledCaseTextarea label={copy.caseSymptom} value={draft.symptom} onChange={(value) => onDraftChange({ ...draft, symptom: value })} />
+        <LabeledCaseTextarea label={copy.caseRootCause} value={draft.rootCause} onChange={(value) => onDraftChange({ ...draft, rootCause: value })} />
+        <LabeledCaseTextarea label={copy.caseSolution} value={draft.solution} onChange={(value) => onDraftChange({ ...draft, solution: value })} />
+      </div>
+      <div className="flex justify-end">
+        <Button disabled={loading || !isCaseDraftComplete(draft)} onClick={onSave}>
+          <BookOpenCheck className="mr-2 h-4 w-4" />{copy.saveCase}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LabeledCaseTextarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1 text-xs text-muted-foreground">
+      {label}
+      <textarea
+        className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -791,6 +933,65 @@ function stringPayload(payload: Record<string, unknown>, key: string) {
 
 function filenameFromPath(relativePath: string) {
   return relativePath.split("/").filter(Boolean).pop() || "artifact";
+}
+
+function emptyRunCaseDraft(): RunCaseDraft {
+  return {
+    title: "",
+    symptom: "",
+    rootCause: "",
+    solution: "",
+    evidenceRefsText: ""
+  };
+}
+
+function caseDraftFromFinalAnswer(answer: V2FinalAnswer): RunCaseDraft {
+  const rootCauses = (answer.likelyRootCauses ?? [])
+    .map((item) => item.cause)
+    .filter(Boolean);
+  const evidenceRefs = collectFinalEvidenceRefs(answer);
+  return {
+    title: answer.summary || "",
+    symptom: (answer.symptoms ?? []).join("\n"),
+    rootCause: rootCauses.join("\n"),
+    solution: (answer.fixSuggestions ?? []).join("\n"),
+    evidenceRefsText: evidenceRefs.join("\n")
+  };
+}
+
+function collectFinalEvidenceRefs(answer: V2FinalAnswer): string[] {
+  const refs = new Set<string>();
+  for (const ref of answer.evidenceRefs ?? []) {
+    if (ref.trim()) refs.add(ref.trim());
+  }
+  for (const cause of answer.likelyRootCauses ?? []) {
+    for (const ref of cause.evidenceRefs ?? []) {
+      if (ref.trim()) refs.add(ref.trim());
+    }
+  }
+  return Array.from(refs);
+}
+
+function runCasePayload(draft: RunCaseDraft): V2CaseDraft {
+  return {
+    title: draft.title.trim(),
+    symptom: draft.symptom.trim(),
+    rootCause: draft.rootCause.trim(),
+    solution: draft.solution.trim(),
+    evidenceRefs: draft.evidenceRefsText
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  };
+}
+
+function isCaseDraftComplete(draft: RunCaseDraft) {
+  return Boolean(
+    draft.title.trim() &&
+    draft.symptom.trim() &&
+    draft.rootCause.trim() &&
+    draft.solution.trim()
+  );
 }
 
 function errorMessage(reason: unknown) {
