@@ -18,8 +18,8 @@ slice provides the durable foundation for the V2 product model:
   with analyzer JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
-- Task MCP endpoint with summary/evidence/manifest/grep/analysis_package
-  resources and `logagent.search_logs` follow-up search plus
+- Task MCP endpoint with summary/evidence/manifest/grep/analysis_package plus
+  Agent audit resources and `logagent.search_logs` follow-up search plus
   `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`; tools with `{input_file}` consume matching
@@ -48,7 +48,8 @@ slice provides the durable foundation for the V2 product model:
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
 - Agent runtime with default stub final answer plus optional single-round
-  OpenAI-compatible provider for evidence-validated JSON final answers.
+  OpenAI-compatible provider for evidence-validated JSON final answers and
+  per-round request/response/state audit artifacts.
 
 ## Local Run
 
@@ -226,6 +227,14 @@ outline, system/metadata context outlines, and the current allowed evidence
 refs. Task MCP exposes it as
 `logagent-v2://run/<run_id>/analysis_package`.
 
+Every Agent round also writes background-only audit artifacts:
+`agent_request.json`, `agent_response.json`, and `analysis_state.json`. The
+request artifact stores the provider/stub payload without Authorization
+headers, the response artifact stores provider output or structured failure
+details plus final-answer validation status, and the state artifact records the
+latest round status. Task MCP exposes them as `agent_request`,
+`agent_response`, and `analysis_state` resources.
+
 ## Initial Evidence Pipeline
 
 When a run starts, V2 now reads all uploads attached to the Workspace and:
@@ -274,7 +283,8 @@ It currently supports:
 - `initialize`
 - `resources/list`
 - `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
-  `system_context`, `metadata_context`, and `analysis_package`
+  `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
+  `agent_request`, and `agent_response`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`

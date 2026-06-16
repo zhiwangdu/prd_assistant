@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Round Audit
+
+- Added V2 Agent round audit artifacts: `agent_request.json`, `agent_response.json`, and `analysis_state.json`.
+- AgentRuntime now persists the provider/stub request before execution, response/validation details after execution, and a latest state snapshot for both success and failure paths.
+- OpenAI-compatible provider execution now returns a structured envelope with sanitized request metadata, HTTP/body previews, parsed final answer, or structured failure details; Authorization headers are not stored.
+- Task MCP now lists and reads `analysis_state`, `agent_request`, and `agent_response` resources.
+- `analysis_package.json` resource index now includes the new Agent audit resources for loop context.
+- Evidence listing now uses SQLite insertion order as the tie-breaker inside equal timestamps so latest artifact resources are stable when multiple audit snapshots are written in the same second.
+- Added regression coverage for stub audit resources, OpenAI-compatible provider audit resources, and invalid evidence-ref failure retaining audit artifacts.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Analysis Package Resource
 
 - Added V2 `analysis_package.json` generation after initial evidence collection.

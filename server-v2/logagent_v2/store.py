@@ -709,7 +709,7 @@ class Store:
                 """
                 SELECT * FROM evidence_items
                 WHERE workspace_id = ? AND (run_id = ? OR run_id IS NULL)
-                ORDER BY created_at ASC, id ASC
+                ORDER BY created_at ASC, rowid ASC
                 """,
                 (run["workspace_id"], run_id),
             ).fetchall()

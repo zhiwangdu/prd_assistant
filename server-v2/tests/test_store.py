@@ -114,7 +114,65 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(package["manifest"]["fileCount"], 1)
             self.assertEqual(package["allowedEvidenceRefs"], ["grep_results.json#matches/0"])
             self.assertIn("analysis_package", {item["name"] for item in package["resources"]})
+            self.assertIn("analysis_state", {item["name"] for item in package["resources"]})
             self.assertFalse(package["systemContext"]["resources"])
+            resource_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 3, "method": "resources/list"},
+            )
+            resource_names = {
+                item["name"] for item in resource_response["result"]["resources"]
+            }
+            self.assertIn("analysis_state", resource_names)
+            self.assertIn("agent_request", resource_names)
+            self.assertIn("agent_response", resource_names)
+            state_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                },
+            )
+            state = json.loads(state_response["result"]["contents"][0]["text"])
+            self.assertEqual(state["status"], "succeeded")
+            self.assertEqual(state["rounds"][0]["status"], "completed")
+            request_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                },
+            )
+            request_doc = json.loads(request_response["result"]["contents"][0]["text"])
+            self.assertEqual(request_doc["provider"], "stub")
+            self.assertEqual(request_doc["transport"]["type"], "local_stub")
+            self.assertEqual(request_doc["allowedEvidenceRefs"], ["grep_results.json#matches/0"])
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                },
+            )
+            response_doc = json.loads(response["result"]["contents"][0]["text"])
+            self.assertEqual(response_doc["provider"], "stub")
+            self.assertEqual(response_doc["status"], "completed")
+            self.assertEqual(response_doc["validation"]["status"], "passed")
+            self.assertEqual(response_doc["validatedFinalAnswer"]["confidence"], "low")
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))
@@ -191,6 +249,140 @@ class StoreTests(unittest.TestCase):
                 assert isinstance(request_payload, dict)
                 self.assertEqual(request_payload["model"], "mock-model")
                 self.assertIn("grep_results.json#matches/0", request_payload["messages"][1]["content"])
+                agent_request = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 21,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                    },
+                )
+                request_doc = json.loads(agent_request["result"]["contents"][0]["text"])
+                self.assertEqual(request_doc["provider"], "openai_compatible")
+                self.assertEqual(request_doc["model"], "mock-model")
+                self.assertNotIn("Authorization", json.dumps(request_doc))
+                agent_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 22,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                    },
+                )
+                response_doc = json.loads(agent_response["result"]["contents"][0]["text"])
+                self.assertEqual(response_doc["provider"], "openai_compatible")
+                self.assertEqual(response_doc["status"], "completed")
+                self.assertEqual(response_doc["validation"]["status"], "passed")
+                self.assertEqual(response_doc["response"]["httpStatus"], 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_agent_provider_validation_failure_keeps_audit_artifacts(self) -> None:
+        class InvalidRefProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                answer = {
+                    "summary": "model summary",
+                    "symptoms": [],
+                    "likelyRootCauses": [
+                        {
+                            "cause": "bad ref",
+                            "evidenceRefs": ["grep_results.json#matches/999"],
+                        }
+                    ],
+                    "nextChecks": [],
+                    "fixSuggestions": [],
+                    "missingInformation": [],
+                    "confidence": "medium",
+                    "evidenceRefs": ["grep_results.json#matches/999"],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), InvalidRefProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("why timeout?", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"query timeout on shard 1\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+                with self.assertRaises(FinalAnswerValidationError):
+                    AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+                evidence_kinds = {item["kind"] for item in store.list_evidence(run["id"])}
+                self.assertIn("agent_request", evidence_kinds)
+                self.assertIn("agent_response", evidence_kinds)
+                self.assertIn("analysis_state", evidence_kinds)
+                agent_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 31,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                    },
+                )
+                response_doc = json.loads(agent_response["result"]["contents"][0]["text"])
+                self.assertEqual(response_doc["status"], "completed")
+                self.assertEqual(response_doc["validation"]["status"], "failed")
+                self.assertEqual(response_doc["validation"]["type"], "FinalAnswerValidationError")
+                self.assertEqual(
+                    response_doc["finalAnswer"]["evidenceRefs"],
+                    ["grep_results.json#matches/999"],
+                )
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 32,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(state["status"], "failed")
+                self.assertEqual(state["finalAnswerStatus"], "invalid")
+                self.assertEqual(state["rounds"][0]["validation"]["status"], "failed")
         finally:
             server.shutdown()
             server.server_close()

@@ -113,6 +113,9 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         "system_context",
         "metadata_context",
         "analysis_package",
+        "analysis_state",
+        "agent_request",
+        "agent_response",
     ]
     return [
         {
