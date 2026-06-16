@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { uploadFile } from "./upload";
+import { V2ToolsBridge } from "./V2ToolsBridge";
 
 type ToolDescriptor = {
   toolId: string;
@@ -597,7 +598,10 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
+    <div className="space-y-5">
+      <V2ToolsBridge apiKey={apiKey} />
+
+      <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
@@ -726,6 +730,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
             </CardContent>
           </Card>
         </div>
+      </div>
       </div>
     </div>
   );

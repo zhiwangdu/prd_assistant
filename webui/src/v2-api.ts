@@ -180,6 +180,32 @@ export type V2CaseImport = {
   updatedAt: string;
 };
 
+export type V2ToolDescriptor = {
+  toolId: string;
+  displayName: string;
+  enabled: boolean;
+  backend: string;
+  readOnly: boolean;
+  editable?: boolean;
+  exportable?: boolean;
+  runnable: boolean;
+  source?: "built_in" | "configured" | string;
+  maxInputFiles?: number;
+  match?: {
+    filePatterns?: string[];
+    keywords?: string[];
+  };
+  paramsSchema?: Record<string, unknown>;
+  allowedHosts?: string[];
+};
+
+export type V2McpResponse = {
+  jsonrpc: "2.0";
+  id?: string | number | null;
+  result?: unknown;
+  error?: { code: number; message: string };
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -307,4 +333,40 @@ export async function updateV2Case(apiKey: string, caseId: string, updates: V2Ca
     headers: jsonHeaders(apiKey),
     body: JSON.stringify(updates)
   });
+}
+
+export async function listV2Tools(apiKey: string) {
+  return fetchJson<{ tools: V2ToolDescriptor[] }>("/api/v2/tools", { headers: authHeaders(apiKey) });
+}
+
+export async function callV2TaskTool(apiKey: string, runId: string, name: string, args: Record<string, unknown>) {
+  return fetchJson<V2McpResponse>(`/api/v2/mcp/task/${encodeURIComponent(runId)}`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: `webui-${Date.now()}`,
+      method: "tools/call",
+      params: { name, arguments: args }
+    })
+  });
+}
+
+export async function downloadV2ToolsZip(apiKey: string) {
+  await downloadV2File(apiKey, "/api/v2/exports/tools.zip", "logagent-v2-tools.zip");
+}
+
+async function downloadV2File(apiKey: string, path: string, filename: string) {
+  const response = await fetch(path, { headers: authHeaders(apiKey) });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

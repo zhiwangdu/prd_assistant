@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Tools Bridge
+
+- Added a V2 Tools bridge panel at the top of the existing Tool plugins page while preserving the Rust-compatible standalone Tool Runner flow below it.
+- Extended `webui/src/v2-api.ts` with Python V2 tool catalog, task MCP tool call, and `tools.zip` download helpers.
+- Added `webui/src/V2ToolsBridge.tsx` to list V2 tools, inspect match/params schema metadata, download `/api/v2/exports/tools.zip`, and execute run-scoped V2 tools through `/api/v2/mcp/task/:run_id`.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Memory Bridge
 
 - Added a V2 Memory bridge panel at the top of the existing Memory page while preserving the Rust-compatible Case import/search/edit flow below it.

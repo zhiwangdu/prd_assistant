@@ -16,6 +16,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用。旧 Memory 页面仍保留；V2 import 当前按后端能力提供 preview/confirm，不包含旧 `/api/cases/imports/:draft_id/messages` 的多轮补充。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
+- `Tools / Tool plugins` 顶部新增 V2 Tools bridge，调用 Python V2 `/api/v2/tools` 展示工具目录，支持下载 `/api/v2/exports/tools.zip`，并允许输入 V2 `run_id` 和 params 后通过 `/api/v2/mcp/task/:run_id` 调用 task MCP。配置工具会执行 `logagent.run_domain_tool`，`logagent.fetch` 会执行 fetch task tool；结果直接展示 MCP JSON 响应。旧 Rust Tool plugins 页面仍保留，继续提供独立上传和 tool_run 兼容入口。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，支持新建和删除非运行中 Session；选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。删除 Session 前会二次确认，删除后只清理 Session 历史项，关联上传、任务和结果产物由 Server 保留。
@@ -108,6 +109,7 @@ webui/
     ToolsView.tsx
     V2AnalyzeBridge.tsx
     V2MemoryBridge.tsx
+    V2ToolsBridge.tsx
     upload.ts
     v2-api.ts
     styles.css
@@ -232,6 +234,9 @@ V2 bridge APIs：
 - `POST /api/v2/workspaces/:workspace_id/runs`
 - `GET /api/v2/runs/:run_id/analysis`
 - `GET /api/v2/artifacts/:artifact_id`
+- `GET /api/v2/tools`
+- `GET /api/v2/exports/tools.zip`
+- `POST /api/v2/mcp/task/:run_id`
 - `GET /api/v2/cases`
 - `GET /api/v2/cases/:case_id`
 - `PATCH /api/v2/cases/:case_id`
