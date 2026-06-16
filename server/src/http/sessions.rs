@@ -32,7 +32,7 @@ pub async fn create_session(
     let title = normalize_title(req.title, &question, "New log analysis session")?;
     let now = Utc::now();
     let record = AnalysisSessionRecord {
-        schema_version: 2,
+        schema_version: 1,
         session_id: session_id.clone(),
         title,
         question,
@@ -167,6 +167,46 @@ pub async fn patch_session(
         "analysis session updated"
     );
     Ok(Json(updated))
+}
+
+pub async fn delete_session(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    validate_session_id_for_api(&session_id)?;
+    let session = state
+        .sessions
+        .get(&session_id)
+        .await
+        .ok_or_else(|| AppError::not_found(format!("unknown sessionId {session_id}")))?;
+    if session.status.is_running_like() {
+        return Err(AppError::conflict(
+            "cannot delete a running or waiting session",
+            serde_json::json!({ "sessionId": session_id }),
+        ));
+    }
+    for task_id in &session.task_ids {
+        if let Some(task) = state.tasks.get(task_id).await {
+            if !task.status.is_terminal() {
+                return Err(AppError::conflict(
+                    "cannot delete a session with an unfinished task",
+                    serde_json::json!({ "sessionId": session_id, "taskId": task.task_id, "status": task.status }),
+                ));
+            }
+        }
+    }
+    let deleted = state
+        .sessions
+        .delete(&session_id)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to delete session: {err}")))?;
+    info!(
+        session_id = %deleted.session_id,
+        task_count = deleted.task_ids.len(),
+        upload_count = deleted.upload_ids.len(),
+        "analysis session deleted"
+    );
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn attach_uploads(

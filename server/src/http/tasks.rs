@@ -960,6 +960,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_api_creates_and_deletes_session() {
+        let (state, root) = test_state();
+        let app = http::router(state.clone()).with_state(state);
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/sessions")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"title":"Manual session","question":"Why did it fail?","analysisLanguage":"zh-CN"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["schemaVersion"], 1);
+        let session_id = body["sessionId"].as_str().unwrap();
+
+        let deleted = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/sessions/{session_id}"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/api/sessions")
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let body = to_bytes(listed.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["sessions"].as_array().unwrap().is_empty());
+
+        let missing = app
+            .oneshot(
+                Request::get(format!("/api/sessions/{session_id}"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn task_api_creates_lists_and_reads_details() {
         let (state, root) = test_state();
         create_test_session(&state, "sess_test").await;

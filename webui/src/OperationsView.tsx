@@ -1,4 +1,4 @@
-import { BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, UploadCloud } from "lucide-react";
+import { BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { analysisCopy, confidenceLabel, eventTypeLabel, sessionStatusLabel, taskPhaseLabel, taskStatusLabel, type AnalysisCopy, type UiLanguage } from "./i18n";
@@ -486,6 +486,39 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
     }
   }
 
+  async function deleteSession(session: SessionSummary) {
+    if (!apiKey.trim()) {
+      setUploadStatus(copy.apiKeyRequired);
+      return;
+    }
+    if (!window.confirm(copy.confirmDeleteSession(session.title, session.sessionId))) return;
+    setLoading(true);
+    try {
+      await fetchJson<Record<string, never>>(`/api/sessions/${encodeURIComponent(session.sessionId)}`, {
+        method: "DELETE",
+        headers: authHeaders(apiKey)
+      });
+      if (selectedSession?.sessionId === session.sessionId) {
+        setSelectedSession(null);
+        setSessionTasks([]);
+        setSelectedTask(null);
+        setArtifacts(null);
+        setTaskResult(null);
+        setAnalysisSnapshot(null);
+        setTimeline([]);
+        setDraftExpanded(true);
+        setTimelineExpanded(true);
+        taskStatusRef.current = null;
+      }
+      setUploadStatus(copy.deletedSession(session.sessionId));
+      await refreshSessions();
+    } catch (reason) {
+      setUploadStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function uploadToSession() {
     if (!selectedSession || !files.length || !apiKey.trim()) {
       setUploadStatus(!selectedSession ? copy.selectOrCreateSession : !files.length ? copy.chooseLogFile : copy.apiKeyRequired);
@@ -665,11 +698,16 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
           </CardHeader>
           <CardContent className="space-y-2">
             {sessions.length ? sessions.map((session) => (
-              <button key={session.sessionId} className={`w-full rounded-lg border p-3 text-left ${selectedSession?.sessionId === session.sessionId ? "border-primary bg-slate-50" : "border-border"}`} onClick={() => void selectSession(session.sessionId)}>
-                <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{session.title}</span><SessionBadge language={language} status={session.status} /></div>
-                <p className="mt-1 font-mono text-xs text-muted-foreground">{session.sessionId}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{copy.uploadsRuns(session.uploadCount, session.taskCount, new Date(session.updatedAt).toLocaleString())}</p>
-              </button>
+              <div key={session.sessionId} className={`flex w-full items-start gap-2 rounded-lg border p-3 ${selectedSession?.sessionId === session.sessionId ? "border-primary bg-slate-50" : "border-border"}`}>
+                <button className="min-w-0 flex-1 text-left" onClick={() => void selectSession(session.sessionId)}>
+                  <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{session.title}</span><SessionBadge language={language} status={session.status} /></div>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">{session.sessionId}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{copy.uploadsRuns(session.uploadCount, session.taskCount, new Date(session.updatedAt).toLocaleString())}</p>
+                </button>
+                <Button className="h-8 w-8 shrink-0 px-0 text-red-600 hover:text-red-700" variant="ghost" disabled={loading} title={copy.deleteSession} aria-label={copy.deleteSession} onClick={() => void deleteSession(session)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             )) : <EmptyState>{copy.noSessions}</EmptyState>}
           </CardContent>
         </Card>

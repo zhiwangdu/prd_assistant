@@ -50,7 +50,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .route(
             "/api/sessions/:session_id",
-            get(sessions::get_session).patch(sessions::patch_session),
+            get(sessions::get_session)
+                .patch(sessions::patch_session)
+                .delete(sessions::delete_session),
         )
         .route(
             "/api/sessions/:session_id/uploads",

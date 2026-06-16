@@ -16,7 +16,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
-- `Analyze` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
+- `Analyze` 从 Server 加载持久化 Session history，支持新建和删除非运行中 Session；选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。删除 Session 前会二次确认，删除后只清理 Session 历史项，关联上传、任务和结果产物由 Server 保留。
 - `Analyze` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
 - `Analyze` 的语言切换只翻译前端固定文案和协议值展示，并影响新 run 的 Claude prompt；旧结果、Server/Claude 原始事件消息、错误详情、路径、JSON key 和 evidence refs 保持原样。
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。

@@ -145,7 +145,7 @@ flowchart LR
 - Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
 - 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
 - `LOGAGENT_CLAUDE_CODE_PATH` 是默认 Claude Code CLI 路径来源。Log Analysis run 会写出 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 Claude session 语义的 `agent_response.json`。Claude CLI 只接收短 stdin 启动 prompt，证据包通过任务专属 MCP `analysis_package` resource 读取，避免大 prompt 进入 argv 或 stdin；完整 `metadata_context.json` 不进入该 package，Claude 初始只看到 `metadataContextOutline`，需要细节时通过 `logagent.query_metadata` 按 section/filter/分页读取。未配置或调用失败时任务失败，不自动 fallback。
-- Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。
+- Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。用户可从 WebUI 删除非运行中的 Session 以清理历史列表，删除只移除 Session 记录和 Session timeline，不级联删除上传、task workspace 或结果产物。
 - WebUI 主入口显示为 `Analyze`，仍使用 Session-first 分析能力，并继续默认调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
 - 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
 - Fetch endpoint 只在 `fetch.enabled=true` 且配置 allowlist 和 32-byte base64 secret key 后可用。Server 从 DevTools bash cURL 导入 endpoint，Authorization、Cookie、token/api_key 类 query/body 字段进入加密 credential set；WebUI、API、日志和 artifact 只展示脱敏值。任务 MCP 可调用 `logagent.fetch`，只读 HTTP MCP 不开放 fetch 执行。

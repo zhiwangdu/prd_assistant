@@ -93,6 +93,32 @@ impl AnalysisSessionStore {
         sessions
     }
 
+    pub async fn delete(&self, session_id: &str) -> anyhow::Result<AnalysisSessionRecord> {
+        validate_session_id(session_id)?;
+        let mut sessions = self.inner.write().await;
+        let session = sessions
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("unknown session {session_id}"))?;
+        if session.status.is_running_like() {
+            anyhow::bail!("cannot delete a running or waiting session");
+        }
+        let path = self.dir.join(format!("{session_id}.json"));
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        let workspace = self.session_workspace_dir(session_id);
+        match fs::remove_dir_all(&workspace) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        sessions.remove(session_id);
+        Ok(session)
+    }
+
     pub async fn update(
         &self,
         session_id: &str,
@@ -472,6 +498,32 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| event.event_type == "task_created"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn delete_removes_record_and_session_workspace() {
+        let root = temp_dir("delete");
+        let sessions_dir = root.join("sessions");
+        let workspaces_dir = root.join("workspaces");
+        let store =
+            AnalysisSessionStore::load(sessions_dir.clone(), workspaces_dir.clone()).unwrap();
+        store.create(session("sess_delete")).await.unwrap();
+        assert!(sessions_dir.join("sess_delete.json").exists());
+        assert!(workspaces_dir
+            .join("sess_delete")
+            .join("session_events.jsonl")
+            .exists());
+
+        let deleted = store.delete("sess_delete").await.unwrap();
+        assert_eq!(deleted.session_id, "sess_delete");
+        assert!(store.get("sess_delete").await.is_none());
+        assert!(!sessions_dir.join("sess_delete.json").exists());
+        assert!(!workspaces_dir.join("sess_delete").exists());
+
+        let reloaded =
+            AnalysisSessionStore::load(root.join("sessions"), root.join("workspaces")).unwrap();
+        assert!(reloaded.get("sess_delete").await.is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 }

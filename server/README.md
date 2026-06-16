@@ -188,7 +188,7 @@ RUST_LOG=logagent_server=info,tower_http=info
   # Skill 导入写入第一个配置的 skills.roots 下的 <skillId>/SKILL.md 和 logagent.json
 ```
 
-每个 Session 持久化到 `sessions/<session_id>.json`，事件追加到 `session_workspaces/<session_id>/session_events.jsonl`。每个任务持久化到 `tasks/<task_id>.json`。Memory 主索引持久化到 `memory/memory.sqlite`，legacy Case JSON 保留在 `cases/` 作为迁移/回滚源。写入使用同目录临时文件加 rename；启动时任何损坏的 Session/任务 JSON 都会导致 Server 明确启动失败。
+每个 Session 持久化到 `sessions/<session_id>.json`，事件追加到 `session_workspaces/<session_id>/session_events.jsonl`。删除 Session 会移除这两个 Session 级记录，但不会删除关联 upload payload、task record、task workspace 或结果产物。每个任务持久化到 `tasks/<task_id>.json`。Memory 主索引持久化到 `memory/memory.sqlite`，legacy Case JSON 保留在 `cases/` 作为迁移/回滚源。写入使用同目录临时文件加 rename；启动时任何损坏的 Session/任务 JSON 都会导致 Server 明确启动失败。
 
 Session 和日志分析 task 都持久化 `analysisLanguage`，当前只接受 `zh-CN` 和 `en-US`，旧 JSON 缺失该字段时默认 `zh-CN`。从 Session 创建 task run 时，Server 会把当前 `analysisLanguage` 快照到 task，并写入 `analysis_package.json` 的 task 摘要。
 
@@ -277,6 +277,7 @@ MVP 要求：
 - `POST /api/sessions` 创建 draft Session。
 - `GET /api/sessions` 返回按更新时间倒序的 Session 历史。
 - `GET /api/sessions/:session_id` 返回完整 Session。
+- `DELETE /api/sessions/:session_id` 删除非运行中 Session 记录和 Session timeline；关联 uploads、tasks、task workspaces 和结果产物保留。
 - `PATCH /api/sessions/:session_id` 更新 title、question、sourceUrl、instanceId、nodeId、analysisLanguage 或 draft/ready 状态。
 - `POST /api/sessions/:session_id/uploads` 把已完成上传附加到 Session。
 - `DELETE /api/sessions/:session_id/uploads/:upload_id` 从未运行中的 Session 移除 upload 引用，不删除 upload payload。

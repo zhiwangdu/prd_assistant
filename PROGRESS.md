@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Analyze Session Create/Delete
+
+- Fixed the Analyze “新建 Session” path by aligning newly created `AnalysisSessionRecord` values with the Session Store's supported schema version. The previous handler created `schemaVersion=2` while the store validator only accepted `schemaVersion=1`, causing `POST /api/sessions` to fail.
+- Added protected `DELETE /api/sessions/:session_id`. It rejects running/waiting Sessions and Sessions with unfinished tasks, then removes only the Session JSON and Session timeline workspace.
+- Preserved evidence by design: deleting a Session does not delete associated upload payloads, task records, task workspaces, result artifacts, Cases, or Memory entries.
+- Added Analyze Session history delete controls with confirmation. Deleting the selected Session clears the draft/details, run list, timeline, artifacts and active task state before refreshing the Session list.
+- Updated root, Server and WebUI docs/specs for Session deletion semantics and the create-session schema fix.
+
 ## 2026-06-16 Log Package Preprocessor
 
 - Added Server-native preprocessing for node log packages named `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`. Matching uploads now expand to `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/` and record package/node metadata in `manifest.json`.

@@ -17,7 +17,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - 分片上传
 - upload JSON 持久化和重启续传
 - task 创建
-- Log Analysis Session 创建、草稿更新、上传绑定、run 创建和 timeline
+- Log Analysis Session 创建、草稿更新、非运行中 Session 删除、上传绑定、run 创建和 timeline
 - Log Analysis Session 和 task `analysisLanguage` 持久化；旧数据默认 `zh-CN`，新 run 从 Session 快照语言
 - task JSON 持久化、列表、详情和重启恢复
 - semaphore 限制的后台执行
@@ -73,6 +73,7 @@ POST /api/sessions
 GET /api/sessions
 GET /api/sessions/:session_id
 PATCH /api/sessions/:session_id
+DELETE /api/sessions/:session_id
 POST /api/sessions/:session_id/uploads
 DELETE /api/sessions/:session_id/uploads/:upload_id
 POST /api/sessions/:session_id/tasks
@@ -159,7 +160,7 @@ POST /api/metadata/imports/:import_id/confirm
 
 Metadata 的用户主键为手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入列表、备注名和摘要计数，`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的 openGemini 拓扑快照，`POST /api/metadata/instances/:instance_id/refresh` 使用已保存的 `rawSnapshot` 重新归一化并覆盖当前快照，`DELETE /api/metadata/instances/:instance_id` 删除该实例及其非共享 cluster/node 记录。`POST /api/metadata/snapshots/fetch` 和 `POST /api/metadata/imports/fetch` 接受可选 `remark`，空值不保存，超过 120 个字符返回 `400`。旧 cluster 查询接口保留兼容；WebUI 不再要求用户输入 ClusterID。重复确认导入同一个 `instanceId` 时，Server 必须先清理旧快照再写入新快照，v1 不保留历史版本。
 
-Session API 的 create/patch payload 支持可选 `analysisLanguage`，取值只能是 `zh-CN` 或 `en-US`，缺省为 `zh-CN`。`GET /api/sessions`、`GET /api/sessions/:session_id`、`POST /api/sessions/:session_id/tasks` 和 task response 均返回该字段。从 Session 创建 task 时必须把当前 `analysisLanguage` 快照到 `TaskRecord`、`analysis_state.json` 和 `analysis_package.json`，后续用户切换 WebUI 语言不得改写历史 run。
+Session API 的 create/patch payload 支持可选 `analysisLanguage`，取值只能是 `zh-CN` 或 `en-US`，缺省为 `zh-CN`。`GET /api/sessions`、`GET /api/sessions/:session_id`、`POST /api/sessions/:session_id/tasks` 和 task response 均返回该字段。从 Session 创建 task 时必须把当前 `analysisLanguage` 快照到 `TaskRecord`、`analysis_state.json` 和 `analysis_package.json`，后续用户切换 WebUI 语言不得改写历史 run。`DELETE /api/sessions/:session_id` 只允许删除非 running/waiting 且无未完成 task 的 Session；删除移除 Session record 和 Session timeline，保留关联 uploads、tasks、task workspaces 和结果产物。
 
 `GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
 
@@ -393,6 +394,8 @@ background executor
 `POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 
 `GET /api/sessions/:session_id/timeline` returns a unified time-ordered stream. Session events include session creation, draft update, upload attach/detach, text-only input recording, task creation, Metadata context summary, System Context resource count, Case recall count, and task status changes. Task analysis events include manifest, grep, tool output, Agent backend calls, model decisions, ask_user, approval, environment evidence and final result events. Metadata slice reads, field type lookups and tag field lookups are audited in `mcp_calls.jsonl` and write `metadata_slices/<stable_id>.json` as background context.
+
+`DELETE /api/sessions/:session_id` is a history maintenance operation. It removes the Session JSON and `session_workspaces/<session_id>/session_events.jsonl` only after confirming the Session is not running/waiting and all referenced tasks are terminal. It does not delete upload payloads, task records, task workspaces, result artifacts, Cases, or Memory entries.
 
 `question` 可选，长度不能超过 `llm.max_input_chars / 2`。
 
