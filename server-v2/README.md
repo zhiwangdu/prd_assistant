@@ -38,8 +38,9 @@ slice provides the durable foundation for the V2 product model:
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   keyword recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
-  Markdown import, explicit Workspace skill selection, `system_context` run
-  snapshot, readonly/task MCP reference reading, and `skills.zip` export.
+  Markdown import, explicit or auto-matched Workspace skill selection,
+  `system_context` run snapshot, readonly/task MCP reference reading, and
+  `skills.zip` export.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
@@ -181,8 +182,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, Fetch cURL import and encrypted
-credential sets, richer Skill auto-matching, Case import drafts, FTS/embedding
-recall, WebUI, or full LangGraph model loop.
+credential sets, Case import drafts, FTS/embedding recall, WebUI, or full
+LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -426,9 +427,11 @@ V2 stores diagnostic Skills under:
 
 `POST /api/v2/skills/imports` creates a simple Markdown Skill with
 `SKILL.md` frontmatter and default `logagent.json`. Workspaces can carry
-explicit `skillIds`; each run writes a `system_context` artifact containing
-selected diagnostic skill summaries, bounded `SKILL.md` content, revision, and
-declared references.
+explicit `skillIds`; if none are set, V2 includes `includeByDefault` Skills and
+auto-matches Skills whose `keywords`, `products`, `toolIds`, `domainAdapters`,
+name, or description match the question. Each run writes a `system_context`
+artifact containing selected diagnostic skill summaries, bounded `SKILL.md`
+content, revision, match reason, match score, and declared references.
 
 Readonly MCP and task MCP expose:
 

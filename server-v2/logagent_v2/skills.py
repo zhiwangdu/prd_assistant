@@ -64,6 +64,7 @@ def import_skill(
         "products": [],
         "domainAdapters": [],
         "toolIds": [],
+        "keywords": [],
         "taskKinds": ["log_analysis"],
         "includeByDefault": False,
         "priority": 0,
@@ -95,6 +96,7 @@ def load_skill(settings: Settings, skill_id: str, include_content: bool) -> Json
         "products": list_of_strings(manifest.get("products")),
         "taskKinds": list_of_strings(manifest.get("taskKinds") or ["log_analysis"]),
         "toolIds": list_of_strings(manifest.get("toolIds")),
+        "keywords": list_of_strings(manifest.get("keywords")),
         "domainAdapters": list_of_strings(manifest.get("domainAdapters")),
         "references": references,
         "revision": skill_revision(raw, manifest),
@@ -211,7 +213,12 @@ def build_system_context(
 ) -> JsonObject:
     workspace = store.get_workspace(workspace_id)
     selected_ids = list(dict.fromkeys(workspace.get("skillIds") or []))
-    resources = skill_resources(settings, selected_ids)
+    resources = skill_resources(
+        settings,
+        selected_ids,
+        question=workspace.get("question", ""),
+        task_mode=workspace.get("mode", ""),
+    )
     return {
         "schemaVersion": 2,
         "workspaceId": workspace_id,
@@ -229,29 +236,39 @@ def preview_system_context(settings: Settings, skill_ids: list[str] | None = Non
     }
 
 
-def skill_resources(settings: Settings, selected_ids: list[str]) -> list[JsonObject]:
-    selected = []
+def skill_resources(
+    settings: Settings,
+    selected_ids: list[str],
+    question: str = "",
+    task_mode: str = "",
+) -> list[JsonObject]:
+    selected: list[tuple[JsonObject, str, int]] = []
     for skill_id in selected_ids:
-        selected.append(get_skill(settings, skill_id, include_content=True))
+        selected.append((get_skill(settings, skill_id, include_content=True), "explicit", 0))
     if not selected:
-        indexed = (
+        indexed = [
             get_skill(settings, item["skillId"], include_content=True)
             for item in list_skills(settings)
-        )
-        selected = [
-            skill
-            for skill in sorted(
-                indexed,
-                key=lambda item: (-int(item["priority"]), item["displayName"]),
-            )
-            if skill["includeByDefault"]
         ]
+        scored = []
+        for skill in indexed:
+            score = skill_match_score(skill, question, task_mode)
+            if skill["includeByDefault"]:
+                scored.append((skill, "default", score))
+            elif score > 0:
+                scored.append((skill, "auto", score))
+        selected = sorted(
+            scored,
+            key=lambda item: (-item[2], -int(item[0]["priority"]), item[0]["displayName"]),
+        )
     resources = []
-    for skill in selected:
+    for skill, reason, score in selected:
         resources.append(
             {
                 "kind": "diagnostic_skill",
                 "skillId": skill["skillId"],
+                "selectionReason": reason,
+                "matchScore": score,
                 "revision": skill["revision"],
                 "sourcePath": skill["sourcePath"],
                 "summary": skill["description"],
@@ -260,6 +277,51 @@ def skill_resources(settings: Settings, selected_ids: list[str]) -> list[JsonObj
             }
         )
     return resources
+
+
+def skill_match_score(skill: JsonObject, question: str, task_mode: str) -> int:
+    haystack = f"{question}\n{task_mode}".lower()
+    score = 0
+    weighted_fields = [
+        ("keywords", 6),
+        ("products", 5),
+        ("toolIds", 4),
+        ("domainAdapters", 4),
+    ]
+    for field, weight in weighted_fields:
+        for term in skill.get(field, []):
+            score += weight if term_matches_question(str(term), haystack) else 0
+    for term in (
+        skill.get("skillId"),
+        skill.get("name"),
+        skill.get("displayName"),
+        skill.get("description"),
+    ):
+        score += 2 if term_matches_question(str(term or ""), haystack) else 0
+    return score
+
+
+def term_matches_question(term: str, haystack: str) -> bool:
+    normalized = term.strip().lower()
+    if not normalized:
+        return False
+    if normalized in haystack and meaningful_term(normalized):
+        return True
+    return any(token in haystack for token in match_terms(normalized))
+
+
+def match_terms(value: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[a-z0-9_.:-]+|[\u4e00-\u9fff]{2,}", value.lower())
+        if meaningful_term(token)
+    ]
+
+
+def meaningful_term(value: str) -> bool:
+    if re.search(r"[\u4e00-\u9fff]", value):
+        return len(value) >= 2
+    return len(value) >= 3
 
 
 def persist_system_context(

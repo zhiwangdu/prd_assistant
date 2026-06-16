@@ -84,7 +84,7 @@ Implemented in this slice:
   confirmation, keyword recall, edit/disable API, readonly MCP search, and task
   MCP background case context.
 - Skill-backed System Context foundation with filesystem Skill registry,
-  Markdown import, explicit Workspace skill selection, per-run
+  Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
   artifacts.
 - `skills.zip` export for the current Skill registry, with regular files only,
@@ -101,7 +101,7 @@ Not yet implemented:
   model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, WebUI Fetch management,
   Metadata task context auto-selection, and WebUI cutover.
-- Richer automatic Skill matching and WebUI System Context cutover.
+- WebUI System Context cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
   management.
 - WebUI V2 cutover.
@@ -515,6 +515,8 @@ schema v2 resources:
 ```text
 kind=diagnostic_skill
 skillId
+selectionReason
+matchScore
 revision
 summary
 content
@@ -522,7 +524,10 @@ references[]
 ```
 
 If no explicit `skillIds` are set, V2 includes Skills whose manifest has
-`includeByDefault=true`. Rich product/version matching is not implemented yet.
+`includeByDefault=true` and auto-matches Skills whose `keywords`, `products`,
+`toolIds`, `domainAdapters`, name, display name, Skill id, or description match
+the Workspace question or mode. Each resource records `selectionReason` as
+`explicit`, `default`, or `auto`, plus a numeric `matchScore`.
 
 Readonly MCP exposes `logagent.list_skills`, `logagent.get_skill`,
 `logagent.get_skill_reference`, and `logagent.preview_system_context` against

@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Skill Auto Matching
+
+- Added V2 automatic Skill selection when a Workspace has no explicit `skillIds`.
+- Skill matching now considers `keywords`, `products`, `toolIds`, `domainAdapters`, Skill id, name, display name, description, Workspace question, and mode.
+- `includeByDefault` Skills are still included; matched resources record `selectionReason` (`explicit`, `default`, or `auto`) and `matchScore` in `system_context.json`.
+- Imported Skill default manifests now include an empty `keywords` list.
+- Added regression coverage for question-driven Skill selection and non-matching Skill exclusion.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Redirect Revalidation
 
 - Added `LOGAGENT_V2_FETCH_MAX_REDIRECTS` with default 5 for V2 Fetch execution.

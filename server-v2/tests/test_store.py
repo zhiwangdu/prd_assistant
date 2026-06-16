@@ -1497,6 +1497,65 @@ class StoreTests(unittest.TestCase):
             self.assertFalse(readonly_body["finalEvidenceAllowed"])
             self.assertIn("PT ownership", readonly_body["content"])
 
+    def test_system_context_auto_matches_skills_from_question(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            matched = import_skill(
+                settings=settings,
+                skill_id="opengemini-topology",
+                name="openGemini Topology",
+                description="Diagnose shard ownership and PT movement.",
+                markdown="Use topology evidence for shard and PT ownership questions.",
+            )
+            matched_dir = settings.skills_dir / matched["skillId"]
+            manifest = json.loads((matched_dir / "logagent.json").read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "products": ["openGemini"],
+                    "keywords": ["shard ownership", "pt movement"],
+                    "priority": 50,
+                }
+            )
+            (matched_dir / "logagent.json").write_text(
+                json.dumps(manifest, ensure_ascii=True, indent=2),
+                encoding="utf-8",
+            )
+            import_skill(
+                settings=settings,
+                skill_id="unrelated",
+                name="Unrelated",
+                description="Unrelated database backup guidance.",
+                markdown="Only backup guidance.",
+            )
+
+            workspace = store.create_workspace(
+                "openGemini shard ownership changed after rebalance",
+                "diagnose",
+                "en-US",
+            )
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            context_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 26,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/system_context"},
+                },
+            )
+            context = json.loads(context_response["result"]["contents"][0]["text"])
+            resources = {item["skillId"]: item for item in context["resources"]}
+            self.assertIn("opengemini-topology", resources)
+            self.assertEqual(resources["opengemini-topology"]["selectionReason"], "auto")
+            self.assertGreater(resources["opengemini-topology"]["matchScore"], 0)
+            self.assertNotIn("unrelated", resources)
+
     def test_skills_zip_exports_regular_files_and_skips_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
