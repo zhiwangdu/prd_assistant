@@ -18,11 +18,16 @@ ANALYSIS_RESOURCE_KINDS = (
 
 def get_run_analysis(settings: Settings, store: Store, run_id: str) -> JsonObject:
     run = store.get_run(run_id)
+    actions = store.list_actions(run_id)
     value: JsonObject = {
         "run": run,
         "workspace": store.get_workspace(run["workspace_id"]),
         "timeline": store.list_timeline(run_id),
         "evidence": store.list_evidence(run_id),
+        "actions": actions,
+        "pendingActions": [
+            action for action in actions if action.get("status") == "pending"
+        ],
         "artifacts": store.list_run_artifacts(run_id),
         "resources": {},
         "result": None,

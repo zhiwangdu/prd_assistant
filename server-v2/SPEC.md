@@ -90,8 +90,8 @@ Implemented in this slice:
   `logagent.fetch` only when enabled and allowlisted. Sensitive endpoint
   material is split into encrypted credential sets.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
-  `logagent.request_approval`; pending actions are persisted and user
-  message/approval APIs can requeue the run.
+  `logagent.request_approval`; pending actions are persisted, exposed in run
+  analysis summaries, and user message/approval APIs can requeue the run.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
@@ -871,6 +871,8 @@ logagent.request_approval
 
 Both calls create an `actions` row and append timeline events. User input moves
 the run to `waiting_for_user`; approval moves it to `waiting_for_approval`.
+`GET /api/v2/runs/:run_id/analysis` returns `actions` and `pendingActions` so
+WebUI can render the same recovery controls as the Rust task detail page.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
 SQLite job queue. The current Agent runtime is still a stub, so resumed runs do

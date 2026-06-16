@@ -293,6 +293,29 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))
 
+    def test_run_analysis_includes_pending_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need input", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "user_input",
+                {"question": "Which node is affected?", "required": True},
+            )
+            store.update_run_status(run["id"], "waiting_for_user", "waiting_for_user")
+
+            analysis = get_run_analysis(settings, store, run["id"])
+
+            self.assertEqual(analysis["pendingActions"][0]["id"], action["id"])
+            self.assertEqual(
+                analysis["pendingActions"][0]["payload"]["question"],
+                "Which node is affected?",
+            )
+
     def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

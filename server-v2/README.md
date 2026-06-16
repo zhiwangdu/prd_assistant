@@ -35,7 +35,8 @@ slice provides the durable foundation for the V2 product model:
   DevTools bash cURL import, default-off allowlist execution, task MCP
   `logagent.fetch`, and `fetch_result` final evidence refs.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
-  and `logagent.request_approval`.
+  and `logagent.request_approval`, exposed through run analysis summaries for
+  WebUI recovery.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Final result persistence as `result.json` and `result.md` artifacts, with

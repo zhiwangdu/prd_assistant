@@ -68,6 +68,17 @@ export type V2TimelineEvent = {
   created_at: string;
 };
 
+export type V2Action = {
+  id: string;
+  run_id: string;
+  kind: "user_input" | "approval" | string;
+  status: "pending" | "approved" | "rejected" | string;
+  payload: Record<string, unknown>;
+  result?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type V2EvidenceArtifact = {
   evidence_id: string;
   evidence_kind: string;
@@ -122,6 +133,8 @@ export type V2RunAnalysis = {
   workspace: V2Workspace;
   timeline: V2TimelineEvent[];
   evidence: V2Evidence[];
+  actions: V2Action[];
+  pendingActions: V2Action[];
   artifacts: V2RunArtifacts;
   resources: Record<string, unknown | null>;
   result: V2RunResult | null;
@@ -501,6 +514,22 @@ export async function getV2Run(apiKey: string, runId: string) {
 
 export async function getV2RunAnalysis(apiKey: string, runId: string) {
   return fetchJson<V2RunAnalysis>(`/api/v2/runs/${encodeURIComponent(runId)}/analysis`, { headers: authHeaders(apiKey) });
+}
+
+export async function postV2RunMessage(apiKey: string, runId: string, input: { message: string; resumeMode?: "continue" | "finalize" }) {
+  return fetchJson<{ event: V2TimelineEvent; job?: Record<string, unknown> | null }>(`/api/v2/runs/${encodeURIComponent(runId)}/messages`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ message: input.message, resumeMode: input.resumeMode ?? "continue" })
+  });
+}
+
+export async function decideV2Action(apiKey: string, actionId: string, input: { decision: "approved" | "rejected"; reason?: string | null }) {
+  return fetchJson<{ action: V2Action; job?: Record<string, unknown> | null }>(`/api/v2/actions/${encodeURIComponent(actionId)}/decisions`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
 }
 
 export async function uploadV2Files(apiKey: string, workspaceId: string, files: File[], onProgress: (progress: number) => void) {

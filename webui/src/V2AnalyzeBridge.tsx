@@ -1,10 +1,11 @@
-import { Download, FileArchive, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow } from "lucide-react";
+import { CheckCircle2, Download, FileArchive, MessageSquare, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import type { UiLanguage } from "./i18n";
 import {
   createV2Run,
   createV2Workspace,
+  decideV2Action,
   deleteV2Workspace,
   downloadV2Artifact,
   getV2Workspace,
@@ -12,8 +13,10 @@ import {
   listV2WorkspaceRuns,
   listV2Workspaces,
   listV2WorkspaceUploads,
+  postV2RunMessage,
   updateV2Workspace,
   uploadV2Files,
+  type V2Action,
   type V2EvidenceArtifact,
   type V2FinalAnswer,
   type V2Mode,
@@ -75,6 +78,16 @@ const copyByLanguage = {
     fixSuggestions: "修复建议",
     missingInformation: "缺失信息",
     noResult: "Run 尚未生成最终结果。",
+    waitingAction: "等待动作",
+    answerPlaceholder: "补充 V2 Agent 需要的信息",
+    sendAnswer: "提交补充",
+    finalizeNow: "没有更多信息，直接生成最终结果",
+    finalizeMessage: "没有更多信息，请基于当前证据生成最终结果。",
+    approvalRequest: "审批请求",
+    approve: "批准",
+    reject: "拒绝",
+    reasonPlaceholder: "可选：审批原因",
+    noPendingAction: "Run 处于等待状态，但没有 pending action。",
     latestEvents: "最近事件",
     empty: "暂无",
     download: "下载",
@@ -137,6 +150,16 @@ const copyByLanguage = {
     fixSuggestions: "Fix suggestions",
     missingInformation: "Missing information",
     noResult: "The run has no final result yet.",
+    waitingAction: "Waiting action",
+    answerPlaceholder: "Provide the information requested by the V2 Agent",
+    sendAnswer: "Send answer",
+    finalizeNow: "No more information, finalize with current evidence",
+    finalizeMessage: "No more information is available. Please finalize with the current evidence.",
+    approvalRequest: "Approval request",
+    approve: "Approve",
+    reject: "Reject",
+    reasonPlaceholder: "Optional approval reason",
+    noPendingAction: "The run is waiting, but no pending action is available.",
     latestEvents: "Latest events",
     empty: "No data",
     download: "Download",
@@ -164,6 +187,8 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const [runs, setRuns] = useState<V2Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [analysis, setAnalysis] = useState<V2RunAnalysis | null>(null);
+  const [waitingMessage, setWaitingMessage] = useState("");
+  const [decisionReason, setDecisionReason] = useState("");
   const [status, setStatus] = useState<string>(copy.apiKeyRequired);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -337,6 +362,47 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     }
   }
 
+  async function refreshSelectedRun() {
+    if (selectedWorkspaceId && selectedRunId) {
+      await loadWorkspace(selectedWorkspaceId, selectedRunId);
+    } else if (selectedRunId) {
+      await loadRun(selectedRunId, true);
+    }
+  }
+
+  async function sendWaitingMessage(resumeMode: "continue" | "finalize") {
+    if (!selectedRunId) return;
+    const message = resumeMode === "finalize"
+      ? waitingMessage.trim() || copy.finalizeMessage
+      : waitingMessage.trim();
+    if (!message) return;
+    setLoading(true);
+    try {
+      await postV2RunMessage(apiKey, selectedRunId, { message, resumeMode });
+      setWaitingMessage("");
+      setStatus(copy.refreshed);
+      await refreshSelectedRun();
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function decideWaitingAction(action: V2Action, decision: "approved" | "rejected") {
+    setLoading(true);
+    try {
+      await decideV2Action(apiKey, action.id, { decision, reason: decisionReason.trim() || null });
+      setDecisionReason("");
+      setStatus(copy.refreshed);
+      await refreshSelectedRun();
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleDownloadArtifact(artifactId: string, relativePath: string) {
     try {
       await downloadV2Artifact(apiKey, artifactId, filenameFromPath(relativePath));
@@ -430,6 +496,19 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           </div>
         ) : null}
 
+        <WaitingActionsPanel
+          copy={copy}
+          run={selectedRun}
+          actions={analysis?.pendingActions ?? []}
+          message={waitingMessage}
+          reason={decisionReason}
+          loading={loading}
+          onMessageChange={setWaitingMessage}
+          onReasonChange={setDecisionReason}
+          onSend={(resumeMode) => void sendWaitingMessage(resumeMode)}
+          onDecision={(action, decision) => void decideWaitingAction(action, decision)}
+        />
+
         <div className="grid gap-5 xl:grid-cols-2">
           <FinalAnswerView copy={copy} answer={finalAnswer} />
           <TimelineView copy={copy} analysis={analysis} />
@@ -480,6 +559,87 @@ function RunList({ copy, runs, selectedRunId, onSelect }: { copy: BridgeCopy; ru
             <p className="mt-1 text-xs text-muted-foreground">{run.phase} · {new Date(run.created_at).toLocaleString()}</p>
           </button>
         )) : <EmptyState>{copy.noRuns}</EmptyState>}
+      </div>
+    </div>
+  );
+}
+
+function WaitingActionsPanel({
+  copy,
+  run,
+  actions,
+  message,
+  reason,
+  loading,
+  onMessageChange,
+  onReasonChange,
+  onSend,
+  onDecision
+}: {
+  copy: BridgeCopy;
+  run: V2Run | null;
+  actions: V2Action[];
+  message: string;
+  reason: string;
+  loading: boolean;
+  onMessageChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+  onSend: (resumeMode: "continue" | "finalize") => void;
+  onDecision: (action: V2Action, decision: "approved" | "rejected") => void;
+}) {
+  if (!run || !run.status.startsWith("waiting")) return null;
+  const action = actions[0];
+  if (!action) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <h3 className="mb-2 font-semibold">{copy.waitingAction}</h3>
+        <p>{copy.noPendingAction}</p>
+      </div>
+    );
+  }
+  if (run.status === "waiting_for_approval" || action.kind === "approval") {
+    return (
+      <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-amber-700" />
+          <h3 className="text-sm font-semibold text-amber-900">{copy.approvalRequest}</h3>
+        </div>
+        <div className="grid gap-3 text-sm md:grid-cols-3">
+          <Metric label="Action" value={stringPayload(action.payload, "actionType") || action.kind} />
+          <Metric label="Reason" value={stringPayload(action.payload, "reason") || "-"} />
+          <Metric label="Action ID" value={action.id} />
+        </div>
+        <pre className="max-h-48 overflow-auto rounded-md border border-amber-200 bg-white/70 p-3 text-xs">{JSON.stringify(action.payload.input ?? action.payload, null, 2)}</pre>
+        <textarea
+          className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
+          value={reason}
+          onChange={(event) => onReasonChange(event.target.value)}
+          placeholder={copy.reasonPlaceholder}
+        />
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button disabled={loading} variant="outline" onClick={() => onDecision(action, "rejected")}><XCircle className="mr-2 h-4 w-4" />{copy.reject}</Button>
+          <Button disabled={loading} onClick={() => onDecision(action, "approved")}><CheckCircle2 className="mr-2 h-4 w-4" />{copy.approve}</Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <div className="flex items-center gap-2">
+        <MessageSquare className="h-5 w-5 text-amber-700" />
+        <h3 className="text-sm font-semibold text-amber-900">{copy.waitingAction}</h3>
+      </div>
+      <p className="text-sm text-amber-900">{stringPayload(action.payload, "question") || copy.noPendingAction}</p>
+      {stringPayload(action.payload, "reason") ? <p className="text-xs text-amber-800">{stringPayload(action.payload, "reason")}</p> : null}
+      <textarea
+        className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
+        value={message}
+        onChange={(event) => onMessageChange(event.target.value)}
+        placeholder={copy.answerPlaceholder}
+      />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button disabled={loading} variant="outline" onClick={() => onSend("finalize")}>{copy.finalizeNow}</Button>
+        <Button disabled={loading || !message.trim()} onClick={() => onSend("continue")}><MessageSquare className="mr-2 h-4 w-4" />{copy.sendAnswer}</Button>
       </div>
     </div>
   );
@@ -622,6 +782,11 @@ function summarizePayload(payload: Record<string, unknown>) {
   const question = payload.question;
   if (typeof question === "string") return question;
   return JSON.stringify(payload);
+}
+
+function stringPayload(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" ? value : "";
 }
 
 function filenameFromPath(relativePath: string) {

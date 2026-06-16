@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Analyze Waiting Actions
+
+- Added V2 run analysis `actions` and `pendingActions` so the WebUI can render waiting user-input and approval states.
+- Added V2 Analyze bridge controls for user supplements, finalize-with-current-evidence messages, and approve/reject action decisions.
+- Added regression coverage for pending actions in `GET /api/v2/runs/:run_id/analysis`.
+- Updated server-v2, WebUI docs, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Workspace Management
 
 - Added V2 Workspace update and soft-delete APIs: `PATCH /api/v2/workspaces/:workspace_id` and `DELETE /api/v2/workspaces/:workspace_id`.

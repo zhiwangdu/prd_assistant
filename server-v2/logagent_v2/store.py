@@ -1251,6 +1251,25 @@ class Store:
         item["result"] = decode_json(item.pop("result_json"), None)
         return item
 
+    def list_actions(self, run_id: str) -> list[JsonObject]:
+        self.get_run(run_id)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM actions
+                WHERE run_id = ?
+                ORDER BY created_at ASC, id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        actions = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = decode_json(item.pop("payload_json"), {})
+            item["result"] = decode_json(item.pop("result_json"), None)
+            actions.append(item)
+        return actions
+
     def decide_action(
         self,
         action_id: str,
