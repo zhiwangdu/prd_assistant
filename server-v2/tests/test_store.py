@@ -14,7 +14,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
-from logagent_v2.artifacts import resolve_artifact_path, write_artifact_bytes
+from logagent_v2.artifacts import (
+    resolve_artifact_path,
+    safe_filename,
+    write_artifact_bytes,
+    write_artifact_file,
+)
 from logagent_v2.case_memory import (
     confirm_case_import,
     create_manual_case,
@@ -213,6 +218,73 @@ class StoreTests(unittest.TestCase):
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))
+
+    def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("upload logs", "diagnose", "en-US")
+
+            for filename, data in (
+                ("a.log", b"alpha error\n"),
+                ("b.log", b"beta warning\n"),
+            ):
+                artifact = write_artifact_bytes(
+                    settings=settings,
+                    store=store,
+                    workspace_id=workspace["id"],
+                    filename=filename,
+                    data=data,
+                    content_type="text/plain",
+                    preview={"filename": filename, "sizeBytes": len(data)},
+                )
+                store.create_upload(workspace["id"], filename, artifact["id"])
+
+            session_id = "ups_test"
+            temp_relative_path = (
+                f"tmp/upload_sessions/{session_id}/{safe_filename('chunked.log')}"
+            )
+            session = store.create_upload_session(
+                session_id=session_id,
+                workspace_id=workspace["id"],
+                filename="chunked.log",
+                content_type="text/plain",
+                expected_size_bytes=12,
+                temp_relative_path=temp_relative_path,
+            )
+            self.assertEqual(session["received_bytes"], 0)
+            temp_path = resolve_artifact_path(settings, temp_relative_path)
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_bytes(b"chunk ")
+            session = store.update_upload_session_progress(session_id, 6)
+            self.assertEqual(session["received_bytes"], 6)
+            with temp_path.open("ab") as target:
+                target.write(b"upload")
+            session = store.update_upload_session_progress(session_id, 12)
+            self.assertEqual(session["received_bytes"], 12)
+
+            artifact = write_artifact_file(
+                settings=settings,
+                store=store,
+                workspace_id=workspace["id"],
+                filename=session["filename"],
+                source_path=temp_path,
+                content_type=session["content_type"],
+                preview={"filename": session["filename"], "sizeBytes": 12},
+            )
+            upload = store.create_upload(workspace["id"], session["filename"], artifact["id"])
+            completed = store.complete_upload_session(session_id, upload["id"], artifact["id"])
+            temp_path.unlink(missing_ok=True)
+
+            self.assertEqual(completed["status"], "completed")
+            self.assertEqual(completed["upload_id"], upload["id"])
+            self.assertEqual(artifact["size_bytes"], 12)
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            self.assertEqual(artifact_path.read_bytes(), b"chunk upload")
+            uploads = store.list_uploads(workspace["id"])
+            self.assertEqual(len(uploads), 3)
 
     def test_agent_runtime_uses_openai_compatible_provider(self) -> None:
         captured: dict[str, object] = {}

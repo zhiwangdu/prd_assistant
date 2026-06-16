@@ -23,6 +23,7 @@ auditable agent boundary.
 - `Evidence`: typed fact or background item.
 - `Artifact`: large file tracked by DB metadata and content hash.
 - `Upload`: user-provided file attached to a Workspace.
+- `UploadSession`: restartable chunked upload state and temp-file pointer.
 - `Action`: Agent-requested operation that may require approval.
 - `Job`: persistent background work item.
 
@@ -34,7 +35,8 @@ Implemented in this slice:
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read.
-- Upload storage as local artifacts.
+- Single multipart upload, batch multipart upload, and restartable chunked
+  upload storage as local artifacts.
 - Run creation and queued `run_analysis` job.
 - Inline DB-backed worker.
 - Initial evidence pipeline for uploaded text files and supported archives.
@@ -133,6 +135,10 @@ POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
 POST /api/v2/workspaces/:workspace_id/uploads
+POST /api/v2/workspaces/:workspace_id/uploads/batch
+POST /api/v2/workspaces/:workspace_id/uploads/init
+POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
+POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
@@ -195,6 +201,9 @@ Default data layout:
       <artifact_file_id>/
         <filename>
   tmp/
+    upload_sessions/
+      <session_id>/
+        <filename>
 ```
 
 SQLite tables:
@@ -204,6 +213,7 @@ SQLite tables:
 - `timeline_events`
 - `artifacts`
 - `uploads`
+- `upload_sessions`
 - `evidence_items`
 - `actions`
 - `jobs`
@@ -216,6 +226,25 @@ SQLite tables:
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
+
+## Uploads
+
+Single and batch upload endpoints create artifact rows directly from multipart
+files and then attach Upload rows to the Workspace. Each file is bounded by
+`LOGAGENT_V2_MAX_UPLOAD_BYTES`.
+
+Chunked uploads use a durable `upload_sessions` row:
+
+```text
+init(filename, sizeBytes?) -> active session + temp_relative_path
+chunk(offset, bytes) -> append only when offset == received_bytes
+complete -> validate size, copy temp file to artifact store, create upload
+```
+
+Session state is stored in SQLite, while partial bytes live under
+`tmp/upload_sessions/<session_id>/`. Completion marks the session `completed`
+with the resulting `upload_id` and `artifact_id`; repeated complete calls can
+return the completed session.
 
 ## Initial Evidence Pipeline
 

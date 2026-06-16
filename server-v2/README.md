@@ -10,6 +10,8 @@ slice provides the durable foundation for the V2 product model:
 - DB-backed job queue for restartable background runs.
 - Workspace, Run, TimelineEvent, Evidence, Artifact, Upload, Action, and Job
   schema foundations.
+- Single, batch, and restartable chunked upload foundations backed by SQLite
+  upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - V1-style node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
@@ -49,9 +51,9 @@ slice provides the durable foundation for the V2 product model:
   `skills.zip` export.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
-- Agent runtime with default stub final answer plus optional single-round
-  OpenAI-compatible provider for evidence-validated JSON final answers and
-  per-round request/response/state audit artifacts.
+- Agent runtime with default stub final answer plus optional bounded
+  OpenAI-compatible provider/tool loop for evidence-validated JSON final
+  answers and per-round request/response/state audit artifacts.
 
 ## Local Run
 
@@ -150,6 +152,10 @@ POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
 POST /api/v2/workspaces/:workspace_id/uploads
+POST /api/v2/workspaces/:workspace_id/uploads/batch
+POST /api/v2/workspaces/:workspace_id/uploads/init
+POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
+POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
@@ -249,6 +255,22 @@ latest round status. Task MCP exposes them as `agent_request`,
 Successful runs also write `result.json` and `result.md`. `GET
 /api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
 evidence metadata, while task MCP exposes `result` and `result_markdown`.
+
+## Uploads
+
+V2 supports three upload paths:
+
+- `POST /api/v2/workspaces/<workspace_id>/uploads` for one multipart file.
+- `POST /api/v2/workspaces/<workspace_id>/uploads/batch` for multiple
+  multipart files under one Workspace.
+- `POST /api/v2/workspaces/<workspace_id>/uploads/init`, followed by
+  `POST /api/v2/uploads/<session_id>/chunks?offset=<bytes>` and
+  `POST /api/v2/uploads/<session_id>/complete`, for restartable chunked upload.
+
+Chunked uploads persist session state in SQLite and temporary bytes under
+`data_dir/tmp/upload_sessions`. Completion validates received size, converts the
+temp file into a regular artifact, creates an Upload row, and marks the session
+completed.
 
 ## Initial Evidence Pipeline
 

@@ -3,11 +3,16 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from .artifacts import resolve_artifact_path, write_artifact_bytes
+from .artifacts import (
+    resolve_artifact_path,
+    safe_filename,
+    write_artifact_bytes,
+    write_artifact_file,
+)
 from .case_memory import (
     case_import_preview,
     confirm_case_import,
@@ -31,6 +36,7 @@ from .fetch import (
     validate_fetch_credentials_available,
 )
 from .exports import build_skills_zip, build_tools_zip
+from .ids import new_id
 from .metadata import (
     confirm_metadata_import,
     import_metadata_from_url,
@@ -176,6 +182,12 @@ class FetchEndpointUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class UploadSessionInit(BaseModel):
+    filename: str = Field(min_length=1, max_length=300)
+    contentType: str | None = Field(default=None, max_length=200)
+    sizeBytes: int | None = Field(default=None, ge=0)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.ensure_dirs()
@@ -241,6 +253,137 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         upload = store.create_upload(workspace_id, file.filename or "upload.bin", artifact["id"])
         return {"upload": upload, "artifact": artifact}
+
+    @app.post("/api/v2/workspaces/{workspace_id}/uploads/batch")
+    async def upload_files(
+        _: Auth,
+        workspace_id: str,
+        files: list[UploadFile] = File(...),
+    ) -> dict:
+        try:
+            store.get_workspace(workspace_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        results = []
+        for file in files:
+            data = await file.read(settings.max_upload_bytes + 1)
+            if len(data) > settings.max_upload_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"upload {file.filename or 'upload.bin'} exceeds max_upload_bytes",
+                )
+            filename = file.filename or "upload.bin"
+            artifact = write_artifact_bytes(
+                settings=settings,
+                store=store,
+                workspace_id=workspace_id,
+                filename=filename,
+                data=data,
+                content_type=file.content_type or "application/octet-stream",
+                schema_name=None,
+                preview={"filename": filename, "sizeBytes": len(data)},
+            )
+            upload = store.create_upload(workspace_id, filename, artifact["id"])
+            results.append({"upload": upload, "artifact": artifact})
+        return {"uploads": results}
+
+    @app.post("/api/v2/workspaces/{workspace_id}/uploads/init")
+    async def init_upload_session(
+        _: Auth,
+        workspace_id: str,
+        payload: UploadSessionInit,
+    ) -> dict:
+        try:
+            store.get_workspace(workspace_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if payload.sizeBytes is not None and payload.sizeBytes > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
+        session_id = new_id("ups")
+        temp_relative_path = (
+            f"tmp/upload_sessions/{session_id}/{safe_filename(payload.filename)}"
+        )
+        session = store.create_upload_session(
+            session_id=session_id,
+            workspace_id=workspace_id,
+            filename=payload.filename,
+            content_type=payload.contentType or "application/octet-stream",
+            expected_size_bytes=payload.sizeBytes,
+            temp_relative_path=temp_relative_path,
+        )
+        return {"session": session}
+
+    @app.post("/api/v2/uploads/{session_id}/chunks")
+    async def upload_chunk(
+        _: Auth,
+        session_id: str,
+        request: Request,
+        offset: int = Query(ge=0),
+    ) -> dict:
+        try:
+            session = store.get_upload_session(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if session["status"] != "active":
+            raise HTTPException(status_code=409, detail="upload session is not active")
+        data = await request.body()
+        if offset != session["received_bytes"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"chunk offset {offset} does not match received_bytes "
+                f"{session['received_bytes']}",
+            )
+        next_offset = offset + len(data)
+        expected_size = session.get("expected_size_bytes")
+        if expected_size is not None and next_offset > expected_size:
+            raise HTTPException(status_code=400, detail="chunk exceeds expected upload size")
+        if next_offset > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
+        path = resolve_artifact_path(settings, session["temp_relative_path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("r+b" if path.exists() else "wb") as target:
+            target.seek(offset)
+            target.write(data)
+        session = store.update_upload_session_progress(session_id, next_offset)
+        return {"session": session}
+
+    @app.post("/api/v2/uploads/{session_id}/complete")
+    async def complete_upload_session(_: Auth, session_id: str) -> dict:
+        try:
+            session = store.get_upload_session(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if session["status"] == "completed":
+            return {
+                "session": session,
+                "upload": store.get_upload(session["upload_id"]),
+                "artifact": store.get_artifact(session["artifact_id"]),
+            }
+        if session["status"] != "active":
+            raise HTTPException(status_code=409, detail="upload session is not active")
+        expected_size = session.get("expected_size_bytes")
+        if expected_size is not None and session["received_bytes"] != expected_size:
+            raise HTTPException(status_code=409, detail="upload session is incomplete")
+        path = resolve_artifact_path(settings, session["temp_relative_path"])
+        if not path.exists():
+            raise HTTPException(status_code=409, detail="upload session has no chunk data")
+        actual_size = path.stat().st_size
+        if actual_size != session["received_bytes"]:
+            raise HTTPException(status_code=409, detail="upload session size mismatch")
+        artifact = write_artifact_file(
+            settings=settings,
+            store=store,
+            workspace_id=session["workspace_id"],
+            filename=session["filename"],
+            source_path=path,
+            content_type=session["content_type"],
+            schema_name=None,
+            preview={"filename": session["filename"], "sizeBytes": actual_size},
+        )
+        upload = store.create_upload(session["workspace_id"], session["filename"], artifact["id"])
+        completed = store.complete_upload_session(session_id, upload["id"], artifact["id"])
+        path.unlink(missing_ok=True)
+        return {"session": completed, "upload": upload, "artifact": artifact}
 
     @app.post("/api/v2/workspaces/{workspace_id}/runs")
     async def create_run(_: Auth, workspace_id: str) -> dict:

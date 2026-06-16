@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Upload Sessions
+
+- Added SQLite-backed `upload_sessions` for restartable chunked uploads.
+- Added V2 batch upload endpoint `POST /api/v2/workspaces/:workspace_id/uploads/batch`.
+- Added V2 chunked upload endpoints: init under a Workspace, offset-checked chunk append, and complete to convert temp bytes into a normal artifact/upload.
+- Added streaming `write_artifact_file` so completed chunked uploads do not need to be reloaded into memory.
+- Chunked upload temp files live under `data_dir/tmp/upload_sessions`; completion validates received size and records `upload_id` / `artifact_id` on the session.
+- Added regression coverage for batch upload persistence, chunk session progress, stream-to-artifact completion, stored bytes, and completed session metadata.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Result Artifacts
 
 - Added final result persistence for succeeded V2 runs as `result.json` and `result.md` artifacts.

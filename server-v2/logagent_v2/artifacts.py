@@ -46,10 +46,46 @@ def write_artifact_bytes(
     )
 
 
+def write_artifact_file(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    filename: str,
+    source_path: Path,
+    content_type: str,
+    schema_name: str | None = None,
+    preview: JsonObject | None = None,
+) -> JsonObject:
+    artifact_id = new_id("artfile")
+    clean_name = safe_filename(filename)
+    relative_path = Path("artifacts") / workspace_id / artifact_id / clean_name
+    absolute_path = settings.data_dir / relative_path
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with source_path.open("rb") as source:
+        with absolute_path.open("wb") as target:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size_bytes += len(chunk)
+                target.write(chunk)
+    return store.create_artifact(
+        workspace_id=workspace_id,
+        relative_path=relative_path.as_posix(),
+        sha256=digest.hexdigest(),
+        size_bytes=size_bytes,
+        content_type=content_type,
+        schema_name=schema_name,
+        preview=preview or {"filename": clean_name, "sizeBytes": size_bytes},
+    )
+
+
 def resolve_artifact_path(settings: Settings, relative_path: str) -> Path:
     root = settings.data_dir.resolve()
     target = (settings.data_dir / relative_path).resolve()
     if root != target and root not in target.parents:
         raise ValueError("artifact path escapes data_dir")
     return target
-

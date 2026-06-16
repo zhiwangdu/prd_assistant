@@ -171,6 +171,21 @@ class Store:
                   created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS upload_sessions (
+                  id TEXT PRIMARY KEY,
+                  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                  filename TEXT NOT NULL,
+                  content_type TEXT NOT NULL,
+                  expected_size_bytes INTEGER,
+                  received_bytes INTEGER NOT NULL,
+                  temp_relative_path TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  upload_id TEXT REFERENCES uploads(id),
+                  artifact_id TEXT REFERENCES artifacts(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS evidence_items (
                   id TEXT PRIMARY KEY,
                   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -581,6 +596,127 @@ class Store:
             "artifact_id": artifact_id,
             "created_at": ts,
         }
+
+    def get_upload(self, upload_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM uploads WHERE id = ?", (upload_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"unknown upload {upload_id}")
+        return dict(row)
+
+    def create_upload_session(
+        self,
+        session_id: str,
+        workspace_id: str,
+        filename: str,
+        content_type: str,
+        expected_size_bytes: int | None,
+        temp_relative_path: str,
+    ) -> JsonObject:
+        self.get_workspace(workspace_id)
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO upload_sessions(
+                  id, workspace_id, filename, content_type, expected_size_bytes,
+                  received_bytes, temp_relative_path, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    workspace_id,
+                    filename,
+                    content_type,
+                    expected_size_bytes,
+                    0,
+                    temp_relative_path,
+                    "active",
+                    ts,
+                    ts,
+                ),
+            )
+            self._append_event_tx(
+                conn,
+                workspace_id,
+                None,
+                "upload_session.created",
+                {
+                    "sessionId": session_id,
+                    "filename": filename,
+                    "expectedSizeBytes": expected_size_bytes,
+                },
+                ts,
+            )
+        return self.get_upload_session(session_id)
+
+    def get_upload_session(self, session_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM upload_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown upload session {session_id}")
+        return dict(row)
+
+    def update_upload_session_progress(
+        self,
+        session_id: str,
+        received_bytes: int,
+    ) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT workspace_id FROM upload_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"unknown upload session {session_id}")
+            conn.execute(
+                """
+                UPDATE upload_sessions
+                SET received_bytes = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (received_bytes, ts, session_id),
+            )
+        return self.get_upload_session(session_id)
+
+    def complete_upload_session(
+        self,
+        session_id: str,
+        upload_id: str,
+        artifact_id: str,
+    ) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT workspace_id, filename FROM upload_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"unknown upload session {session_id}")
+            conn.execute(
+                """
+                UPDATE upload_sessions
+                SET status = ?, upload_id = ?, artifact_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("completed", upload_id, artifact_id, ts, session_id),
+            )
+            self._append_event_tx(
+                conn,
+                row["workspace_id"],
+                None,
+                "upload_session.completed",
+                {
+                    "sessionId": session_id,
+                    "uploadId": upload_id,
+                    "artifactId": artifact_id,
+                    "filename": row["filename"],
+                },
+                ts,
+            )
+        return self.get_upload_session(session_id)
 
     def create_evidence(
         self,
