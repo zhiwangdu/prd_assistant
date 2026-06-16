@@ -261,6 +261,24 @@ export type V2MetadataInstanceSummary = {
   updated_at: string;
 };
 
+export type V2MetadataImport = {
+  importId: string;
+  instanceId: string;
+  templateType: "json" | "yaml" | "opengemini" | string;
+  remark?: string | null;
+  status: string;
+  sourceUrl?: string | null;
+  nodeCount: number;
+  databaseCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2MetadataImportResponse = {
+  import: V2MetadataImport;
+  snapshot: Record<string, unknown>;
+};
+
 export type V2FetchEndpoint = {
   id: string;
   name: string;
@@ -472,6 +490,60 @@ export async function listV2MetadataInstances(apiKey: string) {
 
 export async function downloadV2SkillsZip(apiKey: string) {
   await downloadV2File(apiKey, "/api/v2/exports/skills.zip", "logagent-v2-skills.zip");
+}
+
+export async function listV2MetadataImports(apiKey: string) {
+  return fetchJson<{ imports: V2MetadataImport[] }>("/api/v2/metadata/imports", { headers: authHeaders(apiKey) });
+}
+
+export async function getV2MetadataSnapshot(apiKey: string, instanceId: string) {
+  return fetchJson<Record<string, unknown>>(`/api/v2/metadata/instances/${encodeURIComponent(instanceId)}/snapshot`, { headers: authHeaders(apiKey) });
+}
+
+export async function deleteV2MetadataInstance(apiKey: string, instanceId: string) {
+  return fetchJson<{ deleted: boolean; instanceId: string }>(`/api/v2/metadata/instances/${encodeURIComponent(instanceId)}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function previewV2MetadataImport(apiKey: string, input: { instanceId: string; templateType: string; content: string; remark?: string | null }) {
+  return fetchJson<V2MetadataImportResponse>("/api/v2/metadata/imports/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function previewV2MetadataFetchImport(apiKey: string, input: { instanceId: string; templateType: string; url: string; remark?: string | null }) {
+  return fetchJson<V2MetadataImportResponse>("/api/v2/metadata/imports/fetch/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function confirmV2MetadataImport(apiKey: string, importId: string) {
+  return fetchJson<V2MetadataImportResponse & { instance: V2MetadataInstanceSummary }>(`/api/v2/metadata/imports/${encodeURIComponent(importId)}/confirm`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function importV2Metadata(apiKey: string, input: { instanceId: string; templateType: string; content: string; remark?: string | null }) {
+  return fetchJson<{ instance: V2MetadataInstanceSummary; snapshot: Record<string, unknown> }>("/api/v2/metadata/imports", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function importV2MetadataFromUrl(apiKey: string, input: { instanceId: string; templateType: string; url: string; remark?: string | null }) {
+  return fetchJson<{ instance: V2MetadataInstanceSummary; snapshot: Record<string, unknown> }>("/api/v2/metadata/imports/fetch", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
 }
 
 export async function listV2FetchEndpoints(apiKey: string) {

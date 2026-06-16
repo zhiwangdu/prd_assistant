@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Metadata Bridge
+
+- Added a V2 Metadata bridge panel under the V2 System Context bridge while preserving the Rust-compatible Metadata Dashboard.
+- Extended `webui/src/v2-api.ts` with Python V2 Metadata import preview/fetch preview/confirm/direct import, import listing, instance delete, and snapshot helpers.
+- Added `webui/src/V2MetadataBridge.tsx` to preview/confirm/direct-import JSON/YAML/openGemini metadata from content or URL, list import drafts, manage V2 instances, delete instances, and inspect snapshot JSON.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Fetch Bridge
 
 - Added a V2 Fetch bridge panel at the top of the existing Tools / Fetch page while preserving the Rust-compatible Fetch endpoint and tool-run flow below it.

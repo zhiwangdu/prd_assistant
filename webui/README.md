@@ -16,6 +16,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用。旧 Memory 页面仍保留；V2 import 当前按后端能力提供 preview/confirm，不包含旧 `/api/cases/imports/:draft_id/messages` 的多轮补充。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `System Context` 顶部新增 V2 System Context bridge，直接调用 Python V2 `/api/v2/skills*` 和 `/api/v2/metadata/instances`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载和 V2 Metadata instance 摘要。旧 Skills/Metadata 页面仍保留。
+- `System Context` 顶部同时新增 V2 Metadata bridge，调用 Python V2 `/api/v2/metadata/*`：支持 JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、实例删除和 snapshot JSON 查看。旧 Metadata Dashboard 仍保留在 Metadata tab。
 - `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Tools / Tool plugins` 顶部新增 V2 Tools bridge，调用 Python V2 `/api/v2/tools` 展示工具目录，支持下载 `/api/v2/exports/tools.zip`，并允许输入 V2 `run_id` 和 params 后通过 `/api/v2/mcp/task/:run_id` 调用 task MCP。配置工具会执行 `logagent.run_domain_tool`，`logagent.fetch` 会执行 fetch task tool；结果直接展示 MCP JSON 响应。旧 Rust Tool plugins 页面仍保留，继续提供独立上传和 tool_run 兼容入口。
 - `Tools / Fetch` 顶部新增 V2 Fetch bridge，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact。旧 Rust Fetch 页面仍保留。
@@ -112,6 +113,7 @@ webui/
     V2AnalyzeBridge.tsx
     V2FetchBridge.tsx
     V2MemoryBridge.tsx
+    V2MetadataBridge.tsx
     V2SystemContextBridge.tsx
     V2ToolsBridge.tsx
     upload.ts
@@ -253,6 +255,14 @@ V2 bridge APIs：
 - `POST /api/v2/skills/preview`
 - `GET /api/v2/exports/skills.zip`
 - `GET /api/v2/metadata/instances`
+- `GET /api/v2/metadata/instances/:instance_id/snapshot`
+- `DELETE /api/v2/metadata/instances/:instance_id`
+- `GET /api/v2/metadata/imports`
+- `POST /api/v2/metadata/imports/preview`
+- `POST /api/v2/metadata/imports/fetch/preview`
+- `POST /api/v2/metadata/imports/:import_id/confirm`
+- `POST /api/v2/metadata/imports`
+- `POST /api/v2/metadata/imports/fetch`
 - `GET /api/v2/cases`
 - `GET /api/v2/cases/:case_id`
 - `PATCH /api/v2/cases/:case_id`
