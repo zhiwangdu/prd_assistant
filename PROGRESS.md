@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Executors Bridge
+
+- Added a V2 Executors bridge panel at the top of the existing Tools / Executors page while preserving the Rust-compatible Executors flow below it.
+- Extended `webui/src/v2-api.ts` with Python V2 executor CRUD, command template listing, remote run creation/list/detail, and result helpers.
+- Added `webui/src/V2ExecutorsBridge.tsx` to manage V2 executors, select whitelisted command templates, create and poll V2 remote command runs, and inspect stdout/stderr/result previews and paths.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Executor Foundation
 
 - Added V2 Remote Executor backend APIs for executor CRUD, whitelisted command template listing, remote command run creation/list/detail, and result reads.

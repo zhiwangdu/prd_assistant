@@ -2,6 +2,7 @@ import { Play, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { V2ExecutorsBridge } from "./V2ExecutorsBridge";
 
 type RunStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
 
@@ -276,35 +277,38 @@ export function ExecutorsView({ apiKey }: { apiKey: string }) {
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle>Executors</CardTitle>
-              <CardDescription>Managed ECS SSH targets</CardDescription>
-            </div>
-            <Button className="h-8 px-3" variant="outline" onClick={() => void refreshExecutors()}><RefreshCw className="h-4 w-4" /></Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button className="w-full justify-start" variant="outline" onClick={newExecutor}><Plus className="mr-2 h-4 w-4" />New executor</Button>
-          {executors.length ? executors.map((executor) => (
-            <button key={executor.executorId} className={`w-full rounded-lg border p-3 text-left ${selectedExecutorId === executor.executorId ? "border-primary bg-slate-50" : "border-border"}`} onClick={() => selectExecutor(executor)}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">{executor.name}</p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">{executor.user}@{executor.host}:{executor.port}</p>
-                </div>
-                <Badge variant={executor.enabled ? "success" : "destructive"}>{executor.enabled ? "enabled" : "disabled"}</Badge>
-              </div>
-              {executor.tags.length ? <p className="mt-2 text-xs text-muted-foreground">{executor.tags.join(", ")}</p> : null}
-            </button>
-          )) : <EmptyState>No executors yet.</EmptyState>}
-        </CardContent>
-      </Card>
+    <div className="space-y-5">
+      <V2ExecutorsBridge apiKey={apiKey} />
 
-      <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Executors</CardTitle>
+                <CardDescription>Managed ECS SSH targets</CardDescription>
+              </div>
+              <Button className="h-8 px-3" variant="outline" onClick={() => void refreshExecutors()}><RefreshCw className="h-4 w-4" /></Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button className="w-full justify-start" variant="outline" onClick={newExecutor}><Plus className="mr-2 h-4 w-4" />New executor</Button>
+            {executors.length ? executors.map((executor) => (
+              <button key={executor.executorId} className={`w-full rounded-lg border p-3 text-left ${selectedExecutorId === executor.executorId ? "border-primary bg-slate-50" : "border-border"}`} onClick={() => selectExecutor(executor)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">{executor.name}</p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">{executor.user}@{executor.host}:{executor.port}</p>
+                  </div>
+                  <Badge variant={executor.enabled ? "success" : "destructive"}>{executor.enabled ? "enabled" : "disabled"}</Badge>
+                </div>
+                {executor.tags.length ? <p className="mt-2 text-xs text-muted-foreground">{executor.tags.join(", ")}</p> : null}
+              </button>
+            )) : <EmptyState>No executors yet.</EmptyState>}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-5">
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -404,6 +408,7 @@ export function ExecutorsView({ apiKey }: { apiKey: string }) {
             ) : <EmptyState>Select a run to inspect stdout, stderr, and artifacts.</EmptyState>}
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

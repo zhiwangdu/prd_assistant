@@ -20,6 +20,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Tools / Tool plugins` 顶部新增 V2 Tools bridge，调用 Python V2 `/api/v2/tools` 展示工具目录，支持下载 `/api/v2/exports/tools.zip`，并允许输入 V2 `run_id` 和 params 后通过 `/api/v2/mcp/task/:run_id` 调用 task MCP。配置工具会执行 `logagent.run_domain_tool`，`logagent.fetch` 会执行 fetch task tool；结果直接展示 MCP JSON 响应。旧 Rust Tool plugins 页面仍保留，继续提供独立上传和 tool_run 兼容入口。
 - `Tools / Fetch` 顶部新增 V2 Fetch bridge，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact。旧 Rust Fetch 页面仍保留。
+- `Tools / Executors` 顶部新增 V2 Executors bridge，调用 Python V2 `/api/v2/executors*` 和 `/api/v2/executor-runs*`：支持 V2 executor 新增/编辑/禁用、白名单命令模板选择、DB-backed remote command run 创建/轮询、stdout/stderr/result 路径和预览展示。旧 Rust Executors 页面仍保留。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
 - `Settings` 顶部新增 V2 Settings bridge，调用 Python V2 `/api/v2/settings/*` 和 `/api/v2/debug/llm`：支持 V2 Agent provider 摘要、模型列表和消息测试、Agent backend dry-run、Domain Adapter 摘要、response-content debug 开关、V2 只读 MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载。旧 Rust Settings 页面仍保留。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
@@ -112,6 +113,7 @@ webui/
     OperationsView.tsx
     ToolsView.tsx
     V2AnalyzeBridge.tsx
+    V2ExecutorsBridge.tsx
     V2FetchBridge.tsx
     V2MemoryBridge.tsx
     V2MetadataBridge.tsx
@@ -260,6 +262,15 @@ V2 bridge APIs：
 - `PATCH /api/v2/fetch/endpoints/:endpoint_id`
 - `DELETE /api/v2/fetch/endpoints/:endpoint_id`
 - `POST /api/v2/runs/:run_id/fetch/:endpoint_id`
+- `GET /api/v2/executors`
+- `POST /api/v2/executors`
+- `PATCH /api/v2/executors/:executor_id`
+- `DELETE /api/v2/executors/:executor_id`
+- `GET /api/v2/executor-command-templates`
+- `GET /api/v2/executor-runs`
+- `POST /api/v2/executor-runs`
+- `GET /api/v2/executor-runs/:run_id`
+- `GET /api/v2/executor-runs/:run_id/result`
 - `GET /api/v2/skills`
 - `GET /api/v2/skills/:skill_id`
 - `POST /api/v2/skills/imports`

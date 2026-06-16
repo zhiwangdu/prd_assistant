@@ -378,6 +378,70 @@ export type V2DomainAdapterSummary = {
   notes: string[];
 };
 
+export type V2RemoteRunStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
+
+export type V2RemoteExecutorRecord = {
+  executorId: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  tags: string[];
+  enabled: boolean;
+  notes?: string | null;
+  lastCheck?: { checkedAt: string; status: "OK" | "FAILED"; message: string } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2RemoteCommandTemplate = {
+  commandId: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  argv: string[];
+  timeoutSeconds?: number | null;
+};
+
+export type V2RemoteRunSummary = {
+  taskId: string;
+  alias?: string | null;
+  taskKind: "remote_command_run";
+  status: V2RemoteRunStatus;
+  phase?: string | null;
+  createdAt: string;
+};
+
+export type V2RemoteRunRecord = V2RemoteRunSummary & {
+  attempts?: number;
+  remoteExecutorId?: string | null;
+  remoteCommandId?: string | null;
+  error?: { phase?: string | null; message: string } | null;
+  updatedAt?: string;
+};
+
+export type V2RemoteRunResult = {
+  taskId: string;
+  executorId: string;
+  commandId: string;
+  resultPath: string;
+  result: {
+    status: "OK" | "FAILED" | "TIMED_OUT";
+    exitCode?: number | null;
+    durationMs: number;
+    commandArgv: string[];
+    sshArgvPreview?: string[];
+    stdoutPath: string;
+    stderrPath: string;
+    stdoutPreview: string;
+    stderrPreview: string;
+    warnings: string[];
+    error?: string | null;
+    startedAt: string;
+    completedAt: string;
+  };
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -697,6 +761,60 @@ export async function testV2AgentBackend(apiKey: string, backendId: string) {
 
 export async function getV2DomainAdapters(apiKey: string) {
   return fetchJson<{ domainAdapters: V2DomainAdapterSummary[] }>("/api/v2/settings/domain-adapters", { headers: authHeaders(apiKey) });
+}
+
+export async function listV2Executors(apiKey: string) {
+  return fetchJson<{ executors: V2RemoteExecutorRecord[] }>("/api/v2/executors", { headers: authHeaders(apiKey) });
+}
+
+export async function createV2Executor(apiKey: string, input: { name: string; host: string; port: number; user: string; tags: string[]; notes?: string | null; enabled: boolean }) {
+  return fetchJson<V2RemoteExecutorRecord>("/api/v2/executors", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateV2Executor(apiKey: string, executorId: string, updates: Partial<{ name: string; host: string; port: number; user: string; tags: string[]; notes: string | null; enabled: boolean }>) {
+  return fetchJson<V2RemoteExecutorRecord>(`/api/v2/executors/${encodeURIComponent(executorId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(updates)
+  });
+}
+
+export async function disableV2Executor(apiKey: string, executorId: string) {
+  return fetchJson<V2RemoteExecutorRecord>(`/api/v2/executors/${encodeURIComponent(executorId)}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function listV2ExecutorCommandTemplates(apiKey: string) {
+  return fetchJson<{ enabled: boolean; commands: V2RemoteCommandTemplate[] }>("/api/v2/executor-command-templates", { headers: authHeaders(apiKey) });
+}
+
+export async function listV2ExecutorRuns(apiKey: string, input: { executorId?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  params.set("limit", String(input.limit ?? 50));
+  if (input.executorId) params.set("executorId", input.executorId);
+  return fetchJson<{ runs: V2RemoteRunSummary[] }>(`/api/v2/executor-runs?${params.toString()}`, { headers: authHeaders(apiKey) });
+}
+
+export async function createV2ExecutorRun(apiKey: string, input: { executorId: string; commandId: string; idempotencyKey?: string | null }) {
+  return fetchJson<V2RemoteRunSummary>("/api/v2/executor-runs", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getV2ExecutorRun(apiKey: string, runId: string) {
+  return fetchJson<V2RemoteRunRecord>(`/api/v2/executor-runs/${encodeURIComponent(runId)}`, { headers: authHeaders(apiKey) });
+}
+
+export async function getV2ExecutorRunResult(apiKey: string, runId: string) {
+  return fetchJson<V2RemoteRunResult>(`/api/v2/executor-runs/${encodeURIComponent(runId)}/result`, { headers: authHeaders(apiKey) });
 }
 
 async function downloadV2File(apiKey: string, path: string, filename: string) {
