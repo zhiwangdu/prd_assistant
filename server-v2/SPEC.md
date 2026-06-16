@@ -34,7 +34,9 @@ Implemented in this slice:
 - FastAPI app and public `GET /health`.
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
-- Workspace creation/list/read.
+- Workspace creation/list/read/update and soft-delete lifecycle; deleted
+  Workspaces are omitted from history lists while existing run/upload/artifact
+  rows remain readable by id.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
@@ -147,6 +149,8 @@ GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
+PATCH /api/v2/workspaces/:workspace_id
+DELETE /api/v2/workspaces/:workspace_id
 GET  /api/v2/workspaces/:workspace_id/uploads
 GET  /api/v2/workspaces/:workspace_id/upload-sessions
 GET  /api/v2/workspaces/:workspace_id/runs
@@ -274,6 +278,19 @@ SQLite tables:
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
+
+## Workspaces
+
+V2 Workspaces are mutable analysis containers. `PATCH
+/api/v2/workspaces/:workspace_id` updates the question, mode, language, and
+explicit Skill ids for future runs. Existing run artifacts remain immutable
+snapshots of what was executed.
+
+`DELETE /api/v2/workspaces/:workspace_id` is a soft delete: it marks the
+Workspace status as `deleted`, appends a timeline event, and hides the
+Workspace from `GET /api/v2/workspaces`. It does not cascade-delete uploads,
+runs, evidence, artifacts, or jobs. Creating a new run on a deleted Workspace is
+rejected.
 
 ## Uploads
 

@@ -81,6 +81,36 @@ from logagent_v2.worker import JobRunner
 
 
 class StoreTests(unittest.TestCase):
+    def test_workspace_update_and_soft_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            workspace = store.create_workspace("old question", "diagnose", "zh-CN")
+            run = store.create_run(workspace["id"])
+
+            updated = store.update_workspace(
+                workspace["id"],
+                question="new question",
+                mode="fix",
+                language="en-US",
+                skill_ids=["skill-a"],
+            )
+
+            self.assertEqual(updated["question"], "new question")
+            self.assertEqual(updated["mode"], "fix")
+            self.assertEqual(updated["language"], "en-US")
+            self.assertEqual(updated["skillIds"], ["skill-a"])
+            events = store.list_timeline(run["id"])
+            self.assertTrue(any(event["kind"] == "workspace.updated" for event in events))
+
+            deleted = store.delete_workspace(workspace["id"])
+
+            self.assertEqual(deleted["status"], "deleted")
+            self.assertEqual(store.list_workspaces(), [])
+            self.assertEqual(len(store.list_workspaces(include_deleted=True)), 1)
+            with self.assertRaises(ValueError):
+                store.create_run(workspace["id"])
+
     def test_workspace_run_job_and_stub_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

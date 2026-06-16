@@ -10,6 +10,8 @@ slice provides the durable foundation for the V2 product model:
 - DB-backed job queue for restartable background runs.
 - Workspace, Run, TimelineEvent, Evidence, Artifact, Upload, Action, and Job
   schema foundations.
+- Workspace update and soft-delete lifecycle; deleted Workspaces are hidden from
+  history lists but existing runs and artifacts remain readable by id.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
@@ -166,6 +168,8 @@ GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
+PATCH /api/v2/workspaces/:workspace_id
+DELETE /api/v2/workspaces/:workspace_id
 GET  /api/v2/workspaces/:workspace_id/uploads
 GET  /api/v2/workspaces/:workspace_id/upload-sessions
 GET  /api/v2/workspaces/:workspace_id/runs

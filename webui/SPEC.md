@@ -77,6 +77,7 @@ Database
 
 - Analyze 顶部可以出现 V2 bridge 面板，用于在 V2 WebUI 全量切换前直接验证 Python V2 后端能力。该面板必须独立于旧 Session-first 面板，不能破坏旧 `/api/*` Session 工作流。
 - V2 bridge 必须调用 `/api/v2/workspaces` 创建和列出 Workspace，支持选择历史 Workspace，并展示 Workspace question、mode 和 created time。
+- V2 bridge 必须支持读取单个 Workspace 后回填 question/mode，调用 `PATCH /api/v2/workspaces/:workspace_id` 保存选中 Workspace 的 question/mode/language，并调用 `DELETE /api/v2/workspaces/:workspace_id` 软删除历史 Workspace；删除后前端清空当前选择并刷新历史列表。
 - V2 bridge 必须支持对选中 Workspace 上传文件：小文件可直接调用 `/api/v2/workspaces/:workspace_id/uploads`，超过前端 chunk 阈值的文件必须走 `/api/v2/workspaces/:workspace_id/uploads/init`、`/api/v2/uploads/:session_id/chunks?offset=...` 和 `/api/v2/uploads/:session_id/complete`。
 - V2 bridge 必须调用 `/api/v2/workspaces/:workspace_id/runs` 创建 Run，轮询 `/api/v2/runs/:run_id/analysis`，并展示 run status、phase、timeline、evidence count、resource count、artifact count 和最终结果摘要。
 - V2 bridge 的 artifact 下载必须由前端 `fetch` 携带 Authorization header 调用 `/api/v2/artifacts/:artifact_id`，不能依赖无法带 Bearer header 的裸链接。

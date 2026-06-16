@@ -451,11 +451,20 @@ class Store:
             )
         return self.get_workspace(workspace_id)
 
-    def list_workspaces(self) -> list[JsonObject]:
+    def list_workspaces(self, include_deleted: bool = False) -> list[JsonObject]:
         with self.connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM workspaces ORDER BY created_at DESC, id DESC"
-            ).fetchall()
+            if include_deleted:
+                rows = conn.execute(
+                    "SELECT * FROM workspaces ORDER BY created_at DESC, id DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM workspaces
+                    WHERE status != 'deleted'
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
         return [self._workspace_from_row(row) for row in rows]
 
     def get_workspace(self, workspace_id: str) -> JsonObject:
@@ -464,6 +473,82 @@ class Store:
         if row is None:
             raise KeyError(f"unknown workspace {workspace_id}")
         return self._workspace_from_row(row)
+
+    def update_workspace(
+        self,
+        workspace_id: str,
+        question: str | None = None,
+        mode: str | None = None,
+        language: str | None = None,
+        skill_ids: list[str] | None = None,
+    ) -> JsonObject:
+        current = self.get_workspace(workspace_id)
+        if current["status"] == "deleted":
+            raise ValueError("workspace is deleted")
+        next_question = question if question is not None else current["question"]
+        next_mode = mode if mode is not None else current["mode"]
+        next_language = language if language is not None else current["language"]
+        next_skill_ids = skill_ids if skill_ids is not None else current["skillIds"]
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET question = ?,
+                    mode = ?,
+                    language = ?,
+                    skill_ids_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    next_question,
+                    next_mode,
+                    next_language,
+                    encode_json(next_skill_ids),
+                    ts,
+                    workspace_id,
+                ),
+            )
+            self._append_event_tx(
+                conn,
+                workspace_id,
+                None,
+                "workspace.updated",
+                {
+                    "question": next_question,
+                    "mode": next_mode,
+                    "language": next_language,
+                    "skillIds": next_skill_ids,
+                },
+                ts,
+            )
+        return self.get_workspace(workspace_id)
+
+    def delete_workspace(self, workspace_id: str) -> JsonObject:
+        current = self.get_workspace(workspace_id)
+        if current["status"] == "deleted":
+            return current
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET status = 'deleted',
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (ts, workspace_id),
+            )
+            self._append_event_tx(
+                conn,
+                workspace_id,
+                None,
+                "workspace.deleted",
+                {"workspaceId": workspace_id},
+                ts,
+            )
+        return self.get_workspace(workspace_id)
 
     def list_uploads(self, workspace_id: str) -> list[JsonObject]:
         with self.connect() as conn:
@@ -566,6 +651,8 @@ class Store:
 
     def create_run(self, workspace_id: str) -> JsonObject:
         workspace = self.get_workspace(workspace_id)
+        if workspace["status"] == "deleted":
+            raise ValueError("workspace is deleted")
         run_id = new_id("run")
         job_id = new_id("job")
         ts = now_iso()

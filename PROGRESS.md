@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Workspace Management
+
+- Added V2 Workspace update and soft-delete APIs: `PATCH /api/v2/workspaces/:workspace_id` and `DELETE /api/v2/workspaces/:workspace_id`.
+- Updated Workspace listing to hide `deleted` Workspaces while preserving existing uploads, runs, evidence, and artifacts by id; creating a new run on a deleted Workspace is rejected.
+- Updated the V2 Analyze bridge to load selected Workspace question/mode, save selected Workspace edits, soft-delete selected Workspace history items, and save edits before running the selected Workspace.
+- Updated server-v2, WebUI docs, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Instance Refresh
 
 - Added `POST /api/v2/metadata/instances/:instance_id/refresh` to rebuild a V2 Metadata snapshot from the raw JSON already saved in SQLite.

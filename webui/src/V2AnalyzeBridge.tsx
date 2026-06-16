@@ -1,15 +1,18 @@
-import { Download, FileArchive, Play, RefreshCw, UploadCloud, Workflow } from "lucide-react";
+import { Download, FileArchive, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import type { UiLanguage } from "./i18n";
 import {
   createV2Run,
   createV2Workspace,
+  deleteV2Workspace,
   downloadV2Artifact,
+  getV2Workspace,
   getV2RunAnalysis,
   listV2WorkspaceRuns,
   listV2Workspaces,
   listV2WorkspaceUploads,
+  updateV2Workspace,
   uploadV2Files,
   type V2EvidenceArtifact,
   type V2FinalAnswer,
@@ -42,8 +45,13 @@ const copyByLanguage = {
     uploadProgress: "上传进度",
     createWorkspaceRun: "新建 V2 Workspace 并运行",
     runSelectedWorkspace: "运行选中 Workspace",
+    saveWorkspace: "保存选中 Workspace",
+    deleteWorkspace: "删除选中 Workspace",
     noWorkspaceSelected: "请选择或创建 V2 Workspace",
     createdWorkspace: (workspaceId: string) => `已创建 Workspace ${workspaceId}`,
+    savedWorkspace: (workspaceId: string) => `已保存 Workspace ${workspaceId}`,
+    deletedWorkspace: (workspaceId: string) => `已删除 Workspace ${workspaceId}`,
+    deleteConfirm: (workspaceId: string) => `删除 V2 Workspace ${workspaceId}？历史列表会隐藏它，但已有 run 和 artifacts 会保留在服务端。`,
     uploadingFileCount: (count: number) => `正在上传 ${count} 个文件`,
     createdRun: (runId: string) => `已创建 Run ${runId}`,
     refreshed: "V2 数据已刷新",
@@ -99,8 +107,13 @@ const copyByLanguage = {
     uploadProgress: "Upload progress",
     createWorkspaceRun: "Create V2 workspace and run",
     runSelectedWorkspace: "Run selected workspace",
+    saveWorkspace: "Save selected workspace",
+    deleteWorkspace: "Delete selected workspace",
     noWorkspaceSelected: "Select or create a V2 workspace",
     createdWorkspace: (workspaceId: string) => `Created workspace ${workspaceId}`,
+    savedWorkspace: (workspaceId: string) => `Saved workspace ${workspaceId}`,
+    deletedWorkspace: (workspaceId: string) => `Deleted workspace ${workspaceId}`,
+    deleteConfirm: (workspaceId: string) => `Delete V2 workspace ${workspaceId}? It will be hidden from history, while existing runs and artifacts remain on the server.`,
     uploadingFileCount: (count: number) => `Uploading ${count} file(s)`,
     createdRun: (runId: string) => `Created run ${runId}`,
     refreshed: "V2 data refreshed",
@@ -177,10 +190,13 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const loadWorkspace = useCallback(async (workspaceId: string, preferredRunId?: string) => {
     if (!apiKey.trim()) return;
     setSelectedWorkspaceId(workspaceId);
-    const [uploadResponse, runResponse] = await Promise.all([
+    const [workspace, uploadResponse, runResponse] = await Promise.all([
+      getV2Workspace(apiKey, workspaceId),
       listV2WorkspaceUploads(apiKey, workspaceId),
       listV2WorkspaceRuns(apiKey, workspaceId)
     ]);
+    setQuestion(workspace.question);
+    setMode(workspace.mode);
     setUploads(uploadResponse.uploads);
     setRuns(runResponse.runs);
     const nextRunId = preferredRunId || runResponse.runs[0]?.id || "";
@@ -267,6 +283,10 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     setLoading(true);
     setUploadProgress(0);
     try {
+      const trimmedQuestion = question.trim();
+      if (!trimmedQuestion) return;
+      const workspace = await updateV2Workspace(apiKey, selectedWorkspaceId, { question: trimmedQuestion, mode, language });
+      setWorkspaces((current) => current.map((item) => item.id === workspace.id ? workspace : item));
       if (files.length) {
         setStatus(copy.uploadingFileCount(files.length));
         await uploadV2Files(apiKey, selectedWorkspaceId, files, setUploadProgress);
@@ -275,6 +295,41 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
       setFiles([]);
       setStatus(copy.createdRun(run.id));
       await loadWorkspace(selectedWorkspaceId, run.id);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveSelectedWorkspace() {
+    if (!apiKey.trim() || !selectedWorkspaceId || !question.trim()) return;
+    setLoading(true);
+    try {
+      const workspace = await updateV2Workspace(apiKey, selectedWorkspaceId, { question: question.trim(), mode, language });
+      setWorkspaces((current) => current.map((item) => item.id === workspace.id ? workspace : item));
+      setStatus(copy.savedWorkspace(workspace.id));
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteSelectedWorkspace() {
+    if (!apiKey.trim() || !selectedWorkspaceId) return;
+    const workspaceId = selectedWorkspaceId;
+    if (!window.confirm(copy.deleteConfirm(workspaceId))) return;
+    setLoading(true);
+    try {
+      await deleteV2Workspace(apiKey, workspaceId);
+      setSelectedWorkspaceId("");
+      setSelectedRunId("");
+      setUploads([]);
+      setRuns([]);
+      setAnalysis(null);
+      setStatus(copy.deletedWorkspace(workspaceId));
+      await refreshWorkspaces(true);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -345,6 +400,12 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
                 </Button>
                 <Button disabled={loading || !apiKey.trim() || !selectedWorkspaceId} variant="outline" onClick={() => void runSelectedWorkspace()}>
                   <Play className="mr-2 h-4 w-4" />{copy.runSelectedWorkspace}
+                </Button>
+                <Button disabled={loading || !apiKey.trim() || !selectedWorkspaceId || !question.trim()} variant="outline" onClick={() => void saveSelectedWorkspace()}>
+                  <Save className="mr-2 h-4 w-4" />{copy.saveWorkspace}
+                </Button>
+                <Button disabled={loading || !apiKey.trim() || !selectedWorkspaceId} variant="outline" onClick={() => void deleteSelectedWorkspace()}>
+                  <Trash2 className="mr-2 h-4 w-4" />{copy.deleteWorkspace}
                 </Button>
               </div>
             </div>

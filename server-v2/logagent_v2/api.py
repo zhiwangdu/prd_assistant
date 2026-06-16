@@ -77,6 +77,13 @@ class WorkspaceCreate(BaseModel):
     skillIds: list[str] = Field(default_factory=list, max_length=20)
 
 
+class WorkspaceUpdate(BaseModel):
+    question: str | None = Field(default=None, min_length=1, max_length=20000)
+    mode: Literal["diagnose", "code_investigation", "fix"] | None = None
+    language: Literal["zh-CN", "en-US"] | None = None
+    skillIds: list[str] | None = Field(default=None, max_length=20)
+
+
 class MessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     resumeMode: Literal["continue", "finalize"] = "continue"
@@ -285,6 +292,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.patch("/api/v2/workspaces/{workspace_id}")
+    async def update_workspace(_: Auth, workspace_id: str, payload: WorkspaceUpdate) -> dict:
+        try:
+            return store.update_workspace(
+                workspace_id,
+                question=payload.question.strip() if payload.question is not None else None,
+                mode=payload.mode,
+                language=payload.language,
+                skill_ids=payload.skillIds,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.delete("/api/v2/workspaces/{workspace_id}")
+    async def delete_workspace(_: Auth, workspace_id: str) -> dict:
+        try:
+            workspace = store.delete_workspace(workspace_id)
+            return {"deleted": True, "workspaceId": workspace_id, "workspace": workspace}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/v2/workspaces/{workspace_id}/uploads")
     async def list_workspace_uploads(_: Auth, workspace_id: str) -> dict:
         try:
@@ -473,6 +503,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return store.create_run(workspace_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/runs")
     async def list_runs(_: Auth, workspaceId: str | None = None) -> dict:

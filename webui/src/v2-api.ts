@@ -461,6 +461,25 @@ export async function createV2Workspace(apiKey: string, input: { question: strin
   });
 }
 
+export async function getV2Workspace(apiKey: string, workspaceId: string) {
+  return fetchJson<V2Workspace>(`/api/v2/workspaces/${encodeURIComponent(workspaceId)}`, { headers: authHeaders(apiKey) });
+}
+
+export async function updateV2Workspace(apiKey: string, workspaceId: string, input: Partial<{ question: string; mode: V2Mode; language: "zh-CN" | "en-US"; skillIds: string[] }>) {
+  return fetchJson<V2Workspace>(`/api/v2/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteV2Workspace(apiKey: string, workspaceId: string) {
+  return fetchJson<{ deleted: boolean; workspaceId: string; workspace: V2Workspace }>(`/api/v2/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
+  });
+}
+
 export async function listV2WorkspaceRuns(apiKey: string, workspaceId: string) {
   return fetchJson<{ runs: V2Run[] }>(`/api/v2/workspaces/${encodeURIComponent(workspaceId)}/runs`, { headers: authHeaders(apiKey) });
 }
