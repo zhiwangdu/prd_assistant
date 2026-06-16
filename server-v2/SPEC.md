@@ -37,16 +37,19 @@ Implemented in this slice:
 - Upload storage as local artifacts.
 - Run creation and queued `run_analysis` job.
 - Inline DB-backed worker.
-- Stub Agent runtime that records initial question evidence and returns a
-  low-confidence final result.
+- Initial evidence pipeline for uploaded text files and supported archives.
+- `manifest.json` and `grep_results.json` artifact generation.
+- Stub Agent runtime that records initial question evidence, consumes the
+  initial evidence pipeline, and returns a low-confidence evidence summary.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
+- Evidence listing for a run.
 - Read-only MCP placeholder with `initialize`, `resources/list`,
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
 
 Not yet implemented:
 
-- Secure archive extraction and log search.
+- V1-compatible node log package preprocessing and log slicing.
 - LangGraph provider integration.
 - Task MCP tools.
 - Tool Runner execution.
@@ -74,6 +77,7 @@ POST /api/v2/workspaces/:workspace_id/uploads
 POST /api/v2/workspaces/:workspace_id/runs
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
+GET  /api/v2/runs/:run_id/evidence
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
@@ -110,12 +114,45 @@ SQLite tables:
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
 
+## Initial Evidence Pipeline
+
+Run execution currently performs:
+
+```text
+Workspace uploads
+  -> safe archive scan / text file collection
+  -> manifest.json artifact
+  -> bounded keyword grep
+  -> grep_results.json artifact
+  -> manifest and log_search evidence
+  -> low-confidence stub final answer
+```
+
+Supported archive formats are `.zip`, `.tar`, `.tar.gz`, and `.tgz`. Archive
+members are never extracted by path. V2 normalizes member names and rejects
+absolute paths, `..` traversal, empty paths, and other unsafe names. Non-file
+members and symlinks are skipped. Text files are bounded by
+`LOGAGENT_V2_MAX_TEXT_FILE_BYTES`, aggregate scanned bytes by
+`LOGAGENT_V2_MAX_ARCHIVE_BYTES`, and initial matches by
+`LOGAGENT_V2_MAX_GREP_MATCHES`.
+
+Initial grep refs use:
+
+```text
+grep_results.json#matches/<index>
+```
+
+These refs are current-task evidence. Manifest evidence is background and not
+final evidence.
+
 ## Security
 
 - API key is read from `LOGAGENT_V2_API_KEY`.
 - Artifact paths are resolved relative to `data_dir` and rejected if they
   escape it.
 - Upload filenames are basename-normalized and character-filtered.
+- Archive entries are scanned in memory and rejected if they contain absolute
+  paths or traversal components.
 - Agent runtime cannot execute tools directly in this slice.
 - Future tools must execute only through configured whitelist descriptors.
 
@@ -127,4 +164,3 @@ The current slice is accepted when:
 - `PYTHONPATH=. python3 -m unittest discover tests` passes.
 - A Workspace can be created, an upload stored, a Run queued, and the inline
   worker can complete the stub Agent result.
-

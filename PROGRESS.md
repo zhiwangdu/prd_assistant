@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-17 V2 Initial Evidence Pipeline
+
+- Continued the `rewrite/logagent-v2` clean-room migration toward Rust Server feature parity.
+- Added V2 initial evidence indexing for Workspace uploads. Runs now collect supported plain text logs and scan `.zip`, `.tar`, `.tar.gz`, and `.tgz` packages with bounded file counts, bytes, and grep matches.
+- Added archive safety checks that reject absolute paths, `..` traversal, empty paths, and unsafe member names; symlinks and non-file archive members are skipped.
+- V2 run execution now writes `manifest.json` and `grep_results.json` artifacts, records `manifest` and `log_search` evidence rows, exposes `GET /api/v2/runs/:run_id/evidence`, and lets the current stub final answer cite `grep_results.json#matches/<index>` when initial matches exist.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-16 LogAgent V2 Clean-room Scaffold
 
 - Created the `rewrite/logagent-v2` branch from `main` to keep Rust V1 stable while evaluating a small-team Python Agent stack.

@@ -182,6 +182,29 @@ class Store:
             raise KeyError(f"unknown workspace {workspace_id}")
         return dict(row)
 
+    def list_uploads(self, workspace_id: str) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  uploads.id AS id,
+                  uploads.workspace_id AS workspace_id,
+                  uploads.filename AS filename,
+                  uploads.artifact_id AS artifact_id,
+                  uploads.created_at AS created_at,
+                  artifacts.relative_path AS artifact_relative_path,
+                  artifacts.sha256 AS artifact_sha256,
+                  artifacts.size_bytes AS artifact_size_bytes,
+                  artifacts.content_type AS artifact_content_type
+                FROM uploads
+                JOIN artifacts ON artifacts.id = uploads.artifact_id
+                WHERE uploads.workspace_id = ?
+                ORDER BY uploads.created_at ASC, uploads.id ASC
+                """,
+                (workspace_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_run(self, workspace_id: str) -> JsonObject:
         workspace = self.get_workspace(workspace_id)
         run_id = new_id("run")
@@ -391,6 +414,25 @@ class Store:
         result["payload"] = decode_json(result.pop("payload_json"), {})
         return result
 
+    def list_evidence(self, run_id: str) -> list[JsonObject]:
+        run = self.get_run(run_id)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM evidence_items
+                WHERE workspace_id = ? AND (run_id = ? OR run_id IS NULL)
+                ORDER BY created_at ASC, id ASC
+                """,
+                (run["workspace_id"], run_id),
+            ).fetchall()
+        evidence = []
+        for row in rows:
+            item = dict(row)
+            item["final_allowed"] = bool(item["final_allowed"])
+            item["payload"] = decode_json(item.pop("payload_json"), {})
+            evidence.append(item)
+        return evidence
+
     def list_timeline(self, run_id: str) -> list[JsonObject]:
         run = self.get_run(run_id)
         with self.connect() as conn:
@@ -512,4 +554,3 @@ class Store:
             "payload": payload,
             "created_at": ts,
         }
-

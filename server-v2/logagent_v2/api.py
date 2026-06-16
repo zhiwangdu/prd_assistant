@@ -113,6 +113,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/runs/{run_id}/evidence")
+    async def list_evidence(_: Auth, run_id: str) -> dict:
+        try:
+            return {"evidence": store.list_evidence(run_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.post("/api/v2/runs/{run_id}/messages")
     async def post_message(_: Auth, run_id: str, payload: MessageCreate) -> dict:
         try:
@@ -166,4 +173,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
-

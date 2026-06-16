@@ -42,11 +42,26 @@ class JobRunner:
         try:
             if job["kind"] == "run_analysis":
                 payload = job["payload"]
-                AgentRuntime(self.store).run_analysis(payload["workspace_id"], payload["run_id"])
+                AgentRuntime(self.settings, self.store).run_analysis(
+                    payload["workspace_id"], payload["run_id"]
+                )
             else:
                 raise ValueError(f"unknown job kind {job['kind']}")
         except Exception as error:
+            payload = job.get("payload", {})
+            run_id = payload.get("run_id")
+            if isinstance(run_id, str):
+                try:
+                    self.store.update_run_status(run_id, "failed", "failed")
+                    run = self.store.get_run(run_id)
+                    self.store.append_event(
+                        run["workspace_id"],
+                        run_id,
+                        "run.error",
+                        {"error": str(error)[:2000]},
+                    )
+                except Exception:
+                    pass
             self.store.fail_job(job, str(error))
             return
         self.store.complete_job(job["id"])
-
