@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
+from .metadata import import_metadata, query_field_types
 from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
 from .store import Store
@@ -30,6 +31,22 @@ class MessageCreate(BaseModel):
 class DecisionCreate(BaseModel):
     decision: Literal["approved", "rejected"]
     reason: str | None = Field(default=None, max_length=2000)
+
+
+class MetadataImportCreate(BaseModel):
+    instanceId: str = Field(min_length=1, max_length=200)
+    templateType: Literal["json", "yaml", "opengemini"] = "json"
+    content: str = Field(min_length=1)
+    filename: str | None = Field(default=None, max_length=300)
+    remark: str | None = Field(default=None, max_length=120)
+
+
+class MetadataFieldTypesQuery(BaseModel):
+    instanceId: str = Field(min_length=1, max_length=200)
+    database: str = Field(min_length=1, max_length=300)
+    measurement: str = Field(min_length=1, max_length=300)
+    retentionPolicy: str | None = Field(default=None, max_length=300)
+    field: str | list[str] | None = None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -173,6 +190,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
         return {"tools": tool_descriptors(settings)}
+
+    @app.get("/api/v2/metadata/instances")
+    async def list_metadata_instances(_: Auth) -> dict:
+        return {"instances": store.list_metadata_instances()}
+
+    @app.get("/api/v2/metadata/instances/{instance_id}")
+    async def get_metadata_instance(_: Auth, instance_id: str) -> dict:
+        try:
+            return store.get_metadata_instance(instance_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/metadata/instances/{instance_id}/snapshot")
+    async def get_metadata_snapshot(_: Auth, instance_id: str) -> dict:
+        try:
+            return store.get_metadata_snapshot(instance_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.delete("/api/v2/metadata/instances/{instance_id}")
+    async def delete_metadata_instance(_: Auth, instance_id: str) -> dict:
+        try:
+            store.delete_metadata_instance(instance_id)
+            return {"deleted": True, "instanceId": instance_id}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/imports")
+    async def create_metadata_import(_: Auth, payload: MetadataImportCreate) -> dict:
+        try:
+            return import_metadata(
+                store=store,
+                instance_id=payload.instanceId,
+                template_type=payload.templateType,
+                content=payload.content,
+                remark=payload.remark,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/field-types")
+    async def get_metadata_field_types(_: Auth, payload: MetadataFieldTypesQuery) -> dict:
+        try:
+            return query_field_types(
+                store=store,
+                instance_id=payload.instanceId,
+                database=payload.database,
+                measurement=payload.measurement,
+                retention_policy=payload.retentionPolicy,
+                field=payload.field,
+            )
+        except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/tag-fields")
+    async def get_metadata_tag_fields(_: Auth, payload: MetadataFieldTypesQuery) -> dict:
+        try:
+            return query_field_types(
+                store=store,
+                instance_id=payload.instanceId,
+                database=payload.database,
+                measurement=payload.measurement,
+                retention_policy=payload.retentionPolicy,
+                tags_only=True,
+            )
+        except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/api/v2/mcp/readonly")
     async def readonly_mcp(_: Auth, request: dict) -> dict:

@@ -5,8 +5,12 @@ import json
 from .artifacts import resolve_artifact_path
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
+from .metadata import call_metadata_tool, metadata_tool_descriptors
 from .store import Store
 from .tools import run_configured_tool, tool_descriptors
+
+
+METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
 
 
 def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
@@ -33,6 +37,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     run_domain_tool_descriptor(settings),
                     request_user_input_descriptor(),
                     request_approval_descriptor(),
+                    *metadata_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -66,6 +71,12 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         "name": "tools_catalog",
                         "description": "V2 tool catalog placeholder",
                         "mimeType": "application/json",
+                    },
+                    {
+                        "uri": "logagent-v2://metadata/instances",
+                        "name": "metadata_instances",
+                        "description": "Imported V2 metadata instances",
+                        "mimeType": "application/json",
                     }
                 ]
             }
@@ -76,24 +87,55 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         "name": "logagent.list_tools",
                         "description": "List V2 tool descriptors.",
                         "inputSchema": {"type": "object", "additionalProperties": False},
-                    }
+                    },
+                    *metadata_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
             name = request.get("params", {}).get("name")
-            if name != "logagent.list_tools":
+            arguments = request.get("params", {}).get("arguments") or {}
+            if name == "logagent.list_tools":
+                result = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(metadata_tool_descriptors(), ensure_ascii=True),
+                        }
+                    ]
+                }
+            elif name in METADATA_TOOL_NAMES:
+                value = call_metadata_tool(None, store, None, name, arguments)
+                result = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(value, ensure_ascii=True, indent=2),
+                        }
+                    ]
+                }
+            else:
                 raise ValueError(f"unsupported readonly tool {name}")
-            result = {"content": [{"type": "text", "text": "[]"}]}
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
-            if uri != "logagent-v2://tools/catalog":
+            if uri == "logagent-v2://tools/catalog":
+                value = metadata_tool_descriptors()
+            elif uri == "logagent-v2://metadata/instances":
+                value = {"instances": store.list_metadata_instances()}
+            elif isinstance(uri, str) and uri.startswith(
+                "logagent-v2://metadata/instances/"
+            ) and uri.endswith("/snapshot"):
+                instance_id = uri.removeprefix("logagent-v2://metadata/instances/").removesuffix(
+                    "/snapshot"
+                )
+                value = store.get_metadata_snapshot(instance_id)
+            else:
                 raise ValueError(f"unsupported readonly resource {uri}")
             result = {
                 "contents": [
                     {
                         "uri": uri,
                         "mimeType": "application/json",
-                        "text": "[]",
+                        "text": json.dumps(value, ensure_ascii=True, indent=2),
                     }
                 ]
             }
@@ -209,6 +251,16 @@ def search_logs_descriptor() -> dict:
 def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) -> dict:
     name = params.get("name")
     arguments = params.get("arguments") or {}
+    if name in METADATA_TOOL_NAMES:
+        value = call_metadata_tool(settings, store, run, name, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
     if name == "logagent.get_log_slice":
         return call_get_log_slice(settings, store, run, arguments)
     if name == "logagent.run_domain_tool":

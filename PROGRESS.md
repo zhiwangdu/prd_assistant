@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Foundation
+
+- Added SQLite-backed V2 `metadata_instances` storage for imported raw snapshots and normalized Metadata snapshots.
+- Added direct Metadata import for JSON, YAML via PyYAML, and openGemini-style content. The openGemini path normalizes nodes, databases, retention policies, measurements, and field type labels.
+- Added V2 Metadata APIs for instance list/detail/snapshot/delete plus field type and tag field queries.
+- Added readonly MCP and task MCP Metadata tools: `logagent.list_metadata_instances`, `logagent.get_metadata_snapshot`, `logagent.get_metadata_field_types`, and `logagent.get_metadata_tag_fields`.
+- Task MCP Metadata calls now persist `metadata_slice` background evidence with `final_allowed=false`.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Node Log Package Preprocessor
 
 - Added V2 preprocessing for node log packages named `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` or `.tgz`.

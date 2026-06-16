@@ -17,7 +17,8 @@ from logagent_v2.final_answer import (
     FinalAnswerValidationError,
     normalize_and_validate_final_answer,
 )
-from logagent_v2.mcp import task_mcp_response
+from logagent_v2.mcp import readonly_mcp_response, task_mcp_response
+from logagent_v2.metadata import import_metadata, query_field_types
 from logagent_v2.store import Store
 
 
@@ -510,6 +511,116 @@ class StoreTests(unittest.TestCase):
             decided = store.decide_action(approval["id"], "approved", "ok")
             self.assertEqual(decided["status"], "approved")
             self.assertEqual(decided["result"]["decision"], "approved")
+
+    def test_metadata_import_query_and_mcp_background_slice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            raw = {
+                "ClusterID": 42,
+                "DataNodes": [{"ID": 1, "Host": "10.0.0.1", "Status": "alive"}],
+                "Databases": {
+                    "db0": {
+                        "DefaultRetentionPolicy": "autogen",
+                        "RetentionPolicies": {
+                            "autogen": {
+                                "Measurements": {
+                                    "cpu": {
+                                        "Schema": {
+                                            "host": 6,
+                                            "value": {"Typ": 3, "EndTime": 123},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+            imported = import_metadata(
+                store,
+                instance_id="inst1",
+                template_type="opengemini",
+                content=json.dumps(raw),
+                remark="test cluster",
+            )
+            self.assertEqual(imported["snapshot"]["instance"]["tags"]["sourceClusterId"], "42")
+            instances = store.list_metadata_instances()
+            self.assertEqual(instances[0]["instanceId"], "inst1")
+            self.assertEqual(instances[0]["nodeCount"], 1)
+            self.assertEqual(instances[0]["databaseCount"], 1)
+
+            fields = query_field_types(
+                store,
+                instance_id="inst1",
+                database="db0",
+                measurement="cpu",
+                field=["host", "value", "missing"],
+            )
+            by_name = {item["name"]: item for item in fields["fields"]}
+            self.assertEqual(by_name["host"]["typeLabel"], "Tag")
+            self.assertEqual(by_name["value"]["typeLabel"], "Float")
+            self.assertEqual(fields["missingFields"], ["missing"])
+
+            readonly_instances = readonly_mcp_response(
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 13,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent-v2://metadata/instances"},
+                },
+            )
+            readonly_body = json.loads(readonly_instances["result"]["contents"][0]["text"])
+            self.assertEqual(readonly_body["instances"][0]["instanceId"], "inst1")
+
+            readonly_tags = readonly_mcp_response(
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 14,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_tag_fields",
+                        "arguments": {
+                            "instanceId": "inst1",
+                            "database": "db0",
+                            "measurement": "cpu",
+                        },
+                    },
+                },
+            )
+            tag_body = json.loads(readonly_tags["result"]["content"][0]["text"])
+            self.assertEqual([item["name"] for item in tag_body["fields"]], ["host"])
+
+            workspace = store.create_workspace("metadata context", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            task_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 15,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_field_types",
+                        "arguments": {
+                            "instanceId": "inst1",
+                            "database": "db0",
+                            "measurement": "cpu",
+                        },
+                    },
+                },
+            )
+            task_body = json.loads(task_response["result"]["content"][0]["text"])
+            self.assertFalse(task_body["finalEvidenceAllowed"])
+            evidence = store.list_evidence(run["id"])
+            metadata_slices = [item for item in evidence if item["kind"] == "metadata_slice"]
+            self.assertEqual(len(metadata_slices), 1)
+            self.assertFalse(metadata_slices[0]["final_allowed"])
 
 
 if __name__ == "__main__":

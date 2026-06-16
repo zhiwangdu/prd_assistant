@@ -139,6 +139,16 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS metadata_instances (
+                  instance_id TEXT PRIMARY KEY,
+                  remark TEXT,
+                  template_type TEXT NOT NULL,
+                  snapshot_json TEXT NOT NULL,
+                  raw_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
@@ -507,6 +517,99 @@ class Store:
             item["payload"] = decode_json(item.pop("payload_json"), {})
             events.append(item)
         return events
+
+    def upsert_metadata_instance(
+        self,
+        instance_id: str,
+        remark: str | None,
+        template_type: str,
+        snapshot: JsonObject,
+        raw: JsonObject,
+    ) -> JsonObject:
+        existing = self.get_metadata_instance(instance_id, missing_ok=True)
+        ts = now_iso()
+        created_at = existing["created_at"] if existing else ts
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO metadata_instances(
+                  instance_id, remark, template_type, snapshot_json, raw_json,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(instance_id) DO UPDATE SET
+                  remark = excluded.remark,
+                  template_type = excluded.template_type,
+                  snapshot_json = excluded.snapshot_json,
+                  raw_json = excluded.raw_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    instance_id,
+                    remark,
+                    template_type,
+                    encode_json(snapshot),
+                    encode_json(raw),
+                    created_at,
+                    ts,
+                ),
+            )
+        return self.get_metadata_instance(instance_id)
+
+    def list_metadata_instances(self) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT instance_id, remark, template_type, snapshot_json, created_at, updated_at
+                FROM metadata_instances
+                ORDER BY updated_at DESC, instance_id ASC
+                """
+            ).fetchall()
+        instances = []
+        for row in rows:
+            item = dict(row)
+            snapshot = decode_json(item.pop("snapshot_json"), {})
+            instance = snapshot.get("instance", {})
+            cluster = snapshot.get("cluster", {})
+            item["instanceId"] = item.pop("instance_id")
+            item["templateType"] = item.pop("template_type")
+            item["product"] = instance.get("product")
+            item["version"] = instance.get("version")
+            item["environment"] = instance.get("environment")
+            item["nodeCount"] = len(cluster.get("nodes", []))
+            item["databaseCount"] = len(cluster.get("databases", []))
+            instances.append(item)
+        return instances
+
+    def get_metadata_instance(
+        self, instance_id: str, missing_ok: bool = False
+    ) -> JsonObject | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM metadata_instances WHERE instance_id = ?", (instance_id,)
+            ).fetchone()
+        if row is None:
+            if missing_ok:
+                return None
+            raise KeyError(f"unknown metadata instance {instance_id}")
+        item = dict(row)
+        item["instanceId"] = item.pop("instance_id")
+        item["templateType"] = item.pop("template_type")
+        item["snapshot"] = decode_json(item.pop("snapshot_json"), {})
+        item["raw"] = decode_json(item.pop("raw_json"), {})
+        return item
+
+    def get_metadata_snapshot(self, instance_id: str) -> JsonObject:
+        item = self.get_metadata_instance(instance_id)
+        assert item is not None
+        return item["snapshot"]
+
+    def delete_metadata_instance(self, instance_id: str) -> None:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM metadata_instances WHERE instance_id = ?", (instance_id,)
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown metadata instance {instance_id}")
 
     def append_event(
         self, workspace_id: str, run_id: str | None, kind: str, payload: JsonObject

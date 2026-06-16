@@ -65,14 +65,18 @@ Implemented in this slice:
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
+- Metadata foundation with direct JSON/YAML/openGemini content import, SQLite
+  snapshot storage, field/tag type query APIs, readonly MCP tools, and task MCP
+  background slices.
 
 Not yet implemented:
 
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation.
 - LangGraph provider integration.
-- Rich Tool Runner input matching, per-tool params schema, Metadata, Case
+- Rich Tool Runner input matching, per-tool params schema, Case
   recall, and full multi-round model reasoning after resume.
-- Metadata import/query.
+- Metadata preview/confirm flow, URL fetch, task context auto-selection, and
+  WebUI cutover.
 - Skill-backed System Context.
 - Case Memory.
 - WebUI V2 cutover.
@@ -102,6 +106,13 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/metadata/instances
+GET  /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/instances/:instance_id/snapshot
+DELETE /api/v2/metadata/instances/:instance_id
+POST /api/v2/metadata/imports
+POST /api/v2/metadata/field-types
+POST /api/v2/metadata/tag-fields
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -130,6 +141,7 @@ SQLite tables:
 - `evidence_items`
 - `actions`
 - `jobs`
+- `metadata_instances`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
@@ -218,6 +230,45 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+## Metadata
+
+V2 stores imported Metadata snapshots in SQLite table `metadata_instances`.
+Each row is keyed by `instance_id` and contains `template_type`, optional
+`remark`, normalized `snapshot_json`, and original `raw_json`.
+
+Current direct import request:
+
+```json
+{
+  "instanceId": "prod-og-1",
+  "templateType": "opengemini",
+  "content": "{...}",
+  "remark": "optional display name"
+}
+```
+
+`templateType=json` normalizes generic `instance` / `cluster` / `nodes` /
+`databases` content. `templateType=yaml` uses PyYAML. `templateType=opengemini`
+normalizes `MetaNodes`, `DataNodes`, `SqlNodes`, `Databases`, retention
+policies, measurements, and schema field types. Field type mapping follows the
+existing openGemini labels:
+
+```text
+0 Unknown
+1 Integer
+2 Unsigned
+3 Float
+4 String
+5 Boolean
+6 Tag
+7 Unknown
+```
+
+Readonly MCP resources/tools expose imported instance lists, snapshots, field
+type lookups, and tag-field lookups. Task MCP exposes the same tools and writes
+results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
+background context and cannot be cited by final answers as root-cause evidence.
 
 ## Final Answer Validation
 

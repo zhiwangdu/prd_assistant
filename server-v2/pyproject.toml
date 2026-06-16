@@ -9,6 +9,7 @@ dependencies = [
   "pydantic>=2.8",
   "python-multipart>=0.0.9",
   "langgraph>=0.2",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -26,4 +27,3 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-

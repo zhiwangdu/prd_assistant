@@ -23,6 +23,8 @@ slice provides the durable foundation for the V2 product model:
   and `logagent.request_approval`.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
+- Metadata foundation with JSON/YAML/openGemini content import, SQLite snapshot
+  storage, field/tag type queries, HTTP API, and readonly/task MCP tools.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -109,6 +111,13 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/metadata/instances
+GET  /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/instances/:instance_id/snapshot
+DELETE /api/v2/metadata/instances/:instance_id
+POST /api/v2/metadata/imports
+POST /api/v2/metadata/field-types
+POST /api/v2/metadata/tag-fields
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -121,8 +130,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs, rich Tool Runner input matching, Metadata, Skills, Memory, WebUI, or
-full LangGraph model loop.
+inputs, rich Tool Runner input matching, Metadata preview/confirm and URL fetch,
+Skills, Memory, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -220,3 +229,37 @@ tool_results/<tool_id>/result.json#findings/<index>
 
 Background resources such as `manifest.json` are readable over task MCP but
 cannot be used as final root-cause evidence.
+
+## Metadata
+
+V2 stores imported Metadata in SQLite table `metadata_instances`. The current
+direct import endpoint accepts:
+
+```json
+{
+  "instanceId": "prod-og-1",
+  "templateType": "opengemini",
+  "content": "{...}",
+  "remark": "optional display name"
+}
+```
+
+`templateType=json` and `templateType=opengemini` parse JSON content.
+`templateType=yaml` uses PyYAML. The openGemini parser normalizes `MetaNodes`,
+`DataNodes`, `SqlNodes`, `Databases`, retention policies, measurements, and
+schema field type codes. Type labels follow the existing openGemini mapping:
+`0 Unknown`, `1 Integer`, `2 Unsigned`, `3 Float`, `4 String`, `5 Boolean`,
+`6 Tag`, and `7 Unknown`.
+
+Readonly MCP and task MCP expose:
+
+```text
+logagent.list_metadata_instances
+logagent.get_metadata_snapshot
+logagent.get_metadata_field_types
+logagent.get_metadata_tag_fields
+```
+
+Task MCP Metadata calls persist `metadata_slice` evidence as background context
+with `final_allowed=false`; final answers cannot cite these slices as root-cause
+evidence.
