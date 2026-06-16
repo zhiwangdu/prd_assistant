@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Generic Query Tool Inputs
+
+- Extended V2 `tool_inputs/index.json` materialization beyond node-package tsdb InfluxQL.
+- Generic text files now produce file-scoped `influxql_analyzer` JSONL inputs when they contain JSON or raw InfluxQL query lines.
+- Logs now produce file-scoped `flux_query_analyzer` JSONL inputs when they contain JSON Flux fields or raw `from(...) |> ...` Flux pipelines.
+- Tool input index generation now uses `generatedBy=logagent_v2_tool_input_materializer`.
+- Existing Tool Runner selection continues to prioritize materialized `tool_inputs` by `toolIds`, so `influxql_analyzer` and `flux_query_analyzer` consume their matching JSONL artifacts before fallback file matching.
+- Added regression coverage for generic InfluxQL and Flux materialization plus task MCP tool execution against both generated inputs.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Credential Sets
 
 - Added `cryptography` dependency and `LOGAGENT_V2_FETCH_SECRET_KEY` for Fernet-encrypted Fetch credential sets.

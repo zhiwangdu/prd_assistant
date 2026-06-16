@@ -43,8 +43,9 @@ Implemented in this slice:
   directories are classified into stable `extracted/<node>/<timestamp>/<group>`
   paths, and gzip-rotated files are decoded by magic bytes.
 - Materialized `tool_inputs/index.json` generation for node package tsdb
-  InfluxQL query lines. Generated entries are compatible with the V1
-  `ToolInputEntry` shape and include V2 artifact ids for local execution.
+  InfluxQL query lines, generic file-level InfluxQL query lines, and Flux query
+  lines. Generated entries are compatible with the V1 `ToolInputEntry` shape
+  and include V2 artifact ids for local execution.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Stub Agent runtime that records initial question evidence, consumes the
   initial evidence pipeline, and returns a low-confidence evidence summary.
@@ -97,8 +98,8 @@ Implemented in this slice:
 Not yet implemented:
 
 - LangGraph provider integration.
-- V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
-  node-package InfluxQL JSONL, per-tool params schema, and full multi-round
+- Additional analyzer materialized `tool_inputs/index.json` generation beyond
+  generic InfluxQL/Flux JSONL, per-tool params schema, and full multi-round
   model reasoning after resume.
 - WebUI Fetch management and WebUI cutover.
 - WebUI System Context cutover.
@@ -281,6 +282,13 @@ corresponding `tool_inputs/index.json` artifact uses entries like:
   "artifactRelativePath": "artifacts/..."
 }
 ```
+
+For non-node-package text files, V2 also extracts generic InfluxQL lines into
+`tool_inputs/influxql_analyzer/workspace/<hash>.jsonl` with
+`scope=file`. Flux scripts are detected from JSON fields such as `flux`,
+`fluxQuery`, `query`, `script`, or `statement`, or raw lines that contain a
+Flux `from(...) |> ...` pipeline. Flux inputs use
+`inputKind=flux_query_jsonl` and `toolIds=["flux_query_analyzer"]`.
 
 Follow-up task MCP searches use:
 

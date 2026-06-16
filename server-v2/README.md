@@ -14,7 +14,8 @@ slice provides the durable foundation for the V2 product model:
 - V1-style node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
 - Materialized `tool_inputs/index.json` generation for node-package tsdb
-  InfluxQL query lines, with `influxql_analyzer` JSONL input artifacts.
+  InfluxQL query lines plus generic file-level InfluxQL and Flux query lines,
+  with analyzer JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
 - Task MCP endpoint with summary/evidence/manifest/grep resources and
@@ -190,7 +191,7 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, embedding/vector recall, WebUI, or
+inputs beyond generic InfluxQL/Flux JSONL, embedding/vector recall, WebUI, or
 full LangGraph model loop.
 
 ## Initial Evidence Pipeline
@@ -206,8 +207,9 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts;
-- writes `tool_inputs/index.json` and `influxql_analyzer` JSONL artifacts when
-  a node package tsdb log contains JSON or raw InfluxQL query lines;
+- writes `tool_inputs/index.json`, `influxql_analyzer` JSONL artifacts, and
+  `flux_query_analyzer` JSONL artifacts when logs contain supported query
+  lines;
 - records `manifest` and `log_search` evidence items; and
 - lets the current stub Agent final answer reference
   `grep_results.json#matches/<index>` when matches exist.

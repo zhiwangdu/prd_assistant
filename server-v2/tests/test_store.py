@@ -480,6 +480,104 @@ class StoreTests(unittest.TestCase):
             )
             self.assertEqual(validated["evidenceRefs"], [ref])
 
+    def test_generic_influxql_and_flux_tool_inputs_feed_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "lines=pathlib.Path(sys.argv[1]).read_text().splitlines();"
+                "print(json.dumps({'summary':sys.argv[2]+' rows='+str(len(lines)),"
+                "'findings':[{'message':json.loads(lines[0])['query']}]}))"
+            )
+            influx_tool = ToolDefinition(
+                id="influxql_analyzer",
+                display_name="InfluxQL Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}", "influx"),
+                timeout_seconds=5,
+            )
+            flux_tool = ToolDefinition(
+                id="flux_query_analyzer",
+                display_name="Flux Query Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}", "flux"),
+                timeout_seconds=5,
+            )
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                tools=(influx_tool, flux_tool),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("analyze query templates", "diagnose", "en-US")
+            content = (
+                "{\"query\":\"select * from cpu where host = 'a'\"}\n"
+                '{"flux":"from(bucket: \\"metrics\\") |> range(start: -1h)"}\n'
+            ).encode("utf-8")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "queries.log",
+                content,
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "queries.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            index_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_input_index"
+            )
+            index_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(index_evidence["artifact_id"])["relative_path"],
+            )
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            entries = {entry["toolIds"][0]: entry for entry in index["inputs"]}
+            self.assertEqual(entries["influxql_analyzer"]["inputKind"], "influxql_jsonl")
+            self.assertEqual(entries["flux_query_analyzer"]["inputKind"], "flux_query_jsonl")
+            self.assertEqual(entries["flux_query_analyzer"]["scope"], "file")
+
+            influx_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "influxql_analyzer"},
+                    },
+                },
+            )
+            influx_payload = json.loads(influx_response["result"]["content"][0]["text"])
+            self.assertEqual(influx_payload["result"]["summary"], "influx rows=1")
+            self.assertIn("select * from cpu", influx_payload["result"]["findings"][0]["message"])
+
+            flux_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "flux_query_analyzer"},
+                    },
+                },
+            )
+            flux_payload = json.loads(flux_response["result"]["content"][0]["text"])
+            self.assertEqual(flux_payload["result"]["summary"], "flux rows=1")
+            self.assertIn("from(bucket:", flux_payload["result"]["findings"][0]["message"])
+
     def test_tool_runner_falls_back_to_manifest_and_grep_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (

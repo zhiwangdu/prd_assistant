@@ -494,12 +494,15 @@ def materialize_tool_inputs(
     workspace_id: str,
     text_files: list[TextFile],
 ) -> JsonObject:
-    inputs = materialize_influxql_inputs(settings, store, workspace_id, text_files)
+    inputs = [
+        *materialize_influxql_inputs(settings, store, workspace_id, text_files),
+        *materialize_flux_inputs(settings, store, workspace_id, text_files),
+    ]
     if not inputs:
         return {"path": None, "inputs": []}
     index = {
         "schemaVersion": 1,
-        "generatedBy": "logagent_v2_node_log_preprocessor",
+        "generatedBy": "logagent_v2_tool_input_materializer",
         "inputs": [item.entry for item in inputs],
     }
     artifact = write_json_artifact(
@@ -518,6 +521,33 @@ def materialize_tool_inputs(
 
 
 def materialize_influxql_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+) -> list[MaterializedToolInput]:
+    return [
+        *materialize_node_package_influxql_inputs(settings, store, workspace_id, text_files),
+        *materialize_file_query_inputs(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            text_files=[
+                text_file
+                for text_file in text_files
+                if not (text_file.node_package and text_file.log_group == "tsdb")
+            ],
+            tool_id="influxql_analyzer",
+            input_kind="influxql_jsonl",
+            virtual_root="tool_inputs/influxql_analyzer/workspace",
+            filename_prefix="influxql_workspace",
+            schema_name="logagent.v2.tool_input.influxql_jsonl.v1",
+            extractor=extract_influxql_query,
+        ),
+    ]
+
+
+def materialize_node_package_influxql_inputs(
     settings: Settings,
     store: Store,
     workspace_id: str,
@@ -593,6 +623,89 @@ def materialize_influxql_inputs(
     return results
 
 
+def materialize_flux_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+) -> list[MaterializedToolInput]:
+    return materialize_file_query_inputs(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        text_files=text_files,
+        tool_id="flux_query_analyzer",
+        input_kind="flux_query_jsonl",
+        virtual_root="tool_inputs/flux_query_analyzer/workspace",
+        filename_prefix="flux_workspace",
+        schema_name="logagent.v2.tool_input.flux_query_jsonl.v1",
+        extractor=extract_flux_query,
+    )
+
+
+def materialize_file_query_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+    tool_id: str,
+    input_kind: str,
+    virtual_root: str,
+    filename_prefix: str,
+    schema_name: str,
+    extractor,
+) -> list[MaterializedToolInput]:
+    results: list[MaterializedToolInput] = []
+    for text_file in text_files:
+        records = []
+        for line_number, line in enumerate(text_file.text.splitlines(), start=1):
+            query = extractor(line)
+            if not query:
+                continue
+            package = text_file.node_package or {}
+            records.append(
+                {
+                    "query": query,
+                    "sourcePath": text_file.path,
+                    "lineNumber": line_number,
+                    "nodeId": package.get("nodeId"),
+                    "instanceId": package.get("instanceId"),
+                    "packageTimestamp": package.get("timestamp"),
+                }
+            )
+        if not records:
+            continue
+        input_hash = sha256(f"{tool_id}:{text_file.path}".encode("utf-8")).hexdigest()[:16]
+        virtual_path = f"{virtual_root}/{input_hash}.jsonl"
+        data = "\n".join(json.dumps(record, ensure_ascii=True) for record in records) + "\n"
+        artifact = write_artifact_bytes(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=f"{filename_prefix}_{input_hash}.jsonl",
+            data=data.encode("utf-8"),
+            content_type="application/x-ndjson",
+            schema_name=schema_name,
+            preview={
+                "path": virtual_path,
+                "toolIds": [tool_id],
+                "recordCount": len(records),
+            },
+        )
+        entry = {
+            "path": virtual_path,
+            "inputKind": input_kind,
+            "scope": "file",
+            "toolIds": [tool_id],
+            "sourceFiles": [text_file.path],
+            "recordCount": len(records),
+            "artifactId": artifact["id"],
+            "artifactRelativePath": artifact["relative_path"],
+        }
+        results.append(MaterializedToolInput(entry=entry, artifact=artifact))
+    return results
+
+
 def extract_influxql_query(line: str) -> str | None:
     stripped = line.strip()
     if not stripped:
@@ -611,6 +724,24 @@ def extract_influxql_query(line: str) -> str | None:
     return None
 
 
+def extract_flux_query(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        value = json.loads(stripped)
+    except Exception:
+        value = None
+    if isinstance(value, dict):
+        for key in ("flux", "fluxQuery", "query", "script", "statement"):
+            query = value.get(key)
+            if isinstance(query, str) and looks_like_flux(query):
+                return query.strip()
+    if looks_like_flux(stripped):
+        return stripped
+    return None
+
+
 def looks_like_influxql(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered.startswith(
@@ -624,6 +755,11 @@ def looks_like_influxql(value: str) -> bool:
             "alter ",
         )
     )
+
+
+def looks_like_flux(value: str) -> bool:
+    lowered = value.strip().lower()
+    return "|>" in lowered and re.search(r"\bfrom\s*\(", lowered) is not None
 
 
 def safe_segment(value: str) -> str:
