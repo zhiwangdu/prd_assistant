@@ -99,8 +99,7 @@ Not yet implemented:
 
 - LangGraph provider integration.
 - Additional analyzer materialized `tool_inputs/index.json` generation beyond
-  generic InfluxQL/Flux JSONL, per-tool params schema, and full multi-round
-  model reasoning after resume.
+  generic InfluxQL/Flux JSONL and full multi-round model reasoning after resume.
 - WebUI Fetch management and WebUI cutover.
 - WebUI System Context cutover.
 - Case embedding/vector recall and WebUI Memory management.
@@ -312,14 +311,22 @@ Configured Tool Runner execution:
 ```text
 LOGAGENT_V2_TOOLS_JSON
   -> /api/v2/tools descriptor
-  -> MCP logagent.run_domain_tool { toolId }
+  -> MCP logagent.run_domain_tool { toolId, params? }
+  -> optional paramsSchema validation
   -> optional materialized tool input selection
-  -> fixed absolute command + fixed args with {input_file} substitution
+  -> fixed absolute command + fixed args with {input_file}/{params.name} substitution
   -> tool_result artifact/evidence
 ```
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+Configured tools may declare `paramsSchema`. V2 validates a conservative object
+schema subset: required fields, `additionalProperties=false`, primitive
+`type`, arrays, and `enum`. Validated params are recorded in `tool_result`
+artifacts/evidence and can be substituted into configured argv with
+`{params.<name>}` placeholders. Params affect the stable action id so different
+parameter sets do not reuse one result path.
 
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and

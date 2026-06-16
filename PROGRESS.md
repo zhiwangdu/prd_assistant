@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Params Schema
+
+- Added V2 `ToolDefinition.params_schema` from configured `paramsSchema`.
+- `/api/v2/tools` now exposes each configured tool's own params schema instead of a generic tool-id-only schema.
+- Task MCP `logagent.run_domain_tool` now accepts optional `params`, validates a conservative object-schema subset, and rejects unknown or invalid parameters before running the tool.
+- Configured argv templates now support `{params.name}` substitution alongside `{input_file}` and `{action_id}`; command paths and argv templates remain Server-owned.
+- Tool result artifacts and evidence payloads record validated params, and params contribute to action id hashing so distinct parameter sets do not collide.
+- Added regression coverage for params schema exposure, argv substitution, result/evidence params persistence, and unknown-param rejection.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Generic Query Tool Inputs
 
 - Extended V2 `tool_inputs/index.json` materialization beyond node-package tsdb InfluxQL.

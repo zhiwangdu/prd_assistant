@@ -121,6 +121,13 @@ Tool descriptor example:
     "match": {
       "filePatterns": ["*.jsonl"],
       "keywords": ["query"]
+    },
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "mode": {"type": "string", "enum": ["fast", "full"]}
+      },
+      "additionalProperties": false
     }
   }
 ]
@@ -271,6 +278,12 @@ possible and persisted as `tool_result` evidence. Generic JSON output can use
 InfluxQL analyzer report JSON is adapted into a compact summary and findings
 for special rules, parse errors, realtime classification, fingerprints, compare
 fingerprint deltas, and rule deltas.
+
+Configured tools may declare `paramsSchema`. Task MCP `logagent.run_domain_tool`
+then accepts `params`, validates a conservative object-schema subset
+(`required`, `additionalProperties`, primitive `type`, and `enum`), and replaces
+`{params.name}` placeholders in configured argv. Commands and argv templates
+still come only from Server configuration.
 
 If a configured tool argument contains `{input_file}`, V2 reads the current
 run's latest `tool_input_index` evidence and selects entries whose `toolIds`

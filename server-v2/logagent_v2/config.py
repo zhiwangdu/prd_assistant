@@ -19,6 +19,7 @@ class ToolDefinition:
     max_input_files: int = 1
     match_file_patterns: tuple[str, ...] = ()
     match_keywords: tuple[str, ...] = ()
+    params_schema: dict[str, Any] | None = None
 
     @classmethod
     def from_json(cls, value: dict) -> "ToolDefinition":
@@ -37,6 +38,9 @@ class ToolDefinition:
                 strings_from_list(match.get("filePatterns") or match.get("file_patterns"))
             ),
             match_keywords=tuple(strings_from_list(match.get("keywords"))),
+            params_schema=normalize_params_schema(
+                value.get("paramsSchema") or value.get("params_schema")
+            ),
         )
 
 
@@ -151,3 +155,21 @@ def strings_from_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def normalize_params_schema(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("tool paramsSchema must be an object")
+    schema = dict(value)
+    if schema.get("type", "object") != "object":
+        raise ValueError("tool paramsSchema must use type=object")
+    schema["type"] = "object"
+    properties = schema.get("properties", {})
+    if properties is not None and not isinstance(properties, dict):
+        raise ValueError("tool paramsSchema properties must be an object")
+    required = schema.get("required", [])
+    if required is not None and not isinstance(required, list):
+        raise ValueError("tool paramsSchema required must be an array")
+    return schema

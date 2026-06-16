@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from fnmatch import fnmatchcase
 from hashlib import sha256
@@ -10,6 +11,8 @@ from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings, ToolDefinition
 from .evidence import TextFile, collect_text_files
 from .store import JsonObject, Store
+
+PARAM_PLACEHOLDER_RE = re.compile(r"\{params\.([A-Za-z0-9_]+)\}")
 
 
 def tool_descriptors(settings: Settings) -> list[JsonObject]:
@@ -27,18 +30,8 @@ def tool_descriptors(settings: Settings) -> list[JsonObject]:
                 "filePatterns": list(tool.match_file_patterns),
                 "keywords": list(tool.match_keywords),
             },
-            "paramsSchema": {
-                "type": "object",
-                "properties": {
-                    "toolId": {"const": tool.id},
-                    "inputFiles": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": ["toolId"],
-                "additionalProperties": False,
-            },
+            "paramsSchema": tool.params_schema
+            or {"type": "object", "properties": {}, "additionalProperties": False},
         }
         for tool in settings.tools
     ]
@@ -57,16 +50,20 @@ def run_configured_tool(
     workspace_id: str,
     run_id: str,
     tool_id: str,
+    params: JsonObject | None = None,
 ) -> JsonObject:
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
         raise ValueError(f"tool {tool_id} is disabled")
+    normalized_params = validate_tool_params(tool, params or {})
     input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool)
     if tool_requires_input(tool) and not input_entries:
         raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
     if input_entries:
         runs = [
-            run_single_configured_tool(settings, store, workspace_id, run_id, tool, entry)
+            run_single_configured_tool(
+                settings, store, workspace_id, run_id, tool, entry, normalized_params
+            )
             for entry in input_entries[: tool.max_input_files]
         ]
         primary = runs[0]
@@ -78,7 +75,9 @@ def run_configured_tool(
             "artifacts": [item["artifact"] for item in runs],
             "evidenceItems": [item["evidence"] for item in runs],
         }
-    return run_single_configured_tool(settings, store, workspace_id, run_id, tool, None)
+    return run_single_configured_tool(
+        settings, store, workspace_id, run_id, tool, None, normalized_params
+    )
 
 
 def run_single_configured_tool(
@@ -88,13 +87,14 @@ def run_single_configured_tool(
     run_id: str,
     tool: ToolDefinition,
     input_entry: JsonObject | None,
+    params: JsonObject,
 ) -> JsonObject:
     command = Path(tool.command)
     if not command.is_absolute():
         raise ValueError(f"tool {tool.id} command must be an absolute path")
     input_file = resolve_tool_input_path(settings, store, input_entry) if input_entry else None
-    action_id = tool_action_id(tool, input_entry)
-    argv = [str(command), *format_tool_args(tool.args, input_file, action_id)]
+    action_id = tool_action_id(tool, input_entry, params)
+    argv = [str(command), *format_tool_args(tool.args, input_file, action_id, params)]
     try:
         completed = subprocess.run(
             argv,
@@ -117,6 +117,7 @@ def run_single_configured_tool(
         "actionId": action_id,
         "inputFile": input_entry.get("path") if input_entry else None,
         "inputKind": input_entry.get("inputKind") if input_entry else None,
+        "params": params,
         "argv": argv,
         "timedOut": timed_out,
         "exitCode": None if timed_out else int(completed.returncode),
@@ -153,6 +154,7 @@ def run_single_configured_tool(
             "toolId": tool.id,
             "actionId": action_id,
             "inputFile": result["inputFile"],
+            "params": params,
             "exitCode": result["exitCode"],
             "timedOut": timed_out,
             "findingCount": len(result["findings"]),
@@ -349,25 +351,104 @@ def resolve_tool_input_path(
     return path
 
 
-def format_tool_args(args: tuple[str, ...], input_file: Path | None, action_id: str) -> list[str]:
+def format_tool_args(
+    args: tuple[str, ...],
+    input_file: Path | None,
+    action_id: str,
+    params: JsonObject,
+) -> list[str]:
     result = []
     for arg in args:
         if "{input_file}" in arg and input_file is None:
             raise ValueError("tool arg requires {input_file} but no input file is selected")
         formatted = arg.replace("{input_file}", str(input_file) if input_file else "")
         formatted = formatted.replace("{action_id}", action_id)
+        formatted = PARAM_PLACEHOLDER_RE.sub(
+            lambda match: tool_param_to_arg(params, match.group(1)),
+            formatted,
+        )
         result.append(formatted)
     return result
+
+
+def validate_tool_params(tool: ToolDefinition, params: JsonObject) -> JsonObject:
+    if not isinstance(params, dict):
+        raise ValueError("tool params must be an object")
+    schema = tool.params_schema or {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required", [])
+    if not isinstance(required, list):
+        required = []
+    result: JsonObject = {}
+    for field in required:
+        if field not in params:
+            raise ValueError(f"tool {tool.id} param {field} is required")
+    if schema.get("additionalProperties", False) is False:
+        unknown = sorted(key for key in params if key not in properties)
+        if unknown:
+            raise ValueError(f"tool {tool.id} does not accept params: {', '.join(unknown)}")
+    for key, value in params.items():
+        field_schema = properties.get(key, {})
+        if isinstance(field_schema, dict):
+            validate_tool_param_value(tool.id, key, value, field_schema)
+        result[key] = value
+    return result
+
+
+def validate_tool_param_value(
+    tool_id: str, key: str, value: object, schema: JsonObject
+) -> None:
+    expected = schema.get("type")
+    if expected == "string" and not isinstance(value, str):
+        raise ValueError(f"tool {tool_id} param {key} must be a string")
+    if expected == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
+        raise ValueError(f"tool {tool_id} param {key} must be an integer")
+    if expected == "number" and (
+        isinstance(value, bool) or not isinstance(value, (int, float))
+    ):
+        raise ValueError(f"tool {tool_id} param {key} must be a number")
+    if expected == "boolean" and not isinstance(value, bool):
+        raise ValueError(f"tool {tool_id} param {key} must be a boolean")
+    if expected == "array" and not isinstance(value, list):
+        raise ValueError(f"tool {tool_id} param {key} must be an array")
+    enum = schema.get("enum")
+    if isinstance(enum, list) and value not in enum:
+        raise ValueError(f"tool {tool_id} param {key} must be one of {enum}")
+
+
+def tool_param_to_arg(params: JsonObject, key: str) -> str:
+    if key not in params:
+        raise ValueError(f"tool arg references missing param {key}")
+    value = params[key]
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float, str)):
+        return str(value)
+    return json.dumps(value, ensure_ascii=True)
 
 
 def tool_requires_input(tool: ToolDefinition) -> bool:
     return any("{input_file}" in arg for arg in tool.args)
 
 
-def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None) -> str:
+def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None, params: JsonObject) -> str:
+    params_digest = ""
+    if params:
+        params_digest = ":" + json.dumps(params, ensure_ascii=True, sort_keys=True)
     if input_entry is None:
-        return tool.id
-    digest = sha256(str(input_entry.get("path", "")).encode("utf-8")).hexdigest()[:12]
+        if not params:
+            return tool.id
+        digest = sha256(params_digest.encode("utf-8")).hexdigest()[:12]
+        return f"{safe_action_segment(tool.id)}_{digest}"
+    digest = sha256(
+        (str(input_entry.get("path", "")) + params_digest).encode("utf-8")
+    ).hexdigest()[:12]
     return f"{safe_action_segment(tool.id)}_{digest}"
 
 

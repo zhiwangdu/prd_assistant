@@ -50,7 +50,12 @@ from logagent_v2.metadata import (
 )
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
-from logagent_v2.tools import findings_from_stdout, parse_json, summary_from_stdout
+from logagent_v2.tools import (
+    findings_from_stdout,
+    parse_json,
+    summary_from_stdout,
+    tool_descriptors,
+)
 
 
 class StoreTests(unittest.TestCase):
@@ -371,6 +376,88 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
+
+    def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,sys;"
+                "print(json.dumps({'summary':sys.argv[1]+' '+sys.argv[2],"
+                "'findings':[{'message':sys.argv[3]}]}))"
+            )
+            tool = ToolDefinition(
+                id="param_tool",
+                display_name="Param Tool",
+                command=sys.executable,
+                args=(
+                    "-c",
+                    script,
+                    "{params.mode}",
+                    "{params.limit}",
+                    "{params.enabled}",
+                ),
+                timeout_seconds=5,
+                params_schema={
+                    "type": "object",
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["fast", "full"]},
+                        "limit": {"type": "integer"},
+                        "enabled": {"type": "boolean"},
+                    },
+                    "required": ["mode", "limit"],
+                    "additionalProperties": False,
+                },
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            descriptor = tool_descriptors(settings)[0]
+            self.assertEqual(descriptor["paramsSchema"]["required"], ["mode", "limit"])
+
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("run param tool", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 34,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {
+                            "toolId": "param_tool",
+                            "params": {"mode": "fast", "limit": 3, "enabled": True},
+                        },
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "fast 3")
+            self.assertEqual(payload["result"]["findings"][0]["message"], "true")
+            self.assertEqual(payload["result"]["params"]["limit"], 3)
+            self.assertIn("params", payload["evidence"]["payload"])
+
+            bad_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 35,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {
+                            "toolId": "param_tool",
+                            "params": {"mode": "fast", "limit": 3, "extra": "no"},
+                        },
+                    },
+                },
+            )
+            self.assertIn("does not accept params", bad_response["error"]["message"])
 
     def test_materialized_tool_inputs_feed_configured_tool(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:

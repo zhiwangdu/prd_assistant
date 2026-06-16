@@ -492,7 +492,8 @@ def run_domain_tool_descriptor(settings: Settings) -> dict:
                 "toolId": {
                     "type": "string",
                     "enum": [tool["toolId"] for tool in tool_descriptors(settings) if tool["enabled"]],
-                }
+                },
+                "params": {"type": "object"},
             },
             "required": ["toolId"],
             "additionalProperties": False,
@@ -504,7 +505,17 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
     tool_id = arguments.get("toolId")
     if not isinstance(tool_id, str) or not tool_id:
         raise ValueError("logagent.run_domain_tool requires toolId")
-    result = run_configured_tool(settings, store, run["workspace_id"], run["id"], tool_id)
+    params = arguments.get("params")
+    if params is not None and not isinstance(params, dict):
+        raise ValueError("logagent.run_domain_tool params must be an object")
+    result = run_configured_tool(
+        settings,
+        store,
+        run["workspace_id"],
+        run["id"],
+        tool_id,
+        params=params or {},
+    )
     payload = {
         "result": result["result"],
         "evidence": result["evidence"],
