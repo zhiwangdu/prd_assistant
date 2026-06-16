@@ -3,6 +3,7 @@ from __future__ import annotations
 from .config import Settings
 from .evidence import build_initial_evidence
 from .final_answer import normalize_and_validate_final_answer
+from .metadata import persist_metadata_context
 from .skills import persist_system_context
 from .store import JsonObject, Store
 
@@ -32,6 +33,7 @@ class AgentRuntime:
             payload={"question": workspace["question"]},
         )
         persist_system_context(self.settings, self.store, workspace_id, run_id)
+        persist_metadata_context(self.settings, self.store, workspace_id, run_id)
         evidence_bundle = build_initial_evidence(
             self.settings,
             self.store,
@@ -100,7 +102,7 @@ class AgentRuntime:
             ],
             "fixSuggestions": [],
             "missingInformation": [
-                "Full Agent reasoning, Tool Runner, Metadata, and Case recall are not migrated yet."
+                "Full Agent reasoning and automatic Tool/Case follow-up planning are not wired yet."
             ],
             "confidence": "low",
             "evidenceRefs": [match["ref"] for match in top],

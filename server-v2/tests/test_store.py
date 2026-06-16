@@ -1342,6 +1342,110 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(len(metadata_slices), 1)
             self.assertFalse(metadata_slices[0]["final_allowed"])
 
+    def test_metadata_context_auto_selection_run_resource(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            prod_raw = {
+                "ClusterID": 7,
+                "DataNodes": [{"ID": 1, "Host": "10.0.0.1", "Status": "alive"}],
+                "Databases": {
+                    "metrics": {
+                        "DefaultRetentionPolicy": "autogen",
+                        "RetentionPolicies": {
+                            "autogen": {
+                                "Measurements": {
+                                    "cpu": {
+                                        "Schema": {
+                                            "host": 6,
+                                            "usage": {"Typ": 3},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+            backup_raw = {
+                "ClusterID": 8,
+                "DataNodes": [{"ID": 2, "Host": "10.0.0.2", "Status": "alive"}],
+                "Databases": {
+                    "backupdb": {
+                        "RetentionPolicies": {
+                            "autogen": {"Measurements": {"retention": {"Schema": {"path": 6}}}}
+                        }
+                    }
+                },
+            }
+            import_metadata(
+                store,
+                instance_id="prod-og",
+                template_type="opengemini",
+                content=json.dumps(prod_raw),
+                remark="production query cluster",
+            )
+            import_metadata(
+                store,
+                instance_id="backup-og",
+                template_type="opengemini",
+                content=json.dumps(backup_raw),
+                remark="backup cluster",
+            )
+
+            workspace = store.create_workspace(
+                "prod-og cpu usage timeout in metrics",
+                "diagnose",
+                "en-US",
+            )
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            listed = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 16, "method": "resources/list"},
+            )
+            resource_names = {
+                item["name"] for item in listed["result"]["resources"]
+            }
+            self.assertIn("metadata_context", resource_names)
+
+            context_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 17,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/metadata_context"},
+                },
+            )
+            context = json.loads(context_response["result"]["contents"][0]["text"])
+            self.assertEqual(context["schemaVersion"], 1)
+            self.assertEqual(context["selection"]["totalInstances"], 2)
+            self.assertEqual(context["resources"][0]["instanceId"], "prod-og")
+            self.assertEqual(context["resources"][0]["selectionReason"], "auto")
+            self.assertGreater(context["resources"][0]["matchScore"], 0)
+            self.assertNotIn(
+                "backup-og", {item["instanceId"] for item in context["resources"]}
+            )
+            database = context["resources"][0]["cluster"]["databases"][0]
+            self.assertEqual(database["name"], "metrics")
+            measurement = database["retentionPolicies"][0]["measurements"][0]
+            self.assertEqual(measurement["name"], "cpu")
+
+            evidence = store.list_evidence(run["id"])
+            metadata_contexts = [
+                item for item in evidence if item["kind"] == "metadata_context"
+            ]
+            self.assertEqual(len(metadata_contexts), 1)
+            self.assertFalse(metadata_contexts[0]["final_allowed"])
+
     def test_case_memory_manual_task_and_mcp_background_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

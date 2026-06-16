@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .artifacts import write_artifact_bytes
@@ -19,6 +20,14 @@ FIELD_TYPE_LABELS = {
     6: "Tag",
     7: "Unknown",
 }
+
+METADATA_CONTEXT_MAX_INSTANCES = 3
+METADATA_CONTEXT_MAX_NODES = 10
+METADATA_CONTEXT_MAX_DATABASES = 12
+METADATA_CONTEXT_MAX_RETENTION_POLICIES = 4
+METADATA_CONTEXT_MAX_MEASUREMENTS = 8
+METADATA_CONTEXT_MAX_FIELDS = 16
+METADATA_TOKEN_RE = re.compile(r"[a-z0-9_.:-]+|[\u4e00-\u9fff]{2,}")
 
 
 def import_metadata(
@@ -433,6 +442,328 @@ def normalize_generic_node(instance_id: str, index: int, value: Any) -> JsonObje
         "status": node.get("status"),
         "labels": node.get("labels") if isinstance(node.get("labels"), dict) else {},
     }
+
+
+def build_metadata_context(
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    max_instances: int = METADATA_CONTEXT_MAX_INSTANCES,
+) -> JsonObject:
+    workspace = store.get_workspace(workspace_id)
+    instances = store.list_metadata_instances()
+    selected = select_metadata_instances(
+        store=store,
+        instances=instances,
+        question=workspace.get("question", ""),
+        task_mode=workspace.get("mode", ""),
+        max_instances=max_instances,
+    )
+    return {
+        "schemaVersion": 1,
+        "workspaceId": workspace_id,
+        "runId": run_id,
+        "selection": {
+            "mode": "auto",
+            "totalInstances": len(instances),
+            "selectedInstances": len(selected),
+            "maxInstances": max_instances,
+        },
+        "resources": selected,
+        "finalEvidenceAllowed": False,
+    }
+
+
+def select_metadata_instances(
+    store: Store,
+    instances: list[JsonObject],
+    question: str,
+    task_mode: str,
+    max_instances: int,
+) -> list[JsonObject]:
+    scored: list[tuple[int, int, str, JsonObject]] = []
+    for index, instance in enumerate(instances):
+        snapshot = store.get_metadata_snapshot(instance["instanceId"])
+        score, match_reasons = metadata_match_score(instance, snapshot, question, task_mode)
+        if score > 0:
+            reason = "auto"
+        elif len(instances) == 1:
+            reason = "default_single"
+        else:
+            continue
+        scored.append(
+            (
+                score,
+                index,
+                reason,
+                metadata_context_resource(instance, snapshot, reason, score, match_reasons),
+            )
+        )
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [item[3] for item in scored[: max(0, max_instances)]]
+
+
+def metadata_context_resource(
+    instance_summary: JsonObject,
+    snapshot: JsonObject,
+    selection_reason: str,
+    match_score: int,
+    match_reasons: list[str],
+) -> JsonObject:
+    instance = snapshot.get("instance", {}) if isinstance(snapshot.get("instance"), dict) else {}
+    cluster = snapshot.get("cluster", {}) if isinstance(snapshot.get("cluster"), dict) else {}
+    nodes = cluster.get("nodes", []) if isinstance(cluster.get("nodes"), list) else []
+    databases = cluster.get("databases", []) if isinstance(cluster.get("databases"), list) else []
+    return {
+        "kind": "metadata_instance",
+        "instanceId": instance_summary["instanceId"],
+        "templateType": instance_summary.get("templateType"),
+        "selectionReason": selection_reason,
+        "matchScore": match_score,
+        "matchReasons": match_reasons[:8],
+        "remark": instance_summary.get("remark") or instance.get("remark"),
+        "product": instance.get("product") or instance_summary.get("product"),
+        "version": instance.get("version") or instance_summary.get("version"),
+        "environment": instance.get("environment") or instance_summary.get("environment"),
+        "cluster": {
+            "clusterId": cluster.get("clusterId"),
+            "name": cluster.get("name"),
+            "product": cluster.get("product"),
+            "version": cluster.get("version"),
+            "environment": cluster.get("environment"),
+            "nodeCount": len(nodes),
+            "databaseCount": len(databases),
+            "nodes": [node_outline(node) for node in nodes[:METADATA_CONTEXT_MAX_NODES]],
+            "databases": [
+                database_outline(database)
+                for database in databases[:METADATA_CONTEXT_MAX_DATABASES]
+            ],
+        },
+        "finalEvidenceAllowed": False,
+    }
+
+
+def node_outline(node: JsonObject) -> JsonObject:
+    return {
+        "nodeId": node.get("nodeId"),
+        "hostname": node.get("hostname"),
+        "host": node.get("host"),
+        "role": node.get("role"),
+        "zone": node.get("zone"),
+        "status": node.get("status"),
+    }
+
+
+def database_outline(database: JsonObject) -> JsonObject:
+    policies = (
+        database.get("retentionPolicies", [])
+        if isinstance(database.get("retentionPolicies"), list)
+        else []
+    )
+    return {
+        "name": database.get("name"),
+        "defaultRetentionPolicy": database.get("defaultRetentionPolicy"),
+        "replicaN": database.get("replicaN"),
+        "retentionPolicyCount": len(policies),
+        "retentionPolicies": [
+            retention_policy_outline(policy)
+            for policy in policies[:METADATA_CONTEXT_MAX_RETENTION_POLICIES]
+        ],
+    }
+
+
+def retention_policy_outline(policy: JsonObject) -> JsonObject:
+    measurements = (
+        policy.get("measurements", []) if isinstance(policy.get("measurements"), list) else []
+    )
+    shard_groups = (
+        policy.get("shardGroups", []) if isinstance(policy.get("shardGroups"), list) else []
+    )
+    return {
+        "name": policy.get("name"),
+        "replicaN": policy.get("replicaN"),
+        "duration": policy.get("duration"),
+        "shardGroupDuration": policy.get("shardGroupDuration"),
+        "measurementCount": len(measurements),
+        "shardGroupCount": len(shard_groups),
+        "measurements": [
+            measurement_outline(measurement)
+            for measurement in measurements[:METADATA_CONTEXT_MAX_MEASUREMENTS]
+        ],
+    }
+
+
+def measurement_outline(measurement: JsonObject) -> JsonObject:
+    fields = (
+        measurement.get("schema", []) if isinstance(measurement.get("schema"), list) else []
+    )
+    return {
+        "name": measurement.get("name"),
+        "versionName": measurement.get("versionName"),
+        "engineType": measurement.get("engineType"),
+        "fieldCount": len(fields),
+        "fields": [field_outline(field) for field in fields[:METADATA_CONTEXT_MAX_FIELDS]],
+    }
+
+
+def field_outline(field: JsonObject) -> JsonObject:
+    return {
+        "name": field.get("name"),
+        "typ": field.get("typ"),
+        "typeLabel": field.get("typeLabel"),
+    }
+
+
+def metadata_match_score(
+    instance_summary: JsonObject,
+    snapshot: JsonObject,
+    question: str,
+    task_mode: str,
+) -> tuple[int, list[str]]:
+    haystack = f"{question}\n{task_mode}".lower()
+    score = 0
+    reasons: list[str] = []
+    instance = snapshot.get("instance", {}) if isinstance(snapshot.get("instance"), dict) else {}
+    cluster = snapshot.get("cluster", {}) if isinstance(snapshot.get("cluster"), dict) else {}
+
+    weighted_terms = [
+        ("instanceId", instance_summary.get("instanceId"), 10),
+        ("remark", instance_summary.get("remark") or instance.get("remark"), 5),
+        ("product", instance.get("product") or instance_summary.get("product"), 4),
+        ("environment", instance.get("environment") or instance_summary.get("environment"), 4),
+        ("version", instance.get("version") or instance_summary.get("version"), 3),
+        ("cluster", cluster.get("name") or cluster.get("clusterId"), 4),
+    ]
+    for label, value, weight in weighted_terms:
+        matched = score_term(value, haystack)
+        if matched:
+            score += weight
+            reasons.append(f"{label}:{matched}")
+
+    for node in cluster.get("nodes", []) if isinstance(cluster.get("nodes"), list) else []:
+        for label, value, weight in [
+            ("node", node.get("nodeId"), 4),
+            ("host", node.get("host") or node.get("hostname"), 4),
+            ("role", node.get("role"), 2),
+            ("status", node.get("status"), 1),
+        ]:
+            matched = score_term(value, haystack)
+            if matched:
+                score += weight
+                reasons.append(f"{label}:{matched}")
+
+    for database in (
+        cluster.get("databases", []) if isinstance(cluster.get("databases"), list) else []
+    ):
+        matched_db = score_term(database.get("name"), haystack)
+        if matched_db:
+            score += 5
+            reasons.append(f"database:{matched_db}")
+        policies = (
+            database.get("retentionPolicies", [])
+            if isinstance(database.get("retentionPolicies"), list)
+            else []
+        )
+        for policy in policies:
+            matched_policy = score_term(policy.get("name"), haystack)
+            if matched_policy:
+                score += 2
+                reasons.append(f"retentionPolicy:{matched_policy}")
+            measurements = (
+                policy.get("measurements", [])
+                if isinstance(policy.get("measurements"), list)
+                else []
+            )
+            for measurement in measurements:
+                matched_measurement = score_term(measurement.get("name"), haystack)
+                if matched_measurement:
+                    score += 5
+                    reasons.append(f"measurement:{matched_measurement}")
+                fields = (
+                    measurement.get("schema", [])
+                    if isinstance(measurement.get("schema"), list)
+                    else []
+                )
+                for field in fields:
+                    matched_field = score_term(field.get("name"), haystack)
+                    if matched_field:
+                        score += 2
+                        reasons.append(f"field:{matched_field}")
+    return score, dedupe_preserve_order(reasons)
+
+
+def score_term(value: Any, haystack: str) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not meaningful_metadata_term(normalized):
+        return None
+    if normalized in haystack:
+        return normalized
+    for token in metadata_match_terms(normalized):
+        if token in haystack:
+            return token
+    return None
+
+
+def metadata_match_terms(value: str) -> list[str]:
+    return [token for token in METADATA_TOKEN_RE.findall(value) if meaningful_metadata_term(token)]
+
+
+def meaningful_metadata_term(value: str) -> bool:
+    if not value:
+        return False
+    if re.search(r"[\u4e00-\u9fff]", value):
+        return len(value) >= 2
+    return len(value) >= 3
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def persist_metadata_context(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+) -> JsonObject:
+    context = build_metadata_context(store=store, workspace_id=workspace_id, run_id=run_id)
+    data = json.dumps(context, ensure_ascii=True, indent=2).encode("utf-8")
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename="metadata_context.json",
+        data=data,
+        content_type="application/json",
+        schema_name="logagent.v2.metadata_context.v1",
+        preview={
+            "resourceCount": len(context["resources"]),
+            "totalInstances": context["selection"]["totalInstances"],
+        },
+    )
+    store.create_evidence(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        kind="metadata_context",
+        final_allowed=False,
+        summary=f"Metadata Context captured {len(context['resources'])} instance outline(s).",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": "metadata_context.json",
+            "resourceCount": len(context["resources"]),
+        },
+    )
+    return {"context": context, "artifact": artifact}
 
 
 def query_field_types(

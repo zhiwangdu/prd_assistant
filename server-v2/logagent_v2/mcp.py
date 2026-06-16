@@ -226,6 +226,7 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "manifest", "Initial manifest"),
         resource(run_id, "grep_results", "Initial grep results"),
         resource(run_id, "system_context", "System Context snapshot"),
+        resource(run_id, "metadata_context", "Metadata Context snapshot"),
     ]
 
 
@@ -256,6 +257,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_initial_grep_artifact(settings, store, run["id"])
     elif name == "system_context":
         value = read_latest_evidence_artifact(settings, store, run["id"], "system_context")
+    elif name == "metadata_context":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
     else:
         raise ValueError(f"unsupported task resource {name}")
     return {

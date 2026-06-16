@@ -34,7 +34,8 @@ slice provides the durable foundation for the V2 product model:
   can be marked `succeeded`.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, preview/confirm drafts, field/tag type
-  queries, HTTP API, and readonly/task MCP tools.
+  queries, per-run `metadata_context` auto-selection, HTTP API, and
+  readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   SQLite FTS5/BM25 recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
@@ -232,7 +233,8 @@ It currently supports:
 
 - `initialize`
 - `resources/list`
-- `resources/read` for `summary`, `evidence`, `manifest`, and `grep_results`
+- `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
+  `system_context`, and `metadata_context`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`
@@ -385,6 +387,15 @@ logagent.get_metadata_tag_fields
 Task MCP Metadata calls persist `metadata_slice` evidence as background context
 with `final_allowed=false`; final answers cannot cite these slices as root-cause
 evidence.
+
+When a run starts, V2 also writes `metadata_context.json` as background
+evidence. If exactly one metadata instance exists, it is selected as
+`default_single`; with multiple instances, V2 scores instance id, remark,
+cluster, node, database, retention policy, measurement, and field names against
+the Workspace question/mode and includes up to three matched outlines. The
+outline is bounded to node/database/schema summaries and is exposed through task
+MCP resource `logagent-v2://run/<run_id>/metadata_context`; full snapshots and
+field details remain available through the Metadata MCP tools.
 
 ## Case Memory
 

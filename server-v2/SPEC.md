@@ -78,8 +78,8 @@ Implemented in this slice:
   log search, log slice, or tool finding evidence.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
-  storage, field/tag type query APIs, readonly MCP tools, and task MCP
-  background slices.
+  storage, field/tag type query APIs, per-run `metadata_context`
+  auto-selection, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, SQLite FTS5/BM25 recall, edit/disable API, readonly MCP search,
   and task MCP background case context.
@@ -99,8 +99,7 @@ Not yet implemented:
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
   node-package InfluxQL JSONL, per-tool params schema, and full multi-round
   model reasoning after resume.
-- Encrypted Fetch credential sets, WebUI Fetch management, Metadata task
-  context auto-selection, and WebUI cutover.
+- Encrypted Fetch credential sets, WebUI Fetch management, and WebUI cutover.
 - WebUI System Context cutover.
 - Case import drafts, embedding/vector recall, and WebUI Memory management.
 - WebUI V2 cutover.
@@ -484,6 +483,18 @@ Readonly MCP resources/tools expose imported instance lists, snapshots, field
 type lookups, and tag-field lookups. Task MCP exposes the same tools and writes
 results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
 background context and cannot be cited by final answers as root-cause evidence.
+
+Run startup writes `metadata_context.json` as background evidence and exposes it
+through task MCP resource `logagent-v2://run/<run_id>/metadata_context`. The
+context has schema version 1, a selection summary, and bounded
+`metadata_instance` resources. If exactly one instance exists, V2 includes it as
+`default_single`; if multiple exist, V2 scores instance id, remark, product,
+environment, cluster, node, database, retention policy, measurement, and field
+names against the Workspace question and mode. Selected resources include only
+bounded topology/schema outlines; full snapshots remain behind
+`logagent.get_metadata_snapshot` and detailed field/tag queries remain behind
+their dedicated tools. The context artifact and all metadata slices use
+`final_allowed=false`.
 
 ## Case Memory
 

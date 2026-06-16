@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Task Context
+
+- Added V2 run-start `metadata_context.json` artifact generation.
+- Metadata context auto-selects up to three imported instances from the Workspace question/mode; a single imported instance is included as `default_single`, while multiple instances require question matches on instance, remark, node, database, measurement, or field terms.
+- The context stores bounded topology/schema outlines only; full snapshots and field/tag details remain available through existing Metadata MCP tools.
+- Task MCP now exposes `logagent-v2://run/:run_id/metadata_context` through `resources/list` and `resources/read`.
+- Metadata context evidence is background-only with `final_allowed=false`.
+- Added regression coverage for auto-selection, MCP resource exposure, outline contents, and final evidence exclusion.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch cURL Import
 
 - Added V2 DevTools bash cURL import helpers for Fetch endpoints.
