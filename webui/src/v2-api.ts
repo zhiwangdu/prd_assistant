@@ -206,6 +206,61 @@ export type V2McpResponse = {
   error?: { code: number; message: string };
 };
 
+export type V2SkillReference = {
+  referenceId: string;
+  path: string;
+  title: string;
+  summary: string;
+};
+
+export type V2SkillSummary = {
+  skillId: string;
+  name: string;
+  description: string;
+  displayName: string;
+  includeByDefault: boolean;
+  priority: number;
+  products: string[];
+  taskKinds: string[];
+  toolIds: string[];
+  keywords: string[];
+  domainAdapters: string[];
+  references: V2SkillReference[];
+  revision: string;
+  sourcePath: string;
+  content?: string;
+};
+
+export type V2SystemContextPreview = {
+  schemaVersion: number;
+  workspaceId: string | null;
+  runId: string | null;
+  resources: Array<{
+    kind: string;
+    skillId?: string;
+    selectionReason?: string;
+    matchScore?: number;
+    revision?: string;
+    sourcePath?: string;
+    summary?: string;
+    content?: string;
+    references?: V2SkillReference[];
+  }>;
+};
+
+export type V2MetadataInstanceSummary = {
+  instanceId: string;
+  remark?: string | null;
+  templateType: string;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  nodeCount: number;
+  databaseCount: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -354,6 +409,38 @@ export async function callV2TaskTool(apiKey: string, runId: string, name: string
 
 export async function downloadV2ToolsZip(apiKey: string) {
   await downloadV2File(apiKey, "/api/v2/exports/tools.zip", "logagent-v2-tools.zip");
+}
+
+export async function listV2Skills(apiKey: string) {
+  return fetchJson<{ skills: V2SkillSummary[] }>("/api/v2/skills", { headers: authHeaders(apiKey) });
+}
+
+export async function getV2Skill(apiKey: string, skillId: string) {
+  return fetchJson<V2SkillSummary>(`/api/v2/skills/${encodeURIComponent(skillId)}`, { headers: authHeaders(apiKey) });
+}
+
+export async function importV2Skill(apiKey: string, input: { skillId: string; name: string; description: string; markdown: string; filename?: string | null }) {
+  return fetchJson<V2SkillSummary>("/api/v2/skills/imports", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function previewV2SystemContext(apiKey: string, skillIds: string[]) {
+  return fetchJson<V2SystemContextPreview>("/api/v2/skills/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ skillIds })
+  });
+}
+
+export async function listV2MetadataInstances(apiKey: string) {
+  return fetchJson<{ instances: V2MetadataInstanceSummary[] }>("/api/v2/metadata/instances", { headers: authHeaders(apiKey) });
+}
+
+export async function downloadV2SkillsZip(apiKey: string) {
+  await downloadV2File(apiKey, "/api/v2/exports/skills.zip", "logagent-v2-skills.zip");
 }
 
 async function downloadV2File(apiKey: string, path: string, filename: string) {

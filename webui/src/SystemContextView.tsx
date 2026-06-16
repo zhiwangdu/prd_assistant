@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { MetadataDashboard } from "./metadata/MetadataDashboard";
+import { V2SystemContextBridge } from "./V2SystemContextBridge";
 
 type SkillReference = {
   referenceId: string;
@@ -157,6 +158,8 @@ export function SystemContextView({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="space-y-5">
+      <V2SystemContextBridge apiKey={apiKey} />
+
       <Tabs defaultValue="skills">
         <TabsList>
           <TabsTrigger value="skills"><BrainCircuit className="mr-2 h-4 w-4" />Skills</TabsTrigger>

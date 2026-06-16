@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 System Context Bridge
+
+- Added a V2 System Context bridge panel at the top of the existing System Context page while preserving the Rust-compatible Skills and Metadata tabs below it.
+- Extended `webui/src/v2-api.ts` with Python V2 Skills list/detail/import/preview, Metadata instance listing, and `skills.zip` download helpers.
+- Added `webui/src/V2SystemContextBridge.tsx` to inspect V2 Diagnostic Skills, import Markdown Skills, preview explicit System Context resources, download `/api/v2/exports/skills.zip`, and summarize V2 Metadata instances.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Tools Bridge
 
 - Added a V2 Tools bridge panel at the top of the existing Tool plugins page while preserving the Rust-compatible standalone Tool Runner flow below it.
