@@ -10,6 +10,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
 - `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；如果用户选择文件后直接点击启动分析，WebUI 会先上传并附加这些待处理文件，再创建本次 run。同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
+- `Analyze` 顶部新增 V2 分析桥接面板，直接调用 Python V2 `/api/v2/*`：可新建 Workspace、选择历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、resources、最终结果和 artifacts，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Session-first Analyze 流仍保留，作为 V2 WebUI 全量切换前的兼容入口。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
@@ -104,7 +105,9 @@ webui/
     ExecutorsView.tsx
     OperationsView.tsx
     ToolsView.tsx
+    V2AnalyzeBridge.tsx
     upload.ts
+    v2-api.ts
     styles.css
   index.html
   vite.config.ts
@@ -213,6 +216,20 @@ System Context：
 - `POST /api/tasks/:task_id/messages`
 - `POST /api/tasks/:task_id/actions/:action_id/decision`
 - `POST /api/tasks/:task_id/case`
+
+V2 Analyze bridge：
+
+- `POST /api/v2/workspaces`
+- `GET /api/v2/workspaces`
+- `GET /api/v2/workspaces/:workspace_id/uploads`
+- `GET /api/v2/workspaces/:workspace_id/runs`
+- `POST /api/v2/workspaces/:workspace_id/uploads`
+- `POST /api/v2/workspaces/:workspace_id/uploads/init`
+- `POST /api/v2/uploads/:session_id/chunks`
+- `POST /api/v2/uploads/:session_id/complete`
+- `POST /api/v2/workspaces/:workspace_id/runs`
+- `GET /api/v2/runs/:run_id/analysis`
+- `GET /api/v2/artifacts/:artifact_id`
 
 Fetch：
 

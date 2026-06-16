@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Analyze Bridge
+
+- Added a V2 Analyze bridge panel at the top of the existing Analyze page while preserving the Rust-compatible Session-first flow below it.
+- Added `webui/src/v2-api.ts` for Python V2 Workspace, upload, chunked upload, run, analysis, and artifact download requests.
+- Added `webui/src/V2AnalyzeBridge.tsx` to create/select V2 Workspaces, upload files, create Runs, poll `/api/v2/runs/:run_id/analysis`, show run/timeline/evidence/resource/artifact counts, render final answers, and download artifacts with Authorization headers.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Run Analysis Summary
 
 - Added `GET /api/v2/runs/:run_id/analysis` as the V2 counterpart to Rust Server task analysis reads.

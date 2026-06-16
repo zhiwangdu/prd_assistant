@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import { analysisCopy, confidenceLabel, eventTypeLabel, sessionStatusLabel, taskPhaseLabel, taskStatusLabel, type AnalysisCopy, type UiLanguage } from "./i18n";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { type UploadResponse, uploadFile } from "./upload";
+import { V2AnalyzeBridge } from "./V2AnalyzeBridge";
 
 type TaskStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
 type TaskPhase = "EXTRACT" | "SEARCH_LOGS" | "RUN_TOOL" | "PLAN_ANALYSIS" | "GENERATE_RESULT";
@@ -696,6 +697,8 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
 
   return (
     <div className="space-y-5">
+      <V2AnalyzeBridge apiKey={apiKey} language={language} />
+
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <Card>
           <CardHeader>
