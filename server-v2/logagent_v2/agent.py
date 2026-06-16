@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .analysis_package import persist_analysis_package
 from .config import Settings
 from .evidence import build_initial_evidence
 from .final_answer import normalize_and_validate_final_answer
@@ -40,6 +41,13 @@ class AgentRuntime:
             self.store,
             workspace_id,
             run_id,
+        )
+        persist_analysis_package(
+            self.settings,
+            self.store,
+            workspace_id,
+            run_id,
+            evidence_bundle,
         )
         self.store.update_run_status(run_id, "running", "agent_round")
         final_answer = generate_agent_final_answer(self.settings, workspace, evidence_bundle)

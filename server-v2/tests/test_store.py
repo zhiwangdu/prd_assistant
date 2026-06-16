@@ -94,6 +94,27 @@ class StoreTests(unittest.TestCase):
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "manifest" for item in evidence))
             self.assertTrue(any(item["kind"] == "log_search" for item in evidence))
+            package_evidence = next(
+                item for item in evidence if item["kind"] == "analysis_package"
+            )
+            self.assertFalse(package_evidence["final_allowed"])
+            package_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_package"},
+                },
+            )
+            package = json.loads(package_response["result"]["contents"][0]["text"])
+            self.assertEqual(package["workspace"]["question"], "why did the query timeout?")
+            self.assertEqual(package["manifest"]["fileCount"], 1)
+            self.assertEqual(package["allowedEvidenceRefs"], ["grep_results.json#matches/0"])
+            self.assertIn("analysis_package", {item["name"] for item in package["resources"]})
+            self.assertFalse(package["systemContext"]["resources"])
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))

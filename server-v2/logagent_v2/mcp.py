@@ -227,6 +227,7 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "grep_results", "Initial grep results"),
         resource(run_id, "system_context", "System Context snapshot"),
         resource(run_id, "metadata_context", "Metadata Context snapshot"),
+        resource(run_id, "analysis_package", "Bounded Agent analysis package"),
     ]
 
 
@@ -259,6 +260,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "system_context")
     elif name == "metadata_context":
         value = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
+    elif name == "analysis_package":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "analysis_package")
     else:
         raise ValueError(f"unsupported task resource {name}")
     return {

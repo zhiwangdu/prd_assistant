@@ -51,13 +51,15 @@ Implemented in this slice:
   evidence pipeline, and either returns a deterministic stub summary or calls a
   single-round OpenAI-compatible provider for an evidence-validated JSON final
   answer.
+- `analysis_package.json` generation after initial evidence collection, exposed
+  as task MCP resource for Agent loop context.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
 - Evidence listing for a run.
 - Read-only MCP placeholder with `initialize`, `resources/list`,
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
-- Task MCP endpoint with `summary`, `evidence`, `manifest`, and `grep_results`
-  resources.
+- Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
+  `system_context`, `metadata_context`, and `analysis_package` resources.
 - Task MCP `logagent.search_logs`, which creates follow-up `log_search`
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
@@ -220,6 +222,7 @@ Workspace uploads
   -> bounded keyword grep
   -> grep_results.json artifact
   -> manifest and log_search evidence
+  -> analysis_package.json bounded Agent context
   -> stub or OpenAI-compatible JSON final answer
 ```
 
@@ -660,6 +663,13 @@ Invalid JSON, unsupported refs, or provider HTTP errors fail the run. The
 single-round provider bridge does not yet perform LangGraph multi-round
 planning, resume-aware tool calls, automatic Case injection, or approval/user
 waiting decisions.
+
+Each run also writes `analysis_package.json` with schema version 1. It contains
+Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
+bounded tool input summaries, system/metadata context outlines, allowed
+current-run evidence refs, and final-evidence policy. It intentionally omits
+full Skill content, full Metadata topology, and raw uploaded text. Task MCP
+exposes it at `logagent-v2://run/<run_id>/analysis_package`.
 
 ## Waiting States
 

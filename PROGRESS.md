@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Analysis Package Resource
+
+- Added V2 `analysis_package.json` generation after initial evidence collection.
+- The package captures bounded Agent context: Workspace/run metadata, task MCP resource URIs, manifest outline, grep preview, tool input outline, System Context outline, Metadata Context outline, allowed evidence refs, and final evidence policy.
+- `analysis_package` is persisted as background evidence with `final_allowed=false`.
+- Task MCP now lists and reads `logagent-v2://run/:run_id/analysis_package`.
+- Added regression coverage for package evidence, MCP resource reading, allowed refs, manifest outline, resource index, and empty System Context outline.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Provider Bridge
 
 - Added V2 Agent provider settings: `LOGAGENT_V2_AGENT_PROVIDER`, `LOGAGENT_V2_AGENT_BASE_URL`, `LOGAGENT_V2_AGENT_MODEL`, `LOGAGENT_V2_AGENT_API_KEY`, and `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`.

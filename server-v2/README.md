@@ -18,8 +18,9 @@ slice provides the durable foundation for the V2 product model:
   with analyzer JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
-- Task MCP endpoint with summary/evidence/manifest/grep resources and
-  `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
+- Task MCP endpoint with summary/evidence/manifest/grep/analysis_package
+  resources and `logagent.search_logs` follow-up search plus
+  `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`; tools with `{input_file}` consume matching
   materialized `tool_inputs` before execution, then fall back to manifest file
@@ -218,6 +219,13 @@ This is a single-round provider bridge. Multi-round LangGraph planning,
 resume-aware tool loops, and automatic follow-up tool/case actions remain
 future work.
 
+Every run writes `analysis_package.json` after initial evidence collection. The
+package is a bounded Agent context bundle: Workspace/run metadata, task MCP
+resource URIs, manifest outline, grep match preview, analyzer tool input
+outline, system/metadata context outlines, and the current allowed evidence
+refs. Task MCP exposes it as
+`logagent-v2://run/<run_id>/analysis_package`.
+
 ## Initial Evidence Pipeline
 
 When a run starts, V2 now reads all uploads attached to the Workspace and:
@@ -266,7 +274,7 @@ It currently supports:
 - `initialize`
 - `resources/list`
 - `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
-  `system_context`, and `metadata_context`
+  `system_context`, `metadata_context`, and `analysis_package`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`
