@@ -99,8 +99,8 @@ Not yet implemented:
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
   node-package InfluxQL JSONL, per-tool params schema, and full multi-round
   model reasoning after resume.
-- Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
-  Fetch management, Metadata task context auto-selection, and WebUI cutover.
+- Fetch cURL import, encrypted credential sets, WebUI Fetch management,
+  Metadata task context auto-selection, and WebUI cutover.
 - Richer automatic Skill matching and WebUI System Context cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
   management.
@@ -370,6 +370,7 @@ Fetch execution is disabled by default. To execute endpoints, set:
 ```text
 LOGAGENT_V2_FETCH_ENABLED=1
 LOGAGENT_V2_FETCH_ALLOWED_HOSTS=127.0.0.1,example.internal:8080
+LOGAGENT_V2_FETCH_MAX_REDIRECTS=5
 ```
 
 Only `http` and `https` URLs are supported. The requested host or host:port must
@@ -378,6 +379,12 @@ exactly match the allowlist. Controlled headers such as `Host`,
 Sensitive headers, query parameters, and JSON/form-style body preview fields
 containing token/secret/password/api key style names are redacted from API, MCP,
 and artifact previews.
+
+Redirects are followed manually up to `LOGAGENT_V2_FETCH_MAX_REDIRECTS`. Every
+redirect target is revalidated with the same scheme/host allowlist before the
+next request is sent. Sensitive headers such as Authorization, Cookie, and
+X-Api-Key are stripped when a redirect crosses origin. Each response artifact
+records `finalUrl`, `redirectCount`, and redacted redirect hops.
 
 Task MCP exposes:
 
@@ -388,8 +395,7 @@ logagent.fetch { endpointId }
 
 `logagent.fetch` writes a `fetch_result` artifact/evidence item. Network errors
 produce a failed Fetch result rather than crashing the run. HTTP 4xx/5xx
-responses are stored as responses. Redirect following is intentionally disabled
-in this slice.
+responses are stored as responses.
 
 Fetch response evidence refs use:
 

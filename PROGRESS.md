@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Redirect Revalidation
+
+- Added `LOGAGENT_V2_FETCH_MAX_REDIRECTS` with default 5 for V2 Fetch execution.
+- Fetch now follows redirects manually and revalidates every redirect target against the same `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` allowlist before sending the next request.
+- Cross-origin redirects strip sensitive headers such as Authorization, Cookie, X-Api-Key, and X-Auth-Token.
+- Fetch response artifacts now include redacted `finalUrl`, `redirectCount`, and redirect hop summaries.
+- Added regression coverage for allowlisted redirect success and disallowed redirect failure.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 InfluxQL Tool Output Adapter
 
 - Added V2 Tool Runner stdout normalization for InfluxQL analyzer report and compare-report JSON.

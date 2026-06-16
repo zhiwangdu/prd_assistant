@@ -98,6 +98,7 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
+| `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
 
 Tool descriptor example:
 
@@ -291,9 +292,10 @@ for execution unless `LOGAGENT_V2_FETCH_ENABLED=1`. Execution is constrained to
 `http`/`https` URLs whose host or host:port exactly matches
 `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. Request URLs, sensitive headers, and
 sensitive JSON/form-style body preview fields are redacted in API, MCP, and
-artifact previews. The current V2 slice rejects redirect following by design
-and stores bounded response previews as
-`fetch_result` evidence.
+artifact previews. Redirects are followed manually up to
+`LOGAGENT_V2_FETCH_MAX_REDIRECTS`; every hop is revalidated against the same
+allowlist, and sensitive headers are stripped when redirecting across origin.
+Fetch stores bounded response previews as `fetch_result` evidence.
 
 `request_user_input` and `request_approval` persist pending `actions` and move
 the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to

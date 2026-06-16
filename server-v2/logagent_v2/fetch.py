@@ -19,6 +19,7 @@ SENSITIVE_HEADER_NAMES = {"authorization", "cookie", "x-api-key", "x-auth-token"
 SENSITIVE_QUERY_TOKENS = ("token", "secret", "password", "api_key", "apikey", "session")
 CONTROLLED_HEADERS = {"host", "content-length", "connection"}
 REDACTED = "__REDACTED__"
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)((?:[A-Za-z0-9_-]*(?:token|secret|password|api_key|apikey|session)"
     r"[A-Za-z0-9_-]*)\s*[=:]\s*)([^&\s,}]+)"
@@ -214,21 +215,54 @@ def execute_fetch_endpoint(
 def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject:
     body = endpoint.get("body")
     data = body.encode("utf-8") if body is not None and endpoint["method"] != "GET" else None
-    request = urllib.request.Request(
-        endpoint["url"],
-        data=data,
-        headers=endpoint.get("headers", {}),
-        method=endpoint["method"],
-    )
     opener = urllib.request.build_opener(NoRedirectHandler)
-    try:
-        with opener.open(request, timeout=settings.fetch_timeout_seconds) as response:
-            return response_from_http(settings, response, int(response.status))
-    except urllib.error.HTTPError as error:
-        return response_from_http(settings, error, int(error.code))
+    method = endpoint["method"]
+    url = endpoint["url"]
+    headers = dict(endpoint.get("headers", {}))
+    redirects: list[JsonObject] = []
+    for redirect_count in range(settings.fetch_max_redirects + 1):
+        validate_url_allowed(settings, url)
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with opener.open(request, timeout=settings.fetch_timeout_seconds) as response:
+                return response_from_http(settings, response, int(response.status), url, redirects)
+        except urllib.error.HTTPError as error:
+            status_code = int(error.code)
+            if status_code not in REDIRECT_STATUSES:
+                return response_from_http(settings, error, status_code, url, redirects)
+            location = error.headers.get("Location")
+            if not location:
+                return response_from_http(settings, error, status_code, url, redirects)
+            if redirect_count >= settings.fetch_max_redirects:
+                error.close()
+                raise ValueError("fetch redirect limit exceeded")
+            next_url = urllib.parse.urljoin(url, location)
+            try:
+                validate_url_allowed(settings, next_url)
+            finally:
+                error.close()
+            redirects.append(
+                {
+                    "statusCode": status_code,
+                    "from": redact_url(url),
+                    "to": redact_url(next_url),
+                }
+            )
+            headers = redirect_headers(headers, url, next_url)
+            if status_code == 303 or (status_code in {301, 302} and method != "GET"):
+                method = "GET"
+                data = None
+            url = next_url
+    raise ValueError("fetch redirect limit exceeded")
 
 
-def response_from_http(settings: Settings, response: Any, status_code: int) -> JsonObject:
+def response_from_http(
+    settings: Settings,
+    response: Any,
+    status_code: int,
+    final_url: str,
+    redirects: list[JsonObject] | None = None,
+) -> JsonObject:
     raw = response.read(settings.fetch_max_response_bytes + 1)
     truncated = len(raw) > settings.fetch_max_response_bytes
     if truncated:
@@ -236,10 +270,37 @@ def response_from_http(settings: Settings, response: Any, status_code: int) -> J
     return {
         "statusCode": status_code,
         "httpOk": 200 <= status_code < 400,
+        "finalUrl": redact_url(final_url),
+        "redirectCount": len(redirects or []),
+        "redirects": redirects or [],
         "headers": redact_headers(dict(response.headers.items())),
         "bodyPreview": raw[:4000].decode("utf-8", errors="replace"),
         "bodyTruncated": truncated,
     }
+
+
+def redirect_headers(headers: JsonObject, current_url: str, next_url: str) -> JsonObject:
+    if same_origin(current_url, next_url):
+        return dict(headers)
+    return {
+        key: value
+        for key, value in headers.items()
+        if not is_sensitive_header(str(key))
+    }
+
+
+def same_origin(left_url: str, right_url: str) -> bool:
+    left = urllib.parse.urlsplit(left_url)
+    right = urllib.parse.urlsplit(right_url)
+    return (
+        left.scheme.lower(),
+        (left.hostname or "").lower(),
+        left.port,
+    ) == (
+        right.scheme.lower(),
+        (right.hostname or "").lower(),
+        right.port,
+    )
 
 
 def fetch_text(settings: Settings, url: str) -> JsonObject:

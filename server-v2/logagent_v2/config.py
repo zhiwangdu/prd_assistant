@@ -59,6 +59,7 @@ class Settings:
     fetch_allowed_hosts: tuple[str, ...] = ()
     fetch_timeout_seconds: int = 20
     fetch_max_response_bytes: int = 1024 * 1024
+    fetch_max_redirects: int = 5
 
     @property
     def sqlite_path(self) -> Path:
@@ -112,6 +113,7 @@ class Settings:
         fetch_max_response_bytes = int(
             os.environ.get("LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES", str(1024 * 1024))
         )
+        fetch_max_redirects = int(os.environ.get("LOGAGENT_V2_FETCH_MAX_REDIRECTS", "5"))
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -129,6 +131,7 @@ class Settings:
             fetch_allowed_hosts=fetch_allowed_hosts,
             fetch_timeout_seconds=fetch_timeout_seconds,
             fetch_max_response_bytes=fetch_max_response_bytes,
+            fetch_max_redirects=max(0, fetch_max_redirects),
         )
 
 

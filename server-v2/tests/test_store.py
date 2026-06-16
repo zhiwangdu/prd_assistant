@@ -908,6 +908,107 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_fetch_redirects_are_revalidated_against_allowlist(self) -> None:
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if self.path.startswith("/redirect-ok"):
+                    location = f"http://127.0.0.1:{self.server.server_port}/target?api_key=secret"
+                    self.send_response(302)
+                    self.send_header("Location", location)
+                    self.end_headers()
+                    return
+                if self.path.startswith("/redirect-blocked"):
+                    self.send_response(302)
+                    self.send_header("Location", "http://example.com/target")
+                    self.end_headers()
+                    return
+                body = json.dumps({"ok": True, "path": self.path}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), RedirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("127.0.0.1",),
+                    fetch_max_redirects=2,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                ok_endpoint = store.create_fetch_endpoint(
+                    name="redirect ok",
+                    method="GET",
+                    url=f"http://127.0.0.1:{server.server_port}/redirect-ok",
+                    headers={"Authorization": "Bearer secret"},
+                    body=None,
+                    enabled=True,
+                )
+                blocked_endpoint = store.create_fetch_endpoint(
+                    name="redirect blocked",
+                    method="GET",
+                    url=f"http://127.0.0.1:{server.server_port}/redirect-blocked",
+                    headers={"Authorization": "Bearer secret"},
+                    body=None,
+                    enabled=True,
+                )
+                workspace = store.create_workspace("fetch redirect", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+
+                ok_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 24,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": ok_endpoint["id"]},
+                        },
+                    },
+                )
+                ok_payload = json.loads(ok_response["result"]["content"][0]["text"])
+                ok_result = ok_payload["result"]
+                self.assertEqual(ok_result["status"], "OK")
+                self.assertEqual(ok_result["response"]["statusCode"], 200)
+                self.assertEqual(ok_result["response"]["redirectCount"], 1)
+                self.assertIn("api_key=__REDACTED__", ok_result["response"]["finalUrl"])
+                self.assertEqual(ok_result["response"]["redirects"][0]["statusCode"], 302)
+
+                blocked_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 25,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": blocked_endpoint["id"]},
+                        },
+                    },
+                )
+                blocked_payload = json.loads(blocked_response["result"]["content"][0]["text"])
+                self.assertEqual(blocked_payload["result"]["status"], "FAILED")
+                self.assertIn("not in allowlist", blocked_payload["result"]["error"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_metadata_preview_confirm_import_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
