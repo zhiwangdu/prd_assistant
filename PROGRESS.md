@@ -1,6 +1,15 @@
 # Development Progress
 
-Last updated: 2026-06-16
+Last updated: 2026-06-17
+
+## 2026-06-17 V2 Final Evidence Validation
+
+- Added V2 final answer normalization and validation before a run can be marked `succeeded`.
+- Final answers now require a non-empty summary, normalized string arrays, structured likely root causes, and `confidence=low|medium|high`.
+- Final evidence refs are validated against current-run `final_allowed` evidence artifacts. Supported refs are initial grep matches, follow-up log search matches, log slices, and configured tool findings.
+- Background context such as `manifest.json` is explicitly rejected as final root-cause evidence.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
 
 ## 2026-06-17 V2 Waiting Actions
 

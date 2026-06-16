@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
+import sys
 import tempfile
 import unittest
 import zipfile
-import json
-import sys
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.artifacts import write_artifact_bytes
 from logagent_v2.config import Settings, ToolDefinition
+from logagent_v2.final_answer import (
+    FinalAnswerValidationError,
+    normalize_and_validate_final_answer,
+)
 from logagent_v2.mcp import task_mcp_response
 from logagent_v2.store import Store
 
@@ -235,6 +239,115 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
+
+    def test_final_answer_evidence_refs_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="mock_tool",
+                display_name="Mock Tool",
+                command=sys.executable,
+                args=(
+                    "-c",
+                    "import json; print(json.dumps({'summary':'mock ok','findings':[{'message':'hit'}]}))",
+                ),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("why did timeout happen?", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "query.log",
+                b"query timeout on shard 1\nnormal line\ncache warning\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "query.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            search_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 8,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_logs",
+                        "arguments": {"keywords": ["cache"]},
+                    },
+                },
+            )
+            search_payload = json.loads(search_response["result"]["content"][0]["text"])
+            follow_up_ref = search_payload["search"]["matches"][0]["ref"]
+
+            slice_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {"path": "query.log", "lineNumber": 3},
+                    },
+                },
+            )
+            slice_payload = json.loads(slice_response["result"]["content"][0]["text"])
+            slice_ref = slice_payload["slice"]["ref"]
+
+            tool_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "mock_tool"},
+                    },
+                },
+            )
+            self.assertIn("result", tool_response)
+            tool_ref = "tool_results/mock_tool/result.json#findings/0"
+
+            refs = [
+                "grep_results.json#matches/0",
+                follow_up_ref,
+                slice_ref,
+                tool_ref,
+            ]
+            answer = {
+                "summary": "Validated answer.",
+                "symptoms": "timeout symptom",
+                "likelyRootCauses": [{"cause": "Evidence-backed cause", "evidenceRefs": refs}],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": refs,
+            }
+            validated = normalize_and_validate_final_answer(
+                settings, store, run["id"], answer
+            )
+            self.assertEqual(validated["symptoms"], ["timeout symptom"])
+
+            bad_index = dict(answer, evidenceRefs=["grep_results.json#matches/999"])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], bad_index)
+
+            background_ref = dict(answer, evidenceRefs=["manifest.json#files/0"])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], background_ref)
 
     def test_task_mcp_waiting_actions_are_persisted_and_resumable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

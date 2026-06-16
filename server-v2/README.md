@@ -19,6 +19,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent.run_domain_tool`.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
   and `logagent.request_approval`.
+- Final answer schema normalization and evidence ref validation before a run
+  can be marked `succeeded`.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -116,8 +118,9 @@ python3 -m compileall logagent_v2
 PYTHONPATH=. python3 -m unittest discover tests
 ```
 
-This V2 slice intentionally does not yet migrate the V1 log analyzer, Tool
-Runner, Metadata, Skills, Memory, or full LangGraph model loop.
+This V2 slice intentionally does not yet migrate the V1 node log package
+preprocessor, rich Tool Runner input matching, Metadata, Skills, Memory, WebUI,
+or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -174,3 +177,27 @@ possible and persisted as `tool_result` evidence.
 the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to
 a waiting run or approving/rejecting a pending action requeues the run through
 the SQLite job queue.
+
+## Final Answers
+
+Before V2 stores a `succeeded` run, final answers are normalized and validated.
+The current required shape is:
+
+- `summary`: non-empty string
+- `symptoms`, `nextChecks`, `fixSuggestions`, `missingInformation`: string
+  arrays
+- `likelyRootCauses`: objects with non-empty `cause` and `evidenceRefs`
+- `confidence`: `low`, `medium`, or `high`
+- `evidenceRefs`: optional top-level string array
+
+Only current-task, final-allowed evidence refs are accepted:
+
+```text
+grep_results.json#matches/<index>
+log_searches/<search_id>.json#matches/<index>
+log_slices/<slice_id>.json#lines
+tool_results/<tool_id>/result.json#findings/<index>
+```
+
+Background resources such as `manifest.json` are readable over task MCP but
+cannot be used as final root-cause evidence.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import Settings
 from .evidence import build_initial_evidence
+from .final_answer import normalize_and_validate_final_answer
 from .store import JsonObject, Store
 
 
@@ -37,6 +38,9 @@ class AgentRuntime:
         )
         self.store.update_run_status(run_id, "running", "agent_round")
         final_answer = self._stub_final_answer(workspace, evidence_bundle)
+        final_answer = normalize_and_validate_final_answer(
+            self.settings, self.store, run_id, final_answer
+        )
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer)
         return final_answer
 

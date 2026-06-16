@@ -58,6 +58,9 @@ Implemented in this slice:
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted and user
   message/approval APIs can requeue the run.
+- Final answer schema normalization and evidence ref validation. A run can only
+  be marked `succeeded` after final refs point to current-run, final-allowed
+  log search, log slice, or tool finding evidence.
 
 Not yet implemented:
 
@@ -65,7 +68,6 @@ Not yet implemented:
 - LangGraph provider integration.
 - Rich Tool Runner input matching, per-tool params schema, Metadata, Case
   recall, and full multi-round model reasoning after resume.
-- Tool Runner execution.
 - Metadata import/query.
 - Skill-backed System Context.
 - Case Memory.
@@ -189,6 +191,32 @@ LOGAGENT_V2_TOOLS_JSON
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
 
+## Final Answer Validation
+
+Final answers must be JSON objects with a non-empty `summary`, string arrays for
+`symptoms`, `nextChecks`, `fixSuggestions`, and `missingInformation`,
+`likelyRootCauses[]` objects with non-empty `cause`, and `confidence` set to
+`low`, `medium`, or `high`. Scalar strings for the simple array fields are
+normalized to one-item arrays.
+
+The validator collects top-level `evidenceRefs` and
+`likelyRootCauses[].evidenceRefs`, then verifies every ref against evidence rows
+visible to the current run where `final_allowed=true`.
+
+Accepted ref formats:
+
+```text
+grep_results.json#matches/<index>
+log_searches/<search_id>.json#matches/<index>
+log_slices/<slice_id>.json#lines
+tool_results/<tool_id>/result.json#findings/<index>
+```
+
+The referenced artifact must exist and the match/finding index must be in
+range. Background context such as `manifest.json`, future system context,
+metadata slices, and diagnostic skill references must stay readable context and
+cannot be cited as final root-cause evidence.
+
 ## Waiting States
 
 Task MCP can now request:
@@ -213,9 +241,10 @@ not yet perform true multi-round model reasoning.
 - Upload filenames are basename-normalized and character-filtered.
 - Archive entries are scanned in memory and rejected if they contain absolute
   paths or traversal components.
-- Agent runtime cannot execute tools directly in this slice.
 - Tools execute only through configured whitelist descriptors, with absolute
   command paths, fixed args, timeout, and bounded stdout/stderr.
+- Agent final answers are rejected before success if they cite missing,
+  out-of-range, unsupported, or background-only refs.
 
 ## Acceptance
 
