@@ -97,7 +97,7 @@ Implemented in this slice:
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
-  storage, field/tag type query APIs, per-run `metadata_context`
+  storage, saved raw snapshot refresh, field/tag type query APIs, per-run `metadata_context`
   auto-selection, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
@@ -192,6 +192,7 @@ GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
+POST /api/v2/metadata/instances/:instance_id/refresh
 DELETE /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
@@ -565,6 +566,11 @@ Preview parses and normalizes content into a draft with status `previewed` and
 returns summary counts. It does not mutate `metadata_instances`. Confirm upserts
 the draft snapshot into `metadata_instances` and marks the draft `confirmed`.
 `POST /api/v2/metadata/imports` remains as a direct immediate import shortcut.
+
+`POST /api/v2/metadata/instances/:instance_id/refresh` loads the instance's
+stored raw JSON from SQLite, reruns the current normalizer with the same
+template type and remark, and overwrites the normalized snapshot. It does not
+fetch the original URL again; URL refresh remains an explicit fetch import.
 
 URL fetch import uses the same default-off Fetch boundary. It requires
 `LOGAGENT_V2_FETCH_ENABLED=1`, an exact host or host:port match in

@@ -166,6 +166,15 @@ GET /api/metadata/imports/:import_id/preview
 POST /api/metadata/imports/:import_id/confirm
 ```
 
+Python V2 clean-room Server 已提供等价刷新能力：
+
+```http
+POST /api/v2/metadata/instances/:instance_id/refresh
+```
+
+V2 刷新从 SQLite 中已保存的 `raw_json` 重新运行当前 normalizer 并覆盖
+`metadata_instances.snapshot_json`，不会重新请求原始 URL。
+
 真实 openGemini 元数据导入：
 
 ```json

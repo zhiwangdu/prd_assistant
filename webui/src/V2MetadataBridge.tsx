@@ -11,6 +11,7 @@ import {
   listV2MetadataInstances,
   previewV2MetadataFetchImport,
   previewV2MetadataImport,
+  refreshV2MetadataInstance,
   type V2MetadataImport,
   type V2MetadataImportResponse,
   type V2MetadataInstanceSummary
@@ -170,6 +171,21 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function refreshInstance(instance: V2MetadataInstanceSummary) {
+    setLoading(true);
+    try {
+      const response = await refreshV2MetadataInstance(apiKey, instance.instanceId);
+      setSelectedInstanceId(instance.instanceId);
+      setSnapshot(response.snapshot);
+      setStatus(`V2 refreshed ${instance.instanceId}`);
+      await refresh();
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleFileSelected(file?: File) {
     if (!file) return;
     try {
@@ -278,7 +294,10 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
                     <p className="mt-1 text-xs text-muted-foreground">{instance.product ?? "-"} {instance.version ?? ""} · {instance.environment ?? "-"} · {instance.templateType}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{instance.nodeCount} nodes · {instance.databaseCount} DBs · {instance.remark ?? "no remark"}</p>
                   </button>
-                  <Button className="mt-3 h-8 px-3 text-red-600" disabled={loading} variant="outline" onClick={() => void deleteInstance(instance)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button className="h-8 px-3" disabled={loading} variant="outline" onClick={() => void refreshInstance(instance)}><RefreshCw className="mr-2 h-4 w-4" />Refresh raw</Button>
+                    <Button className="h-8 px-3 text-red-600" disabled={loading} variant="outline" onClick={() => void deleteInstance(instance)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                  </div>
                 </div>
               )) : <EmptyState>No V2 metadata instances.</EmptyState>}
             </div>

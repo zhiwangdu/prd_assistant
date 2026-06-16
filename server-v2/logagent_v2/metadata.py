@@ -118,6 +118,24 @@ def import_metadata_from_url(
     return confirmed
 
 
+def refresh_metadata_instance(store: Store, instance_id: str) -> JsonObject:
+    current = store.get_metadata_instance(instance_id)
+    raw = current.get("raw")
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError("metadata instance has no raw JSON snapshot")
+    template_type = str(current["templateType"]).lower()
+    remark = current.get("remark")
+    snapshot = normalize_metadata_snapshot(instance_id, template_type, raw, remark)
+    instance = store.upsert_metadata_instance(
+        instance_id=instance_id,
+        remark=remark,
+        template_type=template_type,
+        snapshot=snapshot,
+        raw=raw,
+    )
+    return {"instance": instance, "snapshot": snapshot}
+
+
 def confirm_metadata_import(store: Store, import_id: str) -> JsonObject:
     draft = store.get_metadata_import(import_id)
     instance = store.upsert_metadata_instance(

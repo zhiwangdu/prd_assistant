@@ -47,6 +47,7 @@ from .metadata import (
     preview_metadata_import,
     preview_metadata_import_from_url,
     query_field_types,
+    refresh_metadata_instance,
 )
 from .mcp import readonly_mcp_response, task_mcp_response
 from .results import get_run_result
@@ -909,6 +910,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return store.get_metadata_snapshot(instance_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/instances/{instance_id}/refresh")
+    async def refresh_metadata_instance_api(_: Auth, instance_id: str) -> dict:
+        try:
+            return refresh_metadata_instance(store, instance_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.delete("/api/v2/metadata/instances/{instance_id}")
     async def delete_metadata_instance(_: Auth, instance_id: str) -> dict:

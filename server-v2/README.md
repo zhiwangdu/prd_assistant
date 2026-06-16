@@ -39,8 +39,9 @@ slice provides the durable foundation for the V2 product model:
 - Final result persistence as `result.json` and `result.md` artifacts, with
   HTTP and task MCP read surfaces.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
-  fetch, SQLite snapshot storage, preview/confirm drafts, field/tag type
-  queries, per-run `metadata_context` auto-selection, HTTP API, and
+  fetch, SQLite snapshot storage, saved raw snapshot refresh,
+  preview/confirm drafts, field/tag type queries, per-run `metadata_context`
+  auto-selection, HTTP API, and
   readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 plus local vector recall,
@@ -210,6 +211,7 @@ GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
+POST /api/v2/metadata/instances/:instance_id/refresh
 DELETE /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
@@ -544,6 +546,11 @@ POST /api/v2/metadata/imports/:import_id/confirm
 Preview parses and normalizes content, stores a draft with status `previewed`,
 and returns node/database counts without changing `metadata_instances`. Confirm
 upserts the normalized snapshot and marks the draft `confirmed`.
+
+`POST /api/v2/metadata/instances/<instance_id>/refresh` rebuilds the normalized
+snapshot from the raw JSON already saved with the instance and upserts the
+instance row again. It is useful after normalizer changes and does not perform
+network fetches.
 
 URL fetch uses the same default-off Fetch boundary:
 `LOGAGENT_V2_FETCH_ENABLED=1`, exact host/host:port

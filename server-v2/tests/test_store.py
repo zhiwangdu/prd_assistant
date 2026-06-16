@@ -55,6 +55,7 @@ from logagent_v2.metadata import (
     preview_metadata_import,
     preview_metadata_import_from_url,
     query_field_types,
+    refresh_metadata_instance,
 )
 from logagent_v2.results import get_run_result
 from logagent_v2.llm import debug_log_responses, set_debug_log_responses
@@ -2076,6 +2077,44 @@ class StoreTests(unittest.TestCase):
             instances = store.list_metadata_instances()
             self.assertEqual(instances[0]["instanceId"], "inst-preview")
             self.assertEqual(instances[0]["nodeCount"], 1)
+
+    def test_metadata_refresh_rebuilds_snapshot_from_stored_raw(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            imported = import_metadata(
+                store,
+                instance_id="inst-refresh",
+                template_type="opengemini",
+                content=json.dumps(
+                    {
+                        "ClusterID": 99,
+                        "Version": "1.2.3",
+                        "DataNodes": [{"ID": 1, "Host": "10.0.0.1"}],
+                        "Databases": {"db0": {"RetentionPolicies": {}}},
+                    }
+                ),
+                remark="refresh me",
+            )
+            stale_snapshot = dict(imported["snapshot"])
+            stale_snapshot["cluster"] = dict(stale_snapshot["cluster"])
+            stale_snapshot["cluster"]["nodes"] = []
+            store.upsert_metadata_instance(
+                instance_id="inst-refresh",
+                remark="refresh me",
+                template_type="opengemini",
+                snapshot=stale_snapshot,
+                raw=store.get_metadata_instance("inst-refresh")["raw"],
+            )
+            self.assertEqual(store.list_metadata_instances()[0]["nodeCount"], 0)
+
+            refreshed = refresh_metadata_instance(store, "inst-refresh")
+
+            self.assertEqual(refreshed["snapshot"]["instance"]["version"], "1.2.3")
+            self.assertEqual(len(refreshed["snapshot"]["cluster"]["nodes"]), 1)
+            self.assertEqual(store.list_metadata_instances()[0]["nodeCount"], 1)
 
     def test_metadata_url_fetch_preview_confirm_uses_allowlist(self) -> None:
         class MetadataHandler(BaseHTTPRequestHandler):

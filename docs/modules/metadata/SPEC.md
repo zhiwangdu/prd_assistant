@@ -198,6 +198,17 @@ POST /api/metadata/imports/:import_id/confirm
 POST /api/mcp/readonly
 ```
 
+Python V2 clean-room Server 在 `/api/v2/metadata/*` 下提供同等 raw snapshot
+刷新入口：
+
+```http
+POST /api/v2/metadata/instances/:instance_id/refresh
+```
+
+该接口读取 SQLite `metadata_instances.raw_json`，按当前 `templateType` 和
+`remark` 重新生成 `snapshot_json`。它不执行网络请求；需要重新拉取 URL 时应走
+fetch import preview/confirm 或 direct fetch import。
+
 导入请求建议：
 
 ```json

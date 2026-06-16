@@ -647,6 +647,13 @@ export async function getV2MetadataSnapshot(apiKey: string, instanceId: string) 
   return fetchJson<Record<string, unknown>>(`/api/v2/metadata/instances/${encodeURIComponent(instanceId)}/snapshot`, { headers: authHeaders(apiKey) });
 }
 
+export async function refreshV2MetadataInstance(apiKey: string, instanceId: string) {
+  return fetchJson<{ instance: V2MetadataInstanceSummary; snapshot: Record<string, unknown> }>(`/api/v2/metadata/instances/${encodeURIComponent(instanceId)}/refresh`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
+}
+
 export async function deleteV2MetadataInstance(apiKey: string, instanceId: string) {
   return fetchJson<{ deleted: boolean; instanceId: string }>(`/api/v2/metadata/instances/${encodeURIComponent(instanceId)}`, {
     method: "DELETE",

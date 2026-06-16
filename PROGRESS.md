@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Instance Refresh
+
+- Added `POST /api/v2/metadata/instances/:instance_id/refresh` to rebuild a V2 Metadata snapshot from the raw JSON already saved in SQLite.
+- Added regression coverage that corrupts a normalized snapshot, refreshes from stored raw openGemini metadata, and verifies the node count is restored.
+- Added a V2 Metadata bridge `Refresh raw` action for each imported instance and refreshed the displayed snapshot after success.
+- Updated server-v2, WebUI, Metadata docs, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Import Messages
 
 - Added V2 Case import follow-up messages through `POST /api/v2/cases/imports/:import_id/messages`, closing the Rust Memory multi-turn import gap.
