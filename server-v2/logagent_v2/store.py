@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -12,6 +14,7 @@ from .ids import new_id
 
 
 JsonObject = dict[str, Any]
+CASE_VECTOR_DIMS = 64
 
 
 def now_iso() -> str:
@@ -57,6 +60,36 @@ def keyword_score(tokens: set[str], text: str) -> int:
         return 0
     lowered = text.lower()
     return sum(1 for token in tokens if token in lowered)
+
+
+def case_vector_tokens(value: str) -> list[str]:
+    tokens = list(case_tokens(value))
+    grams = []
+    for token in tokens:
+        if len(token) <= 3:
+            grams.append(token)
+            continue
+        grams.extend(token[index : index + 3] for index in range(0, len(token) - 2))
+    return tokens + grams
+
+
+def case_vector(value: str) -> list[float]:
+    vector = [0.0 for _ in range(CASE_VECTOR_DIMS)]
+    for token in case_vector_tokens(value):
+        digest = sha256(token.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:4], "big") % CASE_VECTOR_DIMS
+        sign = 1.0 if digest[4] % 2 == 0 else -1.0
+        vector[index] += sign
+    norm = math.sqrt(sum(item * item for item in vector))
+    if norm == 0:
+        return vector
+    return [round(item / norm, 6) for item in vector]
+
+
+def vector_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    return sum(a * b for a, b in zip(left, right))
 
 
 def quote_fts_token(token: str) -> str:
@@ -206,6 +239,7 @@ class Store:
                   enabled INTEGER NOT NULL,
                   record_json TEXT NOT NULL,
                   searchable_text TEXT NOT NULL,
+                  vector_json TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -262,7 +296,9 @@ class Store:
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
+            self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_case_fts_tx(conn)
+            self._backfill_case_vectors_tx(conn)
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str
@@ -312,6 +348,20 @@ class Store:
             )
         except sqlite3.OperationalError:
             return
+
+    def _backfill_case_vectors_tx(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            """
+            SELECT case_id, searchable_text, vector_json
+            FROM cases
+            WHERE vector_json IS NULL OR vector_json = '[]'
+            """
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE cases SET vector_json = ? WHERE case_id = ?",
+                (encode_json(case_vector(row["searchable_text"])), row["case_id"]),
+            )
 
     def _workspace_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
@@ -976,8 +1026,8 @@ class Store:
                 """
                 INSERT INTO cases(
                   case_id, source_type, task_id, enabled, record_json, searchable_text,
-                  created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  vector_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     case_id,
@@ -986,6 +1036,7 @@ class Store:
                     1 if record.get("enabled", True) else 0,
                     encode_json(record),
                     searchable_text,
+                    encode_json(case_vector(searchable_text)),
                     ts,
                     record["updatedAt"],
                 ),
@@ -1017,13 +1068,15 @@ class Store:
             conn.execute(
                 """
                 UPDATE cases
-                SET enabled = ?, record_json = ?, searchable_text = ?, updated_at = ?
+                SET enabled = ?, record_json = ?, searchable_text = ?, vector_json = ?,
+                    updated_at = ?
                 WHERE case_id = ?
                 """,
                 (
                     1 if record.get("enabled", True) else 0,
                     encode_json(record),
                     searchable_text,
+                    encode_json(case_vector(searchable_text)),
                     record["updatedAt"],
                     case_id,
                 ),
@@ -1042,7 +1095,14 @@ class Store:
         if tokens:
             fts_results = self._search_cases_fts(query or "", limit, include_disabled)
             if fts_results is not None:
-                return fts_results
+                return self._merge_case_vector_results(
+                    fts_results,
+                    self._search_cases_vector(query or "", limit, include_disabled),
+                    limit,
+                )
+            vector_results = self._search_cases_vector(query or "", limit, include_disabled)
+            if vector_results:
+                return vector_results
         with self.connect() as conn:
             rows = conn.execute(
                 """
@@ -1098,6 +1158,68 @@ class Store:
             hit["searchBackend"] = "fts5"
             results.append(hit)
         return results
+
+    def _search_cases_vector(
+        self,
+        query: str,
+        limit: int,
+        include_disabled: bool,
+    ) -> list[JsonObject]:
+        query_vector = case_vector(query)
+        if not any(query_vector):
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM cases
+                WHERE (? OR enabled = 1)
+                ORDER BY updated_at DESC, case_id ASC
+                """,
+                (1 if include_disabled else 0,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            vector = decode_json(row["vector_json"], [])
+            if not isinstance(vector, list):
+                continue
+            score = vector_similarity(query_vector, [float(item) for item in vector])
+            if score <= 0.05:
+                continue
+            hit = self._case_from_row(row)
+            hit["score"] = round(score, 6)
+            hit["vectorScore"] = round(score, 6)
+            hit["searchBackend"] = "vector"
+            results.append(hit)
+        results.sort(key=lambda item: (item["score"], item["updatedAt"]), reverse=True)
+        return results[:limit]
+
+    def _merge_case_vector_results(
+        self,
+        fts_results: list[JsonObject],
+        vector_results: list[JsonObject],
+        limit: int,
+    ) -> list[JsonObject]:
+        merged: dict[str, JsonObject] = {}
+        for item in fts_results:
+            case_id = item["caseId"]
+            hit = dict(item)
+            hit["ftsScore"] = hit.get("score", 0)
+            hit["vectorScore"] = 0.0
+            hit["searchBackend"] = "hybrid"
+            merged[case_id] = hit
+        for item in vector_results:
+            case_id = item["caseId"]
+            if case_id in merged:
+                merged[case_id]["vectorScore"] = item["vectorScore"]
+                merged[case_id]["score"] = round(
+                    float(merged[case_id].get("ftsScore", 0)) + item["vectorScore"],
+                    6,
+                )
+            else:
+                merged[case_id] = dict(item)
+        results = list(merged.values())
+        results.sort(key=lambda item: (item["score"], item["updatedAt"]), reverse=True)
+        return results[:limit]
 
     def _case_from_row(self, row: sqlite3.Row) -> JsonObject:
         record = decode_json(row["record_json"], {})

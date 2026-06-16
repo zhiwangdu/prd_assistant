@@ -38,8 +38,8 @@ slice provides the durable foundation for the V2 product model:
   queries, per-run `metadata_context` auto-selection, HTTP API, and
   readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
-  text/JSON import drafts, SQLite FTS5/BM25 recall, edit/disable API, and
-  readonly/task MCP search.
+  text/JSON import drafts, SQLite FTS5/BM25 plus local vector recall,
+  edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
   `system_context` run snapshot, readonly/task MCP reference reading, and
@@ -198,8 +198,7 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond generic InfluxQL/Flux JSONL, embedding/vector recall, WebUI, or
-full LangGraph model loop.
+inputs beyond generic InfluxQL/Flux JSONL, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -447,9 +446,9 @@ confirmed through `POST /api/v2/runs/:run_id/case`; repeated confirmation of the
 same run returns the existing task case. Cases can be searched with keyword
 queries, read by ID, edited, or disabled. Query search uses local SQLite
 FTS5/BM25 over title, symptom, root cause, solution, product/version/
-environment, instance/node, and evidence refs, with token-overlap fallback if
-FTS5 is unavailable. Disabled cases are hidden unless the caller sets
-`includeDisabled=true`.
+environment, instance/node, and evidence refs, plus a dependency-light local
+hash-vector recall column stored in SQLite. Disabled cases are hidden unless
+the caller sets `includeDisabled=true`.
 
 Case import drafts support text or JSON capture before a Case is confirmed:
 

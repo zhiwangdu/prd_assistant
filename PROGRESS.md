@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Vector Recall
+
+- Added local hash-vector recall for V2 Case Memory without PostgreSQL, Redis, pgvector, or external embedding services.
+- `cases` now stores derived `vector_json`; store initialization backfills vectors for existing Case rows.
+- Case create/update refreshes both FTS and vector data from the same searchable text.
+- `Store.search_cases` now merges SQLite FTS5/BM25 results with vector recall and can return vector-only hits when exact tokens do not match.
+- Search results expose `searchBackend=hybrid` or `vector` plus `vectorScore` where applicable.
+- Added regression coverage for hybrid FTS/vector results, vector-only approximate recall, and vector refresh after Case edits.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Params Schema
 
 - Added V2 `ToolDefinition.params_schema` from configured `paramsSchema`.

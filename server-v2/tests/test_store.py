@@ -1918,7 +1918,8 @@ grep_results.json#matches/0
 
             hits = store.search_cases("shard owner", limit=5)
             self.assertEqual(hits[0]["caseId"], shard_case["caseId"])
-            self.assertEqual(hits[0]["searchBackend"], "fts5")
+            self.assertEqual(hits[0]["searchBackend"], "hybrid")
+            self.assertIn("vectorScore", hits[0])
 
             update_case_record(
                 store,
@@ -1931,6 +1932,24 @@ grep_results.json#matches/0
                 },
             )
             self.assertEqual(store.search_cases("shard owner", limit=5), [])
+
+    def test_case_search_uses_local_vector_recall(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            compaction_case = create_manual_case(
+                store,
+                {
+                    "title": "Timeout during compaction",
+                    "symptom": "query timeout and compaction backlog",
+                    "rootCause": "compaction workers are saturated",
+                    "solution": "reduce compaction pressure",
+                },
+            )
+            hits = store.search_cases("timed out compactions", limit=5)
+            self.assertEqual(hits[0]["caseId"], compaction_case["caseId"])
+            self.assertEqual(hits[0]["searchBackend"], "vector")
+            self.assertGreater(hits[0]["vectorScore"], 0)
 
     def test_skill_system_context_and_reference_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

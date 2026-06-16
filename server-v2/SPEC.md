@@ -84,7 +84,8 @@ Implemented in this slice:
   auto-selection, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, SQLite FTS5/BM25 recall,
-  edit/disable API, readonly MCP search, and task MCP background case context.
+  local hash-vector recall, edit/disable API, readonly MCP search, and task MCP
+  background case context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
@@ -102,7 +103,7 @@ Not yet implemented:
   generic InfluxQL/Flux JSONL and full multi-round model reasoning after resume.
 - WebUI Fetch management and WebUI cutover.
 - WebUI System Context cutover.
-- Case embedding/vector recall and WebUI Memory management.
+- WebUI Memory management.
 - WebUI V2 cutover.
 
 ## API
@@ -530,8 +531,8 @@ their dedicated tools. The context artifact and all metadata slices use
 
 V2 Case Memory stores confirmed Case schema v2 records in SQLite table `cases`.
 Each row contains `source_type`, optional `task_id`, `enabled`, full
-`record_json`, and a denormalized `searchable_text` field for local keyword
-recall.
+`record_json`, a denormalized `searchable_text` field for local keyword recall,
+and a local hash-vector `vector_json` for dependency-light approximate recall.
 
 Supported sources:
 
@@ -554,9 +555,11 @@ Case.
 Search is dependency-light and local: V2 maintains a SQLite FTS5 table beside
 `cases` and ranks query matches with `bm25`. The indexed text covers `title`,
 `symptom`, `rootCause`, `solution`, product/version/environment, instance/node,
-and evidence refs. If FTS5 is unavailable, V2 falls back to token-overlap
-scoring. Disabled cases are excluded by default and can be included with
-`includeDisabled=true`.
+and evidence refs. V2 also stores a normalized hash vector derived from tokens
+and character trigrams; query search merges FTS hits with vector recall and can
+return vector-only hits when exact tokens do not match. If FTS5 is unavailable,
+V2 falls back to token-overlap scoring plus vector recall. Disabled cases are
+excluded by default and can be included with `includeDisabled=true`.
 
 Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`. Task MCP
 exposes the same tools and writes results as `case_context` evidence with
