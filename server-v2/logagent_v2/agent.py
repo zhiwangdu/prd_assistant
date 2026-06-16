@@ -3,6 +3,7 @@ from __future__ import annotations
 from .config import Settings
 from .evidence import build_initial_evidence
 from .final_answer import normalize_and_validate_final_answer
+from .skills import persist_system_context
 from .store import JsonObject, Store
 
 
@@ -30,6 +31,7 @@ class AgentRuntime:
             summary="User question captured as initial evidence.",
             payload={"question": workspace["question"]},
         )
+        persist_system_context(self.settings, self.store, workspace_id, run_id)
         evidence_bundle = build_initial_evidence(
             self.settings,
             self.store,

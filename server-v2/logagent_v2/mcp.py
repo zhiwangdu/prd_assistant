@@ -7,12 +7,21 @@ from .case_memory import call_case_tool, case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
 from .metadata import call_metadata_tool, metadata_tool_descriptors
+from .skills import (
+    get_skill,
+    list_skills,
+    preview_system_context,
+    read_readonly_skill_reference,
+    read_task_skill_reference,
+    skill_tool_descriptors,
+)
 from .store import Store
 from .tools import run_configured_tool, tool_descriptors
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
 CASE_TOOL_NAMES = {tool["name"] for tool in case_tool_descriptors()}
+SKILL_TOOL_NAMES = {tool["name"] for tool in skill_tool_descriptors()}
 
 
 def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
@@ -41,6 +50,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     request_approval_descriptor(),
                     *metadata_tool_descriptors(),
                     *case_tool_descriptors(),
+                    *skill_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -56,7 +66,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
         }
 
 
-def readonly_mcp_response(store: Store, request: dict) -> dict:
+def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> dict:
     method = request.get("method")
     request_id = request.get("id")
     try:
@@ -86,6 +96,12 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         "name": "cases_recent",
                         "description": "Recent enabled V2 cases",
                         "mimeType": "application/json",
+                    },
+                    {
+                        "uri": "logagent-v2://skills",
+                        "name": "skills",
+                        "description": "Imported V2 diagnostic skills",
+                        "mimeType": "application/json",
                     }
                 ]
             }
@@ -99,6 +115,7 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                     },
                     *metadata_tool_descriptors(),
                     *case_tool_descriptors(),
+                    *skill_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -110,7 +127,9 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         {
                             "type": "text",
                             "text": json.dumps(
-                                metadata_tool_descriptors() + case_tool_descriptors(),
+                                metadata_tool_descriptors()
+                                + case_tool_descriptors()
+                                + skill_tool_descriptors(),
                                 ensure_ascii=True,
                             ),
                         }
@@ -136,16 +155,35 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         }
                     ]
                 }
+            elif name in SKILL_TOOL_NAMES:
+                value = call_readonly_skill_tool(settings, name, arguments)
+                result = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(value, ensure_ascii=True, indent=2),
+                        }
+                    ]
+                }
             else:
                 raise ValueError(f"unsupported readonly tool {name}")
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             if uri == "logagent-v2://tools/catalog":
-                value = metadata_tool_descriptors() + case_tool_descriptors()
+                value = (
+                    metadata_tool_descriptors()
+                    + case_tool_descriptors()
+                    + skill_tool_descriptors()
+                )
             elif uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
             elif uri == "logagent-v2://cases/recent":
                 value = {"cases": store.search_cases(query=None, limit=10)}
+            elif uri == "logagent-v2://skills":
+                value = {"skills": list_skills(settings)}
+            elif isinstance(uri, str) and uri.startswith("logagent-v2://skills/"):
+                skill_id = uri.removeprefix("logagent-v2://skills/")
+                value = get_skill(settings, skill_id)
             elif isinstance(uri, str) and uri.startswith(
                 "logagent-v2://metadata/instances/"
             ) and uri.endswith("/snapshot"):
@@ -182,6 +220,7 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "evidence", "Evidence index"),
         resource(run_id, "manifest", "Initial manifest"),
         resource(run_id, "grep_results", "Initial grep results"),
+        resource(run_id, "system_context", "System Context snapshot"),
     ]
 
 
@@ -210,6 +249,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "manifest")
     elif name == "grep_results":
         value = read_initial_grep_artifact(settings, store, run["id"])
+    elif name == "system_context":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "system_context")
     else:
         raise ValueError(f"unsupported task resource {name}")
     return {
@@ -288,6 +329,16 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         }
     if name in CASE_TOOL_NAMES:
         value = call_case_tool(settings, store, run, name, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
+    if name in SKILL_TOOL_NAMES:
+        value = call_task_skill_tool(settings, store, run, name, arguments)
         return {
             "content": [
                 {
@@ -491,3 +542,58 @@ def call_get_log_slice(settings: Settings, store: Store, run: dict, arguments: d
         indent=2,
     )
     return {"content": [{"type": "text", "text": text}]}
+
+
+def call_readonly_skill_tool(settings: Settings, name: str, arguments: dict) -> dict:
+    if name == "logagent.list_skills":
+        return {"skills": list_skills(settings)}
+    if name == "logagent.get_skill":
+        return get_skill(settings, require_arg_string(arguments, "skillId"))
+    if name == "logagent.get_skill_reference":
+        return read_readonly_skill_reference(
+            settings=settings,
+            skill_id=require_arg_string(arguments, "skillId"),
+            reference_id=optional_arg_string(arguments, "referenceId"),
+            path=optional_arg_string(arguments, "path"),
+        )
+    if name == "logagent.preview_system_context":
+        skill_ids = arguments.get("skillIds")
+        if skill_ids is not None and not isinstance(skill_ids, list):
+            raise ValueError("skillIds must be an array")
+        return preview_system_context(settings, skill_ids)
+    raise ValueError(f"unsupported skill tool {name}")
+
+
+def call_task_skill_tool(
+    settings: Settings, store: Store, run: dict, name: str, arguments: dict
+) -> dict:
+    if name == "logagent.get_skill_reference":
+        return read_task_skill_reference(
+            settings=settings,
+            store=store,
+            run_id=run["id"],
+            skill_id=require_arg_string(arguments, "skillId"),
+            reference_id=optional_arg_string(arguments, "referenceId"),
+            path=optional_arg_string(arguments, "path"),
+        )
+    if name == "logagent.list_skills":
+        return {"skills": list_skills(settings)}
+    if name == "logagent.get_skill":
+        return get_skill(settings, require_arg_string(arguments, "skillId"))
+    if name == "logagent.preview_system_context":
+        return preview_system_context(settings, arguments.get("skillIds") or [])
+    raise ValueError(f"unsupported skill tool {name}")
+
+
+def require_arg_string(arguments: dict, name: str) -> str:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} is required")
+    return value.strip()
+
+
+def optional_arg_string(arguments: dict, name: str) -> str | None:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()

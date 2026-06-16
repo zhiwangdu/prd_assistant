@@ -27,6 +27,9 @@ slice provides the durable foundation for the V2 product model:
   storage, field/tag type queries, HTTP API, and readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   keyword recall, edit/disable API, and readonly/task MCP search.
+- Skill-backed System Context foundation with filesystem Skill registry,
+  Markdown import, explicit Workspace skill selection, `system_context` run
+  snapshot, and readonly/task MCP reference reading.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -125,6 +128,10 @@ POST /api/v2/runs/:run_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
+GET  /api/v2/skills
+GET  /api/v2/skills/:skill_id
+POST /api/v2/skills/imports
+POST /api/v2/skills/preview
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -138,8 +145,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs, rich Tool Runner input matching, Metadata preview/confirm and URL fetch,
-Skills, Case import drafts, FTS/embedding recall, WebUI, or full LangGraph model
-loop.
+skills.zip export, richer Skill auto-matching, Case import drafts,
+FTS/embedding recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -303,3 +310,34 @@ logagent.get_case
 Task MCP Case calls persist `case_context` evidence as background context with
 `final_allowed=false`. Historical cases are references for investigation and do
 not replace current-task evidence.
+
+## Skills And System Context
+
+V2 stores diagnostic Skills under:
+
+```text
+<LOGAGENT_V2_DATA_DIR>/skills/<skillId>/
+  SKILL.md
+  logagent.json
+  references/...
+```
+
+`POST /api/v2/skills/imports` creates a simple Markdown Skill with
+`SKILL.md` frontmatter and default `logagent.json`. Workspaces can carry
+explicit `skillIds`; each run writes a `system_context` artifact containing
+selected diagnostic skill summaries, bounded `SKILL.md` content, revision, and
+declared references.
+
+Readonly MCP and task MCP expose:
+
+```text
+logagent.list_skills
+logagent.get_skill
+logagent.get_skill_reference
+logagent.preview_system_context
+```
+
+Task MCP `logagent.get_skill_reference` only reads references declared in the
+run's `system_context` snapshot and persists a `skill_reference` background
+artifact with `final_allowed=false`. Readonly MCP reads the current registry and
+does not write workspace artifacts.

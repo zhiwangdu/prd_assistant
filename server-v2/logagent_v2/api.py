@@ -13,6 +13,7 @@ from .config import Settings
 from .metadata import import_metadata, query_field_types
 from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
+from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
 from .tools import tool_descriptors
 from .worker import JobRunner
@@ -22,6 +23,7 @@ class WorkspaceCreate(BaseModel):
     question: str = Field(min_length=1, max_length=20000)
     mode: Literal["diagnose", "code_investigation", "fix"] = "diagnose"
     language: Literal["zh-CN", "en-US"] = "zh-CN"
+    skillIds: list[str] = Field(default_factory=list, max_length=20)
 
 
 class MessageCreate(BaseModel):
@@ -78,6 +80,18 @@ class CaseUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class SkillImportCreate(BaseModel):
+    skillId: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=1000)
+    markdown: str = Field(min_length=1, max_length=200000)
+    filename: str | None = Field(default=None, max_length=300)
+
+
+class SkillPreviewCreate(BaseModel):
+    skillIds: list[str] = Field(default_factory=list, max_length=20)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.ensure_dirs()
@@ -104,7 +118,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/workspaces")
     async def create_workspace(_: Auth, payload: WorkspaceCreate) -> dict:
-        return store.create_workspace(payload.question, payload.mode, payload.language)
+        return store.create_workspace(
+            payload.question,
+            payload.mode,
+            payload.language,
+            skill_ids=payload.skillIds,
+        )
 
     @app.get("/api/v2/workspaces")
     async def list_workspaces(_: Auth) -> dict:
@@ -219,6 +238,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
         return {"tools": tool_descriptors(settings)}
+
+    @app.get("/api/v2/skills")
+    async def list_diagnostic_skills(_: Auth) -> dict:
+        try:
+            return {"skills": list_skills(settings)}
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/skills/{skill_id}")
+    async def get_diagnostic_skill(_: Auth, skill_id: str) -> dict:
+        try:
+            return get_skill(settings, skill_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/skills/imports")
+    async def create_skill_import(_: Auth, payload: SkillImportCreate) -> dict:
+        try:
+            return import_skill(
+                settings=settings,
+                skill_id=payload.skillId,
+                name=payload.name,
+                description=payload.description,
+                markdown=payload.markdown,
+                filename=payload.filename,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/skills/preview")
+    async def preview_skills(_: Auth, payload: SkillPreviewCreate) -> dict:
+        try:
+            return preview_system_context(settings, payload.skillIds)
+        except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/metadata/instances")
     async def list_metadata_instances(_: Auth) -> dict:
@@ -337,7 +393,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/mcp/readonly")
     async def readonly_mcp(_: Auth, request: dict) -> dict:
-        return readonly_mcp_response(store, request)
+        return readonly_mcp_response(settings, store, request)
 
     @app.post("/api/v2/mcp/task/{run_id}")
     async def task_mcp(_: Auth, run_id: str, request: dict) -> dict:

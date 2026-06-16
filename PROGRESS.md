@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Skill-backed System Context Foundation
+
+- Added V2 filesystem Skill registry under `LOGAGENT_V2_DATA_DIR/skills` with Codex-compatible `SKILL.md`, optional `logagent.json`, revision hashing, declared references, and safe reference path validation.
+- Added Skill APIs: `GET /api/v2/skills`, `GET /api/v2/skills/:skill_id`, `POST /api/v2/skills/imports`, and side-effect-free `POST /api/v2/skills/preview`.
+- Workspaces now persist explicit `skillIds`; run execution writes a `system_context` background artifact containing selected diagnostic Skills, bounded content, revisions, and reference indexes.
+- Added readonly MCP and task MCP Skill tools: `logagent.list_skills`, `logagent.get_skill`, `logagent.get_skill_reference`, and `logagent.preview_system_context`.
+- Task MCP Skill reference reads are constrained to the run snapshot and persist `skill_reference` background evidence with `final_allowed=false`.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Case Memory Foundation
 
 - Added SQLite-backed V2 Case Memory table and Case schema v2 records.

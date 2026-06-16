@@ -89,6 +89,7 @@ class Store:
                   mode TEXT NOT NULL,
                   language TEXT NOT NULL,
                   status TEXT NOT NULL,
+                  skill_ids_json TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -200,24 +201,51 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_cases_task_id ON cases(task_id);
                 """
             )
+            self._ensure_column_tx(
+                conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
+            )
 
-    def create_workspace(self, question: str, mode: str, language: str) -> JsonObject:
+    def _ensure_column_tx(
+        self, conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> None:
+        columns = {
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _workspace_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        item["skillIds"] = decode_json(item.pop("skill_ids_json", None), [])
+        return item
+
+    def create_workspace(
+        self, question: str, mode: str, language: str, skill_ids: list[str] | None = None
+    ) -> JsonObject:
         workspace_id = new_id("ws")
         ts = now_iso()
+        skill_ids = skill_ids or []
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO workspaces(id, question, mode, language, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO workspaces(
+                  id, question, mode, language, status, skill_ids_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (workspace_id, question, mode, language, "active", ts, ts),
+                (workspace_id, question, mode, language, "active", encode_json(skill_ids), ts, ts),
             )
             self._append_event_tx(
                 conn,
                 workspace_id,
                 None,
                 "workspace.created",
-                {"question": question, "mode": mode, "language": language},
+                {
+                    "question": question,
+                    "mode": mode,
+                    "language": language,
+                    "skillIds": skill_ids,
+                },
                 ts,
             )
         return self.get_workspace(workspace_id)
@@ -227,14 +255,14 @@ class Store:
             rows = conn.execute(
                 "SELECT * FROM workspaces ORDER BY created_at DESC, id DESC"
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._workspace_from_row(row) for row in rows]
 
     def get_workspace(self, workspace_id: str) -> JsonObject:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
         if row is None:
             raise KeyError(f"unknown workspace {workspace_id}")
-        return dict(row)
+        return self._workspace_from_row(row)
 
     def list_uploads(self, workspace_id: str) -> list[JsonObject]:
         with self.connect() as conn:

@@ -58,10 +58,15 @@ class Settings:
     def tmp_dir(self) -> Path:
         return self.data_dir / "tmp"
 
+    @property
+    def skills_dir(self) -> Path:
+        return self.data_dir / "skills"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        self.skills_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_env(cls) -> "Settings":

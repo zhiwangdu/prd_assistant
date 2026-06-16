@@ -24,6 +24,7 @@ from logagent_v2.final_answer import (
 )
 from logagent_v2.mcp import readonly_mcp_response, task_mcp_response
 from logagent_v2.metadata import import_metadata, query_field_types
+from logagent_v2.skills import list_skills
 from logagent_v2.store import Store
 
 
@@ -570,6 +571,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(fields["missingFields"], ["missing"])
 
             readonly_instances = readonly_mcp_response(
+                settings,
                 store,
                 {
                     "jsonrpc": "2.0",
@@ -582,6 +584,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(readonly_body["instances"][0]["instanceId"], "inst1")
 
             readonly_tags = readonly_mcp_response(
+                settings,
                 store,
                 {
                     "jsonrpc": "2.0",
@@ -677,6 +680,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(create_task_case(store, run["id"], {})["caseId"], task_case["caseId"])
 
             readonly_cases = readonly_mcp_response(
+                settings,
                 store,
                 {
                     "jsonrpc": "2.0",
@@ -711,6 +715,116 @@ class StoreTests(unittest.TestCase):
             case_context = [item for item in evidence if item["kind"] == "case_context"]
             self.assertEqual(len(case_context), 1)
             self.assertFalse(case_context[0]["final_allowed"])
+
+    def test_skill_system_context_and_reference_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            skill_dir = settings.skills_dir / "opengemini-diagnosis"
+            (skill_dir / "references").mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\n"
+                "name: openGemini Diagnosis\n"
+                "description: Diagnose openGemini logs.\n"
+                "---\n\n"
+                "Always ground conclusions in current task evidence.\n",
+                encoding="utf-8",
+            )
+            (skill_dir / "references" / "topology.md").write_text(
+                "PT ownership and shard topology reference.\n",
+                encoding="utf-8",
+            )
+            (skill_dir / "logagent.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "displayName": "openGemini Diagnosis",
+                        "includeByDefault": False,
+                        "priority": 80,
+                        "references": [
+                            {
+                                "referenceId": "topology",
+                                "path": "references/topology.md",
+                                "title": "Topology",
+                                "summary": "Topology reference",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(list_skills(settings)[0]["skillId"], "opengemini-diagnosis")
+
+            workspace = store.create_workspace(
+                "explain shard ownership",
+                "diagnose",
+                "en-US",
+                skill_ids=["opengemini-diagnosis"],
+            )
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            context_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 18,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/system_context"},
+                },
+            )
+            context = json.loads(context_response["result"]["contents"][0]["text"])
+            self.assertEqual(context["resources"][0]["skillId"], "opengemini-diagnosis")
+            self.assertEqual(context["resources"][0]["references"][0]["referenceId"], "topology")
+
+            task_ref = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 19,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_skill_reference",
+                        "arguments": {
+                            "skillId": "opengemini-diagnosis",
+                            "referenceId": "topology",
+                        },
+                    },
+                },
+            )
+            ref_body = json.loads(task_ref["result"]["content"][0]["text"])
+            self.assertIn("shard topology", ref_body["content"])
+            self.assertTrue(ref_body["backgroundRef"].startswith("skill_references/"))
+            evidence = store.list_evidence(run["id"])
+            skill_refs = [item for item in evidence if item["kind"] == "skill_reference"]
+            self.assertEqual(len(skill_refs), 1)
+            self.assertFalse(skill_refs[0]["final_allowed"])
+
+            readonly_ref = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 20,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_skill_reference",
+                        "arguments": {
+                            "skillId": "opengemini-diagnosis",
+                            "path": "references/topology.md",
+                        },
+                    },
+                },
+            )
+            readonly_body = json.loads(readonly_ref["result"]["content"][0]["text"])
+            self.assertFalse(readonly_body["finalEvidenceAllowed"])
+            self.assertIn("PT ownership", readonly_body["content"])
 
 
 if __name__ == "__main__":

@@ -71,6 +71,10 @@ Implemented in this slice:
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, keyword recall, edit/disable API, readonly MCP search, and task
   MCP background case context.
+- Skill-backed System Context foundation with filesystem Skill registry,
+  Markdown import, explicit Workspace skill selection, per-run
+  `system_context` artifact, readonly MCP Skill tools, and task MCP reference
+  artifacts.
 
 Not yet implemented:
 
@@ -80,7 +84,8 @@ Not yet implemented:
   recall, and full multi-round model reasoning after resume.
 - Metadata preview/confirm flow, URL fetch, task context auto-selection, and
   WebUI cutover.
-- Skill-backed System Context.
+- Skills export zip, richer automatic Skill matching, and WebUI System Context
+  cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
   management.
 - WebUI V2 cutover.
@@ -122,6 +127,10 @@ POST /api/v2/runs/:run_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
+GET  /api/v2/skills
+GET  /api/v2/skills/:skill_id
+POST /api/v2/skills/imports
+POST /api/v2/skills/preview
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -305,6 +314,43 @@ exposes the same tools and writes results as `case_context` evidence with
 `final_allowed=false`. Historical Cases are background references; final answers
 still need current-task evidence refs.
 
+## Skills And System Context
+
+V2 Skills are Codex-compatible filesystem directories under
+`LOGAGENT_V2_DATA_DIR/skills`. Each Skill requires `SKILL.md` with `name` and
+`description` frontmatter; optional `logagent.json` defines display metadata,
+`includeByDefault`, priority, and declared references.
+
+The import API writes:
+
+```text
+skills/<skillId>/SKILL.md
+skills/<skillId>/logagent.json
+```
+
+with a conservative default manifest. Workspaces can store explicit `skillIds`.
+When a run starts, V2 writes `system_context.json` as a background artifact with
+schema v2 resources:
+
+```text
+kind=diagnostic_skill
+skillId
+revision
+summary
+content
+references[]
+```
+
+If no explicit `skillIds` are set, V2 includes Skills whose manifest has
+`includeByDefault=true`. Rich product/version matching is not implemented yet.
+
+Readonly MCP exposes `logagent.list_skills`, `logagent.get_skill`,
+`logagent.get_skill_reference`, and `logagent.preview_system_context` against
+the current registry. Task MCP exposes the same tools, but
+`logagent.get_skill_reference` is constrained to Skills and references captured
+in the current run's `system_context` snapshot and persists `skill_reference`
+evidence with `final_allowed=false`.
+
 ## Final Answer Validation
 
 Final answers must be JSON objects with a non-empty `summary`, string arrays for
@@ -327,9 +373,9 @@ tool_results/<tool_id>/result.json#findings/<index>
 ```
 
 The referenced artifact must exist and the match/finding index must be in
-range. Background context such as `manifest.json`, future system context,
-metadata slices, and diagnostic skill references must stay readable context and
-cannot be cited as final root-cause evidence.
+range. Background context such as `manifest.json`, `system_context.json`,
+metadata slices, case context, and diagnostic skill references must stay
+readable context and cannot be cited as final root-cause evidence.
 
 ## Waiting States
 
