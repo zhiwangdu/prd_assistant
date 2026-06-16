@@ -112,6 +112,10 @@ Implemented in this slice:
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executable files, shell wrappers, config examples, and skip reasons for tools
   that cannot be packaged.
+- V2 Settings and diagnostics endpoints for Agent provider summary, model list
+  and chat connectivity tests, in-process Agent backend dry-run diagnostics,
+  built-in Domain Adapter summaries, and process-local LLM response-content
+  debug logging.
 
 Not yet implemented:
 
@@ -161,6 +165,14 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/debug/llm
+PUT  /api/v2/debug/llm
+GET  /api/v2/settings/llm
+GET  /api/v2/settings/llm/models
+POST /api/v2/settings/llm/chat
+GET  /api/v2/settings/agent-backends
+POST /api/v2/settings/agent-backends/:backend_id/test
+GET  /api/v2/settings/domain-adapters
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -670,6 +682,35 @@ contains each Skill directory's regular files under `<skillId>/...` plus a root
 revisions, source paths, and exported file metadata. Symlinks and symlinked
 directories are skipped; archive paths must remain relative and cannot contain
 `..`.
+
+## Settings And Domain Adapters
+
+V2 Settings APIs are equivalent product diagnostics for the clean-room runtime
+rather than compatibility routes for the Rust Server:
+
+- `GET /api/v2/settings/llm` returns the V2 Agent provider summary, configured
+  model, timeout, input/output limits, and boolean configuration flags. It must
+  not return API keys.
+- `GET /api/v2/settings/llm/models` tests model listing. `stub` returns the
+  local stub model; `openai_compatible` calls the configured `/models`
+  endpoint.
+- `POST /api/v2/settings/llm/chat` sends one bounded test message. `stub`
+  returns a deterministic acknowledgment; `openai_compatible` calls the
+  configured `/chat/completions` endpoint with the V2 max output token limit.
+- `GET /api/v2/settings/agent-backends` summarizes the in-process V2 Agent
+  runtime as `logagent_v2_agent`.
+- `POST /api/v2/settings/agent-backends/:backend_id/test` performs a dry-run
+  configuration diagnostic only. It must not execute shell commands.
+- `GET /api/v2/settings/domain-adapters` returns the built-in adapter registry:
+  `opengemini_influxdb` is active, while `cassandra` and `rocksdb` are
+  skeleton adapters.
+
+Readonly MCP must expose the same Domain Adapter summaries through
+`logagent-v2://domain-adapters` and `logagent.list_domain_adapters`.
+
+`GET/PUT /api/v2/debug/llm` controls process-local model response-content
+logging. It is off by default, resets on restart, and may only log response
+content to stderr; prompts, headers, and API keys must never be logged.
 
 ## Final Answer Validation
 

@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Settings Diagnostics
+
+- Added V2 Settings and diagnostics endpoints under `/api/v2/settings/*` plus `/api/v2/debug/llm`.
+- Added `server-v2/logagent_v2/settings_api.py` for V2 Agent provider summaries, model list/chat connectivity tests, in-process Agent backend dry-run diagnostics, and built-in Domain Adapter summaries.
+- Added `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` and wired it into OpenAI-compatible Agent provider requests.
+- Added response-content-only provider debug logging and exposed Domain Adapter summaries through readonly MCP `logagent-v2://domain-adapters` and `logagent.list_domain_adapters`.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Metadata Bridge
 
 - Added a V2 Metadata bridge panel under the V2 System Context bridge while preserving the Rust-compatible Metadata Dashboard.

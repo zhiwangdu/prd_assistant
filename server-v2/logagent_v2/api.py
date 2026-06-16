@@ -50,6 +50,17 @@ from .metadata import (
 from .mcp import readonly_mcp_response, task_mcp_response
 from .results import get_run_result
 from .security import auth_dependency
+from .llm import debug_log_responses, set_debug_log_responses
+from .settings_api import (
+    agent_backend_diagnostic,
+    agent_backends_summary,
+    domain_adapter_summaries,
+    list_agent_models,
+    llm_settings_summary,
+    test_agent_chat,
+    test_response,
+    validate_settings_message,
+)
 from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
 from .tools import tool_descriptors
@@ -181,6 +192,14 @@ class FetchEndpointUpdate(BaseModel):
     headers: dict[str, str] | None = None
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool | None = None
+
+
+class LlmDebugUpdate(BaseModel):
+    llmOutputLogging: bool
+
+
+class LlmChatTestCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=20000)
 
 
 class UploadSessionInit(BaseModel):
@@ -525,6 +544,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
         return {"tools": [*tool_descriptors(settings), fetch_catalog_descriptor(settings)]}
+
+    @app.get("/api/v2/debug/llm")
+    async def get_llm_debug(_: Auth) -> dict:
+        return {"llmOutputLogging": debug_log_responses()}
+
+    @app.put("/api/v2/debug/llm")
+    async def update_llm_debug(_: Auth, payload: LlmDebugUpdate) -> dict:
+        return {"llmOutputLogging": set_debug_log_responses(payload.llmOutputLogging)}
+
+    @app.get("/api/v2/settings/llm")
+    async def get_llm_settings(_: Auth) -> dict:
+        return {"llm": llm_settings_summary(settings)}
+
+    @app.get("/api/v2/settings/llm/models")
+    async def test_llm_models(_: Auth) -> dict:
+        return test_response(lambda: list_agent_models(settings))
+
+    @app.post("/api/v2/settings/llm/chat")
+    async def test_llm_chat(_: Auth, payload: LlmChatTestCreate) -> dict:
+        try:
+            message = validate_settings_message(payload.message)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return test_response(lambda: test_agent_chat(settings, message))
+
+    @app.get("/api/v2/settings/agent-backends")
+    async def get_agent_backends(_: Auth) -> dict:
+        return {"agentBackends": agent_backends_summary(settings)}
+
+    @app.post("/api/v2/settings/agent-backends/{backend_id}/test")
+    async def test_agent_backend(_: Auth, backend_id: str) -> dict:
+        return test_response(lambda: agent_backend_diagnostic(settings, backend_id))
+
+    @app.get("/api/v2/settings/domain-adapters")
+    async def get_domain_adapters(_: Auth) -> dict:
+        return {"domainAdapters": domain_adapter_summaries()}
 
     @app.get("/api/v2/exports/skills.zip")
     async def export_skills(_: Auth) -> Response:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +18,25 @@ from .tools import tool_descriptors
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
+_DEBUG_LOCK = threading.Lock()
+_DEBUG_LOG_RESPONSES = False
+
+
+def debug_log_responses() -> bool:
+    with _DEBUG_LOCK:
+        return _DEBUG_LOG_RESPONSES
+
+
+def set_debug_log_responses(enabled: bool) -> bool:
+    global _DEBUG_LOG_RESPONSES
+    with _DEBUG_LOCK:
+        _DEBUG_LOG_RESPONSES = bool(enabled)
+        return _DEBUG_LOG_RESPONSES
+
+
+def log_provider_response_content(content: str) -> None:
+    if debug_log_responses():
+        print(f"[logagent-v2] agent provider response content: {content}", file=sys.stderr)
 
 
 def generate_agent_final_answer(
@@ -84,6 +105,7 @@ def build_agent_provider_request(
             "payload": {
                 "model": settings.agent_model,
                 "temperature": 0,
+                "max_tokens": settings.agent_max_output_tokens,
                 "messages": [
                     {
                         "role": "system",
@@ -206,6 +228,7 @@ def call_openai_compatible(
         if isinstance(decoded, dict):
             response_payload["json"] = decoded
         content = extract_chat_content(decoded)
+        log_provider_response_content(content)
         response_payload["contentPreview"] = content[:MAX_PROVIDER_PREVIEW_CHARS]
         final_answer = parse_final_answer_content(content)
     except Exception as error:

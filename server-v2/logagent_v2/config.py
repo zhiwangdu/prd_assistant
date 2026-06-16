@@ -71,6 +71,7 @@ class Settings:
     agent_api_key: str | None = None
     agent_timeout_seconds: int = 60
     agent_max_rounds: int = 3
+    agent_max_output_tokens: int = 2048
 
     @property
     def sqlite_path(self) -> Path:
@@ -132,6 +133,9 @@ class Settings:
         agent_api_key = os.environ.get("LOGAGENT_V2_AGENT_API_KEY")
         agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
         agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "3"))
+        agent_max_output_tokens = int(
+            os.environ.get("LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS", "2048")
+        )
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -157,6 +161,7 @@ class Settings:
             agent_api_key=agent_api_key,
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
+            agent_max_output_tokens=max(1, agent_max_output_tokens),
         )
 
 

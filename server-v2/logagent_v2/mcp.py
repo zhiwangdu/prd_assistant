@@ -9,6 +9,7 @@ from .evidence import get_log_slice, run_log_search
 from .fetch import call_fetch_tool, fetch_catalog_descriptor, fetch_tool_descriptors
 from .metadata import call_metadata_tool, metadata_tool_descriptors
 from .results import latest_evidence, read_text_artifact
+from .settings_api import domain_adapter_summaries
 from .skills import (
     get_skill,
     list_skills,
@@ -107,6 +108,12 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                         "description": "Imported V2 diagnostic skills",
                         "mimeType": "application/json",
                     },
+                    {
+                        "uri": "logagent-v2://domain-adapters",
+                        "name": "domain_adapters",
+                        "description": "Built-in V2 domain adapter summaries",
+                        "mimeType": "application/json",
+                    },
                 ]
             }
         elif method == "tools/list":
@@ -115,6 +122,11 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                     {
                         "name": "logagent.list_tools",
                         "description": "List V2 tool descriptors.",
+                        "inputSchema": {"type": "object", "additionalProperties": False},
+                    },
+                    {
+                        "name": "logagent.list_domain_adapters",
+                        "description": "List built-in V2 domain adapter summaries.",
                         "inputSchema": {"type": "object", "additionalProperties": False},
                     },
                     *metadata_tool_descriptors(),
@@ -136,6 +148,19 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                                 + skill_tool_descriptors()
                                 + [fetch_catalog_descriptor(settings)],
                                 ensure_ascii=True,
+                            ),
+                        }
+                    ]
+                }
+            elif name == "logagent.list_domain_adapters":
+                result = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                {"domainAdapters": domain_adapter_summaries()},
+                                ensure_ascii=True,
+                                indent=2,
                             ),
                         }
                     ]
@@ -187,6 +212,8 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                 value = {"cases": store.search_cases(query=None, limit=10)}
             elif uri == "logagent-v2://skills":
                 value = {"skills": list_skills(settings)}
+            elif uri == "logagent-v2://domain-adapters":
+                value = {"domainAdapters": domain_adapter_summaries()}
             elif isinstance(uri, str) and uri.startswith("logagent-v2://skills/"):
                 skill_id = uri.removeprefix("logagent-v2://skills/")
                 value = get_skill(settings, skill_id)

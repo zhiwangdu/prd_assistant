@@ -55,6 +55,16 @@ from logagent_v2.metadata import (
     query_field_types,
 )
 from logagent_v2.results import get_run_result
+from logagent_v2.llm import debug_log_responses, set_debug_log_responses
+from logagent_v2.settings_api import (
+    agent_backend_diagnostic,
+    agent_backends_summary,
+    domain_adapter_summaries,
+    list_agent_models,
+    llm_settings_summary,
+    test_agent_chat,
+    test_response,
+)
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
 from logagent_v2.tools import (
@@ -2890,6 +2900,87 @@ grep_results.json#matches/0
             self.assertTrue(tools["missing_tool"]["skipped"])
             self.assertIn("regular file", tools["missing_tool"]["skipReason"])
             self.assertNotIn("disabled_tool", tools)
+
+    def test_v2_settings_summaries_and_debug_toggle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+
+            summary = llm_settings_summary(settings)
+            self.assertEqual(summary["provider"], "stub")
+            self.assertEqual(summary["configuredModel"], "stub")
+            self.assertEqual(summary["maxOutputTokens"], 2048)
+            self.assertFalse(summary["baseUrlConfigured"])
+
+            models = list_agent_models(settings)
+            self.assertEqual(models["models"], ["stub"])
+            chat = test_agent_chat(settings, "hello")
+            self.assertEqual(chat["provider"], "stub")
+            self.assertIn("hello", chat["response"])
+
+            backends = agent_backends_summary(settings)
+            self.assertEqual(backends["defaultBackend"], "logagent_v2_agent")
+            self.assertEqual(backends["backends"][0]["backendType"], "langgraph_oriented_agent")
+            diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
+            self.assertEqual(diagnostic["status"], "configured")
+            self.assertTrue(diagnostic["details"])
+
+            self.assertFalse(debug_log_responses())
+            self.assertTrue(set_debug_log_responses(True))
+            self.assertTrue(debug_log_responses())
+            self.assertFalse(set_debug_log_responses(False))
+
+    def test_v2_settings_report_openai_configuration_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                agent_provider="openai_compatible",
+                agent_base_url="http://127.0.0.1:1/v1",
+                agent_model=None,
+            )
+
+            response = test_response(lambda: agent_backend_diagnostic(settings, "logagent_v2_agent"))
+            self.assertFalse(response["ok"])
+            self.assertIn("LOGAGENT_V2_AGENT_MODEL", response["error"])
+
+    def test_v2_domain_adapters_are_exposed_in_readonly_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            adapters = domain_adapter_summaries()
+            self.assertEqual([item["id"] for item in adapters], [
+                "opengemini_influxdb",
+                "cassandra",
+                "rocksdb",
+            ])
+            self.assertEqual(adapters[0]["status"], "active")
+            self.assertEqual(adapters[1]["status"], "skeleton")
+
+            resources = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
+            )
+            resource_uris = {
+                item["uri"] for item in resources["result"]["resources"]
+            }
+            self.assertIn("logagent-v2://domain-adapters", resource_uris)
+
+            tool_call = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "logagent.list_domain_adapters", "arguments": {}},
+                },
+            )
+            payload = json.loads(tool_call["result"]["content"][0]["text"])
+            self.assertEqual(payload["domainAdapters"][0]["id"], "opengemini_influxdb")
 
 
 if __name__ == "__main__":

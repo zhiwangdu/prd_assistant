@@ -54,6 +54,9 @@ slice provides the durable foundation for the V2 product model:
 - Agent runtime with default stub final answer plus optional bounded
   OpenAI-compatible provider/tool loop for evidence-validated JSON final
   answers and per-round request/response/state audit artifacts.
+- Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
+  summary, built-in Domain Adapters, and process-local LLM response-content
+  debug logging.
 
 ## Local Run
 
@@ -115,6 +118,7 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token for the OpenAI-compatible provider |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
+| `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
 
 Tool descriptor example:
 
@@ -173,6 +177,14 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/debug/llm
+PUT  /api/v2/debug/llm
+GET  /api/v2/settings/llm
+GET  /api/v2/settings/llm/models
+POST /api/v2/settings/llm/chat
+GET  /api/v2/settings/agent-backends
+POST /api/v2/settings/agent-backends/:backend_id/test
+GET  /api/v2/settings/domain-adapters
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -212,6 +224,25 @@ POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
+
+## Settings And Diagnostics
+
+V2 exposes Settings diagnostics under `/api/v2/settings/*`. The LLM section is
+mapped to the V2 Agent provider configuration: `stub` is local, while
+`openai_compatible` calls the configured OpenAI-compatible `/models` and
+`/chat/completions` endpoints. Responses never include API keys.
+
+`/api/v2/settings/agent-backends` describes the in-process V2 Agent runtime
+instead of the Rust Server's Claude Code CLI backend. The diagnostic endpoint is
+a dry-run configuration check and does not execute shell commands. The Domain
+Adapter endpoint returns the built-in `opengemini_influxdb` active adapter plus
+`cassandra` and `rocksdb` skeleton adapters. The same adapter summaries are also
+available through readonly MCP `logagent-v2://domain-adapters` and
+`logagent.list_domain_adapters`.
+
+`/api/v2/debug/llm` toggles process-local response-content logging for provider
+debugging. It only logs model response content to stderr and does not log
+prompts, headers, or API keys. The setting resets when the process restarts.
 
 ## Verification
 
