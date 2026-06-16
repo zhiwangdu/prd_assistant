@@ -310,6 +310,74 @@ export type V2FetchRunResult = {
   evidence: V2Evidence;
 };
 
+export type V2LlmSummary = {
+  provider: string;
+  configuredModel: string;
+  maxInputChars: number;
+  maxOutputTokens: number;
+  requestTimeoutSeconds: number;
+  baseUrlConfigured: boolean;
+  apiKeyConfigured: boolean;
+  binaryPathConfigured: boolean;
+};
+
+export type V2LlmTestResponse<T> = {
+  ok: boolean;
+  result?: T | null;
+  error?: string | null;
+};
+
+export type V2LlmModelsResult = {
+  provider: string;
+  configuredModel: string;
+  models: string[];
+  raw: unknown;
+};
+
+export type V2LlmChatResult = {
+  provider: string;
+  model: string;
+  response: string;
+};
+
+export type V2AgentBackendSummary = {
+  id: string;
+  backendType: string;
+  enabled: boolean;
+  defaultBackend: boolean;
+  commandConfigured: boolean;
+  timeoutSeconds: number;
+  maxInputBytes: number;
+  maxOutputBytes: number;
+  executionMode: string;
+  defaultMode?: string;
+  permissionProfile?: string;
+};
+
+export type V2AgentBackendsSummary = {
+  defaultBackend: string;
+  backends: V2AgentBackendSummary[];
+};
+
+export type V2AgentBackendDiagnosticResult = {
+  backendId: string;
+  backendType: string;
+  enabled: boolean;
+  status: string;
+  executionMode: string;
+  details: string[];
+};
+
+export type V2DomainAdapterSummary = {
+  id: string;
+  displayName: string;
+  status: string;
+  products: string[];
+  evidenceKinds: string[];
+  plannedTools: string[];
+  notes: string[];
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -586,6 +654,49 @@ export async function runV2FetchEndpoint(apiKey: string, runId: string, endpoint
     method: "POST",
     headers: authHeaders(apiKey)
   });
+}
+
+export async function getV2LlmDebug(apiKey: string) {
+  return fetchJson<{ llmOutputLogging: boolean }>("/api/v2/debug/llm", { headers: authHeaders(apiKey) });
+}
+
+export async function setV2LlmDebug(apiKey: string, enabled: boolean) {
+  return fetchJson<{ llmOutputLogging: boolean }>("/api/v2/debug/llm", {
+    method: "PUT",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ llmOutputLogging: enabled })
+  });
+}
+
+export async function getV2LlmSettings(apiKey: string) {
+  return fetchJson<{ llm: V2LlmSummary }>("/api/v2/settings/llm", { headers: authHeaders(apiKey) });
+}
+
+export async function testV2LlmModels(apiKey: string) {
+  return fetchJson<V2LlmTestResponse<V2LlmModelsResult>>("/api/v2/settings/llm/models", { headers: authHeaders(apiKey) });
+}
+
+export async function testV2LlmChat(apiKey: string, message: string) {
+  return fetchJson<V2LlmTestResponse<V2LlmChatResult>>("/api/v2/settings/llm/chat", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ message })
+  });
+}
+
+export async function getV2AgentBackends(apiKey: string) {
+  return fetchJson<{ agentBackends: V2AgentBackendsSummary }>("/api/v2/settings/agent-backends", { headers: authHeaders(apiKey) });
+}
+
+export async function testV2AgentBackend(apiKey: string, backendId: string) {
+  return fetchJson<V2LlmTestResponse<V2AgentBackendDiagnosticResult>>(`/api/v2/settings/agent-backends/${encodeURIComponent(backendId)}/test`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getV2DomainAdapters(apiKey: string) {
+  return fetchJson<{ domainAdapters: V2DomainAdapterSummary[] }>("/api/v2/settings/domain-adapters", { headers: authHeaders(apiKey) });
 }
 
 async function downloadV2File(apiKey: string, path: string, filename: string) {

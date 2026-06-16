@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Settings Bridge
+
+- Added a V2 Settings bridge panel at the top of the existing Settings page while preserving the Rust-compatible Settings diagnostics below it.
+- Extended `webui/src/v2-api.ts` with Python V2 Settings, Agent backend diagnostics, Domain Adapter summaries, and response-content debug helpers.
+- Added `webui/src/V2SettingsBridge.tsx` to inspect V2 Agent provider settings, run model list/message tests, dry-run the V2 Agent backend, toggle V2 LLM debug logging, display V2 Domain Adapters, copy readonly MCP config, and download V2 `skills.zip` / `tools.zip`.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 V2 Settings Diagnostics
 
 - Added V2 Settings and diagnostics endpoints under `/api/v2/settings/*` plus `/api/v2/debug/llm`.

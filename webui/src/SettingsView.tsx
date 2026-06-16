@@ -2,6 +2,7 @@ import { AlertTriangle, Bot, Boxes, CheckCircle2, Copy, Download, MessageSquareT
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, jsonHeaders } from "./metadata/api";
+import { V2SettingsBridge } from "./V2SettingsBridge";
 
 type Props = { apiKey: string };
 
@@ -239,6 +240,8 @@ export function SettingsView({ apiKey }: Props) {
 
   return (
     <div className="space-y-5">
+      <V2SettingsBridge apiKey={apiKey} />
+
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
