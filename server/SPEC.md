@@ -49,7 +49,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
-代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Fetch credential store、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Fetch、Metadata、Claude Code Session Runner、Domain Adapter、LLM Gateway 和 Tools 插件等内部能力，`mcp.rs` 承载 LogAgent MCP stdio server，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。
+代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Fetch credential store、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Fetch、Huawei Package Sync、Metadata、Claude Code Session Runner、Domain Adapter、LLM Gateway 和 Tools 插件等内部能力，`mcp.rs` 承载 LogAgent MCP stdio server，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。
 
 ## HTTP 接口
 
@@ -227,6 +227,8 @@ logagent.list_domain_adapters
 
 内置 Fetch catalog tool 为 `logagent.fetch`，`source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件，只有 `fetch.enabled=true` 时才 `runnable=true`。只读 HTTP MCP 可在工具目录看到 descriptor，但 `tools/call logagent.fetch` 必须被拒绝。
 
+内置 Huawei package sync catalog tool 为 `logagent.huawei_cloud_package_sync`，`source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`。只有 `huawei_cloud.package_sync.enabled=true` 且启动配置成功解析 OBS/GaussDB 环境变量后才 `runnable=true`。该工具不进入任务 MCP 或只读 HTTP MCP 执行面，首版只支持受保护 Tools API 手动运行。
+
 Fetch endpoint API 使用 `storage.data_dir/fetch` 下的 endpoint JSON。`POST /api/fetch/imports/preview` 解析 DevTools “Copy as cURL (bash)” 常见格式并返回脱敏预览；`POST /api/fetch/endpoints` 保存 endpoint 和加密 credential set；`POST /api/fetch/endpoints/:fetch_id/runs` 创建 `taskKind=tool_run` 且 `toolId=logagent.fetch` 的后台 run；`GET /api/fetch/runs?fetchId=...` 是 `/api/tools/runs` 的便捷过滤视图。
 
 任务 stdio MCP 额外支持：
@@ -386,7 +388,7 @@ background executor
   -> SUCCEEDED or FAILED
 ```
 
-`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求可引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动。只有 descriptor 中 `enabled=true` 且 `runnable=true` 的工具可通过该接口创建手动 run。`pprof_analyzer` 继续直接读取 raw profile；configured command tools 会先执行 extract/search 准备，生成 `extracted/`、`manifest.json`、`grep_results.json` 和可能的 `tool_inputs/index.json` 后再按白名单 args 模板运行；自动选择输入时优先使用 `tool_inputs` 中声明给该 toolId 的 materialized input，再回退到 manifest file pattern 和 grep keyword。内置 metadata tools 可无上传运行并写入 JSON result；`logagent.preprocess_log_package` 可手动批量运行并输出预处理摘要。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
+`tool_run` 任务通过 `POST /api/tools/:tool_id/runs` 创建，请求可引用已完成的 `uploadIds`，Server 创建 raw snapshot 并从 `RUN_TOOL` phase 启动。只有 descriptor 中 `enabled=true` 且 `runnable=true` 的工具可通过该接口创建手动 run。`pprof_analyzer` 继续直接读取 raw profile；configured command tools 会先执行 extract/search 准备，生成 `extracted/`、`manifest.json`、`grep_results.json` 和可能的 `tool_inputs/index.json` 后再按白名单 args 模板运行；自动选择输入时优先使用 `tool_inputs` 中声明给该 toolId 的 materialized input，再回退到 manifest file pattern 和 grep keyword。内置 metadata tools 可无上传运行并写入 JSON result；`logagent.preprocess_log_package` 可手动批量运行并输出预处理摘要；`logagent.huawei_cloud_package_sync` 必须引用一个上传文件并写入 `tool_results/<action_id>/result.json`。`GET /api/tasks` 默认只返回 `log_analysis` 任务，工具运行使用 `/api/tools/runs` 系列接口查询。
 
 `POST /api/sessions/:session_id/tasks` creates a new `log_analysis` task snapshot from the current Session. `POST /api/tasks` remains available for compatibility and tests but now requires `sessionId`. Both paths accept single-file `uploadId`, batch `uploadIds`, or no uploads for question-only analysis at the task creation layer. Every task writes `session_text_input.json` so the dialog text can be cited as `session_text_input.json#question`. Question-only tasks persist `uploadIds=[]` and `inputs=[]`, write an empty `raw/` snapshot, and still generate `manifest.json` / `grep_results.json` with empty file and match lists. Optional `instanceId` / `nodeId` are resolved against Metadata before persistence. `clusterId` remains accepted for compatibility but is deprecated as a user-facing selector. Session `skillIds` are resolved with Metadata product/version/environment, managed Skills with `includeByDefault=true` may auto-match, and the selected Skill summaries plus Metadata adapter are written to `system_context.json` schema v2. Legacy `systemContextIds` are deserialized for old Sessions but no longer inject old non-Metadata resources into new tasks.
 

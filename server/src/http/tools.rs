@@ -325,6 +325,16 @@ mod tests {
         assert_eq!(metadata_tag_fields["maxFiles"], 0);
         assert!(metadata_tag_fields["paramsTemplate"].is_object());
         assert!(metadata_tag_fields["paramsTemplate"].get("field").is_none());
+        let huawei_package_sync = tools
+            .iter()
+            .find(|tool| tool["toolId"] == "logagent.huawei_cloud_package_sync")
+            .unwrap();
+        assert_eq!(huawei_package_sync["source"], "built_in");
+        assert_eq!(huawei_package_sync["backend"], "huawei_cloud_package_sync");
+        assert_eq!(huawei_package_sync["enabled"], false);
+        assert_eq!(huawei_package_sync["runnable"], false);
+        assert_eq!(huawei_package_sync["minFiles"], 1);
+        assert_eq!(huawei_package_sync["maxFiles"], 1);
 
         let metadata_created = app
             .clone()
@@ -670,6 +680,7 @@ mod tests {
             },
             tools: ToolsSettings { tools },
             fetch: crate::support::config::FetchSettings::default(),
+            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,

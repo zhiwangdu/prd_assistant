@@ -12,6 +12,16 @@ Last updated: 2026-06-16
 - Updated root, Server, WebUI, Log Analyzer, Tool Runner, Interfaces, and Security docs/specs.
 - Verification passed: `cargo fmt --check`, `cargo check`, focused Log Analyzer tests, focused pipeline preprocessing test, focused Tool Runner materialized-input test, `cargo test -- --test-threads=1`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and `git diff --check`.
 
+## 2026-06-16 Huawei OBS + GaussDB Package Sync Tool
+
+- Added disabled-by-default `huawei_cloud.package_sync` Server config with OBS endpoint/bucket/object prefix, OBS credential env vars, optional security token env var, GaussDB host/port/database/user/password env var, `sslmode=disable`, and per-step timeout. Disabled configs do not read credential env vars; enabled configs fail startup on missing or empty secrets.
+- Added built-in Tools catalog descriptor `logagent.huawei_cloud_package_sync` with `source=built_in`, `backend=huawei_cloud_package_sync`, `minFiles=maxFiles=1`, `exportable=false`, `editable=false`, and `runnable` tied to config.
+- Added Huawei package sync execution service. Manual `tool_run` requires one completed upload, streams that raw snapshot file to Huawei OBS with signed PUT, executes user-provided GaussDB update SQL, performs OBS HEAD, executes GaussDB query SQL, and writes `tool_results/<action_id>/result.json`.
+- Result artifacts include OBS PUT/HEAD status, object key/URL, GaussDB affected rows, bounded query rows, step timings, failed step/error, and credential environment variable names. They intentionally omit raw SQL and OBS/GaussDB secret values.
+- Added object key validation, config validation tests, parameter validation tests, fake-client success result tests, and Tools API descriptor regression coverage.
+- Updated root, Server, WebUI, Tool Runner, Interfaces, Security, Config docs/specs plus deploy and example configs for the disabled Huawei package sync section.
+- Verification passed: `cargo fmt --check`, `cargo check -p logagent-server`, `cargo test -p logagent-server huawei -- --nocapture`, `cargo test -p logagent-server http::tools::tests::pprof_tool_run_reuses_uploads_tasks_and_result_api -- --nocapture`, `cargo test -p logagent-server -- --test-threads=1`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and `git diff --check`.
+
 ## 2026-06-16 Fetch Endpoint MVP
 
 - Added Server-managed Fetch endpoints behind a new `fetch` config section. Fetch is disabled by default; enabling it requires a 32-byte base64 secret key from `fetch.secret_key_env` and an explicit `fetch.allowed_hosts` HTTP/HTTPS allowlist.

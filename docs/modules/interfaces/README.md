@@ -14,7 +14,7 @@ Server 已在 `server/src/domain/contracts.rs` 落地第一版公共契约，并
 - `EvidenceArtifact` / `EvidenceType` / `EvidenceSummary`
 - `EvidenceProvider`
 
-Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版工具 action、Tools 页面手动运行和 Claude MCP `logagent.run_domain_tool` 走同一执行接口。日志包预处理会写入 `tool_inputs/index.json`，声明后续工具可消费的 materialized input。Fetch endpoint 复用 `tool_run` / `tool_results` 产物面，但执行契约由 Server 内置 Fetch service 提供：endpoint 和密文 credential set 持久化在 `storage.data_dir/fetch`，任务 MCP `logagent.fetch` 写入 `tool_results/<action_id>/result.json#response`。
+Action 和 Evidence 使用稳定 JSON 名称，artifact 路径必须是 workspace 相对路径。Tool Runner 已成为第一个消费该契约的模块：规则版工具 action、Tools 页面手动运行和 Claude MCP `logagent.run_domain_tool` 走同一执行接口。日志包预处理会写入 `tool_inputs/index.json`，声明后续工具可消费的 materialized input。Fetch endpoint 复用 `tool_run` / `tool_results` 产物面，但执行契约由 Server 内置 Fetch service 提供：endpoint 和密文 credential set 持久化在 `storage.data_dir/fetch`，任务 MCP `logagent.fetch` 写入 `tool_results/<action_id>/result.json#response`。Huawei package sync 同样复用 `tool_run` / `tool_results`，但首版只支持受保护 Tools API 手动运行，结果是 `tool_results/<action_id>/result.json`，不新增最终答案 evidence ref 类型。
 
 Server 现在也支持 Log Analysis Session 和 `taskKind=tool_run` 的手动工具运行任务。Session 是用户可见的恢复单元，保存草稿、上传引用、历史 task runs 和 timeline；每次分析 run 仍创建一个绑定 `sessionId` 的 `taskKind=log_analysis` task workspace 快照。`tool_run` 路径复用 TaskStore、workspace 和 `tool_results` 产物，但不绑定 Session、不进入 `PLAN_ANALYSIS`；Claude MCP `logagent.run_domain_tool` 复用同一个工具 registry。
 
@@ -170,6 +170,6 @@ logagent.list_tools
 logagent.list_domain_adapters
 ```
 
-只读 HTTP MCP tools 不能写 workspace artifact，不能创建或恢复 Session，不能上传、审批、运行 Tool Runner 或执行 Fetch endpoint。
+只读 HTTP MCP tools 不能写 workspace artifact，不能创建或恢复 Session，不能上传、审批、运行 Tool Runner、执行 Fetch endpoint 或执行 Huawei package sync。
 
 当前 Executor 已按持久化 phase 循环分派 handler，并在推进阶段时校验 expected phase。重启恢复保留中断 phase，为后续 `RUN_TOOL` 和 `PLAN_ANALYSIS` 分支提供基础。

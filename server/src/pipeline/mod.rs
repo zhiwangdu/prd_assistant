@@ -835,6 +835,7 @@ mod tests {
                 },
                 tools: ToolsSettings::default(),
                 fetch: crate::support::config::FetchSettings::default(),
+                huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
                 remote_execution: crate::support::config::RemoteExecutionSettings::default(),
                 llm: LlmSettings {
                     provider: LlmProvider::Stub,

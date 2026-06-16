@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
     pub fetch: FetchSettings,
+    pub huawei_cloud: HuaweiCloudSettings,
     pub remote_execution: RemoteExecutionSettings,
     pub llm: LlmSettings,
     pub claude_code: ClaudeCodeSettings,
@@ -111,6 +112,109 @@ impl Default for FetchSettings {
             max_response_bytes: default_fetch_max_response_bytes(),
             max_redirects: default_fetch_max_redirects(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HuaweiCloudSettings {
+    pub package_sync: HuaweiPackageSyncSettings,
+}
+
+#[derive(Debug, Clone)]
+pub struct HuaweiPackageSyncSettings {
+    pub enabled: bool,
+    pub timeout_seconds: u64,
+    pub obs: HuaweiObsSettings,
+    pub gaussdb: HuaweiGaussDbSettings,
+}
+
+impl Default for HuaweiPackageSyncSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            timeout_seconds: default_huawei_package_sync_timeout(),
+            obs: HuaweiObsSettings::default(),
+            gaussdb: HuaweiGaussDbSettings::default(),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct HuaweiObsSettings {
+    pub endpoint: String,
+    pub bucket: String,
+    pub object_prefix: String,
+    pub access_key_env: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key_env: Option<String>,
+    pub secret_key: Option<String>,
+    pub security_token_env: Option<String>,
+    pub security_token: Option<String>,
+}
+
+impl std::fmt::Debug for HuaweiObsSettings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HuaweiObsSettings")
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field("object_prefix", &self.object_prefix)
+            .field("access_key_env", &self.access_key_env)
+            .field(
+                "access_key",
+                &self.access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("secret_key_env", &self.secret_key_env)
+            .field(
+                "secret_key",
+                &self.secret_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("security_token_env", &self.security_token_env)
+            .field(
+                "security_token",
+                &self.security_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct HuaweiGaussDbSettings {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub user: String,
+    pub password_env: Option<String>,
+    pub password: Option<String>,
+    pub sslmode: String,
+}
+
+impl Default for HuaweiGaussDbSettings {
+    fn default() -> Self {
+        Self {
+            host: String::new(),
+            port: default_huawei_gaussdb_port(),
+            database: String::new(),
+            user: String::new(),
+            password_env: None,
+            password: None,
+            sslmode: default_huawei_gaussdb_sslmode(),
+        }
+    }
+}
+
+impl std::fmt::Debug for HuaweiGaussDbSettings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HuaweiGaussDbSettings")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("database", &self.database)
+            .field("user", &self.user)
+            .field("password_env", &self.password_env)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("sslmode", &self.sslmode)
+            .finish()
     }
 }
 
@@ -292,6 +396,7 @@ struct ConfigFile {
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
     fetch: Option<FetchConfig>,
+    huawei_cloud: Option<HuaweiCloudConfig>,
     remote_execution: Option<RemoteExecutionConfig>,
     llm: Option<LlmConfig>,
     claude_code: Option<ClaudeCodeConfig>,
@@ -395,6 +500,64 @@ struct FetchConfig {
     max_response_bytes: usize,
     #[serde(default = "default_fetch_max_redirects")]
     max_redirects: usize,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct HuaweiCloudConfig {
+    package_sync: Option<HuaweiPackageSyncConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HuaweiPackageSyncConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_huawei_package_sync_timeout")]
+    timeout_seconds: u64,
+    #[serde(default)]
+    obs: HuaweiObsConfig,
+    #[serde(default)]
+    gaussdb: HuaweiGaussDbConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct HuaweiObsConfig {
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    bucket: String,
+    #[serde(default)]
+    object_prefix: String,
+    access_key_env: Option<String>,
+    secret_key_env: Option<String>,
+    security_token_env: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HuaweiGaussDbConfig {
+    #[serde(default)]
+    host: String,
+    #[serde(default = "default_huawei_gaussdb_port")]
+    port: u16,
+    #[serde(default)]
+    database: String,
+    #[serde(default)]
+    user: String,
+    password_env: Option<String>,
+    #[serde(default = "default_huawei_gaussdb_sslmode")]
+    sslmode: String,
+}
+
+impl Default for HuaweiGaussDbConfig {
+    fn default() -> Self {
+        Self {
+            host: String::new(),
+            port: default_huawei_gaussdb_port(),
+            database: String::new(),
+            user: String::new(),
+            password_env: None,
+            sslmode: default_huawei_gaussdb_sslmode(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -608,6 +771,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             log_analyzer: None,
             tools: BTreeMap::new(),
             fetch: None,
+            huawei_cloud: None,
             remote_execution: None,
             llm: None,
             claude_code: None,
@@ -640,6 +804,11 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
     let fetch = resolve_fetch(parsed.fetch.unwrap_or_else(default_fetch_config))?;
+    let huawei_cloud = resolve_huawei_cloud(
+        parsed
+            .huawei_cloud
+            .unwrap_or_else(default_huawei_cloud_config),
+    )?;
     let remote_execution = resolve_remote_execution(
         parsed
             .remote_execution
@@ -722,6 +891,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         },
         tools,
         fetch,
+        huawei_cloud,
         remote_execution,
         llm: LlmSettings {
             provider,
@@ -882,6 +1052,191 @@ fn resolve_fetch(raw: FetchConfig) -> anyhow::Result<FetchSettings> {
         max_response_bytes: raw.max_response_bytes.max(1),
         max_redirects: raw.max_redirects,
     })
+}
+
+fn resolve_huawei_cloud(raw: HuaweiCloudConfig) -> anyhow::Result<HuaweiCloudSettings> {
+    let package_sync = resolve_huawei_package_sync(
+        raw.package_sync
+            .unwrap_or_else(default_huawei_package_sync_config),
+    )?;
+    Ok(HuaweiCloudSettings { package_sync })
+}
+
+fn resolve_huawei_package_sync(
+    raw: HuaweiPackageSyncConfig,
+) -> anyhow::Result<HuaweiPackageSyncSettings> {
+    let enabled = raw.enabled;
+    let endpoint = raw.obs.endpoint.trim().trim_end_matches('/').to_string();
+    let bucket = raw.obs.bucket.trim().to_string();
+    let object_prefix = normalize_huawei_object_prefix(&raw.obs.object_prefix)?;
+    let access_key_env = non_empty_optional(raw.obs.access_key_env);
+    let secret_key_env = non_empty_optional(raw.obs.secret_key_env);
+    let security_token_env = non_empty_optional(raw.obs.security_token_env);
+    let host = raw.gaussdb.host.trim().to_string();
+    let database = raw.gaussdb.database.trim().to_string();
+    let user = raw.gaussdb.user.trim().to_string();
+    let password_env = non_empty_optional(raw.gaussdb.password_env);
+    let sslmode = raw.gaussdb.sslmode.trim().to_ascii_lowercase();
+
+    let (access_key, secret_key, security_token, password) = if enabled {
+        if endpoint.is_empty() {
+            anyhow::bail!("huawei_cloud.package_sync.obs.endpoint is required when enabled");
+        }
+        let parsed_endpoint = reqwest::Url::parse(&endpoint)
+            .with_context(|| format!("invalid Huawei OBS endpoint {endpoint}"))?;
+        if !matches!(parsed_endpoint.scheme(), "http" | "https") {
+            anyhow::bail!("huawei_cloud.package_sync.obs.endpoint must use http or https");
+        }
+        if parsed_endpoint.host_str().is_none() {
+            anyhow::bail!("huawei_cloud.package_sync.obs.endpoint must include host");
+        }
+        if parsed_endpoint.path() != "/" {
+            anyhow::bail!("huawei_cloud.package_sync.obs.endpoint must not include a path");
+        }
+        if !parsed_endpoint.username().is_empty()
+            || parsed_endpoint.password().is_some()
+            || parsed_endpoint.query().is_some()
+            || parsed_endpoint.fragment().is_some()
+        {
+            anyhow::bail!(
+                "huawei_cloud.package_sync.obs.endpoint must not include credentials, query, or fragment"
+            );
+        }
+        if bucket.is_empty() {
+            anyhow::bail!("huawei_cloud.package_sync.obs.bucket is required when enabled");
+        }
+        if !is_valid_huawei_bucket_name(&bucket) {
+            anyhow::bail!("huawei_cloud.package_sync.obs.bucket contains unsupported characters");
+        }
+        let access_key_env = access_key_env
+            .as_deref()
+            .context("huawei_cloud.package_sync.obs.access_key_env is required when enabled")?;
+        let secret_key_env = secret_key_env
+            .as_deref()
+            .context("huawei_cloud.package_sync.obs.secret_key_env is required when enabled")?;
+        if host.is_empty() {
+            anyhow::bail!("huawei_cloud.package_sync.gaussdb.host is required when enabled");
+        }
+        if database.is_empty() {
+            anyhow::bail!("huawei_cloud.package_sync.gaussdb.database is required when enabled");
+        }
+        if user.is_empty() {
+            anyhow::bail!("huawei_cloud.package_sync.gaussdb.user is required when enabled");
+        }
+        let password_env = password_env
+            .as_deref()
+            .context("huawei_cloud.package_sync.gaussdb.password_env is required when enabled")?;
+        if sslmode != "disable" {
+            anyhow::bail!(
+                "huawei_cloud.package_sync.gaussdb.sslmode currently only supports disable"
+            );
+        }
+        (
+            Some(resolve_required_env(
+                access_key_env,
+                "Huawei OBS access key",
+            )?),
+            Some(resolve_required_env(
+                secret_key_env,
+                "Huawei OBS secret key",
+            )?),
+            match security_token_env.as_deref() {
+                Some(env_name) => {
+                    Some(resolve_required_env(env_name, "Huawei OBS security token")?)
+                }
+                None => None,
+            },
+            Some(resolve_required_env(
+                password_env,
+                "Huawei GaussDB password",
+            )?),
+        )
+    } else {
+        (None, None, None, None)
+    };
+
+    Ok(HuaweiPackageSyncSettings {
+        enabled,
+        timeout_seconds: raw.timeout_seconds.max(1),
+        obs: HuaweiObsSettings {
+            endpoint,
+            bucket,
+            object_prefix,
+            access_key_env,
+            access_key,
+            secret_key_env,
+            secret_key,
+            security_token_env,
+            security_token,
+        },
+        gaussdb: HuaweiGaussDbSettings {
+            host,
+            port: raw.gaussdb.port,
+            database,
+            user,
+            password_env,
+            password,
+            sslmode,
+        },
+    })
+}
+
+fn non_empty_optional(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_required_env(env_name: &str, label: &str) -> anyhow::Result<String> {
+    let value =
+        env::var(env_name).with_context(|| format!("missing {label} env var {env_name}"))?;
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        anyhow::bail!("{label} env var {env_name} must not be empty");
+    }
+    Ok(value)
+}
+
+fn normalize_huawei_object_prefix(raw: &str) -> anyhow::Result<String> {
+    let trimmed = raw.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    validate_huawei_object_key(trimmed)
+        .with_context(|| "invalid huawei_cloud.package_sync.obs.object_prefix")?;
+    Ok(trimmed.to_string())
+}
+
+pub fn validate_huawei_object_key(value: &str) -> anyhow::Result<()> {
+    let value = value.trim();
+    if value.is_empty() {
+        anyhow::bail!("object key must not be empty");
+    }
+    if value.len() > 1024 {
+        anyhow::bail!("object key must be at most 1024 bytes");
+    }
+    if value.starts_with('/') || value.contains('\\') || value.contains('?') || value.contains('#')
+    {
+        anyhow::bail!("object key must be relative and must not contain \\, ?, or #");
+    }
+    if value
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        anyhow::bail!("object key must not contain empty, . or .. path segments");
+    }
+    if value.chars().any(char::is_control) {
+        anyhow::bail!("object key must not contain control characters");
+    }
+    Ok(())
+}
+
+fn is_valid_huawei_bucket_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value
+            .bytes()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == b'.' || ch == b'-')
 }
 
 fn parse_fetch_allowed_host(raw: &str) -> anyhow::Result<FetchAllowedHost> {
@@ -1190,6 +1545,21 @@ fn default_fetch_config() -> FetchConfig {
     }
 }
 
+fn default_huawei_cloud_config() -> HuaweiCloudConfig {
+    HuaweiCloudConfig {
+        package_sync: Some(default_huawei_package_sync_config()),
+    }
+}
+
+fn default_huawei_package_sync_config() -> HuaweiPackageSyncConfig {
+    HuaweiPackageSyncConfig {
+        enabled: false,
+        timeout_seconds: default_huawei_package_sync_timeout(),
+        obs: HuaweiObsConfig::default(),
+        gaussdb: HuaweiGaussDbConfig::default(),
+    }
+}
+
 fn default_llm_config() -> LlmConfig {
     LlmConfig {
         provider: default_llm_provider(),
@@ -1285,6 +1655,18 @@ fn default_fetch_max_response_bytes() -> usize {
 
 fn default_fetch_max_redirects() -> usize {
     3
+}
+
+fn default_huawei_package_sync_timeout() -> u64 {
+    60
+}
+
+fn default_huawei_gaussdb_port() -> u16 {
+    8000
+}
+
+fn default_huawei_gaussdb_sslmode() -> String {
+    "disable".to_string()
 }
 
 fn default_remote_execution_enabled() -> bool {
@@ -1997,6 +2379,155 @@ fetch:
                     .contains("32 bytes"));
             },
         );
+    }
+
+    #[test]
+    fn resolves_huawei_package_sync_config_only_when_enabled() {
+        let disabled = serde_yaml::from_str::<ConfigFile>(
+            r#"
+huawei_cloud:
+  package_sync:
+    enabled: false
+    obs:
+      access_key_env: LOGAGENT_TEST_MISSING_OBS_AK
+      secret_key_env: LOGAGENT_TEST_MISSING_OBS_SK
+    gaussdb:
+      password_env: LOGAGENT_TEST_MISSING_GAUSSDB_PASSWORD
+"#,
+        )
+        .unwrap();
+        let settings = resolve_huawei_cloud(disabled.huawei_cloud.unwrap()).unwrap();
+        assert!(!settings.package_sync.enabled);
+        assert!(settings.package_sync.obs.access_key.is_none());
+        assert!(settings.package_sync.gaussdb.password.is_none());
+
+        temp_env_set("LOGAGENT_TEST_OBS_AK", "ak", || {
+            temp_env_set("LOGAGENT_TEST_OBS_SK", "sk", || {
+                temp_env_set("LOGAGENT_TEST_OBS_TOKEN", "token", || {
+                    temp_env_set("LOGAGENT_TEST_GAUSSDB_PASSWORD", "pwd", || {
+                        let enabled = serde_yaml::from_str::<ConfigFile>(
+                            r#"
+huawei_cloud:
+  package_sync:
+    enabled: true
+    timeout_seconds: 9
+    obs:
+      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+      bucket: "pkg-bucket"
+      object_prefix: "/packages/releases/"
+      access_key_env: LOGAGENT_TEST_OBS_AK
+      secret_key_env: LOGAGENT_TEST_OBS_SK
+      security_token_env: LOGAGENT_TEST_OBS_TOKEN
+    gaussdb:
+      host: "gaussdb.internal"
+      port: 8000
+      database: "pkgdb"
+      user: "pkguser"
+      password_env: LOGAGENT_TEST_GAUSSDB_PASSWORD
+      sslmode: "disable"
+"#,
+                        )
+                        .unwrap();
+                        let settings = resolve_huawei_cloud(enabled.huawei_cloud.unwrap()).unwrap();
+                        let package_sync = settings.package_sync;
+                        assert!(package_sync.enabled);
+                        assert_eq!(package_sync.timeout_seconds, 9);
+                        assert_eq!(package_sync.obs.object_prefix, "packages/releases");
+                        assert_eq!(package_sync.obs.access_key.as_deref(), Some("ak"));
+                        assert_eq!(package_sync.obs.secret_key.as_deref(), Some("sk"));
+                        assert_eq!(package_sync.obs.security_token.as_deref(), Some("token"));
+                        assert_eq!(package_sync.gaussdb.password.as_deref(), Some("pwd"));
+                    });
+                });
+            });
+        });
+    }
+
+    #[test]
+    fn rejects_invalid_huawei_package_sync_config() {
+        let missing_env = serde_yaml::from_str::<ConfigFile>(
+            r#"
+huawei_cloud:
+  package_sync:
+    enabled: true
+    obs:
+      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+      bucket: "pkg-bucket"
+      access_key_env: LOGAGENT_TEST_MISSING_OBS_AK
+      secret_key_env: LOGAGENT_TEST_MISSING_OBS_SK
+    gaussdb:
+      host: "gaussdb.internal"
+      database: "pkgdb"
+      user: "pkguser"
+      password_env: LOGAGENT_TEST_MISSING_GAUSSDB_PASSWORD
+"#,
+        )
+        .unwrap();
+        assert!(resolve_huawei_cloud(missing_env.huawei_cloud.unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("LOGAGENT_TEST_MISSING_OBS_AK"));
+
+        temp_env_set("LOGAGENT_TEST_OBS_AK2", "ak", || {
+            temp_env_set("LOGAGENT_TEST_OBS_SK2", "sk", || {
+                temp_env_set("LOGAGENT_TEST_GAUSSDB_PASSWORD2", "pwd", || {
+                    let endpoint_with_query = serde_yaml::from_str::<ConfigFile>(
+                        r#"
+huawei_cloud:
+  package_sync:
+    enabled: true
+    obs:
+      endpoint: "https://obs.cn-north-4.myhuaweicloud.com?region=cn"
+      bucket: "pkg-bucket"
+      access_key_env: LOGAGENT_TEST_OBS_AK2
+      secret_key_env: LOGAGENT_TEST_OBS_SK2
+    gaussdb:
+      host: "gaussdb.internal"
+      database: "pkgdb"
+      user: "pkguser"
+      password_env: LOGAGENT_TEST_GAUSSDB_PASSWORD2
+"#,
+                    )
+                    .unwrap();
+                    assert!(
+                        resolve_huawei_cloud(endpoint_with_query.huawei_cloud.unwrap())
+                            .unwrap_err()
+                            .to_string()
+                            .contains("credentials, query, or fragment")
+                    );
+
+                    let unsupported_sslmode = serde_yaml::from_str::<ConfigFile>(
+                        r#"
+huawei_cloud:
+  package_sync:
+    enabled: true
+    obs:
+      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+      bucket: "pkg-bucket"
+      access_key_env: LOGAGENT_TEST_OBS_AK2
+      secret_key_env: LOGAGENT_TEST_OBS_SK2
+    gaussdb:
+      host: "gaussdb.internal"
+      database: "pkgdb"
+      user: "pkguser"
+      password_env: LOGAGENT_TEST_GAUSSDB_PASSWORD2
+      sslmode: "require"
+"#,
+                    )
+                    .unwrap();
+                    assert!(
+                        resolve_huawei_cloud(unsupported_sslmode.huawei_cloud.unwrap())
+                            .unwrap_err()
+                            .to_string()
+                            .contains("sslmode")
+                    );
+                });
+            });
+        });
+
+        assert!(validate_huawei_object_key("prefix/pkg.tar.gz").is_ok());
+        assert!(validate_huawei_object_key("../pkg.tar.gz").is_err());
+        assert!(validate_huawei_object_key("prefix//pkg.tar.gz").is_err());
     }
 
     fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {

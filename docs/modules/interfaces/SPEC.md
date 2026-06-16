@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Huawei package sync 已接入同一 `tool_run` / `tool_results` 产物面，首版只支持受保护 Tools API 手动运行，不新增最终答案 evidence ref 类型。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint 和 Huawei package sync。
 
 ## 公共产物
 
@@ -42,7 +42,7 @@ Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
 - `log_analysis`：完整上传、解压、grep、Tool Runner、Analysis Orchestrator、Claude Code session result 流程。
 - `log_analysis` 必须绑定 `sessionId`。
-- `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，不绑定 Session，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。内置 `logagent.preprocess_log_package` 使用同一任务类型生成预处理摘要和 `tool_inputs`；内置 `logagent.fetch` 也使用 `tool_run`，但无需上传文件，结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`。
+- `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，不绑定 Session，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。内置 `logagent.preprocess_log_package` 使用同一任务类型生成预处理摘要和 `tool_inputs`；内置 `logagent.fetch` 也使用 `tool_run`，但无需上传文件，结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`；内置 `logagent.huawei_cloud_package_sync` 使用一个上传文件，结果写入 `tool_results/<action_id>/result.json`。
 
 ## 状态契约
 

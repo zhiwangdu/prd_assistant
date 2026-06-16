@@ -19,6 +19,9 @@ use crate::{
     },
     pipeline::{extract_task, prepare_pipeline_run, search_task},
     services::fetch::{FetchRunParams, FETCH_TOOL_ID},
+    services::huawei_package_sync::{
+        validate_params as validate_huawei_package_sync_params, HUAWEI_PACKAGE_SYNC_TOOL_ID,
+    },
     services::metadata::{MetadataFieldTypesRequest, MetadataTagFieldsRequest},
     support::{
         config::{AppConfig, ToolSettings},
@@ -121,6 +124,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     descriptors.push(preprocess_log_package_descriptor());
     descriptors.extend(metadata_descriptors());
     descriptors.push(fetch_descriptor(config));
+    descriptors.push(huawei_package_sync_descriptor(config));
     descriptors
 }
 
@@ -137,7 +141,10 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     }
     metadata_descriptors()
         .into_iter()
-        .chain(std::iter::once(fetch_descriptor(config)))
+        .chain([
+            fetch_descriptor(config),
+            huawei_package_sync_descriptor(config),
+        ])
         .find(|descriptor| descriptor.tool_id == tool_id)
 }
 
@@ -178,6 +185,7 @@ pub fn validate_tool_run_request(
         METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
         METADATA_GET_TAG_FIELDS_ID => validate_metadata_tag_fields_params(params),
         FETCH_TOOL_ID => validate_fetch_params(config, params),
+        HUAWEI_PACKAGE_SYNC_TOOL_ID => validate_huawei_package_sync_run_params(config, params),
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
@@ -194,6 +202,9 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
             | METADATA_GET_TAG_FIELDS_ID,
         ) => run_metadata_task(state, task).await,
         Some(FETCH_TOOL_ID) => crate::services::fetch::run_fetch_task(state, task).await,
+        Some(HUAWEI_PACKAGE_SYNC_TOOL_ID) => {
+            crate::services::huawei_package_sync::run_huawei_package_sync_task(state, task).await
+        }
         Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
             run_configured_tool_task(state, task).await
         }
@@ -529,6 +540,63 @@ fn fetch_descriptor(config: &AppConfig) -> ToolDescriptor {
     }
 }
 
+fn huawei_package_sync_descriptor(config: &AppConfig) -> ToolDescriptor {
+    let enabled = config.huawei_cloud.package_sync.enabled;
+    ToolDescriptor {
+        tool_id: HUAWEI_PACKAGE_SYNC_TOOL_ID.to_string(),
+        display_name: "Huawei OBS + GaussDB Package Sync".to_string(),
+        description:
+            "Upload one package to Huawei OBS, execute a GaussDB update SQL, then query OBS/GaussDB summary."
+                .to_string(),
+        enabled,
+        source: ToolSource::BuiltIn,
+        read_only: false,
+        editable: false,
+        exportable: false,
+        runnable: enabled,
+        tags: vec![
+            "built-in".to_string(),
+            "huawei-cloud".to_string(),
+            "obs".to_string(),
+            "gaussdb".to_string(),
+            "manual-run".to_string(),
+        ],
+        backend: "huawei_cloud_package_sync".to_string(),
+        accepted_suffixes: vec!["*".to_string()],
+        min_files: 1,
+        max_files: 1,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "objectKey": {
+                    "type": "string",
+                    "description": "Optional OBS object key. Leave blank to use configured prefix plus uploaded filename."
+                },
+                "updateSql": {
+                    "type": "string",
+                    "description": "GaussDB SQL executed after OBS PUT."
+                },
+                "querySql": {
+                    "type": "string",
+                    "description": "GaussDB query SQL executed after OBS HEAD."
+                }
+            },
+            "required": ["updateSql", "querySql"]
+        }),
+        params_template: serde_json::json!({
+            "objectKey": "",
+            "updateSql": "",
+            "querySql": ""
+        }),
+        output_views: vec![
+            "summary".to_string(),
+            "obs".to_string(),
+            "gaussdb".to_string(),
+            "json".to_string(),
+        ],
+    }
+}
+
 fn metadata_tags() -> Vec<String> {
     vec![
         "built-in".to_string(),
@@ -702,6 +770,23 @@ fn validate_fetch_params(
     }
     serde_json::to_value(params)
         .map_err(|err| AppError::internal(format!("failed to encode fetch params: {err}")))
+}
+
+fn validate_huawei_package_sync_run_params(
+    config: &AppConfig,
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if !config.huawei_cloud.package_sync.enabled {
+        return Err(AppError::bad_request(
+            "Huawei package sync is disabled by server config",
+        ));
+    }
+    let params = validate_huawei_package_sync_params(value)?;
+    serde_json::to_value(params).map_err(|err| {
+        AppError::internal(format!(
+            "failed to encode Huawei package sync params: {err}"
+        ))
+    })
 }
 
 fn required_string_param(value: &serde_json::Value, key: &str) -> Result<String, AppError> {

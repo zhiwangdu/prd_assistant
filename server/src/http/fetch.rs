@@ -512,6 +512,7 @@ mod tests {
                 max_response_bytes: 1024 * 1024,
                 max_redirects: 2,
             },
+            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,

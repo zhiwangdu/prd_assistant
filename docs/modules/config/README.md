@@ -15,6 +15,7 @@ MVP 使用单一配置文件 `logagent.yaml`，避免每个模块各自维护零
 - `skills`
 - `tools`
 - `fetch`
+- `huawei_cloud`
 - `remote_execution`
 - `claude_code`
 - `mcp`
@@ -92,6 +93,25 @@ fetch:
   max_request_bytes: 1048576
   max_response_bytes: 2097152
   max_redirects: 3
+
+huawei_cloud:
+  package_sync:
+    enabled: false
+    timeout_seconds: 60
+    obs:
+      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+      bucket: "example-bucket"
+      object_prefix: "packages"
+      access_key_env: "LOGAGENT_HUAWEI_OBS_ACCESS_KEY"
+      secret_key_env: "LOGAGENT_HUAWEI_OBS_SECRET_KEY"
+      security_token_env: "LOGAGENT_HUAWEI_OBS_SECURITY_TOKEN"
+    gaussdb:
+      host: "127.0.0.1"
+      port: 8000
+      database: "postgres"
+      user: "gaussdb"
+      password_env: "LOGAGENT_HUAWEI_GAUSSDB_PASSWORD"
+      sslmode: "disable"
 
 tools:
   flux_query_analyzer:
@@ -224,6 +244,11 @@ metadata:
 - `fetch.enabled` 默认 false。启用时必须配置 `fetch.secret_key_env`，对应环境变量值必须是 32-byte base64 key，并且 `fetch.allowed_hosts` 不能为空。
 - `fetch.allowed_hosts` 条目可写为 `host`、`host:port` 或 `http(s)://host[:port]`；Fetch 执行只允许命中这些 `http/https` 目标，每个 redirect hop 都重新校验。
 - `fetch.request_timeout_seconds`、`fetch.max_request_bytes`、`fetch.max_response_bytes` 和 `fetch.max_redirects` 控制内置 Fetch tool 的请求超时、请求体大小、响应体大小和 redirect 次数。
+- `huawei_cloud.package_sync.enabled` 默认 false。启用时必须配置 OBS `endpoint`、`bucket`、`access_key_env`、`secret_key_env` 和 GaussDB `host`、`database`、`user`、`password_env`；对应环境变量缺失或为空会导致启动失败。禁用时不读取这些环境变量。
+- `huawei_cloud.package_sync.obs.endpoint` 只支持 `http/https` 且不能带 path；`object_prefix` 可为空，但非空时必须是安全相对 object key 前缀。
+- `huawei_cloud.package_sync.obs.security_token_env` 可选，用于临时凭据；配置后启用时同样必须存在。
+- `huawei_cloud.package_sync.gaussdb.port` 默认 8000；首版 `sslmode` 只支持 `disable`。
+- `huawei_cloud.package_sync.timeout_seconds` 控制 OBS PUT、GaussDB update、OBS HEAD 和 GaussDB query 每个步骤的独立 timeout，非正值按 1 秒处理。
 - `skills.enabled` 默认 true，`skills.roots` 默认 `skills`；相对路径优先按配置文件目录解析，目录不存在时回退到当前工作目录。
 - `skills.max_skill_chars` 控制写入 `system_context.json` 的 SKILL.md 注入片段上限，`skills.max_reference_chars` 控制 MCP 按需读取 reference 的正文上限。
 - 当前 `PLAN_ANALYSIS` 只检查 session 轮数和 Claude 调用次数预算；日志搜索和领域工具执行由 Claude Code 通过 LogAgent MCP tools 请求并由 Server 持久化。

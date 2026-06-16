@@ -150,6 +150,7 @@ flowchart LR
 - 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
 - Fetch endpoint 只在 `fetch.enabled=true` 且配置 allowlist 和 32-byte base64 secret key 后可用。Server 从 DevTools bash cURL 导入 endpoint，Authorization、Cookie、token/api_key 类 query/body 字段进入加密 credential set；WebUI、API、日志和 artifact 只展示脱敏值。任务 MCP 可调用 `logagent.fetch`，只读 HTTP MCP 不开放 fetch 执行。
 - Log Analyzer 会自动识别节点日志包 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`，按 `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/` 展开三类日志目录，透明读取 gzip 轮转文件，并生成 `tool_inputs/index.json` 供 `influxql_analyzer` 等工具优先消费。
+- `logagent.huawei_cloud_package_sync` 是默认关闭的内置手动工具；启用后只接受一个已上传包，把包流式 PUT 到配置的 Huawei OBS，再执行用户提交的 GaussDB update/query SQL，并把 OBS HEAD 与查询摘要写入 `tool_results/<action_id>/result.json`。OBS/GaussDB 密钥只从环境变量读取，不进入 artifact。
 - Settings 提供只读 MCP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载入口。
 - Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
 - `WAITING_FOR_USER` 支持用户提交补充信息，也支持声明没有更多信息并请求基于当前证据直接生成最终结果；该意图会写入 `analysis_state.json` 并通过 `analysis_package.json` 约束下一轮 Claude Code 不再继续追问。
@@ -181,7 +182,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 |------|------|
 | Claude Code Session Runner | [README](./docs/modules/agent-backends/README.md) / [SPEC](./docs/modules/agent-backends/SPEC.md) |
 | Log Analyzer | [README](./docs/modules/log-analyzer/README.md) / [SPEC](./docs/modules/log-analyzer/SPEC.md) |
-| Tool Runner / Fetch | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
+| Tool Runner / Fetch / Huawei Package Sync | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
 | Domain Adapters | [README](./docs/modules/domain-adapters/README.md) / [SPEC](./docs/modules/domain-adapters/SPEC.md) |
 | Metadata | [README](./docs/modules/metadata/README.md) / [SPEC](./docs/modules/metadata/SPEC.md) |
 | Skills | [README](./docs/modules/skills/README.md) / [SPEC](./docs/modules/skills/SPEC.md) |
@@ -215,7 +216,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`；部署样例默认启用这些源码构建产物。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`；部署样例默认启用这些源码构建产物。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页、Huawei OBS + GaussDB package sync 内置工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
 
 Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的远程采集仍通过 LogAgent approval gate 进入等待态并使用 mock evidence。
 
