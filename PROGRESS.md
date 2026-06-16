@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Timeline Event Kind
+
+- Fixed the V2 Analyze timeline event label to use the Python V2 backend
+  `kind` field while retaining compatibility with legacy `event_type`.
+- Updated V2 timeline TypeScript typing, WebUI docs, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Analyze Case Save
 
 - Added a V2 Analyze Case save panel for succeeded runs with final answers.

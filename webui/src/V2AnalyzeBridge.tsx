@@ -825,7 +825,7 @@ function TimelineView({ copy, analysis }: { copy: BridgeCopy; analysis: V2RunAna
           {latest.map((event) => (
             <li className="rounded-md bg-slate-50 p-2" key={event.id}>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline">{event.event_type}</Badge>
+                <Badge variant="outline">{eventKind(event)}</Badge>
                 <span>{new Date(event.created_at).toLocaleTimeString()}</span>
               </div>
               <p className="mt-1 break-words text-xs text-muted-foreground">{summarizePayload(event.payload)}</p>
@@ -924,6 +924,10 @@ function summarizePayload(payload: Record<string, unknown>) {
   const question = payload.question;
   if (typeof question === "string") return question;
   return JSON.stringify(payload);
+}
+
+function eventKind(event: { kind?: string; event_type?: string }) {
+  return event.kind || event.event_type || "event";
 }
 
 function stringPayload(payload: Record<string, unknown>, key: string) {

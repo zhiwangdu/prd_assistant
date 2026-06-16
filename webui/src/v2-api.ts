@@ -63,7 +63,8 @@ export type V2TimelineEvent = {
   id: string;
   workspace_id: string;
   run_id?: string | null;
-  event_type: string;
+  kind: string;
+  event_type?: string;
   payload: Record<string, unknown>;
   created_at: string;
 };
