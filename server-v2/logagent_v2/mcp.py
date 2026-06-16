@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from .artifacts import resolve_artifact_path
+from .case_memory import call_case_tool, case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
 from .metadata import call_metadata_tool, metadata_tool_descriptors
@@ -11,6 +12,7 @@ from .tools import run_configured_tool, tool_descriptors
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
+CASE_TOOL_NAMES = {tool["name"] for tool in case_tool_descriptors()}
 
 
 def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
@@ -38,6 +40,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     request_user_input_descriptor(),
                     request_approval_descriptor(),
                     *metadata_tool_descriptors(),
+                    *case_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -77,6 +80,12 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         "name": "metadata_instances",
                         "description": "Imported V2 metadata instances",
                         "mimeType": "application/json",
+                    },
+                    {
+                        "uri": "logagent-v2://cases/recent",
+                        "name": "cases_recent",
+                        "description": "Recent enabled V2 cases",
+                        "mimeType": "application/json",
                     }
                 ]
             }
@@ -89,6 +98,7 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         "inputSchema": {"type": "object", "additionalProperties": False},
                     },
                     *metadata_tool_descriptors(),
+                    *case_tool_descriptors(),
                 ]
             }
         elif method == "tools/call":
@@ -99,7 +109,10 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                     "content": [
                         {
                             "type": "text",
-                            "text": json.dumps(metadata_tool_descriptors(), ensure_ascii=True),
+                            "text": json.dumps(
+                                metadata_tool_descriptors() + case_tool_descriptors(),
+                                ensure_ascii=True,
+                            ),
                         }
                     ]
                 }
@@ -113,14 +126,26 @@ def readonly_mcp_response(store: Store, request: dict) -> dict:
                         }
                     ]
                 }
+            elif name in CASE_TOOL_NAMES:
+                value = call_case_tool(None, store, None, name, arguments)
+                result = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(value, ensure_ascii=True, indent=2),
+                        }
+                    ]
+                }
             else:
                 raise ValueError(f"unsupported readonly tool {name}")
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             if uri == "logagent-v2://tools/catalog":
-                value = metadata_tool_descriptors()
+                value = metadata_tool_descriptors() + case_tool_descriptors()
             elif uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
+            elif uri == "logagent-v2://cases/recent":
+                value = {"cases": store.search_cases(query=None, limit=10)}
             elif isinstance(uri, str) and uri.startswith(
                 "logagent-v2://metadata/instances/"
             ) and uri.endswith("/snapshot"):
@@ -253,6 +278,16 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
     arguments = params.get("arguments") or {}
     if name in METADATA_TOOL_NAMES:
         value = call_metadata_tool(settings, store, run, name, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
+    if name in CASE_TOOL_NAMES:
+        value = call_case_tool(settings, store, run, name, arguments)
         return {
             "content": [
                 {

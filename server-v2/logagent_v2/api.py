@@ -3,11 +3,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
+from .case_memory import create_manual_case, create_task_case, update_case
 from .config import Settings
 from .metadata import import_metadata, query_field_types
 from .mcp import readonly_mcp_response, task_mcp_response
@@ -47,6 +48,34 @@ class MetadataFieldTypesQuery(BaseModel):
     measurement: str = Field(min_length=1, max_length=300)
     retentionPolicy: str | None = Field(default=None, max_length=300)
     field: str | list[str] | None = None
+
+
+class CaseCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    symptom: str = Field(min_length=1, max_length=10000)
+    rootCause: str = Field(min_length=1, max_length=10000)
+    solution: str = Field(min_length=1, max_length=10000)
+    product: str | None = Field(default=None, max_length=200)
+    version: str | None = Field(default=None, max_length=200)
+    environment: str | None = Field(default=None, max_length=200)
+    instanceId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    evidenceRefs: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class CaseUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    symptom: str | None = Field(default=None, max_length=10000)
+    rootCause: str | None = Field(default=None, max_length=10000)
+    solution: str | None = Field(default=None, max_length=10000)
+    product: str | None = Field(default=None, max_length=200)
+    version: str | None = Field(default=None, max_length=200)
+    environment: str | None = Field(default=None, max_length=200)
+    instanceId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    evidenceRefs: list[str] | None = None
+    enabled: bool | None = None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -257,6 +286,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/cases")
+    async def create_case(_: Auth, payload: CaseCreate) -> dict:
+        try:
+            return create_manual_case(store, payload.model_dump())
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/runs/{run_id}/case")
+    async def create_run_case(_: Auth, run_id: str, payload: CaseUpdate | None = None) -> dict:
+        try:
+            overrides = payload.model_dump(exclude_none=True) if payload else {}
+            return create_task_case(store, run_id, overrides)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/cases")
+    async def search_cases(
+        _: Auth,
+        query: str | None = None,
+        limit: int = Query(default=5, ge=1, le=50),
+        includeDisabled: bool = False,
+    ) -> dict:
+        return {
+            "cases": store.search_cases(
+                query=query,
+                limit=limit,
+                include_disabled=includeDisabled,
+            )
+        }
+
+    @app.get("/api/v2/cases/{case_id}")
+    async def get_case(_: Auth, case_id: str) -> dict:
+        try:
+            return store.get_case(case_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.patch("/api/v2/cases/{case_id}")
+    async def patch_case(_: Auth, case_id: str, payload: CaseUpdate) -> dict:
+        try:
+            return update_case(store, case_id, payload.model_dump(exclude_unset=True))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/mcp/readonly")
     async def readonly_mcp(_: Auth, request: dict) -> dict:

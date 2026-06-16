@@ -68,6 +68,9 @@ Implemented in this slice:
 - Metadata foundation with direct JSON/YAML/openGemini content import, SQLite
   snapshot storage, field/tag type query APIs, readonly MCP tools, and task MCP
   background slices.
+- Case Memory foundation with manual Case creation, succeeded-run Case
+  confirmation, keyword recall, edit/disable API, readonly MCP search, and task
+  MCP background case context.
 
 Not yet implemented:
 
@@ -78,7 +81,8 @@ Not yet implemented:
 - Metadata preview/confirm flow, URL fetch, task context auto-selection, and
   WebUI cutover.
 - Skill-backed System Context.
-- Case Memory.
+- Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
+  management.
 - WebUI V2 cutover.
 
 ## API
@@ -113,6 +117,11 @@ DELETE /api/v2/metadata/instances/:instance_id
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
+POST /api/v2/cases
+POST /api/v2/runs/:run_id/case
+GET  /api/v2/cases
+GET  /api/v2/cases/:case_id
+PATCH /api/v2/cases/:case_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -142,6 +151,7 @@ SQLite tables:
 - `actions`
 - `jobs`
 - `metadata_instances`
+- `cases`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
@@ -269,6 +279,31 @@ Readonly MCP resources/tools expose imported instance lists, snapshots, field
 type lookups, and tag-field lookups. Task MCP exposes the same tools and writes
 results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
 background context and cannot be cited by final answers as root-cause evidence.
+
+## Case Memory
+
+V2 Case Memory stores confirmed Case schema v2 records in SQLite table `cases`.
+Each row contains `source_type`, optional `task_id`, `enabled`, full
+`record_json`, and a denormalized `searchable_text` field for local keyword
+recall.
+
+Supported sources:
+
+- `manual`: created through `POST /api/v2/cases`; requires `title`, `symptom`,
+  `rootCause`, and `solution`.
+- `task`: created through `POST /api/v2/runs/:run_id/case`; the run must be
+  `succeeded` and have a final answer. Repeated confirmation of one run returns
+  the existing task Case instead of creating duplicates.
+
+Search is intentionally dependency-light in this slice: V2 uses token overlap
+against `title`, `symptom`, `rootCause`, `solution`, product/version/environment,
+instance/node, and evidence refs. Disabled cases are excluded by default and can
+be included with `includeDisabled=true`.
+
+Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`. Task MCP
+exposes the same tools and writes results as `case_context` evidence with
+`final_allowed=false`. Historical Cases are background references; final answers
+still need current-task evidence refs.
 
 ## Final Answer Validation
 

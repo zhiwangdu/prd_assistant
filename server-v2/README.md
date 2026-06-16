@@ -25,6 +25,8 @@ slice provides the durable foundation for the V2 product model:
   can be marked `succeeded`.
 - Metadata foundation with JSON/YAML/openGemini content import, SQLite snapshot
   storage, field/tag type queries, HTTP API, and readonly/task MCP tools.
+- Case Memory foundation with manual cases, succeeded-run case confirmation,
+  keyword recall, edit/disable API, and readonly/task MCP search.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -118,6 +120,11 @@ DELETE /api/v2/metadata/instances/:instance_id
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
+POST /api/v2/cases
+POST /api/v2/runs/:run_id/case
+GET  /api/v2/cases
+GET  /api/v2/cases/:case_id
+PATCH /api/v2/cases/:case_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -131,7 +138,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs, rich Tool Runner input matching, Metadata preview/confirm and URL fetch,
-Skills, Memory, WebUI, or full LangGraph model loop.
+Skills, Case import drafts, FTS/embedding recall, WebUI, or full LangGraph model
+loop.
 
 ## Initial Evidence Pipeline
 
@@ -263,3 +271,35 @@ logagent.get_metadata_tag_fields
 Task MCP Metadata calls persist `metadata_slice` evidence as background context
 with `final_allowed=false`; final answers cannot cite these slices as root-cause
 evidence.
+
+## Case Memory
+
+V2 stores confirmed cases in SQLite table `cases` using Case schema v2:
+
+```json
+{
+  "sourceType": "manual",
+  "title": "Timeout during compaction",
+  "symptom": "...",
+  "rootCause": "...",
+  "solution": "...",
+  "evidenceRefs": []
+}
+```
+
+Manual cases are created through `POST /api/v2/cases`. Succeeded runs can be
+confirmed through `POST /api/v2/runs/:run_id/case`; repeated confirmation of the
+same run returns the existing task case. Cases can be searched with keyword
+overlap, read by ID, edited, or disabled. Disabled cases are hidden unless the
+caller sets `includeDisabled=true`.
+
+Readonly MCP and task MCP expose:
+
+```text
+logagent.search_cases
+logagent.get_case
+```
+
+Task MCP Case calls persist `case_context` evidence as background context with
+`final_allowed=false`. Historical cases are references for investigation and do
+not replace current-task evidence.

@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Memory Foundation
+
+- Added SQLite-backed V2 Case Memory table and Case schema v2 records.
+- Added manual Case creation, succeeded-run Case confirmation with duplicate prevention, keyword recall, get-by-id, edit, and enable/disable support.
+- Added V2 Case APIs: `POST /api/v2/cases`, `POST /api/v2/runs/:run_id/case`, `GET /api/v2/cases`, `GET /api/v2/cases/:case_id`, and `PATCH /api/v2/cases/:case_id`.
+- Added readonly MCP and task MCP Case tools: `logagent.search_cases` and `logagent.get_case`.
+- Task MCP Case calls now persist `case_context` background evidence with `final_allowed=false`.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Metadata Foundation
 
 - Added SQLite-backed V2 `metadata_instances` storage for imported raw snapshots and normalized Metadata snapshots.

@@ -12,6 +12,11 @@ from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.artifacts import write_artifact_bytes
+from logagent_v2.case_memory import (
+    create_manual_case,
+    create_task_case,
+    update_case as update_case_record,
+)
 from logagent_v2.config import Settings, ToolDefinition
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
@@ -621,6 +626,91 @@ class StoreTests(unittest.TestCase):
             metadata_slices = [item for item in evidence if item["kind"] == "metadata_slice"]
             self.assertEqual(len(metadata_slices), 1)
             self.assertFalse(metadata_slices[0]["final_allowed"])
+
+    def test_case_memory_manual_task_and_mcp_background_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            manual = create_manual_case(
+                store,
+                {
+                    "title": "Timeout during compaction",
+                    "symptom": "query timeout and slow compaction",
+                    "rootCause": "compaction backlog",
+                    "solution": "reduce concurrent compactions",
+                    "product": "opengemini",
+                    "evidenceRefs": ["grep_results.json#matches/0"],
+                },
+            )
+            search = store.search_cases("timeout compaction", limit=5)
+            self.assertEqual(search[0]["caseId"], manual["caseId"])
+
+            disabled = update_case_record(store, manual["caseId"], {"enabled": False})
+            self.assertFalse(disabled["enabled"])
+            self.assertEqual(store.search_cases("timeout", limit=5), [])
+            self.assertEqual(
+                store.search_cases("timeout", limit=5, include_disabled=True)[0]["caseId"],
+                manual["caseId"],
+            )
+
+            workspace = store.create_workspace("why did the query timeout?", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"query timeout on shard 1\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            task_case = create_task_case(
+                store,
+                run["id"],
+                {"solution": "inspect shard load and compaction queue"},
+            )
+            self.assertEqual(task_case["sourceType"], "task")
+            self.assertEqual(create_task_case(store, run["id"], {})["caseId"], task_case["caseId"])
+
+            readonly_cases = readonly_mcp_response(
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 16,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_cases",
+                        "arguments": {"query": "shard timeout", "limit": 5},
+                    },
+                },
+            )
+            readonly_body = json.loads(readonly_cases["result"]["content"][0]["text"])
+            self.assertEqual(readonly_body["cases"][0]["caseId"], task_case["caseId"])
+
+            task_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 17,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_cases",
+                        "arguments": {"query": "timeout", "limit": 5},
+                    },
+                },
+            )
+            task_body = json.loads(task_response["result"]["content"][0]["text"])
+            self.assertFalse(task_body["finalEvidenceAllowed"])
+            evidence = store.list_evidence(run["id"])
+            case_context = [item for item in evidence if item["kind"] == "case_context"]
+            self.assertEqual(len(case_context), 1)
+            self.assertFalse(case_context[0]["final_allowed"])
 
 
 if __name__ == "__main__":

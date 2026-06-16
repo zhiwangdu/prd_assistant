@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -25,6 +26,37 @@ def decode_json(value: str | None, default: Any = None) -> Any:
     if value is None:
         return default
     return json.loads(value)
+
+
+def case_tokens(value: str) -> set[str]:
+    return {
+        token.lower()
+        for token in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{2,}", value)
+        if token.strip()
+    }
+
+
+def case_searchable_text(record: JsonObject) -> str:
+    values = [
+        record.get("title"),
+        record.get("symptom"),
+        record.get("rootCause"),
+        record.get("solution"),
+        record.get("product"),
+        record.get("version"),
+        record.get("environment"),
+        record.get("instanceId"),
+        record.get("nodeId"),
+        " ".join(record.get("evidenceRefs", [])),
+    ]
+    return "\n".join(str(value) for value in values if value)
+
+
+def keyword_score(tokens: set[str], text: str) -> int:
+    if not tokens:
+        return 0
+    lowered = text.lower()
+    return sum(1 for token in tokens if token in lowered)
 
 
 class Store:
@@ -149,11 +181,23 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS cases (
+                  case_id TEXT PRIMARY KEY,
+                  source_type TEXT NOT NULL,
+                  task_id TEXT,
+                  enabled INTEGER NOT NULL,
+                  record_json TEXT NOT NULL,
+                  searchable_text TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sched
                   ON jobs(status, next_run_at, locked_until);
+                CREATE INDEX IF NOT EXISTS idx_cases_task_id ON cases(task_id);
                 """
             )
 
@@ -610,6 +654,100 @@ class Store:
             )
             if cursor.rowcount == 0:
                 raise KeyError(f"unknown metadata instance {instance_id}")
+
+    def create_case(self, record: JsonObject, searchable_text: str) -> JsonObject:
+        case_id = record["caseId"]
+        ts = record["createdAt"]
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO cases(
+                  case_id, source_type, task_id, enabled, record_json, searchable_text,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    case_id,
+                    record["sourceType"],
+                    record.get("taskId"),
+                    1 if record.get("enabled", True) else 0,
+                    encode_json(record),
+                    searchable_text,
+                    ts,
+                    record["updatedAt"],
+                ),
+            )
+        return self.get_case(case_id)
+
+    def get_case(self, case_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM cases WHERE case_id = ?", (case_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"unknown case {case_id}")
+        return self._case_from_row(row)
+
+    def find_case_by_task(self, task_id: str) -> JsonObject | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM cases WHERE source_type = 'task' AND task_id = ? LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return self._case_from_row(row) if row else None
+
+    def update_case(self, case_id: str, updates: JsonObject, searchable_text: str) -> JsonObject:
+        current = self.get_case(case_id)
+        record = dict(current)
+        record.update({key: value for key, value in updates.items() if value is not None})
+        record["updatedAt"] = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE cases
+                SET enabled = ?, record_json = ?, searchable_text = ?, updated_at = ?
+                WHERE case_id = ?
+                """,
+                (
+                    1 if record.get("enabled", True) else 0,
+                    encode_json(record),
+                    searchable_text,
+                    record["updatedAt"],
+                    case_id,
+                ),
+            )
+        return self.get_case(case_id)
+
+    def search_cases(
+        self,
+        query: str | None,
+        limit: int,
+        include_disabled: bool = False,
+    ) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM cases
+                WHERE (? OR enabled = 1)
+                ORDER BY updated_at DESC, case_id ASC
+                """,
+                (1 if include_disabled else 0,),
+            ).fetchall()
+        cases = [self._case_from_row(row) for row in rows]
+        tokens = case_tokens(query or "")
+        scored = []
+        for record in cases:
+            text = case_searchable_text(record)
+            score = keyword_score(tokens, text)
+            if tokens and score == 0:
+                continue
+            hit = dict(record)
+            hit["score"] = score
+            scored.append(hit)
+        scored.sort(key=lambda item: (item["score"], item["updatedAt"]), reverse=True)
+        return scored[: max(1, min(limit, 50))]
+
+    def _case_from_row(self, row: sqlite3.Row) -> JsonObject:
+        record = decode_json(row["record_json"], {})
+        return record
 
     def append_event(
         self, workspace_id: str, run_id: str | None, kind: str, payload: JsonObject
