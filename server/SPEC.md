@@ -158,6 +158,8 @@ Session API 的 create/patch payload 支持可选 `analysisLanguage`，取值只
 - `rawSnapshot`: 原始 openGemini `/getdata` JSON。
 - 完整 Shard、IndexGroup、Index、MstVersions 和节点连接字段。
 
+openGemini raw `Measurement.Schema` 字段必须兼容直接类型码结构 `{ "field": <typeCode> }` 和对象结构 `{ "field": { "Typ": <typeCode>, "EndTime": ... } }`；Server 逐字段优先解析直接类型码，失败时降级读取对象结构，类型码映射不变。
+
 Shard 和 Index 的 `owners` 是 PT ID，不是 NodeID。
 
 受保护接口必须携带：

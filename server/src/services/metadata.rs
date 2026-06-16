@@ -2295,7 +2295,8 @@ fn normalize_opengemini_schema(value: Option<&serde_json::Value>) -> Vec<FieldSc
         .iter()
         .map(|(name, field)| FieldSchemaMetadata {
             name: name.to_string(),
-            typ: first_u64_field(field, &["Typ", "Type", "type", "typ"]),
+            typ: u64_value(field)
+                .or_else(|| first_u64_field(field, &["Typ", "Type", "type", "typ"])),
             end_time: field.get("EndTime").and_then(serde_json::Value::as_u64),
         })
         .collect::<Vec<_>>();
@@ -2303,14 +2304,15 @@ fn normalize_opengemini_schema(value: Option<&serde_json::Value>) -> Vec<FieldSc
     result
 }
 
+fn u64_value(value: &serde_json::Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
+}
+
 fn first_u64_field(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
-    keys.iter().find_map(|key| {
-        value.get(*key).and_then(|field| {
-            field
-                .as_u64()
-                .or_else(|| field.as_str().and_then(|text| text.trim().parse().ok()))
-        })
-    })
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(u64_value))
 }
 
 fn normalize_opengemini_shard_groups(value: Option<&serde_json::Value>) -> Vec<ShardGroupMetadata> {
@@ -3531,6 +3533,92 @@ nodes:
         assert_eq!(
             data_node.labels.get("tcpHost").map(String::as_str),
             Some("127.0.0.1:8401")
+        );
+    }
+
+    #[tokio::test]
+    async fn normalizes_compact_opengemini_schema_type_codes() {
+        let fixture = Fixture::new("metadata-opengemini-compact-schema");
+        let store = MetadataStore::new(fixture.config());
+        let preview = store
+            .create_import_preview(MetadataImportRequest {
+                template_type: "opengemini".to_string(),
+                filename: Some("getdata.json".to_string()),
+                instance_id: Some("prod-compact".to_string()),
+                remark: None,
+                content: serde_json::json!({
+                    "ClusterID": 42_u64,
+                    "Databases": {
+                        "metrics": {
+                            "Name": "metrics",
+                            "DefaultRetentionPolicy": "autogen",
+                            "RetentionPolicies": {
+                                "autogen": {
+                                    "Name": "autogen",
+                                    "Measurements": {
+                                        "cpu_0000": {
+                                            "Name": "cpu_0000",
+                                            "Schema": {
+                                                "host": 6,
+                                                "old_value": { "Typ": 2, "EndTime": 123_u64 },
+                                                "usage": "3"
+                                            }
+                                        }
+                                    },
+                                    "MstVersions": {
+                                        "cpu": {
+                                            "NameWithVersion": "cpu_0000",
+                                            "Version": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+                .to_string(),
+            })
+            .await
+            .unwrap();
+        store.confirm_import(&preview.import_id).await.unwrap();
+
+        let snapshot = store.get_instance_snapshot("prod-compact").await.unwrap();
+        let measurement = &snapshot.cluster.databases[0].retention_policies[0].measurements[0];
+        assert_eq!(measurement.logical_name.as_deref(), Some("cpu"));
+        assert_eq!(
+            measurement
+                .schema
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.end_time))
+                .collect::<Vec<_>>(),
+            vec![
+                ("host", Some(6), None),
+                ("old_value", Some(2), Some(123)),
+                ("usage", Some(3), None)
+            ]
+        );
+
+        let fields = store
+            .get_metadata_field_types(MetadataFieldTypesRequest {
+                instance_id: "prod-compact".to_string(),
+                database: "metrics".to_string(),
+                measurement: "cpu".to_string(),
+                retention_policy: None,
+                field: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            fields
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.typ, field.type_label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("host", Some(6), "Tag"),
+                ("old_value", Some(2), "Unsigned"),
+                ("usage", Some(3), "Float")
+            ]
         );
     }
 

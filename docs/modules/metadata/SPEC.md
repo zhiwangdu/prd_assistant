@@ -122,6 +122,8 @@ Database:
 }
 ```
 
+openGemini raw JSON 中的 `Measurement.Schema` 必须兼容两种字段结构：`{ "field": <typeCode> }` 简写和 `{ "field": { "Typ": <typeCode>, "EndTime": ... } }` 对象结构。归一化时按字段逐个优先解析简写类型码；不是数字或数字字符串时，降级读取对象中的 `Typ` / `Type` / `type` / `typ` 和 `EndTime`。类型码到展示标签的映射保持 openGemini 枚举语义不变。
+
 PartitionView:
 
 ```json

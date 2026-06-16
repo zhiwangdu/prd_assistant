@@ -421,6 +421,8 @@ Metadata 的用户主键是手工输入的 `instanceId`，可选 `remark` 作为
 
 确认 metadata 导入时，重复的 `instanceId` 走覆盖逻辑：Server 会先清理该实例旧的 cluster/node 快照，再写入本次导入结果。v1 不保存历史版本，也不做增量合并。
 
+openGemini raw JSON 的 `Measurement.Schema` 同时兼容 `{ "field": <typeCode> }` 简写和 `{ "field": { "Typ": <typeCode>, "EndTime": ... } }` 对象结构。Server 按字段优先解析简写类型码；不能解析为数字时，再降级读取对象中的 `Typ` / `Type` / `type` / `typ` 和 `EndTime`。类型码映射仍使用 `0..7` -> `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`。
+
 内置 MCP tool `logagent.get_metadata_field_types` 支持按 `instanceId`、`database`、`measurement` 查询字段类型；`retentionPolicy` 可选，省略时使用该 DB 的默认 RP；`field` 可省略、传单个字段名或字段名数组，省略时返回 measurement 下全部字段。返回包含 openGemini field type 枚举码和 `typeLabel`，其中 `0..7` 分别映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`，结果写入 `metadata_slices/` 并只作为背景上下文。
 
 内置 MCP tool `logagent.get_metadata_tag_fields` 使用相同的 `instanceId` / `database` / `measurement` / 可选 `retentionPolicy` 定位规则，但不接受 `field` 参数，只返回 `typ=6` / `typeLabel=Tag` 的字段。返回结构仍与 field types 一致，`fields` 只包含 tag fields，`missingFields=[]`，`finalEvidenceAllowed=false`；任务 MCP 调用写入 `metadata_slices/tag_fields_<stable_id>.json`。

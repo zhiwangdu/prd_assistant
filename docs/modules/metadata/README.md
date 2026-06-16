@@ -188,6 +188,7 @@ POST /api/metadata/imports/:import_id/confirm
 - `SqlNodes` -> `<instanceId>:sql-*` 节点
 - `Databases`、`Term`、`Index`、`NumOfShards` 等写入 cluster labels
 - `Databases` -> cluster `databases`，重点保留默认 RP、RP 参数、Measurements schema、ShardGroups
+- `Measurement.Schema` 同时兼容 `{ "field": <typeCode> }` 简写和 `{ "field": { "Typ": <typeCode>, "EndTime": ... } }` 对象结构；每个字段优先按简写类型码解析，不能解析时再降级读取 `Typ` / `Type` / `type` / `typ` 和 `EndTime`
 - `PtView` -> cluster `partitionViews`，重点保留数据库、PT ID、owner data node、状态、版本和 RGID
 - 节点的 `Host`、`RPCAddr`、`TCPHost`、`GossipAddr`、`Status`、`Az` 等写入 node fields/labels
 - `Shard.Owners` 和 `Index.Owners` -> PT ID

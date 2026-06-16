@@ -2,6 +2,13 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Metadata Compact Schema Type Codes
+
+- openGemini raw JSON import now accepts both `Measurement.Schema` shapes: compact `{ "field": <typeCode> }` values and object `{ "field": { "Typ": <typeCode>, "EndTime": ... } }` values.
+- Schema normalization resolves each field by first parsing the compact direct type code, including numeric strings, then falling back to object aliases `Typ` / `Type` / `type` / `typ`; `EndTime` remains available for object fields.
+- The openGemini type-code mapping is unchanged, so `logagent.get_metadata_field_types`, `logagent.get_metadata_tag_fields`, and WebUI Schemas continue to display the same `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown` labels.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::metadata -- --test-threads=1`, and `cargo test -p logagent-server -- --test-threads=1`.
+
 ## 2026-06-16 Analyze Language Preference
 
 - Added WebUI language configuration for the Analyze workflow. The default is Simplified Chinese, with an English switch in the top bar; the selected language is saved in browser localStorage.
