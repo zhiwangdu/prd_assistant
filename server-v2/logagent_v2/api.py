@@ -133,16 +133,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "user.message",
             {"message": payload.message, "resumeMode": payload.resumeMode},
         )
-        return {"event": event}
+        job = None
+        if run["status"] == "waiting_for_user":
+            store.update_run_status(run_id, "queued", "queued")
+            job = store.enqueue_run(run_id)
+        return {"event": event, "job": job}
 
     @app.post("/api/v2/actions/{action_id}/decisions")
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
-        return {
-            "actionId": action_id,
-            "decision": payload.decision,
-            "reason": payload.reason,
-            "status": "recorded",
-        }
+        try:
+            action = store.decide_action(action_id, payload.decision, payload.reason)
+            run = store.get_run(action["run_id"])
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        job = None
+        if run["status"] == "waiting_for_approval":
+            store.update_run_status(run["id"], "queued", "queued")
+            job = store.enqueue_run(run["id"])
+        return {"action": action, "job": job}
 
     @app.get("/api/v2/evidence/{evidence_id}")
     async def get_evidence(_: Auth, evidence_id: str) -> dict:

@@ -31,6 +31,8 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     search_logs_descriptor(),
                     get_log_slice_descriptor(),
                     run_domain_tool_descriptor(settings),
+                    request_user_input_descriptor(),
+                    request_approval_descriptor(),
                 ]
             }
         elif method == "tools/call":
@@ -211,6 +213,10 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         return call_get_log_slice(settings, store, run, arguments)
     if name == "logagent.run_domain_tool":
         return call_run_domain_tool(settings, store, run, arguments)
+    if name == "logagent.request_user_input":
+        return call_request_user_input(store, run, arguments)
+    if name == "logagent.request_approval":
+        return call_request_approval(store, run, arguments)
     if name != "logagent.search_logs":
         raise ValueError(f"unsupported task tool {name}")
     keywords = arguments.get("keywords")
@@ -231,6 +237,93 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         indent=2,
     )
     return {"content": [{"type": "text", "text": text}]}
+
+
+def request_user_input_descriptor() -> dict:
+    return {
+        "name": "logagent.request_user_input",
+        "description": "Pause this run and ask the user for more information.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "minLength": 1},
+                "reason": {"type": "string"},
+                "required": {"type": "boolean", "default": True},
+                "answerFormat": {"type": "string"},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def request_approval_descriptor() -> dict:
+    return {
+        "name": "logagent.request_approval",
+        "description": "Pause this run and request approval for a gated action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "actionType": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+                "input": {"type": "object"},
+            },
+            "required": ["actionType", "reason"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def call_request_user_input(store: Store, run: dict, arguments: dict) -> dict:
+    question = arguments.get("question")
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError("logagent.request_user_input requires question")
+    action = store.create_action(
+        run["id"],
+        "user_input",
+        {
+            "question": question.strip(),
+            "reason": arguments.get("reason"),
+            "required": bool(arguments.get("required", True)),
+            "answerFormat": arguments.get("answerFormat"),
+        },
+    )
+    store.update_run_status(run["id"], "waiting_for_user", "waiting_for_user")
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"action": action}, ensure_ascii=True, indent=2),
+            }
+        ]
+    }
+
+
+def call_request_approval(store: Store, run: dict, arguments: dict) -> dict:
+    action_type = arguments.get("actionType")
+    reason = arguments.get("reason")
+    if not isinstance(action_type, str) or not action_type.strip():
+        raise ValueError("logagent.request_approval requires actionType")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("logagent.request_approval requires reason")
+    action = store.create_action(
+        run["id"],
+        "approval",
+        {
+            "actionType": action_type.strip(),
+            "reason": reason.strip(),
+            "input": arguments.get("input") if isinstance(arguments.get("input"), dict) else {},
+        },
+    )
+    store.update_run_status(run["id"], "waiting_for_approval", "waiting_for_approval")
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"action": action}, ensure_ascii=True, indent=2),
+            }
+        ]
+    }
 
 
 def run_domain_tool_descriptor(settings: Settings) -> dict:

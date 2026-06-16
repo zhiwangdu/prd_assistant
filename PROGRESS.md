@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-17 V2 Waiting Actions
+
+- Added persistent V2 action helpers for pending user input and approval requests.
+- Added task MCP `logagent.request_user_input` and `logagent.request_approval`; calls persist actions and move the run into `waiting_for_user` or `waiting_for_approval`.
+- Updated message and action decision APIs so a waiting run can be requeued into the SQLite job queue after user input or approve/reject.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Minimal Tool Runner
 
 - Added V2 configured Tool Runner foundation. Tools can be loaded from `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and invoked through task MCP `logagent.run_domain_tool`.

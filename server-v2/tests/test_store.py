@@ -236,6 +236,68 @@ class StoreTests(unittest.TestCase):
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
 
+    def test_task_mcp_waiting_actions_are_persisted_and_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need more data", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            prompt_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.request_user_input",
+                        "arguments": {
+                            "question": "Which version?",
+                            "reason": "version affects diagnostics",
+                        },
+                    },
+                },
+            )
+            prompt_payload = json.loads(prompt_response["result"]["content"][0]["text"])
+            prompt_action = store.get_action(prompt_payload["action"]["id"])
+            self.assertEqual(prompt_action["kind"], "user_input")
+            self.assertEqual(store.get_run(run["id"])["status"], "waiting_for_user")
+
+            store.update_run_status(run["id"], "queued", "queued")
+            queued = store.enqueue_run(run["id"])
+            self.assertEqual(queued["runId"], run["id"])
+
+            approval_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.request_approval",
+                        "arguments": {
+                            "actionType": "remote_collect",
+                            "reason": "Need remote logs",
+                            "input": {"node": "n1"},
+                        },
+                    },
+                },
+            )
+            approval_payload = json.loads(approval_response["result"]["content"][0]["text"])
+            approval = store.get_action(approval_payload["action"]["id"])
+            self.assertEqual(approval["kind"], "approval")
+            self.assertEqual(store.get_run(run["id"])["status"], "waiting_for_approval")
+
+            decided = store.decide_action(approval["id"], "approved", "ok")
+            self.assertEqual(decided["status"], "approved")
+            self.assertEqual(decided["result"]["decision"], "approved")
+
 
 if __name__ == "__main__":
     unittest.main()

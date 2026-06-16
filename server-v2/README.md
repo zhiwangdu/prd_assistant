@@ -17,6 +17,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`.
+- Waiting-state action foundation for task MCP `logagent.request_user_input`
+  and `logagent.request_approval`.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -149,6 +151,8 @@ It currently supports:
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`
 - `tools/call logagent.run_domain_tool`
+- `tools/call logagent.request_user_input`
+- `tools/call logagent.request_approval`
 
 Follow-up searches write a `log_search` evidence row and return stable refs:
 
@@ -165,3 +169,8 @@ log_slices/<slice_id>.json#lines
 Configured tools can only be invoked by `toolId`; the model cannot provide an
 executable path, shell command, or argv. Tool stdout is parsed as JSON when
 possible and persisted as `tool_result` evidence.
+
+`request_user_input` and `request_approval` persist pending `actions` and move
+the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to
+a waiting run or approving/rejecting a pending action requeues the run through
+the SQLite job queue.

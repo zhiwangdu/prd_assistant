@@ -227,26 +227,17 @@ class Store:
                 {"question": workspace["question"], "mode": workspace["mode"]},
                 ts,
             )
-            conn.execute(
-                """
-                INSERT INTO jobs(
-                  id, kind, status, payload_json, attempts, max_attempts, next_run_at,
-                  created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job_id,
-                    "run_analysis",
-                    "queued",
-                    encode_json({"workspace_id": workspace_id, "run_id": run_id}),
-                    0,
-                    3,
-                    ts,
-                    ts,
-                    ts,
-                ),
-            )
+            self._enqueue_run_tx(conn, job_id, workspace_id, run_id, ts)
         return self.get_run(run_id)
+
+    def enqueue_run(self, run_id: str) -> JsonObject:
+        run = self.get_run(run_id)
+        job_id = new_id("job")
+        ts = now_iso()
+        with self.connect() as conn:
+            self._enqueue_run_tx(conn, job_id, run["workspace_id"], run_id, ts)
+            self._append_event_tx(conn, run["workspace_id"], run_id, "run.requeued", {}, ts)
+        return {"jobId": job_id, "runId": run_id}
 
     def get_run(self, run_id: str) -> JsonObject:
         with self.connect() as conn:
@@ -402,6 +393,72 @@ class Store:
             )
         return self.get_evidence(evidence_id)
 
+    def create_action(
+        self,
+        run_id: str,
+        kind: str,
+        payload: JsonObject,
+    ) -> JsonObject:
+        run = self.get_run(run_id)
+        action_id = new_id("act")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO actions(id, run_id, kind, status, payload_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (action_id, run_id, kind, "pending", encode_json(payload), ts, ts),
+            )
+            self._append_event_tx(
+                conn,
+                run["workspace_id"],
+                run_id,
+                f"action.{kind}.pending",
+                {"actionId": action_id, "payload": payload},
+                ts,
+            )
+        return self.get_action(action_id)
+
+    def get_action(self, action_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM actions WHERE id = ?", (action_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"unknown action {action_id}")
+        item = dict(row)
+        item["payload"] = decode_json(item.pop("payload_json"), {})
+        item["result"] = decode_json(item.pop("result_json"), None)
+        return item
+
+    def decide_action(
+        self,
+        action_id: str,
+        decision: str,
+        reason: str | None,
+    ) -> JsonObject:
+        action = self.get_action(action_id)
+        run = self.get_run(action["run_id"])
+        ts = now_iso()
+        result = {"decision": decision, "reason": reason}
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE actions
+                SET status = ?, result_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (decision, encode_json(result), ts, action_id),
+            )
+            self._append_event_tx(
+                conn,
+                run["workspace_id"],
+                run["id"],
+                f"action.{decision}",
+                {"actionId": action_id, "reason": reason},
+                ts,
+            )
+        return self.get_action(action_id)
+
     def get_evidence(self, evidence_id: str) -> JsonObject:
         with self.connect() as conn:
             row = conn.execute(
@@ -528,6 +585,34 @@ class Store:
                 """,
                 (status, next_run_at, error[:2000], ts, job["id"]),
             )
+
+    def _enqueue_run_tx(
+        self,
+        conn: sqlite3.Connection,
+        job_id: str,
+        workspace_id: str,
+        run_id: str,
+        ts: str,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO jobs(
+              id, kind, status, payload_json, attempts, max_attempts, next_run_at,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                "run_analysis",
+                "queued",
+                encode_json({"workspace_id": workspace_id, "run_id": run_id}),
+                0,
+                3,
+                ts,
+                ts,
+                ts,
+            ),
+        )
 
     def _append_event_tx(
         self,

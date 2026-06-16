@@ -55,13 +55,16 @@ Implemented in this slice:
 - Minimal configured Tool Runner. Tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
   task MCP `logagent.run_domain_tool`.
+- Waiting-state foundation through task MCP `logagent.request_user_input` and
+  `logagent.request_approval`; pending actions are persisted and user
+  message/approval APIs can requeue the run.
 
 Not yet implemented:
 
 - V1-compatible node log package preprocessing and log slicing.
 - LangGraph provider integration.
 - Rich Tool Runner input matching, per-tool params schema, Metadata, Case
-  recall, user prompt, and approval.
+  recall, and full multi-round model reasoning after resume.
 - Tool Runner execution.
 - Metadata import/query.
 - Skill-backed System Context.
@@ -185,6 +188,22 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+## Waiting States
+
+Task MCP can now request:
+
+```text
+logagent.request_user_input
+logagent.request_approval
+```
+
+Both calls create an `actions` row and append timeline events. User input moves
+the run to `waiting_for_user`; approval moves it to `waiting_for_approval`.
+`POST /api/v2/runs/:run_id/messages` and
+`POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
+SQLite job queue. The current Agent runtime is still a stub, so resumed runs do
+not yet perform true multi-round model reasoning.
 
 ## Security
 
