@@ -24,6 +24,8 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 已有 C/C++ 工具可直接复用，通过 Tool Runner 统一调用。
 - Python/Go/Java 主要作为已有生态或历史工具的兼容选项，不作为新模块首选。
 
+V2 重构分支 `rewrite/logagent-v2` 是一个明确例外：为评估小团队内部使用的主流 Agent 技术栈，新增 `server-v2/` clean-room Python 实现。V2 首版采用 FastAPI、LangGraph-oriented Agent runtime、SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL 或 Redis，且不要求兼容当前 Rust Server API。
+
 核心链路：
 
 ```text
@@ -170,6 +172,7 @@ flowchart LR
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
 | [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
 | [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、只读 HTTP MCP、导出包和 API | [SPEC](./server/SPEC.md) |
+| [server-v2](./server-v2/README.md) | V2 clean-room Python/FastAPI 小团队 Agent Server，SQLite + 本地 artifact store | [SPEC](./server-v2/SPEC.md) |
 | [webui](./webui/README.md) | Vite WebUI、Analyze、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
 | [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
@@ -218,6 +221,8 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 ## 当前优先级
 
 当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`；部署样例默认启用这些源码构建产物。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页、Huawei OBS + GaussDB package sync 内置工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
+
+V2 重构分支的当前优先级是先跑通小团队单机部署的基础闭环：`Workspace -> Upload -> Run -> SQLite job -> Agent stub -> Timeline/Evidence/FinalAnswer`。该分支暂不追求和 Rust V1 API 兼容；迁移日志解压、搜索、Tool Runner、Metadata、Skills、Memory 和 WebUI V2 cutover 会在基础边界稳定后分阶段推进。
 
 Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的远程采集仍通过 LogAgent approval gate 进入等待态并使用 mock evidence。
 

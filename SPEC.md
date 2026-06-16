@@ -34,6 +34,8 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 已有编译工具可复用，不强制重写。外部工具统一通过白名单配置和 Tool Runner 调用。
 
+V2 重构分支 `rewrite/logagent-v2` 作为 clean-room 架构评估例外，允许以 Python/FastAPI/LangGraph-oriented runtime 重新实现 Server。该分支面向小团队单机部署，默认使用 SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL/Redis，也不要求兼容 Rust V1 API。
+
 ## 组件和内部能力边界
 
 当前可运行组件：
@@ -43,6 +45,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 | Chrome Extension | [chrome-extension/SPEC.md](./chrome-extension/SPEC.md) |
 | Native Agent | [native-agent/SPEC.md](./native-agent/SPEC.md) |
 | Server | [server/SPEC.md](./server/SPEC.md) |
+| Server V2 | [server-v2/SPEC.md](./server-v2/SPEC.md) |
 | WebUI | [webui/SPEC.md](./webui/SPEC.md) |
 | Testing | [testing/SPEC.md](./testing/SPEC.md) |
 
@@ -195,6 +198,7 @@ flowchart TD
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 基于已落地的 Remote Executor，继续实现测试环境通过 SSH/SCP 采集日志和运行环境信息，并接入 Analysis Agent 审批动作。
+- V2 clean-room 分支继续迁移日志解压/search、LangGraph 模型 provider、Tool Runner、Metadata、Skills、Case Memory 和 WebUI V2 cutover。
 
 ## 全局验收
 

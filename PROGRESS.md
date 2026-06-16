@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 LogAgent V2 Clean-room Scaffold
+
+- Created the `rewrite/logagent-v2` branch from `main` to keep Rust V1 stable while evaluating a small-team Python Agent stack.
+- Added `server-v2/` as a clean-room FastAPI/LangGraph-oriented implementation. The first slice uses SQLite WAL and local artifacts instead of PostgreSQL/Redis, matching the small-team deployment decision.
+- Implemented the V2 foundation: settings, API key auth, SQLite schema, DB-backed job queue, local artifact writes, Workspace/Run/Upload/Evidence/Timeline models, inline worker, stub Agent runtime, artifact download, and read-only MCP discovery placeholder.
+- Added `server-v2/README.md` and `server-v2/SPEC.md`, and updated root README/SPEC to document the V2 exception to the Rust-first rule.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-16 Stable MCP Log Search Evidence
 
 - Investigated `sess_1781622184222_1` / `task_1781622204486_5`: the uploaded openGemini node packages were extracted successfully and the real analyzer found query issues, but Claude Code later issued broad MCP searches such as `memory`, `at `, and Java exception names. The previous `logagent.search_logs` response returned only counts and `grep_results.json#matches/*` refs, so the model misread benign `lib/memory/memory.go` and ordinary English/Go log lines as JVM/OOM/NPE evidence.

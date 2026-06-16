@@ -1,6 +1,9 @@
 .DS_Store
 target/
 data/
+.venv/
+__pycache__/
+*.pyc
 node_modules/
 .next/
 out/
