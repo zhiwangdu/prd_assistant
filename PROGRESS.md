@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Static WebUI Hosting
+
+- Added V2 `GET /` static WebUI hosting from `webui/out`, configurable through
+  `LOGAGENT_V2_WEBUI_DIR`.
+- Added SPA fallback for non-API routes while preserving 404 behavior for
+  unknown `/api/*` paths and missing static assets.
+- Added regression coverage for root index serving, asset serving, SPA fallback,
+  missing asset 404, and missing API route 404.
+- Updated server-v2 docs and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`,
+  `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Resume Context
 
 - Added bounded V2 Agent `interactionContext` built from recent user messages,

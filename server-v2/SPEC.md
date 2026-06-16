@@ -10,6 +10,7 @@ single-machine deployment over distributed infrastructure:
 - SQLite WAL for durable state.
 - Local filesystem artifacts for large evidence.
 - DB-backed jobs instead of Redis.
+- Static WebUI build hosting from local filesystem.
 
 V2 does not need to be compatible with the current Rust Server API or artifact
 layout. The stable product goal remains evidence-backed diagnosis with an
@@ -32,6 +33,9 @@ auditable agent boundary.
 Implemented in this slice:
 
 - FastAPI app and public `GET /health`.
+- Public `GET /` static WebUI hosting from `webui/out`; non-API SPA routes
+  return `index.html`, static assets are served directly, and unknown `/api/*`
+  paths still return 404.
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted
@@ -147,6 +151,7 @@ Authorization: Bearer <api-key>
 Current V2 endpoints:
 
 ```http
+GET  /
 GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces

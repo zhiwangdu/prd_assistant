@@ -77,10 +77,40 @@ from logagent_v2.tools import (
     summary_from_stdout,
     tool_descriptors,
 )
+from logagent_v2.webui_static import WebuiStaticNotFound, resolve_webui_asset
 from logagent_v2.worker import JobRunner
 
 
 class StoreTests(unittest.TestCase):
+    def test_static_webui_resolves_index_assets_and_spa_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            webui_dir = tmp_path / "webui-out"
+            assets_dir = webui_dir / "assets"
+            assets_dir.mkdir(parents=True)
+            (webui_dir / "index.html").write_text(
+                "<html><body><div id=\"root\">LogAgent V2 UI</div></body></html>",
+                encoding="utf-8",
+            )
+            (assets_dir / "app.js").write_text(
+                "console.log('logagent-v2');",
+                encoding="utf-8",
+            )
+
+            root = resolve_webui_asset(webui_dir, "")
+            asset = resolve_webui_asset(webui_dir, "assets/app.js")
+            fallback = resolve_webui_asset(webui_dir, "workspaces/demo")
+
+            self.assertEqual(root, (webui_dir / "index.html").resolve())
+            self.assertEqual(asset, (assets_dir / "app.js").resolve())
+            self.assertEqual(fallback, (webui_dir / "index.html").resolve())
+            with self.assertRaises(WebuiStaticNotFound):
+                resolve_webui_asset(webui_dir, "assets/missing.js")
+            with self.assertRaises(WebuiStaticNotFound):
+                resolve_webui_asset(webui_dir, "api/v2/not-a-route")
+            with self.assertRaises(WebuiStaticNotFound):
+                resolve_webui_asset(webui_dir, "../secret")
+
     def test_workspace_update_and_soft_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "logagent.sqlite")

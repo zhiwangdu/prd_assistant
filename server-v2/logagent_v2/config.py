@@ -84,6 +84,10 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
     )
 
 
+def default_webui_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "webui" / "out"
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -119,6 +123,7 @@ class Settings:
     remote_max_output_bytes: int = 1024 * 1024
     remote_host_key_policy: str = "accept-new"
     remote_commands: tuple[RemoteCommandTemplate, ...] = field(default_factory=default_remote_commands)
+    webui_dir: Path = field(default_factory=default_webui_dir)
 
     @property
     def sqlite_path(self) -> Path:
@@ -200,6 +205,8 @@ class Settings:
         remote_commands = parse_remote_commands_env(
             os.environ.get("LOGAGENT_V2_REMOTE_COMMANDS_JSON")
         )
+        raw_webui_dir = os.environ.get("LOGAGENT_V2_WEBUI_DIR")
+        webui_dir = Path(raw_webui_dir).expanduser() if raw_webui_dir else default_webui_dir()
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -233,6 +240,7 @@ class Settings:
             remote_max_output_bytes=max(1024, remote_max_output_bytes),
             remote_host_key_policy=remote_host_key_policy,
             remote_commands=remote_commands,
+            webui_dir=webui_dir,
         )
 
 

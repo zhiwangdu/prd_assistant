@@ -5,6 +5,7 @@ LogAgent redesign. It does not preserve the Rust Server API surface. The first
 slice provides the durable foundation for the V2 product model:
 
 - FastAPI HTTP service.
+- Static WebUI hosting from `webui/out` with SPA fallback for non-API routes.
 - SQLite WAL storage under one local data directory.
 - Local artifact storage for uploads and future evidence files.
 - DB-backed job queue for restartable background runs.
@@ -96,6 +97,13 @@ Protected APIs require:
 Authorization: Bearer <api-key>
 ```
 
+Public endpoints:
+
+```http
+GET /
+GET /health
+```
+
 ## Configuration
 
 Environment variables:
@@ -134,6 +142,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `off` host-key behavior |
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates |
+| `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 
 Tool descriptor example:
 
@@ -314,7 +323,9 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond generic InfluxQL/Flux JSONL, WebUI, or full LangGraph model loop.
+inputs beyond generic InfluxQL/Flux JSONL or the full LangGraph model loop. The
+Python server can serve the current static WebUI build, while full WebUI cutover
+remains a separate product step.
 
 ## Agent Runtime
 

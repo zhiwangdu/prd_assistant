@@ -67,6 +67,7 @@ from .settings_api import (
 from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
 from .tools import tool_descriptors
+from .webui_static import WebuiStaticNotFound, resolve_webui_asset
 from .worker import JobRunner
 
 
@@ -1184,7 +1185,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def task_mcp(_: Auth, run_id: str, request: dict) -> dict:
         return task_mcp_response(settings, store, run_id, request)
 
+    @app.get("/", include_in_schema=False)
+    async def webui_root() -> FileResponse:
+        return serve_webui_asset(settings, "")
+
+    @app.get("/{asset_path:path}", include_in_schema=False)
+    async def webui_asset(asset_path: str) -> FileResponse:
+        return serve_webui_asset(settings, asset_path)
+
     return app
+
+
+def serve_webui_asset(settings: Settings, asset_path: str) -> FileResponse:
+    try:
+        path = resolve_webui_asset(settings.webui_dir, asset_path)
+    except WebuiStaticNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path)
 
 
 def normalize_executor_payload(payload: dict, partial: bool = False) -> dict:
