@@ -69,7 +69,8 @@ Implemented in this slice:
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP
-  `logagent.fetch` only when enabled and allowlisted.
+  `logagent.fetch` only when enabled and allowlisted. Sensitive endpoint
+  material is split into encrypted credential sets.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted and user
   message/approval APIs can requeue the run.
@@ -99,7 +100,7 @@ Not yet implemented:
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
   node-package InfluxQL JSONL, per-tool params schema, and full multi-round
   model reasoning after resume.
-- Encrypted Fetch credential sets, WebUI Fetch management, and WebUI cutover.
+- WebUI Fetch management and WebUI cutover.
 - WebUI System Context cutover.
 - Case embedding/vector recall and WebUI Memory management.
 - WebUI V2 cutover.
@@ -198,6 +199,7 @@ SQLite tables:
 - `cases`
 - `case_imports`
 - `fetch_endpoints`
+- `fetch_credential_sets`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
@@ -366,9 +368,11 @@ add `results[]` and `evidenceItems[]`.
 ## Fetch Endpoints
 
 V2 Fetch endpoints are stored in SQLite table `fetch_endpoints` with name,
-method, URL, headers, optional body, enabled flag, and timestamps. The public
-API returns redacted endpoint previews; raw headers and bodies are only used by
-the server-side executor.
+method, redacted URL, redacted headers, optional redacted body material, enabled
+flag, and timestamps. Sensitive request material is stored separately in
+`fetch_credential_sets` as encrypted JSON using `LOGAGENT_V2_FETCH_SECRET_KEY`.
+The public API returns redacted endpoint previews; raw request material is only
+hydrated inside the server-side executor.
 
 Endpoints can be created directly or imported from DevTools bash cURL commands:
 
@@ -382,8 +386,13 @@ The cURL importer supports request method, headers, body, cookies,
 form uploads, proxy, cert, file, or resolver options rather than widening the
 network or filesystem boundary. Import previews redact sensitive query,
 header, and JSON/form body fields and return detected sensitive field
-locations. Encrypted credential sets are not implemented in V2 yet, so saved
-endpoints still use the existing endpoint storage path.
+locations.
+
+If a URL query parameter, header, or body field name looks like a token,
+secret, password, API key, session, Authorization, or Cookie, creating or
+updating the endpoint requires a valid Fernet 32-byte base64 key in
+`LOGAGENT_V2_FETCH_SECRET_KEY`. Without that key, the write is rejected before
+the endpoint row is stored.
 
 Fetch execution is disabled by default. To execute endpoints, set:
 
@@ -391,6 +400,7 @@ Fetch execution is disabled by default. To execute endpoints, set:
 LOGAGENT_V2_FETCH_ENABLED=1
 LOGAGENT_V2_FETCH_ALLOWED_HOSTS=127.0.0.1,example.internal:8080
 LOGAGENT_V2_FETCH_MAX_REDIRECTS=5
+LOGAGENT_V2_FETCH_SECRET_KEY=<fernet-32-byte-base64-key>
 ```
 
 Only `http` and `https` URLs are supported. The requested host or host:port must

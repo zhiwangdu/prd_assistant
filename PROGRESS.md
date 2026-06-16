@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Credential Sets
+
+- Added `cryptography` dependency and `LOGAGENT_V2_FETCH_SECRET_KEY` for Fernet-encrypted Fetch credential sets.
+- Added SQLite-backed `fetch_credential_sets` with one encrypted credential set per sensitive Fetch endpoint.
+- Fetch endpoint create/import/update now stores only redacted URL/header/body material in `fetch_endpoints` when sensitive query, header, or body fields are detected.
+- Sensitive endpoint writes require a valid secret key before the endpoint row is created or updated; non-sensitive endpoints continue to work without a key.
+- Fetch execution hydrates the full request material from the encrypted credential set, while API, MCP, and result artifacts continue to expose redacted values.
+- Added regression coverage for missing-key rejection, encrypted storage, credential hydration, execution with restored secrets, and redacted request artifacts.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `server-v2/pyproject.toml`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Import Drafts
 
 - Added SQLite-backed V2 `case_imports` drafts for Memory import preview/confirm flow.

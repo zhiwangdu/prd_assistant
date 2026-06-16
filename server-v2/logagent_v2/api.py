@@ -19,11 +19,16 @@ from .case_memory import (
 from .config import Settings
 from .fetch import (
     endpoint_from_curl,
+    endpoint_for_storage,
+    endpoint_with_credential_summary,
     execute_fetch_endpoint,
     fetch_catalog_descriptor,
+    hydrate_fetch_endpoint,
     normalize_fetch_endpoint,
+    persist_fetch_credentials,
     preview_curl_import,
     public_fetch_endpoint,
+    validate_fetch_credentials_available,
 )
 from .exports import build_skills_zip, build_tools_zip
 from .metadata import (
@@ -384,7 +389,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "enabled": settings.fetch_enabled,
             "allowedHosts": list(settings.fetch_allowed_hosts),
             "endpoints": [
-                public_fetch_endpoint(endpoint) for endpoint in store.list_fetch_endpoints()
+                public_fetch_endpoint(endpoint_with_credential_summary(store, endpoint))
+                for endpoint in store.list_fetch_endpoints()
             ],
         }
 
@@ -403,15 +409,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 name=payload.name,
                 enabled=payload.enabled,
             )
+            validate_fetch_credentials_available(settings, endpoint)
+            stored = endpoint_for_storage(endpoint)
             created = store.create_fetch_endpoint(
-                name=endpoint["name"],
-                method=endpoint["method"],
-                url=endpoint["url"],
-                headers=endpoint["headers"],
-                body=endpoint.get("body"),
-                enabled=endpoint["enabled"],
+                name=stored["name"],
+                method=stored["method"],
+                url=stored["url"],
+                headers=stored["headers"],
+                body=stored.get("body"),
+                enabled=stored["enabled"],
             )
-            return public_fetch_endpoint(created)
+            persist_fetch_credentials(settings, store, created["id"], endpoint)
+            return public_fetch_endpoint(
+                endpoint_with_credential_summary(store, store.get_fetch_endpoint(created["id"]))
+            )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -419,29 +430,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def create_fetch_endpoint(_: Auth, payload: FetchEndpointCreate) -> dict:
         try:
             endpoint = normalize_fetch_endpoint(payload.model_dump())
+            validate_fetch_credentials_available(settings, endpoint)
+            stored = endpoint_for_storage(endpoint)
             created = store.create_fetch_endpoint(
-                name=endpoint["name"],
-                method=endpoint["method"],
-                url=endpoint["url"],
-                headers=endpoint["headers"],
-                body=endpoint.get("body"),
-                enabled=endpoint["enabled"],
+                name=stored["name"],
+                method=stored["method"],
+                url=stored["url"],
+                headers=stored["headers"],
+                body=stored.get("body"),
+                enabled=stored["enabled"],
             )
-            return public_fetch_endpoint(created)
+            persist_fetch_credentials(settings, store, created["id"], endpoint)
+            return public_fetch_endpoint(
+                endpoint_with_credential_summary(store, store.get_fetch_endpoint(created["id"]))
+            )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/fetch/endpoints/{endpoint_id}")
     async def get_fetch_endpoint(_: Auth, endpoint_id: str) -> dict:
         try:
-            return public_fetch_endpoint(store.get_fetch_endpoint(endpoint_id))
+            return public_fetch_endpoint(
+                endpoint_with_credential_summary(store, store.get_fetch_endpoint(endpoint_id))
+            )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.patch("/api/v2/fetch/endpoints/{endpoint_id}")
     async def patch_fetch_endpoint(_: Auth, endpoint_id: str, payload: FetchEndpointUpdate) -> dict:
         try:
-            current = store.get_fetch_endpoint(endpoint_id)
+            current = hydrate_fetch_endpoint(settings, store, store.get_fetch_endpoint(endpoint_id))
             updates = {
                 key: value
                 for key, value in payload.model_dump(exclude_unset=True).items()
@@ -450,8 +468,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             merged = dict(current)
             merged.update(updates)
             endpoint = normalize_fetch_endpoint(merged)
-            updated = store.update_fetch_endpoint(endpoint_id, endpoint)
-            return public_fetch_endpoint(updated)
+            validate_fetch_credentials_available(settings, endpoint)
+            stored = endpoint_for_storage(endpoint)
+            updated = store.update_fetch_endpoint(endpoint_id, stored)
+            persist_fetch_credentials(settings, store, endpoint_id, endpoint)
+            return public_fetch_endpoint(endpoint_with_credential_summary(store, updated))
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

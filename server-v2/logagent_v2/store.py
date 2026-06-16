@@ -234,6 +234,15 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS fetch_credential_sets (
+                  id TEXT PRIMARY KEY,
+                  endpoint_id TEXT NOT NULL UNIQUE REFERENCES fetch_endpoints(id) ON DELETE CASCADE,
+                  encrypted_json TEXT NOT NULL,
+                  redacted_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
@@ -245,6 +254,8 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_case_imports_status
                   ON case_imports(status, updated_at);
                 CREATE INDEX IF NOT EXISTS idx_fetch_endpoints_enabled ON fetch_endpoints(enabled);
+                CREATE INDEX IF NOT EXISTS idx_fetch_credentials_endpoint
+                  ON fetch_credential_sets(endpoint_id);
                 """
             )
             self._ensure_column_tx(
@@ -1140,6 +1151,55 @@ class Store:
             raise KeyError(f"unknown fetch endpoint {endpoint_id}")
         return self._fetch_endpoint_from_row(row)
 
+    def get_fetch_credential_set(self, endpoint_id: str) -> JsonObject | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM fetch_credential_sets
+                WHERE endpoint_id = ?
+                """,
+                (endpoint_id,),
+            ).fetchone()
+        return self._fetch_credential_set_from_row(row) if row else None
+
+    def upsert_fetch_credential_set(
+        self,
+        endpoint_id: str,
+        encrypted_json: str,
+        redacted: JsonObject,
+    ) -> JsonObject:
+        existing = self.get_fetch_credential_set(endpoint_id)
+        credential_id = existing["id"] if existing else new_id("fetchcred")
+        created_at = existing["createdAt"] if existing else now_iso()
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO fetch_credential_sets(
+                  id, endpoint_id, encrypted_json, redacted_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(endpoint_id) DO UPDATE SET
+                  encrypted_json = excluded.encrypted_json,
+                  redacted_json = excluded.redacted_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    credential_id,
+                    endpoint_id,
+                    encrypted_json,
+                    encode_json(redacted),
+                    created_at,
+                    ts,
+                ),
+            )
+        credential = self.get_fetch_credential_set(endpoint_id)
+        assert credential is not None
+        return credential
+
+    def delete_fetch_credential_set(self, endpoint_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM fetch_credential_sets WHERE endpoint_id = ?", (endpoint_id,))
+
     def update_fetch_endpoint(self, endpoint_id: str, updates: JsonObject) -> JsonObject:
         current = self.get_fetch_endpoint(endpoint_id)
         merged = dict(current)
@@ -1172,6 +1232,7 @@ class Store:
 
     def delete_fetch_endpoint(self, endpoint_id: str) -> None:
         with self.connect() as conn:
+            conn.execute("DELETE FROM fetch_credential_sets WHERE endpoint_id = ?", (endpoint_id,))
             cursor = conn.execute("DELETE FROM fetch_endpoints WHERE id = ?", (endpoint_id,))
             if cursor.rowcount == 0:
                 raise KeyError(f"unknown fetch endpoint {endpoint_id}")
@@ -1180,6 +1241,15 @@ class Store:
         item = dict(row)
         item["headers"] = decode_json(item.pop("headers_json"), {})
         item["enabled"] = bool(item["enabled"])
+        item["createdAt"] = item.pop("created_at")
+        item["updatedAt"] = item.pop("updated_at")
+        return item
+
+    def _fetch_credential_set_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        item["endpointId"] = item.pop("endpoint_id")
+        item["encrypted"] = item.pop("encrypted_json")
+        item["redacted"] = decode_json(item.pop("redacted_json"), {})
         item["createdAt"] = item.pop("created_at")
         item["updatedAt"] = item.pop("updated_at")
         return item

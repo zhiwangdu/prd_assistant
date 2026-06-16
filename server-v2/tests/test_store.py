@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import gzip
 import io
 import json
@@ -23,7 +24,17 @@ from logagent_v2.case_memory import (
 )
 from logagent_v2.config import Settings, ToolDefinition
 from logagent_v2.exports import build_skills_zip, build_tools_zip
-from logagent_v2.fetch import endpoint_from_curl, preview_curl_import
+from logagent_v2.fetch import (
+    endpoint_for_storage,
+    endpoint_from_curl,
+    endpoint_with_credential_summary,
+    execute_fetch_endpoint,
+    hydrate_fetch_endpoint,
+    persist_fetch_credentials,
+    preview_curl_import,
+    public_fetch_endpoint,
+    validate_fetch_credentials_available,
+)
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
     normalize_and_validate_final_answer,
@@ -906,6 +917,106 @@ class StoreTests(unittest.TestCase):
                     },
                 )
                 self.assertIn("not in allowlist", blocked["error"]["message"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_fetch_sensitive_credentials_are_encrypted_and_hydrated(self) -> None:
+        captured: dict[str, str] = {}
+
+        class CredentialHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                captured["path"] = self.path
+                captured["authorization"] = self.headers.get("Authorization", "")
+                captured["body"] = self.rfile.read(length).decode("utf-8")
+                body = json.dumps({"ok": True}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), CredentialHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                key = base64.urlsafe_b64encode(b"1" * 32).decode("ascii")
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("127.0.0.1",),
+                    fetch_secret_key=key,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                endpoint = {
+                    "name": "secret endpoint",
+                    "method": "POST",
+                    "url": f"http://127.0.0.1:{server.server_port}/data?api_key=query-secret",
+                    "headers": {
+                        "Authorization": "Bearer header-secret",
+                        "X-Trace": "visible",
+                    },
+                    "body": '{"password":"body-secret","keep":"value"}',
+                    "enabled": True,
+                }
+                with self.assertRaises(ValueError):
+                    validate_fetch_credentials_available(
+                        Settings(data_dir=Path(tmp), api_key="test"),
+                        endpoint,
+                    )
+
+                validate_fetch_credentials_available(settings, endpoint)
+                stored = endpoint_for_storage(endpoint)
+                created = store.create_fetch_endpoint(
+                    name=stored["name"],
+                    method=stored["method"],
+                    url=stored["url"],
+                    headers=stored["headers"],
+                    body=stored.get("body"),
+                    enabled=stored["enabled"],
+                )
+                persist_fetch_credentials(settings, store, created["id"], endpoint)
+                stored_endpoint = store.get_fetch_endpoint(created["id"])
+                self.assertIn("api_key=__REDACTED__", stored_endpoint["url"])
+                self.assertEqual(stored_endpoint["headers"]["Authorization"], "__REDACTED__")
+                self.assertIn('"password": "__REDACTED__"', stored_endpoint["body"])
+                credential = store.get_fetch_credential_set(created["id"])
+                self.assertIsNotNone(credential)
+                assert credential is not None
+                self.assertNotIn("header-secret", credential["encrypted"])
+                public = public_fetch_endpoint(
+                    endpoint_with_credential_summary(store, stored_endpoint)
+                )
+                self.assertTrue(public["hasCredentials"])
+                self.assertEqual(
+                    public["credentialSet"]["redacted"]["detectedSensitiveFields"][0][
+                        "location"
+                    ],
+                    "query",
+                )
+
+                hydrated = hydrate_fetch_endpoint(settings, store, stored_endpoint)
+                self.assertIn("api_key=query-secret", hydrated["url"])
+                self.assertEqual(hydrated["headers"]["Authorization"], "Bearer header-secret")
+                self.assertIn("body-secret", hydrated["body"])
+
+                workspace = store.create_workspace("fetch secret", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+                result = execute_fetch_endpoint(settings, store, workspace["id"], run["id"], created["id"])
+                self.assertEqual(result["result"]["status"], "OK")
+                self.assertIn("api_key=query-secret", captured["path"])
+                self.assertEqual(captured["authorization"], "Bearer header-secret")
+                self.assertIn("body-secret", captured["body"])
+                self.assertIn("__REDACTED__", result["result"]["request"]["url"])
+                self.assertIn("__REDACTED__", result["result"]["request"]["bodyPreview"])
         finally:
             server.shutdown()
             server.server_close()

@@ -231,6 +231,106 @@ def public_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
     return result
 
 
+def endpoint_with_credential_summary(store: Store, endpoint: JsonObject) -> JsonObject:
+    result = dict(endpoint)
+    credential = store.get_fetch_credential_set(endpoint["id"])
+    result["hasCredentials"] = credential is not None
+    if credential is not None:
+        result["credentialSet"] = {
+            "id": credential["id"],
+            "redacted": credential["redacted"],
+            "updatedAt": credential["updatedAt"],
+        }
+    return result
+
+
+def endpoint_for_storage(endpoint: JsonObject) -> JsonObject:
+    if not detected_sensitive_fields(endpoint):
+        return dict(endpoint)
+    stored = dict(endpoint)
+    stored["url"] = redact_url(endpoint["url"])
+    stored["headers"] = redact_headers(endpoint.get("headers", {}))
+    if endpoint.get("body") is not None:
+        stored["body"] = redact_body_preview(str(endpoint.get("body")))
+    return stored
+
+
+def validate_fetch_credentials_available(settings: Settings, endpoint: JsonObject) -> None:
+    if detected_sensitive_fields(endpoint):
+        fetch_fernet(settings)
+
+
+def persist_fetch_credentials(
+    settings: Settings,
+    store: Store,
+    endpoint_id: str,
+    endpoint: JsonObject,
+) -> None:
+    sensitive_fields = detected_sensitive_fields(endpoint)
+    if not sensitive_fields:
+        store.delete_fetch_credential_set(endpoint_id)
+        return
+    encrypted = encrypt_json(settings, {"schemaVersion": 1, "endpoint": endpoint})
+    redacted = {
+        "schemaVersion": 1,
+        "detectedSensitiveFields": sensitive_fields,
+        "endpoint": public_fetch_endpoint(endpoint),
+    }
+    store.upsert_fetch_credential_set(endpoint_id, encrypted, redacted)
+
+
+def hydrate_fetch_endpoint(
+    settings: Settings,
+    store: Store,
+    endpoint: JsonObject,
+) -> JsonObject:
+    credential = store.get_fetch_credential_set(endpoint["id"])
+    if credential is None:
+        return dict(endpoint)
+    decrypted = decrypt_json(settings, credential["encrypted"])
+    secret_endpoint = decrypted.get("endpoint")
+    if not isinstance(secret_endpoint, dict):
+        raise ValueError("fetch credential set is invalid")
+    hydrated = dict(endpoint)
+    for key in ("name", "method", "url", "headers", "body", "enabled"):
+        if key in secret_endpoint:
+            hydrated[key] = secret_endpoint[key]
+    return hydrated
+
+
+def encrypt_json(settings: Settings, value: JsonObject) -> str:
+    fernet = fetch_fernet(settings)
+    data = json.dumps(value, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    return fernet.encrypt(data).decode("utf-8")
+
+
+def decrypt_json(settings: Settings, encrypted: str) -> JsonObject:
+    fernet = fetch_fernet(settings)
+    try:
+        data = fernet.decrypt(encrypted.encode("utf-8"))
+    except Exception as error:
+        raise ValueError("failed to decrypt fetch credential set") from error
+    value = json.loads(data.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("fetch credential set did not decrypt to an object")
+    return value
+
+
+def fetch_fernet(settings: Settings):
+    if not settings.fetch_secret_key:
+        raise ValueError(
+            "LOGAGENT_V2_FETCH_SECRET_KEY is required for sensitive Fetch credentials"
+        )
+    try:
+        from cryptography.fernet import Fernet
+    except Exception as error:
+        raise ValueError("cryptography package is required for Fetch credential encryption") from error
+    try:
+        return Fernet(settings.fetch_secret_key.encode("utf-8"))
+    except Exception as error:
+        raise ValueError("LOGAGENT_V2_FETCH_SECRET_KEY must be a valid Fernet key") from error
+
+
 def fetch_catalog_descriptor(settings: Settings) -> JsonObject:
     return {
         "toolId": "logagent.fetch",
@@ -277,7 +377,7 @@ def call_fetch_tool(
         return {
             "enabled": settings.fetch_enabled,
             "endpoints": [
-                public_fetch_endpoint(endpoint)
+                public_fetch_endpoint(endpoint_with_credential_summary(store, endpoint))
                 for endpoint in store.list_fetch_endpoints()
                 if endpoint["enabled"]
             ],
@@ -299,7 +399,7 @@ def execute_fetch_endpoint(
 ) -> JsonObject:
     if not settings.fetch_enabled:
         raise ValueError("fetch is disabled")
-    endpoint = store.get_fetch_endpoint(endpoint_id)
+    endpoint = hydrate_fetch_endpoint(settings, store, store.get_fetch_endpoint(endpoint_id))
     if not endpoint["enabled"]:
         raise ValueError(f"fetch endpoint {endpoint_id} is disabled")
     validate_url_allowed(settings, endpoint["url"])

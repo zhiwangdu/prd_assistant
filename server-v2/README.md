@@ -102,6 +102,7 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
+| `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key for encrypted Fetch credential sets |
 
 Tool descriptor example:
 
@@ -189,8 +190,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, encrypted Fetch credential sets,
-embedding/vector recall, WebUI, or full LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, embedding/vector recall, WebUI, or
+full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -308,6 +309,15 @@ manually up to
 `LOGAGENT_V2_FETCH_MAX_REDIRECTS`; every hop is revalidated against the same
 allowlist, and sensitive headers are stripped when redirecting across origin.
 Fetch stores bounded response previews as `fetch_result` evidence.
+
+Sensitive Fetch endpoint material is split into an encrypted credential set.
+If a URL query parameter, header, or body field looks like a token, secret,
+password, API key, session, Authorization, or Cookie, V2 stores only a redacted
+endpoint definition in `fetch_endpoints` and encrypts the full request material
+in `fetch_credential_sets` using `LOGAGENT_V2_FETCH_SECRET_KEY`. Creating or
+updating a sensitive endpoint without a valid key is rejected before the
+endpoint row is written. Execution hydrates the endpoint from the credential
+set, while API, MCP, and result artifacts continue to show only redacted values.
 
 `request_user_input` and `request_approval` persist pending `actions` and move
 the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to
