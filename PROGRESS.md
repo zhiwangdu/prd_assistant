@@ -2,6 +2,13 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Analyze Start With Pending Uploads
+
+- Fixed Analyze Session run creation when a user selected log files and clicked `Start analysis` without first clicking the separate upload button. WebUI now uploads pending files, attaches the completed upload IDs to the selected Session, and only then creates the Session task run.
+- Root cause observed in `sess_1781620388058_1`: the latest task snapshot had `uploadIds=[]`, `manifest.files=0`, and `analysis_package.task.uploadIds=[]`, so Claude Code correctly treated it as a question-only task and asked for more data.
+- Updated WebUI README/SPEC to document that `Start analysis` auto-attaches pending selected files before creating the run.
+- Verification passed: `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and the rebuilt static `webui/out` was synced to the running 50992 runtime directory for manual retest.
+
 ## 2026-06-16 Node Package Directory Entry Fix
 
 - Fixed node log package extraction for tar archives that include `./` or other directory entries. The preprocessor now skips directory entries before path normalization and only classifies ordinary files, matching tarballs produced by `tar -czf package.tar.gz .`.

@@ -526,21 +526,10 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
     }
     setLoading(true);
     try {
-      const uploads: UploadResponse[] = [];
-      for (let index = 0; index < files.length; index += 1) {
-        setUploadStatus(copy.uploadingFile(files[index].name));
-        uploads.push(await uploadFile(files[index], apiKey, (value) => setUploadProgress(Math.round(((index + value) / files.length) * 100))));
-      }
-      await fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(selectedSession.sessionId)}/uploads`, {
-        method: "POST",
-        headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ uploadIds: uploads.map((upload) => upload.uploadId) })
-      });
-      setUploadProgress(100);
-      setFiles([]);
-      setUploadStatus(copy.attachedUploads(uploads.length, selectedSession.sessionId));
+      const { session, uploadCount } = await uploadSelectedFilesToSession(selectedSession.sessionId);
+      setUploadStatus(copy.attachedUploads(uploadCount, selectedSession.sessionId));
       await refreshSessions();
-      await selectSession(selectedSession.sessionId, false, selectedTask?.taskId);
+      await selectSession(session.sessionId, false, selectedTask?.taskId);
     } catch (reason) {
       setUploadStatus(errorMessage(reason));
     } finally {
@@ -548,14 +537,33 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
     }
   }
 
+  async function uploadSelectedFilesToSession(sessionId: string): Promise<{ session: SessionRecord; uploadCount: number }> {
+    const pendingFiles = files;
+    const uploads: UploadResponse[] = [];
+    setUploadProgress(0);
+    for (let index = 0; index < pendingFiles.length; index += 1) {
+      setUploadStatus(copy.uploadingFile(pendingFiles[index].name));
+      uploads.push(await uploadFile(pendingFiles[index], apiKey, (value) => setUploadProgress(Math.round(((index + value) / pendingFiles.length) * 100))));
+    }
+    const session = await fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(sessionId)}/uploads`, {
+      method: "POST",
+      headers: jsonHeaders(apiKey),
+      body: JSON.stringify({ uploadIds: uploads.map((upload) => upload.uploadId) })
+    });
+    setUploadProgress(100);
+    setFiles([]);
+    return { session, uploadCount: uploads.length };
+  }
+
   async function startAnalysis() {
     if (!selectedSession || !apiKey.trim()) return;
+    const sessionId = selectedSession.sessionId;
     setLoading(true);
     setArtifacts(null);
     setTaskResult(null);
     setAnalysisSnapshot(null);
     try {
-      const savedSession = await fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(selectedSession.sessionId)}`, {
+      let savedSession = await fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
         headers: jsonHeaders(apiKey),
         body: JSON.stringify({
@@ -568,8 +576,12 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
           skillIds: selectedSkillIds
         })
       });
+      if (files.length) {
+        const attached = await uploadSelectedFilesToSession(sessionId);
+        savedSession = attached.session;
+      }
       setSelectedSession(savedSession);
-      const task = await fetchJson<TaskSummary>(`/api/sessions/${encodeURIComponent(selectedSession.sessionId)}/tasks`, {
+      const task = await fetchJson<TaskSummary>(`/api/sessions/${encodeURIComponent(savedSession.sessionId)}/tasks`, {
         method: "POST",
         headers: authHeaders(apiKey)
       });
@@ -577,7 +589,7 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
       setTimelineExpanded(true);
       setUploadStatus(copy.analysisRunCreated);
       await refreshSessions();
-      await selectSession(selectedSession.sessionId, false, task.taskId);
+      await selectSession(savedSession.sessionId, false, task.taskId);
     } catch (reason) {
       setUploadStatus(errorMessage(reason));
     } finally {

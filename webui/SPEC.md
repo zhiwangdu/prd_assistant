@@ -87,7 +87,7 @@ Database
 - `title/question/sourceUrl/instanceId/nodeId` 草稿输入 debounce PATCH 到 `/api/sessions/:session_id`，刷新页面后从 Server 恢复。
 - `analysisLanguage` 作为 Session 草稿字段随 debounce PATCH 保存；新建 Session 使用当前 WebUI 语言，旧 Session 缺失该字段时按 `zh-CN` 展示和保存。
 - `Session draft` 必须支持展开/收起；启动分析 run 后自动收起，收起态展示 title、question、source URL、metadata 绑定、upload/run 数量和 session 状态摘要。
-- 上传仍使用 `/api/uploads*`，上传完成后调用 `/api/sessions/:session_id/uploads` 附加到当前 Session；上传是可选输入，用户只填写 `question` 也可以启动分析。
+- 上传仍使用 `/api/uploads*`，上传完成后调用 `/api/sessions/:session_id/uploads` 附加到当前 Session；上传是可选输入，用户只填写 `question` 也可以启动分析。若用户已在 Session draft 中选择文件但尚未点击单独上传按钮，点击 `Start analysis` 必须先上传并附加这些待处理文件，再调用 `/api/sessions/:session_id/tasks` 创建 run。
 - Session draft 可选择 Diagnostic Skills，选择结果 debounce PATCH 到 `skillIds`；创建 run 后 artifacts 展示 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
 - System Context / Skills 页必须在 Refresh 旁提供 Import 入口，支持填写 `skillId`、`name`、`description`，选择 `.md/.markdown` 文件或手动粘贴 Markdown，并调用 `POST /api/skills/imports`。
 - 选择 Markdown 文件时必须用 `File.text()` 读取内容；如果文件含 Codex frontmatter，则预填 `name` 和 `description`，正文编辑框使用去掉 frontmatter 后的 Markdown。
