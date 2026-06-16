@@ -13,6 +13,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Analyze` 顶部新增 V2 分析桥接面板，直接调用 Python V2 `/api/v2/*`：可新建 Workspace、选择历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、resources、最终结果和 artifacts，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Session-first Analyze 流仍保留，作为 V2 WebUI 全量切换前的兼容入口。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
+- `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用。旧 Memory 页面仍保留；V2 import 当前按后端能力提供 preview/confirm，不包含旧 `/api/cases/imports/:draft_id/messages` 的多轮补充。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
 - `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
@@ -106,6 +107,7 @@ webui/
     OperationsView.tsx
     ToolsView.tsx
     V2AnalyzeBridge.tsx
+    V2MemoryBridge.tsx
     upload.ts
     v2-api.ts
     styles.css
@@ -217,7 +219,7 @@ System Context：
 - `POST /api/tasks/:task_id/actions/:action_id/decision`
 - `POST /api/tasks/:task_id/case`
 
-V2 Analyze bridge：
+V2 bridge APIs：
 
 - `POST /api/v2/workspaces`
 - `GET /api/v2/workspaces`
@@ -230,6 +232,11 @@ V2 Analyze bridge：
 - `POST /api/v2/workspaces/:workspace_id/runs`
 - `GET /api/v2/runs/:run_id/analysis`
 - `GET /api/v2/artifacts/:artifact_id`
+- `GET /api/v2/cases`
+- `GET /api/v2/cases/:case_id`
+- `PATCH /api/v2/cases/:case_id`
+- `POST /api/v2/cases/imports/preview`
+- `POST /api/v2/cases/imports/:import_id/confirm`
 
 Fetch：
 

@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Memory Bridge
+
+- Added a V2 Memory bridge panel at the top of the existing Memory page while preserving the Rust-compatible Case import/search/edit flow below it.
+- Extended `webui/src/v2-api.ts` with Python V2 Case Memory search, import preview, import confirm, and case update helpers.
+- Added `webui/src/V2MemoryBridge.tsx` to search V2 Cases, preview text/file imports, edit structured drafts, confirm Cases, edit selected Case details, and enable/disable Cases.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Analyze Bridge
 
 - Added a V2 Analyze bridge panel at the top of the existing Analyze page while preserving the Rust-compatible Session-first flow below it.

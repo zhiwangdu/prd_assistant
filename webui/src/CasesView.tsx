@@ -2,6 +2,7 @@ import { BookOpenCheck, CheckCircle2, FileText, MessageSquare, RefreshCw, Save, 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { V2MemoryBridge } from "./V2MemoryBridge";
 
 type CaseRecord = {
   schemaVersion: number;
@@ -255,6 +256,8 @@ export function CasesView({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="space-y-5">
+      <V2MemoryBridge apiKey={apiKey} />
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
         <Card>
           <CardHeader>

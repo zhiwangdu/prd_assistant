@@ -127,6 +127,59 @@ export type V2RunAnalysis = {
   result: V2RunResult | null;
 };
 
+export type V2CaseRecord = {
+  schemaVersion: number;
+  caseId: string;
+  sourceType: "task" | "manual";
+  taskId?: string | null;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  instanceId?: string | null;
+  nodeId?: string | null;
+  title: string;
+  symptom: string;
+  rootCause: string;
+  solution: string;
+  evidenceRefs: string[];
+  sourceResultPath?: string | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2CaseHit = V2CaseRecord & {
+  score: number;
+  searchBackend?: string;
+  ftsScore?: number;
+  vectorScore?: number;
+};
+
+export type V2CaseDraft = {
+  title?: string | null;
+  symptom?: string | null;
+  rootCause?: string | null;
+  solution?: string | null;
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  instanceId?: string | null;
+  nodeId?: string | null;
+  evidenceRefs?: string[];
+};
+
+export type V2CaseImport = {
+  importId: string;
+  status: "previewed" | "confirmed" | string;
+  filename?: string | null;
+  caseId?: string | null;
+  draft: V2CaseDraft;
+  validationErrors: string[];
+  sourceSizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -222,4 +275,36 @@ export async function downloadV2Artifact(apiKey: string, artifactId: string, fil
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+export async function searchV2Cases(apiKey: string, input: { query?: string; includeDisabled?: boolean; limit?: number }) {
+  const params = new URLSearchParams();
+  params.set("limit", String(input.limit ?? 50));
+  params.set("includeDisabled", String(Boolean(input.includeDisabled)));
+  if (input.query?.trim()) params.set("query", input.query.trim());
+  return fetchJson<{ cases: V2CaseHit[] }>(`/api/v2/cases?${params.toString()}`, { headers: authHeaders(apiKey) });
+}
+
+export async function previewV2CaseImport(apiKey: string, input: { content: string; filename?: string | null }) {
+  return fetchJson<{ import: V2CaseImport }>("/api/v2/cases/imports/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function confirmV2CaseImport(apiKey: string, importId: string, overrides: V2CaseDraft) {
+  return fetchJson<{ import: V2CaseImport; case: V2CaseRecord }>(`/api/v2/cases/imports/${encodeURIComponent(importId)}/confirm`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(overrides)
+  });
+}
+
+export async function updateV2Case(apiKey: string, caseId: string, updates: V2CaseDraft & { enabled?: boolean }) {
+  return fetchJson<V2CaseRecord>(`/api/v2/cases/${encodeURIComponent(caseId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(updates)
+  });
 }
