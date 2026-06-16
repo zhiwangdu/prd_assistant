@@ -51,6 +51,7 @@ from .mcp import readonly_mcp_response, task_mcp_response
 from .results import get_run_result
 from .security import auth_dependency
 from .llm import debug_log_responses, set_debug_log_responses
+from .remote_execution import command_template, command_templates
 from .settings_api import (
     agent_backend_diagnostic,
     agent_backends_summary,
@@ -200,6 +201,32 @@ class LlmDebugUpdate(BaseModel):
 
 class LlmChatTestCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
+
+
+class RemoteExecutorCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=22, ge=1, le=65535)
+    user: str = Field(min_length=1, max_length=64)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    notes: str | None = Field(default=None, max_length=500)
+    enabled: bool = True
+
+
+class RemoteExecutorUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    host: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    user: str | None = Field(default=None, max_length=64)
+    tags: list[str] | None = Field(default=None, max_length=20)
+    notes: str | None = Field(default=None, max_length=500)
+    enabled: bool | None = None
+
+
+class RemoteRunCreate(BaseModel):
+    executorId: str = Field(min_length=1, max_length=120)
+    commandId: str = Field(min_length=1, max_length=120)
+    idempotencyKey: str | None = Field(default=None, max_length=200)
 
 
 class UploadSessionInit(BaseModel):
@@ -580,6 +607,105 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/settings/domain-adapters")
     async def get_domain_adapters(_: Auth) -> dict:
         return {"domainAdapters": domain_adapter_summaries()}
+
+    @app.get("/api/v2/executors")
+    async def list_executors(_: Auth) -> dict:
+        return {"executors": store.list_remote_executors()}
+
+    @app.post("/api/v2/executors", status_code=201)
+    async def create_executor(_: Auth, payload: RemoteExecutorCreate) -> dict:
+        try:
+            return store.create_remote_executor(normalize_executor_payload(payload.model_dump()))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/executors/{executor_id}")
+    async def get_executor(_: Auth, executor_id: str) -> dict:
+        try:
+            return store.get_remote_executor(executor_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.patch("/api/v2/executors/{executor_id}")
+    async def patch_executor(_: Auth, executor_id: str, payload: RemoteExecutorUpdate) -> dict:
+        try:
+            updates = normalize_executor_payload(
+                payload.model_dump(exclude_unset=True), partial=True
+            )
+            return store.update_remote_executor(executor_id, updates)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.delete("/api/v2/executors/{executor_id}")
+    async def delete_executor(_: Auth, executor_id: str) -> dict:
+        try:
+            return store.disable_remote_executor(executor_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/executor-command-templates")
+    async def list_executor_command_templates(_: Auth) -> dict:
+        return {
+            "enabled": settings.remote_execution_enabled,
+            "commands": command_templates(settings),
+        }
+
+    @app.get("/api/v2/executor-runs")
+    async def list_executor_runs(
+        _: Auth,
+        executorId: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
+        return {"runs": compact_remote_runs(store.list_remote_runs(executorId, limit))}
+
+    @app.post("/api/v2/executor-runs", status_code=202)
+    async def create_executor_run(_: Auth, payload: RemoteRunCreate) -> dict:
+        if not settings.remote_execution_enabled:
+            raise HTTPException(status_code=400, detail="remote execution is disabled")
+        try:
+            executor = store.get_remote_executor(payload.executorId)
+        except KeyError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if not executor["enabled"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"executor {payload.executorId} is disabled",
+            )
+        template = command_template(settings, payload.commandId)
+        if template is None:
+            raise HTTPException(status_code=400, detail=f"unknown commandId {payload.commandId}")
+        if not template.enabled:
+            raise HTTPException(
+                status_code=400,
+                detail=f"remote command {payload.commandId} is disabled",
+            )
+        return remote_run_summary(
+            store.create_remote_run(
+                executor_id=executor["executorId"],
+                command_id=template.command_id,
+                alias=f"{template.display_name} on {executor['name']}",
+                idempotency_key=payload.idempotencyKey,
+            )
+        )
+
+    @app.get("/api/v2/executor-runs/{run_id}")
+    async def get_executor_run(_: Auth, run_id: str) -> dict:
+        try:
+            return remote_run_detail(store.get_remote_run(run_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/executor-runs/{run_id}/result")
+    async def get_executor_run_result(_: Auth, run_id: str) -> dict:
+        try:
+            run = store.get_remote_run(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if not run.get("result"):
+            raise HTTPException(status_code=404, detail="remote run result is not available")
+        return run["result"]
 
     @app.get("/api/v2/exports/skills.zip")
     async def export_skills(_: Auth) -> Response:
@@ -996,6 +1122,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return task_mcp_response(settings, store, run_id, request)
 
     return app
+
+
+def normalize_executor_payload(payload: dict, partial: bool = False) -> dict:
+    result = dict(payload)
+    if not partial or "name" in result:
+        result["name"] = normalize_non_empty(result.get("name"), "name", 120)
+    if not partial or "host" in result:
+        result["host"] = normalize_non_empty(result.get("host"), "host", 255)
+    if not partial or "user" in result:
+        result["user"] = normalize_non_empty(result.get("user"), "user", 64)
+    if "tags" in result and result["tags"] is not None:
+        result["tags"] = normalize_tags(result["tags"])
+    if "notes" in result and isinstance(result["notes"], str):
+        result["notes"] = result["notes"].strip() or None
+    return result
+
+
+def normalize_non_empty(value: object, field: str, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field} must not be empty")
+    if len(text) > max_chars:
+        raise ValueError(f"{field} exceeds maximum length of {max_chars}")
+    return text
+
+
+def normalize_tags(tags: list[str]) -> list[str]:
+    normalized = []
+    for tag in tags:
+        value = str(tag).strip()
+        if not value:
+            continue
+        if len(value) > 40:
+            raise ValueError("executor tag exceeds maximum length of 40")
+        if value not in normalized:
+            normalized.append(value)
+    if len(normalized) > 20:
+        raise ValueError("executor tags exceed maximum length of 20")
+    return normalized
+
+
+def compact_remote_runs(runs: list[dict]) -> list[dict]:
+    return [remote_run_summary(run) for run in runs]
+
+
+def remote_run_summary(run: dict) -> dict:
+    return {
+        "taskId": run["taskId"],
+        "alias": run.get("alias"),
+        "taskKind": run["taskKind"],
+        "status": run["status"],
+        "phase": run.get("phase"),
+        "createdAt": run["createdAt"],
+    }
+
+
+def remote_run_detail(run: dict) -> dict:
+    result = dict(remote_run_summary(run))
+    result.update(
+        {
+            "attempts": run.get("attempts", 0),
+            "remoteExecutorId": run.get("remoteExecutorId"),
+            "remoteCommandId": run.get("remoteCommandId"),
+            "error": run.get("error"),
+            "updatedAt": run.get("updatedAt"),
+        }
+    )
+    return result
 
 
 app = create_app()

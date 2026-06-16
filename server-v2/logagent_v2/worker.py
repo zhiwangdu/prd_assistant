@@ -6,6 +6,7 @@ from contextlib import suppress
 
 from .agent import AgentRuntime
 from .config import Settings
+from .remote_execution import execute_remote_command_run
 from .store import JsonObject, Store
 
 
@@ -45,12 +46,20 @@ class JobRunner:
                 AgentRuntime(self.settings, self.store).run_analysis(
                     payload["workspace_id"], payload["run_id"]
                 )
+            elif job["kind"] == "remote_command_run":
+                payload = job["payload"]
+                await asyncio.to_thread(
+                    execute_remote_command_run,
+                    self.settings,
+                    self.store,
+                    payload["run_id"],
+                )
             else:
                 raise ValueError(f"unknown job kind {job['kind']}")
         except Exception as error:
             payload = job.get("payload", {})
             run_id = payload.get("run_id")
-            if isinstance(run_id, str):
+            if job.get("kind") == "run_analysis" and isinstance(run_id, str):
                 try:
                     self.store.update_run_status(run_id, "failed", "failed")
                     run = self.store.get_run(run_id)
@@ -60,6 +69,11 @@ class JobRunner:
                         "run.error",
                         {"error": str(error)[:2000]},
                     )
+                except Exception:
+                    pass
+            elif job.get("kind") == "remote_command_run" and isinstance(run_id, str):
+                try:
+                    self.store.fail_remote_run(run_id, "EXECUTE_REMOTE_COMMAND", str(error))
                 except Exception:
                     pass
             self.store.fail_job(job, str(error))

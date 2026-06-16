@@ -116,6 +116,10 @@ Implemented in this slice:
   and chat connectivity tests, in-process Agent backend dry-run diagnostics,
   built-in Domain Adapter summaries, and process-local LLM response-content
   debug logging.
+- Remote Executor foundation with SQLite-managed executor assets,
+  environment-configured whitelisted SSH command templates, DB-backed
+  `remote_command_run` jobs, controlled SSH argv construction, bounded
+  stdout/stderr capture, and result files under `remote_runs/<run_id>/`.
 
 Not yet implemented:
 
@@ -173,6 +177,16 @@ POST /api/v2/settings/llm/chat
 GET  /api/v2/settings/agent-backends
 POST /api/v2/settings/agent-backends/:backend_id/test
 GET  /api/v2/settings/domain-adapters
+GET  /api/v2/executors
+POST /api/v2/executors
+GET  /api/v2/executors/:executor_id
+PATCH /api/v2/executors/:executor_id
+DELETE /api/v2/executors/:executor_id
+GET  /api/v2/executor-command-templates
+GET  /api/v2/executor-runs
+POST /api/v2/executor-runs
+GET  /api/v2/executor-runs/:run_id
+GET  /api/v2/executor-runs/:run_id/result
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -224,6 +238,12 @@ Default data layout:
     <workspace_id>/
       <artifact_file_id>/
         <filename>
+  remote_runs/
+    <remote_run_id>/
+      remote_command/
+        result.json
+        stdout.txt
+        stderr.txt
   tmp/
     upload_sessions/
       <session_id>/
@@ -247,6 +267,8 @@ SQLite tables:
 - `case_imports`
 - `fetch_endpoints`
 - `fetch_credential_sets`
+- `remote_executors`
+- `remote_runs`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.
@@ -711,6 +733,30 @@ Readonly MCP must expose the same Domain Adapter summaries through
 `GET/PUT /api/v2/debug/llm` controls process-local model response-content
 logging. It is off by default, resets on restart, and may only log response
 content to stderr; prompts, headers, and API keys must never be logged.
+
+## Remote Executors
+
+Remote Executors provide the V2 equivalent of the Rust Server's low-level
+remote command smoke runner. They are not a full Environment Collector.
+
+- Executors are stored in SQLite with `executorId`, name, host, port, SSH user,
+  tags, notes, enabled state, and timestamps.
+- `DELETE /api/v2/executors/:executor_id` disables an executor; it does not
+  delete historical run records.
+- Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`. If
+  unset, V2 exposes a default `smoke_ls_root` template with argv
+  `["ls", "-la", "/root"]`.
+- Creating a run validates that remote execution is enabled, the executor is
+  enabled, and the command template exists and is enabled.
+- The worker constructs a fixed SSH argv using the configured SSH executable,
+  batch mode, connect timeout, host key policy, port, `user@host`, and the
+  template argv. The API never accepts free-form shell input.
+- stdout and stderr are capped by `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`, stored
+  as files, and previewed in `result.json`.
+- Non-zero exit code, timeout, and SSH start failure are recorded in
+  `result.status` as `FAILED` or `TIMED_OUT`. The remote run reaches
+  `SUCCEEDED` when controlled execution completed and result files were
+  persisted. System errors before result persistence mark the run `FAILED`.
 
 ## Final Answer Validation
 

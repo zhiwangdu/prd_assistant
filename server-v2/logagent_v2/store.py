@@ -292,6 +292,35 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS remote_executors (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  host TEXT NOT NULL,
+                  port INTEGER NOT NULL,
+                  user TEXT NOT NULL,
+                  tags_json TEXT NOT NULL,
+                  enabled INTEGER NOT NULL,
+                  notes TEXT,
+                  last_check_json TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS remote_runs (
+                  id TEXT PRIMARY KEY,
+                  executor_id TEXT NOT NULL REFERENCES remote_executors(id),
+                  command_id TEXT NOT NULL,
+                  idempotency_key TEXT UNIQUE,
+                  status TEXT NOT NULL,
+                  phase TEXT,
+                  alias TEXT,
+                  attempts INTEGER NOT NULL,
+                  result_json TEXT,
+                  error_json TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
@@ -305,6 +334,10 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_fetch_endpoints_enabled ON fetch_endpoints(enabled);
                 CREATE INDEX IF NOT EXISTS idx_fetch_credentials_endpoint
                   ON fetch_credential_sets(endpoint_id);
+                CREATE INDEX IF NOT EXISTS idx_remote_runs_executor
+                  ON remote_runs(executor_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_remote_runs_idempotency
+                  ON remote_runs(idempotency_key);
                 """
             )
             self._ensure_column_tx(
@@ -703,6 +736,236 @@ class Store:
         if row is None:
             raise KeyError(f"unknown upload {upload_id}")
         return dict(row)
+
+    def create_remote_executor(self, record: JsonObject) -> JsonObject:
+        executor_id = new_id("executor")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO remote_executors(
+                  id, name, host, port, user, tags_json, enabled, notes,
+                  last_check_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    executor_id,
+                    record["name"],
+                    record["host"],
+                    int(record["port"]),
+                    record["user"],
+                    encode_json(record.get("tags", [])),
+                    1 if record.get("enabled", True) else 0,
+                    record.get("notes"),
+                    encode_json(record.get("lastCheck")) if record.get("lastCheck") else None,
+                    ts,
+                    ts,
+                ),
+            )
+        return self.get_remote_executor(executor_id)
+
+    def list_remote_executors(self) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM remote_executors ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+        return [self._remote_executor_from_row(row) for row in rows]
+
+    def get_remote_executor(self, executor_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM remote_executors WHERE id = ?", (executor_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown executor {executor_id}")
+        return self._remote_executor_from_row(row)
+
+    def update_remote_executor(self, executor_id: str, updates: JsonObject) -> JsonObject:
+        current = self.get_remote_executor(executor_id)
+        merged = {**current, **updates}
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE remote_executors
+                SET name = ?, host = ?, port = ?, user = ?, tags_json = ?,
+                    enabled = ?, notes = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    merged["name"],
+                    merged["host"],
+                    int(merged["port"]),
+                    merged["user"],
+                    encode_json(merged.get("tags", [])),
+                    1 if merged.get("enabled", True) else 0,
+                    merged.get("notes"),
+                    ts,
+                    executor_id,
+                ),
+            )
+        return self.get_remote_executor(executor_id)
+
+    def disable_remote_executor(self, executor_id: str) -> JsonObject:
+        return self.update_remote_executor(executor_id, {"enabled": False})
+
+    def create_remote_run(
+        self,
+        executor_id: str,
+        command_id: str,
+        alias: str,
+        idempotency_key: str | None = None,
+    ) -> JsonObject:
+        if idempotency_key:
+            existing = self.find_remote_run_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing
+        self.get_remote_executor(executor_id)
+        run_id = new_id("rrun")
+        job_id = new_id("job")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO remote_runs(
+                  id, executor_id, command_id, idempotency_key, status, phase,
+                  alias, attempts, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    executor_id,
+                    command_id,
+                    idempotency_key,
+                    "QUEUED",
+                    "QUEUED",
+                    alias,
+                    0,
+                    ts,
+                    ts,
+                ),
+            )
+            self._enqueue_remote_run_tx(conn, job_id, run_id, ts)
+        return self.get_remote_run(run_id)
+
+    def list_remote_runs(
+        self, executor_id: str | None = None, limit: int = 50
+    ) -> list[JsonObject]:
+        with self.connect() as conn:
+            if executor_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM remote_runs
+                    WHERE executor_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT ?
+                    """,
+                    (executor_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM remote_runs
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [self._remote_run_from_row(row) for row in rows]
+
+    def get_remote_run(self, run_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM remote_runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"unknown remote run {run_id}")
+        return self._remote_run_from_row(row)
+
+    def find_remote_run_by_idempotency_key(self, idempotency_key: str) -> JsonObject | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM remote_runs WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+        return self._remote_run_from_row(row) if row is not None else None
+
+    def mark_remote_run_running(self, run_id: str, phase: str) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT attempts FROM remote_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"unknown remote run {run_id}")
+            conn.execute(
+                """
+                UPDATE remote_runs
+                SET status = 'RUNNING', phase = ?, attempts = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (phase, int(row["attempts"]) + 1, ts, run_id),
+            )
+        return self.get_remote_run(run_id)
+
+    def complete_remote_run(self, run_id: str, result: JsonObject) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE remote_runs
+                SET status = 'SUCCEEDED', phase = 'FINISHED', result_json = ?,
+                    error_json = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (encode_json(result), ts, run_id),
+            )
+        return self.get_remote_run(run_id)
+
+    def fail_remote_run(self, run_id: str, phase: str, message: str) -> JsonObject:
+        ts = now_iso()
+        error = {"phase": phase, "message": message[:2000]}
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE remote_runs
+                SET status = 'FAILED', phase = ?, error_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (phase, encode_json(error), ts, run_id),
+            )
+        return self.get_remote_run(run_id)
+
+    def _remote_executor_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        return {
+            "executorId": item["id"],
+            "name": item["name"],
+            "host": item["host"],
+            "port": item["port"],
+            "user": item["user"],
+            "tags": decode_json(item["tags_json"], []),
+            "enabled": bool(item["enabled"]),
+            "notes": item.get("notes"),
+            "lastCheck": decode_json(item.get("last_check_json"), None),
+            "createdAt": item["created_at"],
+            "updatedAt": item["updated_at"],
+        }
+
+    def _remote_run_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        return {
+            "taskId": item["id"],
+            "alias": item.get("alias"),
+            "taskKind": "remote_command_run",
+            "status": item["status"],
+            "phase": item.get("phase"),
+            "attempts": item["attempts"],
+            "remoteExecutorId": item["executor_id"],
+            "remoteCommandId": item["command_id"],
+            "idempotencyKey": item.get("idempotency_key"),
+            "result": decode_json(item.get("result_json"), None),
+            "error": decode_json(item.get("error_json"), None),
+            "createdAt": item["created_at"],
+            "updatedAt": item["updated_at"],
+        }
 
     def create_upload_session(
         self,
@@ -1712,6 +1975,33 @@ class Store:
                 encode_json({"workspace_id": workspace_id, "run_id": run_id}),
                 0,
                 3,
+                ts,
+                ts,
+                ts,
+            ),
+        )
+
+    def _enqueue_remote_run_tx(
+        self,
+        conn: sqlite3.Connection,
+        job_id: str,
+        run_id: str,
+        ts: str,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO jobs(
+              id, kind, status, payload_json, attempts, max_attempts, next_run_at,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                "remote_command_run",
+                "queued",
+                encode_json({"run_id": run_id}),
+                0,
+                1,
                 ts,
                 ts,
                 ts,

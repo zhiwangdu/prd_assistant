@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,46 @@ class ToolDefinition:
 
 
 @dataclass(frozen=True)
+class RemoteCommandTemplate:
+    command_id: str
+    display_name: str
+    description: str
+    argv: tuple[str, ...]
+    enabled: bool = True
+    timeout_seconds: int | None = None
+
+    @classmethod
+    def from_json(cls, value: dict) -> "RemoteCommandTemplate":
+        command_id = str(value.get("commandId") or value.get("command_id") or value["id"])
+        argv = tuple(str(arg) for arg in value.get("argv", []))
+        if not argv:
+            raise ValueError("remote command template argv must not be empty")
+        return cls(
+            command_id=command_id,
+            display_name=str(value.get("displayName") or value.get("display_name") or command_id),
+            description=str(value.get("description") or ""),
+            argv=argv,
+            enabled=bool(value.get("enabled", True)),
+            timeout_seconds=(
+                max(1, int(value["timeoutSeconds"]))
+                if value.get("timeoutSeconds") is not None
+                else None
+            ),
+        )
+
+
+def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
+    return (
+        RemoteCommandTemplate(
+            command_id="smoke_ls_root",
+            display_name="Smoke: list /root",
+            description="Low-risk SSH smoke command for managed executors.",
+            argv=("ls", "-la", "/root"),
+        ),
+    )
+
+
+@dataclass(frozen=True)
 class Settings:
     data_dir: Path
     api_key: str
@@ -72,6 +112,13 @@ class Settings:
     agent_timeout_seconds: int = 60
     agent_max_rounds: int = 3
     agent_max_output_tokens: int = 2048
+    remote_execution_enabled: bool = True
+    remote_ssh_command: str = "ssh"
+    remote_connect_timeout_seconds: int = 10
+    remote_command_timeout_seconds: int = 30
+    remote_max_output_bytes: int = 1024 * 1024
+    remote_host_key_policy: str = "accept-new"
+    remote_commands: tuple[RemoteCommandTemplate, ...] = field(default_factory=default_remote_commands)
 
     @property
     def sqlite_path(self) -> Path:
@@ -136,6 +183,23 @@ class Settings:
         agent_max_output_tokens = int(
             os.environ.get("LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS", "2048")
         )
+        remote_execution_enabled = os.environ.get("LOGAGENT_V2_REMOTE_EXECUTION_ENABLED", "1") != "0"
+        remote_ssh_command = os.environ.get("LOGAGENT_V2_REMOTE_SSH_COMMAND", "ssh")
+        remote_connect_timeout_seconds = int(
+            os.environ.get("LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS", "10")
+        )
+        remote_command_timeout_seconds = int(
+            os.environ.get("LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS", "30")
+        )
+        remote_max_output_bytes = int(
+            os.environ.get("LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES", str(1024 * 1024))
+        )
+        remote_host_key_policy = os.environ.get(
+            "LOGAGENT_V2_REMOTE_HOST_KEY_POLICY", "accept-new"
+        )
+        remote_commands = parse_remote_commands_env(
+            os.environ.get("LOGAGENT_V2_REMOTE_COMMANDS_JSON")
+        )
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -162,6 +226,13 @@ class Settings:
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
             agent_max_output_tokens=max(1, agent_max_output_tokens),
+            remote_execution_enabled=remote_execution_enabled,
+            remote_ssh_command=remote_ssh_command,
+            remote_connect_timeout_seconds=max(1, remote_connect_timeout_seconds),
+            remote_command_timeout_seconds=max(1, remote_command_timeout_seconds),
+            remote_max_output_bytes=max(1024, remote_max_output_bytes),
+            remote_host_key_policy=remote_host_key_policy,
+            remote_commands=remote_commands,
         )
 
 
@@ -172,6 +243,15 @@ def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
     if not isinstance(decoded, list):
         raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
     return tuple(ToolDefinition.from_json(item) for item in decoded)
+
+
+def parse_remote_commands_env(raw: str | None) -> tuple[RemoteCommandTemplate, ...]:
+    if not raw:
+        return default_remote_commands()
+    decoded = json.loads(raw)
+    if not isinstance(decoded, list):
+        raise ValueError("LOGAGENT_V2_REMOTE_COMMANDS_JSON must be a JSON array")
+    return tuple(RemoteCommandTemplate.from_json(item) for item in decoded)
 
 
 def strings_from_list(value: Any) -> list[str]:

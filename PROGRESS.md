@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Executor Foundation
+
+- Added V2 Remote Executor backend APIs for executor CRUD, whitelisted command template listing, remote command run creation/list/detail, and result reads.
+- Extended V2 config with `LOGAGENT_V2_REMOTE_*` settings, default `smoke_ls_root` template, SQLite `remote_executors` / `remote_runs` tables, and DB-backed `remote_command_run` jobs.
+- Added `server-v2/logagent_v2/remote_execution.py` to execute configured SSH argv with batch mode, connect timeout, host-key policy, bounded stdout/stderr capture, and persisted `result.json` / `stdout.txt` / `stderr.txt`.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, Environment Collector docs, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 Settings Bridge
 
 - Added a V2 Settings bridge panel at the top of the existing Settings page while preserving the Rust-compatible Settings diagnostics below it.

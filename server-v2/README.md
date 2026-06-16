@@ -57,6 +57,9 @@ slice provides the durable foundation for the V2 product model:
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
+- Remote Executor foundation with SQLite-managed executors, environment-driven
+  whitelisted SSH command templates, DB-backed remote command jobs, and
+  stdout/stderr/result files under the V2 data directory.
 
 ## Local Run
 
@@ -119,6 +122,13 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
+| `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
+| `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `ssh` | SSH executable used by Remote Executor jobs |
+| `LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS` | `10` | SSH connect timeout option |
+| `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS` | `30` | Default remote command timeout |
+| `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
+| `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `off` host-key behavior |
+| `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates |
 
 Tool descriptor example:
 
@@ -185,6 +195,16 @@ POST /api/v2/settings/llm/chat
 GET  /api/v2/settings/agent-backends
 POST /api/v2/settings/agent-backends/:backend_id/test
 GET  /api/v2/settings/domain-adapters
+GET  /api/v2/executors
+POST /api/v2/executors
+GET  /api/v2/executors/:executor_id
+PATCH /api/v2/executors/:executor_id
+DELETE /api/v2/executors/:executor_id
+GET  /api/v2/executor-command-templates
+GET  /api/v2/executor-runs
+POST /api/v2/executor-runs
+GET  /api/v2/executor-runs/:run_id
+GET  /api/v2/executor-runs/:run_id/result
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -243,6 +263,39 @@ available through readonly MCP `logagent-v2://domain-adapters` and
 `/api/v2/debug/llm` toggles process-local response-content logging for provider
 debugging. It only logs model response content to stderr and does not log
 prompts, headers, or API keys. The setting resets when the process restarts.
+
+## Remote Executors
+
+V2 Remote Executor APIs live under `/api/v2/executors`,
+`/api/v2/executor-command-templates`, and `/api/v2/executor-runs`. Executors are
+stored in SQLite with host, port, SSH user, tags, notes, enabled state, and
+timestamps. Deleting an executor disables it instead of removing historical run
+records.
+
+Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
+V2 exposes the low-risk `smoke_ls_root` template. Runs are DB-backed jobs. The
+worker invokes the configured SSH executable with fixed argv:
+
+```text
+ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>
+```
+
+The API never accepts free-form shell commands. Results are written under:
+
+```text
+data_dir/
+  remote_runs/
+    <run_id>/
+      remote_command/
+        result.json
+        stdout.txt
+        stderr.txt
+```
+
+Non-zero exit, timeout, and start failures are recorded in `result.json`; the
+remote run itself reaches `SUCCEEDED` when the controlled execution completed
+and result files were persisted. System errors before result persistence mark
+the run `FAILED`.
 
 ## Verification
 

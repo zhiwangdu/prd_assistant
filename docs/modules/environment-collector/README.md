@@ -23,6 +23,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - WebUI `Tools / Executors` 可纳管 ECS 执行机，资产持久化在 `storage.data_dir/executors`。
 - Server 支持 `remote_command_run` task 和 `EXECUTE_REMOTE_COMMAND` phase，通过系统 `ssh` 二进制执行 `remote_execution.commands` 白名单模板。
 - 默认模板 `smoke_ls_root` 执行 `ls -la /root`，用于验证如 `root@112.74.50.120` 的免密 SSH。
+- V2 clean-room Server 已提供同类 Remote Executor 基础能力：`/api/v2/executors` 管理 SQLite executor，`/api/v2/executor-command-templates` 暴露环境配置的白名单模板，`/api/v2/executor-runs` 创建 DB-backed remote command job，并把 `result.json`、`stdout.txt`、`stderr.txt` 写入 `LOGAGENT_V2_DATA_DIR/remote_runs/<run_id>/remote_command/`。
 - 当前不支持 Analysis Agent 自动映射采集意图、不支持 SCP 文件采集、不支持多节点批量采集；这些仍属于 Environment Collector 后续工作。
 
 ## 适用场景

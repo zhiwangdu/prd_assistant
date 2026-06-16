@@ -7,6 +7,7 @@ import json
 import sys
 import tarfile
 import tempfile
+import asyncio
 import threading
 import unittest
 import zipfile
@@ -28,7 +29,7 @@ from logagent_v2.case_memory import (
     preview_case_import,
     update_case as update_case_record,
 )
-from logagent_v2.config import Settings, ToolDefinition
+from logagent_v2.config import RemoteCommandTemplate, Settings, ToolDefinition
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
     endpoint_for_storage,
@@ -56,6 +57,7 @@ from logagent_v2.metadata import (
 )
 from logagent_v2.results import get_run_result
 from logagent_v2.llm import debug_log_responses, set_debug_log_responses
+from logagent_v2.remote_execution import command_templates
 from logagent_v2.settings_api import (
     agent_backend_diagnostic,
     agent_backends_summary,
@@ -73,6 +75,7 @@ from logagent_v2.tools import (
     summary_from_stdout,
     tool_descriptors,
 )
+from logagent_v2.worker import JobRunner
 
 
 class StoreTests(unittest.TestCase):
@@ -2981,6 +2984,77 @@ grep_results.json#matches/0
             )
             payload = json.loads(tool_call["result"]["content"][0]["text"])
             self.assertEqual(payload["domainAdapters"][0]["id"], "opengemini_influxdb")
+
+    def test_v2_remote_executor_run_uses_queued_fake_ssh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps(sys.argv[1:]))\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="smoke_ls_root",
+                        display_name="Smoke",
+                        description="test",
+                        argv=("ls", "-la", "/root"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            executor = store.create_remote_executor(
+                {
+                    "name": "local fake",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "tags": ["test"],
+                    "enabled": True,
+                    "notes": "fake ssh",
+                }
+            )
+            self.assertEqual(executor["executorId"][:9], "executor_")
+            self.assertEqual(command_templates(settings)[0]["commandId"], "smoke_ls_root")
+
+            run = store.create_remote_run(
+                executor["executorId"],
+                "smoke_ls_root",
+                "Smoke on local fake",
+                idempotency_key="remote-idem-1",
+            )
+            same = store.create_remote_run(
+                executor["executorId"],
+                "smoke_ls_root",
+                "Smoke on local fake",
+                idempotency_key="remote-idem-1",
+            )
+            self.assertEqual(same["taskId"], run["taskId"])
+            jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(jobs[0]["kind"], "remote_command_run")
+
+            asyncio.run(JobRunner(settings, store).process_job(jobs[0]))
+
+            finished = store.get_remote_run(run["taskId"])
+            self.assertEqual(finished["status"], "SUCCEEDED")
+            self.assertEqual(finished["phase"], "FINISHED")
+            self.assertEqual(finished["result"]["result"]["status"], "OK")
+            stdout_preview = finished["result"]["result"]["stdoutPreview"]
+            self.assertIn("root@127.0.0.1", stdout_preview)
+            self.assertIn("ls", stdout_preview)
+            result_path = settings.data_dir / finished["result"]["resultPath"]
+            self.assertTrue(result_path.exists())
 
 
 if __name__ == "__main__":
