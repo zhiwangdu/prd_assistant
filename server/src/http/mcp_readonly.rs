@@ -708,6 +708,7 @@ mod tests {
         assert!(text.contains("\"source\": \"configured\""));
         assert!(text.contains("\"toolId\": \"logagent.get_metadata_field_types\""));
         assert!(text.contains("\"toolId\": \"logagent.get_metadata_tag_fields\""));
+        assert!(text.contains("\"toolId\": \"logagent.fetch\""));
         assert!(text.contains("\"source\": \"built_in\""));
         assert!(text.contains("\"exportable\": false"));
 
@@ -725,6 +726,24 @@ mod tests {
         )
         .await;
         assert!(rejected["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown or unsupported"));
+
+        let rejected_fetch = post_mcp(
+            &app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {
+                    "name": "logagent.fetch",
+                    "arguments": { "fetchId": "fetch_123" }
+                }
+            }),
+        )
+        .await;
+        assert!(rejected_fetch["error"]["message"]
             .as_str()
             .unwrap()
             .contains("unknown or unsupported"));
@@ -836,6 +855,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings { tools },
+            fetch: crate::support::config::FetchSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,

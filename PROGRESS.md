@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Fetch Endpoint MVP
+
+- Added Server-managed Fetch endpoints behind a new `fetch` config section. Fetch is disabled by default; enabling it requires a 32-byte base64 secret key from `fetch.secret_key_env` and an explicit `fetch.allowed_hosts` HTTP/HTTPS allowlist.
+- Added DevTools bash cURL import preview and endpoint CRUD APIs under `/api/fetch/*`. Import detects Authorization, Cookie, and token/api_key/secret/password/session-style query/body fields, stores sensitive values in an AES-256-GCM credential set under `storage.data_dir/fetch`, and returns only redacted previews.
+- Added built-in runnable tool descriptor `logagent.fetch`, manual Fetch runs as `taskKind=tool_run`, bounded reqwest execution with request/response size limits, timeout, redirect revalidation, cross-host Authorization/Cookie stripping, controlled-header rejection, and response artifacts at `tool_results/<action_id>/result.json` plus `response_body.bin`.
+- Added task MCP tools `logagent.list_fetch_endpoints` and `logagent.fetch`; the latter returns bounded response previews and final-answer evidence refs in the controlled format `tool_results/<action_id>/result.json#response`.
+- Kept the personal read-only HTTP MCP boundary read-only: it may expose the `logagent.fetch` catalog descriptor through `logagent://tools/catalog` / `logagent.list_tools`, but `tools/call logagent.fetch` is rejected.
+- Updated LLM final evidence validation so `#response` refs are accepted only for current-task actions whose result artifact is real and `tool=logagent.fetch`; unknown actions and non-Fetch actions are rejected.
+- Added WebUI `Tools / Fetch` for cURL paste, redacted preview, save, enable/disable, delete, manual run, recent run polling, and response artifact viewing.
+- Updated root, Server, WebUI, Tool Runner, Interfaces, Security, Config docs/specs, added `examples/server-fetch.yaml`, and synced this progress log.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server fetch -- --nocapture`, `cargo test -p logagent-server readonly_mcp_exposes_resources_and_tools_without_task_access -- --nocapture`, `cargo test -- --test-threads=1`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and `git diff --check`.
+
 ## 2026-06-16 Submodule Remote Guard
 
 - Fixed `scripts/configure-tool-submodules.sh` so custom source-built analyzer submodule URLs can no longer rewrite the parent repository `origin`.

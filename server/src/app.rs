@@ -10,8 +10,9 @@ use crate::{
     },
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
-        executor_store::RemoteExecutorStore, session_store::AnalysisSessionStore,
-        system_context_store::SystemContextStore, task_store::TaskStore, upload_store::UploadStore,
+        executor_store::RemoteExecutorStore, fetch_store::FetchStore,
+        session_store::AnalysisSessionStore, system_context_store::SystemContextStore,
+        task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -25,6 +26,7 @@ pub struct AppState {
     pub case_imports: CaseImportStore,
     pub executors: RemoteExecutorStore,
     pub system_context: SystemContextStore,
+    pub fetch: FetchStore,
     pub skills: SkillRegistry,
     pub sessions: AnalysisSessionStore,
     pub tasks: TaskStore,
@@ -51,6 +53,7 @@ impl AppState {
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         let executors = RemoteExecutorStore::load(config.storage.executors_dir())?;
         let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
+        let fetch = FetchStore::load(config.storage.fetch_dir(), &config.fetch)?;
         let skills = SkillRegistry::load(config.skills.clone())?;
         let sessions = AnalysisSessionStore::load(
             config.storage.sessions_dir(),
@@ -62,6 +65,7 @@ impl AppState {
             case_imports,
             executors,
             system_context,
+            fetch,
             skills,
             sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),

@@ -17,6 +17,7 @@ use crate::{
         models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolSource},
     },
     pipeline::{extract_task, prepare_pipeline_run, search_task},
+    services::fetch::{FetchRunParams, FETCH_TOOL_ID},
     services::metadata::{MetadataFieldTypesRequest, MetadataTagFieldsRequest},
     support::{
         config::{AppConfig, ToolSettings},
@@ -116,6 +117,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
         }
     }
     descriptors.extend(metadata_descriptors());
+    descriptors.push(fetch_descriptor(config));
     descriptors
 }
 
@@ -129,6 +131,7 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     }
     metadata_descriptors()
         .into_iter()
+        .chain(std::iter::once(fetch_descriptor(config)))
         .find(|descriptor| descriptor.tool_id == tool_id)
 }
 
@@ -167,6 +170,7 @@ pub fn validate_tool_run_request(
         METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
         METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
         METADATA_GET_TAG_FIELDS_ID => validate_metadata_tag_fields_params(params),
+        FETCH_TOOL_ID => validate_fetch_params(config, params),
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
@@ -181,6 +185,7 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
             | METADATA_GET_FIELD_TYPES_ID
             | METADATA_GET_TAG_FIELDS_ID,
         ) => run_metadata_task(state, task).await,
+        Some(FETCH_TOOL_ID) => crate::services::fetch::run_fetch_task(state, task).await,
         Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
             run_configured_tool_task(state, task).await
         }
@@ -431,6 +436,53 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
     ]
 }
 
+fn fetch_descriptor(config: &AppConfig) -> ToolDescriptor {
+    ToolDescriptor {
+        tool_id: FETCH_TOOL_ID.to_string(),
+        display_name: "Fetch endpoint".to_string(),
+        description: "Run a managed HTTP endpoint imported from a browser DevTools curl command."
+            .to_string(),
+        enabled: config.fetch.enabled,
+        source: ToolSource::BuiltIn,
+        read_only: false,
+        editable: false,
+        exportable: false,
+        runnable: config.fetch.enabled,
+        tags: vec![
+            "built-in".to_string(),
+            "fetch".to_string(),
+            "http".to_string(),
+            "manual-run".to_string(),
+        ],
+        backend: "fetch".to_string(),
+        accepted_suffixes: Vec::new(),
+        min_files: 0,
+        max_files: 0,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "fetchId": { "type": "string" },
+                "variables": { "type": "object", "additionalProperties": { "type": "string" } },
+                "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+                "body": { "type": "string" }
+            },
+            "required": ["fetchId"]
+        }),
+        params_template: serde_json::json!({
+            "fetchId": "",
+            "variables": {},
+            "headers": {},
+            "body": null
+        }),
+        output_views: vec![
+            "summary".to_string(),
+            "request".to_string(),
+            "response".to_string(),
+            "body_artifact".to_string(),
+        ],
+    }
+}
+
 fn metadata_tags() -> Vec<String> {
     vec![
         "built-in".to_string(),
@@ -582,6 +634,22 @@ fn validate_metadata_tag_fields_params(
         );
     }
     Ok(serde_json::Value::Object(normalized))
+}
+
+fn validate_fetch_params(
+    config: &AppConfig,
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if !config.fetch.enabled {
+        return Err(AppError::bad_request("fetch is disabled by server config"));
+    }
+    let params: FetchRunParams = serde_json::from_value(value.clone())
+        .map_err(|err| AppError::bad_request(format!("invalid fetch params: {err}")))?;
+    if params.fetch_id.trim().is_empty() {
+        return Err(AppError::bad_request("fetchId is required"));
+    }
+    serde_json::to_value(params)
+        .map_err(|err| AppError::internal(format!("failed to encode fetch params: {err}")))
 }
 
 fn required_string_param(value: &serde_json::Value, key: &str) -> Result<String, AppError> {

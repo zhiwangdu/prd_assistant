@@ -13,6 +13,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `examples/server-tools.yaml`
 - `examples/server-influxql-tool.yaml`
 - `examples/server-pprof-tool.yaml`
+- `examples/server-fetch.yaml`
 - `examples/native-agent-remote-50992.yaml`
 
 ## 配置范围
@@ -60,6 +61,13 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `claude_code.permission_profiles.<mode>.allowed_tools` 会自动追加 `mcp__logagent__*`，保证任务 MCP tools 在 `dontAsk` 模式下可用。
 - `mcp.enabled`
 - `mcp.transport`
+- `fetch.enabled`
+- `fetch.secret_key_env`
+- `fetch.allowed_hosts`
+- `fetch.request_timeout_seconds`
+- `fetch.max_request_bytes`
+- `fetch.max_response_bytes`
+- `fetch.max_redirects`
 - `tools.<name>.enabled`
 - `tools.<name>.path`
 - `tools.<name>.path_env`
@@ -107,6 +115,18 @@ auth:
       value_env: "LOGAGENT_NATIVE_API_KEY"
 ```
 
+Fetch credential encryption key 也只能通过环境变量提供：
+
+```yaml
+fetch:
+  enabled: true
+  secret_key_env: "LOGAGENT_FETCH_SECRET_KEY"
+  allowed_hosts:
+    - "http://127.0.0.1:8091"
+```
+
+`LOGAGENT_FETCH_SECRET_KEY` 必须是 32-byte base64 key。`fetch.enabled=false` 时不会读取该环境变量。
+
 路径类配置可使用 `${VAR}` 引用环境变量。当前 Server 已支持 `storage.data_dir`、`skills.roots[]` 和 `tools.<name>.path` 展开，例如：
 
 ```yaml
@@ -137,6 +157,9 @@ tools:
 - `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径。
 - `claude_code.default_mode` 仅支持 `diagnose`、`code_investigation` 和 `fix`。
 - `mcp.transport` 当前只支持 `stdio`。
+- `fetch.enabled` 默认 false；启用时必须配置非空 `fetch.allowed_hosts` 和可解码为 32-byte 原始 key 的 `fetch.secret_key_env` 环境变量。
+- `fetch.allowed_hosts` 支持 `host`、`host:port` 和 `http(s)://host[:port]`。Fetch 执行、redirect hop 和运行时 URL template 解析结果都必须命中 allowlist。
+- `fetch.request_timeout_seconds`、`fetch.max_request_bytes`、`fetch.max_response_bytes` 和 `fetch.max_redirects` 必须有有限默认值；非正或缺省值按安全默认裁剪。
 - `skills.enabled` 默认 true，`skills.roots` 默认 `skills`。
 - `skills.max_skill_chars` 和 `skills.max_reference_chars` 有下限和上限裁剪，避免过大 prompt 或 reference artifact。
 - 启用的 tool path 或 path_env 解析结果必须是绝对路径；固定 `path` 支持 `${ENV}` 展开；非法工具名、相对路径、缺失/空 path_env 启动失败。

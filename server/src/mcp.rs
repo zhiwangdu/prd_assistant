@@ -12,12 +12,16 @@ use tracing::{info, warn};
 
 use crate::{
     domain::{
-        contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
+        contracts::{
+            ActionKind, ActionRisk, AgentAction, EvidenceArtifact, EvidenceProvider,
+            EvidenceSummary, EvidenceType, TaskContext,
+        },
         models::{GrepResults, SystemContextBundle, TaskRecord},
     },
     pipeline::{read_tool_results, search_task_with_settings},
     services::{
         agent_contracts::write_json_atomic,
+        fetch::{execute_fetch_to_artifacts, FetchRunParams},
         metadata::{
             metadata_context_outline, metadata_slice_query_from_value, query_metadata_context,
             MetadataFieldTypesRequest, MetadataStore, MetadataTagFieldsRequest,
@@ -26,9 +30,12 @@ use crate::{
         skill_registry::SkillRegistry,
         tool_runner::ToolRunner,
     },
-    stores::{analysis_state, case_store::CaseStore, task_store::TaskStore},
+    stores::{
+        analysis_state, case_store::CaseStore, fetch_store::FetchStore, task_store::TaskStore,
+    },
     support::{
         config::{AnalysisMode, AppConfig, LogAnalyzerSettings},
+        fs_utils::relative_string,
         id::next_id,
     },
 };
@@ -47,6 +54,7 @@ pub async fn run_stdio(
         .await
         .ok_or_else(|| anyhow::anyhow!("unknown taskId {task_id}"))?;
     let skills = SkillRegistry::load(config.skills.clone())?;
+    let fetch_store = FetchStore::load(config.storage.fetch_dir(), &config.fetch)?;
     let workspace = config.storage.workspace_dir(&task_id);
     tokio::fs::create_dir_all(&workspace).await?;
     info!(
@@ -100,7 +108,17 @@ pub async fn run_stdio(
                     .pointer("/params/arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
-                call_tool(&config, &skills, &workspace, &task, mode, name, arguments).await
+                call_tool(
+                    &config,
+                    &skills,
+                    &fetch_store,
+                    &workspace,
+                    &task,
+                    mode,
+                    name,
+                    arguments,
+                )
+                .await
             }
             "prompts/list" => Ok(json!({ "prompts": [] })),
             _ => Err(anyhow::anyhow!("unsupported MCP method {method}")),
@@ -331,6 +349,25 @@ fn tools_list_result() -> serde_json::Value {
                 }
             },
             {
+                "name": "logagent.list_fetch_endpoints",
+                "description": "List enabled managed Fetch endpoints available to this task. Credentials are never returned.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "logagent.fetch",
+                "description": "Run one managed Fetch endpoint through the Server allowlist and credential store.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fetchId": { "type": "string" },
+                        "variables": { "type": "object", "additionalProperties": { "type": "string" } },
+                        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+                        "body": { "type": "string" }
+                    },
+                    "required": ["fetchId"]
+                }
+            },
+            {
                 "name": "logagent.recall_cases",
                 "description": "Recall active enabled cases from LogAgent memory.",
                 "inputSchema": {
@@ -469,6 +506,7 @@ fn tools_list_result() -> serde_json::Value {
 async fn call_tool(
     config: &Arc<AppConfig>,
     skills: &SkillRegistry,
+    fetch_store: &FetchStore,
     workspace: &Path,
     task: &TaskRecord,
     _mode: AnalysisMode,
@@ -482,6 +520,17 @@ async fn call_tool(
         "logagent.get_log_slice" => get_log_slice_tool(workspace, arguments.clone()).await?,
         "logagent.run_domain_tool" => {
             run_domain_tool(config.clone(), workspace, task, arguments.clone()).await?
+        }
+        "logagent.list_fetch_endpoints" => list_fetch_endpoints_tool(config, fetch_store).await?,
+        "logagent.fetch" => {
+            fetch_tool(
+                config.clone(),
+                fetch_store,
+                workspace,
+                task,
+                arguments.clone(),
+            )
+            .await?
         }
         "logagent.recall_cases" => {
             recall_cases_tool(config.clone(), workspace, arguments.clone()).await?
@@ -644,6 +693,103 @@ async fn run_domain_tool(
         "artifactPath": artifact.artifact_path,
         "summary": artifact.summary,
         "evidenceRefs": [artifact.artifact_path],
+    }))
+}
+
+async fn list_fetch_endpoints_tool(
+    config: &AppConfig,
+    fetch_store: &FetchStore,
+) -> anyhow::Result<serde_json::Value> {
+    if !config.fetch.enabled {
+        anyhow::bail!("fetch is disabled by configuration");
+    }
+    let endpoints = fetch_store
+        .list()
+        .await
+        .into_iter()
+        .filter(|endpoint| endpoint.enabled)
+        .map(|endpoint| {
+            json!({
+                "fetchId": endpoint.fetch_id,
+                "name": endpoint.name,
+                "description": endpoint.description,
+                "tags": endpoint.tags,
+                "method": endpoint.method,
+                "urlTemplate": endpoint.url_template,
+                "credentialVersion": endpoint.credential_version,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "schemaVersion": 1,
+        "endpoints": endpoints,
+        "finalEvidenceAllowed": false
+    }))
+}
+
+async fn fetch_tool(
+    config: Arc<AppConfig>,
+    fetch_store: &FetchStore,
+    workspace: &Path,
+    _task: &TaskRecord,
+    arguments: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let params: FetchRunParams = serde_json::from_value(arguments.clone())?;
+    if params.fetch_id.trim().is_empty() {
+        anyhow::bail!("fetchId is required");
+    }
+    let action = AgentAction {
+        schema_version: 1,
+        action_id: format!("act_fetch_{}", stable_json_hash(&arguments)),
+        kind: ActionKind::RunTool,
+        reason: "Claude Code MCP requested managed fetch endpoint".to_string(),
+        evidence_refs: Vec::new(),
+        input: arguments,
+        risk: ActionRisk::SafeReadOnly,
+        fingerprint: format!(
+            "fetch:{}",
+            stable_json_hash(&json!({ "fetchId": params.fetch_id.clone() }))
+        ),
+    };
+    let result_path =
+        execute_fetch_to_artifacts(config, fetch_store, workspace, &action.action_id, params)
+            .await?;
+    let artifact_path = relative_string(workspace, &result_path)?;
+    let result: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(&result_path).await?)?;
+    let response_ref = format!("{artifact_path}#response");
+    let status_code = result
+        .get("statusCode")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_default();
+    let body_preview = result
+        .pointer("/response/bodyPreview")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .chars()
+        .take(1200)
+        .collect::<String>();
+    let artifact = EvidenceArtifact {
+        schema_version: 1,
+        action_id: Some(action.action_id.clone()),
+        evidence_type: EvidenceType::ToolOutput,
+        artifact_path: artifact_path.clone(),
+        summary: EvidenceSummary {
+            title: format!("Fetch {} HTTP {}", action.action_id, status_code),
+            details: vec![
+                format!("statusCode={status_code}"),
+                format!("evidenceRef={response_ref}"),
+            ],
+        },
+    };
+    artifact.validate()?;
+    analysis_state::record_tool_artifact(workspace, &action, &artifact)?;
+    Ok(json!({
+        "artifactPath": artifact_path,
+        "statusCode": status_code,
+        "httpOk": result.get("httpOk").and_then(|value| value.as_bool()).unwrap_or(false),
+        "bodyPreview": body_preview,
+        "evidenceRefs": [response_ref],
     }))
 }
 
@@ -1069,11 +1215,13 @@ mod tests {
         .unwrap();
         let config = test_config(&root);
         let skills = SkillRegistry::load(config.skills.clone()).unwrap();
+        let fetch_store = FetchStore::load(config.storage.fetch_dir(), &config.fetch).unwrap();
         let task = task_record("task_meta");
 
         let result = call_tool(
             &config,
             &skills,
+            &fetch_store,
             &workspace,
             &task,
             AnalysisMode::Diagnose,
@@ -1155,11 +1303,13 @@ mod tests {
             .unwrap();
         store.confirm_import(&preview.import_id).await.unwrap();
         let skills = SkillRegistry::load(config.skills.clone()).unwrap();
+        let fetch_store = FetchStore::load(config.storage.fetch_dir(), &config.fetch).unwrap();
         let task = task_record("task_meta");
 
         let result = call_tool(
             &config,
             &skills,
+            &fetch_store,
             &workspace,
             &task,
             AnalysisMode::Diagnose,
@@ -1195,6 +1345,7 @@ mod tests {
         let tag_result = call_tool(
             &config,
             &skills,
+            &fetch_store,
             &workspace,
             &task,
             AnalysisMode::Diagnose,
@@ -1503,6 +1654,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings::default(),
+            fetch: crate::support::config::FetchSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             llm: LlmSettings {
                 provider: LlmProvider::Stub,

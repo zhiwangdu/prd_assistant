@@ -579,6 +579,7 @@ mod tests {
                 max_matches: 20,
             },
             tools: ToolsSettings::default(),
+            fetch: crate::support::config::FetchSettings::default(),
             remote_execution: RemoteExecutionSettings {
                 enabled: true,
                 ssh_binary,

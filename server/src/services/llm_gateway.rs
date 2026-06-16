@@ -1920,6 +1920,10 @@ fn normalize_evidence_ref(
     if value == SESSION_TEXT_INPUT_REF {
         return Ok(vec![SESSION_TEXT_INPUT_REF.to_string()]);
     }
+    if let Some(action_id) = parse_canonical_fetch_response_ref(value) {
+        ensure_fetch_response_ref(action_id, tool_results)?;
+        return Ok(vec![canonical_fetch_response_ref(action_id)]);
+    }
     if let Some((action_id, index)) = parse_canonical_tool_finding_ref(value) {
         ensure_tool_finding_index(action_id, index, tool_results)?;
         return Ok(vec![canonical_tool_finding_ref(action_id, index)]);
@@ -1992,6 +1996,15 @@ fn parse_canonical_tool_finding_ref(value: &str) -> Option<(&str, usize)> {
         return None;
     }
     Some((action_id, selector.parse().ok()?))
+}
+
+fn parse_canonical_fetch_response_ref(value: &str) -> Option<&str> {
+    let value = value.strip_prefix("tool_results/")?;
+    let action_id = value.strip_suffix("/result.json#response")?;
+    if !valid_action_ref_id(action_id) {
+        return None;
+    }
+    Some(action_id)
 }
 
 fn valid_action_ref_id(action_id: &str) -> bool {
@@ -2088,6 +2101,23 @@ fn ensure_tool_finding_index(
     Ok(())
 }
 
+fn ensure_fetch_response_ref(
+    action_id: &str,
+    tool_results: &[ToolRunRecord],
+) -> anyhow::Result<()> {
+    let result = tool_results
+        .iter()
+        .find(|result| result.action_id == action_id)
+        .ok_or_else(|| anyhow::anyhow!("fetch action {action_id} was not provided"))?;
+    if result.tool != crate::services::fetch::FETCH_TOOL_ID {
+        anyhow::bail!(
+            "evidence ref {} does not refer to a fetch result",
+            canonical_fetch_response_ref(action_id)
+        );
+    }
+    Ok(())
+}
+
 fn ensure_case_index(index: usize, case_context: Option<&serde_json::Value>) -> anyhow::Result<()> {
     let cases = case_context_cases(case_context)?;
     if index >= cases.len() {
@@ -2131,6 +2161,10 @@ fn canonical_case_ref(index: usize) -> String {
 
 fn canonical_tool_finding_ref(action_id: &str, index: usize) -> String {
     format!("tool_results/{action_id}/result.json#findings/{index}")
+}
+
+fn canonical_fetch_response_ref(action_id: &str) -> String {
+    format!("tool_results/{action_id}/result.json#response")
 }
 
 #[cfg(test)]
@@ -3097,6 +3131,44 @@ JSON
     }
 
     #[test]
+    fn validates_fetch_response_evidence_refs() {
+        let tool_results = vec![fixture_fetch_result(), fixture_tool_result()];
+        let draft = ResultDraft {
+            summary: "summary".to_string(),
+            symptoms: vec![],
+            likely_root_causes: vec![RootCause {
+                cause: "upstream returned the failing state".to_string(),
+                evidence_refs: vec!["tool_results/act_fetch_1/result.json#response".to_string()],
+            }],
+            next_checks: vec![],
+            fix_suggestions: vec![],
+            missing_information: vec![],
+            confidence: Confidence::Low,
+        };
+
+        let result = validate_result_evidence(draft, None, 0, None, &tool_results).unwrap();
+
+        assert_eq!(
+            result.likely_root_causes[0].evidence_refs,
+            vec!["tool_results/act_fetch_1/result.json#response"]
+        );
+
+        let wrong_tool = ResultDraft {
+            summary: "summary".to_string(),
+            symptoms: vec![],
+            likely_root_causes: vec![RootCause {
+                cause: "planner issue".to_string(),
+                evidence_refs: vec!["tool_results/act_tool_flux/result.json#response".to_string()],
+            }],
+            next_checks: vec![],
+            fix_suggestions: vec![],
+            missing_information: vec![],
+            confidence: Confidence::Low,
+        };
+        assert!(validate_result_evidence(wrong_tool, None, 0, None, &tool_results).is_err());
+    }
+
+    #[test]
     fn validates_session_text_input_evidence_ref() {
         let draft = ResultDraft {
             summary: "summary".to_string(),
@@ -3550,6 +3622,24 @@ JSON
                 line: Some(12),
                 message: "filter pushdown failed".to_string(),
             }],
+            error: None,
+        }
+    }
+
+    fn fixture_fetch_result() -> ToolRunRecord {
+        ToolRunRecord {
+            schema_version: 3,
+            tool: crate::services::fetch::FETCH_TOOL_ID.to_string(),
+            action_id: "act_fetch_1".to_string(),
+            status: ToolRunStatus::Ok,
+            exit_code: None,
+            duration_ms: 7,
+            command: Vec::new(),
+            input_file: None,
+            stdout_path: String::new(),
+            stderr_path: String::new(),
+            summary: "GET https://example.com -> HTTP 200".to_string(),
+            findings: Vec::new(),
             error: None,
         }
     }

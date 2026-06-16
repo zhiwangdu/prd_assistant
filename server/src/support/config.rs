@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,7 @@ pub struct AppConfig {
     pub skills: SkillSettings,
     pub log_analyzer: LogAnalyzerSettings,
     pub tools: ToolsSettings,
+    pub fetch: FetchSettings,
     pub remote_execution: RemoteExecutionSettings,
     pub llm: LlmSettings,
     pub claude_code: ClaudeCodeSettings,
@@ -75,6 +77,41 @@ pub struct ToolSettings {
 pub struct ToolMatchSettings {
     pub file_patterns: Vec<String>,
     pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FetchSettings {
+    pub enabled: bool,
+    #[allow(dead_code)]
+    pub secret_key_env: Option<String>,
+    pub secret_key: Option<[u8; 32]>,
+    pub allowed_hosts: Vec<FetchAllowedHost>,
+    pub request_timeout_seconds: u64,
+    pub max_request_bytes: usize,
+    pub max_response_bytes: usize,
+    pub max_redirects: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchAllowedHost {
+    pub scheme: Option<String>,
+    pub host: String,
+    pub port: Option<u16>,
+}
+
+impl Default for FetchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            secret_key_env: Some("LOGAGENT_FETCH_SECRET_KEY".to_string()),
+            secret_key: None,
+            allowed_hosts: Vec::new(),
+            request_timeout_seconds: default_fetch_request_timeout(),
+            max_request_bytes: default_fetch_max_request_bytes(),
+            max_response_bytes: default_fetch_max_response_bytes(),
+            max_redirects: default_fetch_max_redirects(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +291,7 @@ struct ConfigFile {
     log_analyzer: Option<LogAnalyzerConfig>,
     #[serde(default)]
     tools: BTreeMap<String, ToolConfig>,
+    fetch: Option<FetchConfig>,
     remote_execution: Option<RemoteExecutionConfig>,
     llm: Option<LlmConfig>,
     claude_code: Option<ClaudeCodeConfig>,
@@ -340,6 +378,23 @@ struct ToolMatchConfig {
     file_patterns: Vec<String>,
     #[serde(default)]
     keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FetchConfig {
+    #[serde(default)]
+    enabled: bool,
+    secret_key_env: Option<String>,
+    #[serde(default)]
+    allowed_hosts: Vec<String>,
+    #[serde(default = "default_fetch_request_timeout")]
+    request_timeout_seconds: u64,
+    #[serde(default = "default_fetch_max_request_bytes")]
+    max_request_bytes: usize,
+    #[serde(default = "default_fetch_max_response_bytes")]
+    max_response_bytes: usize,
+    #[serde(default = "default_fetch_max_redirects")]
+    max_redirects: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -471,6 +526,7 @@ impl AppConfig {
         fs::create_dir_all(self.storage.metadata_dir())?;
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
         fs::create_dir_all(self.storage.system_context_dir())?;
+        fs::create_dir_all(self.storage.fetch_dir())?;
         Ok(())
     }
 }
@@ -535,6 +591,10 @@ impl StorageSettings {
     pub fn system_context_dir(&self) -> PathBuf {
         self.data_dir.join("system_context").join("resources")
     }
+
+    pub fn fetch_dir(&self) -> PathBuf {
+        self.data_dir.join("fetch")
+    }
 }
 
 pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
@@ -547,6 +607,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             skills: None,
             log_analyzer: None,
             tools: BTreeMap::new(),
+            fetch: None,
             remote_execution: None,
             llm: None,
             claude_code: None,
@@ -578,6 +639,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         .log_analyzer
         .unwrap_or_else(default_log_analyzer_config);
     let tools = resolve_tools(parsed.tools)?;
+    let fetch = resolve_fetch(parsed.fetch.unwrap_or_else(default_fetch_config))?;
     let remote_execution = resolve_remote_execution(
         parsed
             .remote_execution
@@ -659,6 +721,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             max_matches: analyzer.max_matches,
         },
         tools,
+        fetch,
         remote_execution,
         llm: LlmSettings {
             provider,
@@ -772,6 +835,94 @@ fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
     Ok(McpSettings {
         enabled: raw.enabled,
         transport: transport.to_string(),
+    })
+}
+
+fn resolve_fetch(raw: FetchConfig) -> anyhow::Result<FetchSettings> {
+    let allowed_hosts = raw
+        .allowed_hosts
+        .iter()
+        .map(|value| parse_fetch_allowed_host(value))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let secret_key_env = raw
+        .secret_key_env
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let secret_key = if raw.enabled {
+        if allowed_hosts.is_empty() {
+            anyhow::bail!("fetch.allowed_hosts must not be empty when fetch is enabled");
+        }
+        let secret_key_env = secret_key_env
+            .as_deref()
+            .context("fetch.secret_key_env is required when fetch is enabled")?;
+        let encoded = env::var(secret_key_env)
+            .with_context(|| format!("missing fetch secret key env var {secret_key_env}"))?;
+        let decoded = BASE64
+            .decode(encoded.trim())
+            .with_context(|| format!("fetch secret key env var {secret_key_env} is not base64"))?;
+        let key: [u8; 32] = decoded.try_into().map_err(|value: Vec<u8>| {
+            anyhow::anyhow!(
+                "fetch secret key env var {secret_key_env} must decode to 32 bytes, got {}",
+                value.len()
+            )
+        })?;
+        Some(key)
+    } else {
+        None
+    };
+    Ok(FetchSettings {
+        enabled: raw.enabled,
+        secret_key_env,
+        secret_key,
+        allowed_hosts,
+        request_timeout_seconds: raw.request_timeout_seconds.max(1),
+        max_request_bytes: raw.max_request_bytes.max(1),
+        max_response_bytes: raw.max_response_bytes.max(1),
+        max_redirects: raw.max_redirects,
+    })
+}
+
+fn parse_fetch_allowed_host(raw: &str) -> anyhow::Result<FetchAllowedHost> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        anyhow::bail!("fetch.allowed_hosts entries must not be empty");
+    }
+    if raw.contains("://") {
+        let url = reqwest::Url::parse(raw)
+            .with_context(|| format!("invalid fetch allowed host {raw}"))?;
+        let scheme = url.scheme();
+        if !matches!(scheme, "http" | "https") {
+            anyhow::bail!("fetch allowed host scheme must be http or https");
+        }
+        let host = url
+            .host_str()
+            .context("fetch allowed host URL is missing host")?
+            .to_ascii_lowercase();
+        return Ok(FetchAllowedHost {
+            scheme: Some(scheme.to_string()),
+            host,
+            port: url.port_or_known_default(),
+        });
+    }
+    let (host, port) = match raw.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => {
+            let port = port
+                .parse::<u16>()
+                .with_context(|| format!("invalid fetch allowed host port in {raw}"))?;
+            (host, Some(port))
+        }
+        _ => (raw, None),
+    };
+    let host = host.trim().to_ascii_lowercase();
+    if host.is_empty() || host == "*" {
+        anyhow::bail!("fetch allowed host must be an explicit host");
+    }
+    Ok(FetchAllowedHost {
+        scheme: None,
+        host,
+        port,
     })
 }
 
@@ -1027,6 +1178,18 @@ fn default_log_analyzer_config() -> LogAnalyzerConfig {
     }
 }
 
+fn default_fetch_config() -> FetchConfig {
+    FetchConfig {
+        enabled: false,
+        secret_key_env: Some("LOGAGENT_FETCH_SECRET_KEY".to_string()),
+        allowed_hosts: Vec::new(),
+        request_timeout_seconds: default_fetch_request_timeout(),
+        max_request_bytes: default_fetch_max_request_bytes(),
+        max_response_bytes: default_fetch_max_response_bytes(),
+        max_redirects: default_fetch_max_redirects(),
+    }
+}
+
 fn default_llm_config() -> LlmConfig {
     LlmConfig {
         provider: default_llm_provider(),
@@ -1106,6 +1269,22 @@ fn default_tool_max_output_bytes() -> usize {
 
 fn default_tool_max_input_files() -> usize {
     1
+}
+
+fn default_fetch_request_timeout() -> u64 {
+    30
+}
+
+fn default_fetch_max_request_bytes() -> usize {
+    1024 * 1024
+}
+
+fn default_fetch_max_response_bytes() -> usize {
+    2 * 1024 * 1024
+}
+
+fn default_fetch_max_redirects() -> usize {
+    3
 }
 
 fn default_remote_execution_enabled() -> bool {
@@ -1756,6 +1935,68 @@ tools:
                 .to_string()
                 .contains("must not be empty"));
         });
+    }
+
+    #[test]
+    fn resolves_fetch_config_with_base64_key_and_allowlist() {
+        temp_env_set("LOGAGENT_TEST_FETCH_KEY", &BASE64.encode([9u8; 32]), || {
+            let parsed = serde_yaml::from_str::<ConfigFile>(
+                r#"
+fetch:
+  enabled: true
+  secret_key_env: LOGAGENT_TEST_FETCH_KEY
+  allowed_hosts:
+    - "http://127.0.0.1:50992"
+    - "api.example.com"
+  request_timeout_seconds: 5
+"#,
+            )
+            .unwrap();
+            let fetch = resolve_fetch(parsed.fetch.unwrap()).unwrap();
+            assert!(fetch.enabled);
+            assert_eq!(fetch.secret_key, Some([9u8; 32]));
+            assert_eq!(fetch.allowed_hosts.len(), 2);
+            assert_eq!(fetch.allowed_hosts[0].scheme.as_deref(), Some("http"));
+            assert_eq!(fetch.allowed_hosts[0].port, Some(50992));
+            assert_eq!(fetch.allowed_hosts[1].host, "api.example.com");
+            assert_eq!(fetch.request_timeout_seconds, 5);
+        });
+    }
+
+    #[test]
+    fn rejects_enabled_fetch_without_valid_key_or_allowlist() {
+        let missing_allowlist = serde_yaml::from_str::<ConfigFile>(
+            r#"
+fetch:
+  enabled: true
+  secret_key_env: LOGAGENT_TEST_FETCH_KEY
+"#,
+        )
+        .unwrap();
+        assert!(resolve_fetch(missing_allowlist.fetch.unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("allowed_hosts"));
+
+        temp_env_set(
+            "LOGAGENT_TEST_FETCH_BAD_KEY",
+            &BASE64.encode([1u8; 16]),
+            || {
+                let bad_key = serde_yaml::from_str::<ConfigFile>(
+                    r#"
+fetch:
+  enabled: true
+  secret_key_env: LOGAGENT_TEST_FETCH_BAD_KEY
+  allowed_hosts: ["127.0.0.1"]
+"#,
+                )
+                .unwrap();
+                assert!(resolve_fetch(bad_key.fetch.unwrap())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("32 bytes"));
+            },
+        );
     }
 
     fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {

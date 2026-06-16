@@ -9,6 +9,7 @@
 - Native Agent 只接受 `127.0.0.1` 请求。
 - Native Agent 校验文件路径，避免任意文件上传。
 - 不在日志或数据库中保存 Cookie、Authorization、session token。
+- Fetch endpoint 导入的 Authorization、Cookie、token/api_key/secret/password/session 等敏感值只进入 Server credential store，并用 AES-256-GCM 加密持久化；API、WebUI、日志、artifact 和 LLM evidence 只展示脱敏值。
 - 上传文件大小限制。
 - 任务失败要保留错误信息，方便定位。
 
@@ -29,6 +30,7 @@
 - Claude Code permission profile 自动允许 `mcp__logagent__*`，只开放任务专属 LogAgent MCP server；native built-in tools 仍由 `tools` / `allowed_tools` / `disallowed_tools` 控制。LogAgent 的用户审批只控制 Server 侧 approval-gated action，不能替代 Claude CLI 的 tool allowlist。
 - Claude Code 只能通过 `claude_code` 配置接入；领域能力只能通过 LogAgent MCP 调用，不能直接执行 LogAgent 工具、SSH、任务外文件系统或状态变更。
 - 只读 HTTP MCP 只面向个人本地 Claude Code 读取共享知识；它不能创建、读取、启动或恢复 Session，不能读取 task workspace，不能上传文件，不能运行 Tool Runner，不能审批或远程采集，不能修改 Case、Metadata、Skills 或 System Context。
+- 只读 HTTP MCP 可以展示工具目录中的 `logagent.fetch` descriptor，但不能执行 Fetch endpoint；Fetch 执行只允许任务 MCP 和 Server 手动 `tool_run` 路径。
 - 第一阶段 Claude Code dry-run 诊断只检查配置路径，不执行 CLI；`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 只是 workspace 内契约产物。`claude_prompt.md` 只保存短启动 prompt，证据包通过任务 MCP resource 读取；完整 Metadata 不进入 prompt/package，默认只暴露 outline。
 - `logagent.query_metadata` 只能从当前 task workspace 的 `metadata_context.json` 生成 bounded slice，写入 `metadata_slices/<stable_id>.json` 并审计到 `mcp_calls.jsonl`；它不扩大 Claude native file `Read` 权限，slice 也不能作为最终 evidence ref。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
@@ -45,6 +47,8 @@
 - 限制外部工具执行时间、输出大小和可访问目录。
 - 工具执行结果要保留 exit code、stderr 和原始输出路径，方便审计。
 - Tools 页面创建的手动工具运行也必须走同一白名单和 workspace 边界。`pprof_analyzer` 只分析已上传到 Server 的本地 profile 文件，不接受 URL source，并把 `PPROF_TMPDIR` 设置到当前 task workspace 内。
+- 内置 Fetch tool 不调用外部命令，执行边界来自 `fetch.enabled`、32-byte base64 secret key、`fetch.allowed_hosts`、请求/响应大小限制、timeout 和 redirect 限制。每次请求和每个 redirect hop 都必须命中 `http/https` allowlist，跨 host redirect 不转发 Authorization/Cookie。
+- Fetch cURL import 和运行时 header override 必须拒绝 `Host`、`Content-Length`、`Transfer-Encoding`、`Connection` 等受控 header，拒绝 form/upload/proxy/cert/resolve/connect-to 等扩大网络或文件边界的参数。
 - `tools.zip` 导出只打包当前 enabled 且解析为普通可执行文件的工具二进制、wrapper 和示例配置；不导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。缺失或不可执行工具只在 manifest 标记 skipped。
 
 ## 代码仓

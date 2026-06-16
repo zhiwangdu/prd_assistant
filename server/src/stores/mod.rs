@@ -2,6 +2,7 @@ pub mod analysis_state;
 pub mod case_import_store;
 pub mod case_store;
 pub mod executor_store;
+pub mod fetch_store;
 pub mod memory_store;
 pub mod session_store;
 pub mod system_context_store;

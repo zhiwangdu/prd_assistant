@@ -13,6 +13,7 @@ mod cases;
 mod debug;
 mod executors;
 mod exports;
+mod fetch;
 mod health;
 mod mcp_readonly;
 mod metadata;
@@ -93,6 +94,22 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/tools/runs/:task_id/artifacts",
             get(tools::tool_run_artifacts),
         )
+        .route("/api/fetch/imports/preview", post(fetch::import_preview))
+        .route(
+            "/api/fetch/endpoints",
+            get(fetch::list_endpoints).post(fetch::create_endpoint),
+        )
+        .route(
+            "/api/fetch/endpoints/:fetch_id",
+            get(fetch::get_endpoint)
+                .patch(fetch::patch_endpoint)
+                .delete(fetch::delete_endpoint),
+        )
+        .route(
+            "/api/fetch/endpoints/:fetch_id/runs",
+            post(fetch::create_run),
+        )
+        .route("/api/fetch/runs", get(fetch::list_runs))
         .route(
             "/api/executors",
             get(executors::list_executors).post(executors::create_executor),

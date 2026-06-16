@@ -1,0 +1,39 @@
+server:
+  bind: "127.0.0.1:50998"
+  public_base_url: "http://127.0.0.1:50998"
+  max_concurrent_tasks: 2
+
+storage:
+  data_dir: "/tmp/logagent-server-fetch"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+auth:
+  api_keys:
+    - name: "webui"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+fetch:
+  enabled: true
+  secret_key_env: "LOGAGENT_FETCH_SECRET_KEY"
+  allowed_hosts:
+    - "http://127.0.0.1:8091"
+    - "http://127.0.0.1:50998"
+  request_timeout_seconds: 30
+  max_request_bytes: 1048576
+  max_response_bytes: 2097152
+  max_redirects: 3
+
+llm:
+  provider: "stub"
+  model: "stub"
+
+claude_code:
+  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
+  default_mode: "diagnose"
+  max_session_seconds: 120
+  max_output_bytes: 1048576
+
+mcp:
+  enabled: true
+  transport: "stdio"

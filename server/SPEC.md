@@ -24,6 +24,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
+- Fetch endpoint MVP：`fetch` 配置、cURL import、credential store、endpoint API、`logagent.fetch` MCP tool 和 response evidence ref
 - `PLAN_ANALYSIS` Claude Code session runner、MCP config 生成、等待态和 evidence ref 校验
 - `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复 API
 - Analysis State Store MVP 和 `/api/tasks/:task_id/analysis`
@@ -47,7 +48,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - upload pipeline
 - WEBUI 静态托管，目录为 Vite 构建的 `webui/out`
 
-代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Metadata、Claude Code Session Runner、Domain Adapter、LLM Gateway 和 Tools 插件等内部能力，`mcp.rs` 承载 LogAgent MCP stdio server，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。
+代码结构已整理为单 crate 内部分层目录：`http/` 承载路由，`domain/` 承载公共类型，`stores/` 承载本地 JSON 持久化、Fetch credential store、Memory SQLite store 和 Case 兼容 facade，`services/` 承载 Log Analyzer、Tool Runner、Fetch、Metadata、Claude Code Session Runner、Domain Adapter、LLM Gateway 和 Tools 插件等内部能力，`mcp.rs` 承载 LogAgent MCP stdio server，`pipeline/` 承载任务流水线和可恢复 executor，`support/` 承载配置、鉴权、错误和路径安全。
 
 ## HTTP 接口
 
@@ -90,6 +91,14 @@ GET /api/tools/runs
 GET /api/tools/runs/:task_id
 GET /api/tools/runs/:task_id/result
 GET /api/tools/runs/:task_id/artifacts
+POST /api/fetch/imports/preview
+GET /api/fetch/endpoints
+POST /api/fetch/endpoints
+GET /api/fetch/endpoints/:fetch_id
+PATCH /api/fetch/endpoints/:fetch_id
+DELETE /api/fetch/endpoints/:fetch_id
+POST /api/fetch/endpoints/:fetch_id/runs
+GET /api/fetch/runs
 GET /api/executors
 POST /api/executors
 GET /api/executors/:executor_id
@@ -170,7 +179,7 @@ Authorization: Bearer <api-key>
 
 ## 只读 HTTP MCP 和导出
 
-`POST /api/mcp/readonly` 是面向个人本地 Claude Code 的高级只读入口，与 `logagent-server mcp --task-id ...` 的任务 stdio MCP 分离。HTTP MCP 只读取共享知识，不绑定 task，不读取 task workspace，不启动/恢复 Session，不上传文件，不运行 Tool Runner，不发起审批或远程 SSH/SCP，不修改 Case、Metadata、Skills 或 System Context。
+`POST /api/mcp/readonly` 是面向个人本地 Claude Code 的高级只读入口，与 `logagent-server mcp --task-id ...` 的任务 stdio MCP 分离。HTTP MCP 只读取共享知识，不绑定 task，不读取 task workspace，不启动/恢复 Session，不上传文件，不运行 Tool Runner 或 Fetch endpoint，不发起审批或远程 SSH/SCP，不修改 Case、Metadata、Skills 或 System Context。
 
 支持 JSON-RPC 方法：
 
@@ -213,6 +222,19 @@ logagent.list_domain_adapters
 
 工具目录由 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 共享同一批 descriptor。每个 descriptor 必须包含 `source`、`tags`、`readOnly`、`editable`、`exportable`、`runnable`、`backend`、`paramsSchema`、`paramsTemplate` 和 `outputViews`。手动配置的外部工具使用 `source=configured`；内置 metadata 工具使用 `source=built_in`，并且必须是只读、不可编辑、不可导出、可通过 `POST /api/tools/:tool_id/runs` 手动运行。当前内置 metadata catalog tools 包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields`。
 
+内置 Fetch catalog tool 为 `logagent.fetch`，`source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件，只有 `fetch.enabled=true` 时才 `runnable=true`。只读 HTTP MCP 可在工具目录看到 descriptor，但 `tools/call logagent.fetch` 必须被拒绝。
+
+Fetch endpoint API 使用 `storage.data_dir/fetch` 下的 endpoint JSON。`POST /api/fetch/imports/preview` 解析 DevTools “Copy as cURL (bash)” 常见格式并返回脱敏预览；`POST /api/fetch/endpoints` 保存 endpoint 和加密 credential set；`POST /api/fetch/endpoints/:fetch_id/runs` 创建 `taskKind=tool_run` 且 `toolId=logagent.fetch` 的后台 run；`GET /api/fetch/runs?fetchId=...` 是 `/api/tools/runs` 的便捷过滤视图。
+
+任务 stdio MCP 额外支持：
+
+```text
+logagent.list_fetch_endpoints
+logagent.fetch
+```
+
+`logagent.list_fetch_endpoints` 只返回脱敏 endpoint 摘要；`logagent.fetch` 按 `fetchId` 执行受控请求，写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`，返回 bounded preview 和 `tool_results/<action_id>/result.json#response`。
+
 `logagent.get_metadata_field_types` 参数为必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`。`retentionPolicy` 省略时使用 DB 默认 RP；`field` 可为字符串或字符串数组，省略时返回 measurement 全部 fields。返回字段包含 `typ` 和 `typeLabel`，openGemini 枚举码 `0..7` 映射为 `Unknown/Integer/Unsigned/Float/String/Boolean/Tag/Unknown`。
 
 `logagent.get_metadata_tag_fields` 参数为必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field` 参数。它复用 field type 查询的定位和默认 RP 规则，但只返回 `typ=6` / `typeLabel=Tag` 的字段；返回结构仍使用 `fields`、`missingFields=[]` 和 `finalEvidenceAllowed=false`。
@@ -250,6 +272,8 @@ data_dir/
     task_xxx.json
   executors/
     executor_xxx.json
+  fetch/
+    fetch_xxx.json
   memory/
     memory.sqlite
   cases/
@@ -278,6 +302,9 @@ data_dir/
           result.json
           stdout.txt
           stderr.txt
+        act_fetch_xxx/
+          result.json
+          response_body.bin
       remote_command/
         result.json
         stdout.txt
@@ -565,8 +592,17 @@ persist task
 - `tools.<name>.args`
 - `tools.<name>.match.file_patterns`
 - `tools.<name>.match.keywords`
+- `fetch.enabled`
+- `fetch.secret_key_env`
+- `fetch.allowed_hosts`
+- `fetch.request_timeout_seconds`
+- `fetch.max_request_bytes`
+- `fetch.max_response_bytes`
+- `fetch.max_redirects`
 
 `pprof_analyzer` 复用通用 `tools.pprof_analyzer.*` 配置；该工具的 `path` / `path_env` 必须指向 Go 可执行文件，Server 会固定附加 `tool pprof` 子命令。
+
+`fetch.enabled` 默认 false。启用时必须配置 `fetch.secret_key_env`，环境变量值必须是 32-byte base64 key；必须配置非空 `fetch.allowed_hosts`，条目可为 `host`、`host:port` 或 `http(s)://host[:port]`。执行限制由 `request_timeout_seconds`、`max_request_bytes`、`max_response_bytes` 和 `max_redirects` 控制。
 
 ## 待实现
 
@@ -596,6 +632,9 @@ persist task
 - 规则版 Tool Runner 必须遵守 `max_input_files`，同一工具不同输入文件必须生成不同稳定 action id。
 - `GET /api/tasks/:task_id/artifacts` 返回 `textInput` 和 `toolResults`。
 - Tool Runner JSON stdout 的 summary/findings 必须进入 `toolResults`；非 JSON stdout 必须保持兼容 fallback。
+- Fetch import preview 和 endpoint view 不能泄露 Authorization、Cookie、token/api_key/secret/password/session 等敏感 header/query/body 字段；持久化 endpoint JSON 只能保存 AES-256-GCM 密文。Fetch result artifact 的 request、response headers 和 URL query 必须脱敏。
+- Fetch 执行必须拒绝非 allowlist URL、redirect 后非 allowlist URL、受控 header、unsupported curl flags、上传文件/form/proxy/cert/resolve/connect-to 等扩大网络或文件边界的 cURL 参数。HTTP 4xx/5xx 视为请求完成并记录 `httpOk=false`。
+- 最终答案可引用 `tool_results/<action_id>/result.json#response`，但必须校验当前任务中存在该 action 且 result `tool=logagent.fetch`；未知 action 或非 Fetch action 必须拒绝。
 - 真实 `flux_query_analyzer` stdout JSON 必须被通用 Tool Runner 解析为 `toolResults[].summary/findings`，且 `scripts/smoke-flux-query-analyzer.sh` 能验证 `summary/findings/topQueries`。
 - 真实 `influxql_analyzer` Report stdout 必须被转换为 `toolResults[].summary/findings`，且 `large_limit`、`no_time_filter` 等规则可在 artifacts 中查看。
 - `opengemini_storage_analyzer` 和 `influxdb_storage_analyzer` 必须通过 `scripts/build-tools.sh` 从 submodule 源码构建，并分别通过 smoke 脚本验证 stdout JSON 的 tool id 和 high severity finding。
