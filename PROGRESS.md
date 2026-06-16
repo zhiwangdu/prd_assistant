@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Read-only Tool Loop
+
+- Added `LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3 for bounded provider/tool-loop execution.
+- OpenAI-compatible Agent prompts now include available read-only tools and prior tool observations.
+- AgentRuntime now accepts provider-returned `tool_calls` for `logagent.search_logs` and `logagent.get_log_slice`, executes those Server-owned task MCP tools, and feeds structured observations into the next provider round.
+- Agent response audit artifacts now persist tool calls and tool observations; `analysis_state.json` records multiple rounds with `tool_calls_executed` and final completion statuses.
+- Final answers can now cite follow-up `log_searches/<id>.json#matches/<index>` refs produced during the same run.
+- Unsupported tool names, non-object arguments, provider failures, invalid final refs, and max-round exhaustion fail the run with audit artifacts retained.
+- Added regression coverage for provider-directed follow-up log search followed by a final answer citing the generated evidence ref.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Round Audit
 
 - Added V2 Agent round audit artifacts: `agent_request.json`, `agent_response.json`, and `analysis_state.json`.

@@ -71,6 +71,8 @@ def persist_agent_response(
         "reason": provider_response.get("reason"),
         "error": provider_response.get("error"),
         "finalAnswer": provider_response.get("finalAnswer"),
+        "toolCalls": provider_response.get("toolCalls"),
+        "toolObservations": provider_response.get("toolObservations"),
         "validatedFinalAnswer": provider_response.get("validatedFinalAnswer"),
         "validation": provider_response.get("validation"),
     }

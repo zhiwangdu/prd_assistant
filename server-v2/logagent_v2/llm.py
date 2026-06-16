@@ -11,14 +11,42 @@ from .store import JsonObject
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
+AGENT_READONLY_TOOLS = [
+    {
+        "name": "logagent.search_logs",
+        "description": "Search current Workspace logs for one or more keywords.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"keywords": {"type": "array", "items": {"type": "string"}}},
+            "required": ["keywords"],
+        },
+    },
+    {
+        "name": "logagent.get_log_slice",
+        "description": "Read bounded context around a log path and line number.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "lineNumber": {"type": "integer"},
+                "before": {"type": "integer"},
+                "after": {"type": "integer"},
+            },
+            "required": ["path", "lineNumber"],
+        },
+    },
+]
 
 
 def generate_agent_final_answer(
     settings: Settings,
     workspace: JsonObject,
     evidence_bundle: JsonObject,
+    tool_observations: list[JsonObject] | None = None,
 ) -> JsonObject | None:
-    result = generate_agent_provider_result(settings, workspace, evidence_bundle)
+    result = generate_agent_provider_result(
+        settings, workspace, evidence_bundle, tool_observations
+    )
     if result.get("status") == "skipped":
         return None
     if result.get("status") != "completed":
@@ -34,8 +62,11 @@ def generate_agent_provider_result(
     settings: Settings,
     workspace: JsonObject,
     evidence_bundle: JsonObject,
+    tool_observations: list[JsonObject] | None = None,
 ) -> JsonObject:
-    request_payload = build_agent_provider_request(settings, workspace, evidence_bundle)
+    request_payload = build_agent_provider_request(
+        settings, workspace, evidence_bundle, tool_observations
+    )
     return execute_agent_provider_request(settings, request_payload)
 
 
@@ -43,9 +74,10 @@ def build_agent_provider_request(
     settings: Settings,
     workspace: JsonObject,
     evidence_bundle: JsonObject,
+    tool_observations: list[JsonObject] | None = None,
 ) -> JsonObject:
     provider = (settings.agent_provider or "stub").lower()
-    prompt = build_agent_prompt(workspace, evidence_bundle)
+    prompt = build_agent_prompt(workspace, evidence_bundle, tool_observations)
     allowed_refs = allowed_evidence_refs(evidence_bundle)
     if provider == "stub":
         return {
@@ -76,8 +108,9 @@ def build_agent_provider_request(
                     {
                         "role": "system",
                         "content": (
-                            "You are LogAgent V2. Return only one JSON object matching the "
-                            "final answer schema. Use only provided evidence refs."
+                            "You are LogAgent V2. Return only one JSON object. Either request "
+                            "allowed tool calls using the provided protocol or return the final "
+                            "answer schema. Use only provided evidence refs."
                         ),
                     },
                     {
@@ -213,7 +246,11 @@ def call_openai_compatible(
     }
 
 
-def build_agent_prompt(workspace: JsonObject, evidence_bundle: JsonObject) -> str:
+def build_agent_prompt(
+    workspace: JsonObject,
+    evidence_bundle: JsonObject,
+    tool_observations: list[JsonObject] | None = None,
+) -> str:
     manifest = evidence_bundle.get("manifest", {})
     grep_results = evidence_bundle.get("grepResults", {})
     matches = grep_results.get("matches", [])
@@ -237,6 +274,20 @@ def build_agent_prompt(workspace: JsonObject, evidence_bundle: JsonObject) -> st
         },
         "allowedEvidenceRefs": [item["ref"] for item in evidence_preview if item.get("ref")],
         "evidencePreview": evidence_preview,
+        "toolObservations": tool_observations or [],
+        "availableTools": AGENT_READONLY_TOOLS,
+        "responseProtocol": {
+            "finalAnswer": "Return the final answer JSON object directly.",
+            "toolCalls": {
+                "type": "tool_calls",
+                "toolCalls": [
+                    {
+                        "name": "logagent.search_logs",
+                        "arguments": {"keywords": ["timeout"]},
+                    }
+                ],
+            },
+        },
         "requiredSchema": {
             "summary": "string",
             "symptoms": ["string"],

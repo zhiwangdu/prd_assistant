@@ -388,6 +388,129 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_agent_provider_can_request_readonly_log_search_before_final_answer(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class ToolLoopProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                captured_prompts.append(prompt)
+                if len(captured_prompts) == 1:
+                    answer = {
+                        "type": "tool_calls",
+                        "toolCalls": [
+                            {
+                                "name": "logagent.search_logs",
+                                "arguments": {"keywords": ["panic"]},
+                            }
+                        ],
+                    }
+                else:
+                    observation = prompt["toolObservations"][0]
+                    ref = observation["result"]["search"]["matches"][0]["ref"]
+                    answer = {
+                        "summary": "model used follow-up search",
+                        "symptoms": ["panic line"],
+                        "likelyRootCauses": [
+                            {
+                                "cause": "panic was found by a follow-up search",
+                                "evidenceRefs": [ref],
+                            }
+                        ],
+                        "nextChecks": [],
+                        "fixSuggestions": [],
+                        "missingInformation": [],
+                        "confidence": "high",
+                        "evidenceRefs": [ref],
+                    }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), ToolLoopProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=3,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("find panic root cause", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"normal startup\npanic: shard crashed\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertEqual(final_answer["summary"], "model used follow-up search")
+                self.assertEqual(final_answer["confidence"], "high")
+                self.assertTrue(final_answer["evidenceRefs"][0].startswith("log_searches/"))
+                self.assertEqual(len(captured_prompts), 2)
+                self.assertEqual(captured_prompts[0]["toolObservations"], [])
+                self.assertEqual(
+                    captured_prompts[1]["toolObservations"][0]["name"],
+                    "logagent.search_logs",
+                )
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 41,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(state["status"], "succeeded")
+                self.assertEqual(len(state["rounds"]), 2)
+                self.assertEqual(state["rounds"][0]["status"], "tool_calls_executed")
+                self.assertEqual(state["rounds"][1]["status"], "completed")
+                first_response_evidence = [
+                    item for item in store.list_evidence(run["id"])
+                    if item["kind"] == "agent_response"
+                ][0]
+                first_response_path = resolve_artifact_path(
+                    settings,
+                    store.get_artifact(first_response_evidence["artifact_id"])["relative_path"],
+                )
+                first_response = json.loads(first_response_path.read_text(encoding="utf-8"))
+                self.assertEqual(first_response["toolCalls"][0]["name"], "logagent.search_logs")
+                self.assertEqual(
+                    first_response["validation"]["status"], "tool_calls_executed"
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_job_lock_prevents_duplicate_acquire(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "logagent.sqlite")

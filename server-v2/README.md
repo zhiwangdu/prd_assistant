@@ -110,6 +110,7 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MODEL` | unset | Model name for the OpenAI-compatible provider |
 | `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token for the OpenAI-compatible provider |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
+| `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 
 Tool descriptor example:
 
@@ -211,14 +212,18 @@ inputs beyond generic InfluxQL/Flux JSONL, WebUI, or full LangGraph model loop.
 By default V2 uses `LOGAGENT_V2_AGENT_PROVIDER=stub`, which produces the
 deterministic low-confidence evidence summary used by the foundation tests.
 `LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` sends a compact prompt with the
-Workspace question, manifest counts, initial grep preview, and allowed evidence
-refs to `<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider must
-return one JSON final-answer object; V2 normalizes it and rejects unsupported
-or non-current evidence refs before marking the run `succeeded`.
+Workspace question, manifest counts, initial grep preview, allowed evidence
+refs, available read-only tools, and prior tool observations to
+`<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider may return a
+`tool_calls` object for `logagent.search_logs` or `logagent.get_log_slice`;
+V2 executes those Server-owned task MCP tools, feeds the observations into the
+next round, and stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must
+eventually return one JSON final-answer object; V2 normalizes it and rejects
+unsupported or non-current evidence refs before marking the run `succeeded`.
 
-This is a single-round provider bridge. Multi-round LangGraph planning,
-resume-aware tool loops, and automatic follow-up tool/case actions remain
-future work.
+This is a bounded provider-directed tool loop. Automatic domain-tool, Fetch,
+Case injection, waiting/approval actions, and resume-aware LangGraph planning
+remain future work.
 
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
