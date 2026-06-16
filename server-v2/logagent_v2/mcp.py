@@ -6,6 +6,7 @@ from .artifacts import resolve_artifact_path
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
 from .store import Store
+from .tools import run_configured_tool, tool_descriptors
 
 
 def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
@@ -25,7 +26,13 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
             uri = request.get("params", {}).get("uri")
             result = read_task_resource(settings, store, run, uri)
         elif method == "tools/list":
-            result = {"tools": [search_logs_descriptor(), get_log_slice_descriptor()]}
+            result = {
+                "tools": [
+                    search_logs_descriptor(),
+                    get_log_slice_descriptor(),
+                    run_domain_tool_descriptor(settings),
+                ]
+            }
         elif method == "tools/call":
             result = call_task_tool(settings, store, run, request.get("params", {}))
         else:
@@ -202,6 +209,8 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
     arguments = params.get("arguments") or {}
     if name == "logagent.get_log_slice":
         return call_get_log_slice(settings, store, run, arguments)
+    if name == "logagent.run_domain_tool":
+        return call_run_domain_tool(settings, store, run, arguments)
     if name != "logagent.search_logs":
         raise ValueError(f"unsupported task tool {name}")
     keywords = arguments.get("keywords")
@@ -216,6 +225,40 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
     text = json.dumps(
         {
             "search": result["search"],
+            "evidence": result["evidence"],
+        },
+        ensure_ascii=True,
+        indent=2,
+    )
+    return {"content": [{"type": "text", "text": text}]}
+
+
+def run_domain_tool_descriptor(settings: Settings) -> dict:
+    return {
+        "name": "logagent.run_domain_tool",
+        "description": "Run a configured read-only diagnostic tool by toolId.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "toolId": {
+                    "type": "string",
+                    "enum": [tool["toolId"] for tool in tool_descriptors(settings) if tool["enabled"]],
+                }
+            },
+            "required": ["toolId"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments: dict) -> dict:
+    tool_id = arguments.get("toolId")
+    if not isinstance(tool_id, str) or not tool_id:
+        raise ValueError("logagent.run_domain_tool requires toolId")
+    result = run_configured_tool(settings, store, run["workspace_id"], run["id"], tool_id)
+    text = json.dumps(
+        {
+            "result": result["result"],
             "evidence": result["evidence"],
         },
         ensure_ascii=True,

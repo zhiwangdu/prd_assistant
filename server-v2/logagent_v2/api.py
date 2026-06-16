@@ -12,6 +12,7 @@ from .config import Settings
 from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
 from .store import Store
+from .tools import tool_descriptors
 from .worker import JobRunner
 
 
@@ -163,7 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
-        return {"tools": []}
+        return {"tools": tool_descriptors(settings)}
 
     @app.post("/api/v2/mcp/readonly")
     async def readonly_mcp(_: Auth, request: dict) -> dict:

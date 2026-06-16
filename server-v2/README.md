@@ -15,6 +15,8 @@ slice provides the durable foundation for the V2 product model:
 - Read-only MCP discovery placeholder.
 - Task MCP endpoint with summary/evidence/manifest/grep resources and
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
+- Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
+  `logagent.run_domain_tool`.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -66,6 +68,23 @@ Environment variables:
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
+| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors |
+
+Tool descriptor example:
+
+```json
+[
+  {
+    "id": "mock_tool",
+    "displayName": "Mock Tool",
+    "command": "/usr/bin/mock-tool",
+    "args": ["--json"],
+    "enabled": true,
+    "timeoutSeconds": 30,
+    "maxOutputBytes": 1048576
+  }
+]
+```
 
 ## Current API
 
@@ -129,6 +148,7 @@ It currently supports:
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`
+- `tools/call logagent.run_domain_tool`
 
 Follow-up searches write a `log_search` evidence row and return stable refs:
 
@@ -141,3 +161,7 @@ Log slices write a `log_slice` evidence row and return:
 ```text
 log_slices/<slice_id>.json#lines
 ```
+
+Configured tools can only be invoked by `toolId`; the model cannot provide an
+executable path, shell command, or argv. Tool stdout is parsed as JSON when
+possible and persisted as `tool_result` evidence.

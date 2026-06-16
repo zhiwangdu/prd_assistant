@@ -52,13 +52,16 @@ Implemented in this slice:
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
   Workspace text path and persists `log_slice` evidence.
+- Minimal configured Tool Runner. Tools are loaded from
+  `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
+  task MCP `logagent.run_domain_tool`.
 
 Not yet implemented:
 
 - V1-compatible node log package preprocessing and log slicing.
 - LangGraph provider integration.
-- Additional task MCP tools such as `run_domain_tool`, Metadata, Case recall,
-  user prompt, and approval.
+- Rich Tool Runner input matching, per-tool params schema, Metadata, Case
+  recall, user prompt, and approval.
 - Tool Runner execution.
 - Metadata import/query.
 - Skill-backed System Context.
@@ -170,6 +173,19 @@ log_slices/<slice_id>.json#lines
 `logagent.get_log_slice` only reads paths that are available from the current
 Workspace's uploaded text files or supported archive members.
 
+Configured Tool Runner execution:
+
+```text
+LOGAGENT_V2_TOOLS_JSON
+  -> /api/v2/tools descriptor
+  -> MCP logagent.run_domain_tool { toolId }
+  -> fixed absolute command + fixed args
+  -> tool_result artifact/evidence
+```
+
+The model cannot submit executable paths, shell snippets, dynamic argv, or
+environment overrides.
+
 ## Security
 
 - API key is read from `LOGAGENT_V2_API_KEY`.
@@ -179,7 +195,8 @@ Workspace's uploaded text files or supported archive members.
 - Archive entries are scanned in memory and rejected if they contain absolute
   paths or traversal components.
 - Agent runtime cannot execute tools directly in this slice.
-- Future tools must execute only through configured whitelist descriptors.
+- Tools execute only through configured whitelist descriptors, with absolute
+  command paths, fixed args, timeout, and bounded stdout/stderr.
 
 ## Acceptance
 

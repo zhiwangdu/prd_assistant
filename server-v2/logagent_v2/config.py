@@ -1,8 +1,33 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    id: str
+    display_name: str
+    command: str
+    args: tuple[str, ...] = ()
+    enabled: bool = True
+    timeout_seconds: int = 30
+    max_output_bytes: int = 1024 * 1024
+
+    @classmethod
+    def from_json(cls, value: dict) -> "ToolDefinition":
+        tool_id = str(value["id"])
+        return cls(
+            id=tool_id,
+            display_name=str(value.get("displayName") or value.get("display_name") or tool_id),
+            command=str(value["command"]),
+            args=tuple(str(arg) for arg in value.get("args", [])),
+            enabled=bool(value.get("enabled", True)),
+            timeout_seconds=max(1, int(value.get("timeoutSeconds", 30))),
+            max_output_bytes=max(1024, int(value.get("maxOutputBytes", 1024 * 1024))),
+        )
 
 
 @dataclass(frozen=True)
@@ -19,6 +44,7 @@ class Settings:
     max_concurrent_jobs: int = 2
     job_poll_seconds: float = 1.0
     inline_worker: bool = True
+    tools: tuple[ToolDefinition, ...] = ()
 
     @property
     def sqlite_path(self) -> Path:
@@ -56,6 +82,7 @@ class Settings:
         max_grep_matches = int(os.environ.get("LOGAGENT_V2_MAX_GREP_MATCHES", "500"))
         max_concurrent_jobs = int(os.environ.get("LOGAGENT_V2_MAX_CONCURRENT_JOBS", "2"))
         inline_worker = os.environ.get("LOGAGENT_V2_INLINE_WORKER", "1") != "0"
+        tools = parse_tools_env(os.environ.get("LOGAGENT_V2_TOOLS_JSON"))
         return cls(
             data_dir=data_dir,
             api_key=api_key,
@@ -68,4 +95,14 @@ class Settings:
             max_grep_matches=max_grep_matches,
             max_concurrent_jobs=max_concurrent_jobs,
             inline_worker=inline_worker,
+            tools=tools,
         )
+
+
+def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
+    if not raw:
+        return ()
+    decoded = json.loads(raw)
+    if not isinstance(decoded, list):
+        raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
+    return tuple(ToolDefinition.from_json(item) for item in decoded)

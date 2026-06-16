@@ -4,11 +4,12 @@ import tempfile
 import unittest
 import zipfile
 import json
+import sys
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.artifacts import write_artifact_bytes
-from logagent_v2.config import Settings
+from logagent_v2.config import Settings, ToolDefinition
 from logagent_v2.mcp import task_mcp_response
 from logagent_v2.store import Store
 
@@ -195,6 +196,45 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(slice_payload["slice"]["startLine"], 1)
             self.assertEqual(slice_payload["slice"]["endLine"], 2)
             self.assertTrue(slice_payload["slice"]["ref"].startswith("log_slices/"))
+
+    def test_task_mcp_runs_configured_tool_by_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="mock_tool",
+                display_name="Mock Tool",
+                command=sys.executable,
+                args=(
+                    "-c",
+                    "import json; print(json.dumps({'summary':'mock ok','findings':[{'message':'hit'}]}))",
+                ),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("run tool", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "mock_tool"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "mock ok")
+            self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
+            evidence = store.list_evidence(run["id"])
+            self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
 
 
 if __name__ == "__main__":

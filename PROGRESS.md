@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-17 V2 Minimal Tool Runner
+
+- Added V2 configured Tool Runner foundation. Tools can be loaded from `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and invoked through task MCP `logagent.run_domain_tool`.
+- Tool execution is whitelist-only: models provide `toolId` only; executable path and argv come from Server configuration, run without shell, with timeout and bounded stdout/stderr.
+- Tool results are written as JSON artifacts and `tool_result` evidence. JSON stdout with `summary` and `findings` is parsed into structured result fields.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Task MCP Log Slice
 
 - Added task MCP `logagent.get_log_slice` for bounded context around a current Workspace text path and line number.
