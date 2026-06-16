@@ -97,7 +97,7 @@ tools:
 - 已支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - 已支持固定 `path` 或环境变量 `path_env` 指定工具路径；固定 `path` 支持 `${ENV}` 展开；启用工具时最终路径必须是绝对路径。
 - 已支持 `max_input_files` 控制单个工具在同一任务中最多处理的匹配输入文件数量，默认 1。
-- 规则版 action 先读取 `tool_inputs/index.json` 中声明给当前 toolId 的 materialized input，再按 manifest 文件模式匹配，最后用 grep keyword 补充候选；每个 action id 包含工具名和输入文件稳定哈希，避免批量任务结果目录冲突。
+- 规则版 action 先读取 `tool_inputs/index.json` 中声明给当前 toolId 的 materialized input；只要存在匹配项，就只使用这些 tool-ready 输入并受 `max_input_files` 限制，不再补充原始日志候选。没有匹配 materialized input 时才按 manifest 文件模式匹配，并用 grep keyword 补充候选；每个 action id 包含工具名和输入文件稳定哈希，避免批量任务结果目录冲突。
 - 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、`stderr.txt`。
 - 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。

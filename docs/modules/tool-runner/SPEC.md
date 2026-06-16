@@ -40,7 +40,7 @@ Server 还提供只读工具目录和工具包导出：
 - 构建 source-built analyzers 时的 submodule clone URL override，来自 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；这些变量只影响本地 Git submodule 初始化，不进入 Server 运行时工具白名单，也不能改写顶层仓库 `origin`
 - `max_input_files`，单个工具在同一任务中最多自动选择的输入文件数量，默认 1
 - 日志片段、查询文本或 manifest 文件
-- 可选 `tool_inputs/index.json`，由日志包预处理生成。Tool Runner 自动选择输入时先使用声明给当前 toolId 的 materialized input，再回退到 manifest file pattern 和 grep keyword。
+- 可选 `tool_inputs/index.json`，由日志包预处理生成。Tool Runner 自动选择输入时优先使用声明给当前 toolId 的 materialized input；只要存在匹配项，就只使用这些 tool-ready 输入并受 `max_input_files` 限制。只有没有匹配 materialized input 时，才回退到 manifest file pattern 和 grep keyword。
 
 ## 输出
 
@@ -168,7 +168,7 @@ Huawei package sync 的 `result.json` 至少包含：
 - Huawei package sync 必须只接受一个已完成 upload，生成安全 OBS object key，流式上传包，不把密钥或原始 SQL 写入 artifact；OBS/GaussDB 失败必须写入 `status=FAILED`、`failedStep` 和 `error`。
 - Configured command tools 必须在 enabled 时 `runnable=true`，通过 `paramsTemplate.inputFiles` 显式输入或按 match rules 自动选择 `extracted/...` 文件，不允许用户传入任意 argv。
 - Configured command tools 的 `paramsTemplate.inputFiles` 可显式输入 `extracted/...` 或 `tool_inputs/...` workspace 相对路径。
-- 规则版 action 选择必须先使用 `tool_inputs/index.json` 中匹配 toolId 的 materialized inputs，再使用 manifest file pattern，最后使用 grep keyword 补充候选；同一工具最多生成 `max_input_files` 个 action。
+- 规则版 action 选择必须先使用 `tool_inputs/index.json` 中匹配 toolId 的 materialized inputs；如果存在匹配项，不得再补充 manifest 或 grep 候选。同一工具最多生成 `max_input_files` 个 action。只有没有匹配 materialized input 时，才按 manifest file pattern 优先、grep keyword 补充候选。
 - 同一工具的不同输入文件必须生成不同稳定 action id。
 - 重复 action id 幂等，结果可回填到同一分析 revision。
 - 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 Claude Code 分析结果。

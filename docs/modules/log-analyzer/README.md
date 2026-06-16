@@ -78,7 +78,7 @@ extracted/<文件基名>/
 extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/...
 ```
 
-archive 内可以存在一层或多层顶层包装目录，例如 `<package>/var/chroot/...`。预处理会在规范化后的路径组件中查找支持的日志路径前缀，而不是要求它必须位于 archive 根目录。
+archive 内可以存在一层或多层顶层包装目录，例如 `<package>/var/chroot/...`。`./`、`<package>/` 等目录项会被跳过；预处理只对普通文件在规范化后的路径组件中查找支持的日志路径前缀，而不是要求它必须位于 archive 根目录。
 
 目录映射：
 

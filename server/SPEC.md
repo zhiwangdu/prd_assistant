@@ -24,7 +24,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - phase 驱动的可恢复 Executor dispatcher
 - TaskContext、Action、EvidenceArtifact 和 EvidenceProvider 公共契约
 - Tool Runner MVP 和 `RUN_TOOL` phase
-- 节点日志包预处理：匹配 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` 的包会按节点/时间/日志类型展开；archive path 可带顶层包装目录，路径中匹配 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 的普通文件会归入对应日志组。gzip 轮转日志可被 grep 和日志切片透明读取，并生成 `tool_inputs` 给后续 analyzer 使用；没有任何支持日志目录时 EXTRACT phase 明确失败。
+- 节点日志包预处理：匹配 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` 的包会按节点/时间/日志类型展开；archive path 可带顶层包装目录，`./` 和普通目录项会跳过，路径中匹配 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 的普通文件会归入对应日志组。gzip 轮转日志可被 grep 和日志切片透明读取，并生成 `tool_inputs` 给后续 analyzer 使用；没有任何支持日志目录时 EXTRACT phase 明确失败。
 - Fetch endpoint MVP：`fetch` 配置、cURL import、credential store、endpoint API、`logagent.fetch` MCP tool 和 response evidence ref
 - `PLAN_ANALYSIS` Claude Code session runner、MCP config 生成、等待态和 evidence ref 校验
 - `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复 API

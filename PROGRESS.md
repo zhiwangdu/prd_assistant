@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Node Package Directory Entry Fix
+
+- Fixed node log package extraction for tar archives that include `./` or other directory entries. The preprocessor now skips directory entries before path normalization and only classifies ordinary files, matching tarballs produced by `tar -czf package.tar.gz .`.
+- Updated the node log package regression fixture to include an archive root directory entry, covering the real extraction failure observed during openGemini rotation upload testing.
+- Tool Runner now treats matching materialized `tool_inputs` as exclusive automatic inputs; raw manifest/grep fallback is only used when no materialized input exists, preventing `influxql_analyzer` from being run against raw rotated `.log.gz` files after the preprocessor has generated JSONL.
+- Documentation now states that top-level wrapper directories and directory entries are supported for node log packages.
+- Verification covered the real openGemini rotation flow: deployment configs were set to `max-size=1m`, `max-num=8`, `max-age=7`, `compress-enabled=true`; tsbs load/query traffic generated rotated gzip logs; a node package with wrapper directory, `./` tar entry, active logs, and rotated gzip logs uploaded successfully; LogAgent extracted 16 files into node log groups, generated a 2,247-line `influxql_analyzer` JSONL input, and the real analyzer finished with `status=OK`.
+- Local checks passed: `cargo fmt --check`, `cargo check`, `cargo test -p logagent-server services::log_analyzer -- --nocapture`, `cargo test -p logagent-server services::tool_runner -- --nocapture`, and `git diff --check`.
+
 ## 2026-06-16 Session Tarball Extraction Fix
 
 - Fixed node log package preprocessing for Session tasks when uploaded `.tar.gz` archives contain a top-level wrapper directory. The path classifier now searches normalized archive components for `var/chroot/gemini/log/{tsdb,stream}` and `home/Ruby/log` instead of requiring those prefixes at archive root.

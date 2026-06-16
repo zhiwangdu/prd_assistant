@@ -394,19 +394,17 @@ fn preprocess_tar_archive<R: Read>(
         let entry_type = entry.header().entry_type();
         let entry_path = entry.path()?.to_path_buf();
         let original_path = display_archive_path(&entry_path);
-        let normalized = normalize_archive_path(&entry_path)?;
-        let Some((log_group, remainder)) = classify_log_path(&normalized) else {
-            if entry_type.is_file() {
-                state.ignored(&original_path);
-            }
-            continue;
-        };
         if entry_type.is_dir() {
             continue;
         }
         if !entry_type.is_file() {
             anyhow::bail!("archive contains unsupported entry type at {original_path}");
         }
+        let normalized = normalize_archive_path(&entry_path)?;
+        let Some((log_group, remainder)) = classify_log_path(&normalized) else {
+            state.ignored(&original_path);
+            continue;
+        };
         if remainder.is_empty() {
             state.ignored(&original_path);
             continue;
@@ -1019,15 +1017,7 @@ mod tests {
             let file = fs::File::create(self.root.join(filename)).unwrap();
             let encoder = GzEncoder::new(file, Compression::default());
             let mut builder = tar::Builder::new(encoder);
-            builder
-                .append_dir_all("var", self.source.join("var"))
-                .unwrap();
-            builder
-                .append_dir_all("home", self.source.join("home"))
-                .unwrap();
-            builder
-                .append_dir_all("tmp", self.source.join("tmp"))
-                .unwrap();
+            builder.append_dir_all(".", &self.source).unwrap();
             builder.finish().unwrap();
             builder.into_inner().unwrap().finish().unwrap();
         }

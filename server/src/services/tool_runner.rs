@@ -312,13 +312,14 @@ fn select_input_files(
     let limit = tool.max_input_files.max(1);
     let mut selected = Vec::new();
 
-    for input_file in select_materialized_inputs(tool, workspace, manifest) {
-        if selected.len() >= limit {
-            return selected;
+    let materialized_inputs = select_materialized_inputs(tool, workspace, manifest);
+    if !materialized_inputs.is_empty() {
+        for input_file in materialized_inputs {
+            if selected.len() >= limit {
+                break;
+            }
+            push_selected_path(&mut selected, &input_file);
         }
-        push_selected_path(&mut selected, &input_file);
-    }
-    if selected.len() >= limit {
         selected.truncate(limit);
         return selected;
     }
@@ -1427,7 +1428,9 @@ JSON
         .unwrap();
         let mut manifest = manifest();
         manifest.tool_inputs_path = Some("tool_inputs/index.json".to_string());
-        let runner = ToolRunner::new(settings(PathBuf::from("/bin/echo"), 5));
+        let mut tool_settings = settings(PathBuf::from("/bin/echo"), 5);
+        tool_settings.tools.get_mut("fake").unwrap().max_input_files = 3;
+        let runner = ToolRunner::new(tool_settings);
 
         let actions = runner.rule_based_actions(&fixture.workspace, &manifest, &grep());
 
