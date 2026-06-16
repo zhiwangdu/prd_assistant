@@ -37,6 +37,8 @@ pub struct AnalysisState {
     #[serde(default)]
     pub analysis_mode: Option<String>,
     #[serde(default)]
+    pub analysis_language: Option<String>,
+    #[serde(default)]
     pub permission_profile: Option<String>,
     #[serde(default)]
     pub mcp_config_path: Option<String>,
@@ -213,6 +215,7 @@ pub fn initialize(workspace: &Path, task: &TaskRecord) -> anyhow::Result<()> {
         pending_approvals: Vec::new(),
         claude_session_id: None,
         analysis_mode: Some(task.analysis_mode.as_str().to_string()),
+        analysis_language: Some(task.analysis_language.as_str().to_string()),
         permission_profile: None,
         mcp_config_path: None,
         last_claude_response_path: None,
@@ -1171,6 +1174,7 @@ mod tests {
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             analysis_mode: crate::support::config::AnalysisMode::Diagnose,
+            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {

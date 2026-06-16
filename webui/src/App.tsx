@@ -7,6 +7,7 @@ import { OperationsView } from "./OperationsView";
 import { ToolsView } from "./ToolsView";
 import { SystemContextView } from "./SystemContextView";
 import { SettingsView } from "./SettingsView";
+import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
@@ -14,11 +15,14 @@ export function App() {
   const [apiKey, setApiKey] = useState("");
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
-  const [llmDebugStatus, setLlmDebugStatus] = useState("LLM output logs off");
+  const [language, setLanguage] = useState<UiLanguage>(DEFAULT_UI_LANGUAGE);
+  const copy = appCopy[language];
+  const [llmDebugStatus, setLlmDebugStatus] = useState<string>(copy.llmLogsOff);
   const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools" | "settings">("operations");
 
   useEffect(() => {
     setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
+    setLanguage(normalizeUiLanguage(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)));
     void fetch("/health").then((response) => setHealthy(response.ok)).catch(() => setHealthy(false));
   }, []);
 
@@ -27,26 +31,30 @@ export function App() {
   }, [apiKey]);
 
   useEffect(() => {
+    localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+
+  useEffect(() => {
     if (!apiKey.trim()) {
       setLlmDebugEnabled(false);
-      setLlmDebugStatus("API Key required");
+      setLlmDebugStatus(copy.apiKeyRequired);
       return;
     }
     void fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", { headers: authHeaders(apiKey) })
       .then((response) => {
         setLlmDebugEnabled(response.llmOutputLogging);
-        setLlmDebugStatus(response.llmOutputLogging ? "LLM output logs on" : "LLM output logs off");
+        setLlmDebugStatus(response.llmOutputLogging ? copy.llmLogsOn : copy.llmLogsOff);
       })
       .catch((reason) => setLlmDebugStatus(errorMessage(reason)));
-  }, [apiKey]);
+  }, [apiKey, copy.apiKeyRequired, copy.llmLogsOff, copy.llmLogsOn]);
 
   async function toggleLlmDebug(enabled: boolean) {
     if (!apiKey.trim()) {
-      setLlmDebugStatus("API Key required");
+      setLlmDebugStatus(copy.apiKeyRequired);
       return;
     }
     setLlmDebugEnabled(enabled);
-    setLlmDebugStatus(enabled ? "Enabling LLM output logs..." : "Disabling LLM output logs...");
+    setLlmDebugStatus(enabled ? copy.enablingLlmLogs : copy.disablingLlmLogs);
     try {
       const response = await fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", {
         method: "PUT",
@@ -54,7 +62,7 @@ export function App() {
         body: JSON.stringify({ llmOutputLogging: enabled })
       });
       setLlmDebugEnabled(response.llmOutputLogging);
-      setLlmDebugStatus(response.llmOutputLogging ? "LLM output logs on" : "LLM output logs off");
+      setLlmDebugStatus(response.llmOutputLogging ? copy.llmLogsOn : copy.llmLogsOff);
     } catch (reason) {
       setLlmDebugEnabled(!enabled);
       setLlmDebugStatus(errorMessage(reason));
@@ -67,18 +75,24 @@ export function App() {
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary p-2 text-primary-foreground"><Layers3 className="h-5 w-5" /></div>
-            <div><h1 className="font-semibold">LogAgent Analysis Workbench</h1><p className="text-xs text-muted-foreground">Evidence, memory, system context, and tools</p></div>
-            <Badge variant={healthy ? "success" : healthy === false ? "destructive" : "secondary"}><Activity className="mr-1 h-3 w-3" />{healthy ? "Server healthy" : healthy === false ? "Server unavailable" : "Checking"}</Badge>
+            <div><h1 className="font-semibold">{copy.productName}</h1><p className="text-xs text-muted-foreground">{copy.productSubtitle}</p></div>
+            <Badge variant={healthy ? "success" : healthy === false ? "destructive" : "secondary"}><Activity className="mr-1 h-3 w-3" />{healthy ? copy.serverHealthy : healthy === false ? copy.serverUnavailable : copy.checking}</Badge>
           </div>
           <Card className="shadow-none lg:w-[560px]">
-            <CardContent className="grid gap-3 p-3 md:grid-cols-[1fr_auto] md:items-center">
+            <CardContent className="grid gap-3 p-3 md:grid-cols-[1fr_auto_auto] md:items-center">
               <div className="relative">
                 <KeyRound className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input className="border-0 pl-9 shadow-none" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="API Key" />
+                <Input className="border-0 pl-9 shadow-none" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={copy.apiKeyPlaceholder} />
               </div>
               <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+                <span className="whitespace-nowrap">{copy.languageLabel}</span>
+                <select className="bg-transparent text-xs outline-none" value={language} onChange={(event) => setLanguage(normalizeUiLanguage(event.target.value))}>
+                  {languageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
                 <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={llmDebugEnabled} onChange={(event) => void toggleLlmDebug(event.target.checked)} />
-                <span className="whitespace-nowrap">LLM debug</span>
+                <span className="whitespace-nowrap">{copy.llmDebug}</span>
                 <span className="hidden max-w-40 truncate text-slate-400 xl:inline" title={llmDebugStatus}>{llmDebugStatus}</span>
               </label>
             </CardContent>
@@ -87,13 +101,13 @@ export function App() {
       </header>
       <main className="mx-auto max-w-[1680px] px-5 py-6">
         <nav className="mb-5 flex gap-2">
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />Analyze</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />Memory</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />System Context</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />Tools</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "settings" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("settings")}><Settings className="mr-2 inline h-4 w-4" />Settings</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />{copy.navAnalyze}</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />{copy.navMemory}</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />{copy.navSystemContext}</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />{copy.navTools}</button>
+          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "settings" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("settings")}><Settings className="mr-2 inline h-4 w-4" />{copy.navSettings}</button>
         </nav>
-        {view === "operations" ? <OperationsView apiKey={apiKey} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <SettingsView apiKey={apiKey} />}
+        {view === "operations" ? <OperationsView apiKey={apiKey} language={language} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <SettingsView apiKey={apiKey} />}
       </main>
     </div>
   );

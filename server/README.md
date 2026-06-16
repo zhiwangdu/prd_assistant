@@ -182,6 +182,8 @@ RUST_LOG=logagent_server=info,tower_http=info
 
 每个 Session 持久化到 `sessions/<session_id>.json`，事件追加到 `session_workspaces/<session_id>/session_events.jsonl`。每个任务持久化到 `tasks/<task_id>.json`。Memory 主索引持久化到 `memory/memory.sqlite`，legacy Case JSON 保留在 `cases/` 作为迁移/回滚源。写入使用同目录临时文件加 rename；启动时任何损坏的 Session/任务 JSON 都会导致 Server 明确启动失败。
 
+Session 和日志分析 task 都持久化 `analysisLanguage`，当前只接受 `zh-CN` 和 `en-US`，旧 JSON 缺失该字段时默认 `zh-CN`。从 Session 创建 task run 时，Server 会把当前 `analysisLanguage` 快照到 task，并写入 `analysis_package.json` 的 task 摘要。
+
 任务 workspace：
 
 ```text
@@ -260,7 +262,7 @@ MVP 要求：
 - `POST /api/sessions` 创建 draft Session。
 - `GET /api/sessions` 返回按更新时间倒序的 Session 历史。
 - `GET /api/sessions/:session_id` 返回完整 Session。
-- `PATCH /api/sessions/:session_id` 更新 title、question、sourceUrl、instanceId、nodeId 或 draft/ready 状态。
+- `PATCH /api/sessions/:session_id` 更新 title、question、sourceUrl、instanceId、nodeId、analysisLanguage 或 draft/ready 状态。
 - `POST /api/sessions/:session_id/uploads` 把已完成上传附加到 Session。
 - `DELETE /api/sessions/:session_id/uploads/:upload_id` 从未运行中的 Session 移除 upload 引用，不删除 upload payload。
 - `POST /api/sessions/:session_id/tasks` 按当前 Session 创建新的 Log Analysis task 快照；Session 可以没有上传日志，仅凭问题文本启动分析。
@@ -302,7 +304,7 @@ MVP 要求：
 - 同步解压 `.zip`、`.tar.gz`、`.tgz`、`.tar`，普通 `.log` / `.txt` 直接复制到 `extracted/<文件基名>/`。
 - `.tar.gz` / `.tgz` 如果 gzip tar 解压失败，会自动按普通 `.tar` fallback 再尝试一次。
 - 创建 Log Analysis task 支持 `uploadId` 单文件、`uploadIds` 批量文件或无上传的文本问题分析，但必须绑定 `sessionId`；有上传时先验证并复制到 workspace raw 快照，无上传时创建空 raw/input 快照，持久化 `QUEUED` 后以 `202 Accepted` 立即返回。
-- 每次 Session 创建 task run 时都会写入 task `sessionId`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
+- 每次 Session 创建 task run 时都会写入 task `sessionId` 和 `analysisLanguage`，并把 taskId 追加到 Session `taskIds`，更新 `activeTaskId/status`。
 - Task 状态进入 RUNNING、WAITING、SUCCEEDED 或 FAILED 时会同步更新所属 Session，并追加 `task_status_changed` event。
 - Task 创建时固化完整 `metadata_context.json`、Skill-backed `system_context.json` 和 `case_context.json`，同时向 Session timeline 追加 Metadata summary、Skill/System Context resource count 和 Case recall count。Claude Code 初始 `analysis_package.json` 和任务 MCP `metadata_context` resource 只提供 Metadata outline/counts，细节必须通过 `logagent.query_metadata` 读取 bounded slice；需要指定 instance/database/measurement 的字段类型时可用 `logagent.get_metadata_field_types`，只需要该 measurement 的 Tag 字段时可用 `logagent.get_metadata_tag_fields`。
 - `POST /api/skills/imports` 接收 `skillId`、`name`、`description`、`markdown` 和可选 `filename`，在第一个可用 `skills.roots` 下创建 `<skillId>/SKILL.md` 和默认 `logagent.json`，随后重载 Skill Registry；重复 ID、非法 ID、空字段、禁用 skills 或无可写 root 会被拒绝，当前版本不覆盖已有 Skill。
@@ -335,7 +337,7 @@ MVP 要求：
 - LLM Gateway 支持 `stub`、OpenAI-compatible Chat Completions 和预留 `binary` provider；binary provider 固定调用 `<binary_path> run <prompt>`，stdout 复用现有结构化 JSON/schema/evidence 校验。
 - 未关联 TaskRecord 的 workspace 只记录告警，不自动删除。
 - 递归扫描文本行，按配置关键词做简单 grep。
-- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。Server 自动注入 `--allowedTools mcp__logagent__*`，保证 `dontAsk` 模式下任务 MCP tools 可直接使用；`diagnose` 仍通过 `--tools ""` 禁用 native tools。证据包不再内联到 CLI 参数或 stdin；Claude 通过任务 MCP `analysis_package` resource 读取，且 package 内的 Metadata 只保留 `metadataContextOutline`。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。`resumeMode=finalize` 的用户消息会让 `analysis_package.analysisState.finalizeRequested=true`，prompt 要求 Claude 不再返回 `waiting_for_user`。
+- `RUN_TOOL` 后进入 `PLAN_ANALYSIS`。分析前会刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后调用 Claude Code CLI，并把 session 信息写入 `claude_session.json`、MCP 调用写入 `mcp_calls.jsonl`、真实响应写入 `agent_response.json`。`LOGAGENT_CLAUDE_CODE_PATH` 可直接指向 Claude Code CLI `claude` 二进制；Server 会使用 `--print --output-format json --json-schema ... --mcp-config ... --strict-mcp-config` 调用并解析 CLI envelope。Server 自动注入 `--allowedTools mcp__logagent__*`，保证 `dontAsk` 模式下任务 MCP tools 可直接使用；`diagnose` 仍通过 `--tools ""` 禁用 native tools。证据包不再内联到 CLI 参数或 stdin；Claude 通过任务 MCP `analysis_package` resource 读取，且 package 内的 Metadata 只保留 `metadataContextOutline`。Claude 输出只能是 `completed`、`waiting_for_user` 或 `waiting_for_approval` structured outcome；完成时直接持久化 `result.json` / `result.md`，等待态复用现有 message/approval API。`resumeMode=finalize` 的用户消息会让 `analysis_package.analysisState.finalizeRequested=true`，prompt 要求 Claude 不再返回 `waiting_for_user`。Claude 启动 prompt 同时读取 task `analysisLanguage`：`zh-CN` 要求 finalAnswer、追问和审批原因等自然语言字段优先简体中文，`en-US` 要求英文；API 名、路径、JSON key、工具名、产品名和 evidence refs 保持原值。
 - `PLAN_ANALYSIS` 通过 Claude MCP `logagent.request_user_input` 和 `logagent.request_approval` 进入等待态。真实 SSH/SCP 执行器后续仍替换在 Environment Collector 内，且必须走审批。
 - `PLAN_ANALYSIS` 在达到 `analysis` 预算或发现重复 action fingerprint 时，不进入 `FAILED`，而是生成低置信度、带终止原因的 `result.json` / `result.md` 并正常结束。
 - `GENERATE_RESULT` 仍保留为兼容恢复和非 Agent Loop 辅助路径；Log Analysis 正常运行不再从 `PLAN_ANALYSIS` fallback 到该阶段。`PLAN_ANALYSIS` 的 Claude CLI 或 adapter 非零退出、超时、stdout 非 JSON、非法 action 或非法 evidence ref 都会写入失败的 `agent_response.json` 并使任务进入 `FAILED / PLAN_ANALYSIS`。

@@ -180,6 +180,7 @@ pub async fn create_remote_run(
         session_id: None,
         task_kind: TaskKind::RemoteCommandRun,
         analysis_mode: state.config.claude_code.default_mode,
+        analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
         source: TaskSource::RemoteExecutor,
         upload_ids: Vec::new(),
         inputs: Vec::new(),

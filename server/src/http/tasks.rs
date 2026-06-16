@@ -39,6 +39,7 @@ pub struct CreateLogAnalysisTaskInput {
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
     pub analysis_mode: AnalysisMode,
+    pub analysis_language: crate::domain::models::AnalysisLanguage,
     pub skill_ids: Vec<String>,
 }
 
@@ -93,6 +94,7 @@ pub async fn create_task(
             analysis_mode: req
                 .analysis_mode
                 .unwrap_or(state.config.claude_code.default_mode),
+            analysis_language: req.analysis_language.unwrap_or_default(),
             skill_ids: req.skill_ids,
         },
     )
@@ -123,6 +125,7 @@ pub async fn create_log_analysis_task(
         session_id = %session_id,
         upload_count = upload_ids.len(),
         analysis_mode = %input.analysis_mode.as_str(),
+        analysis_language = %input.analysis_language.as_str(),
         "preparing log analysis task snapshot"
     );
     let mut uploads = Vec::with_capacity(upload_ids.len());
@@ -248,12 +251,13 @@ pub async fn create_log_analysis_task(
     }
     let now = Utc::now();
     let record = TaskRecord {
-        schema_version: 7,
+        schema_version: 8,
         task_id: task_id.clone(),
         alias: None,
         session_id: Some(session_id.clone()),
         task_kind: TaskKind::LogAnalysis,
         analysis_mode: input.analysis_mode,
+        analysis_language: input.analysis_language,
         source: TaskSource::Upload,
         upload_ids,
         inputs,
@@ -299,6 +303,7 @@ pub async fn create_log_analysis_task(
         input_count = record.inputs.len(),
         case_recall_count = recalled_cases.len(),
         system_context_count = system_context.resources.len(),
+        analysis_language = %record.analysis_language.as_str(),
         "log analysis task persisted"
     );
     Ok(record)
@@ -1163,6 +1168,7 @@ mod tests {
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 analysis_mode: AnalysisMode::Diagnose,
+                analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_test".to_string()],
                 inputs: vec![],
@@ -1553,6 +1559,7 @@ mod tests {
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 analysis_mode: AnalysisMode::Diagnose,
+                analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {
@@ -2326,6 +2333,7 @@ JSON
                 source_url: None,
                 instance_id: None,
                 node_id: None,
+                analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
                 system_context_ids: Vec::new(),
                 skill_ids: Vec::new(),
                 upload_ids: Vec::new(),

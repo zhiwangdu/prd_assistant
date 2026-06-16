@@ -90,6 +90,7 @@ pub async fn create_tool_run(
         session_id: None,
         task_kind: TaskKind::ToolRun,
         analysis_mode: state.config.claude_code.default_mode,
+        analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
         source: TaskSource::Upload,
         upload_ids,
         inputs,

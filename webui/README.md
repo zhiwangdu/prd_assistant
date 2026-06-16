@@ -10,6 +10,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
 - `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
+- `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `Tools`：包含 `Tool plugins` 和 `Executors` 两个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；内置工具只读、不可编辑、不可导出且不显示手动运行表单，首个手动运行工具支持 `pprof_analyzer`。Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
@@ -17,6 +18,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。
 - `Analyze` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
+- `Analyze` 的语言切换只翻译前端固定文案和协议值展示，并影响新 run 的 Claude prompt；旧结果、Server/Claude 原始事件消息、错误详情、路径、JSON key 和 evidence refs 保持原样。
 - 成功 run 优先展示 Server 持久化的 task alias；未完成或旧任务没有 alias 时使用状态/时间生成可读标题，避免把 `task_...` 作为主要列表名称。
 - `Session draft` 和统一 Evidence Timeline 支持展开/收起；启动分析 run 后草稿自动收起，task 运行完成后 timeline 自动收起并只展示最终结果或失败摘要。
 - WebUI 选择 Session 时会 best-effort 调用本机 Native Agent `PUT http://127.0.0.1:17321/workspace/current` 设置活动 Session；失败只提示本地 Agent 未连接，不影响 WebUI 上传。

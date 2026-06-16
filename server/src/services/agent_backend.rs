@@ -7,7 +7,7 @@ use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
 use tracing::{error, info, warn};
 
 use crate::{
-    domain::models::GrepResults,
+    domain::models::{AnalysisLanguage, GrepResults},
     services::{
         agent_contracts::write_json_atomic,
         llm_gateway::{validate_final_answer_with_evidence, FinalAnswerDecision},
@@ -63,6 +63,7 @@ pub struct AgentBackendDiagnosticResult {
 pub struct AgentBackendDecisionInput<'a> {
     pub workspace: &'a Path,
     pub analysis_mode: AnalysisMode,
+    pub analysis_language: AnalysisLanguage,
     pub grep_results: &'a GrepResults,
     pub case_context: Option<&'a serde_json::Value>,
     pub tool_results: &'a [ToolRunRecord],
@@ -204,6 +205,7 @@ impl AgentBackendRegistry {
         info!(
             workspace = %input.workspace.display(),
             analysis_mode = %input.analysis_mode.as_str(),
+            analysis_language = %input.analysis_language.as_str(),
             resume_session_id = ?resume_session_id,
             "starting Claude Code session"
         );
@@ -221,6 +223,7 @@ impl AgentBackendRegistry {
             &self.settings.command_path,
             &self.settings,
             input.analysis_mode,
+            input.analysis_language,
             profile,
             input.workspace,
             resume_session_id.as_deref(),
@@ -367,11 +370,12 @@ async fn run_claude_code_command(
     command_path: &Path,
     settings: &ClaudeCodeSettings,
     analysis_mode: AnalysisMode,
+    analysis_language: AnalysisLanguage,
     profile: &PermissionProfileSettings,
     workspace: &Path,
     resume_session_id: Option<&str>,
 ) -> anyhow::Result<String> {
-    let prompt = build_claude_code_prompt(analysis_mode, profile)
+    let prompt = build_claude_code_prompt(analysis_mode, analysis_language, profile)
         .await
         .context("failed to build Claude Code prompt")?;
     let prompt_bytes = prompt.len() as u64;
@@ -382,6 +386,7 @@ async fn run_claude_code_command(
         command = %command_path.display(),
         workspace = %workspace.display(),
         analysis_mode = %analysis_mode.as_str(),
+        analysis_language = %analysis_language.as_str(),
         permission_profile = %profile.name,
         resume_session_id = ?resume_session_id,
         timeout_seconds = settings.max_session_seconds,
@@ -474,6 +479,7 @@ async fn run_claude_code_command(
 
 async fn build_claude_code_prompt(
     analysis_mode: AnalysisMode,
+    analysis_language: AnalysisLanguage,
     profile: &PermissionProfileSettings,
 ) -> anyhow::Result<String> {
     Ok(format!(
@@ -483,6 +489,8 @@ Use LogAgent MCP resources and tools for task evidence. Do not invent evidence r
 LogAgent MCP tools are pre-authorized by the permission profile. Use search_logs, query_metadata, recall_cases, get_log_slice, and other LogAgent MCP read tools directly; do not ask the user to approve these MCP reads. Only request user approval for approval-gated actions such as remote environment collection.
 
 Mode: {mode}
+Response language: {language}
+Language instruction: {language_instruction}
 Permission profile: {profile}
 Native Bash allowed: {native_bash}
 Native Edit allowed: {native_edit}
@@ -498,6 +506,8 @@ Return exactly one JSON object matching the schema:
 The finalAnswer fields are summary, symptoms, likelyRootCauses, nextChecks, fixSuggestions, missingInformation, confidence. Final root cause evidence refs may use session_text_input.json#question, grep_results.json#matches/<index>, case_context.json#cases/<index>, or tool_results/<action_id>/result.json#findings/<index>. Do not use system_context.json, diagnostic_skill, skill_references/*, or metadata_slices/* refs as final root cause evidence.
 "#,
         mode = analysis_mode.as_str(),
+        language = analysis_language.as_str(),
+        language_instruction = analysis_language.prompt_instruction(),
         profile = profile.name,
         native_bash = profile.native_bash,
         native_edit = profile.native_edit,
@@ -936,6 +946,32 @@ JSON
     }
 
     #[tokio::test]
+    async fn claude_code_prompt_includes_response_language_instruction() {
+        let profile = PermissionProfileSettings {
+            name: "diagnose".to_string(),
+            permission_mode: "dontAsk".to_string(),
+            tools: String::new(),
+            allowed_tools: vec![LOGAGENT_MCP_ALLOWED_TOOL_GLOB.to_string()],
+            disallowed_tools: vec!["Bash".to_string(), "Edit".to_string()],
+            native_bash: false,
+            native_edit: false,
+            worktree_required: false,
+        };
+
+        let zh = build_claude_code_prompt(AnalysisMode::Diagnose, AnalysisLanguage::ZhCn, &profile)
+            .await
+            .unwrap();
+        let en = build_claude_code_prompt(AnalysisMode::Diagnose, AnalysisLanguage::EnUs, &profile)
+            .await
+            .unwrap();
+
+        assert!(zh.contains("Response language: zh-CN"));
+        assert!(zh.contains("Use Simplified Chinese"));
+        assert!(en.contains("Response language: en-US"));
+        assert!(en.contains("Use English"));
+    }
+
+    #[tokio::test]
     async fn claude_code_session_rejects_invalid_evidence_ref() {
         let fixture = Fixture::new();
         let claude = fixture.write_claude(
@@ -1035,6 +1071,7 @@ JSON
             AgentBackendDecisionInput {
                 workspace: &self.workspace,
                 analysis_mode,
+                analysis_language: AnalysisLanguage::ZhCn,
                 grep_results: &self.grep,
                 case_context: None,
                 tool_results: &[],

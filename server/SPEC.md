@@ -18,6 +18,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - upload JSON 持久化和重启续传
 - task 创建
 - Log Analysis Session 创建、草稿更新、上传绑定、run 创建和 timeline
+- Log Analysis Session 和 task `analysisLanguage` 持久化；旧数据默认 `zh-CN`，新 run 从 Session 快照语言
 - task JSON 持久化、列表、详情和重启恢复
 - semaphore 限制的后台执行
 - phase 驱动的可恢复 Executor dispatcher
@@ -35,6 +36,7 @@ Server 也是 Analysis Orchestrator、LogAgent MCP tools 和 Claude Code session
 - 只读 HTTP MCP：`POST /api/mcp/readonly`
 - Skills / Tools 导出下载：`GET /api/exports/skills.zip`、`GET /api/exports/tools.zip`
 - Claude Code session 输入/响应产物：`analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json`
+- Claude Code startup prompt 会按 task `analysisLanguage` 约束自然语言输出：`zh-CN` 优先简体中文，`en-US` 使用英文；协议名、路径、JSON key、工具名、产品名和 evidence refs 保持原值
 - Claude Code session 的 Metadata 按需加载：`analysis_package.json` 只包含 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 返回 outline，`logagent.query_metadata` 按 section/filter/limit/cursor 写入 `metadata_slices/<stable_id>.json`，`logagent.get_metadata_field_types` 从已导入 Metadata Store 查询指定 measurement 的字段类型，`logagent.get_metadata_tag_fields` 只返回该 measurement 的 Tag 字段
 - task artifact 查询
 - metadata 查询和导入确认
@@ -146,6 +148,8 @@ POST /api/metadata/imports/:import_id/confirm
 ```
 
 Metadata 的用户主键为手工输入的 `instanceId`，可选 `remark` 作为用户备注名。`GET /api/metadata/instances` 返回已导入列表、备注名和摘要计数，`GET /api/metadata/instances/:instance_id/snapshot` 返回该实例对应的 openGemini 拓扑快照，`POST /api/metadata/instances/:instance_id/refresh` 使用已保存的 `rawSnapshot` 重新归一化并覆盖当前快照，`DELETE /api/metadata/instances/:instance_id` 删除该实例及其非共享 cluster/node 记录。`POST /api/metadata/snapshots/fetch` 和 `POST /api/metadata/imports/fetch` 接受可选 `remark`，空值不保存，超过 120 个字符返回 `400`。旧 cluster 查询接口保留兼容；WebUI 不再要求用户输入 ClusterID。重复确认导入同一个 `instanceId` 时，Server 必须先清理旧快照再写入新快照，v1 不保留历史版本。
+
+Session API 的 create/patch payload 支持可选 `analysisLanguage`，取值只能是 `zh-CN` 或 `en-US`，缺省为 `zh-CN`。`GET /api/sessions`、`GET /api/sessions/:session_id`、`POST /api/sessions/:session_id/tasks` 和 task response 均返回该字段。从 Session 创建 task 时必须把当前 `analysisLanguage` 快照到 `TaskRecord`、`analysis_state.json` 和 `analysis_package.json`，后续用户切换 WebUI 语言不得改写历史 run。
 
 `GET /api/metadata/clusters/:cluster_id` 返回的 cluster 包含：
 

@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Analyze Language Preference
+
+- Added WebUI language configuration for the Analyze workflow. The default is Simplified Chinese, with an English switch in the top bar; the selected language is saved in browser localStorage.
+- Analyze now localizes fixed UI labels, status/phase/confidence badges, common timeline event labels, waiting prompts, approval controls, result headings, Case confirmation controls, and artifact panel labels. Technical terms such as `Session`, `Case`, `Claude Code`, `MCP`, `Metadata`, `Tool Runner`, `grep`, `artifact`, `evidence ref`, JSON keys, paths, and product names remain unchanged where translation would reduce precision.
+- Added Server `analysisLanguage` persistence to Sessions and log-analysis tasks. Existing persisted JSON defaults to `zh-CN`; new task runs snapshot the Session language into `TaskRecord`, `analysis_state.json`, task MCP summary, and `analysis_package.json`.
+- Claude Code startup prompts now include response-language instructions: `zh-CN` asks for Simplified Chinese natural-language fields, while `en-US` asks for English. Protocol names, paths, JSON keys, tool names, product names, and evidence refs remain raw.
+- Verification passed: `cargo fmt --check`, `cargo check`, `cargo test -- --test-threads=1`, `npm --prefix webui run lint`, `npm --prefix webui run typecheck`, `npm --prefix webui run build`, and `git diff --check`. Plain parallel `cargo test` exposed existing concurrency-sensitive fake CLI/tool timeout failures, so the single-thread run is the final test signal for this change.
+
 ## 2026-06-16 Source-built Domain Analyzer Tools
 
 - Unified the four source-built analyzer submodules on Go 1.26: InfluxQL analyzer, Flux query analyzer, openGemini storage analyzer, and InfluxDB storage analyzer now have matching module/build/CI or developer documentation baselines. InfluxDB already had `go 1.26`; its Dockerfile and storage-analyzer README now match that baseline.

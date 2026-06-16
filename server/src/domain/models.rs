@@ -75,6 +75,8 @@ pub struct CreateTaskRequest {
     #[serde(default)]
     pub analysis_mode: Option<AnalysisMode>,
     #[serde(default)]
+    pub analysis_language: Option<AnalysisLanguage>,
+    #[serde(default)]
     pub system_context_ids: Vec<String>,
     #[serde(default)]
     pub skill_ids: Vec<String>,
@@ -89,6 +91,7 @@ pub struct TaskResponse {
     pub task_kind: TaskKind,
     pub session_id: Option<String>,
     pub analysis_mode: AnalysisMode,
+    pub analysis_language: AnalysisLanguage,
     pub status: TaskStatus,
     pub phase: Option<TaskPhase>,
     pub created_at: DateTime<Utc>,
@@ -396,6 +399,8 @@ pub struct TaskRecord {
     pub task_kind: TaskKind,
     #[serde(default = "default_analysis_mode")]
     pub analysis_mode: AnalysisMode,
+    #[serde(default = "default_analysis_language")]
+    pub analysis_language: AnalysisLanguage,
     pub source: TaskSource,
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
@@ -453,6 +458,7 @@ impl TaskRecord {
             task_kind: self.task_kind,
             session_id: self.session_id.clone(),
             analysis_mode: self.analysis_mode,
+            analysis_language: self.analysis_language,
             status: self.status,
             phase: self.phase,
             created_at: self.created_at,
@@ -462,6 +468,44 @@ impl TaskRecord {
 
 pub fn default_analysis_mode() -> AnalysisMode {
     AnalysisMode::Diagnose
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnalysisLanguage {
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "en-US")]
+    EnUs,
+}
+
+impl AnalysisLanguage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ZhCn => "zh-CN",
+            Self::EnUs => "en-US",
+        }
+    }
+
+    pub fn prompt_instruction(self) -> &'static str {
+        match self {
+            Self::ZhCn => {
+                "Use Simplified Chinese for all natural-language finalAnswer, pendingPrompt, pendingApproval reason/risk, and user-facing explanations. Keep precise technical terms in English when Chinese would reduce accuracy, including API names, file paths, evidence refs, JSON keys, tool names, protocol/status values, and product names."
+            }
+            Self::EnUs => {
+                "Use English for all natural-language finalAnswer, pendingPrompt, pendingApproval reason/risk, and user-facing explanations. Keep API names, file paths, evidence refs, JSON keys, tool names, protocol/status values, and product names unchanged."
+            }
+        }
+    }
+}
+
+impl Default for AnalysisLanguage {
+    fn default() -> Self {
+        default_analysis_language()
+    }
+}
+
+pub fn default_analysis_language() -> AnalysisLanguage {
+    AnalysisLanguage::ZhCn
 }
 
 pub fn default_task_question() -> String {
@@ -518,6 +562,8 @@ pub struct AnalysisSessionRecord {
     pub source_url: Option<String>,
     pub instance_id: Option<String>,
     pub node_id: Option<String>,
+    #[serde(default = "default_analysis_language")]
+    pub analysis_language: AnalysisLanguage,
     #[serde(default)]
     pub system_context_ids: Vec<String>,
     #[serde(default)]
@@ -538,6 +584,7 @@ impl AnalysisSessionRecord {
             source_url: self.source_url.clone(),
             instance_id: self.instance_id.clone(),
             node_id: self.node_id.clone(),
+            analysis_language: self.analysis_language,
             system_context_count: self.system_context_ids.len(),
             skill_count: self.skill_ids.len(),
             upload_count: self.upload_ids.len(),
@@ -558,6 +605,7 @@ pub struct AnalysisSessionSummary {
     pub source_url: Option<String>,
     pub instance_id: Option<String>,
     pub node_id: Option<String>,
+    pub analysis_language: AnalysisLanguage,
     pub system_context_count: usize,
     pub skill_count: usize,
     pub upload_count: usize,
@@ -583,6 +631,8 @@ pub struct CreateAnalysisSessionRequest {
     pub instance_id: Option<String>,
     pub node_id: Option<String>,
     #[serde(default)]
+    pub analysis_language: Option<AnalysisLanguage>,
+    #[serde(default)]
     pub system_context_ids: Vec<String>,
     #[serde(default)]
     pub skill_ids: Vec<String>,
@@ -599,6 +649,8 @@ pub struct PatchAnalysisSessionRequest {
     pub instance_id: Option<Option<String>>,
     #[serde(default)]
     pub node_id: Option<Option<String>>,
+    #[serde(default)]
+    pub analysis_language: Option<AnalysisLanguage>,
     #[serde(default)]
     pub system_context_ids: Option<Vec<String>>,
     #[serde(default)]
@@ -1036,4 +1088,76 @@ pub struct AnalysisResult {
 pub struct ResultOutput {
     pub result_json_path: PathBuf,
     pub result_markdown_path: PathBuf,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn old_persisted_session_defaults_to_simplified_chinese() {
+        let session: AnalysisSessionRecord = serde_json::from_value(json!({
+            "schemaVersion": 1,
+            "sessionId": "sess_old",
+            "title": "Old session",
+            "question": "Why did it fail?",
+            "sourceUrl": null,
+            "instanceId": null,
+            "nodeId": null,
+            "systemContextIds": [],
+            "skillIds": [],
+            "uploadIds": [],
+            "taskIds": [],
+            "activeTaskId": null,
+            "status": "draft",
+            "createdAt": "2026-06-16T00:00:00Z",
+            "updatedAt": "2026-06-16T00:00:00Z"
+        }))
+        .unwrap();
+
+        assert_eq!(session.analysis_language, AnalysisLanguage::ZhCn);
+    }
+
+    #[test]
+    fn old_persisted_task_defaults_to_simplified_chinese() {
+        let task: TaskRecord = serde_json::from_value(json!({
+            "schemaVersion": 7,
+            "taskId": "task_old",
+            "alias": null,
+            "sessionId": "sess_old",
+            "taskKind": "log_analysis",
+            "analysisMode": "diagnose",
+            "source": "upload",
+            "uploadIds": [],
+            "inputs": [],
+            "sourceUrl": null,
+            "toolId": null,
+            "toolParams": null,
+            "toolResultPath": null,
+            "remoteExecutorId": null,
+            "remoteCommandId": null,
+            "remoteCommandParams": null,
+            "remoteResultPath": null,
+            "instanceId": null,
+            "clusterId": null,
+            "nodeId": null,
+            "question": "Why did it fail?",
+            "status": "QUEUED",
+            "phase": null,
+            "attempts": 0,
+            "error": null,
+            "manifestPath": null,
+            "grepResultsPath": null,
+            "metadataContextPath": null,
+            "systemContextPath": null,
+            "resultJsonPath": null,
+            "resultMarkdownPath": null,
+            "createdAt": "2026-06-16T00:00:00Z",
+            "updatedAt": "2026-06-16T00:00:00Z"
+        }))
+        .unwrap();
+
+        assert_eq!(task.analysis_language, AnalysisLanguage::ZhCn);
+    }
 }

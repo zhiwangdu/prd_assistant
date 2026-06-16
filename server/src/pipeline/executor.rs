@@ -348,6 +348,7 @@ async fn plan_analysis_phase(
             .decide_next(AgentBackendDecisionInput {
                 workspace: &workspace,
                 analysis_mode: task.analysis_mode,
+                analysis_language: task.analysis_language,
                 grep_results: &grep,
                 case_context: case_context.as_ref(),
                 tool_results: &tool_results,
@@ -1186,6 +1187,7 @@ JSON
                 session_id: Some("sess_test".to_string()),
                 task_kind: TaskKind::LogAnalysis,
                 analysis_mode: AnalysisMode::Diagnose,
+                analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
                 source: TaskSource::Upload,
                 upload_ids: vec!["upl_1".to_string()],
                 inputs: vec![TaskInput {

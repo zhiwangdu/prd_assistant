@@ -457,6 +457,7 @@ mod tests {
             session_id: Some("sess_test".to_string()),
             task_kind: crate::domain::models::TaskKind::LogAnalysis,
             analysis_mode: crate::support::config::AnalysisMode::Diagnose,
+            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![],

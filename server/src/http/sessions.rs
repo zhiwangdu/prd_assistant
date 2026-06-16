@@ -32,13 +32,14 @@ pub async fn create_session(
     let title = normalize_title(req.title, &question, "New log analysis session")?;
     let now = Utc::now();
     let record = AnalysisSessionRecord {
-        schema_version: 1,
+        schema_version: 2,
         session_id: session_id.clone(),
         title,
         question,
         source_url: normalize_optional(req.source_url),
         instance_id: normalize_optional(req.instance_id),
         node_id: normalize_optional(req.node_id),
+        analysis_language: req.analysis_language.unwrap_or_default(),
         system_context_ids: normalize_context_ids(req.system_context_ids)?,
         skill_ids: normalize_skill_ids(req.skill_ids)?,
         upload_ids: Vec::new(),
@@ -137,6 +138,9 @@ pub async fn patch_session(
                 if let Some(node_id) = req.node_id {
                     session.node_id = normalize_optional(node_id);
                 }
+                if let Some(language) = req.analysis_language {
+                    session.analysis_language = language;
+                }
                 if let Some(system_context_ids) = req.system_context_ids {
                     session.system_context_ids = normalize_context_ids(system_context_ids)?;
                 }
@@ -150,7 +154,7 @@ pub async fn patch_session(
             },
             "session_updated",
             "session draft updated".to_string(),
-            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/systemContextIds/skillIds/status" }),
+            serde_json::json!({ "fields": "title/question/sourceUrl/instanceId/nodeId/analysisLanguage/systemContextIds/skillIds/status" }),
         )
         .await
         .map_err(|err| AppError::internal(format!("failed to update session: {err}")))?;
@@ -243,6 +247,7 @@ pub async fn create_session_task(
             cluster_id: None,
             node_id: session.node_id.clone(),
             analysis_mode: state.config.claude_code.default_mode,
+            analysis_language: session.analysis_language,
             skill_ids: session.skill_ids.clone(),
         },
     )

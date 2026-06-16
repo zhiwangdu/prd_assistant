@@ -47,6 +47,8 @@ Database
 
 - 顶部栏全局产品名为 `LogAgent Analysis Workbench`，副标题描述 evidence、memory、system context 和 tools，避免把整个 WebUI 限定为 Metadata Console。
 - 顶部导航默认选中 `Analyze`，可见顺序必须是 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`。
+- 顶部必须提供 WebUI 语言选择，当前支持 `zh-CN` 和 `en-US`，默认 `zh-CN`。语言选择保存在浏览器 localStorage；在 `Analyze` 中会同步到当前 Session 的 `analysisLanguage`，创建新 run 时由 Server 快照到 task。
+- `Analyze` 中固定 UI 文案、状态、阶段、置信度和常见 timeline event 必须优先使用简体中文展示；仅当专业名词无法准确翻译时保留英文，例如 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref`、`InstanceID`、`NodeID`、产品名和 JSON/path。切换到 `en-US` 时这些固定展示改为英文。
 - Metadata 不再作为顶层导航项；Metadata 拓扑和导入能力仍通过 System Context 内的 Metadata tab 进入。
 - Metadata 导入区必须提供三种导入方式：实时 URL 加载、JSON 文件上传、手动 JSON 文本输入。三种方式都先生成导入预览，再由用户确认写入 Metadata Store。
 - 实时 URL 加载面向 openGemini `/getdata`，必须要求 InstanceID；JSON 文件和 JSON 文本使用 `templateType=json`，完整模板 JSON 可不填写 InstanceID，openGemini 原始 JSON 仍要求 InstanceID。
@@ -81,6 +83,7 @@ Database
 - 时间线来自服务端事件摘要，不渲染隐藏思维链或未经清洗的 Provider 原始响应。
 - Analyze 必须以 Session 为唯一历史入口。未选择 Session 时只显示新建入口；选择后展示 Session draft editor、uploads、active run、历史 runs 和 Evidence timeline。
 - `title/question/sourceUrl/instanceId/nodeId` 草稿输入 debounce PATCH 到 `/api/sessions/:session_id`，刷新页面后从 Server 恢复。
+- `analysisLanguage` 作为 Session 草稿字段随 debounce PATCH 保存；新建 Session 使用当前 WebUI 语言，旧 Session 缺失该字段时按 `zh-CN` 展示和保存。
 - `Session draft` 必须支持展开/收起；启动分析 run 后自动收起，收起态展示 title、question、source URL、metadata 绑定、upload/run 数量和 session 状态摘要。
 - 上传仍使用 `/api/uploads*`，上传完成后调用 `/api/sessions/:session_id/uploads` 附加到当前 Session；上传是可选输入，用户只填写 `question` 也可以启动分析。
 - Session draft 可选择 Diagnostic Skills，选择结果 debounce PATCH 到 `skillIds`；创建 run 后 artifacts 展示 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
@@ -88,6 +91,7 @@ Database
 - 选择 Markdown 文件时必须用 `File.text()` 读取内容；如果文件含 Codex frontmatter，则预填 `name` 和 `description`，正文编辑框使用去掉 frontmatter 后的 Markdown。
 - Skill 导入成功后必须刷新 Skills 列表、选中新 Skill、关闭导入表单并展示成功状态；失败时在页面状态栏展示 Server 返回的错误。
 - `Start analysis` 调用 `/api/sessions/:session_id/tasks`，每次创建新的 task run；同一 Session 可以多次运行。
+- `Start analysis` 创建的新 task 必须继承 Session `analysisLanguage`。该设置只影响新 run 的 Claude Code 自然语言输出和 UI 固定文案，不翻译历史结果、Server/Claude 原始事件消息、错误、路径、JSON key 或 evidence refs。
 - Runs 面板、收起态 timeline 和 Case 确认区优先展示 task `alias`，没有 alias 时使用状态/时间回退标题；不能把 `task_...` 作为主要显示名称。
 - WebUI 选择 Session 时 best-effort 调用 Native Agent `PUT /workspace/current` 设置 Chrome 导入目标；失败只提示，不阻断 WebUI 上传。
 - Evidence timeline 使用 `/api/sessions/:session_id/timeline`，合并 Session events 和 task analysis events。

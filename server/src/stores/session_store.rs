@@ -432,6 +432,7 @@ mod tests {
             source_url: None,
             instance_id: None,
             node_id: None,
+            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
             system_context_ids: Vec::new(),
             skill_ids: Vec::new(),
             upload_ids: Vec::new(),
