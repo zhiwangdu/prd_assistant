@@ -4,6 +4,7 @@ import os
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -15,10 +16,14 @@ class ToolDefinition:
     enabled: bool = True
     timeout_seconds: int = 30
     max_output_bytes: int = 1024 * 1024
+    max_input_files: int = 1
+    match_file_patterns: tuple[str, ...] = ()
+    match_keywords: tuple[str, ...] = ()
 
     @classmethod
     def from_json(cls, value: dict) -> "ToolDefinition":
         tool_id = str(value["id"])
+        match = value.get("match") if isinstance(value.get("match"), dict) else {}
         return cls(
             id=tool_id,
             display_name=str(value.get("displayName") or value.get("display_name") or tool_id),
@@ -27,6 +32,11 @@ class ToolDefinition:
             enabled=bool(value.get("enabled", True)),
             timeout_seconds=max(1, int(value.get("timeoutSeconds", 30))),
             max_output_bytes=max(1024, int(value.get("maxOutputBytes", 1024 * 1024))),
+            max_input_files=max(1, int(value.get("maxInputFiles", 1))),
+            match_file_patterns=tuple(
+                strings_from_list(match.get("filePatterns") or match.get("file_patterns"))
+            ),
+            match_keywords=tuple(strings_from_list(match.get("keywords"))),
         )
 
 
@@ -129,3 +139,9 @@ def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
     if not isinstance(decoded, list):
         raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
     return tuple(ToolDefinition.from_json(item) for item in decoded)
+
+
+def strings_from_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]

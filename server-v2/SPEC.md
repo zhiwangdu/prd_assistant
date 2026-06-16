@@ -42,6 +42,9 @@ Implemented in this slice:
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`; supported log
   directories are classified into stable `extracted/<node>/<timestamp>/<group>`
   paths, and gzip-rotated files are decoded by magic bytes.
+- Materialized `tool_inputs/index.json` generation for node package tsdb
+  InfluxQL query lines. Generated entries are compatible with the V1
+  `ToolInputEntry` shape and include V2 artifact ids for local execution.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Stub Agent runtime that records initial question evidence, consumes the
   initial evidence pipeline, and returns a low-confidence evidence summary.
@@ -58,7 +61,8 @@ Implemented in this slice:
   Workspace text path and persists `log_slice` evidence.
 - Minimal configured Tool Runner. Tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
-  task MCP `logagent.run_domain_tool`.
+  task MCP `logagent.run_domain_tool`. Tools with `{input_file}` arguments
+  consume matching materialized tool inputs before execution.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, exposed as a built-in `/api/v2/tools` descriptor,
   and executable through task MCP `logagent.fetch` only when enabled and
@@ -82,10 +86,11 @@ Implemented in this slice:
 
 Not yet implemented:
 
-- V1-compatible analyzer materialized `tool_inputs/index.json` generation.
 - LangGraph provider integration.
-- Rich Tool Runner input matching, per-tool params schema, Case
-  recall, and full multi-round model reasoning after resume.
+- V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
+  node-package InfluxQL JSONL, manifest/grep fallback Tool Runner input
+  matching, real analyzer-specific stdout adapters, per-tool params schema, and
+  full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
   Fetch management, Metadata preview/confirm flow, openGemini URL import, task
   context auto-selection, and WebUI cutover.
@@ -184,6 +189,7 @@ Run execution currently performs:
 ```text
 Workspace uploads
   -> safe archive scan / text file collection
+  -> optional node-package InfluxQL JSONL tool_inputs materialization
   -> manifest.json artifact
   -> bounded keyword grep
   -> grep_results.json artifact
@@ -232,6 +238,28 @@ Each manifest file entry records `originalPath`, `logGroup`, and `nodePackage`
 metadata. A matching node package with no supported log directories is rejected
 with a clear error so an empty manifest is not treated as a successful import.
 
+For node package `tsdb` logs, V2 extracts JSON lines with a string `query`,
+`sql`, or `statement` field and raw lines that look like InfluxQL statements.
+Those records are written to `influxql_analyzer` JSONL artifacts. The
+corresponding `tool_inputs/index.json` artifact uses entries like:
+
+```json
+{
+  "path": "tool_inputs/influxql_analyzer/<node>/<timestamp>.jsonl",
+  "inputKind": "influxql_jsonl",
+  "scope": "package",
+  "toolIds": ["influxql_analyzer"],
+  "nodeId": "node-a",
+  "instanceId": "inst-a",
+  "packageTimestamp": "20260617130000",
+  "logGroup": "tsdb",
+  "sourceFiles": ["extracted/node-a/20260617130000/tsdb/query.log"],
+  "recordCount": 1,
+  "artifactId": "artfile_...",
+  "artifactRelativePath": "artifacts/..."
+}
+```
+
 Follow-up task MCP searches use:
 
 ```text
@@ -255,12 +283,27 @@ Configured Tool Runner execution:
 LOGAGENT_V2_TOOLS_JSON
   -> /api/v2/tools descriptor
   -> MCP logagent.run_domain_tool { toolId }
-  -> fixed absolute command + fixed args
+  -> optional materialized tool input selection
+  -> fixed absolute command + fixed args with {input_file} substitution
   -> tool_result artifact/evidence
 ```
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+When a tool arg contains `{input_file}`, V2 selects entries from the current
+run's latest `tool_input_index` evidence whose `toolIds` contain the requested
+tool id. The placeholder is replaced with the resolved artifact path. Each input
+creates a stable action id derived from tool id plus virtual input path, and the
+evidence ref prefix becomes:
+
+```text
+tool_results/<tool_id>_<input_hash>/result.json#findings/
+```
+
+If a tool requires `{input_file}` but no materialized input matches, execution
+fails with a controlled error. Manifest file-pattern and grep-keyword fallback
+selection is not yet implemented in V2.
 
 ## Fetch Endpoints
 

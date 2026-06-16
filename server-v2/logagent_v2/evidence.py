@@ -8,6 +8,7 @@ import re
 import stat
 import tarfile
 import zipfile
+from collections import defaultdict
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePosixPath
@@ -62,6 +63,12 @@ class NodeLogPackage:
     timestamp: str
 
 
+@dataclass(frozen=True)
+class MaterializedToolInput:
+    entry: JsonObject
+    artifact: JsonObject
+
+
 def build_initial_evidence(
     settings: Settings,
     store: Store,
@@ -72,7 +79,15 @@ def build_initial_evidence(
     uploads = store.list_uploads(workspace_id)
     text_files = collect_text_files(settings, uploads)
     keywords = search_keywords(workspace["question"])
-    manifest = build_manifest(workspace_id, run_id, uploads, text_files)
+    tool_input_bundle = materialize_tool_inputs(settings, store, workspace_id, text_files)
+    manifest = build_manifest(
+        workspace_id,
+        run_id,
+        uploads,
+        text_files,
+        tool_inputs_path=tool_input_bundle.get("path"),
+        tool_input_count=len(tool_input_bundle.get("inputs", [])),
+    )
     grep_results = grep_text_files(
         text_files,
         keywords,
@@ -124,11 +139,26 @@ def build_initial_evidence(
             "evidenceRefPrefix": "grep_results.json#matches/",
         },
     )
+    if tool_input_bundle.get("artifact"):
+        store.create_evidence(
+            workspace_id=workspace_id,
+            run_id=run_id,
+            kind="tool_input_index",
+            final_allowed=False,
+            summary=f"Materialized {len(tool_input_bundle['inputs'])} tool input file(s).",
+            artifact_id=tool_input_bundle["artifact"]["id"],
+            payload={
+                "artifactId": tool_input_bundle["artifact"]["id"],
+                "path": tool_input_bundle["path"],
+                "inputCount": len(tool_input_bundle["inputs"]),
+            },
+        )
     return {
         "manifest": manifest,
         "grepResults": grep_results,
         "manifestArtifact": manifest_artifact,
         "grepArtifact": grep_artifact,
+        "toolInputIndex": tool_input_bundle if tool_input_bundle.get("artifact") else None,
     }
 
 
@@ -458,6 +488,148 @@ def node_package_payload(node_package: NodeLogPackage | None) -> JsonObject | No
     }
 
 
+def materialize_tool_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+) -> JsonObject:
+    inputs = materialize_influxql_inputs(settings, store, workspace_id, text_files)
+    if not inputs:
+        return {"path": None, "inputs": []}
+    index = {
+        "schemaVersion": 1,
+        "generatedBy": "logagent_v2_node_log_preprocessor",
+        "inputs": [item.entry for item in inputs],
+    }
+    artifact = write_json_artifact(
+        settings,
+        store,
+        workspace_id,
+        "tool_inputs_index.json",
+        index,
+        schema_name="logagent.v2.tool_input_index.v1",
+    )
+    return {
+        "path": "tool_inputs/index.json",
+        "inputs": index["inputs"],
+        "artifact": artifact,
+    }
+
+
+def materialize_influxql_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+) -> list[MaterializedToolInput]:
+    grouped_records: dict[tuple[str, str, str], list[JsonObject]] = defaultdict(list)
+    grouped_sources: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    metadata: dict[tuple[str, str, str], JsonObject] = {}
+    for text_file in text_files:
+        package = text_file.node_package
+        if not package or text_file.log_group != "tsdb":
+            continue
+        node_id = str(package.get("nodeId") or "unknown")
+        timestamp = str(package.get("timestamp") or "unknown")
+        instance_id = str(package.get("instanceId") or "")
+        key = (node_id, timestamp, instance_id)
+        metadata[key] = package
+        for line_number, line in enumerate(text_file.text.splitlines(), start=1):
+            query = extract_influxql_query(line)
+            if not query:
+                continue
+            grouped_records[key].append(
+                {
+                    "query": query,
+                    "sourcePath": text_file.path,
+                    "lineNumber": line_number,
+                    "nodeId": node_id,
+                    "instanceId": instance_id or None,
+                    "packageTimestamp": timestamp,
+                }
+            )
+            grouped_sources[key].add(text_file.path)
+
+    results: list[MaterializedToolInput] = []
+    for key, records in grouped_records.items():
+        node_id, timestamp, instance_id = key
+        if not records:
+            continue
+        clean_node = safe_segment(node_id)
+        clean_timestamp = safe_segment(timestamp)
+        virtual_path = f"tool_inputs/influxql_analyzer/{clean_node}/{clean_timestamp}.jsonl"
+        data = ("\n".join(json.dumps(record, ensure_ascii=True) for record in records) + "\n")
+        artifact = write_artifact_bytes(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=f"influxql_{clean_node}_{clean_timestamp}.jsonl",
+            data=data.encode("utf-8"),
+            content_type="application/x-ndjson",
+            schema_name="logagent.v2.tool_input.influxql_jsonl.v1",
+            preview={
+                "path": virtual_path,
+                "toolIds": ["influxql_analyzer"],
+                "recordCount": len(records),
+            },
+        )
+        package = metadata[key]
+        entry = {
+            "path": virtual_path,
+            "inputKind": "influxql_jsonl",
+            "scope": "package",
+            "toolIds": ["influxql_analyzer"],
+            "nodeId": node_id,
+            "instanceId": instance_id or None,
+            "packageTimestamp": package.get("timestamp"),
+            "logGroup": "tsdb",
+            "sourceFiles": sorted(grouped_sources[key]),
+            "recordCount": len(records),
+            "artifactId": artifact["id"],
+            "artifactRelativePath": artifact["relative_path"],
+        }
+        results.append(MaterializedToolInput(entry=entry, artifact=artifact))
+    return results
+
+
+def extract_influxql_query(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        value = json.loads(stripped)
+    except Exception:
+        value = None
+    if isinstance(value, dict):
+        for key in ("query", "sql", "statement"):
+            query = value.get(key)
+            if isinstance(query, str) and looks_like_influxql(query):
+                return query.strip()
+    if looks_like_influxql(stripped):
+        return stripped
+    return None
+
+
+def looks_like_influxql(value: str) -> bool:
+    lowered = value.strip().lower()
+    return lowered.startswith(
+        (
+            "select ",
+            "show ",
+            "explain ",
+            "delete ",
+            "drop ",
+            "create ",
+            "alter ",
+        )
+    )
+
+
+def safe_segment(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")[:80] or "unknown"
+
+
 def search_keywords(question: str) -> list[str]:
     tokens = [
         token.lower()
@@ -512,7 +684,12 @@ def grep_text_files(
 
 
 def build_manifest(
-    workspace_id: str, run_id: str, uploads: list[JsonObject], text_files: list[TextFile]
+    workspace_id: str,
+    run_id: str,
+    uploads: list[JsonObject],
+    text_files: list[TextFile],
+    tool_inputs_path: str | None = None,
+    tool_input_count: int = 0,
 ) -> JsonObject:
     files = []
     for text_file in text_files:
@@ -530,7 +707,7 @@ def build_manifest(
         if text_file.node_package:
             item["nodePackage"] = text_file.node_package
         files.append(item)
-    return {
+    manifest = {
         "schemaVersion": 1,
         "workspaceId": workspace_id,
         "runId": run_id,
@@ -548,6 +725,10 @@ def build_manifest(
         ],
         "files": files,
     }
+    if tool_inputs_path:
+        manifest["toolInputsPath"] = tool_inputs_path
+        manifest["toolInputCount"] = tool_input_count
+    return manifest
 
 
 def write_json_artifact(

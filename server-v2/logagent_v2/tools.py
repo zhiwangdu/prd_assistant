@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 
-from .artifacts import write_artifact_bytes
+from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings, ToolDefinition
 from .store import JsonObject, Store
 
@@ -19,9 +20,20 @@ def tool_descriptors(settings: Settings) -> list[JsonObject]:
             "readOnly": True,
             "editable": False,
             "runnable": tool.enabled,
+            "maxInputFiles": tool.max_input_files,
+            "match": {
+                "filePatterns": list(tool.match_file_patterns),
+                "keywords": list(tool.match_keywords),
+            },
             "paramsSchema": {
                 "type": "object",
-                "properties": {"toolId": {"const": tool.id}},
+                "properties": {
+                    "toolId": {"const": tool.id},
+                    "inputFiles": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
                 "required": ["toolId"],
                 "additionalProperties": False,
             },
@@ -47,10 +59,40 @@ def run_configured_tool(
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
         raise ValueError(f"tool {tool_id} is disabled")
+    input_entries = select_tool_inputs(settings, store, run_id, tool)
+    if tool_requires_input(tool) and not input_entries:
+        raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
+    if input_entries:
+        runs = [
+            run_single_configured_tool(settings, store, workspace_id, run_id, tool, entry)
+            for entry in input_entries[: tool.max_input_files]
+        ]
+        primary = runs[0]
+        if len(runs) == 1:
+            return primary
+        return {
+            **primary,
+            "results": [item["result"] for item in runs],
+            "artifacts": [item["artifact"] for item in runs],
+            "evidenceItems": [item["evidence"] for item in runs],
+        }
+    return run_single_configured_tool(settings, store, workspace_id, run_id, tool, None)
+
+
+def run_single_configured_tool(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    tool: ToolDefinition,
+    input_entry: JsonObject | None,
+) -> JsonObject:
     command = Path(tool.command)
     if not command.is_absolute():
-        raise ValueError(f"tool {tool_id} command must be an absolute path")
-    argv = [str(command), *tool.args]
+        raise ValueError(f"tool {tool.id} command must be an absolute path")
+    input_file = resolve_tool_input_path(settings, store, input_entry) if input_entry else None
+    action_id = tool_action_id(tool, input_entry)
+    argv = [str(command), *format_tool_args(tool.args, input_file, action_id)]
     try:
         completed = subprocess.run(
             argv,
@@ -70,6 +112,9 @@ def run_configured_tool(
         "schemaVersion": 1,
         "toolId": tool.id,
         "displayName": tool.display_name,
+        "actionId": action_id,
+        "inputFile": input_entry.get("path") if input_entry else None,
+        "inputKind": input_entry.get("inputKind") if input_entry else None,
         "argv": argv,
         "timedOut": timed_out,
         "exitCode": None if timed_out else int(completed.returncode),
@@ -83,7 +128,7 @@ def run_configured_tool(
         settings=settings,
         store=store,
         workspace_id=workspace_id,
-        filename=f"{tool.id}_result.json",
+        filename=f"{action_id}_result.json",
         data=json.dumps(result, ensure_ascii=True, indent=2).encode("utf-8"),
         content_type="application/json",
         schema_name="logagent.v2.tool_result.v1",
@@ -104,13 +149,97 @@ def run_configured_tool(
         payload={
             "artifactId": artifact["id"],
             "toolId": tool.id,
+            "actionId": action_id,
+            "inputFile": result["inputFile"],
             "exitCode": result["exitCode"],
             "timedOut": timed_out,
             "findingCount": len(result["findings"]),
-            "evidenceRefPrefix": f"tool_results/{tool.id}/result.json#findings/",
+            "evidenceRefPrefix": f"tool_results/{action_id}/result.json#findings/",
         },
     )
     return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def select_tool_inputs(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    tool: ToolDefinition,
+) -> list[JsonObject]:
+    if not tool_requires_input(tool):
+        return []
+    index = latest_tool_input_index(settings, store, run_id)
+    inputs = index.get("inputs") if isinstance(index, dict) else None
+    if not isinstance(inputs, list):
+        return []
+    selected = []
+    for entry in inputs:
+        if not isinstance(entry, dict):
+            continue
+        tool_ids = entry.get("toolIds")
+        if not isinstance(tool_ids, list) or tool.id not in tool_ids:
+            continue
+        if not isinstance(entry.get("artifactId"), str):
+            continue
+        selected.append(entry)
+        if len(selected) >= tool.max_input_files:
+            break
+    return selected
+
+
+def latest_tool_input_index(settings: Settings, store: Store, run_id: str) -> JsonObject:
+    candidates = [
+        item for item in store.list_evidence(run_id) if item["kind"] == "tool_input_index"
+    ]
+    if not candidates:
+        return {}
+    artifact_id = candidates[-1].get("artifact_id")
+    if not artifact_id:
+        return {}
+    artifact = store.get_artifact(artifact_id)
+    path = resolve_artifact_path(settings, artifact["relative_path"])
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def resolve_tool_input_path(
+    settings: Settings, store: Store, input_entry: JsonObject
+) -> Path:
+    artifact = store.get_artifact(str(input_entry["artifactId"]))
+    path = resolve_artifact_path(settings, artifact["relative_path"])
+    if not path.is_file():
+        raise ValueError(f"tool input artifact is missing for {input_entry.get('path')}")
+    return path
+
+
+def format_tool_args(args: tuple[str, ...], input_file: Path | None, action_id: str) -> list[str]:
+    result = []
+    for arg in args:
+        if "{input_file}" in arg and input_file is None:
+            raise ValueError("tool arg requires {input_file} but no input file is selected")
+        formatted = arg.replace("{input_file}", str(input_file) if input_file else "")
+        formatted = formatted.replace("{action_id}", action_id)
+        result.append(formatted)
+    return result
+
+
+def tool_requires_input(tool: ToolDefinition) -> bool:
+    return any("{input_file}" in arg for arg in tool.args)
+
+
+def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None) -> str:
+    if input_entry is None:
+        return tool.id
+    digest = sha256(str(input_entry.get("path", "")).encode("utf-8")).hexdigest()[:12]
+    return f"{safe_action_segment(tool.id)}_{digest}"
+
+
+def safe_action_segment(value: str) -> str:
+    result = "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
+    return result[:80] or "tool"
 
 
 def parse_json(data: bytes) -> JsonObject | None:

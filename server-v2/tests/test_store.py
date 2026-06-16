@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
-from logagent_v2.artifacts import write_artifact_bytes
+from logagent_v2.artifacts import resolve_artifact_path, write_artifact_bytes
 from logagent_v2.case_memory import (
     create_manual_case,
     create_task_case,
@@ -348,6 +348,114 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
+
+    def test_materialized_tool_inputs_feed_configured_tool(self) -> None:
+        def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "lines=pathlib.Path(sys.argv[1]).read_text().splitlines();"
+                "print(json.dumps({'summary':'rows='+str(len(lines)),"
+                "'findings':[{'message':lines[0]}]}))"
+            )
+            tool = ToolDefinition(
+                id="influxql_analyzer",
+                display_name="InfluxQL Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("slow query", "diagnose", "en-US")
+
+            tar_path = Path(tmp) / "Pkg_Inst_NodeB_20260617130000_logs.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as archive:
+                add_file(
+                    archive,
+                    "wrapper/var/chroot/gemini/log/tsdb/query.log",
+                    b'{"query":"select * from cpu"}\nplain text\n',
+                )
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                tar_path.name,
+                tar_path.read_bytes(),
+                "application/gzip",
+            )
+            store.create_upload(workspace["id"], tar_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            manifest_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 30,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/manifest"},
+                },
+            )
+            manifest = json.loads(manifest_response["result"]["contents"][0]["text"])
+            self.assertEqual(manifest["toolInputsPath"], "tool_inputs/index.json")
+            self.assertEqual(manifest["toolInputCount"], 1)
+
+            index_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_input_index"
+            )
+            index_artifact = store.get_artifact(index_evidence["artifact_id"])
+            index_path = resolve_artifact_path(settings, index_artifact["relative_path"])
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            entry = index["inputs"][0]
+            self.assertEqual(entry["toolIds"], ["influxql_analyzer"])
+            self.assertEqual(entry["recordCount"], 1)
+            self.assertTrue(entry["path"].startswith("tool_inputs/influxql_analyzer/NodeB/"))
+
+            tool_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "influxql_analyzer"},
+                    },
+                },
+            )
+            payload = json.loads(tool_response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "rows=1")
+            self.assertEqual(payload["result"]["inputFile"], entry["path"])
+            self.assertIn("select * from cpu", payload["result"]["findings"][0]["message"])
+
+            ref = payload["evidence"]["payload"]["evidenceRefPrefix"] + "0"
+            answer = {
+                "summary": "Tool-backed answer.",
+                "symptoms": [],
+                "likelyRootCauses": [{"cause": "slow query", "evidenceRefs": [ref]}],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": [ref],
+            }
+            validated = normalize_and_validate_final_answer(
+                settings, store, run["id"], answer
+            )
+            self.assertEqual(validated["evidenceRefs"], [ref])
 
     def test_final_answer_evidence_refs_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

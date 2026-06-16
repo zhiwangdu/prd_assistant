@@ -13,12 +13,15 @@ slice provides the durable foundation for the V2 product model:
 - Initial evidence pipeline for uploaded text files and supported archives.
 - V1-style node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
+- Materialized `tool_inputs/index.json` generation for node-package tsdb
+  InfluxQL query lines, with `influxql_analyzer` JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
 - Task MCP endpoint with summary/evidence/manifest/grep resources and
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
-  `logagent.run_domain_tool`.
+  `logagent.run_domain_tool`; tools with `{input_file}` consume matching
+  materialized `tool_inputs` before execution.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   default-off allowlist execution, task MCP `logagent.fetch`, and
   `fetch_result` final evidence refs.
@@ -101,7 +104,12 @@ Tool descriptor example:
     "args": ["--json"],
     "enabled": true,
     "timeoutSeconds": 30,
-    "maxOutputBytes": 1048576
+    "maxOutputBytes": 1048576,
+    "maxInputFiles": 1,
+    "match": {
+      "filePatterns": ["*.jsonl"],
+      "keywords": ["query"]
+    }
   }
 ]
 ```
@@ -157,10 +165,11 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs, rich Tool Runner input matching, Fetch cURL import and encrypted
-credential sets, Metadata preview/confirm and openGemini URL import, skills.zip
-export, richer Skill auto-matching, Case import drafts, FTS/embedding recall,
-WebUI, or full LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
+matching, real analyzer-specific stdout adapters, Fetch cURL import and
+encrypted credential sets, Metadata preview/confirm and openGemini URL import,
+skills.zip export, richer Skill auto-matching, Case import drafts,
+FTS/embedding recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -175,6 +184,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts;
+- writes `tool_inputs/index.json` and `influxql_analyzer` JSONL artifacts when
+  a node package tsdb log contains JSON or raw InfluxQL query lines;
 - records `manifest` and `log_search` evidence items; and
 - lets the current stub Agent final answer reference
   `grep_results.json#matches/<index>` when matches exist.
@@ -231,6 +242,16 @@ log_slices/<slice_id>.json#lines
 Configured tools can only be invoked by `toolId`; the model cannot provide an
 executable path, shell command, or argv. Tool stdout is parsed as JSON when
 possible and persisted as `tool_result` evidence.
+
+If a configured tool argument contains `{input_file}`, V2 reads the current
+run's latest `tool_input_index` evidence and selects entries whose `toolIds`
+include the requested tool. The placeholder is replaced with the local artifact
+path for that input. Each selected input gets a stable action id derived from
+the tool id and virtual input path, so final refs use:
+
+```text
+tool_results/<tool_id>_<input_hash>/result.json#findings/<index>
+```
 
 Fetch endpoints are configured through the protected HTTP API and are disabled
 for execution unless `LOGAGENT_V2_FETCH_ENABLED=1`. Execution is constrained to

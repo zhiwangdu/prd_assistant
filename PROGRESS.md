@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Materialized Tool Inputs
+
+- Added V2 `ToolDefinition` support for `maxInputFiles` and `match` metadata in `LOGAGENT_V2_TOOLS_JSON`.
+- Added node-package `tsdb` InfluxQL query materialization during initial evidence indexing. V2 now writes `influxql_analyzer` JSONL artifacts and a `tool_inputs/index.json` artifact with V1-compatible `ToolInputEntry` fields plus V2 artifact ids.
+- Manifest artifacts now include `toolInputsPath=tool_inputs/index.json` and `toolInputCount` when materialized inputs exist.
+- Added `tool_input_index` background evidence so task MCP Tool Runner calls can find run-local materialized inputs without exposing them as final root-cause evidence.
+- Configured tools whose args contain `{input_file}` now select matching materialized inputs by `toolIds`, substitute the local artifact path, and generate stable per-input action ids for `tool_results/<tool_id>_<input_hash>/result.json#findings/<index>` refs.
+- Existing no-input configured tools keep the previous action id behavior and final ref shape.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Fetch Endpoint Foundation
 
 - Added V2 Fetch endpoint settings: default disabled execution, explicit host/host:port allowlist, request timeout, and bounded response preview size.
