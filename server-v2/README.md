@@ -30,7 +30,8 @@ slice provides the durable foundation for the V2 product model:
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Metadata foundation with JSON/YAML/openGemini content import, SQLite snapshot
-  storage, field/tag type queries, HTTP API, and readonly/task MCP tools.
+  storage, preview/confirm drafts, field/tag type queries, HTTP API, and
+  readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   keyword recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
@@ -135,6 +136,10 @@ GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
 DELETE /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/imports
+GET  /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/:import_id/confirm
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
@@ -167,9 +172,9 @@ PYTHONPATH=. python3 -m unittest discover tests
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
 matching, real analyzer-specific stdout adapters, Fetch cURL import and
-encrypted credential sets, Metadata preview/confirm and openGemini URL import,
-skills.zip export, richer Skill auto-matching, Case import drafts,
-FTS/embedding recall, WebUI, or full LangGraph model loop.
+encrypted credential sets, Metadata openGemini URL import, skills.zip export,
+richer Skill auto-matching, Case import drafts, FTS/embedding recall, WebUI, or
+full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -294,8 +299,21 @@ cannot be used as final root-cause evidence.
 
 ## Metadata
 
-V2 stores imported Metadata in SQLite table `metadata_instances`. The current
-direct import endpoint accepts:
+V2 stores Metadata import drafts in SQLite table `metadata_imports` and
+confirmed Metadata in `metadata_instances`. The direct import endpoint still
+imports immediately; the safer product flow is:
+
+```text
+POST /api/v2/metadata/imports/preview
+GET  /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/:import_id/confirm
+```
+
+Preview parses and normalizes content, stores a draft with status `previewed`,
+and returns node/database counts without changing `metadata_instances`. Confirm
+upserts the normalized snapshot and marks the draft `confirmed`.
+
+Metadata import payloads accept:
 
 ```json
 {

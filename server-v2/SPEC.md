@@ -73,9 +73,9 @@ Implemented in this slice:
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
-- Metadata foundation with direct JSON/YAML/openGemini content import, SQLite
-  snapshot storage, field/tag type query APIs, readonly MCP tools, and task MCP
-  background slices.
+- Metadata foundation with direct JSON/YAML/openGemini content import,
+  preview/confirm draft workflow, SQLite snapshot storage, field/tag type query
+  APIs, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, keyword recall, edit/disable API, readonly MCP search, and task
   MCP background case context.
@@ -92,8 +92,8 @@ Not yet implemented:
   matching, real analyzer-specific stdout adapters, per-tool params schema, and
   full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
-  Fetch management, Metadata preview/confirm flow, openGemini URL import, task
-  context auto-selection, and WebUI cutover.
+  Fetch management, Metadata openGemini URL import, task context
+  auto-selection, and WebUI cutover.
 - Skills export zip, richer automatic Skill matching, and WebUI System Context
   cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
@@ -129,6 +129,10 @@ GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
 DELETE /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/imports
+GET  /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/:import_id/confirm
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
@@ -176,6 +180,7 @@ SQLite tables:
 - `actions`
 - `jobs`
 - `metadata_instances`
+- `metadata_imports`
 - `cases`
 - `fetch_endpoints`
 
@@ -351,9 +356,23 @@ catalog descriptor, but it does not expose or run `logagent.fetch`.
 
 ## Metadata
 
-V2 stores imported Metadata snapshots in SQLite table `metadata_instances`.
-Each row is keyed by `instance_id` and contains `template_type`, optional
-`remark`, normalized `snapshot_json`, and original `raw_json`.
+V2 stores Metadata import drafts in SQLite table `metadata_imports` and
+confirmed snapshots in `metadata_instances`. Instance rows are keyed by
+`instance_id` and contain `template_type`, optional `remark`, normalized
+`snapshot_json`, and original `raw_json`.
+
+The product import flow is preview then confirm:
+
+```text
+POST /api/v2/metadata/imports/preview
+GET  /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/:import_id/confirm
+```
+
+Preview parses and normalizes content into a draft with status `previewed` and
+returns summary counts. It does not mutate `metadata_instances`. Confirm upserts
+the draft snapshot into `metadata_instances` and marks the draft `confirmed`.
+`POST /api/v2/metadata/imports` remains as a direct immediate import shortcut.
 
 Current direct import request:
 

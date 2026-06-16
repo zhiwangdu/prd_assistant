@@ -25,7 +25,12 @@ from logagent_v2.final_answer import (
     normalize_and_validate_final_answer,
 )
 from logagent_v2.mcp import readonly_mcp_response, task_mcp_response
-from logagent_v2.metadata import import_metadata, query_field_types
+from logagent_v2.metadata import (
+    confirm_metadata_import,
+    import_metadata,
+    preview_metadata_import,
+    query_field_types,
+)
 from logagent_v2.skills import list_skills
 from logagent_v2.store import Store
 
@@ -710,6 +715,46 @@ class StoreTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+    def test_metadata_preview_confirm_import_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            content = json.dumps(
+                {
+                    "cluster": {
+                        "clusterId": "cluster-a",
+                        "nodes": [{"nodeId": "n1", "host": "127.0.0.1"}],
+                        "databases": [{"name": "db0"}],
+                    }
+                }
+            )
+
+            preview = preview_metadata_import(
+                store,
+                instance_id="inst-preview",
+                template_type="json",
+                content=content,
+                remark="preview only",
+            )
+            self.assertEqual(preview["import"]["status"], "previewed")
+            self.assertEqual(preview["import"]["nodeCount"], 1)
+            self.assertEqual(store.list_metadata_instances(), [])
+
+            drafts = store.list_metadata_imports()
+            self.assertEqual(drafts[0]["importId"], preview["import"]["importId"])
+            self.assertEqual(
+                store.get_metadata_import(preview["import"]["importId"])["status"],
+                "previewed",
+            )
+
+            confirmed = confirm_metadata_import(store, preview["import"]["importId"])
+            self.assertEqual(confirmed["import"]["status"], "confirmed")
+            instances = store.list_metadata_instances()
+            self.assertEqual(instances[0]["instanceId"], "inst-preview")
+            self.assertEqual(instances[0]["nodeCount"], 1)
 
     def test_task_mcp_waiting_actions_are_persisted_and_resumable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

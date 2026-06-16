@@ -16,7 +16,13 @@ from .fetch import (
     normalize_fetch_endpoint,
     public_fetch_endpoint,
 )
-from .metadata import import_metadata, query_field_types
+from .metadata import (
+    confirm_metadata_import,
+    import_metadata,
+    metadata_import_preview,
+    preview_metadata_import,
+    query_field_types,
+)
 from .mcp import readonly_mcp_response, task_mcp_response
 from .security import auth_dependency
 from .skills import get_skill, import_skill, list_skills, preview_system_context
@@ -399,6 +405,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             store.delete_metadata_instance(instance_id)
             return {"deleted": True, "instanceId": instance_id}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/metadata/imports")
+    async def list_metadata_imports(
+        _: Auth,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
+        return {
+            "imports": [
+                metadata_import_preview(item) for item in store.list_metadata_imports(limit)
+            ]
+        }
+
+    @app.get("/api/v2/metadata/imports/{import_id}")
+    async def get_metadata_import(_: Auth, import_id: str) -> dict:
+        try:
+            draft = store.get_metadata_import(import_id)
+            return {"import": metadata_import_preview(draft), "snapshot": draft["snapshot"]}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/imports/preview")
+    async def create_metadata_import_preview(_: Auth, payload: MetadataImportCreate) -> dict:
+        try:
+            return preview_metadata_import(
+                store=store,
+                instance_id=payload.instanceId,
+                template_type=payload.templateType,
+                content=payload.content,
+                remark=payload.remark,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/imports/{import_id}/confirm")
+    async def confirm_metadata_import_draft(_: Auth, import_id: str) -> dict:
+        try:
+            return confirm_metadata_import(store, import_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

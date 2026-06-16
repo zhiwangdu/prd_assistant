@@ -40,6 +40,59 @@ def import_metadata(
     return {"instance": instance, "snapshot": snapshot}
 
 
+def preview_metadata_import(
+    store: Store,
+    instance_id: str,
+    template_type: str,
+    content: str,
+    remark: str | None = None,
+) -> JsonObject:
+    template_type = template_type.lower()
+    raw = parse_metadata_content(template_type, content)
+    snapshot = normalize_metadata_snapshot(instance_id, template_type, raw, remark)
+    draft = store.create_metadata_import(
+        instance_id=instance_id,
+        remark=remark,
+        template_type=template_type,
+        snapshot=snapshot,
+        raw=raw,
+    )
+    return {"import": metadata_import_preview(draft), "snapshot": snapshot}
+
+
+def confirm_metadata_import(store: Store, import_id: str) -> JsonObject:
+    draft = store.get_metadata_import(import_id)
+    instance = store.upsert_metadata_instance(
+        instance_id=draft["instanceId"],
+        remark=draft.get("remark"),
+        template_type=draft["templateType"],
+        snapshot=draft["snapshot"],
+        raw=draft["raw"],
+    )
+    confirmed = store.update_metadata_import_status(import_id, "confirmed")
+    return {
+        "import": metadata_import_preview(confirmed),
+        "instance": instance,
+        "snapshot": draft["snapshot"],
+    }
+
+
+def metadata_import_preview(draft: JsonObject) -> JsonObject:
+    snapshot = draft.get("snapshot", {})
+    cluster = snapshot.get("cluster", {}) if isinstance(snapshot, dict) else {}
+    return {
+        "importId": draft["importId"],
+        "instanceId": draft["instanceId"],
+        "templateType": draft["templateType"],
+        "remark": draft.get("remark"),
+        "status": draft["status"],
+        "nodeCount": len(cluster.get("nodes", [])),
+        "databaseCount": len(cluster.get("databases", [])),
+        "createdAt": draft["createdAt"],
+        "updatedAt": draft["updatedAt"],
+    }
+
+
 def parse_metadata_content(template_type: str, content: str) -> JsonObject:
     if template_type in {"json", "opengemini"}:
         value = json.loads(content)

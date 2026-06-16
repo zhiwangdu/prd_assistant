@@ -182,6 +182,18 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS metadata_imports (
+                  import_id TEXT PRIMARY KEY,
+                  instance_id TEXT NOT NULL,
+                  remark TEXT,
+                  template_type TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  snapshot_json TEXT NOT NULL,
+                  raw_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS cases (
                   case_id TEXT PRIMARY KEY,
                   source_type TEXT NOT NULL,
@@ -210,6 +222,8 @@ class Store:
                   ON timeline_events(workspace_id, run_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sched
                   ON jobs(status, next_run_at, locked_until);
+                CREATE INDEX IF NOT EXISTS idx_metadata_imports_status
+                  ON metadata_imports(status, updated_at);
                 CREATE INDEX IF NOT EXISTS idx_cases_task_id ON cases(task_id);
                 CREATE INDEX IF NOT EXISTS idx_fetch_endpoints_enabled ON fetch_endpoints(enabled);
                 """
@@ -695,6 +709,86 @@ class Store:
             )
             if cursor.rowcount == 0:
                 raise KeyError(f"unknown metadata instance {instance_id}")
+
+    def create_metadata_import(
+        self,
+        instance_id: str,
+        remark: str | None,
+        template_type: str,
+        snapshot: JsonObject,
+        raw: JsonObject,
+    ) -> JsonObject:
+        import_id = new_id("mdimp")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO metadata_imports(
+                  import_id, instance_id, remark, template_type, status,
+                  snapshot_json, raw_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    import_id,
+                    instance_id,
+                    remark,
+                    template_type,
+                    "previewed",
+                    encode_json(snapshot),
+                    encode_json(raw),
+                    ts,
+                    ts,
+                ),
+            )
+        return self.get_metadata_import(import_id)
+
+    def list_metadata_imports(self, limit: int = 50) -> list[JsonObject]:
+        limit = max(1, min(limit, 200))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM metadata_imports
+                ORDER BY updated_at DESC, import_id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._metadata_import_from_row(row) for row in rows]
+
+    def get_metadata_import(self, import_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM metadata_imports WHERE import_id = ?", (import_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown metadata import {import_id}")
+        return self._metadata_import_from_row(row)
+
+    def update_metadata_import_status(self, import_id: str, status: str) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE metadata_imports
+                SET status = ?, updated_at = ?
+                WHERE import_id = ?
+                """,
+                (status, ts, import_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown metadata import {import_id}")
+        return self.get_metadata_import(import_id)
+
+    def _metadata_import_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        item["importId"] = item.pop("import_id")
+        item["instanceId"] = item.pop("instance_id")
+        item["templateType"] = item.pop("template_type")
+        item["snapshot"] = decode_json(item.pop("snapshot_json"), {})
+        item["raw"] = decode_json(item.pop("raw_json"), {})
+        item["createdAt"] = item.pop("created_at")
+        item["updatedAt"] = item.pop("updated_at")
+        return item
 
     def create_case(self, record: JsonObject, searchable_text: str) -> JsonObject:
         case_id = record["caseId"]

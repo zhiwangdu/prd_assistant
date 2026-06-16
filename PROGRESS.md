@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Preview Confirm
+
+- Added SQLite-backed V2 `metadata_imports` drafts with `previewed` and `confirmed` statuses.
+- Added Metadata preview flow that parses and normalizes JSON/YAML/openGemini content into a draft without mutating `metadata_instances`.
+- Added Metadata confirm flow that upserts the draft snapshot into `metadata_instances` and marks the draft confirmed.
+- Added protected APIs: `GET /api/v2/metadata/imports`, `GET /api/v2/metadata/imports/:import_id`, `POST /api/v2/metadata/imports/preview`, and `POST /api/v2/metadata/imports/:import_id/confirm`.
+- Kept `POST /api/v2/metadata/imports` as the direct immediate import shortcut.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Materialized Tool Inputs
 
 - Added V2 `ToolDefinition` support for `maxInputFiles` and `match` metadata in `LOGAGENT_V2_TOOLS_JSON`.
