@@ -36,7 +36,7 @@ slice provides the durable foundation for the V2 product model:
   keyword recall, edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit Workspace skill selection, `system_context` run
-  snapshot, and readonly/task MCP reference reading.
+  snapshot, readonly/task MCP reference reading, and `skills.zip` export.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -132,6 +132,7 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/exports/skills.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
@@ -174,7 +175,7 @@ PYTHONPATH=. python3 -m unittest discover tests
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
 matching, real analyzer-specific stdout adapters, Fetch cURL import and
-encrypted credential sets, skills.zip export, richer Skill auto-matching, Case
+encrypted credential sets, tools.zip export, richer Skill auto-matching, Case
 import drafts, FTS/embedding recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
@@ -414,3 +415,8 @@ Task MCP `logagent.get_skill_reference` only reads references declared in the
 run's `system_context` snapshot and persists a `skill_reference` background
 artifact with `final_allowed=false`. Readonly MCP reads the current registry and
 does not write workspace artifacts.
+
+`GET /api/v2/exports/skills.zip` exports the current Skill registry as a zip
+snapshot. It includes regular files under each Skill directory, preserves
+relative paths, writes a root `manifest.json`, and skips symlinks so exports
+cannot include files outside the registry.

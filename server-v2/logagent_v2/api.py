@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
@@ -16,6 +16,7 @@ from .fetch import (
     normalize_fetch_endpoint,
     public_fetch_endpoint,
 )
+from .exports import build_skills_zip
 from .metadata import (
     confirm_metadata_import,
     import_metadata_from_url,
@@ -277,6 +278,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
         return {"tools": [*tool_descriptors(settings), fetch_catalog_descriptor(settings)]}
+
+    @app.get("/api/v2/exports/skills.zip")
+    async def export_skills(_: Auth) -> Response:
+        try:
+            data = build_skills_zip(settings)
+        except ValueError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="skills.zip"'},
+        )
 
     @app.get("/api/v2/skills")
     async def list_diagnostic_skills(_: Auth) -> dict:

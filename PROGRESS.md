@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Skills Zip Export
+
+- Added V2 `GET /api/v2/exports/skills.zip` for exporting the current filesystem Skill registry.
+- Added `server-v2/logagent_v2/exports.py` to package each Skill directory's regular files, preserve relative paths, and write a root `manifest.json` with Skill revision and file metadata.
+- Export path validation rejects absolute/parent paths, and symlinks or symlinked directories are skipped so exports cannot include files outside the Skill registry.
+- Added regression coverage for regular Skill files, reference files, manifest generation, and symlink skipping.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Metadata URL Fetch
 
 - Added allowlisted Metadata URL fetch for preview and direct import, reusing `LOGAGENT_V2_FETCH_ENABLED`, `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, timeout, and response-size limits.

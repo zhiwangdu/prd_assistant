@@ -84,6 +84,8 @@ Implemented in this slice:
   Markdown import, explicit Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
   artifacts.
+- `skills.zip` export for the current Skill registry, with regular files only,
+  root manifest, and symlink skipping.
 
 Not yet implemented:
 
@@ -94,7 +96,7 @@ Not yet implemented:
   full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
   Fetch management, Metadata task context auto-selection, and WebUI cutover.
-- Skills export zip, richer automatic Skill matching, and WebUI System Context
+- Tools export zip, richer automatic Skill matching, and WebUI System Context
   cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
   management.
@@ -125,6 +127,7 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/exports/skills.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
@@ -478,6 +481,13 @@ the current registry. Task MCP exposes the same tools, but
 `logagent.get_skill_reference` is constrained to Skills and references captured
 in the current run's `system_context` snapshot and persists `skill_reference`
 evidence with `final_allowed=false`.
+
+`GET /api/v2/exports/skills.zip` builds a current registry snapshot. The archive
+contains each Skill directory's regular files under `<skillId>/...` plus a root
+`manifest.json` with `schemaVersion`, `generatedAt`, Skill ids, display names,
+revisions, source paths, and exported file metadata. Symlinks and symlinked
+directories are skipped; archive paths must remain relative and cannot contain
+`..`.
 
 ## Final Answer Validation
 

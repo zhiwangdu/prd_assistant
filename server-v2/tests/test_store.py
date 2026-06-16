@@ -20,6 +20,7 @@ from logagent_v2.case_memory import (
     update_case as update_case_record,
 )
 from logagent_v2.config import Settings, ToolDefinition
+from logagent_v2.exports import build_skills_zip
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
     normalize_and_validate_final_answer,
@@ -33,7 +34,7 @@ from logagent_v2.metadata import (
     preview_metadata_import_from_url,
     query_field_types,
 )
-from logagent_v2.skills import list_skills
+from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
 
 
@@ -1205,6 +1206,44 @@ class StoreTests(unittest.TestCase):
             readonly_body = json.loads(readonly_ref["result"]["content"][0]["text"])
             self.assertFalse(readonly_body["finalEvidenceAllowed"])
             self.assertIn("PT ownership", readonly_body["content"])
+
+    def test_skills_zip_exports_regular_files_and_skips_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            skill = import_skill(
+                settings=settings,
+                skill_id="export-skill",
+                name="Export Skill",
+                description="Export test skill.",
+                markdown="Use exported references.",
+            )
+            skill_dir = settings.skills_dir / skill["skillId"]
+            (skill_dir / "references").mkdir()
+            (skill_dir / "references" / "note.md").write_text(
+                "reference note\n", encoding="utf-8"
+            )
+            outside = Path(tmp) / "outside-secret.md"
+            outside.write_text("secret\n", encoding="utf-8")
+            try:
+                (skill_dir / "references" / "linked.md").symlink_to(outside)
+            except OSError:
+                pass
+
+            archive_bytes = build_skills_zip(settings)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                names = set(archive.namelist())
+                self.assertIn("export-skill/SKILL.md", names)
+                self.assertIn("export-skill/logagent.json", names)
+                self.assertIn("export-skill/references/note.md", names)
+                self.assertNotIn("export-skill/references/linked.md", names)
+                manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+
+            self.assertEqual(manifest["schemaVersion"], 1)
+            self.assertEqual(manifest["skills"][0]["skillId"], "export-skill")
+            files = manifest["skills"][0]["files"]
+            self.assertTrue(any(item["path"] == "SKILL.md" for item in files))
+            self.assertTrue(all(item["path"] != "references/linked.md" for item in files))
 
 
 if __name__ == "__main__":
