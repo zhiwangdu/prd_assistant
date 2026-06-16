@@ -451,6 +451,27 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_upload_sessions(self, workspace_id: str | None = None) -> list[JsonObject]:
+        with self.connect() as conn:
+            if workspace_id is None:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM upload_sessions
+                    ORDER BY created_at DESC, rowid DESC
+                    """
+                ).fetchall()
+            else:
+                self.get_workspace(workspace_id)
+                rows = conn.execute(
+                    """
+                    SELECT * FROM upload_sessions
+                    WHERE workspace_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    """,
+                    (workspace_id,),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_run(self, workspace_id: str) -> JsonObject:
         workspace = self.get_workspace(workspace_id)
         run_id = new_id("run")
@@ -475,6 +496,30 @@ class Store:
             )
             self._enqueue_run_tx(conn, job_id, workspace_id, run_id, ts)
         return self.get_run(run_id)
+
+    def list_runs(self, workspace_id: str | None = None) -> list[JsonObject]:
+        with self.connect() as conn:
+            if workspace_id is None:
+                rows = conn.execute(
+                    "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC"
+                ).fetchall()
+            else:
+                self.get_workspace(workspace_id)
+                rows = conn.execute(
+                    """
+                    SELECT * FROM runs
+                    WHERE workspace_id = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    """,
+                    (workspace_id,),
+                ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["budget"] = decode_json(item.pop("budget_json"), {})
+            item["finalAnswer"] = decode_json(item.pop("final_answer_json"), None)
+            result.append(item)
+        return result
 
     def enqueue_run(self, run_id: str) -> JsonObject:
         run = self.get_run(run_id)

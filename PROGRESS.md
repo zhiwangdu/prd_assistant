@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Run and Upload Listing
+
+- Added Store and HTTP read surfaces for workspace uploads, upload sessions, and runs.
+- Added global `GET /api/v2/runs` with optional `workspaceId` filter to support WebUI history/task list views.
+- Added `GET /api/v2/uploads/:session_id` for chunked upload session recovery/status reads.
+- Added regression coverage for run listing and upload session listing.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Upload Sessions
 
 - Added SQLite-backed `upload_sessions` for restartable chunked uploads.

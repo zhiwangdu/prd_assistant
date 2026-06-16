@@ -87,6 +87,8 @@ class StoreTests(unittest.TestCase):
 
             self.assertEqual(len(jobs), 1)
             self.assertEqual(jobs[0]["kind"], "run_analysis")
+            self.assertEqual(store.list_runs(workspace["id"])[0]["id"], run["id"])
+            self.assertEqual(store.list_runs()[0]["id"], run["id"])
 
             AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
             store.complete_job(jobs[0]["id"])
@@ -285,6 +287,9 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(artifact_path.read_bytes(), b"chunk upload")
             uploads = store.list_uploads(workspace["id"])
             self.assertEqual(len(uploads), 3)
+            sessions = store.list_upload_sessions(workspace["id"])
+            self.assertEqual([item["id"] for item in sessions], [session_id])
+            self.assertEqual(store.list_upload_sessions()[0]["id"], session_id)
 
     def test_agent_runtime_uses_openai_compatible_provider(self) -> None:
         captured: dict[str, object] = {}

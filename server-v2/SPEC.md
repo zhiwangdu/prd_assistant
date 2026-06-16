@@ -35,6 +35,8 @@ Implemented in this slice:
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read.
+- Workspace-scoped upload, upload session, and run listing plus global run
+  listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
   upload storage as local artifacts.
 - Run creation and queued `run_analysis` job.
@@ -134,12 +136,17 @@ GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
+GET  /api/v2/workspaces/:workspace_id/uploads
+GET  /api/v2/workspaces/:workspace_id/upload-sessions
+GET  /api/v2/workspaces/:workspace_id/runs
 POST /api/v2/workspaces/:workspace_id/uploads
 POST /api/v2/workspaces/:workspace_id/uploads/batch
 POST /api/v2/workspaces/:workspace_id/uploads/init
+GET  /api/v2/uploads/:session_id
 POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
 POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
+GET  /api/v2/runs?workspaceId=<workspace_id>
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence

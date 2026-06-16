@@ -232,6 +232,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/workspaces/{workspace_id}/uploads")
+    async def list_workspace_uploads(_: Auth, workspace_id: str) -> dict:
+        try:
+            store.get_workspace(workspace_id)
+            return {"uploads": store.list_uploads(workspace_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/workspaces/{workspace_id}/upload-sessions")
+    async def list_workspace_upload_sessions(_: Auth, workspace_id: str) -> dict:
+        try:
+            return {"sessions": store.list_upload_sessions(workspace_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/workspaces/{workspace_id}/runs")
+    async def list_workspace_runs(_: Auth, workspace_id: str) -> dict:
+        try:
+            return {"runs": store.list_runs(workspace_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.post("/api/v2/workspaces/{workspace_id}/uploads")
     async def upload_file(_: Auth, workspace_id: str, file: UploadFile = File(...)) -> dict:
         try:
@@ -313,6 +335,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return {"session": session}
 
+    @app.get("/api/v2/uploads/{session_id}")
+    async def get_upload_session(_: Auth, session_id: str) -> dict:
+        try:
+            return store.get_upload_session(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.post("/api/v2/uploads/{session_id}/chunks")
     async def upload_chunk(
         _: Auth,
@@ -389,6 +418,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def create_run(_: Auth, workspace_id: str) -> dict:
         try:
             return store.create_run(workspace_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/runs")
+    async def list_runs(_: Auth, workspaceId: str | None = None) -> dict:
+        try:
+            return {"runs": store.list_runs(workspaceId)}
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

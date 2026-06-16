@@ -151,12 +151,17 @@ GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
+GET  /api/v2/workspaces/:workspace_id/uploads
+GET  /api/v2/workspaces/:workspace_id/upload-sessions
+GET  /api/v2/workspaces/:workspace_id/runs
 POST /api/v2/workspaces/:workspace_id/uploads
 POST /api/v2/workspaces/:workspace_id/uploads/batch
 POST /api/v2/workspaces/:workspace_id/uploads/init
+GET  /api/v2/uploads/:session_id
 POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
 POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
+GET  /api/v2/runs?workspaceId=<workspace_id>
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
