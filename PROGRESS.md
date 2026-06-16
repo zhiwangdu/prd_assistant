@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Context Tool Catalog
+
+- Expanded the provider-directed Agent tool loop from log search/slice to the advertised task MCP tool catalog.
+- Agent prompts now advertise Metadata, Case Memory, Skill reference, Fetch catalog, configured domain tool, and enabled Fetch execution tools in addition to log search/slice.
+- AgentRuntime now validates provider tool calls against the same advertised tool set before executing through `call_task_tool`.
+- Fetch execution is only advertised when `LOGAGENT_V2_FETCH_ENABLED=1`; waiting/approval tools are not advertised to the provider.
+- Added regression coverage that verifies the advertised prompt tool names exclude waiting/approval, that disabled Fetch execution is hidden, and that a provider can call `logagent.search_cases` before returning a final answer.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Read-only Tool Loop
 
 - Added `LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3 for bounded provider/tool-loop execution.

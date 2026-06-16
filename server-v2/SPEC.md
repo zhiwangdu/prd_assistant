@@ -49,8 +49,8 @@ Implemented in this slice:
 - `manifest.json` and `grep_results.json` artifact generation.
 - Agent runtime that records initial question evidence, consumes the initial
   evidence pipeline, and either returns a deterministic stub summary or calls a
-  bounded OpenAI-compatible provider loop for read-only log search/slice tool
-  calls and an evidence-validated JSON final answer. Each round persists
+  bounded OpenAI-compatible provider loop for advertised Server-owned tools and
+  an evidence-validated JSON final answer. Each round persists
   `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
   artifacts before the run reaches a terminal state.
 - `analysis_package.json` generation after initial evidence collection, exposed
@@ -662,19 +662,21 @@ question/mode/language, manifest counts, a bounded initial grep preview,
 allowed current-run evidence refs, available read-only tools, and prior tool
 observations.
 
-The provider may return a `tool_calls` object requesting
-`logagent.search_logs` or `logagent.get_log_slice`. V2 validates the tool name
-and arguments as JSON objects, executes the Server-owned task MCP tool, records
-the resulting evidence/artifacts through the existing tool implementation, and
-feeds the structured observation into the next provider round. The loop is
-bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3.
+The provider may return a `tool_calls` object requesting a tool advertised in
+the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
+Skill references, Fetch catalog, configured domain tools when present, and
+Fetch execution when Fetch is enabled. Waiting/approval tools are not
+advertised. V2 validates the tool name and arguments as JSON objects, executes
+the Server-owned task MCP tool, records the resulting evidence/artifacts through
+the existing tool implementation, and feeds the structured observation into the
+next provider round. The loop is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with
+default 3.
 
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
-tool requests, or max-round exhaustion fail the run. Automatic domain-tool,
-Fetch, Case injection, approval/user waiting actions, and resume-aware
-LangGraph planning remain future work.
+tool requests, or max-round exhaustion fail the run. Approval/user waiting
+actions and resume-aware LangGraph planning remain future work.
 
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,

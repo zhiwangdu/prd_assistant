@@ -213,17 +213,20 @@ By default V2 uses `LOGAGENT_V2_AGENT_PROVIDER=stub`, which produces the
 deterministic low-confidence evidence summary used by the foundation tests.
 `LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` sends a compact prompt with the
 Workspace question, manifest counts, initial grep preview, allowed evidence
-refs, available read-only tools, and prior tool observations to
+refs, available Server-owned tools, and prior tool observations to
 `<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider may return a
-`tool_calls` object for `logagent.search_logs` or `logagent.get_log_slice`;
-V2 executes those Server-owned task MCP tools, feeds the observations into the
-next round, and stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must
-eventually return one JSON final-answer object; V2 normalizes it and rejects
-unsupported or non-current evidence refs before marking the run `succeeded`.
+`tool_calls` object for tools advertised in the prompt: log search/slice,
+Metadata, Case Memory, Skill references, Fetch catalog, configured domain tools,
+and Fetch execution when Fetch is enabled. V2 validates the requested tool name
+against the advertised set, executes through the existing task MCP call path,
+feeds the observations into the next round, and stops after
+`LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must eventually return one JSON
+final-answer object; V2 normalizes it and rejects unsupported or non-current
+evidence refs before marking the run `succeeded`.
 
-This is a bounded provider-directed tool loop. Automatic domain-tool, Fetch,
-Case injection, waiting/approval actions, and resume-aware LangGraph planning
-remain future work.
+This is a bounded provider-directed tool loop. Waiting/approval actions and
+resume-aware LangGraph planning remain future work and are not advertised to
+the provider.
 
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP

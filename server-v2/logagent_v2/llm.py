@@ -6,36 +6,16 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from .case_memory import case_tool_descriptors
 from .config import Settings
+from .fetch import fetch_tool_descriptors
+from .metadata import metadata_tool_descriptors
+from .skills import skill_tool_descriptors
 from .store import JsonObject
+from .tools import tool_descriptors
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
-AGENT_READONLY_TOOLS = [
-    {
-        "name": "logagent.search_logs",
-        "description": "Search current Workspace logs for one or more keywords.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"keywords": {"type": "array", "items": {"type": "string"}}},
-            "required": ["keywords"],
-        },
-    },
-    {
-        "name": "logagent.get_log_slice",
-        "description": "Read bounded context around a log path and line number.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "lineNumber": {"type": "integer"},
-                "before": {"type": "integer"},
-                "after": {"type": "integer"},
-            },
-            "required": ["path", "lineNumber"],
-        },
-    },
-]
 
 
 def generate_agent_final_answer(
@@ -77,7 +57,7 @@ def build_agent_provider_request(
     tool_observations: list[JsonObject] | None = None,
 ) -> JsonObject:
     provider = (settings.agent_provider or "stub").lower()
-    prompt = build_agent_prompt(workspace, evidence_bundle, tool_observations)
+    prompt = build_agent_prompt(settings, workspace, evidence_bundle, tool_observations)
     allowed_refs = allowed_evidence_refs(evidence_bundle)
     if provider == "stub":
         return {
@@ -247,6 +227,7 @@ def call_openai_compatible(
 
 
 def build_agent_prompt(
+    settings: Settings,
     workspace: JsonObject,
     evidence_bundle: JsonObject,
     tool_observations: list[JsonObject] | None = None,
@@ -275,7 +256,7 @@ def build_agent_prompt(
         "allowedEvidenceRefs": [item["ref"] for item in evidence_preview if item.get("ref")],
         "evidencePreview": evidence_preview,
         "toolObservations": tool_observations or [],
-        "availableTools": AGENT_READONLY_TOOLS,
+        "availableTools": agent_available_tools(settings),
         "responseProtocol": {
             "finalAnswer": "Return the final answer JSON object directly.",
             "toolCalls": {
@@ -300,6 +281,86 @@ def build_agent_prompt(
         },
     }
     return json.dumps(prompt, ensure_ascii=True, indent=2)
+
+
+def agent_allowed_tool_names(settings: Settings) -> set[str]:
+    return {tool["name"] for tool in agent_available_tools(settings)}
+
+
+def agent_available_tools(settings: Settings) -> list[JsonObject]:
+    tools = [
+        search_logs_tool_descriptor(),
+        get_log_slice_tool_descriptor(),
+        *metadata_tool_descriptors(),
+        *case_tool_descriptors(),
+        *skill_tool_descriptors(),
+    ]
+    if any(tool["enabled"] for tool in tool_descriptors(settings)):
+        tools.append(run_domain_tool_descriptor(settings))
+    fetch_tools = fetch_tool_descriptors()
+    tools.append(fetch_tools[0])
+    if settings.fetch_enabled:
+        tools.append(fetch_tools[1])
+    return tools
+
+
+def search_logs_tool_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.search_logs",
+        "description": "Search current Workspace logs for one or more keywords.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                    "maxItems": 16,
+                }
+            },
+            "required": ["keywords"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def get_log_slice_tool_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.get_log_slice",
+        "description": "Read bounded context around a current Workspace log path.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "lineNumber": {"type": "integer", "minimum": 1},
+                "before": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+                "after": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+            },
+            "required": ["path", "lineNumber"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def run_domain_tool_descriptor(settings: Settings) -> JsonObject:
+    return {
+        "name": "logagent.run_domain_tool",
+        "description": "Run a configured read-only diagnostic tool by toolId.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "toolId": {
+                    "type": "string",
+                    "enum": [
+                        tool["toolId"] for tool in tool_descriptors(settings) if tool["enabled"]
+                    ],
+                },
+                "params": {"type": "object"},
+            },
+            "required": ["toolId"],
+            "additionalProperties": False,
+        },
+    }
 
 
 def allowed_evidence_refs(evidence_bundle: JsonObject) -> list[str]:

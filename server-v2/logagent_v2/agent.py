@@ -12,13 +12,16 @@ from .analysis_package import persist_analysis_package
 from .config import Settings
 from .evidence import build_initial_evidence
 from .final_answer import normalize_and_validate_final_answer
-from .llm import build_agent_provider_request, execute_agent_provider_request
+from .llm import (
+    agent_allowed_tool_names,
+    build_agent_provider_request,
+    execute_agent_provider_request,
+)
 from .mcp import call_task_tool
 from .metadata import persist_metadata_context
 from .skills import persist_system_context
 from .store import JsonObject, Store
 
-MODEL_TOOL_NAMES = {"logagent.search_logs", "logagent.get_log_slice"}
 MAX_TOOL_CALLS_PER_ROUND = 4
 
 
@@ -164,7 +167,10 @@ class AgentRuntime:
                     raise ValueError("agent provider did not return a JSON object")
 
                 if is_tool_call_request(raw_final_answer):
-                    tool_calls = normalize_tool_calls(raw_final_answer)
+                    tool_calls = normalize_tool_calls(
+                        raw_final_answer,
+                        allowed_tool_names=agent_allowed_tool_names(self.settings),
+                    )
                     observations = self._execute_tool_calls(run_id, attempt, tool_calls)
                     tool_observations.extend(observations)
                     provider_response = {
@@ -456,7 +462,10 @@ def is_tool_call_request(value: JsonObject) -> bool:
     return value.get("type") == "tool_calls" or isinstance(value.get("toolCalls"), list)
 
 
-def normalize_tool_calls(value: JsonObject) -> list[JsonObject]:
+def normalize_tool_calls(
+    value: JsonObject,
+    allowed_tool_names: set[str],
+) -> list[JsonObject]:
     raw_calls = value.get("toolCalls")
     if not isinstance(raw_calls, list) or not raw_calls:
         raise ValueError("agent tool_calls response requires non-empty toolCalls")
@@ -467,7 +476,7 @@ def normalize_tool_calls(value: JsonObject) -> list[JsonObject]:
         if not isinstance(item, dict):
             raise ValueError(f"toolCalls[{index}] must be an object")
         name = item.get("name")
-        if name not in MODEL_TOOL_NAMES:
+        if name not in allowed_tool_names:
             raise ValueError(f"unsupported agent tool call: {name}")
         arguments = item.get("arguments")
         if arguments is None:

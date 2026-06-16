@@ -473,6 +473,16 @@ class StoreTests(unittest.TestCase):
                 self.assertTrue(final_answer["evidenceRefs"][0].startswith("log_searches/"))
                 self.assertEqual(len(captured_prompts), 2)
                 self.assertEqual(captured_prompts[0]["toolObservations"], [])
+                available_tool_names = {
+                    tool["name"] for tool in captured_prompts[0]["availableTools"]
+                }
+                self.assertIn("logagent.search_cases", available_tool_names)
+                self.assertIn("logagent.list_metadata_instances", available_tool_names)
+                self.assertIn("logagent.list_skills", available_tool_names)
+                self.assertIn("logagent.list_fetch_endpoints", available_tool_names)
+                self.assertNotIn("logagent.fetch", available_tool_names)
+                self.assertNotIn("logagent.request_user_input", available_tool_names)
+                self.assertNotIn("logagent.request_approval", available_tool_names)
                 self.assertEqual(
                     captured_prompts[1]["toolObservations"][0]["name"],
                     "logagent.search_logs",
@@ -506,6 +516,117 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(
                     first_response["validation"]["status"], "tool_calls_executed"
                 )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_agent_provider_can_use_case_search_tool_observation(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class CaseToolProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                captured_prompts.append(prompt)
+                if len(captured_prompts) == 1:
+                    answer = {
+                        "type": "tool_calls",
+                        "toolCalls": [
+                            {
+                                "name": "logagent.search_cases",
+                                "arguments": {"query": "compaction panic", "limit": 3},
+                            }
+                        ],
+                    }
+                else:
+                    case_title = prompt["toolObservations"][0]["result"]["cases"][0]["title"]
+                    answer = {
+                        "summary": f"similar case found: {case_title}",
+                        "symptoms": [],
+                        "likelyRootCauses": [],
+                        "nextChecks": ["Compare the uploaded log against the recalled case."],
+                        "fixSuggestions": [],
+                        "missingInformation": [],
+                        "confidence": "medium",
+                        "evidenceRefs": [],
+                    }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), CaseToolProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                create_manual_case(
+                    store,
+                    {
+                        "title": "Compaction panic case",
+                        "symptom": "panic during compaction",
+                        "rootCause": "corrupt segment",
+                        "solution": "rebuild the affected shard",
+                    },
+                )
+                workspace = store.create_workspace("compaction panic", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"panic during compaction\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertIn("Compaction panic case", final_answer["summary"])
+                self.assertEqual(len(captured_prompts), 2)
+                observation = captured_prompts[1]["toolObservations"][0]
+                self.assertEqual(observation["name"], "logagent.search_cases")
+                self.assertEqual(
+                    observation["result"]["cases"][0]["title"], "Compaction panic case"
+                )
+                evidence_kinds = {item["kind"] for item in store.list_evidence(run["id"])}
+                self.assertIn("case_context", evidence_kinds)
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 51,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(len(state["rounds"]), 2)
+                self.assertEqual(state["rounds"][0]["status"], "tool_calls_executed")
+                self.assertEqual(state["rounds"][1]["status"], "completed")
         finally:
             server.shutdown()
             server.server_close()
