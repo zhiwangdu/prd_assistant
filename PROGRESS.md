@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Import Drafts
+
+- Added SQLite-backed V2 `case_imports` drafts for Memory import preview/confirm flow.
+- Added deterministic Case draft parsing for JSON fields and plain text sections such as `Title`, `Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and `Evidence Refs`.
+- Added protected APIs: `GET /api/v2/cases/imports`, `GET /api/v2/cases/imports/:import_id`, `POST /api/v2/cases/imports/preview`, and `POST /api/v2/cases/imports/:import_id/confirm`.
+- Preview stores the source text, parsed draft, and validation errors without writing to `cases`; confirm may apply overrides and only then creates a manual Case through the existing FTS-indexed path.
+- Confirming an already confirmed import returns the existing Case instead of creating duplicates.
+- Added regression coverage for preview parsing, confirm/search, idempotent confirm, incomplete draft rejection, and override completion.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Task Context
 
 - Added V2 run-start `metadata_context.json` artifact generation.

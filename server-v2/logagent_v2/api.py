@@ -8,7 +8,14 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
-from .case_memory import create_manual_case, create_task_case, update_case
+from .case_memory import (
+    case_import_preview,
+    confirm_case_import,
+    create_manual_case,
+    create_task_case,
+    preview_case_import,
+    update_case,
+)
 from .config import Settings
 from .fetch import (
     endpoint_from_curl,
@@ -91,6 +98,25 @@ class CaseCreate(BaseModel):
 
 
 class CaseUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    symptom: str | None = Field(default=None, max_length=10000)
+    rootCause: str | None = Field(default=None, max_length=10000)
+    solution: str | None = Field(default=None, max_length=10000)
+    product: str | None = Field(default=None, max_length=200)
+    version: str | None = Field(default=None, max_length=200)
+    environment: str | None = Field(default=None, max_length=200)
+    instanceId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    evidenceRefs: list[str] | None = None
+    enabled: bool | None = None
+
+
+class CaseImportPreviewCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=200000)
+    filename: str | None = Field(default=None, max_length=300)
+
+
+class CaseImportConfirmCreate(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     symptom: str | None = Field(default=None, max_length=10000)
     rootCause: str | None = Field(default=None, max_length=10000)
@@ -624,6 +650,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 include_disabled=includeDisabled,
             )
         }
+
+    @app.get("/api/v2/cases/imports")
+    async def list_case_imports(
+        _: Auth,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
+        return {
+            "imports": [
+                case_import_preview(item) for item in store.list_case_imports(limit=limit)
+            ]
+        }
+
+    @app.get("/api/v2/cases/imports/{import_id}")
+    async def get_case_import(_: Auth, import_id: str) -> dict:
+        try:
+            return {"import": case_import_preview(store.get_case_import(import_id))}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/cases/imports/preview")
+    async def preview_case_import_api(_: Auth, payload: CaseImportPreviewCreate) -> dict:
+        return preview_case_import(
+            store=store,
+            content=payload.content,
+            filename=payload.filename,
+        )
+
+    @app.post("/api/v2/cases/imports/{import_id}/confirm")
+    async def confirm_case_import_api(
+        _: Auth,
+        import_id: str,
+        payload: CaseImportConfirmCreate | None = None,
+    ) -> dict:
+        try:
+            overrides = payload.model_dump(exclude_none=True) if payload else {}
+            return confirm_case_import(store, import_id, overrides)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/cases/{case_id}")
     async def get_case(_: Auth, case_id: str) -> dict:

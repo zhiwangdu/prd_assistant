@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .artifacts import write_artifact_bytes
@@ -10,6 +11,26 @@ from .store import JsonObject, Store, case_searchable_text, now_iso
 
 
 CASE_REQUIRED_FIELDS = ("title", "symptom", "rootCause", "solution")
+
+CASE_IMPORT_SECTION_ALIASES = {
+    "title": {"title", "case title", "标题", "案例标题"},
+    "symptom": {"symptom", "symptoms", "现象", "故障现象", "问题现象"},
+    "rootCause": {
+        "root cause",
+        "rootcause",
+        "cause",
+        "原因",
+        "根因",
+        "根本原因",
+    },
+    "solution": {"solution", "fix", "resolution", "解决方案", "修复", "处理方案"},
+    "product": {"product", "产品"},
+    "version": {"version", "版本"},
+    "environment": {"environment", "env", "环境"},
+    "instanceId": {"instance", "instanceid", "instance id", "实例", "实例id"},
+    "nodeId": {"node", "nodeid", "node id", "节点", "节点id"},
+    "evidenceRefs": {"evidencerefs", "evidence refs", "evidence", "证据", "证据引用"},
+}
 
 
 def create_manual_case(store: Store, payload: JsonObject) -> JsonObject:
@@ -55,6 +76,201 @@ def update_case(store: Store, case_id: str, payload: JsonObject) -> JsonObject:
     for field in CASE_REQUIRED_FIELDS:
         require_non_empty(merged, field)
     return store.update_case(case_id, updates, case_searchable_text(merged))
+
+
+def preview_case_import(
+    store: Store,
+    content: str,
+    filename: str | None = None,
+) -> JsonObject:
+    draft = draft_case_from_text(content)
+    validation_errors = validate_case_draft(draft)
+    case_import = store.create_case_import(
+        source_text=content,
+        filename=filename,
+        draft=draft,
+        validation_errors=validation_errors,
+    )
+    return {"import": case_import_preview(case_import)}
+
+
+def confirm_case_import(
+    store: Store,
+    import_id: str,
+    overrides: JsonObject | None = None,
+) -> JsonObject:
+    case_import = store.get_case_import(import_id)
+    if case_import["status"] == "confirmed" and case_import.get("caseId"):
+        return {
+            "import": case_import_preview(case_import),
+            "case": store.get_case(case_import["caseId"]),
+        }
+    draft = dict(case_import.get("draft", {}))
+    draft.update(normalize_case_import_overrides(overrides or {}))
+    validation_errors = validate_case_draft(draft)
+    if validation_errors:
+        store.update_case_import(
+            import_id,
+            status="previewed",
+            draft=draft,
+            validation_errors=validation_errors,
+        )
+        raise ValueError("case import draft is incomplete: " + "; ".join(validation_errors))
+    case = create_manual_case(store, draft)
+    confirmed = store.update_case_import(
+        import_id,
+        status="confirmed",
+        draft=draft,
+        validation_errors=[],
+        case_id=case["caseId"],
+    )
+    return {"import": case_import_preview(confirmed), "case": case}
+
+
+def case_import_preview(case_import: JsonObject) -> JsonObject:
+    return {
+        "importId": case_import["importId"],
+        "status": case_import["status"],
+        "filename": case_import.get("filename"),
+        "caseId": case_import.get("caseId"),
+        "draft": case_import.get("draft", {}),
+        "validationErrors": case_import.get("validationErrors", []),
+        "sourceSizeBytes": case_import.get("sourceSizeBytes", 0),
+        "createdAt": case_import["createdAt"],
+        "updatedAt": case_import["updatedAt"],
+    }
+
+
+def draft_case_from_text(content: str) -> JsonObject:
+    parsed_json = try_parse_case_json(content)
+    if parsed_json is not None:
+        return normalize_case_import_overrides(parsed_json)
+    sections = parse_case_sections(content)
+    draft = normalize_case_import_overrides(sections)
+    free_text = sections.get("_freeText", "")
+    non_empty_lines = [line.strip() for line in content.splitlines() if line.strip()]
+    if not draft.get("title") and non_empty_lines:
+        draft["title"] = non_empty_lines[0][:180]
+    if not draft.get("symptom") and free_text:
+        draft["symptom"] = free_text
+    return draft
+
+
+def try_parse_case_json(content: str) -> JsonObject | None:
+    stripped = content.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        value = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    return value
+
+
+def parse_case_sections(content: str) -> JsonObject:
+    result: JsonObject = {"_freeText": ""}
+    buffers: dict[str, list[str]] = {}
+    current_key: str | None = None
+    free_lines: list[str] = []
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip()
+        parsed = parse_case_section_line(line)
+        if parsed is not None:
+            current_key, value = parsed
+            if value:
+                buffers.setdefault(current_key, []).append(value)
+            continue
+        if current_key is not None:
+            buffers.setdefault(current_key, []).append(line)
+        elif line.strip():
+            free_lines.append(line.strip())
+    for key, lines in buffers.items():
+        text = "\n".join(line.strip() for line in lines if line.strip()).strip()
+        if not text:
+            continue
+        if key == "evidenceRefs":
+            result[key] = split_evidence_refs(text)
+        else:
+            result[key] = text
+    result["_freeText"] = "\n".join(free_lines).strip()
+    return result
+
+
+def parse_case_section_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip().lstrip("#*- >").strip()
+    if not stripped:
+        return None
+    key = canonical_case_import_key(stripped)
+    if key is not None:
+        return key, ""
+    match = re.match(r"^([^:：]{1,40})[:：]\s*(.*)$", stripped)
+    if not match:
+        return None
+    key = canonical_case_import_key(match.group(1))
+    if key is None:
+        return None
+    return key, match.group(2).strip()
+
+
+def canonical_case_import_key(label: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", label.strip().lower())
+    normalized = normalized.removesuffix(":").removesuffix("：").strip()
+    for key, aliases in CASE_IMPORT_SECTION_ALIASES.items():
+        if normalized in aliases:
+            return key
+    return None
+
+
+def normalize_case_import_overrides(payload: JsonObject) -> JsonObject:
+    normalized: JsonObject = {}
+    alias_map = {
+        "root_cause": "rootCause",
+        "root cause": "rootCause",
+        "rootcause": "rootCause",
+        "evidence_refs": "evidenceRefs",
+        "evidence refs": "evidenceRefs",
+        "instance_id": "instanceId",
+        "instance id": "instanceId",
+        "node_id": "nodeId",
+        "node id": "nodeId",
+    }
+    for key, value in payload.items():
+        canonical = alias_map.get(str(key).strip().lower(), key)
+        if canonical in (
+            "title",
+            "symptom",
+            "rootCause",
+            "solution",
+            "product",
+            "version",
+            "environment",
+            "instanceId",
+            "nodeId",
+        ):
+            text = optional_string(value)
+            if text is not None:
+                normalized[canonical] = text
+        elif canonical == "evidenceRefs":
+            normalized[canonical] = normalize_string_list(value)
+        elif canonical == "enabled":
+            normalized[canonical] = bool(value)
+    return normalized
+
+
+def validate_case_draft(draft: JsonObject) -> list[str]:
+    errors = []
+    for field in CASE_REQUIRED_FIELDS:
+        value = draft.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} is required")
+    return errors
+
+
+def split_evidence_refs(value: str) -> list[str]:
+    parts = re.split(r"[\n,，]+", value)
+    return normalize_string_list([part.strip() for part in parts])
 
 
 def base_case_record(source_type: str, payload: JsonObject) -> JsonObject:

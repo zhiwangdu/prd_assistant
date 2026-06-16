@@ -37,7 +37,8 @@ slice provides the durable foundation for the V2 product model:
   queries, per-run `metadata_context` auto-selection, HTTP API, and
   readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
-  SQLite FTS5/BM25 recall, edit/disable API, and readonly/task MCP search.
+  text/JSON import drafts, SQLite FTS5/BM25 recall, edit/disable API, and
+  readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
   `system_context` run snapshot, readonly/task MCP reference reading, and
@@ -158,6 +159,10 @@ POST /api/v2/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
 GET  /api/v2/cases
+GET  /api/v2/cases/imports
+GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports/preview
+POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
 GET  /api/v2/skills
@@ -184,8 +189,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, encrypted Fetch credential sets, Case
-import drafts, embedding/vector recall, WebUI, or full LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, encrypted Fetch credential sets,
+embedding/vector recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -420,6 +425,21 @@ FTS5/BM25 over title, symptom, root cause, solution, product/version/
 environment, instance/node, and evidence refs, with token-overlap fallback if
 FTS5 is unavailable. Disabled cases are hidden unless the caller sets
 `includeDisabled=true`.
+
+Case import drafts support text or JSON capture before a Case is confirmed:
+
+```text
+POST /api/v2/cases/imports/preview
+GET  /api/v2/cases/imports
+GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports/:import_id/confirm
+```
+
+Preview parses JSON Case fields or plain text sections such as `Title`,
+`Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and
+`Evidence Refs`. Missing required fields are returned as `validationErrors`.
+Confirm may provide overrides to complete or edit the draft; only confirm writes
+to `cases` and updates the FTS index.
 
 Readonly MCP and task MCP expose:
 

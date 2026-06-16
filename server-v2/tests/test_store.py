@@ -15,8 +15,10 @@ from pathlib import Path
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.artifacts import resolve_artifact_path, write_artifact_bytes
 from logagent_v2.case_memory import (
+    confirm_case_import,
     create_manual_case,
     create_task_case,
+    preview_case_import,
     update_case as update_case_record,
 )
 from logagent_v2.config import Settings, ToolDefinition
@@ -1531,6 +1533,69 @@ class StoreTests(unittest.TestCase):
             case_context = [item for item in evidence if item["kind"] == "case_context"]
             self.assertEqual(len(case_context), 1)
             self.assertFalse(case_context[0]["final_allowed"])
+
+    def test_case_import_preview_confirm_and_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            content = """
+Title: Query timeout during compaction
+Product: opengemini
+Version: 1.3.0
+Environment: staging
+Instance ID: inst-a
+Symptom:
+Queries timed out while compaction backlog grew.
+Root Cause:
+Compaction workers fell behind after retention policy changes.
+Solution:
+Reduce concurrent writes and increase compaction throughput.
+Evidence Refs:
+grep_results.json#matches/0
+"""
+            preview = preview_case_import(store, content, filename="case.txt")
+            case_import = preview["import"]
+            self.assertEqual(case_import["status"], "previewed")
+            self.assertEqual(case_import["filename"], "case.txt")
+            self.assertEqual(case_import["validationErrors"], [])
+            self.assertEqual(case_import["draft"]["product"], "opengemini")
+            self.assertEqual(case_import["draft"]["instanceId"], "inst-a")
+
+            listed = store.list_case_imports()
+            self.assertEqual(listed[0]["importId"], case_import["importId"])
+            confirmed = confirm_case_import(store, case_import["importId"])
+            self.assertEqual(confirmed["import"]["status"], "confirmed")
+            self.assertEqual(confirmed["case"]["sourceType"], "manual")
+            self.assertEqual(
+                confirmed["case"]["evidenceRefs"], ["grep_results.json#matches/0"]
+            )
+            self.assertEqual(
+                store.search_cases("compaction timeout", limit=5)[0]["caseId"],
+                confirmed["case"]["caseId"],
+            )
+            repeated = confirm_case_import(store, case_import["importId"])
+            self.assertEqual(repeated["case"]["caseId"], confirmed["case"]["caseId"])
+
+    def test_case_import_confirm_rejects_incomplete_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            preview = preview_case_import(store, "Only a symptom line")
+            self.assertIn("rootCause is required", preview["import"]["validationErrors"])
+            with self.assertRaises(ValueError):
+                confirm_case_import(store, preview["import"]["importId"])
+
+            completed = confirm_case_import(
+                store,
+                preview["import"]["importId"],
+                {
+                    "title": "Manual title",
+                    "rootCause": "Missing index caused slow query.",
+                    "solution": "Create the missing index.",
+                },
+            )
+            self.assertEqual(completed["case"]["title"], "Manual title")
+            self.assertEqual(completed["import"]["validationErrors"], [])
 
     def test_case_search_uses_fts_and_updates_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

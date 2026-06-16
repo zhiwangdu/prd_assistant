@@ -210,6 +210,18 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS case_imports (
+                  import_id TEXT PRIMARY KEY,
+                  status TEXT NOT NULL,
+                  filename TEXT,
+                  source_text TEXT NOT NULL,
+                  draft_json TEXT NOT NULL,
+                  validation_errors_json TEXT NOT NULL,
+                  case_id TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS fetch_endpoints (
                   id TEXT PRIMARY KEY,
                   name TEXT NOT NULL,
@@ -230,6 +242,8 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_metadata_imports_status
                   ON metadata_imports(status, updated_at);
                 CREATE INDEX IF NOT EXISTS idx_cases_task_id ON cases(task_id);
+                CREATE INDEX IF NOT EXISTS idx_case_imports_status
+                  ON case_imports(status, updated_at);
                 CREATE INDEX IF NOT EXISTS idx_fetch_endpoints_enabled ON fetch_endpoints(enabled);
                 """
             )
@@ -836,6 +850,109 @@ class Store:
         item["sourceUrl"] = item.pop("source_url", None)
         item["snapshot"] = decode_json(item.pop("snapshot_json"), {})
         item["raw"] = decode_json(item.pop("raw_json"), {})
+        item["createdAt"] = item.pop("created_at")
+        item["updatedAt"] = item.pop("updated_at")
+        return item
+
+    def create_case_import(
+        self,
+        source_text: str,
+        draft: JsonObject,
+        validation_errors: list[str],
+        filename: str | None = None,
+    ) -> JsonObject:
+        import_id = new_id("caseimp")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO case_imports(
+                  import_id, status, filename, source_text, draft_json,
+                  validation_errors_json, case_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    import_id,
+                    "previewed",
+                    filename,
+                    source_text,
+                    encode_json(draft),
+                    encode_json(validation_errors),
+                    None,
+                    ts,
+                    ts,
+                ),
+            )
+        return self.get_case_import(import_id)
+
+    def list_case_imports(self, limit: int = 50) -> list[JsonObject]:
+        limit = max(1, min(limit, 200))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM case_imports
+                ORDER BY updated_at DESC, import_id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._case_import_from_row(row) for row in rows]
+
+    def get_case_import(self, import_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM case_imports WHERE import_id = ?", (import_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown case import {import_id}")
+        return self._case_import_from_row(row)
+
+    def update_case_import(
+        self,
+        import_id: str,
+        status: str,
+        draft: JsonObject | None = None,
+        validation_errors: list[str] | None = None,
+        case_id: str | None = None,
+    ) -> JsonObject:
+        current = self.get_case_import(import_id)
+        ts = now_iso()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE case_imports
+                SET status = ?,
+                    draft_json = ?,
+                    validation_errors_json = ?,
+                    case_id = ?,
+                    updated_at = ?
+                WHERE import_id = ?
+                """,
+                (
+                    status,
+                    encode_json(draft if draft is not None else current["draft"]),
+                    encode_json(
+                        validation_errors
+                        if validation_errors is not None
+                        else current["validationErrors"]
+                    ),
+                    case_id if case_id is not None else current.get("caseId"),
+                    ts,
+                    import_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown case import {import_id}")
+        return self.get_case_import(import_id)
+
+    def _case_import_from_row(self, row: sqlite3.Row) -> JsonObject:
+        item = dict(row)
+        item["importId"] = item.pop("import_id")
+        item["sourceText"] = item.pop("source_text")
+        item["sourceSizeBytes"] = len(item["sourceText"].encode("utf-8"))
+        item["draft"] = decode_json(item.pop("draft_json"), {})
+        item["validationErrors"] = decode_json(item.pop("validation_errors_json"), [])
+        item["caseId"] = item.pop("case_id", None)
         item["createdAt"] = item.pop("created_at")
         item["updatedAt"] = item.pop("updated_at")
         return item

@@ -81,8 +81,8 @@ Implemented in this slice:
   storage, field/tag type query APIs, per-run `metadata_context`
   auto-selection, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
-  confirmation, SQLite FTS5/BM25 recall, edit/disable API, readonly MCP search,
-  and task MCP background case context.
+  confirmation, text/JSON import drafts, SQLite FTS5/BM25 recall,
+  edit/disable API, readonly MCP search, and task MCP background case context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
@@ -101,7 +101,7 @@ Not yet implemented:
   model reasoning after resume.
 - Encrypted Fetch credential sets, WebUI Fetch management, and WebUI cutover.
 - WebUI System Context cutover.
-- Case import drafts, embedding/vector recall, and WebUI Memory management.
+- Case embedding/vector recall and WebUI Memory management.
 - WebUI V2 cutover.
 
 ## API
@@ -147,6 +147,10 @@ POST /api/v2/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
 GET  /api/v2/cases
+GET  /api/v2/cases/imports
+GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports/preview
+POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
 GET  /api/v2/skills
@@ -192,6 +196,7 @@ SQLite tables:
 - `metadata_instances`
 - `metadata_imports`
 - `cases`
+- `case_imports`
 - `fetch_endpoints`
 
 The database stores state and bounded previews. Large payloads live in artifact
@@ -510,6 +515,16 @@ Supported sources:
 - `task`: created through `POST /api/v2/runs/:run_id/case`; the run must be
   `succeeded` and have a final answer. Repeated confirmation of one run returns
   the existing task Case instead of creating duplicates.
+
+Case import drafts live in `case_imports` and are created through
+`POST /api/v2/cases/imports/preview`. Preview accepts JSON Case fields or plain
+text sections such as `Title`, `Symptom`, `Root Cause`, `Solution`, `Product`,
+`Version`, `Environment`, `Instance ID`, `Node ID`, and `Evidence Refs`. It
+stores the source text, parsed draft, and validation errors without mutating
+`cases`. `POST /api/v2/cases/imports/:import_id/confirm` may provide field
+overrides; only a complete confirmed draft creates a `manual` Case and updates
+the FTS index. Re-confirming an already confirmed import returns the existing
+Case.
 
 Search is dependency-light and local: V2 maintains a SQLite FTS5 table beside
 `cases` and ranks query matches with `bm25`. The indexed text covers `title`,
