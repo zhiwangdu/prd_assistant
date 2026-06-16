@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 InfluxQL Tool Output Adapter
+
+- Added V2 Tool Runner stdout normalization for InfluxQL analyzer report and compare-report JSON.
+- Generic JSON stdout parsing now accepts `summary`/`message`/`title`, `findings`/`issues`/`diagnostics`, string findings, and alternate finding fields such as `level`, `path`, `lineNumber`, and `description`.
+- InfluxQL report output now produces summaries for record/window/statement/parse-error counts plus special rule counts, and findings for special rules, parse errors, realtime classification, and notable fingerprints.
+- InfluxQL compare output now produces summaries for statement/QPS deltas and batch stats, plus findings for new/removed/changed fingerprints and rule deltas.
+- Added regression coverage for InfluxQL report and compare-report parsing.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Runner Fallback Inputs
 
 - Added V2 Tool Runner fallback input matching for configured tools whose args contain `{input_file}`.

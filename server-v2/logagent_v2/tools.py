@@ -376,29 +376,443 @@ def safe_action_segment(value: str) -> str:
     return result[:80] or "tool"
 
 
-def parse_json(data: bytes) -> JsonObject | None:
+def parse_json(data: bytes) -> object | None:
     if not data.strip():
         return None
     try:
         value = json.loads(data.decode("utf-8"))
     except Exception:
         return None
-    return value if isinstance(value, dict) else None
+    return value
 
 
-def summary_from_stdout(parsed: JsonObject | None, stdout: bytes, timed_out: bool) -> str:
+def summary_from_stdout(parsed: object | None, stdout: bytes, timed_out: bool) -> str:
     if timed_out:
         return "Tool timed out."
-    if parsed and isinstance(parsed.get("summary"), str):
-        return parsed["summary"]
+    if isinstance(parsed, dict):
+        if is_influxql_report(parsed):
+            return influxql_report_summary(parsed)
+        if is_influxql_compare_report(parsed):
+            return influxql_compare_summary(parsed)
+        summary = string_field(parsed, ("summary", "message", "title"))
+        if summary:
+            return summary
+    if isinstance(parsed, str) and parsed.strip():
+        return parsed.strip()[:500]
     preview = stdout.decode("utf-8", errors="replace").strip()
     return preview[:500] if preview else "Tool produced no stdout."
 
 
-def findings_from_stdout(parsed: JsonObject | None) -> list[JsonObject]:
+def findings_from_stdout(parsed: object | None) -> list[JsonObject]:
     if not parsed:
         return []
-    findings = parsed.get("findings")
-    if not isinstance(findings, list):
+    if isinstance(parsed, dict):
+        if is_influxql_report(parsed):
+            return influxql_report_findings(parsed)
+        if is_influxql_compare_report(parsed):
+            return influxql_compare_findings(parsed)
+        for key in ("findings", "issues", "diagnostics"):
+            findings = parsed.get(key)
+            if isinstance(findings, list):
+                return parse_findings_value(findings)
         return []
-    return [item for item in findings if isinstance(item, dict)]
+    if isinstance(parsed, list):
+        return parse_findings_value(parsed)
+    return []
+
+
+def is_influxql_report(value: JsonObject) -> bool:
+    return (
+        "total_records" in value
+        and "total_statements" in value
+        and isinstance(value.get("fingerprints"), list)
+    )
+
+
+def is_influxql_compare_report(value: JsonObject) -> bool:
+    return "batch_a" in value and "batch_b" in value and "statement_delta" in value
+
+
+def influxql_report_summary(value: JsonObject) -> str:
+    total_records = int_field(value, "total_records") or 0
+    records_in_window = int_field(value, "records_in_window") or 0
+    total_statements = int_field(value, "total_statements") or 0
+    parse_errors = int_field(value, "parse_error_count") or 0
+    summary = (
+        "influxql report: "
+        f"records={total_records}, recordsInWindow={records_in_window}, "
+        f"statements={total_statements}, parseErrors={parse_errors}"
+    )
+    rule_summary = influxql_rule_summary(value)
+    if rule_summary:
+        summary += f", specialRules={rule_summary}"
+    return summary
+
+
+def influxql_compare_summary(value: JsonObject) -> str:
+    statement_delta = number_to_string(value.get("statement_delta")) or "0"
+    qps_delta = number_to_string(value.get("qps_delta")) or "0"
+    return (
+        "influxql compare report: "
+        f"statementDelta={statement_delta}, qpsDelta={qps_delta}, "
+        f"batchA={compare_batch_summary(value.get('batch_a'))}, "
+        f"batchB={compare_batch_summary(value.get('batch_b'))}"
+    )
+
+
+def compare_batch_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return "unknown"
+    statements = number_to_string(value.get("total_statements")) or "0"
+    parse_errors = number_to_string(value.get("parse_error_count")) or "0"
+    qps = number_to_string(value.get("qps")) or "0"
+    duration = number_to_string(value.get("effective_duration_seconds")) or "0"
+    return (
+        f"statements={statements}, parseErrors={parse_errors}, "
+        f"qps={qps}, durationSeconds={duration}"
+    )
+
+
+def influxql_report_findings(value: JsonObject) -> list[JsonObject]:
+    findings: list[JsonObject] = []
+    findings.extend(influxql_special_rule_findings(value))
+    findings.extend(influxql_parse_error_findings(value))
+    findings.extend(influxql_realtime_findings(value))
+    findings.extend(influxql_fingerprint_findings(value))
+    return findings
+
+
+def influxql_compare_findings(value: JsonObject) -> list[JsonObject]:
+    findings: list[JsonObject] = []
+    findings.extend(compare_fingerprint_findings(value, "new_fingerprints", "new fingerprint"))
+    findings.extend(
+        compare_fingerprint_findings(value, "removed_fingerprints", "removed fingerprint")
+    )
+    findings.extend(
+        compare_fingerprint_findings(value, "changed_fingerprints", "changed fingerprint")
+    )
+    findings.extend(compare_rule_delta_findings(value))
+    return findings
+
+
+def influxql_rule_summary(value: JsonObject) -> str:
+    rules = value.get("special_rules")
+    if not isinstance(rules, list):
+        return ""
+    parts = []
+    for item in rules[:8]:
+        if not isinstance(item, dict):
+            continue
+        name = string_field(item, ("rule",))
+        if not name:
+            continue
+        count = number_to_string(item.get("count")) or "0"
+        parts.append(f"{name}:{count}")
+    return ", ".join(parts)
+
+
+def influxql_special_rule_findings(value: JsonObject) -> list[JsonObject]:
+    rules = value.get("special_rules")
+    if not isinstance(rules, list):
+        return []
+    findings = []
+    for item in rules[:12]:
+        if not isinstance(item, dict):
+            continue
+        name = string_field(item, ("rule",))
+        if not name:
+            continue
+        count = number_to_string(item.get("count")) or "0"
+        fingerprints = item.get("fingerprints")
+        fingerprint_count = len(fingerprints) if isinstance(fingerprints, list) else 0
+        findings.append(
+            {
+                "severity": influxql_rule_severity(name),
+                "message": (
+                    f"rule {name} matched {count} statement(s) across "
+                    f"{fingerprint_count} fingerprint(s): {influxql_rule_description(name)}"
+                ),
+            }
+        )
+    return findings
+
+
+def influxql_parse_error_findings(value: JsonObject) -> list[JsonObject]:
+    errors = value.get("parse_errors")
+    if not isinstance(errors, list):
+        return []
+    findings = []
+    for item in errors[:5]:
+        if not isinstance(item, dict):
+            continue
+        message = string_field(item, ("error",))
+        if not message:
+            continue
+        count = number_to_string(item.get("count")) or "0"
+        findings.append(
+            {
+                "severity": "high",
+                "message": f"parse error occurred {count} time(s): {message}",
+            }
+        )
+    return findings
+
+
+def influxql_realtime_findings(value: JsonObject) -> list[JsonObject]:
+    realtime = value.get("realtime_query")
+    if not isinstance(realtime, dict):
+        return []
+    total = int_field(realtime, "total") or 0
+    if total <= 0:
+        return []
+    non_realtime = int_field(realtime, "non_realtime") or 0
+    unknown = int_field(realtime, "unknown") or 0
+    realtime_count = int_field(realtime, "realtime") or 0
+    findings = []
+    if non_realtime > 0:
+        findings.append(
+            {
+                "severity": "medium",
+                "message": (
+                    "realtime query classification found "
+                    f"{non_realtime}/{total} non-realtime select-like statement(s)"
+                ),
+            }
+        )
+    if unknown > 0:
+        reason = first_realtime_sample_reason(realtime, "sample_unknown")
+        reason_text = f"; sample reason: {reason}" if reason else ""
+        findings.append(
+            {
+                "severity": "low",
+                "message": (
+                    "realtime query classification is unknown for "
+                    f"{unknown}/{total} select-like statement(s); "
+                    f"realtime={realtime_count}{reason_text}"
+                ),
+            }
+        )
+    return findings
+
+
+def influxql_fingerprint_findings(value: JsonObject) -> list[JsonObject]:
+    fingerprints = value.get("fingerprints")
+    if not isinstance(fingerprints, list):
+        return []
+    findings = []
+    for item in fingerprints[:5]:
+        if not isinstance(item, dict):
+            continue
+        count = int_field(item, "count") or 0
+        rules = string_list(item.get("rules"))
+        if count <= 1 and not rules:
+            continue
+        statement_type = string_field(item, ("statement_type",)) or ""
+        normalized = string_field(item, ("normalized_query",)) or ""
+        rule_text = ", ".join(rules) if rules else "none"
+        findings.append(
+            {
+                "severity": "low",
+                "message": (
+                    f"fingerprint {statement_type} occurred {count} time(s), "
+                    f"rules=[{rule_text}], normalized={normalized}"
+                ),
+            }
+        )
+    return findings
+
+
+def compare_fingerprint_findings(value: JsonObject, key: str, label: str) -> list[JsonObject]:
+    items = value.get(key)
+    if not isinstance(items, list):
+        return []
+    findings = []
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            continue
+        status = string_field(item, ("status",)) or label
+        statement_type = string_field(item, ("statement_type",)) or "unknown"
+        normalized = (
+            string_field(item, ("normalized_query",))
+            or string_field(item, ("fingerprint",))
+            or "unknown"
+        )
+        count_a = number_to_string(item.get("count_a")) or "0"
+        count_b = number_to_string(item.get("count_b")) or "0"
+        count_delta = number_to_string(item.get("count_delta")) or "0"
+        qps_a = number_to_string(item.get("qps_a")) or "0"
+        qps_b = number_to_string(item.get("qps_b")) or "0"
+        qps_delta = number_to_string(item.get("qps_delta")) or "0"
+        rules = ",".join(string_list(item.get("rules"))) or "-"
+        findings.append(
+            {
+                "severity": compare_fingerprint_severity(key, count_delta),
+                "message": (
+                    f"{label}: status={status}, statementType={statement_type}, "
+                    f"count={count_a}->{count_b} (delta={count_delta}), "
+                    f"qps={qps_a}->{qps_b} (delta={qps_delta}), "
+                    f"rules={rules}, query={normalized}"
+                ),
+            }
+        )
+    return findings
+
+
+def compare_rule_delta_findings(value: JsonObject) -> list[JsonObject]:
+    items = value.get("rule_deltas")
+    if not isinstance(items, list):
+        return []
+    findings = []
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            continue
+        rule = string_field(item, ("rule",)) or "unknown"
+        count_a = number_to_string(item.get("count_a")) or "0"
+        count_b = number_to_string(item.get("count_b")) or "0"
+        count_delta = number_to_string(item.get("count_delta")) or "0"
+        qps_a = number_to_string(item.get("qps_a")) or "0"
+        qps_b = number_to_string(item.get("qps_b")) or "0"
+        qps_delta = number_to_string(item.get("qps_delta")) or "0"
+        findings.append(
+            {
+                "severity": compare_delta_severity(count_delta),
+                "message": (
+                    f"rule delta: rule={rule}, count={count_a}->{count_b} "
+                    f"(delta={count_delta}), qps={qps_a}->{qps_b} "
+                    f"(delta={qps_delta})"
+                ),
+            }
+        )
+    return findings
+
+
+def first_realtime_sample_reason(value: JsonObject, key: str) -> str | None:
+    samples = value.get(key)
+    if not isinstance(samples, list) or not samples:
+        return None
+    first = samples[0]
+    if not isinstance(first, dict):
+        return None
+    return string_field(first, ("reason",))
+
+
+def influxql_rule_severity(rule: str) -> str:
+    if rule in {"write_or_destructive", "large_limit", "no_time_filter"}:
+        return "high"
+    if rule in {"group_by_high_cardinality_risk", "not_realtime_query"}:
+        return "medium"
+    return "low"
+
+
+def influxql_rule_description(rule: str) -> str:
+    descriptions = {
+        "no_time_filter": "SELECT has no explicit time predicate",
+        "has_regex": "query uses regex matching or regex measurement/source",
+        "has_wildcard": "query uses wildcard selection, grouping, or metadata scope",
+        "large_limit": "LIMIT or SLIMIT is greater than or equal to the configured threshold",
+        "group_by_high_cardinality_risk": (
+            "non-time GROUP BY dimensions exceed the configured threshold"
+        ),
+        "meta_query": "metadata or explain query",
+        "write_or_destructive": "query writes data or performs destructive changes",
+        "not_realtime_query": "select-like query is explicitly non-realtime",
+    }
+    return descriptions.get(rule, "unrecognized analyzer rule")
+
+
+def compare_fingerprint_severity(key: str, count_delta: str) -> str:
+    if key == "removed_fingerprints":
+        return "low"
+    if key == "new_fingerprints":
+        return "high"
+    return compare_delta_severity(count_delta)
+
+
+def compare_delta_severity(count_delta: str) -> str:
+    try:
+        value = float(count_delta.strip())
+    except ValueError:
+        return "medium"
+    if value > 0:
+        return "high"
+    if value < 0:
+        return "low"
+    return "medium"
+
+
+def parse_findings_value(items: list[object]) -> list[JsonObject]:
+    findings = []
+    for item in items:
+        finding = parse_finding_value(item)
+        if finding:
+            findings.append(finding)
+    return findings
+
+
+def parse_finding_value(value: object) -> JsonObject | None:
+    if isinstance(value, str) and value.strip():
+        return {"message": value.strip()}
+    if not isinstance(value, dict):
+        return None
+    message = string_field(
+        value,
+        ("message", "summary", "description", "detail", "title", "cause"),
+    )
+    if not message:
+        return None
+    finding: JsonObject = {"message": message}
+    severity = string_field(value, ("severity", "level", "status"))
+    if severity:
+        finding["severity"] = severity
+    file = string_field(value, ("file", "path", "filename"))
+    if file:
+        finding["file"] = file
+    line = number_field(value, ("line", "lineNumber", "startLine"))
+    if line is not None:
+        finding["line"] = line
+    return finding
+
+
+def string_field(value: JsonObject, keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    return None
+
+
+def number_field(value: JsonObject, keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        item = value.get(key)
+        if isinstance(item, int):
+            return item
+        if isinstance(item, float):
+            return int(item)
+        if isinstance(item, str):
+            try:
+                return int(item.strip())
+            except ValueError:
+                continue
+    return None
+
+
+def int_field(value: JsonObject, key: str) -> int | None:
+    return number_field(value, (key,))
+
+
+def number_to_string(value: object) -> str | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]

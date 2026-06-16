@@ -22,7 +22,9 @@ slice provides the durable foundation for the V2 product model:
 - Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
   `logagent.run_domain_tool`; tools with `{input_file}` consume matching
   materialized `tool_inputs` before execution, then fall back to manifest file
-  patterns and initial grep keyword matches.
+  patterns and initial grep keyword matches. Generic JSON stdout and
+  InfluxQL analyzer report/compare stdout are normalized into
+  `summary/findings`.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   default-off allowlist execution, task MCP `logagent.fetch`, and
   `fetch_result` final evidence refs.
@@ -177,10 +179,9 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond node-package InfluxQL JSONL, real analyzer-specific stdout
-adapters, Fetch cURL import and encrypted credential sets, richer Skill
-auto-matching, Case import drafts, FTS/embedding recall, WebUI, or full
-LangGraph model loop.
+inputs beyond node-package InfluxQL JSONL, Fetch cURL import and encrypted
+credential sets, richer Skill auto-matching, Case import drafts, FTS/embedding
+recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -252,7 +253,11 @@ log_slices/<slice_id>.json#lines
 
 Configured tools can only be invoked by `toolId`; the model cannot provide an
 executable path, shell command, or argv. Tool stdout is parsed as JSON when
-possible and persisted as `tool_result` evidence.
+possible and persisted as `tool_result` evidence. Generic JSON output can use
+`summary`, `message`, or `title`, plus `findings`, `issues`, or `diagnostics`.
+InfluxQL analyzer report JSON is adapted into a compact summary and findings
+for special rules, parse errors, realtime classification, fingerprints, compare
+fingerprint deltas, and rule deltas.
 
 If a configured tool argument contains `{input_file}`, V2 reads the current
 run's latest `tool_input_index` evidence and selects entries whose `toolIds`

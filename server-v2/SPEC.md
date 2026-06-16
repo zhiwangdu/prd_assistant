@@ -63,7 +63,9 @@ Implemented in this slice:
   `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
   task MCP `logagent.run_domain_tool`. Tools with `{input_file}` arguments
   consume matching materialized tool inputs before execution, then fall back to
-  manifest file patterns and initial grep keyword matches.
+  manifest file patterns and initial grep keyword matches. Generic JSON stdout
+  and InfluxQL analyzer report/compare stdout are normalized into
+  `summary/findings`.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, exposed as a built-in `/api/v2/tools` descriptor,
   and executable through task MCP `logagent.fetch` only when enabled and
@@ -95,8 +97,8 @@ Not yet implemented:
 
 - LangGraph provider integration.
 - V1-compatible analyzer materialized `tool_inputs/index.json` generation beyond
-  node-package InfluxQL JSONL, real analyzer-specific stdout adapters, per-tool
-  params schema, and full multi-round model reasoning after resume.
+  node-package InfluxQL JSONL, per-tool params schema, and full multi-round
+  model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
   Fetch management, Metadata task context auto-selection, and WebUI cutover.
 - Richer automatic Skill matching and WebUI System Context cutover.
@@ -303,6 +305,20 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+Tool stdout is parsed as JSON when possible. Generic JSON output supports
+`summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and
+finding fields `severity` / `level` / `status`, `file` / `path` / `filename`,
+`line` / `lineNumber` / `startLine`, and `message` / `summary` /
+`description` / `detail` / `title` / `cause`.
+
+InfluxQL analyzer report stdout is specially adapted. Summary includes
+`total_records`, `records_in_window`, `total_statements`, `parse_error_count`,
+and `special_rules`. Findings include special rule hits, parse errors,
+realtime classification, and notable fingerprints. InfluxQL compare report
+stdout is also adapted: `statement_delta`, `qps_delta`, `batch_a`, and
+`batch_b` go into summary, while new/removed/changed fingerprints and
+`rule_deltas` become findings.
 
 `GET /api/v2/exports/tools.zip` exports only enabled configured subprocess
 tools from `LOGAGENT_V2_TOOLS_JSON`. Built-in tools are not packaged. The

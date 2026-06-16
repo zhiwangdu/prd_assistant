@@ -36,6 +36,7 @@ from logagent_v2.metadata import (
 )
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
+from logagent_v2.tools import findings_from_stdout, parse_json, summary_from_stdout
 
 
 class StoreTests(unittest.TestCase):
@@ -538,6 +539,120 @@ class StoreTests(unittest.TestCase):
             self.assertNotEqual(
                 evidence[0]["payload"]["actionId"], evidence[1]["payload"]["actionId"]
             )
+
+    def test_tool_stdout_parses_influxql_report(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "total_records": 2,
+  "records_in_window": 2,
+  "total_statements": 2,
+  "parse_error_count": 1,
+  "fingerprints": [
+    {
+      "statement_type": "SELECT",
+      "normalized_query": "SELECT * FROM cpu LIMIT 1",
+      "count": 1,
+      "rules": ["large_limit", "no_time_filter"]
+    }
+  ],
+  "special_rules": [
+    {"rule": "large_limit", "count": 1, "fingerprints": ["fp1"]},
+    {"rule": "no_time_filter", "count": 1, "fingerprints": ["fp1"]}
+  ],
+  "parse_errors": [
+    {"error": "found BAD, expected SELECT", "count": 1, "sample_queries": ["BAD"]}
+  ],
+  "realtime_query": {
+    "total": 1,
+    "realtime": 0,
+    "non_realtime": 0,
+    "unknown": 1,
+    "sample_unknown": [{"reason": "query has no where time predicate"}]
+  }
+}"""
+        )
+
+        summary = summary_from_stdout(parsed, b"", False)
+        findings = findings_from_stdout(parsed)
+        self.assertIn("records=2", summary)
+        self.assertIn("specialRules=large_limit:1, no_time_filter:1", summary)
+        self.assertTrue(
+            any(
+                finding.get("severity") == "high"
+                and "rule large_limit" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any("parse error occurred 1 time" in finding["message"] for finding in findings)
+        )
+        self.assertTrue(
+            any(
+                "realtime query classification is unknown" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any("fingerprint SELECT occurred 1 time" in finding["message"] for finding in findings)
+        )
+
+    def test_tool_stdout_parses_influxql_compare_report(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "batch_a": {"total_statements": 10},
+  "batch_b": {"total_statements": 14, "qps": 2.5, "effective_duration_seconds": 5},
+  "statement_delta": 4,
+  "qps_delta": 0.5,
+  "new_fingerprints": [
+    {
+      "fingerprint": "fp-new",
+      "statement_type": "SELECT",
+      "normalized_query": "SELECT * FROM cpu",
+      "status": "new",
+      "count_a": 0,
+      "count_b": 4,
+      "count_delta": 4,
+      "qps_a": 0,
+      "qps_b": 0.5,
+      "qps_delta": 0.5,
+      "rules": ["no_time_filter"]
+    }
+  ],
+  "removed_fingerprints": [],
+  "changed_fingerprints": [],
+  "rule_deltas": [
+    {
+      "rule": "large_limit",
+      "count_a": 1,
+      "count_b": 3,
+      "count_delta": 2,
+      "qps_a": 0.1,
+      "qps_b": 0.3,
+      "qps_delta": 0.2
+    }
+  ]
+}"""
+        )
+
+        summary = summary_from_stdout(parsed, b"", False)
+        findings = findings_from_stdout(parsed)
+        self.assertIn("statementDelta=4", summary)
+        self.assertIn("batchB=statements=14", summary)
+        self.assertTrue(
+            any(
+                finding.get("severity") == "high"
+                and "count=0->4" in finding["message"]
+                and "rules=no_time_filter" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any(
+                "rule=large_limit" in finding["message"]
+                and "qps=0.1->0.3" in finding["message"]
+                for finding in findings
+            )
+        )
 
     def test_final_answer_evidence_refs_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
