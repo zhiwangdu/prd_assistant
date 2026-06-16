@@ -36,7 +36,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent.fetch`, and `fetch_result` final evidence refs.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
   and `logagent.request_approval`, exposed through run analysis summaries for
-  WebUI recovery.
+  WebUI recovery; user supplements answer pending user-input actions and recent
+  messages/action decisions are included in the next Agent request context.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
@@ -321,7 +322,8 @@ By default V2 uses `LOGAGENT_V2_AGENT_PROVIDER=stub`, which produces the
 deterministic low-confidence evidence summary used by the foundation tests.
 `LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` sends a compact prompt with the
 Workspace question, manifest counts, initial grep preview, allowed evidence
-refs, available Server-owned tools, and prior tool observations to
+refs, recent user messages/action results from resumed runs, available
+Server-owned tools, and prior tool observations to
 `<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider may return a
 `tool_calls` object for tools advertised in the prompt: log search/slice,
 Metadata, Case Memory, Skill references, Fetch catalog, configured domain tools,
@@ -332,9 +334,11 @@ feeds the observations into the next round, and stops after
 final-answer object; V2 normalizes it and rejects unsupported or non-current
 evidence refs before marking the run `succeeded`.
 
-This is a bounded provider-directed tool loop. Waiting/approval actions and
-resume-aware LangGraph planning remain future work and are not advertised to
-the provider.
+This is a bounded provider-directed tool loop. Waiting/approval tools are not
+advertised to the provider. Full LangGraph planning remains future work, but
+resumed runs include a bounded `interactionContext` with recent user messages,
+answered/approved/rejected actions, pending actions, and a
+finalize-with-current-evidence directive when the user requests it.
 
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
@@ -507,8 +511,11 @@ set, while API, MCP, and result artifacts continue to show only redacted values.
 
 `request_user_input` and `request_approval` persist pending `actions` and move
 the run into `waiting_for_user` or `waiting_for_approval`. Posting a message to
-a waiting run or approving/rejecting a pending action requeues the run through
-the SQLite job queue.
+a waiting run marks pending user-input actions as `answered` and requeues the
+run through the SQLite job queue. Approving/rejecting a pending action records
+the decision and requeues approval-waiting runs. The next Agent request carries
+recent user messages, action results, and remaining pending actions in
+`interactionContext`.
 
 ## Final Answers
 

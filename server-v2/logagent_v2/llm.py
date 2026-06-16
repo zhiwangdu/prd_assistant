@@ -76,9 +76,12 @@ def build_agent_provider_request(
     workspace: JsonObject,
     evidence_bundle: JsonObject,
     tool_observations: list[JsonObject] | None = None,
+    interaction_context: JsonObject | None = None,
 ) -> JsonObject:
     provider = (settings.agent_provider or "stub").lower()
-    prompt = build_agent_prompt(settings, workspace, evidence_bundle, tool_observations)
+    prompt = build_agent_prompt(
+        settings, workspace, evidence_bundle, tool_observations, interaction_context
+    )
     allowed_refs = allowed_evidence_refs(evidence_bundle)
     if provider == "stub":
         return {
@@ -254,6 +257,7 @@ def build_agent_prompt(
     workspace: JsonObject,
     evidence_bundle: JsonObject,
     tool_observations: list[JsonObject] | None = None,
+    interaction_context: JsonObject | None = None,
 ) -> str:
     manifest = evidence_bundle.get("manifest", {})
     grep_results = evidence_bundle.get("grepResults", {})
@@ -279,6 +283,7 @@ def build_agent_prompt(
         "allowedEvidenceRefs": [item["ref"] for item in evidence_preview if item.get("ref")],
         "evidencePreview": evidence_preview,
         "toolObservations": tool_observations or [],
+        "interactionContext": interaction_context or {},
         "availableTools": agent_available_tools(settings),
         "responseProtocol": {
             "finalAnswer": "Return the final answer JSON object directly.",

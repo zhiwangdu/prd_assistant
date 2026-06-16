@@ -91,7 +91,9 @@ Implemented in this slice:
   material is split into encrypted credential sets.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted, exposed in run
-  analysis summaries, and user message/approval APIs can requeue the run.
+  analysis summaries, user supplements mark pending user-input actions as
+  answered, and user message/approval APIs requeue the run with bounded
+  `interactionContext` in the next Agent request.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
@@ -125,10 +127,10 @@ Implemented in this slice:
 
 Not yet implemented:
 
-- Full LangGraph multi-round planning, tool loop, and resume-aware model
-  reasoning.
+- Full LangGraph multi-round planning and product-grade resume policies beyond
+  the current bounded `interactionContext` handoff.
 - Additional analyzer materialized `tool_inputs/index.json` generation beyond
-  generic InfluxQL/Flux JSONL and full multi-round model reasoning after resume.
+  generic InfluxQL/Flux JSONL.
 - WebUI Fetch management and WebUI cutover.
 - WebUI System Context cutover.
 - WebUI Memory management.
@@ -819,8 +821,8 @@ behavior. `openai_compatible` posts a compact Chat Completions request to
 `LOGAGENT_V2_AGENT_MODEL`, optional `LOGAGENT_V2_AGENT_API_KEY`, and
 `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`. The request includes the Workspace
 question/mode/language, manifest counts, a bounded initial grep preview,
-allowed current-run evidence refs, available read-only tools, and prior tool
-observations.
+allowed current-run evidence refs, recent user messages/action results from
+resumed runs, available read-only tools, and prior tool observations.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
@@ -835,8 +837,9 @@ default 3.
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
-tool requests, or max-round exhaustion fail the run. Approval/user waiting
-actions and resume-aware LangGraph planning remain future work.
+tool requests, or max-round exhaustion fail the run. Approval/user waiting tools
+are still not advertised to the provider; full resume-aware LangGraph planning
+remains future work.
 
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
@@ -875,8 +878,12 @@ the run to `waiting_for_user`; approval moves it to `waiting_for_approval`.
 WebUI can render the same recovery controls as the Rust task detail page.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
-SQLite job queue. The current Agent runtime is still a stub, so resumed runs do
-not yet perform true multi-round model reasoning.
+SQLite job queue. User messages also mark pending `user_input` actions as
+`answered`. The next Agent request includes a bounded `interactionContext`
+containing recent user messages, answered/approved/rejected actions, remaining
+pending actions, and `resumeDirective=finalize_with_current_evidence` when the
+user chooses finalization. The current runtime still does not implement full
+LangGraph resume planning.
 
 ## Security
 

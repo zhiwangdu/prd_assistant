@@ -1299,6 +1299,45 @@ class Store:
             )
         return self.get_action(action_id)
 
+    def answer_user_input_actions(
+        self,
+        run_id: str,
+        message: str,
+        resume_mode: str,
+    ) -> list[JsonObject]:
+        run = self.get_run(run_id)
+        ts = now_iso()
+        result = {"message": message, "resumeMode": resume_mode}
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM actions
+                WHERE run_id = ? AND kind = 'user_input' AND status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+            action_ids = [row["id"] for row in rows]
+            for action_id in action_ids:
+                conn.execute(
+                    """
+                    UPDATE actions
+                    SET status = 'answered', result_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (encode_json(result), ts, action_id),
+                )
+            if action_ids:
+                self._append_event_tx(
+                    conn,
+                    run["workspace_id"],
+                    run_id,
+                    "action.user_input.answered",
+                    {"actionIds": action_ids, "resumeMode": resume_mode},
+                    ts,
+                )
+        return [self.get_action(action_id) for action_id in action_ids]
+
     def get_evidence(self, evidence_id: str) -> JsonObject:
         with self.connect() as conn:
             row = conn.execute(

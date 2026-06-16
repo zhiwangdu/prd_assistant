@@ -80,7 +80,7 @@ Database
 - V2 bridge 必须支持读取单个 Workspace 后回填 question/mode，调用 `PATCH /api/v2/workspaces/:workspace_id` 保存选中 Workspace 的 question/mode/language，并调用 `DELETE /api/v2/workspaces/:workspace_id` 软删除历史 Workspace；删除后前端清空当前选择并刷新历史列表。
 - V2 bridge 必须支持对选中 Workspace 上传文件：小文件可直接调用 `/api/v2/workspaces/:workspace_id/uploads`，超过前端 chunk 阈值的文件必须走 `/api/v2/workspaces/:workspace_id/uploads/init`、`/api/v2/uploads/:session_id/chunks?offset=...` 和 `/api/v2/uploads/:session_id/complete`。
 - V2 bridge 必须调用 `/api/v2/workspaces/:workspace_id/runs` 创建 Run，轮询 `/api/v2/runs/:run_id/analysis`，并展示 run status、phase、timeline、evidence count、resource count、artifact count 和最终结果摘要。
-- V2 bridge 必须读取 `/api/v2/runs/:run_id/analysis` 中的 `pendingActions`；`WAITING_FOR_USER` 时调用 `/api/v2/runs/:run_id/messages` 提交补充或 `resumeMode=finalize`，`WAITING_FOR_APPROVAL` 时调用 `/api/v2/actions/:action_id/decisions` 批准或拒绝并恢复 run。
+- V2 bridge 必须读取 `/api/v2/runs/:run_id/analysis` 中的 `pendingActions`；`WAITING_FOR_USER` 时调用 `/api/v2/runs/:run_id/messages` 提交补充或 `resumeMode=finalize`，接受返回的 `answeredActions` 并通过后续轮询刷新 pending actions，`WAITING_FOR_APPROVAL` 时调用 `/api/v2/actions/:action_id/decisions` 批准或拒绝并恢复 run。
 - V2 bridge 的 artifact 下载必须由前端 `fetch` 携带 Authorization header 调用 `/api/v2/artifacts/:artifact_id`，不能依赖无法带 Bearer header 的裸链接。
 - V2 bridge 当前是迁移桥接层；完整 V2 原生页面仍需后续逐页切换。
 - 状态展示使用 `QUEUED`、`RUNNING`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL`、`SUCCEEDED`、`FAILED`。

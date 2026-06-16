@@ -66,12 +66,14 @@ class AgentRuntime:
             evidence_bundle,
         )
         self.store.update_run_status(run_id, "running", "agent_round")
+        interaction_context = self._interaction_context(run_id)
         final_answer = self._run_agent_round(
             workspace=workspace,
             workspace_id=workspace_id,
             run_id=run_id,
             evidence_bundle=evidence_bundle,
             analysis_package_artifact_id=analysis_package["artifact"]["id"],
+            interaction_context=interaction_context,
         )
         persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer)
@@ -84,6 +86,7 @@ class AgentRuntime:
         run_id: str,
         evidence_bundle: JsonObject,
         analysis_package_artifact_id: str | None,
+        interaction_context: JsonObject | None,
     ) -> JsonObject:
         tool_observations: list[JsonObject] = []
         rounds: list[JsonObject] = []
@@ -93,7 +96,11 @@ class AgentRuntime:
 
         for attempt in range(1, self.settings.agent_max_rounds + 1):
             provider_request = build_agent_provider_request(
-                self.settings, workspace, evidence_bundle, tool_observations
+                self.settings,
+                workspace,
+                evidence_bundle,
+                tool_observations,
+                interaction_context,
             )
             last_provider_request = provider_request
             request_audit = persist_agent_request(
@@ -135,7 +142,9 @@ class AgentRuntime:
                     provider_response = {
                         **provider_response,
                         "status": "completed",
-                        "finalAnswer": self._stub_final_answer(workspace, evidence_bundle),
+                        "finalAnswer": self._stub_final_answer(
+                            workspace, evidence_bundle, interaction_context
+                        ),
                     }
                 if provider_response.get("status") != "completed":
                     provider_response = {
@@ -398,20 +407,79 @@ class AgentRuntime:
             )
         return observations
 
-    def _stub_final_answer(self, workspace: JsonObject, evidence_bundle: JsonObject) -> JsonObject:
+    def _interaction_context(self, run_id: str) -> JsonObject:
+        timeline = self.store.list_timeline(run_id)
+        user_messages = [
+            {
+                "message": event.get("payload", {}).get("message"),
+                "resumeMode": event.get("payload", {}).get("resumeMode"),
+                "createdAt": event.get("created_at"),
+            }
+            for event in timeline
+            if event.get("kind") == "user.message"
+            and isinstance(event.get("payload"), dict)
+            and isinstance(event["payload"].get("message"), str)
+        ]
+        actions = self.store.list_actions(run_id)
+        action_results = [
+            {
+                "id": action.get("id"),
+                "kind": action.get("kind"),
+                "status": action.get("status"),
+                "payload": action.get("payload", {}),
+                "result": action.get("result"),
+                "updatedAt": action.get("updated_at"),
+            }
+            for action in actions
+            if action.get("status") != "pending"
+        ]
+        pending_actions = [
+            {
+                "id": action.get("id"),
+                "kind": action.get("kind"),
+                "payload": action.get("payload", {}),
+                "createdAt": action.get("created_at"),
+            }
+            for action in actions
+            if action.get("status") == "pending"
+        ]
+        context: JsonObject = {
+            "userMessages": user_messages[-10:],
+            "actionResults": action_results[-10:],
+            "pendingActions": pending_actions[-10:],
+        }
+        if user_messages and user_messages[-1].get("resumeMode") == "finalize":
+            context["resumeDirective"] = "finalize_with_current_evidence"
+        return context
+
+    def _stub_final_answer(
+        self,
+        workspace: JsonObject,
+        evidence_bundle: JsonObject,
+        interaction_context: JsonObject | None = None,
+    ) -> JsonObject:
+        interaction_context = interaction_context or {}
+        user_messages = interaction_context.get("userMessages")
+        last_message = (
+            user_messages[-1] if isinstance(user_messages, list) and user_messages else None
+        )
         manifest = evidence_bundle["manifest"]
         grep_results = evidence_bundle["grepResults"]
         matches = grep_results["matches"]
         if not manifest["files"]:
+            missing_information = ["No current-task log evidence is available."]
+            if interaction_context.get("resumeDirective") == "finalize_with_current_evidence":
+                missing_information = []
             return {
                 "summary": "V2 captured the question, but no supported text log files were uploaded.",
                 "symptoms": [],
                 "likelyRootCauses": [],
                 "nextChecks": ["Upload .log/.txt files or supported .zip/.tar/.tar.gz packages."],
                 "fixSuggestions": [],
-                "missingInformation": ["No current-task log evidence is available."],
+                "missingInformation": missing_information,
                 "confidence": "low",
                 "evidenceRefs": [],
+                "userMessage": last_message.get("message") if isinstance(last_message, dict) else None,
             }
         if not matches:
             return {

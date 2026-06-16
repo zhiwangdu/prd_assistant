@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Resume Context
+
+- Added bounded V2 Agent `interactionContext` built from recent user messages,
+  answered/approved/rejected actions, and remaining pending actions.
+- Updated `POST /api/v2/runs/:run_id/messages` to mark pending `user_input`
+  actions as `answered` before requeueing waiting runs.
+- Updated stub resume behavior so finalize-with-current-evidence clears the
+  no-log missing-information blocker and records the latest user message in the
+  final answer.
+- Updated V2 API typings plus server-v2/WebUI docs.
+- Verification passed: `python3 -m compileall logagent_v2`,
+  `PYTHONPATH=. python3 -m unittest discover tests`, `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, `cd webui && npm run build`, and
+  `git diff --check`.
+
 ## 2026-06-17 V2 Analyze Waiting Actions
 
 - Added V2 run analysis `actions` and `pendingActions` so the WebUI can render waiting user-input and approval states.

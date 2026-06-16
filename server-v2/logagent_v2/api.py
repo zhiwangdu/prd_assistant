@@ -569,11 +569,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "user.message",
             {"message": payload.message, "resumeMode": payload.resumeMode},
         )
+        answered_actions = store.answer_user_input_actions(
+            run_id, payload.message, payload.resumeMode
+        )
         job = None
         if run["status"] == "waiting_for_user":
             store.update_run_status(run_id, "queued", "queued")
             job = store.enqueue_run(run_id)
-        return {"event": event, "job": job}
+        return {"event": event, "answeredActions": answered_actions, "job": job}
 
     @app.post("/api/v2/actions/{action_id}/decisions")
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:

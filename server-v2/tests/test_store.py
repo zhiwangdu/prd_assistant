@@ -316,6 +316,89 @@ class StoreTests(unittest.TestCase):
                 "Which node is affected?",
             )
 
+    def test_user_message_answers_pending_user_input_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            workspace = store.create_workspace("need input", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "user_input",
+                {"question": "Which node is affected?", "required": True},
+            )
+
+            answered = store.answer_user_input_actions(
+                run["id"], "node-1 is affected", "continue"
+            )
+
+            self.assertEqual([item["id"] for item in answered], [action["id"]])
+            updated = store.get_action(action["id"])
+            self.assertEqual(updated["status"], "answered")
+            self.assertEqual(updated["result"]["message"], "node-1 is affected")
+            self.assertEqual(updated["result"]["resumeMode"], "continue")
+            analysis_actions = store.list_actions(run["id"])
+            self.assertEqual(
+                [item for item in analysis_actions if item["status"] == "pending"],
+                [],
+            )
+            events = store.list_timeline(run["id"])
+            self.assertTrue(
+                any(event["kind"] == "action.user_input.answered" for event in events)
+            )
+
+    def test_agent_resume_context_includes_user_messages_and_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("finish with current evidence", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "user_input",
+                {"question": "Upload logs or finish?", "required": False},
+            )
+            store.update_run_status(run["id"], "waiting_for_user", "waiting_for_user")
+            store.append_event(
+                workspace["id"],
+                run["id"],
+                "user.message",
+                {"message": "No more logs, finish now.", "resumeMode": "finalize"},
+            )
+            store.answer_user_input_actions(
+                run["id"], "No more logs, finish now.", "finalize"
+            )
+
+            final_answer = AgentRuntime(settings, store).run_analysis(
+                workspace["id"], run["id"]
+            )
+
+            self.assertEqual(final_answer["missingInformation"], [])
+            self.assertEqual(final_answer["userMessage"], "No more logs, finish now.")
+            request_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 41,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                },
+            )
+            request_doc = json.loads(request_response["result"]["contents"][0]["text"])
+            prompt = json.loads(request_doc["payload"]["prompt"])
+            interaction = prompt["interactionContext"]
+            self.assertEqual(
+                interaction["userMessages"][-1]["message"], "No more logs, finish now."
+            )
+            self.assertEqual(interaction["resumeDirective"], "finalize_with_current_evidence")
+            self.assertEqual(interaction["actionResults"][-1]["id"], action["id"])
+            self.assertEqual(interaction["actionResults"][-1]["status"], "answered")
+            self.assertEqual(interaction["pendingActions"], [])
+
     def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

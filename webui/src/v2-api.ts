@@ -72,7 +72,7 @@ export type V2Action = {
   id: string;
   run_id: string;
   kind: "user_input" | "approval" | string;
-  status: "pending" | "approved" | "rejected" | string;
+  status: "pending" | "answered" | "approved" | "rejected" | string;
   payload: Record<string, unknown>;
   result?: Record<string, unknown> | null;
   created_at: string;
@@ -517,7 +517,7 @@ export async function getV2RunAnalysis(apiKey: string, runId: string) {
 }
 
 export async function postV2RunMessage(apiKey: string, runId: string, input: { message: string; resumeMode?: "continue" | "finalize" }) {
-  return fetchJson<{ event: V2TimelineEvent; job?: Record<string, unknown> | null }>(`/api/v2/runs/${encodeURIComponent(runId)}/messages`, {
+  return fetchJson<{ event: V2TimelineEvent; answeredActions?: V2Action[]; job?: Record<string, unknown> | null }>(`/api/v2/runs/${encodeURIComponent(runId)}/messages`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify({ message: input.message, resumeMode: input.resumeMode ?? "continue" })
