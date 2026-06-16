@@ -77,7 +77,7 @@ llm:
 claude_code:
   command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
   default_mode: "diagnose"
-  max_session_seconds: 120
+  max_session_seconds: 600
   max_output_bytes: 1048576
 
 mcp:
@@ -239,6 +239,7 @@ metadata:
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
 - `claude_code.command_path` 或 `command_path_env` 必须解析为绝对路径；默认环境变量为 `LOGAGENT_CLAUDE_CODE_PATH`。
 - `claude_code.default_mode` 支持 `diagnose`、`code_investigation` 和 `fix`，默认 `diagnose`。
+- `claude_code.max_session_seconds` 控制一次 Claude Code headless session 的最长运行时间，推荐值为 600 秒，避免较大日志包的 MCP 检索和工具调用在规划分析阶段过早超时。
 - `claude_code.permission_profiles` 可覆盖各模式的 `permission_mode`、native tools、allowed/disallowed tools 和 worktree 要求。Server 会自动给所有 profile 的 `allowed_tools` 追加 `mcp__logagent__*`，使 `dontAsk` 模式下的任务 MCP tools 不需要用户侧 Claude CLI 交互批准；`diagnose` 的 `tools: ""` 仍表示禁用 built-in native tools。
 - `mcp.enabled` 默认 true，`mcp.transport` 当前只支持 `stdio`。
 - `fetch.enabled` 默认 false。启用时必须配置 `fetch.secret_key_env`，对应环境变量值必须是 32-byte base64 key，并且 `fetch.allowed_hosts` 不能为空。

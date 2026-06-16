@@ -42,7 +42,7 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 claude_code:
   command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
   default_mode: "diagnose"
-  max_session_seconds: 120
+  max_session_seconds: 600
   max_output_bytes: 1048576
   permission_profiles:
     diagnose:

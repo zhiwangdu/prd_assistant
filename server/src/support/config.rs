@@ -1724,7 +1724,7 @@ fn validate_remote_command_id(command_id: &str) -> anyhow::Result<()> {
 }
 
 fn default_claude_code_max_session_seconds() -> u64 {
-    120
+    600
 }
 
 fn default_claude_code_max_output_bytes() -> usize {
@@ -1991,6 +1991,7 @@ mod tests {
 
             assert_eq!(settings.command_path, PathBuf::from("/opt/bin/claude"));
             assert_eq!(settings.default_mode, AnalysisMode::Diagnose);
+            assert_eq!(settings.max_session_seconds, 600);
             let diagnose = settings
                 .permission_profiles
                 .get(&AnalysisMode::Diagnose)

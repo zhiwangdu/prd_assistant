@@ -2,6 +2,12 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Claude Code Session Timeout
+
+- Increased the default and recommended `claude_code.max_session_seconds` from 120 seconds to 600 seconds so `PLAN_ANALYSIS` has enough time for Claude Code MCP evidence reads and tool calls on larger log packages.
+- Updated example configs, deploy sample config, Agent Backend docs, Config docs, and the active 50992 runtime config.
+- Verification passed: `cargo fmt --check`, `cargo check`, and `cargo test -p logagent-server support::config -- --nocapture`.
+
 ## 2026-06-16 Analyze Start With Pending Uploads
 
 - Fixed Analyze Session run creation when a user selected log files and clicked `Start analysis` without first clicking the separate upload button. WebUI now uploads pending files, attaches the completed upload IDs to the selected Session, and only then creates the Session task run.
