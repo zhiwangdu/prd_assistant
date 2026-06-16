@@ -76,7 +76,7 @@ Optional variables:
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
 - `LOGAGENT_CLAUDE_CODE_PATH`: required by the default `logagent.yaml`. Set it to the absolute Claude Code CLI path, usually the output of `which claude`.
 - `LOGAGENT_SUBMODULE_BASE_URL`: optional internal Git namespace for all source-built analyzer submodules.
-- `LOGAGENT_SUBMODULE_INFLUXQL_URL`, `LOGAGENT_SUBMODULE_FLUX_URL`, `LOGAGENT_SUBMODULE_OPENGEMINI_URL`, `LOGAGENT_SUBMODULE_INFLUXDB_URL`: optional per-repository clone URLs. These override the committed GitHub defaults through local Git config only.
+- `LOGAGENT_SUBMODULE_INFLUXQL_URL`, `LOGAGENT_SUBMODULE_FLUX_URL`, `LOGAGENT_SUBMODULE_OPENGEMINI_URL`, `LOGAGENT_SUBMODULE_INFLUXDB_URL`: optional per-repository clone URLs. These override the committed GitHub defaults through local Git submodule config only and must not change the parent repository `origin`.
 
 ## Dependencies
 
@@ -105,7 +105,7 @@ Preview without changing the host:
 
 InfluxQL, Flux, openGemini storage, and InfluxDB storage analyzers are built from `third_party/` submodules during `rebuild-install.sh` and installed to `$LOGAGENT_APP_DIR/bin/tools/`. `pprof_analyzer` uses the configured Go executable at runtime. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
 
-In environments that cannot reach GitHub, set the submodule URL variables in `.env` before running `rebuild-install.sh`. The rebuild path calls `scripts/build-tools.sh`, which first writes these URLs to local `.git/config` and then runs `git submodule update --init --recursive` as needed. You can also apply the same override manually from the source checkout:
+In environments that cannot reach GitHub, set the submodule URL variables in `.env` before running `rebuild-install.sh`. The rebuild path calls `scripts/build-tools.sh`, which first writes these URLs to local Git submodule config and then runs `git submodule update --init --recursive` as needed. If a submodule directory exists but has not been initialized as its own Git worktree yet, the helper skips `remote set-url origin` for that directory so the parent repository remote stays intact. You can also apply the same override manually from the source checkout:
 
 ```bash
 export LOGAGENT_SUBMODULE_BASE_URL="ssh://git@gitlab.internal/zhiwangdu"

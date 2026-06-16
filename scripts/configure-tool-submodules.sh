@@ -10,7 +10,9 @@ usage() {
 Usage: scripts/configure-tool-submodules.sh [options]
 
 Configures local Git submodule URLs for LogAgent source-built tools. This
-updates .git/config only; .gitmodules remains the committed default.
+updates .git/config only; .gitmodules remains the committed default. Existing
+submodule origin remotes are updated only when the submodule is already an
+initialized Git worktree.
 
 Options:
   --base-url <url>          Repository namespace containing influxql.git,
@@ -105,10 +107,22 @@ url_from_base() {
   fi
 }
 
+is_own_git_worktree() {
+  local path="$1"
+  local top_level
+  top_level="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -z "$top_level" ]]; then
+    return 1
+  fi
+
+  [[ "$(cd "$path" && pwd -P)" == "$(cd "$top_level" && pwd -P)" ]]
+}
+
 configure_submodule_url() {
   local path="$1"
   local label="$2"
   local url="$3"
+  local full_path="$REPO_ROOT/$path"
 
   if [[ -z "$url" ]]; then
     return
@@ -116,8 +130,8 @@ configure_submodule_url() {
 
   git -C "$REPO_ROOT" config "submodule.$path.url" "$url"
 
-  if [[ -d "$REPO_ROOT/$path" ]] && git -C "$REPO_ROOT/$path" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$REPO_ROOT/$path" remote set-url origin "$url" >/dev/null 2>&1 || true
+  if [[ -d "$full_path" ]] && is_own_git_worktree "$full_path"; then
+    git -C "$full_path" remote set-url origin "$url" >/dev/null 2>&1 || true
   fi
 
   printf 'Configured %s submodule URL: %s\n' "$label" "$url"

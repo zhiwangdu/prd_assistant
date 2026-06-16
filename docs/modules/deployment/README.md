@@ -58,7 +58,7 @@ export LOGAGENT_NATIVE_API_KEY=<secret>
 ./scripts/server-service.sh start|stop|restart|status|logs
 ```
 
-`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`，并调用 `build-tools.sh` 从 `third_party/` submodules 构建 `$LOGAGENT_WORK_DIR/bin/tools/` 下的源码引用诊断工具。`build-tools.sh` 会先读取 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL`，把自定义 clone 地址写入本地 Git submodule 配置，再按需初始化 submodule，适配无法访问 GitHub 的内网部署。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
+`init-workdir.sh` 创建 `bin/`、`config/`、`data/`、`logs/`、`run/` 和 `webui/`，并生成 `config/server.yaml`。`build-server.sh` 编译并安装 `$LOGAGENT_WORK_DIR/bin/logagent-server`，并调用 `build-tools.sh` 从 `third_party/` submodules 构建 `$LOGAGENT_WORK_DIR/bin/tools/` 下的源码引用诊断工具。`build-tools.sh` 会先读取 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL`，把自定义 clone 地址写入本地 Git submodule 配置，再按需初始化 submodule，适配无法访问 GitHub 的内网部署；该步骤不会修改顶层仓库 `origin`，只有已初始化的 submodule worktree 才会同步更新其自身 `origin`。`build-webui.sh` 编译并同步 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 使用 `$LOGAGENT_WORK_DIR/run/logagent-server.pid`、`$LOGAGENT_WORK_DIR/logs/logagent-server.log` 和 `$LOGAGENT_WORK_DIR/config/server.yaml` 管理服务。
 
 测试/长期运行环境也可以使用仓库根目录 `deploy/` 模板：
 

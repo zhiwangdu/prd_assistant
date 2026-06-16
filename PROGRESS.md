@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Submodule Remote Guard
+
+- Fixed `scripts/configure-tool-submodules.sh` so custom source-built analyzer submodule URLs can no longer rewrite the parent repository `origin`.
+- Root cause: when a `third_party/<tool>` directory existed but the submodule was not initialized, `git -C <tool> rev-parse --git-dir` discovered the parent repository, so `remote set-url origin <submodule-url>` targeted the parent checkout.
+- The script now only updates an existing submodule `origin` when that directory is its own initialized Git worktree; otherwise it only writes `submodule.<path>.url` in the parent repo local config for future `git submodule update`.
+- Updated deployment and Tool Runner docs/specs to state that submodule URL overrides must not mutate `.gitmodules` or the top-level `origin`.
+- Verification passed: shell syntax checks for `scripts/configure-tool-submodules.sh` and `scripts/build-tools.sh`, `configure-tool-submodules.sh --help`, `build-tools.sh --help`, temp-repo regression for an uninitialized submodule directory preserving parent `origin`, temp-repo regression for an initialized submodule updating only the child `origin`, and `git diff --check`.
+
 ## 2026-06-16 Metadata Compact Schema Type Codes
 
 - openGemini raw JSON import now accepts both `Measurement.Schema` shapes: compact `{ "field": <typeCode> }` values and object `{ "field": { "Typ": <typeCode>, "EndTime": ... } }` values.

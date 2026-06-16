@@ -454,7 +454,7 @@ tool_results/<action_id>/
 
 真实 `flux_query_analyzer` 适配：
 
-- 源码通过 `third_party/flux` submodule 默认引用 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支，CLI 入口为 `libflux/flux-core` 的 `query_stats` binary；内网环境可用 `LOGAGENT_SUBMODULE_FLUX_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。
+- 源码通过 `third_party/flux` submodule 默认引用 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支，CLI 入口为 `libflux/flux-core` 的 `query_stats` binary；内网环境可用 `LOGAGENT_SUBMODULE_FLUX_URL` 或 `LOGAGENT_SUBMODULE_BASE_URL` 覆盖 clone URL。submodule URL 覆盖只允许写入 submodule config 和已初始化 submodule 自身 remote，不能改写顶层仓库 `origin`。
 - `scripts/build-tools.sh` 构建产物名为 `flux_query_analyzer`；默认输出到 `target/tools/flux_query_analyzer`，设置 `LOGAGENT_WORK_DIR` 时输出到 `$LOGAGENT_WORK_DIR/bin/tools/flux_query_analyzer`，runtime 部署输出到 `$LOGAGENT_APP_DIR/bin/tools/flux_query_analyzer`。
 - `examples/server-flux-tool.yaml` 只启用该工具，并通过 `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` 指向构建产物。
 - CLI 参数为 `--input {input_file} --format json --top-k 20 --max-input-lines 100000 --max-error-findings 20`。

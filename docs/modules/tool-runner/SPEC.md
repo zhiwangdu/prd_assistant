@@ -30,7 +30,7 @@ Server 还提供只读工具目录和工具包导出：
 - `action_id`
 - 工具参数模板
 - 工具路径，来自固定 `path` 或 `path_env` 环境变量；固定 `path` 可使用 `${ENV}` 占位符
-- 构建 source-built analyzers 时的 submodule clone URL override，来自 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；这些变量只影响本地 Git submodule 初始化，不进入 Server 运行时工具白名单
+- 构建 source-built analyzers 时的 submodule clone URL override，来自 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；这些变量只影响本地 Git submodule 初始化，不进入 Server 运行时工具白名单，也不能改写顶层仓库 `origin`
 - `max_input_files`，单个工具在同一任务中最多自动选择的输入文件数量，默认 1
 - 日志片段、查询文本或 manifest 文件
 
@@ -123,7 +123,7 @@ tool_results/<action_id>/result.json#findings/<index>
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
 - Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建对应工具并验证 stdout JSON。
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。
-- `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址不被修改。
+- `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址和顶层仓库 `origin` 不被修改。若 submodule 目录只是父仓库内的未初始化目录，脚本不得对该目录执行 `remote set-url origin`。
 - Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。
 - `pprof_analyzer` 手动运行必须创建 `tool_run` task，成功后 `/api/tools/runs/:task_id/result` 返回 profile type、top 表格和 artifact 路径。
 - 内置 metadata 工具必须出现在工具目录中并标记 `source=built_in` / `readOnly=true` / `editable=false` / `exportable=false` / `runnable=true`，并支持无上传手动运行；`logagent.get_metadata_tag_fields` 的 `minFiles=maxFiles=0`，`paramsTemplate` 不包含 `field`，结果只包含 Tag 字段。
