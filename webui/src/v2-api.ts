@@ -261,6 +261,37 @@ export type V2MetadataInstanceSummary = {
   updated_at: string;
 };
 
+export type V2FetchEndpoint = {
+  id: string;
+  name: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | string;
+  url: string;
+  headers: Record<string, string>;
+  bodyPreview?: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+  credentialSet?: {
+    id: string;
+    redacted: unknown;
+    updatedAt: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2FetchPreview = {
+  schemaVersion: number;
+  endpoint: V2FetchEndpoint;
+  detectedSensitiveFields: Array<{ location: string; name: string }>;
+  unsupportedWarnings: string[];
+};
+
+export type V2FetchRunResult = {
+  result: Record<string, unknown>;
+  artifact: V2Artifact;
+  evidence: V2Evidence;
+};
+
 export async function listV2Workspaces(apiKey: string) {
   return fetchJson<{ workspaces: V2Workspace[] }>("/api/v2/workspaces", { headers: authHeaders(apiKey) });
 }
@@ -441,6 +472,48 @@ export async function listV2MetadataInstances(apiKey: string) {
 
 export async function downloadV2SkillsZip(apiKey: string) {
   await downloadV2File(apiKey, "/api/v2/exports/skills.zip", "logagent-v2-skills.zip");
+}
+
+export async function listV2FetchEndpoints(apiKey: string) {
+  return fetchJson<{ enabled: boolean; allowedHosts: string[]; endpoints: V2FetchEndpoint[] }>("/api/v2/fetch/endpoints", { headers: authHeaders(apiKey) });
+}
+
+export async function previewV2FetchCurl(apiKey: string, curl: string) {
+  return fetchJson<V2FetchPreview>("/api/v2/fetch/imports/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ curl })
+  });
+}
+
+export async function importV2FetchCurl(apiKey: string, input: { curl: string; name?: string | null; enabled?: boolean }) {
+  return fetchJson<V2FetchEndpoint>("/api/v2/fetch/imports", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateV2FetchEndpoint(apiKey: string, endpointId: string, updates: Partial<Pick<V2FetchEndpoint, "name" | "method" | "url" | "headers" | "enabled">> & { body?: string | null }) {
+  return fetchJson<V2FetchEndpoint>(`/api/v2/fetch/endpoints/${encodeURIComponent(endpointId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(updates)
+  });
+}
+
+export async function deleteV2FetchEndpoint(apiKey: string, endpointId: string) {
+  return fetchJson<{ deleted: boolean; endpointId: string }>(`/api/v2/fetch/endpoints/${encodeURIComponent(endpointId)}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function runV2FetchEndpoint(apiKey: string, runId: string, endpointId: string) {
+  return fetchJson<V2FetchRunResult>(`/api/v2/runs/${encodeURIComponent(runId)}/fetch/${encodeURIComponent(endpointId)}`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
 }
 
 async function downloadV2File(apiKey: string, path: string, filename: string) {

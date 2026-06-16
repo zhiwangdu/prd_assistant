@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { uploadFile } from "./upload";
+import { V2FetchBridge } from "./V2FetchBridge";
 import { V2ToolsBridge } from "./V2ToolsBridge";
 
 type ToolDescriptor = {
@@ -331,7 +332,10 @@ function FetchView({ apiKey }: { apiKey: string }) {
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
+    <div className="space-y-5">
+      <V2FetchBridge apiKey={apiKey} />
+
+      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
@@ -452,6 +456,7 @@ function FetchView({ apiKey }: { apiKey: string }) {
             ) : <EmptyState>Select or run a fetch endpoint.</EmptyState>}
           </CardContent>
         </Card>
+      </div>
       </div>
     </div>
   );

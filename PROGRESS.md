@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 WebUI V2 Fetch Bridge
+
+- Added a V2 Fetch bridge panel at the top of the existing Tools / Fetch page while preserving the Rust-compatible Fetch endpoint and tool-run flow below it.
+- Extended `webui/src/v2-api.ts` with Python V2 Fetch endpoint listing, cURL preview/import, endpoint update/delete, and run-scoped fetch execution helpers.
+- Added `webui/src/V2FetchBridge.tsx` to preview/import cURL commands, manage V2 Fetch endpoints, show redacted sensitive-field previews, run a Fetch endpoint inside a V2 run, and display result/evidence/artifact output.
+- Updated `webui/README.md`, `webui/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-17 WebUI V2 System Context Bridge
 
 - Added a V2 System Context bridge panel at the top of the existing System Context page while preserving the Rust-compatible Skills and Metadata tabs below it.
