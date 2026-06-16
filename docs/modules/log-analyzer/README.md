@@ -78,11 +78,15 @@ extracted/<文件基名>/
 extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/...
 ```
 
+archive 内可以存在一层或多层顶层包装目录，例如 `<package>/var/chroot/...`。预处理会在规范化后的路径组件中查找支持的日志路径前缀，而不是要求它必须位于 archive 根目录。
+
 目录映射：
 
 - `/var/chroot/gemini/log/tsdb/**` -> `tsdb`
 - `/var/chroot/gemini/log/stream/**` -> `stream`
 - `/home/Ruby/log/**` -> `agent`
+
+如果一个匹配命名格式的节点日志包中没有任何文件落在上述三类目录下，EXTRACT phase 会失败并返回明确错误，避免把空 manifest 误判为成功解包。
 
 日志轮转按目录语义处理：目录下所有普通文件都纳入对应 log group，不依赖 `.log`、`.log.gz` 或其他后缀。gzip 文件用 magic bytes 识别，初始 grep 和 `logagent.get_log_slice` 都透明解码；解码失败的 gzip 文件保留在 manifest 中并记录 warning，检索时跳过。
 

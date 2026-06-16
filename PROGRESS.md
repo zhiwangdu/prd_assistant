@@ -2,6 +2,13 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-16 Session Tarball Extraction Fix
+
+- Fixed node log package preprocessing for Session tasks when uploaded `.tar.gz` archives contain a top-level wrapper directory. The path classifier now searches normalized archive components for `var/chroot/gemini/log/{tsdb,stream}` and `home/Ruby/log` instead of requiring those prefixes at archive root.
+- Node log packages that match `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` but contain no supported log directories now fail EXTRACT with a clear error instead of producing an empty successful manifest.
+- Added pipeline regression coverage for ordinary `.tar.gz` Session task extraction and wrapped node log package extraction, plus Log Analyzer coverage for unsupported-node-package failure.
+- Updated root, Server, and Log Analyzer docs/specs.
+
 ## 2026-06-16 Analyze Session Create/Delete
 
 - Fixed the Analyze “新建 Session” path by aligning newly created `AnalysisSessionRecord` values with the Session Store's supported schema version. The previous handler created `schemaVersion=2` while the store validator only accepted `schemaVersion=1`, causing `POST /api/sessions` to fail.

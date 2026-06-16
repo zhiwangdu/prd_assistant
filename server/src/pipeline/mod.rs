@@ -689,6 +689,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn extract_task_extracts_generic_tar_gz_upload() {
+        let fixture = Fixture::new("pipeline-generic-targz");
+        let filename = "logs.tar.gz";
+        fixture.write_generic_tar_gz(filename);
+        let config = fixture.config();
+        let workspace = config.storage.workspace_dir("task_batch");
+        let uploads = vec![fixture.upload_record("upl_logs", filename)];
+        let inputs = prepare_raw_snapshot(&workspace, &uploads).await.unwrap();
+        let record = task_record(inputs);
+
+        prepare_pipeline_run(&workspace).await.unwrap();
+        extract_task(config.clone(), record).await.unwrap();
+        search_task(config, "task_batch").await.unwrap();
+
+        assert!(workspace.join("extracted/logs/logs/app.log").exists());
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(workspace.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["files"][0]["path"], "logs/logs/app.log");
+        let grep: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(workspace.join("grep_results.json")).unwrap())
+                .unwrap();
+        assert_eq!(grep["totalMatches"], 1);
+        assert!(grep["matches"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("ERROR generic"));
+    }
+
+    #[tokio::test]
     async fn extract_task_preprocesses_node_log_package_and_tool_inputs() {
         let fixture = Fixture::new("pipeline-log-package");
         let filename = "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz";
@@ -735,6 +765,47 @@ mod tests {
                 == "tool_inputs/influxql_analyzer/node123/2026_06_16_09_58_02_561564.jsonl"
                 && input["recordCount"] == 1));
 
+        let grep: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(workspace.join("grep_results.json")).unwrap())
+                .unwrap();
+        assert!(grep["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["text"].as_str().unwrap().contains("ERROR rotated")));
+    }
+
+    #[tokio::test]
+    async fn extract_task_preprocesses_node_log_package_with_wrapper_dir() {
+        let fixture = Fixture::new("pipeline-log-package-wrapper");
+        let filename = "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz";
+        fixture.write_node_log_package_with_prefix(filename, "pkg123_logs");
+        let config = fixture.config();
+        let workspace = config.storage.workspace_dir("task_batch");
+        let uploads = vec![fixture.upload_record("upl_pkg", filename)];
+        let inputs = prepare_raw_snapshot(&workspace, &uploads).await.unwrap();
+        let record = task_record(inputs);
+
+        prepare_pipeline_run(&workspace).await.unwrap();
+        extract_task(config.clone(), record).await.unwrap();
+        search_task(config, "task_batch").await.unwrap();
+
+        assert!(workspace
+            .join("extracted/node123/2026_06_16_09_58_02_561564/tsdb/influxdb.log")
+            .exists());
+        assert!(workspace
+            .join("extracted/node123/2026_06_16_09_58_02_561564/agent/agent.log")
+            .exists());
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(workspace.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            manifest["files"][0]["path"],
+            "node123/2026_06_16_09_58_02_561564/agent/agent.log"
+        );
+        assert!(manifest["uploads"][0]["ignoredFileCount"].is_null());
+        assert_eq!(manifest["uploads"][0]["logGroups"][0]["name"], "agent");
+        assert_eq!(manifest["uploads"][0]["logGroups"][1]["name"], "tsdb");
         let grep: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(workspace.join("grep_results.json")).unwrap())
                 .unwrap();
@@ -859,7 +930,23 @@ mod tests {
             fs::write(self.uploads.join(filename), content).unwrap();
         }
 
+        fn write_generic_tar_gz(&self, filename: &str) {
+            let source = self.root.join("generic-source");
+            fs::create_dir_all(source.join("logs")).unwrap();
+            fs::write(source.join("logs/app.log"), "INFO generic\nERROR generic\n").unwrap();
+            let file = fs::File::create(self.uploads.join(filename)).unwrap();
+            let encoder = GzEncoder::new(file, Compression::default());
+            let mut builder = tar::Builder::new(encoder);
+            builder.append_dir_all("logs", source.join("logs")).unwrap();
+            builder.finish().unwrap();
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
         fn write_node_log_package(&self, filename: &str) {
+            self.write_node_log_package_with_prefix(filename, "");
+        }
+
+        fn write_node_log_package_with_prefix(&self, filename: &str, prefix: &str) {
             let source = self.root.join("source");
             fs::create_dir_all(source.join("var/chroot/gemini/log/tsdb")).unwrap();
             fs::create_dir_all(source.join("home/Ruby/log")).unwrap();
@@ -879,8 +966,23 @@ mod tests {
             let file = fs::File::create(self.uploads.join(filename)).unwrap();
             let encoder = GzEncoder::new(file, Compression::default());
             let mut builder = tar::Builder::new(encoder);
-            builder.append_dir_all("var", source.join("var")).unwrap();
-            builder.append_dir_all("home", source.join("home")).unwrap();
+            let tar_prefix = prefix.trim_matches('/');
+            let var_path = if tar_prefix.is_empty() {
+                "var".to_string()
+            } else {
+                format!("{tar_prefix}/var")
+            };
+            let home_path = if tar_prefix.is_empty() {
+                "home".to_string()
+            } else {
+                format!("{tar_prefix}/home")
+            };
+            builder
+                .append_dir_all(var_path, source.join("var"))
+                .unwrap();
+            builder
+                .append_dir_all(home_path, source.join("home"))
+                .unwrap();
             builder.finish().unwrap();
             builder.into_inner().unwrap().finish().unwrap();
         }

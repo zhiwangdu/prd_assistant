@@ -316,6 +316,11 @@ impl<'a> PreprocessState<'a> {
     }
 
     fn finish(self) -> anyhow::Result<PreprocessedUpload> {
+        if self.files.is_empty() {
+            anyhow::bail!(
+                "log package contains no supported log files under var/chroot/gemini/log/tsdb, var/chroot/gemini/log/stream, or home/Ruby/log"
+            );
+        }
         let mut log_groups = self
             .log_group_counts
             .into_iter()
@@ -605,14 +610,20 @@ fn classify_log_path(components: &[String]) -> Option<(&'static str, Vec<String>
         (&["var", "chroot", "gemini", "log", "stream"][..], "stream"),
         (&["home", "ruby", "log"][..], "agent"),
     ] {
-        if lower.len() >= prefix.len()
-            && lower
+        if lower.len() < prefix.len() {
+            continue;
+        }
+        for start in 0..=(lower.len() - prefix.len()) {
+            if lower
                 .iter()
+                .skip(start)
                 .take(prefix.len())
                 .zip(prefix.iter())
                 .all(|(left, right)| left == right)
-        {
-            return Some((group, components[prefix.len()..].to_vec()));
+            {
+                let remainder_start = start + prefix.len();
+                return Some((group, components[remainder_start..].to_vec()));
+            }
         }
     }
     None
@@ -902,6 +913,29 @@ mod tests {
         assert!(query_jsonl.contains(r#""query":"select * from cpu""#));
         assert!(result.tool_inputs.iter().any(|input| input.path
             == "tool_inputs/influxql_analyzer/node123/2026_06_16_09_58_02_561564.jsonl"));
+    }
+
+    #[test]
+    fn node_package_without_supported_log_dirs_fails_clearly() {
+        let fixture = Fixture::new("preprocess-empty-node-package");
+        let package_name = "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz";
+        fixture.write_source_log();
+        fixture.write_tar_gz(package_name);
+
+        let analyzer = analyzer();
+        let err = analyzer
+            .extract_upload(
+                &fixture.root.join(package_name),
+                &fixture
+                    .extracted
+                    .join("node123")
+                    .join("2026_06_16_09_58_02_561564"),
+                Some(&fixture.root.join("tool_inputs")),
+            )
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("log package contains no supported log files"));
     }
 
     fn analyzer() -> LogAnalyzer {
