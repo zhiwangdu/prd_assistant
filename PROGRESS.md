@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tools Zip Export
+
+- Added V2 `GET /api/v2/exports/tools.zip` for exporting enabled configured subprocess tools.
+- Tool exports now include `README.md`, `tools-manifest.json`, packaged binaries under `bin/<toolId>/`, shell wrappers under `wrappers/`, and config examples under `config/examples/`; packaged binaries and wrappers carry executable zip mode metadata.
+- Missing, relative, non-file, or non-executable configured tools are retained in the manifest with `skipped=true`; disabled tools and built-in tools are omitted.
+- The export does not include API keys, Fetch endpoint credentials, runtime environment values, uploads, artifacts, or workspace data.
+- Added regression coverage for executable packaging, skipped missing tools, config examples, manifest fields, and disabled-tool omission.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Skills Zip Export
 
 - Added V2 `GET /api/v2/exports/skills.zip` for exporting the current filesystem Skill registry.

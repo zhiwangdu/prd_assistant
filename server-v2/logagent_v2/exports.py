@@ -3,11 +3,13 @@ from __future__ import annotations
 import io
 import json
 import os
+import platform
 import zipfile
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path, PurePosixPath
 
-from .config import Settings
+from .config import Settings, ToolDefinition
 from .skills import get_skill, list_skills
 from .store import JsonObject
 
@@ -57,6 +59,148 @@ def build_skills_zip(settings: Settings) -> bytes:
     return buffer.getvalue()
 
 
+def build_tools_zip(settings: Settings) -> bytes:
+    server_os = platform.system().lower() or os.name
+    server_arch = platform.machine() or "unknown"
+    manifest: JsonObject = {
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "serverOs": server_os,
+        "serverArch": server_arch,
+        "tools": [],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("README.md", tools_package_readme())
+        for tool in settings.tools:
+            if not tool.enabled:
+                continue
+            entry = tool_manifest_entry(tool, server_os, server_arch)
+            try:
+                package_tool(archive, tool, entry)
+            except ValueError as error:
+                entry["skipReason"] = str(error)
+            archive.writestr(
+                f"config/examples/{safe_zip_segment(tool.id)}.yaml",
+                tool_config_example(tool, entry.get("binaryFilename")),
+            )
+            manifest["tools"].append(entry)
+        archive.writestr(
+            "tools-manifest.json",
+            json.dumps(manifest, ensure_ascii=True, indent=2).encode("utf-8"),
+        )
+    return buffer.getvalue()
+
+
+def tool_manifest_entry(tool: ToolDefinition, server_os: str, server_arch: str) -> JsonObject:
+    return {
+        "toolId": tool.id,
+        "displayName": tool.display_name,
+        "configuredArgs": list(tool.args),
+        "matchRules": {
+            "filePatterns": list(tool.match_file_patterns),
+            "keywords": list(tool.match_keywords),
+        },
+        "serverOs": server_os,
+        "serverArch": server_arch,
+        "binaryFilename": None,
+        "sha256": None,
+        "size": None,
+        "packaged": False,
+        "skipped": True,
+        "skipReason": None,
+    }
+
+
+def package_tool(archive: zipfile.ZipFile, tool: ToolDefinition, entry: JsonObject) -> None:
+    tool_id = safe_zip_segment(tool.id)
+    command = Path(tool.command)
+    if not command.is_absolute():
+        raise ValueError("tool command is not an absolute path")
+    resolved = command.resolve()
+    if not resolved.is_file():
+        raise ValueError("resolved path is not a regular file")
+    if not os.access(resolved, os.X_OK):
+        raise ValueError("resolved path is not executable")
+    binary_filename = safe_zip_segment(resolved.name)
+    data = resolved.read_bytes()
+    write_zip_bytes(archive, f"bin/{tool_id}/{binary_filename}", data, mode=0o755)
+    write_zip_text(
+        archive,
+        f"wrappers/{tool_id}.sh",
+        tool_wrapper(tool_id, binary_filename),
+        mode=0o755,
+    )
+    entry["binaryFilename"] = binary_filename
+    entry["sha256"] = sha256(data).hexdigest()
+    entry["size"] = len(data)
+    entry["packaged"] = True
+    entry["skipped"] = False
+    entry["skipReason"] = None
+
+
+def tool_wrapper(tool_id: str, binary_filename: str) -> str:
+    return (
+        "#!/usr/bin/env sh\n"
+        "set -eu\n"
+        'DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\n'
+        f'exec "$DIR/bin/{tool_id}/{binary_filename}" "$@"\n'
+    )
+
+
+def tool_config_example(tool: ToolDefinition, binary_filename: object) -> str:
+    packaged_path = (
+        f"./bin/{safe_zip_segment(tool.id)}/{binary_filename}"
+        if isinstance(binary_filename, str)
+        else "<absolute path to executable>"
+    )
+    return (
+        "# Example LOGAGENT_V2_TOOLS_JSON entry.\n"
+        "- id: " + json.dumps(tool.id) + "\n"
+        "  displayName: " + json.dumps(tool.display_name) + "\n"
+        "  command: " + json.dumps(packaged_path) + "\n"
+        "  args: " + json.dumps(list(tool.args), ensure_ascii=True) + "\n"
+        f"  enabled: {str(tool.enabled).lower()}\n"
+        f"  timeoutSeconds: {tool.timeout_seconds}\n"
+        f"  maxOutputBytes: {tool.max_output_bytes}\n"
+        f"  maxInputFiles: {tool.max_input_files}\n"
+        "  match:\n"
+        "    filePatterns: " + json.dumps(list(tool.match_file_patterns)) + "\n"
+        "    keywords: " + json.dumps(list(tool.match_keywords)) + "\n"
+    )
+
+
+def tools_package_readme() -> str:
+    return (
+        "# LogAgent V2 Tools Package\n\n"
+        "This archive contains configured executable tools from this Server. "
+        "Built-in tools are intentionally omitted. See tools-manifest.json for "
+        "packaged and skipped tools.\n"
+    )
+
+
+def write_zip_text(
+    archive: zipfile.ZipFile,
+    path: str,
+    content: str,
+    mode: int = 0o644,
+) -> None:
+    write_zip_bytes(archive, path, content.encode("utf-8"), mode)
+
+
+def write_zip_bytes(
+    archive: zipfile.ZipFile,
+    path: str,
+    data: bytes,
+    mode: int = 0o644,
+) -> None:
+    info = zipfile.ZipInfo(safe_zip_path(path))
+    info.create_system = 3
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = (mode & 0o777) << 16
+    archive.writestr(info, data)
+
+
 def iter_regular_skill_files(skill_dir: Path) -> list[Path]:
     files: list[Path] = []
     for root, dirs, names in os.walk(skill_dir, followlinks=False):
@@ -84,3 +228,10 @@ def validate_relative_path(path: str) -> None:
     pure = PurePosixPath(path)
     if not path or pure.is_absolute() or ".." in pure.parts:
         raise ValueError(f"unsafe zip path {path!r}")
+
+
+def safe_zip_segment(value: str) -> str:
+    if not value or "/" in value or "\\" in value or value in {".", ".."}:
+        raise ValueError(f"unsafe zip path segment {value!r}")
+    validate_relative_path(value)
+    return value

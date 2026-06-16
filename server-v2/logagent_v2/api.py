@@ -16,7 +16,7 @@ from .fetch import (
     normalize_fetch_endpoint,
     public_fetch_endpoint,
 )
-from .exports import build_skills_zip
+from .exports import build_skills_zip, build_tools_zip
 from .metadata import (
     confirm_metadata_import,
     import_metadata_from_url,
@@ -289,6 +289,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=data,
             media_type="application/zip",
             headers={"Content-Disposition": 'attachment; filename="skills.zip"'},
+        )
+
+    @app.get("/api/v2/exports/tools.zip")
+    async def export_tools(_: Auth) -> Response:
+        try:
+            data = build_tools_zip(settings)
+        except ValueError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="tools.zip"'},
         )
 
     @app.get("/api/v2/skills")

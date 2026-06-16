@@ -86,6 +86,9 @@ Implemented in this slice:
   artifacts.
 - `skills.zip` export for the current Skill registry, with regular files only,
   root manifest, and symlink skipping.
+- `tools.zip` export for enabled configured subprocess tools, with packaged
+  executable files, shell wrappers, config examples, and skip reasons for tools
+  that cannot be packaged.
 
 Not yet implemented:
 
@@ -96,8 +99,7 @@ Not yet implemented:
   full multi-round model reasoning after resume.
 - Fetch cURL import, encrypted credential sets, redirect revalidation, WebUI
   Fetch management, Metadata task context auto-selection, and WebUI cutover.
-- Tools export zip, richer automatic Skill matching, and WebUI System Context
-  cutover.
+- Richer automatic Skill matching and WebUI System Context cutover.
 - Case import drafts, FTS/BM25, embedding/vector recall, and WebUI Memory
   management.
 - WebUI V2 cutover.
@@ -128,6 +130,7 @@ GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
 GET  /api/v2/exports/skills.zip
+GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
@@ -300,6 +303,24 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+`GET /api/v2/exports/tools.zip` exports only enabled configured subprocess
+tools from `LOGAGENT_V2_TOOLS_JSON`. Built-in tools are not packaged. The
+archive contains:
+
+```text
+README.md
+tools-manifest.json
+bin/<toolId>/<executable>
+wrappers/<toolId>.sh
+config/examples/<toolId>.yaml
+```
+
+Executable commands must resolve to absolute, regular, executable files to be
+packaged. Tools that cannot be packaged remain in `tools-manifest.json` with
+`skipped=true` and `skipReason`; disabled tools are omitted. The export does
+not include API keys, Fetch endpoint secrets, environment values, uploads,
+artifacts, or workspace data.
 
 When a tool arg contains `{input_file}`, V2 selects entries from the current
 run's latest `tool_input_index` evidence whose `toolIds` contain the requested

@@ -20,7 +20,7 @@ from logagent_v2.case_memory import (
     update_case as update_case_record,
 )
 from logagent_v2.config import Settings, ToolDefinition
-from logagent_v2.exports import build_skills_zip
+from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
     normalize_and_validate_final_answer,
@@ -1244,6 +1244,64 @@ class StoreTests(unittest.TestCase):
             files = manifest["skills"][0]["files"]
             self.assertTrue(any(item["path"] == "SKILL.md" for item in files))
             self.assertTrue(all(item["path"] != "references/linked.md" for item in files))
+
+    def test_tools_zip_packages_executable_and_marks_missing_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            executable = root / "fake-tool"
+            executable.write_text("#!/usr/bin/env sh\necho ok\n", encoding="utf-8")
+            executable.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                tools=(
+                    ToolDefinition(
+                        id="fake_tool",
+                        display_name="Fake Tool",
+                        command=executable.as_posix(),
+                        args=("--input", "{input_file}"),
+                        max_input_files=2,
+                        match_file_patterns=("*.log",),
+                        match_keywords=("panic",),
+                    ),
+                    ToolDefinition(
+                        id="missing_tool",
+                        display_name="Missing Tool",
+                        command=(root / "missing-tool").as_posix(),
+                    ),
+                    ToolDefinition(
+                        id="disabled_tool",
+                        display_name="Disabled Tool",
+                        command=executable.as_posix(),
+                        enabled=False,
+                    ),
+                ),
+            )
+
+            archive_bytes = build_tools_zip(settings)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                names = set(archive.namelist())
+                self.assertIn("README.md", names)
+                self.assertIn("bin/fake_tool/fake-tool", names)
+                self.assertIn("wrappers/fake_tool.sh", names)
+                binary_mode = (archive.getinfo("bin/fake_tool/fake-tool").external_attr >> 16)
+                wrapper_mode = (archive.getinfo("wrappers/fake_tool.sh").external_attr >> 16)
+                self.assertEqual(binary_mode & 0o777, 0o755)
+                self.assertEqual(wrapper_mode & 0o777, 0o755)
+                self.assertIn("config/examples/fake_tool.yaml", names)
+                self.assertIn("config/examples/missing_tool.yaml", names)
+                self.assertNotIn("bin/missing_tool/missing-tool", names)
+                self.assertNotIn("config/examples/disabled_tool.yaml", names)
+                manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))
+
+            tools = {item["toolId"]: item for item in manifest["tools"]}
+            self.assertTrue(tools["fake_tool"]["packaged"])
+            self.assertFalse(tools["fake_tool"]["skipped"])
+            self.assertEqual(tools["fake_tool"]["configuredArgs"], ["--input", "{input_file}"])
+            self.assertFalse(tools["missing_tool"]["packaged"])
+            self.assertTrue(tools["missing_tool"]["skipped"])
+            self.assertIn("regular file", tools["missing_tool"]["skipReason"])
+            self.assertNotIn("disabled_tool", tools)
 
 
 if __name__ == "__main__":

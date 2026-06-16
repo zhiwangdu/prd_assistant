@@ -37,6 +37,8 @@ slice provides the durable foundation for the V2 product model:
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit Workspace skill selection, `system_context` run
   snapshot, readonly/task MCP reference reading, and `skills.zip` export.
+- `tools.zip` export for enabled configured subprocess tools, with packaged
+  executables, shell wrappers, examples, and a manifest.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -133,6 +135,7 @@ GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
 GET  /api/v2/exports/skills.zip
+GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
@@ -175,8 +178,8 @@ PYTHONPATH=. python3 -m unittest discover tests
 This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
 inputs beyond node-package InfluxQL JSONL, manifest/grep fallback input
 matching, real analyzer-specific stdout adapters, Fetch cURL import and
-encrypted credential sets, tools.zip export, richer Skill auto-matching, Case
-import drafts, FTS/embedding recall, WebUI, or full LangGraph model loop.
+encrypted credential sets, richer Skill auto-matching, Case import drafts,
+FTS/embedding recall, WebUI, or full LangGraph model loop.
 
 ## Initial Evidence Pipeline
 
@@ -259,6 +262,14 @@ the tool id and virtual input path, so final refs use:
 ```text
 tool_results/<tool_id>_<input_hash>/result.json#findings/<index>
 ```
+
+`GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools.
+The archive contains `README.md`, `tools-manifest.json`, executable files under
+`bin/<toolId>/`, shell wrappers under `wrappers/`, and config examples under
+`config/examples/`. Missing, relative, non-file, or non-executable tool
+commands are kept in the manifest with `skipped=true`; disabled tools and
+built-in tools are omitted. The export does not include API keys, endpoint
+credentials, runtime environment values, uploads, artifacts, or workspace data.
 
 Fetch endpoints are configured through the protected HTTP API and are disabled
 for execution unless `LOGAGENT_V2_FETCH_ENABLED=1`. Execution is constrained to
