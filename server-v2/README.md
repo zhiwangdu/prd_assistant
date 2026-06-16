@@ -43,7 +43,7 @@ slice provides the durable foundation for the V2 product model:
   queries, per-run `metadata_context` auto-selection, HTTP API, and
   readonly/task MCP tools.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
-  text/JSON import drafts, SQLite FTS5/BM25 plus local vector recall,
+  text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 plus local vector recall,
   edit/disable API, and readonly/task MCP search.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
@@ -226,6 +226,7 @@ GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/preview
+POST /api/v2/cases/imports/:import_id/messages
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
@@ -620,14 +621,18 @@ Case import drafts support text or JSON capture before a Case is confirmed:
 POST /api/v2/cases/imports/preview
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports/:import_id/messages
 POST /api/v2/cases/imports/:import_id/confirm
 ```
 
 Preview parses JSON Case fields or plain text sections such as `Title`,
 `Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and
 `Evidence Refs`. Missing required fields are returned as `validationErrors`.
-Confirm may provide overrides to complete or edit the draft; only confirm writes
-to `cases` and updates the FTS index.
+Follow-up messages are appended to the draft, persisted in SQLite, and combined
+with the original source text for another parse pass. Confirm may provide
+overrides to complete or edit the draft; only confirm writes to `cases` and
+updates the FTS index, and it remains blocked until required fields are
+complete.
 
 Readonly MCP and task MCP expose:
 

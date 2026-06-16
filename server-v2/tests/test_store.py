@@ -23,6 +23,7 @@ from logagent_v2.artifacts import (
     write_artifact_file,
 )
 from logagent_v2.case_memory import (
+    append_case_import_message,
     confirm_case_import,
     create_manual_case,
     create_task_case,
@@ -2569,9 +2570,25 @@ grep_results.json#matches/0
             with self.assertRaises(ValueError):
                 confirm_case_import(store, preview["import"]["importId"])
 
-            completed = confirm_case_import(
+            updated = append_case_import_message(
                 store,
                 preview["import"]["importId"],
+                "Root Cause: Missing index caused slow query.\n"
+                "Solution: Create the missing index.",
+            )
+            self.assertEqual(updated["import"]["messages"][0]["role"], "user")
+            self.assertEqual(updated["import"]["validationErrors"], [])
+
+            confirmed_from_message = confirm_case_import(store, preview["import"]["importId"])
+            self.assertEqual(
+                confirmed_from_message["case"]["rootCause"],
+                "Missing index caused slow query.",
+            )
+
+            second_preview = preview_case_import(store, "Only another symptom")
+            completed = confirm_case_import(
+                store,
+                second_preview["import"]["importId"],
                 {
                     "title": "Manual title",
                     "rootCause": "Missing index caused slow query.",

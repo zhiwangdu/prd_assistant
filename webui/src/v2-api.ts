@@ -168,6 +168,12 @@ export type V2CaseDraft = {
   evidenceRefs?: string[];
 };
 
+export type V2CaseImportMessage = {
+  role: "user" | "assistant" | string;
+  content: string;
+  createdAt: string;
+};
+
 export type V2CaseImport = {
   importId: string;
   status: "previewed" | "confirmed" | string;
@@ -175,6 +181,7 @@ export type V2CaseImport = {
   caseId?: string | null;
   draft: V2CaseDraft;
   validationErrors: string[];
+  messages?: V2CaseImportMessage[];
   sourceSizeBytes: number;
   createdAt: string;
   updatedAt: string;
@@ -560,6 +567,14 @@ export async function confirmV2CaseImport(apiKey: string, importId: string, over
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify(overrides)
+  });
+}
+
+export async function appendV2CaseImportMessage(apiKey: string, importId: string, message: string) {
+  return fetchJson<{ import: V2CaseImport }>(`/api/v2/cases/imports/${encodeURIComponent(importId)}/messages`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({ message })
   });
 }
 

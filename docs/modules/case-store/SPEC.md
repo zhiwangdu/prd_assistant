@@ -58,11 +58,26 @@ PATCH /api/cases/:case_id
 POST /api/mcp/readonly
 ```
 
+Python V2 clean-room Server 使用 `/api/v2/cases*` 命名空间提供等价能力：
+
+```http
+POST /api/v2/cases/imports/preview
+POST /api/v2/cases/imports/:import_id/messages
+POST /api/v2/cases/imports/:import_id/confirm
+GET /api/v2/cases
+GET /api/v2/cases/:case_id
+PATCH /api/v2/cases/:case_id
+```
+
 `POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。生成记录为 `sourceType=task`，必须包含 `taskId` 和 `sourceResultPath`。
 
 `POST /api/cases` 创建 `sourceType=manual` 记录。请求必须包含 `title`、`symptom`、`rootCause` 和 `solution`；可选 `product`、`version`、`environment`、`instanceId`、`nodeId`、`evidenceRefs` 和 `enabled`。手工 Case 不包含 `taskId` 和 `sourceResultPath`。
 
 Case import API 创建未确认草稿，不直接写入 Case Store。`POST /api/cases/imports` 支持 JSON 文本和 multipart UTF-8 文本类文件；PDF/DOCX 暂不解析。LLM Gateway 将原始材料整理为 `structuredCase`，如果缺少 `title`、`symptom`、`rootCause` 或 `solution`，返回 `missingFields` 和 `assistantQuestion`。`POST /api/cases/imports/:draft_id/messages` 追加用户补充并重新整理，`PATCH /api/cases/imports/:draft_id` 保存手工修正，`POST /api/cases/imports/:draft_id/confirm` 只有在必填字段完整时才创建 `sourceType=manual` Case。
+
+V2 Case import 使用同样的产品语义：preview 持久化 source text、draft、validation errors
+和 messages；messages endpoint 追加用户补充，合并原文与消息重新解析，并在仍缺字段时生成下一轮
+assistant question；confirm 仍只在必填字段完整时创建 `manual` Case。
 
 新任务创建时会写入：
 

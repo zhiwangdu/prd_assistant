@@ -15,6 +15,7 @@ from .artifacts import (
     write_artifact_file,
 )
 from .case_memory import (
+    append_case_import_message,
     case_import_preview,
     confirm_case_import,
     create_manual_case,
@@ -139,6 +140,10 @@ class CaseUpdate(BaseModel):
 class CaseImportPreviewCreate(BaseModel):
     content: str = Field(min_length=1, max_length=200000)
     filename: str | None = Field(default=None, max_length=300)
+
+
+class CaseImportMessageCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=20000)
 
 
 class CaseImportConfirmCreate(BaseModel):
@@ -1082,6 +1087,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=payload.content,
             filename=payload.filename,
         )
+
+    @app.post("/api/v2/cases/imports/{import_id}/messages")
+    async def append_case_import_message_api(
+        _: Auth,
+        import_id: str,
+        payload: CaseImportMessageCreate,
+    ) -> dict:
+        try:
+            return append_case_import_message(store, import_id, payload.message)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/cases/imports/{import_id}/confirm")
     async def confirm_case_import_api(

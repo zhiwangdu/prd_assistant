@@ -266,6 +266,7 @@ class Store:
                   source_text TEXT NOT NULL,
                   draft_json TEXT NOT NULL,
                   validation_errors_json TEXT NOT NULL,
+                  messages_json TEXT NOT NULL DEFAULT '[]',
                   case_id TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
@@ -345,6 +346,9 @@ class Store:
             )
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column_tx(
+                conn, "case_imports", "messages_json", "TEXT NOT NULL DEFAULT '[]'"
+            )
             self._ensure_case_fts_tx(conn)
             self._backfill_case_vectors_tx(conn)
 
@@ -1420,6 +1424,7 @@ class Store:
         draft: JsonObject,
         validation_errors: list[str],
         filename: str | None = None,
+        messages: list[JsonObject] | None = None,
     ) -> JsonObject:
         import_id = new_id("caseimp")
         ts = now_iso()
@@ -1428,8 +1433,8 @@ class Store:
                 """
                 INSERT INTO case_imports(
                   import_id, status, filename, source_text, draft_json,
-                  validation_errors_json, case_id, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  validation_errors_json, messages_json, case_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     import_id,
@@ -1438,6 +1443,7 @@ class Store:
                     source_text,
                     encode_json(draft),
                     encode_json(validation_errors),
+                    encode_json(messages or []),
                     None,
                     ts,
                     ts,
@@ -1474,6 +1480,8 @@ class Store:
         draft: JsonObject | None = None,
         validation_errors: list[str] | None = None,
         case_id: str | None = None,
+        messages: list[JsonObject] | None = None,
+        source_text: str | None = None,
     ) -> JsonObject:
         current = self.get_case_import(import_id)
         ts = now_iso()
@@ -1482,20 +1490,24 @@ class Store:
                 """
                 UPDATE case_imports
                 SET status = ?,
+                    source_text = ?,
                     draft_json = ?,
                     validation_errors_json = ?,
+                    messages_json = ?,
                     case_id = ?,
                     updated_at = ?
                 WHERE import_id = ?
                 """,
                 (
                     status,
+                    source_text if source_text is not None else current["sourceText"],
                     encode_json(draft if draft is not None else current["draft"]),
                     encode_json(
                         validation_errors
                         if validation_errors is not None
                         else current["validationErrors"]
                     ),
+                    encode_json(messages if messages is not None else current["messages"]),
                     case_id if case_id is not None else current.get("caseId"),
                     ts,
                     import_id,
@@ -1512,6 +1524,7 @@ class Store:
         item["sourceSizeBytes"] = len(item["sourceText"].encode("utf-8"))
         item["draft"] = decode_json(item.pop("draft_json"), {})
         item["validationErrors"] = decode_json(item.pop("validation_errors_json"), [])
+        item["messages"] = decode_json(item.pop("messages_json"), [])
         item["caseId"] = item.pop("case_id", None)
         item["createdAt"] = item.pop("created_at")
         item["updatedAt"] = item.pop("updated_at")

@@ -127,6 +127,38 @@ def confirm_case_import(
     return {"import": case_import_preview(confirmed), "case": case}
 
 
+def append_case_import_message(store: Store, import_id: str, message: str) -> JsonObject:
+    case_import = store.get_case_import(import_id)
+    if case_import["status"] == "confirmed":
+        raise ValueError("case import draft is already confirmed")
+    content = message.strip()
+    if not content:
+        raise ValueError("message must not be empty")
+    messages = list(case_import.get("messages", []))
+    messages.append({"role": "user", "content": content, "createdAt": now_iso()})
+    combined_text = combine_case_import_text(case_import["sourceText"], messages)
+    reparsed = draft_case_from_text(combined_text)
+    draft = dict(case_import.get("draft", {}))
+    draft.update({key: value for key, value in reparsed.items() if key != "_freeText"})
+    validation_errors = validate_case_draft(draft)
+    if validation_errors:
+        messages.append(
+            {
+                "role": "assistant",
+                "content": default_case_import_question(validation_errors),
+                "createdAt": now_iso(),
+            }
+        )
+    updated = store.update_case_import(
+        import_id,
+        status="previewed",
+        draft=draft,
+        validation_errors=validation_errors,
+        messages=messages,
+    )
+    return {"import": case_import_preview(updated)}
+
+
 def case_import_preview(case_import: JsonObject) -> JsonObject:
     return {
         "importId": case_import["importId"],
@@ -135,6 +167,7 @@ def case_import_preview(case_import: JsonObject) -> JsonObject:
         "caseId": case_import.get("caseId"),
         "draft": case_import.get("draft", {}),
         "validationErrors": case_import.get("validationErrors", []),
+        "messages": case_import.get("messages", []),
         "sourceSizeBytes": case_import.get("sourceSizeBytes", 0),
         "createdAt": case_import["createdAt"],
         "updatedAt": case_import["updatedAt"],
@@ -154,6 +187,21 @@ def draft_case_from_text(content: str) -> JsonObject:
     if not draft.get("symptom") and free_text:
         draft["symptom"] = free_text
     return draft
+
+
+def combine_case_import_text(source_text: str, messages: list[JsonObject]) -> str:
+    parts = [source_text.strip()]
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            role = str(message.get("role") or "user")
+            parts.append(f"{role} supplement:\n{content.strip()}")
+    return "\n\n".join(part for part in parts if part)
+
+
+def default_case_import_question(validation_errors: list[str]) -> str:
+    fields = [error.removesuffix(" is required") for error in validation_errors]
+    return "Please provide missing Case fields: " + ", ".join(fields)
 
 
 def try_parse_case_json(content: str) -> JsonObject | None:

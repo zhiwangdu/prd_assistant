@@ -13,7 +13,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Analyze` 顶部新增 V2 分析桥接面板，直接调用 Python V2 `/api/v2/*`：可新建 Workspace、选择历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、resources、最终结果和 artifacts，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Session-first Analyze 流仍保留，作为 V2 WebUI 全量切换前的兼容入口。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
-- `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用。旧 Memory 页面仍保留；V2 import 当前按后端能力提供 preview/confirm，不包含旧 `/api/cases/imports/:draft_id/messages` 的多轮补充。
+- `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用。旧 Memory 页面仍保留。
 - `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
 - `System Context` 顶部新增 V2 System Context bridge，直接调用 Python V2 `/api/v2/skills*` 和 `/api/v2/metadata/instances`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载和 V2 Metadata instance 摘要。旧 Skills/Metadata 页面仍保留。
 - `System Context` 顶部同时新增 V2 Metadata bridge，调用 Python V2 `/api/v2/metadata/*`：支持 JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、实例删除和 snapshot JSON 查看。旧 Metadata Dashboard 仍保留在 Metadata tab。
@@ -289,6 +289,7 @@ V2 bridge APIs：
 - `GET /api/v2/cases/:case_id`
 - `PATCH /api/v2/cases/:case_id`
 - `POST /api/v2/cases/imports/preview`
+- `POST /api/v2/cases/imports/:import_id/messages`
 - `POST /api/v2/cases/imports/:import_id/confirm`
 
 Fetch：

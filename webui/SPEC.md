@@ -111,8 +111,7 @@ Database
 - 顶部 `Memory` 页面必须支持 `GET /api/cases` 搜索列表、Case import 文本/文本文件导入、LLM 结构化草稿、缺失信息追问、确认保存、`PATCH /api/cases/:case_id` 详情编辑和启用/禁用。直接 `POST /api/cases` 保留为后端兼容能力，不再作为主录入 UI。
 - Memory 顶部可以出现 V2 bridge 面板，用于在 V2 WebUI 全量切换前直接验证 Python V2 Case Memory。该面板必须独立于旧 Memory 面板，不能破坏旧 `/api/cases*` 工作流。
 - V2 Memory bridge 必须调用 `/api/v2/cases` 搜索和展示 Case，支持 `includeDisabled`，展示 score/search backend，并可调用 `PATCH /api/v2/cases/:case_id` 编辑 Case 字段和启用/禁用。
-- V2 Memory bridge 必须读取文本文件内容后调用 `/api/v2/cases/imports/preview`，展示 draft 和 validation errors；确认时调用 `/api/v2/cases/imports/:import_id/confirm` 并允许用前端编辑后的字段覆盖 draft。
-- V2 Memory bridge 当前只覆盖 V2 后端已有的 preview/confirm 导入流；旧 Memory 的多轮缺失信息补充仍只在旧 `/api/cases/imports/:draft_id/messages` 流中提供。
+- V2 Memory bridge 必须读取文本文件内容后调用 `/api/v2/cases/imports/preview`，展示 draft 和 validation errors；缺少必填字段时调用 `/api/v2/cases/imports/:import_id/messages` 提交补充信息，展示消息历史并刷新结构化 draft；确认时调用 `/api/v2/cases/imports/:import_id/confirm` 并允许用前端编辑后的字段覆盖 draft。
 - 成功任务 artifacts 中存在 `caseContext` 时，WebUI 必须展示任务创建时召回的历史 Case，并说明其仅作分析参考。
 - 成功任务 artifacts 中存在 `textInput` 时，WebUI 必须展示任务创建时固化的对话框输入，并支持 `session_text_input.json#question` evidence ref 跳转。
 - 成功任务 artifacts 中存在 `analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls` 或 `agentResponse` 时，WebUI 必须展示 Claude Code session 面板，包含 analysis mode、permission profile、session id、runtime status、耗时、错误、structured output、MCP calls 和 artifact 路径。

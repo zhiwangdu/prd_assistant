@@ -1,7 +1,8 @@
-import { BookOpenCheck, CheckCircle2, FileText, RefreshCw, Save, Search, UploadCloud, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, FileText, MessageSquare, RefreshCw, Save, Search, Send, UploadCloud, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import {
+  appendV2CaseImportMessage,
   confirmV2CaseImport,
   previewV2CaseImport,
   searchV2Cases,
@@ -48,6 +49,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [caseImport, setCaseImport] = useState<V2CaseImport | null>(null);
   const [importDraft, setImportDraft] = useState<UiCaseDraft>(EMPTY_DRAFT);
+  const [importMessage, setImportMessage] = useState("");
   const [status, setStatus] = useState("V2 Memory 等待加载");
   const [loading, setLoading] = useState(false);
 
@@ -90,6 +92,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
       const response = await previewV2CaseImport(apiKey, { content, filename: sourceFile?.name ?? null });
       setCaseImport(response.import);
       setImportDraft(fromV2Draft(response.import.draft));
+      setImportMessage("");
       setStatus(response.import.validationErrors.length ? `V2 preview has ${response.import.validationErrors.length} validation errors` : "V2 preview ready to confirm");
     } catch (reason) {
       setStatus(errorMessage(reason));
@@ -108,6 +111,22 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
       setEditDraft(toDraft(response.case));
       setStatus(`V2 saved ${response.case.caseId}`);
       await refreshCases();
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendImportMessage() {
+    if (!caseImport || !importMessage.trim()) return;
+    setLoading(true);
+    try {
+      const response = await appendV2CaseImportMessage(apiKey, caseImport.importId, importMessage);
+      setCaseImport(response.import);
+      setImportDraft(fromV2Draft(response.import.draft));
+      setImportMessage("");
+      setStatus(response.import.validationErrors.length ? `V2 import still has ${response.import.validationErrors.length} validation errors` : "V2 import draft completed");
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -141,6 +160,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     setSourceFile(null);
     setCaseImport(null);
     setImportDraft(EMPTY_DRAFT);
+    setImportMessage("");
     setStatus("V2 import draft cleared");
   }
 
@@ -206,6 +226,26 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
                 {caseImport.validationErrors.length ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                     {caseImport.validationErrors.map((item) => <p key={item}>{item}</p>)}
+                  </div>
+                ) : null}
+                <CaseImportMessages messages={caseImport.messages ?? []} />
+                {caseImport.validationErrors.length ? (
+                  <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                      <span>补充缺失信息</span>
+                    </div>
+                    <textarea
+                      className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-600/20"
+                      value={importMessage}
+                      onChange={(event) => setImportMessage(event.target.value)}
+                      placeholder="填写缺失的标题、现象、根因或解决方案，V2 会重新整理草稿"
+                    />
+                    <div className="flex justify-end">
+                      <Button disabled={loading || !importMessage.trim()} onClick={() => void sendImportMessage()}>
+                        <Send className="mr-2 h-4 w-4" />Submit supplement
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -285,6 +325,29 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function CaseImportMessages({ messages }: { messages: NonNullable<V2CaseImport["messages"]> }) {
+  if (!messages.length) return null;
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <MessageSquare className="h-4 w-4 text-primary" />
+        <span>Import messages</span>
+      </div>
+      <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+        {messages.map((message, index) => (
+          <div className="rounded-md bg-slate-50 p-2 text-xs" key={`${message.createdAt}-${index}`}>
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <Badge variant={message.role === "assistant" ? "secondary" : "success"}>{message.role}</Badge>
+              <span className="text-muted-foreground">{new Date(message.createdAt).toLocaleString()}</span>
+            </div>
+            <p className="whitespace-pre-wrap text-foreground">{message.content}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

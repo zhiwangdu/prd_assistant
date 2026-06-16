@@ -100,7 +100,7 @@ Implemented in this slice:
   storage, field/tag type query APIs, per-run `metadata_context`
   auto-selection, readonly MCP tools, and task MCP background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
-  confirmation, text/JSON import drafts, SQLite FTS5/BM25 recall,
+  confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
   local hash-vector recall, edit/disable API, readonly MCP search, and task MCP
   background case context.
 - Skill-backed System Context foundation with filesystem Skill registry,
@@ -208,6 +208,7 @@ GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/preview
+POST /api/v2/cases/imports/:import_id/messages
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
@@ -636,11 +637,14 @@ Case import drafts live in `case_imports` and are created through
 `POST /api/v2/cases/imports/preview`. Preview accepts JSON Case fields or plain
 text sections such as `Title`, `Symptom`, `Root Cause`, `Solution`, `Product`,
 `Version`, `Environment`, `Instance ID`, `Node ID`, and `Evidence Refs`. It
-stores the source text, parsed draft, and validation errors without mutating
-`cases`. `POST /api/v2/cases/imports/:import_id/confirm` may provide field
-overrides; only a complete confirmed draft creates a `manual` Case and updates
-the FTS index. Re-confirming an already confirmed import returns the existing
-Case.
+stores the source text, parsed draft, validation errors, and follow-up message
+history without mutating `cases`. `POST
+/api/v2/cases/imports/:import_id/messages` appends a user supplement, combines
+all messages with the original source text, reparses the draft, and adds an
+assistant question when required fields are still missing. `POST
+/api/v2/cases/imports/:import_id/confirm` may provide field overrides; only a
+complete confirmed draft creates a `manual` Case and updates the FTS index.
+Re-confirming an already confirmed import returns the existing Case.
 
 Search is dependency-light and local: V2 maintains a SQLite FTS5 table beside
 `cases` and ranks query matches with `bm25`. The indexed text covers `title`,
