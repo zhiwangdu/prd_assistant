@@ -159,6 +159,73 @@ def run_log_search(
     return {"search": results, "artifact": artifact, "evidence": evidence}
 
 
+def get_log_slice(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    path: str,
+    line_number: int,
+    before: int,
+    after: int,
+) -> JsonObject:
+    if line_number < 1:
+        raise ValueError("lineNumber must be >= 1")
+    before = max(0, min(before, 50))
+    after = max(0, min(after, 50))
+    uploads = store.list_uploads(workspace_id)
+    text_files = collect_text_files(settings, uploads)
+    selected = next((text_file for text_file in text_files if text_file.path == path), None)
+    if selected is None:
+        raise ValueError(f"log path {path!r} is not available in this workspace")
+    lines = selected.text.splitlines()
+    start = max(1, line_number - before)
+    end = min(len(lines), line_number + after)
+    slice_id = new_id("logslice")
+    slice_path = f"log_slices/{slice_id}.json"
+    result = {
+        "schemaVersion": 1,
+        "sliceId": slice_id,
+        "path": path,
+        "sourceUploadId": selected.source_upload_id,
+        "lineNumber": line_number,
+        "startLine": start,
+        "endLine": end,
+        "lines": [
+            {
+                "lineNumber": current,
+                "text": lines[current - 1][:4000],
+            }
+            for current in range(start, end + 1)
+        ],
+        "ref": f"{slice_path}#lines",
+    }
+    artifact = write_json_artifact(
+        settings,
+        store,
+        workspace_id,
+        f"{slice_id}.json",
+        result,
+        schema_name="logagent.v2.log_slice.v1",
+    )
+    evidence = store.create_evidence(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        kind="log_slice",
+        final_allowed=True,
+        summary=f"Log slice {path}:{start}-{end}.",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": slice_path,
+            "sourcePath": path,
+            "lineNumber": line_number,
+            "ref": result["ref"],
+        },
+    )
+    return {"slice": result, "artifact": artifact, "evidence": evidence}
+
+
 def collect_text_files(settings: Settings, uploads: list[JsonObject]) -> list[TextFile]:
     text_files: list[TextFile] = []
     total_archive_bytes = 0

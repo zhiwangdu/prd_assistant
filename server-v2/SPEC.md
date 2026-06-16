@@ -50,13 +50,15 @@ Implemented in this slice:
   resources.
 - Task MCP `logagent.search_logs`, which creates follow-up `log_search`
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
+- Task MCP `logagent.get_log_slice`, which reads bounded context from a current
+  Workspace text path and persists `log_slice` evidence.
 
 Not yet implemented:
 
 - V1-compatible node log package preprocessing and log slicing.
 - LangGraph provider integration.
-- Additional task MCP tools such as `get_log_slice`, `run_domain_tool`,
-  Metadata, Case recall, user prompt, and approval.
+- Additional task MCP tools such as `run_domain_tool`, Metadata, Case recall,
+  user prompt, and approval.
 - Tool Runner execution.
 - Metadata import/query.
 - Skill-backed System Context.
@@ -158,6 +160,15 @@ log_searches/<search_id>.json#matches/<index>
 ```
 
 Each follow-up search persists a `log_search` evidence item and a JSON artifact.
+
+Log slice refs use:
+
+```text
+log_slices/<slice_id>.json#lines
+```
+
+`logagent.get_log_slice` only reads paths that are available from the current
+Workspace's uploaded text files or supported archive members.
 
 ## Security
 

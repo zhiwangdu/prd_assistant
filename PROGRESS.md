@@ -2,6 +2,13 @@
 
 Last updated: 2026-06-16
 
+## 2026-06-17 V2 Task MCP Log Slice
+
+- Added task MCP `logagent.get_log_slice` for bounded context around a current Workspace text path and line number.
+- Log slices are persisted as `log_slice` evidence with refs in the form `log_slices/<slice_id>.json#lines`.
+- Updated `server-v2/README.md` and `server-v2/SPEC.md`.
+- Verification passed: `python3 -m compileall logagent_v2` and `PYTHONPATH=. python3 -m unittest discover tests`.
+
 ## 2026-06-17 V2 Task MCP Log Search
 
 - Added V2 task MCP endpoint `POST /api/v2/mcp/task/:run_id`.

@@ -172,6 +172,30 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(payload["search"]["matches"][0]["ref"].startswith("log_searches/"))
             self.assertIn("#matches/0", payload["search"]["matches"][0]["ref"])
 
+            slice_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "query.log",
+                            "lineNumber": 2,
+                            "before": 1,
+                            "after": 0,
+                        },
+                    },
+                },
+            )
+            slice_payload = json.loads(slice_response["result"]["content"][0]["text"])
+            self.assertEqual(slice_payload["slice"]["startLine"], 1)
+            self.assertEqual(slice_payload["slice"]["endLine"], 2)
+            self.assertTrue(slice_payload["slice"]["ref"].startswith("log_slices/"))
+
 
 if __name__ == "__main__":
     unittest.main()

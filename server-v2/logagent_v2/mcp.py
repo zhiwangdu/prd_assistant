@@ -4,7 +4,7 @@ import json
 
 from .artifacts import resolve_artifact_path
 from .config import Settings
-from .evidence import run_log_search
+from .evidence import get_log_slice, run_log_search
 from .store import Store
 
 
@@ -25,7 +25,7 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
             uri = request.get("params", {}).get("uri")
             result = read_task_resource(settings, store, run, uri)
         elif method == "tools/list":
-            result = {"tools": [search_logs_descriptor()]}
+            result = {"tools": [search_logs_descriptor(), get_log_slice_descriptor()]}
         elif method == "tools/call":
             result = call_task_tool(settings, store, run, request.get("params", {}))
         else:
@@ -200,6 +200,8 @@ def search_logs_descriptor() -> dict:
 def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) -> dict:
     name = params.get("name")
     arguments = params.get("arguments") or {}
+    if name == "logagent.get_log_slice":
+        return call_get_log_slice(settings, store, run, arguments)
     if name != "logagent.search_logs":
         raise ValueError(f"unsupported task tool {name}")
     keywords = arguments.get("keywords")
@@ -214,6 +216,52 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
     text = json.dumps(
         {
             "search": result["search"],
+            "evidence": result["evidence"],
+        },
+        ensure_ascii=True,
+        indent=2,
+    )
+    return {"content": [{"type": "text", "text": text}]}
+
+
+def get_log_slice_descriptor() -> dict:
+    return {
+        "name": "logagent.get_log_slice",
+        "description": "Read bounded context lines around a current Workspace log path.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "lineNumber": {"type": "integer", "minimum": 1},
+                "before": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+                "after": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+            },
+            "required": ["path", "lineNumber"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def call_get_log_slice(settings: Settings, store: Store, run: dict, arguments: dict) -> dict:
+    path = arguments.get("path")
+    line_number = arguments.get("lineNumber")
+    if not isinstance(path, str) or not path:
+        raise ValueError("logagent.get_log_slice requires path")
+    if not isinstance(line_number, int):
+        raise ValueError("logagent.get_log_slice requires integer lineNumber")
+    result = get_log_slice(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        path=path,
+        line_number=line_number,
+        before=int(arguments.get("before", 5)),
+        after=int(arguments.get("after", 5)),
+    )
+    text = json.dumps(
+        {
+            "slice": result["slice"],
             "evidence": result["evidence"],
         },
         ensure_ascii=True,

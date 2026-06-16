@@ -14,7 +14,7 @@ slice provides the durable foundation for the V2 product model:
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP discovery placeholder.
 - Task MCP endpoint with summary/evidence/manifest/grep resources and
-  `logagent.search_logs` follow-up search.
+  `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Stub agent runtime that exercises the lifecycle before LangGraph model
   reasoning and tool execution are wired in. The stub now summarizes real
   initial grep evidence when uploads are present.
@@ -128,9 +128,16 @@ It currently supports:
 - `resources/read` for `summary`, `evidence`, `manifest`, and `grep_results`
 - `tools/list`
 - `tools/call logagent.search_logs`
+- `tools/call logagent.get_log_slice`
 
 Follow-up searches write a `log_search` evidence row and return stable refs:
 
 ```text
 log_searches/<search_id>.json#matches/<index>
+```
+
+Log slices write a `log_slice` evidence row and return:
+
+```text
+log_slices/<slice_id>.json#lines
 ```
