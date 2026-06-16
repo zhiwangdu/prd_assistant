@@ -451,6 +451,61 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_run_artifacts(self, run_id: str) -> JsonObject:
+        run = self.get_run(run_id)
+        uploads = self.list_uploads(run["workspace_id"])
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  evidence_items.id AS evidence_id,
+                  evidence_items.kind AS evidence_kind,
+                  evidence_items.summary AS evidence_summary,
+                  evidence_items.final_allowed AS final_allowed,
+                  evidence_items.payload_json AS evidence_payload_json,
+                  evidence_items.created_at AS evidence_created_at,
+                  artifacts.id AS artifact_id,
+                  artifacts.relative_path AS relative_path,
+                  artifacts.sha256 AS sha256,
+                  artifacts.size_bytes AS size_bytes,
+                  artifacts.content_type AS content_type,
+                  artifacts.schema_name AS schema_name,
+                  artifacts.preview_json AS preview_json,
+                  artifacts.created_at AS artifact_created_at
+                FROM evidence_items
+                JOIN artifacts ON artifacts.id = evidence_items.artifact_id
+                WHERE evidence_items.workspace_id = ?
+                  AND (evidence_items.run_id = ? OR evidence_items.run_id IS NULL)
+                ORDER BY evidence_items.created_at ASC, evidence_items.rowid ASC
+                """,
+                (run["workspace_id"], run_id),
+            ).fetchall()
+        evidence_artifacts = []
+        for row in rows:
+            item = dict(row)
+            item["final_allowed"] = bool(item["final_allowed"])
+            item["evidence_payload"] = decode_json(item.pop("evidence_payload_json"), {})
+            item["preview"] = decode_json(item.pop("preview_json"), {})
+            evidence_artifacts.append(item)
+        upload_artifacts = [
+            {
+                "upload_id": upload["id"],
+                "filename": upload["filename"],
+                "artifact_id": upload["artifact_id"],
+                "relative_path": upload["artifact_relative_path"],
+                "sha256": upload["artifact_sha256"],
+                "size_bytes": upload["artifact_size_bytes"],
+                "content_type": upload["artifact_content_type"],
+                "created_at": upload["created_at"],
+            }
+            for upload in uploads
+        ]
+        return {
+            "run": run,
+            "uploads": upload_artifacts,
+            "evidenceArtifacts": evidence_artifacts,
+        }
+
     def list_upload_sessions(self, workspace_id: str | None = None) -> list[JsonObject]:
         with self.connect() as conn:
             if workspace_id is None:

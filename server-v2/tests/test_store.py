@@ -217,6 +217,20 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(run_result["finalAnswer"]["confidence"], "low")
             self.assertEqual(run_result["artifacts"]["json"]["content_type"], "application/json")
             self.assertEqual(run_result["artifacts"]["markdown"]["content_type"], "text/markdown")
+            run_artifacts = store.list_run_artifacts(run["id"])
+            self.assertEqual(run_artifacts["run"]["id"], run["id"])
+            self.assertEqual(len(run_artifacts["uploads"]), 1)
+            self.assertEqual(run_artifacts["uploads"][0]["filename"], "db.log")
+            artifact_kinds = {
+                item["evidence_kind"] for item in run_artifacts["evidenceArtifacts"]
+            }
+            self.assertIn("manifest", artifact_kinds)
+            self.assertIn("log_search", artifact_kinds)
+            self.assertIn("analysis_package", artifact_kinds)
+            self.assertIn("result", artifact_kinds)
+            self.assertTrue(
+                all(item["artifact_id"] for item in run_artifacts["evidenceArtifacts"])
+            )
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
             self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))

@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Run Artifact Listing
+
+- Added `Store.list_run_artifacts` to enumerate both Workspace upload artifacts and run evidence artifacts for a run.
+- Added `GET /api/v2/runs/:run_id/artifacts` as the V2 counterpart to Rust Server task artifact listing.
+- Artifact listing includes evidence kind, summary, final evidence flag, payload, artifact metadata, and uploaded input artifact metadata.
+- Added regression coverage for uploaded input artifact listing and generated artifact kinds such as manifest, log search, analysis package, and result.
+- Updated `server-v2/README.md`, `server-v2/SPEC.md`, and `PROGRESS.md`.
+- Verification passed: `python3 -m compileall logagent_v2`, `PYTHONPATH=. python3 -m unittest discover tests`, and `git diff --check`.
+
 ## 2026-06-17 V2 Run and Upload Listing
 
 - Added Store and HTTP read surfaces for workspace uploads, upload sessions, and runs.

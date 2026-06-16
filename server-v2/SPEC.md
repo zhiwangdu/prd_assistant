@@ -61,7 +61,8 @@ Implemented in this slice:
   as task MCP resource for Agent loop context.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
-- Evidence listing for a run.
+- Evidence and artifact listing for a run, including uploaded input artifacts
+  and evidence artifact outputs.
 - Read-only MCP placeholder with `initialize`, `resources/list`,
   `resources/read`, `tools/list`, and `tools/call logagent.list_tools`.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
@@ -150,6 +151,7 @@ GET  /api/v2/runs?workspaceId=<workspace_id>
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
 GET  /api/v2/runs/:run_id/evidence
+GET  /api/v2/runs/:run_id/artifacts
 GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions

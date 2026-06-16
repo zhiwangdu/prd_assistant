@@ -449,6 +449,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/runs/{run_id}/artifacts")
+    async def list_run_artifacts(_: Auth, run_id: str) -> dict:
+        try:
+            return store.list_run_artifacts(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/v2/runs/{run_id}/result")
     async def get_result(_: Auth, run_id: str) -> dict:
         try:
