@@ -753,6 +753,9 @@ optional string `variables` that replace `{name}` placeholders in the endpoint
 URL before allowlist validation, optional temporary string `headers`, and an
 optional string `body` override. Controlled headers such as `Host` and
 `Content-Length` are rejected for both saved endpoints and runtime overrides.
+The `/api/v2/tools` catalog descriptor keeps the Rust/V1 manual-run shape:
+`readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
+`outputViews=["summary","request","response","body_artifact"]`.
 Task MCP `logagent.list_fetch_endpoints` matches the Rust/V1 envelope with
 `schemaVersion=1`, enabled endpoint summaries, and
 `finalEvidenceAllowed=false`; when Fetch execution is disabled it returns a

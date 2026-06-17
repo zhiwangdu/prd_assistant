@@ -243,7 +243,7 @@ def normalize_fetch_run_params(value: JsonObject) -> JsonObject:
         raise ValueError(f"logagent.fetch received unsupported params: {', '.join(unknown)}")
     endpoint_id = value.get("endpointId") or value.get("fetchId")
     if not isinstance(endpoint_id, str) or not endpoint_id.strip():
-        raise ValueError("logagent.fetch requires endpointId")
+        raise ValueError("logagent.fetch requires endpointId or fetchId")
 
     normalized: JsonObject = {
         "endpointId": endpoint_id.strip(),
@@ -463,11 +463,11 @@ def fetch_catalog_descriptor(settings: Settings) -> JsonObject:
     return {
         "toolId": "logagent.fetch",
         "displayName": "Fetch endpoint",
-        "description": "Run one configured Fetch endpoint by endpointId.",
+        "description": "Run a managed HTTP endpoint imported from a browser DevTools curl command.",
         "source": "built_in",
-        "tags": ["built-in", "fetch", "http"],
+        "tags": ["built-in", "fetch", "http", "manual-run"],
         "backend": "fetch",
-        "readOnly": True,
+        "readOnly": False,
         "editable": False,
         "exportable": False,
         "runnable": settings.fetch_enabled,
@@ -490,10 +490,11 @@ def fetch_catalog_descriptor(settings: Settings) -> JsonObject:
                 },
                 "body": {"type": "string"},
             },
+            "anyOf": [{"required": ["fetchId"]}, {"required": ["endpointId"]}],
             "additionalProperties": False,
         },
-        "paramsTemplate": {"endpointId": "", "variables": {}, "headers": {}},
-        "outputViews": ["summary", "request", "response"],
+        "paramsTemplate": {"fetchId": "", "variables": {}, "headers": {}, "body": None},
+        "outputViews": ["summary", "request", "response", "body_artifact"],
         "allowedHosts": list(settings.fetch_allowed_hosts),
     }
 

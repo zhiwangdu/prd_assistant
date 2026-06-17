@@ -588,7 +588,10 @@ available, or the protected manual Tools API. The migrated built-ins are:
 
 - metadata catalog tools: instance list, snapshot, field types, tag fields;
 - `logagent.preprocess_log_package`;
-- `logagent.fetch`;
+- `logagent.fetch`, whose catalog descriptor keeps the Rust/V1 manual-run
+  shape: `readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
+  `outputViews=["summary","request","response","body_artifact"]` while runtime
+  calls still accept either `endpointId` or `fetchId`;
 - `pprof_analyzer`;
 - `logagent.huawei_cloud_package_sync`, disabled until Huawei OBS/GaussDB
   environment variables are configured and pass startup validation. Its catalog

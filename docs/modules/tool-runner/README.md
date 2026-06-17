@@ -86,12 +86,12 @@ tools:
 - stdout、stderr、exit code、耗时都要保存。
 - 工具失败不应导致整个任务失败，除非标记为必需。
 - 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
-- 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable/paramsTemplate`；内置工具使用 `source=built_in`，只读、不可编辑、不可导出，是否支持页面手动运行由 `runnable` 决定。
+- 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable/paramsTemplate`；内置工具使用 `source=built_in`，`readOnly` 按具体工具执行语义标记，不可编辑、不可导出，是否支持页面手动运行由 `runnable` 决定。
 - configured subprocess 工具按 Rust/V1 command descriptor 形态暴露：
   `source=configured`、`backend=command`、`readOnly=false`、`editable=true`、
   `exportable=enabled`、`minFiles=1`，并将 `acceptedSuffixes` 原样设置为
   `match.filePatterns`。
-- `logagent.fetch` 使用 `source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。
+- `logagent.fetch` 使用 Rust/V1 catalog 形状：`source=built_in`、`backend=fetch`、`readOnly=false`、tag 包含 `manual-run`、不可导出、不可编辑、无需上传文件、`paramsTemplate` 以 `fetchId` 为主并包含 `body=null`、`outputViews=["summary","request","response","body_artifact"]`；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。运行时仍兼容 V2 `endpointId` 和 V1 `fetchId`。
 - `logagent.huawei_cloud_package_sync` 使用 Rust/V1 catalog 形状：display name 为 `Huawei OBS + GaussDB Package Sync`，`source=built_in`、`backend=huawei_cloud_package_sync`、tag 包含 `huawei-cloud`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`、`outputViews=["summary","obs","gaussdb","json"]`；只有 `huawei_cloud.package_sync.enabled=true` / `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED=1` 且 OBS/GaussDB 配置通过启动校验时才可运行。V2 会校验 OBS endpoint、bucket、object prefix、必填 OBS keys 和 GaussDB DSN；它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
 
 ## 当前实现状态

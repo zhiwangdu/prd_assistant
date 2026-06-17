@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Catalog Descriptor Parity
+
+- V2 `logagent.fetch` catalog metadata now matches the Rust/V1 manual-run
+  descriptor shape while keeping the V2 runtime-compatible `endpointId`
+  parameter path.
+- The descriptor now uses the browser DevTools cURL description, includes the
+  `manual-run` tag, marks `readOnly=false`, exposes a V1-style
+  `paramsTemplate` with `fetchId` and `body=null`, and advertises
+  `outputViews=["summary", "request", "response", "body_artifact"]`.
+- Runtime validation now reports that either `endpointId` or `fetchId` is
+  required.
+- Added regression coverage for Fetch descriptor fields and missing ID
+  validation.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused Fetch/tool registry regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Huawei Descriptor Catalog Parity
 
 - V2 `logagent.huawei_cloud_package_sync` catalog metadata now matches the

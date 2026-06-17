@@ -2371,6 +2371,18 @@ class StoreTests(unittest.TestCase):
             self.assertIn("logagent.fetch", descriptors)
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+            self.assertFalse(descriptors["logagent.fetch"]["readOnly"])
+            self.assertIn("manual-run", descriptors["logagent.fetch"]["tags"])
+            self.assertEqual(
+                descriptors["logagent.fetch"]["paramsTemplate"],
+                {"fetchId": "", "variables": {}, "headers": {}, "body": None},
+            )
+            self.assertEqual(
+                descriptors["logagent.fetch"]["outputViews"],
+                ["summary", "request", "response", "body_artifact"],
+            )
+            with self.assertRaisesRegex(ValueError, "endpointId or fetchId"):
+                validate_tool_run_params(settings, "logagent.fetch", {})
             self.assertEqual(descriptors["pprof_analyzer"]["source"], "configured")
             self.assertEqual(descriptors["pprof_analyzer"]["backend"], "command")
             self.assertEqual(descriptors["pprof_analyzer"]["readOnly"], False)
