@@ -226,9 +226,13 @@ def context_outline(
         return None
     if kind == "system_context":
         resources = value.get("resources", [])
+        system_resources = value.get("systemResources", [])
         return {
             "schemaVersion": value.get("schemaVersion"),
             "resourceCount": len(resources) if isinstance(resources, list) else 0,
+            "systemResourceCount": len(system_resources)
+            if isinstance(system_resources, list)
+            else 0,
             "resources": [
                 {
                     "kind": item.get("kind"),
@@ -241,6 +245,17 @@ def context_outline(
                     else 0,
                 }
                 for item in resources[:MAX_CONTEXT_RESOURCES]
+                if isinstance(item, dict)
+            ],
+            "systemResources": [
+                {
+                    "kind": item.get("kind"),
+                    "contextId": item.get("contextId"),
+                    "title": item.get("title"),
+                    "summary": item.get("summary"),
+                    "source": item.get("source"),
+                }
+                for item in system_resources[:MAX_CONTEXT_RESOURCES]
                 if isinstance(item, dict)
             ],
         }

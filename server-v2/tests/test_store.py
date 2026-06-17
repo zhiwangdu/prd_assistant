@@ -7137,6 +7137,66 @@ grep_results.json#matches/0
             self.assertIn("Check compaction backlog", payload["prompt"])
             self.assertIn("Metadata adapter", payload["prompt"])
 
+    def test_session_system_context_ids_materialize_into_run_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            resource = create_system_context_resource(
+                store,
+                {
+                    "kind": "runbook",
+                    "title": "Compaction runbook",
+                    "scope": "log_analysis",
+                    "contentType": "markdown",
+                    "content": "Check compaction backlog before changing query limits.",
+                    "summary": "Compaction triage",
+                    "promptPolicy": {"includeByDefault": False},
+                },
+            )
+            workspace = store.create_workspace(
+                "compaction timeout",
+                "diagnose",
+                "en-US",
+                system_context_ids=[resource["contextId"]],
+            )
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            context_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 23,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/system_context"},
+                },
+            )
+            context = json.loads(context_response["result"]["contents"][0]["text"])
+            system_context_ids = {item["contextId"] for item in context["systemResources"]}
+            self.assertIn(resource["contextId"], system_context_ids)
+            self.assertIn("Check compaction backlog", context["prompt"])
+
+            package_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 24,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_package"},
+                },
+            )
+            package = json.loads(package_response["result"]["contents"][0]["text"])
+            self.assertEqual(package["systemContext"]["systemResourceCount"], 1)
+            self.assertEqual(
+                package["systemContext"]["systemResources"][0]["contextId"],
+                resource["contextId"],
+            )
+
     def test_legacy_system_context_resource_api_smoke(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

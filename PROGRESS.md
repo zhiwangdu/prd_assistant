@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session System Context Materialization
+
+- V2 run `system_context.json` now materializes explicit Session
+  `systemContextIds` from legacy System Context resources alongside
+  Skill-backed Diagnostic Skills.
+- The artifact keeps existing Skill `resources`, adds `skillResources`,
+  `systemResources`, and the rendered legacy System Context prompt.
+- `analysis_package.systemContext` now includes `systemResourceCount` and
+  bounded `systemResources` summaries so the Agent can see selected runbooks,
+  architecture docs, glossaries, and similar legacy context.
+- Added regression coverage for a Session-bound runbook appearing in both task
+  MCP `system_context` and `analysis_package`.
+- Verification passed: focused Session System Context materialization
+  regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (109 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Metadata Binding Propagation
 
 - V2 Metadata context generation now honors explicit Session `instanceId` /

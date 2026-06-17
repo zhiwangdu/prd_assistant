@@ -100,8 +100,9 @@ slice provides the durable foundation for the V2 product model:
   V1-compatible `logagent.recall_cases`.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
-  `system_context` run snapshot, readonly/task MCP reference reading, and
-  `skills.zip` export.
+  explicit Session `systemContextIds` materialized from legacy System Context
+  resources, `system_context` run snapshot, readonly/task MCP reference
+  reading, and `skills.zip` export.
 - Legacy System Context resource compatibility APIs backed by SQLite for
   prompt packs, architecture docs, runbooks, glossaries, tool capability notes,
   knowledge notes, diagnostic-skill records, version activation, and prompt

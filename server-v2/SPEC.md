@@ -202,8 +202,9 @@ Implemented in this slice:
   V1-compatible Case recall background context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
-  `system_context` artifact, readonly MCP Skill tools, and task MCP reference
-  artifacts.
+  `system_context` artifact, explicit Session `systemContextIds` materialized
+  from legacy System Context resources, readonly MCP Skill tools, and task MCP
+  reference artifacts.
 - Legacy System Context resource compatibility APIs backed by SQLite. V2 can
   create, list, read, update, version, activate, and preview prompt packs,
   architecture docs, runbooks, glossaries, tool capability notes, knowledge

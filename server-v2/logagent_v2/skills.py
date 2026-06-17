@@ -9,6 +9,7 @@ from typing import Any
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
 from .store import JsonObject, Store, now_iso
+from .system_context import preview_system_context_resources
 
 
 SKILL_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -218,11 +219,21 @@ def build_system_context(
         question=workspace.get("question", ""),
         task_mode=workspace.get("mode", ""),
     )
+    legacy_context = preview_system_context_resources(
+        store,
+        context_ids=workspace.get("systemContextIds", []),
+        task_kind="log_analysis",
+        instance_id=workspace.get("instanceId"),
+    )
+    system_resources = legacy_context.get("resources", [])
     return {
         "schemaVersion": 2,
         "workspaceId": workspace_id,
         "runId": run_id,
         "resources": resources,
+        "skillResources": resources,
+        "systemResources": system_resources if isinstance(system_resources, list) else [],
+        "prompt": legacy_context.get("prompt", ""),
     }
 
 
@@ -339,14 +350,19 @@ def persist_system_context(
         data=data,
         content_type="application/json",
         schema_name="logagent.v2.system_context.v2",
-        preview={"resourceCount": len(context["resources"])},
+        preview={
+            "resourceCount": len(context["resources"]) + len(context["systemResources"])
+        },
     )
     store.create_evidence(
         workspace_id=workspace_id,
         run_id=run_id,
         kind="system_context",
         final_allowed=False,
-        summary=f"System Context captured {len(context['resources'])} resources.",
+        summary=(
+            "System Context captured "
+            f"{len(context['resources']) + len(context['systemResources'])} resources."
+        ),
         artifact_id=artifact["id"],
         payload={"artifactId": artifact["id"], "path": "system_context.json"},
     )
