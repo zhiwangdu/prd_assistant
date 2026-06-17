@@ -1868,6 +1868,83 @@ class StoreTests(unittest.TestCase):
             else:
                 os.environ["LOGAGENT_TEST_TOOL_DIR"] = previous
 
+    def test_parse_tools_env_accepts_v1_map_path_env_and_snake_case(self) -> None:
+        env_values = {
+            "LOGAGENT_TEST_TOOL_DIR": None,
+            "LOGAGENT_TEST_PATH_ENV": None,
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.environ["LOGAGENT_TEST_TOOL_DIR"] = tmpdir
+                os.environ["LOGAGENT_TEST_PATH_ENV"] = "${LOGAGENT_TEST_TOOL_DIR}/v1-tool"
+                raw = json.dumps(
+                    {
+                        "v1_tool": {
+                            "path_env": "LOGAGENT_TEST_PATH_ENV",
+                            "timeout_seconds": 9,
+                            "max_output_bytes": 4096,
+                            "max_input_files": 4,
+                            "args": ["--input", "{input_file}"],
+                            "match": {
+                                "file_patterns": ["*.LOG"],
+                                "keywords": ["ERROR"],
+                            },
+                        },
+                        "disabled_v1_tool": {
+                            "path": "relative-disabled-tool",
+                            "enabled": False,
+                        },
+                        "disabled_env_tool": {
+                            "path_env": "LOGAGENT_TEST_PATH_ENV",
+                            "enabled": False,
+                        },
+                    }
+                )
+
+                tools = {tool.id: tool for tool in parse_tools_env(raw)}
+                self.assertEqual(
+                    tools["v1_tool"].command,
+                    str(Path(tmpdir) / "v1-tool"),
+                )
+                self.assertEqual(tools["v1_tool"].timeout_seconds, 9)
+                self.assertEqual(tools["v1_tool"].max_output_bytes, 4096)
+                self.assertEqual(tools["v1_tool"].max_input_files, 4)
+                self.assertEqual(tools["v1_tool"].args, ("--input", "{input_file}"))
+                self.assertEqual(tools["v1_tool"].match_file_patterns, ("*.log",))
+                self.assertEqual(tools["v1_tool"].match_keywords, ("error",))
+                self.assertEqual(
+                    tools["disabled_v1_tool"].command,
+                    "relative-disabled-tool",
+                )
+                self.assertEqual(tools["disabled_env_tool"].command, "")
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_parse_tools_env_rejects_missing_enabled_path_env(self) -> None:
+        previous = os.environ.get("LOGAGENT_TEST_MISSING_PATH_ENV")
+        try:
+            os.environ.pop("LOGAGENT_TEST_MISSING_PATH_ENV", None)
+            raw = json.dumps(
+                {
+                    "missing_path_env_tool": {
+                        "path_env": "LOGAGENT_TEST_MISSING_PATH_ENV",
+                        "enabled": True,
+                    }
+                }
+            )
+            with self.assertRaisesRegex(ValueError, "path_env .* is not set"):
+                parse_tools_env(raw)
+        finally:
+            if previous is None:
+                os.environ.pop("LOGAGENT_TEST_MISSING_PATH_ENV", None)
+            else:
+                os.environ["LOGAGENT_TEST_MISSING_PATH_ENV"] = previous
+
     def test_parse_tools_env_rejects_enabled_relative_command(self) -> None:
         raw = json.dumps(
             [

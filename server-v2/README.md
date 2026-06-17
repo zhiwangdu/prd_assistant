@@ -189,7 +189,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency; non-positive values clamp to 1 |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
-| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
+| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array or object map of fixed whitelist tool descriptors; supports V2 `command` plus V1 `path` / `path_env`, camelCase or snake_case limits; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
 | `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
 | `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
@@ -234,8 +234,12 @@ source-built analyzer as a configured subprocess tool using the same args,
 timeouts, `maxInputFiles`, match patterns, and keywords as
 `examples/server-tools.yaml`. The storage defaults preserve the wider V1
 settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
-`timeoutSeconds=60` and `maxInputFiles=5`. Source-built analyzer paths and
-`LOGAGENT_V2_TOOLS_JSON` commands expand environment variables and `~` during
+`timeoutSeconds=60` and `maxInputFiles=5`. `LOGAGENT_V2_TOOLS_JSON` accepts
+either a V2 descriptor array or a Rust/V1-style object keyed by tool id. Each
+descriptor may use V2 `command`, V1 `path`, or V1 `path_env` / `pathEnv`, and
+may use camelCase or snake_case limit fields such as `timeoutSeconds` /
+`timeout_seconds` and `maxInputFiles` / `max_input_files`. Source-built analyzer
+paths and configured tool paths expand environment variables and `~` during
 configuration loading; enabled tools fail startup if the resolved command is
 not absolute. User-configured tool IDs use the Rust/V1 `tools.<name>` safe
 pattern: non-empty ASCII letters, digits, `_`, and `-` only. Built-in

@@ -104,7 +104,13 @@ tools:
   run 的 `manifest.json`、`grep_results.json` 和可选 `tool_inputs/index.json`，
   并以该目录作为 subprocess `cwd` 执行，保持 Rust/V1 workspace 占位符语义。
 - 已支持固定 `path` 或环境变量 `path_env` 指定工具路径；固定 `path` 支持 `${ENV}` 展开；启用工具时最终路径必须是绝对路径。
-- Python V2 的 `LOGAGENT_V2_TOOLS_JSON.command` 和 `LOGAGENT_V2_TOOL_*_ANALYZER` 快捷环境变量同样支持 `${ENV}` / `$ENV` 和 `~` 展开；enabled 工具在配置加载阶段必须解析为绝对路径，否则 Server 启动失败，避免目录、导出和执行面看到不一致的 runnable 状态。
+- Python V2 的 `LOGAGENT_V2_TOOLS_JSON` 支持 descriptor array，也支持
+  Rust/V1 风格的 tool-id object map；descriptor 可使用 V2 `command` 或
+  V1 `path`、`path_env` / `pathEnv`，并接受 camelCase 或 snake_case limit
+  字段。`LOGAGENT_V2_TOOLS_JSON` 路径和 `LOGAGENT_V2_TOOL_*_ANALYZER`
+  快捷环境变量同样支持 `${ENV}` / `$ENV` 和 `~` 展开；enabled 工具在配置加载
+  阶段必须解析为绝对路径，否则 Server 启动失败，避免目录、导出和执行面看到
+  不一致的 runnable 状态。
 - Python V2 的 `LOGAGENT_V2_TOOLS_JSON.id` 与 Rust/V1 `tools.<name>` 对齐，只允许非空 ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具不属于用户配置工具命名空间。
 - Python V2 的 `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` 和 `keywords` 在配置加载阶段统一转小写，HTTP/MCP 工具目录输出与 Rust/V1 保持一致。
 - 已支持 `max_input_files` 控制单个工具在同一任务中最多处理的匹配输入文件数量，默认 1。

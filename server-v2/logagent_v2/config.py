@@ -29,7 +29,7 @@ class ToolDefinition:
         tool_id = str(value["id"])
         validate_tool_name(tool_id)
         enabled = bool(value.get("enabled", True))
-        command = expand_tool_command(str(value["command"]))
+        command = resolve_tool_json_command(tool_id, value, enabled=enabled)
         validate_tool_command_path(tool_id, command, enabled=enabled)
         match = value.get("match") if isinstance(value.get("match"), dict) else {}
         return cls(
@@ -38,9 +38,12 @@ class ToolDefinition:
             command=command,
             args=tuple(str(arg) for arg in value.get("args", [])),
             enabled=enabled,
-            timeout_seconds=max(1, int(value.get("timeoutSeconds", 30))),
-            max_output_bytes=max(1024, int(value.get("maxOutputBytes", 1024 * 1024))),
-            max_input_files=max(1, int(value.get("maxInputFiles", 1))),
+            timeout_seconds=max(1, int(camel_or_snake(value, "timeoutSeconds", 30))),
+            max_output_bytes=max(
+                1024,
+                int(camel_or_snake(value, "maxOutputBytes", 1024 * 1024)),
+            ),
+            max_input_files=max(1, int(camel_or_snake(value, "maxInputFiles", 1))),
             match_file_patterns=tuple(
                 strings_from_list(match.get("filePatterns") or match.get("file_patterns"))
             ),
@@ -338,9 +341,7 @@ def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
     configured: list[ToolDefinition] = []
     if raw:
         decoded = json.loads(raw)
-        if not isinstance(decoded, list):
-            raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
-        configured.extend(ToolDefinition.from_json(item) for item in decoded)
+        configured.extend(tool_definitions_from_json(decoded))
     configured.extend(default_source_built_tools_from_env())
     seen = set()
     deduped = []
@@ -350,6 +351,59 @@ def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
         seen.add(tool.id)
         deduped.append(tool)
     return tuple(deduped)
+
+
+def tool_definitions_from_json(decoded: Any) -> list[ToolDefinition]:
+    if isinstance(decoded, list):
+        values = decoded
+    elif isinstance(decoded, dict):
+        values = []
+        for tool_id, descriptor in decoded.items():
+            if not isinstance(descriptor, dict):
+                raise ValueError("LOGAGENT_V2_TOOLS_JSON object values must be objects")
+            values.append({"id": tool_id, **descriptor})
+    else:
+        raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array or object")
+    if not all(isinstance(item, dict) for item in values):
+        raise ValueError("LOGAGENT_V2_TOOLS_JSON entries must be objects")
+    return [ToolDefinition.from_json(item) for item in values]
+
+
+def camel_or_snake(value: dict, camel_key: str, default: Any) -> Any:
+    if camel_key in value:
+        return value[camel_key]
+    snake_key = camel_to_snake(camel_key)
+    return value.get(snake_key, default)
+
+
+def camel_to_snake(value: str) -> str:
+    result = []
+    for char in value:
+        if char.isupper():
+            result.append("_")
+            result.append(char.lower())
+        else:
+            result.append(char)
+    return "".join(result).lstrip("_")
+
+
+def resolve_tool_json_command(tool_id: str, value: dict, *, enabled: bool) -> str:
+    command_value = value.get("command")
+    if command_value is None:
+        command_value = value.get("path")
+    path_env = value.get("pathEnv") or value.get("path_env")
+    if command_value is None and path_env:
+        if not enabled:
+            return ""
+        env_name = str(path_env)
+        command_value = os.environ.get(env_name)
+        if not command_value:
+            raise ValueError(f"tool {tool_id} path_env {env_name} is not set")
+    if command_value is None:
+        if enabled:
+            raise ValueError(f"tool {tool_id} command/path/path_env is required")
+        return ""
+    return expand_tool_command(str(command_value))
 
 
 def default_source_built_tools_from_env() -> list[ToolDefinition]:

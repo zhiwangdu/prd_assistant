@@ -566,12 +566,17 @@ LOGAGENT_V2_TOOLS_JSON
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
 
-V2 expands `${ENV}` / `$ENV` variables and `~` in `LOGAGENT_V2_TOOLS_JSON`
-commands and in source-built analyzer executable environment variables. If an
-enabled configured tool does not resolve to an absolute command path, settings
-loading fails before the descriptor is exposed through HTTP, readonly MCP, or
-task MCP surfaces. Disabled descriptors may retain unresolved or relative
-commands because they are not runnable or exported.
+`LOGAGENT_V2_TOOLS_JSON` accepts either a descriptor array or a Rust/V1-style
+object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1
+`path_env` / `pathEnv`, and may use camelCase or snake_case limit fields such
+as `timeoutSeconds` / `timeout_seconds`, `maxOutputBytes` / `max_output_bytes`,
+and `maxInputFiles` / `max_input_files`. V2 expands `${ENV}` / `$ENV` variables
+and `~` in configured command paths and in source-built analyzer executable
+environment variables. If an enabled configured tool does not resolve to an
+absolute command path, settings loading fails before the descriptor is exposed
+through HTTP, readonly MCP, or task MCP surfaces. Disabled descriptors may
+retain unresolved or relative commands because they are not runnable or
+exported.
 User-configured tool IDs follow the Rust/V1 `tools.<name>` safe pattern:
 non-empty ASCII letters, digits, `_`, and `-` only. Built-in `logagent.*` tools
 are fixed server capabilities and are not loaded from `LOGAGENT_V2_TOOLS_JSON`.

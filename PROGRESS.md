@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Config V1 Compatibility
+
+- `LOGAGENT_V2_TOOLS_JSON` now accepts both descriptor arrays and Rust/V1-style
+  object maps keyed by tool id.
+- Configured tool descriptors now accept V2 `command` plus V1 `path`,
+  `path_env` / `pathEnv`, and camelCase or snake_case limit fields such as
+  `timeoutSeconds` / `timeout_seconds`, `maxOutputBytes` / `max_output_bytes`,
+  and `maxInputFiles` / `max_input_files`.
+- Disabled descriptors do not read `path_env`; enabled descriptors still fail
+  startup when their resolved command is missing or not absolute.
+- Added regression coverage for map-shaped tool config, `path_env`,
+  snake_case fields, disabled `path_env`, and missing enabled `path_env`.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused `parse_tools_env` regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (106 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Configured Tool Result Parity
 
 - V2 configured subprocess `result.json` now uses the Rust/V1
