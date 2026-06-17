@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Deploy Tool Build Shell Parity
+
+- Updated `deploy/rebuild-v2-install.sh` to load `$HOME/.cargo/env` when
+  present, matching the Rust rebuild script behavior for non-interactive SSH
+  shells.
+- This makes `--with-tools` / `--tools-only` able to find rustup-managed
+  `cargo` when rebuilding the Flux analyzer through `scripts/build-tools.sh`.
+- Updated Deploy and V2 Server docs/specs.
+- Verification passed: `bash -n deploy/rebuild-v2-install.sh
+  deploy/logagent-v2ctl.sh deploy/rebuild-install.sh deploy/logagentctl.sh
+  scripts/build-tools.sh scripts/configure-tool-submodules.sh` and
+  `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Field Filter Schema Compatibility
 
 - Aligned V2 Metadata field filter schemas with Rust/V1 across Tools catalog,

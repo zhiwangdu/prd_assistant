@@ -72,7 +72,7 @@ cp logagent.example.yaml logagent.yaml
 ./logagentctl.sh start
 ```
 
-`deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。部署脚本会预创建 `data/uploads`、`data/sessions`、`data/tasks`、`data/workspaces`、`data/cases`、`data/case_imports` 和 `data/memory`；其中 `data/memory/memory.sqlite` 是 Memory SQLite 主索引，`data/cases/*.json` 保留为 legacy Case 迁移和回滚源。
+`deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。部署脚本会预创建 `data/uploads`、`data/sessions`、`data/tasks`、`data/workspaces`、`data/cases`、`data/case_imports` 和 `data/memory`；其中 `data/memory/memory.sqlite` 是 Memory SQLite 主索引，`data/cases/*.json` 保留为 legacy Case 迁移和回滚源。`deploy/rebuild-v2-install.sh` 也会在存在 `$HOME/.cargo/env` 时加载它，保证非交互 SSH shell 下用 `--with-tools` / `--tools-only` 构建 Flux analyzer 时能找到 rustup-managed `cargo`。
 
 `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。`deploy/.env.example` 还提供 V2 Fetch allowlist、request/response size、redirect 和 credential secret 示例，以及 submodule 内网镜像变量：`LOGAGENT_SUBMODULE_BASE_URL` 适合四个工具仓库位于同一 Git namespace 的场景，单仓库变量 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL` 和 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 优先级更高。
 

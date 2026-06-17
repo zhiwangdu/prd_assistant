@@ -204,7 +204,9 @@ build unless `--server-only` is set, syncs `webui/out` to
 `$LOGAGENT_V2_WEBUI_DIR`, and restarts V2 only if it was already running.
 `--with-tools` calls `scripts/build-tools.sh --output-dir
 $LOGAGENT_APP_DIR/bin/tools`; `--tools-only` skips server install, DB init, and
-WebUI sync for fast analyzer rebuilds.
+WebUI sync for fast analyzer rebuilds. `rebuild-v2-install.sh` also loads
+`$HOME/.cargo/env` when present so Flux analyzer builds can find rustup-managed
+`cargo` in non-interactive SSH shells.
 
 Useful overrides:
 

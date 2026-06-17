@@ -1191,7 +1191,8 @@ The current slice is accepted when:
 - Interrupted `running` jobs are recovered on startup without waiting for the
   previous lock timeout.
 - `deploy/rebuild-v2-install.sh` can create the V2 virtualenv, install
-  `server-v2`, initialize SQLite, sync WebUI static files, and preserve
-  existing `data-v2`.
+  `server-v2`, initialize SQLite, sync WebUI static files, load
+  `$HOME/.cargo/env` for source-built analyzer rebuilds when present, and
+  preserve existing `data-v2`.
 - `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
   V2 logs using the same `.env` loading pattern as the Rust deploy controls.
