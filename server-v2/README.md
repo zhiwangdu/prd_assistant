@@ -21,8 +21,9 @@ slice provides the durable foundation for the V2 product model:
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
 - Materialized `tool_inputs/index.json` generation for node-package tsdb
   InfluxQL query lines, generic file-level InfluxQL/Flux query lines, and
-  enabled storage analyzer file inputs such as `.tssp`, `.tssp.init`, `.tsm`,
-  `.tsi`, and `_series` files from direct uploads or supported archives.
+  enabled storage analyzer file or directory inputs such as `.tssp`,
+  `.tssp.init`, `.tsm`, `.tsi`, TSI/mergeset trees, and `_series` trees from
+  direct uploads or supported archives.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP endpoint with V1-shaped tool catalog, Metadata, Case Memory,
   Skill registry, and Domain Adapter resources/tools.
@@ -36,8 +37,9 @@ slice provides the durable foundation for the V2 product model:
   materialized `tool_inputs` before execution, then fall back to manifest file
   patterns, initial grep keyword matches, or raw upload artifacts for storage
   analyzers. Enabled storage analyzer materialized inputs point to safe artifact
-  files extracted from uploads and archives. Generic JSON stdout and InfluxQL
-  analyzer report/compare stdout are normalized into `summary/findings`.
+  files or directory bundles extracted from uploads and archives. Generic JSON
+  stdout and InfluxQL analyzer report/compare stdout are normalized into
+  `summary/findings`.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.
@@ -415,8 +417,9 @@ PYTHONPATH=. python3 -m unittest discover tests
 ```
 
 This V2 slice migrates V1 configured analyzer execution, metadata/preprocess/
-fetch/pprof/Huawei built-ins, and storage analyzer raw upload fallback. Full
-LangGraph planning and full WebUI cutover remain separate product steps.
+fetch/pprof/Huawei built-ins, storage analyzer materialized inputs, and raw
+upload fallback. Full LangGraph planning and full WebUI cutover remain separate
+product steps.
 
 ## Job Recovery
 

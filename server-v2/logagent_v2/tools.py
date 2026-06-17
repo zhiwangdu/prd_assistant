@@ -864,7 +864,7 @@ def resolve_tool_input_path(
 ) -> Path:
     artifact = store.get_artifact(str(input_entry["artifactId"]))
     path = resolve_artifact_path(settings, artifact["relative_path"])
-    if not path.is_file():
+    if not path.is_file() and not path.is_dir():
         raise ValueError(f"tool input artifact is missing for {input_entry.get('path')}")
     return path
 

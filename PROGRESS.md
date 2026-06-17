@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Storage Analyzer Directory Inputs
+
+- Added V2 directory artifact support for tool inputs without changing the
+  SQLite artifact schema.
+- Storage analyzer materialization now groups archive TSI/mergeset and
+  `_series` trees into safe `tool_inputs/storage_dirs/...` directory artifacts
+  when the matching analyzer is enabled.
+- `logagent.run_domain_tool` can pass artifact-backed directories through the
+  existing `{input_file}` argument path, so source-built storage analyzers can
+  receive directory inputs.
+- Added regression coverage for InfluxDB `_series` tar.gz bundles and
+  openGemini TSI zip bundles.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Storage Analyzer Materialized Inputs
 
 - Extended V2 `tool_inputs/index.json` generation beyond InfluxQL/Flux text
@@ -13,8 +29,8 @@ Last updated: 2026-06-17
 - `logagent.run_domain_tool` and manual configured tools now automatically
   prefer these storage materialized inputs before falling back to raw upload
   artifact matching.
-- Updated Tool Runner and `server-v2` README/SPEC docs to describe storage
-  analyzer input materialization and the remaining directory-bundle gap.
+- Updated Tool Runner and `server-v2` README/SPEC docs to describe file-level
+  storage analyzer input materialization.
 - Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
   `cd server-v2 && .venv/bin/python -m pytest`,
   `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.

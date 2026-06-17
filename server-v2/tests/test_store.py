@@ -2029,6 +2029,174 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["inputFile"], storage_entry["path"])
             self.assertIn("storage_", payload["result"]["findings"][0]["message"])
 
+    def test_archive_series_directory_tool_input_feeds_storage_analyzer(self) -> None:
+        def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "files=sorted(x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file());"
+                "print(json.dumps({'summary':'files='+str(len(files)),"
+                "'findings':[{'message':files[0]}]}))"
+            )
+            tool = ToolDefinition(
+                id="influxdb_storage_analyzer",
+                display_name="InfluxDB Storage Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                max_input_files=3,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("series index issue", "diagnose", "en-US")
+
+            tar_path = Path(tmp) / "series.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as archive:
+                add_file(archive, "engine/db/rp/_series/00/0000", b"series-a")
+                add_file(archive, "engine/db/rp/_series/01/0001", b"series-b")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                tar_path.name,
+                tar_path.read_bytes(),
+                "application/gzip",
+            )
+            store.create_upload(workspace["id"], tar_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            index_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_input_index"
+            )
+            index_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(index_evidence["artifact_id"])["relative_path"],
+            )
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            directory_entry = next(
+                item
+                for item in index["inputs"]
+                if item["toolIds"] == ["influxdb_storage_analyzer"]
+            )
+            self.assertEqual(directory_entry["inputKind"], "influxdb_storage_directory")
+            self.assertEqual(directory_entry["scope"], "archive_directory")
+            self.assertEqual(directory_entry["sourceArchiveRoot"], "engine/db/rp/_series")
+            self.assertEqual(directory_entry["fileCount"], 2)
+
+            directory_artifact = store.get_artifact(directory_entry["artifactId"])
+            directory_path = resolve_artifact_path(settings, directory_artifact["relative_path"])
+            self.assertTrue(directory_path.is_dir())
+            self.assertTrue((directory_path / "00" / "0000").is_file())
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 38,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "influxdb_storage_analyzer"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "files=2")
+            self.assertEqual(payload["result"]["inputFile"], directory_entry["path"])
+            self.assertEqual(payload["result"]["inputKind"], "influxdb_storage_directory")
+            self.assertEqual(payload["result"]["findings"][0]["message"], "00/0000")
+
+    def test_archive_tsi_directory_tool_input_feeds_opengemini_storage_analyzer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "files=sorted(x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file());"
+                "print(json.dumps({'summary':'files='+str(len(files)),"
+                "'findings':[{'message':files[-1]}]}))"
+            )
+            tool = ToolDefinition(
+                id="opengemini_storage_analyzer",
+                display_name="openGemini Storage Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                max_input_files=3,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("tsi index issue", "diagnose", "en-US")
+
+            zip_path = Path(tmp) / "tsi.zip"
+            with zipfile.ZipFile(zip_path, "w") as archive:
+                archive.writestr("index/tsi/part/metaindex.bin", b"meta")
+                archive.writestr("index/tsi/part/items.bin", b"items")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                zip_path.name,
+                zip_path.read_bytes(),
+                "application/zip",
+            )
+            store.create_upload(workspace["id"], zip_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            index_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_input_index"
+            )
+            index_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(index_evidence["artifact_id"])["relative_path"],
+            )
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            directory_entry = next(
+                item
+                for item in index["inputs"]
+                if item["toolIds"] == ["opengemini_storage_analyzer"]
+            )
+            self.assertEqual(directory_entry["inputKind"], "opengemini_storage_directory")
+            self.assertEqual(directory_entry["scope"], "archive_directory")
+            self.assertEqual(directory_entry["sourceArchiveRoot"], "index/tsi")
+            self.assertEqual(directory_entry["fileCount"], 2)
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 39,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "opengemini_storage_analyzer"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "files=2")
+            self.assertEqual(payload["result"]["inputFile"], directory_entry["path"])
+            self.assertEqual(payload["result"]["inputKind"], "opengemini_storage_directory")
+            self.assertEqual(payload["result"]["findings"][0]["message"], "part/metaindex.bin")
+
     def test_tool_runner_falls_back_to_manifest_and_grep_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (
