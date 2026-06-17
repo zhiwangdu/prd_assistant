@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Case Import Draft Save
+
+- V2 Memory Workbench now exposes the V2 Case import patch route through a
+  `Save draft` action, calling `PATCH /api/v2/cases/imports/:import_id` for
+  unconfirmed imports.
+- Saving a draft refreshes the active structured draft, validation errors, and
+  recent import history entry without confirming it into Case Memory.
+- Confirmed imports disable draft save/confirm controls, matching the backend's
+  immutable confirmed import behavior.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Manual Tool InputFiles
 
 - V2 Tools Workbench manual `tool_run` creation now honors descriptor-supported

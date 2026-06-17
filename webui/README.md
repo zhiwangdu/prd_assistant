@@ -16,7 +16,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
   Fetch response body 和 pprof top/tree/raw/stderr/SVG 等结果支持文件。
 - V2 Analyze timeline 使用 Python V2 timeline event 的 `kind` 字段作为事件标签，并兼容旧 `event_type` 字段。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
-- `Memory`：已切换为 V2 Memory 工作台，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、导入历史/草稿恢复、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Rust Memory 页面不再默认渲染。
+- `Memory`：已切换为 V2 Memory 工作台，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、导入历史/草稿恢复、编辑并保存结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Rust Memory 页面不再默认渲染。
 - `System Context`：已切换为 V2 System Context + V2 Metadata 工作台，直接调用 Python V2 `/api/v2/skills*`、`/api/v2/system-context/*`、`/api/v2/metadata/instances` 和 `/api/v2/metadata/*`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载、V1-compatible System Context resource 列表/创建/编辑、版本追加/编辑/激活、资源+Metadata adapter prompt preview、JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、用已保存 raw JSON 刷新实例、实例删除和 snapshot JSON 查看。旧 Rust Skills/Metadata 页面不再默认渲染。
 - `Tools / Tool plugins`：已切换为 V2 Tools 工作台，调用 Python V2 `/api/v2/tools` 展示工具目录，展示 `source`、`tags`、`readOnly`、`editable`、`exportable`、`manualOnly`、文件数量约束、`acceptedSuffixes`、`outputViews`、`match`、`paramsTemplate` 和 `paramsSchema`，支持下载 `/api/v2/exports/tools.zip`。页面同时支持两种 V2 原生运行方式：输入 V2 `run_id` 后按选中工具的 `paramsTemplate` 预填 params，通过 `/api/v2/mcp/task/:run_id` 调用 task MCP；或在 Manual `tool_run` 区复用/自动创建 Workspace，上传匹配文件或用 `params.inputFiles` 复用 Workspace 已知输入，再调用 `/api/v2/tools/:tool_id/runs`，随后刷新 `/api/v2/tools/runs`、轮询选中的非终态 run、读取 `/api/v2/tools/runs/:run_id/result` 和 `/api/v2/tools/runs/:run_id/artifacts`，并通过带 Authorization header 的 `/api/v2/artifacts/:artifact_id` 下载 upload、evidence 和 support artifacts。旧 Rust 独立上传型 Tool Runner 页面不再默认渲染。
 - `Tools / Fetch`：已切换为 V2 Fetch 工作台，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 和 run override JSON（`variables`、`headers`、`body`）后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact；也支持不绑定已有分析 run 的 standalone Fetch `tool_run`，可选复用 Workspace 或自动创建隔离 Workspace，调用 `/api/v2/fetch/endpoints/:endpoint_id/runs` 创建、`/api/v2/fetch/runs` 刷新历史、选择非终态 run 后轮询并读取结果。结果面板展示 result artifact、response body artifact、evidence 和 body preview，并通过带 Authorization header 的 artifact API 下载 `result.json` 与 `response_body.bin`。旧 Rust Fetch 页面不再默认渲染。
@@ -37,7 +37,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 用户可填写分析问题；任务成功后展示单次 LLM 生成的摘要、症状、可能根因、检查项、修复建议、缺失信息和置信度。
 - 成功任务支持编辑标题、现象、根因和解决方案后人工确认保存为 Case；同页可搜索相似 Case 并禁用不再召回的 Case。
 - 成功任务展示任务创建时固化的 `caseContext`，区分历史 Case 参考和实时 Case 搜索结果；Case 列表已适配 schema v2 并展示 `task` / `manual` 来源。
-- 顶部 `Memory` 页面通过 Case import 草稿创建 `manual` Case：用户粘贴大段文字或上传 UTF-8 文本类文件，LLM 整理为结构化草稿，缺少标题、现象、根因或解决方案时以对话方式补充；页面会展示最近 V2 import history，可点击恢复未确认或已确认 draft、validation errors 和补充消息；确认前仍可编辑产品、版本、环境、InstanceID、NodeID、标题、现象、根因、解决方案和 evidence refs。
+- 顶部 `Memory` 页面通过 Case import 草稿创建 `manual` Case：用户粘贴大段文字或上传 UTF-8 文本类文件，LLM 整理为结构化草稿，缺少标题、现象、根因或解决方案时以对话方式补充；页面会展示最近 V2 import history，可点击恢复未确认或已确认 draft、validation errors 和补充消息；确认前仍可编辑并保存产品、版本、环境、InstanceID、NodeID、标题、现象、根因、解决方案和 evidence refs。
 - 页面顶部提供 `LLM debug` 开关，调用 V2 `/api/v2/debug/llm` 控制 LLM response content 是否打印到 Server 日志。
 - 创建任务时可填写 `instanceId` / `nodeId`，任务详情展示 Server 解析后的关联 ID；`clusterId` 不再作为用户输入。
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
@@ -326,8 +326,10 @@ V2 APIs：
 - `GET /api/v2/cases/:case_id`
 - `PATCH /api/v2/cases/:case_id`
 - `GET /api/v2/cases/imports`
+- `GET /api/v2/cases/imports/:import_id`
 - `POST /api/v2/cases/imports/preview`
 - `POST /api/v2/cases/imports/:import_id/messages`
+- `PATCH /api/v2/cases/imports/:import_id`
 - `POST /api/v2/cases/imports/:import_id/confirm`
 
 Fetch：

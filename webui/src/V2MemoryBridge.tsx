@@ -5,6 +5,7 @@ import {
   appendV2CaseImportMessage,
   confirmV2CaseImport,
   listV2CaseImports,
+  patchV2CaseImport,
   previewV2CaseImport,
   searchV2Cases,
   updateV2Case,
@@ -119,6 +120,22 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
       setEditDraft(toDraft(response.case));
       await refreshCases();
       setStatus(`V2 saved ${response.case.caseId}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveImportDraft() {
+    if (!caseImport) return;
+    setLoading(true);
+    try {
+      const response = await patchV2CaseImport(apiKey, caseImport.importId, draftPayload(importDraft));
+      setCaseImport(response.import);
+      upsertCaseImport(response.import);
+      setImportDraft(fromV2Draft(response.import.draft));
+      setStatus(response.import.validationErrors.length ? `V2 draft saved with ${response.import.validationErrors.length} validation errors` : "V2 draft saved");
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -270,7 +287,10 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
                 ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <span className="text-xs text-muted-foreground">{caseImport.filename ?? "pasted text"} · updated {new Date(caseImport.updatedAt).toLocaleString()}</span>
-                  <Button disabled={loading || !importReady || caseImport.status === "confirmed"} onClick={() => void confirmImport()}><Save className="mr-2 h-4 w-4" />Confirm</Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={loading || caseImport.status === "confirmed"} variant="outline" onClick={() => void saveImportDraft()}><Save className="mr-2 h-4 w-4" />Save draft</Button>
+                    <Button disabled={loading || !importReady || caseImport.status === "confirmed"} onClick={() => void confirmImport()}><Save className="mr-2 h-4 w-4" />Confirm</Button>
+                  </div>
                 </div>
               </>
             ) : <EmptyState>Preview 后可编辑字段，再确认写入 V2 Case Memory。</EmptyState>}

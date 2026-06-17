@@ -821,6 +821,14 @@ export async function appendV2CaseImportMessage(apiKey: string, importId: string
   });
 }
 
+export async function patchV2CaseImport(apiKey: string, importId: string, updates: V2CaseDraft) {
+  return fetchJson<{ import: V2CaseImport }>(`/api/v2/cases/imports/${encodeURIComponent(importId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(updates)
+  });
+}
+
 export async function updateV2Case(apiKey: string, caseId: string, updates: V2CaseDraft & { enabled?: boolean }) {
   return fetchJson<V2CaseRecord>(`/api/v2/cases/${encodeURIComponent(caseId)}`, {
     method: "PATCH",
