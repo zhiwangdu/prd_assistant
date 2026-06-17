@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Configured Tool Workspace Parity
+
+- V2 configured subprocess tools now run with `cwd` set to a per-action
+  materialized tool workspace under `data_dir/tmp/tool_workspaces/...`.
+- The workspace view copies the current run's `manifest.json`,
+  `grep_results.json`, and optional `tool_inputs/index.json`, then expands
+  Rust/V1 placeholders `{workspace}`, `{manifest_path}`, `{grep_results_path}`,
+  `{action_id}`, `{input_file}`, and `{params.name}`.
+- Unsupported placeholder-like tokens such as `{unknown}` now fail before
+  subprocess execution.
+- Added regression coverage for workspace/cwd placeholder execution and
+  unknown placeholder rejection.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused configured-tool workspace regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (101 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Pprof Command Arg Parity
 
 - V2 `pprof_analyzer` now builds `go tool pprof` argv like Rust/V1:

@@ -558,7 +558,8 @@ LOGAGENT_V2_TOOLS_JSON
   -> MCP logagent.run_domain_tool { toolId|tool, inputFile?, params? }
   -> optional paramsSchema validation
   -> optional explicit or materialized tool input selection
-  -> expanded fixed absolute command + fixed args with {input_file}/{params.name} substitution
+  -> materialized tool workspace with manifest/grep/tool_inputs view
+  -> expanded fixed absolute command + fixed args with V1 placeholder substitution
   -> tool_result artifact/evidence
 ```
 
@@ -634,6 +635,14 @@ artifacts/evidence and can be substituted into configured argv with
 descriptor with reserved `inputFiles` but never substitutes it into argv unless
 the configured args explicitly contain `{input_file}`. Params affect the stable
 action id so different parameter sets do not reuse one result path. Configured
+subprocess actions run with `cwd` set to a per-action materialized workspace
+under `data_dir/tmp/tool_workspaces/<workspace_id>/<run_id>/<action_id>/`.
+Before execution V2 copies the current run's `manifest.json`,
+`grep_results.json`, and, when present, `tool_inputs/index.json` into that
+workspace. It expands the Rust/V1 command placeholders `{workspace}`,
+`{manifest_path}`, `{grep_results_path}`, `{action_id}`, `{input_file}`, and
+`{params.<name>}`; unsupported placeholder-like tokens fail before subprocess
+execution. Configured
 tool descriptors must retain the Rust/V1 catalog semantics:
 `source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from

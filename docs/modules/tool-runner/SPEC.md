@@ -60,6 +60,11 @@ Server 还提供只读工具目录和工具包导出：
 - 日志片段、查询文本或 manifest 文件
 - 可选显式输入选择：V2 task MCP top-level `inputFile`、`params.inputFiles` 或手动 tool_run `params.inputFiles`。这些路径必须是 workspace-relative，只能解析到当前 Workspace 的 manifest 文本路径、对应 `extracted/...` 虚拟路径或当前 run 的 `tool_inputs/...` entry，不能是任意本地路径。
 - 可选 `tool_inputs/index.json`，由日志包预处理或 V2 初始证据 materializer 生成。Tool Runner 自动选择输入时优先使用声明给当前 toolId 的 materialized input；只要存在匹配项，就只使用这些 tool-ready 输入并受 `max_input_files` 限制。V2 materializer 会为 InfluxQL/Flux 查询生成 JSONL artifact，也会在相关 analyzer 启用时为 openGemini/InfluxDB storage analyzers 从直接上传或 archive 内抽取 `.tssp`、`.tssp.init`、`.tsm`、`.tsi` 文件和 TSI/mergeset、`_series` 目录作为 `tool_inputs/storage/` 或 `tool_inputs/storage_dirs/` artifact。只有没有显式输入且没有匹配 materialized input 时，才回退到 manifest file pattern 和 grep keyword。
+- V2 每次执行 configured subprocess 前会物化独立 tool workspace，并把
+  subprocess `cwd` 设置到该目录。`{workspace}`、`{manifest_path}` 和
+  `{grep_results_path}` 指向这个视图内的路径，而不是 artifact store 的内部目录。
+  该 workspace 至少包含当前 run 的 `manifest.json`、`grep_results.json`，以及
+  可选 `tool_inputs/index.json`。
 
 ## 输出
 

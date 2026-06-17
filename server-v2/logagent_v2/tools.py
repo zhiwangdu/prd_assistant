@@ -35,6 +35,7 @@ from .metadata import (
 from .store import JsonObject, Store
 
 PARAM_PLACEHOLDER_RE = re.compile(r"\{params\.([A-Za-z0-9_]+)\}")
+UNSUPPORTED_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_.]*\}")
 PREPROCESS_LOG_PACKAGE_ID = "logagent.preprocess_log_package"
 PPROF_ANALYZER_ID = "pprof_analyzer"
 HUAWEI_PACKAGE_SYNC_TOOL_ID = "logagent.huawei_cloud_package_sync"
@@ -615,12 +616,19 @@ def run_single_configured_tool(
         raise ValueError(f"tool {tool.id} command must be an absolute path")
     input_file = resolve_tool_input_path(settings, store, input_entry) if input_entry else None
     action_id = tool_action_id(tool, input_entry, params)
-    argv = [str(command), *format_tool_args(tool.args, input_file, action_id, params)]
+    tool_workspace = prepare_tool_workspace(
+        settings, store, workspace_id, run_id, action_id
+    )
+    argv = [
+        str(command),
+        *format_tool_args(tool.args, input_file, action_id, params, tool_workspace),
+    ]
     try:
         completed = subprocess.run(
             argv,
             check=False,
             capture_output=True,
+            cwd=tool_workspace,
             timeout=tool.timeout_seconds,
         )
         timed_out = False
@@ -976,19 +984,93 @@ def format_tool_args(
     input_file: Path | None,
     action_id: str,
     params: JsonObject,
+    tool_workspace: Path,
 ) -> list[str]:
     result = []
     for arg in args:
         if "{input_file}" in arg and input_file is None:
             raise ValueError("tool arg requires {input_file} but no input file is selected")
         formatted = arg.replace("{input_file}", str(input_file) if input_file else "")
+        formatted = formatted.replace("{workspace}", str(tool_workspace))
+        formatted = formatted.replace(
+            "{manifest_path}", str(tool_workspace / "manifest.json")
+        )
+        formatted = formatted.replace(
+            "{grep_results_path}", str(tool_workspace / "grep_results.json")
+        )
         formatted = formatted.replace("{action_id}", action_id)
         formatted = PARAM_PLACEHOLDER_RE.sub(
             lambda match: tool_param_to_arg(params, match.group(1)),
             formatted,
         )
+        if UNSUPPORTED_PLACEHOLDER_RE.search(formatted):
+            raise ValueError(f"unsupported tool argument placeholder in {arg}")
         result.append(formatted)
     return result
+
+
+def prepare_tool_workspace(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    action_id: str,
+) -> Path:
+    tool_workspace = (
+        settings.tmp_dir
+        / "tool_workspaces"
+        / safe_action_segment(workspace_id)
+        / safe_action_segment(run_id)
+        / safe_action_segment(action_id)
+    )
+    tool_workspace.mkdir(parents=True, exist_ok=True)
+    materialize_run_artifact_for_tool_workspace(
+        settings, store, run_id, tool_workspace, "manifest", "manifest.json"
+    )
+    materialize_run_artifact_for_tool_workspace(
+        settings, store, run_id, tool_workspace, "log_search", "grep_results.json"
+    )
+    materialize_run_artifact_for_tool_workspace(
+        settings, store, run_id, tool_workspace, "tool_input_index", "tool_inputs/index.json"
+    )
+    return tool_workspace
+
+
+def materialize_run_artifact_for_tool_workspace(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    tool_workspace: Path,
+    evidence_kind: str,
+    payload_path: str,
+) -> None:
+    artifact_id = latest_evidence_artifact_id(store, run_id, evidence_kind, payload_path)
+    if artifact_id is None:
+        return
+    artifact = store.get_artifact(artifact_id)
+    source = resolve_artifact_path(settings, artifact["relative_path"])
+    if not source.is_file():
+        return
+    target = tool_workspace / Path(*payload_path.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+
+
+def latest_evidence_artifact_id(
+    store: Store,
+    run_id: str,
+    evidence_kind: str,
+    payload_path: str,
+) -> str | None:
+    for evidence in reversed(store.list_evidence(run_id)):
+        if evidence.get("kind") != evidence_kind:
+            continue
+        if evidence.get("payload", {}).get("path") != payload_path:
+            continue
+        artifact_id = evidence.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id:
+            return artifact_id
+    return None
 
 
 def configured_input_file_count(

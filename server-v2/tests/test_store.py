@@ -41,6 +41,7 @@ from logagent_v2.config import (
     parse_tools_env,
 )
 from logagent_v2.environment import persist_approved_environment_evidence
+from logagent_v2.evidence import build_initial_evidence
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
     endpoint_for_storage,
@@ -3007,6 +3008,117 @@ fi
                 },
             )
             self.assertIn("does not accept params", bad_response["error"]["message"])
+
+    def test_configured_tool_runs_in_materialized_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "manifest=pathlib.Path(sys.argv[1]);"
+                "grep=pathlib.Path(sys.argv[2]);"
+                "workspace=pathlib.Path(sys.argv[3]);"
+                "cwd=pathlib.Path.cwd();"
+                "manifest_data=json.loads(manifest.read_text());"
+                "grep_data=json.loads(grep.read_text());"
+                "print(json.dumps({'summary':"
+                "f\"cwd={cwd.resolve()==workspace.resolve()} "
+                "manifest={manifest.exists()} grep={grep.exists()}\","
+                "'findings':[{'message':json.dumps({"
+                "'files':manifest_data['fileCount'],"
+                "'matches':grep_data['totalMatches'],"
+                "'workspace':str(workspace)"
+                "})}]}))"
+            )
+            tool = ToolDefinition(
+                id="workspace_tool",
+                display_name="Workspace Tool",
+                command=sys.executable,
+                args=(
+                    "-c",
+                    script,
+                    "{manifest_path}",
+                    "{grep_results_path}",
+                    "{workspace}",
+                ),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("panic timeout", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"panic timeout\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            build_initial_evidence(settings, store, workspace["id"], run["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 36,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "workspace_tool"},
+                    },
+                },
+            )
+
+            payload = json.loads(response["result"]["content"][0]["text"])
+            result = payload["result"]
+            self.assertEqual(result["summary"], "cwd=True manifest=True grep=True")
+            finding = json.loads(result["findings"][0]["message"])
+            self.assertEqual(finding["files"], 1)
+            self.assertGreaterEqual(finding["matches"], 1)
+            self.assertEqual(Path(result["argv"][3]).name, "manifest.json")
+            self.assertEqual(Path(result["argv"][4]).name, "grep_results.json")
+            self.assertEqual(Path(result["argv"][5]), Path(finding["workspace"]))
+            self.assertEqual(Path(result["argv"][3]).parent, Path(result["argv"][5]))
+
+    def test_configured_tool_rejects_unknown_placeholder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="bad_placeholder_tool",
+                display_name="Bad Placeholder Tool",
+                command=sys.executable,
+                args=("-c", "print('unexpected')", "{unknown}"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("bad placeholder", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 37,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "bad_placeholder_tool"},
+                    },
+                },
+            )
+
+            self.assertIn(
+                "unsupported tool argument placeholder",
+                response["error"]["message"],
+            )
 
     def test_materialized_tool_inputs_feed_configured_tool(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:

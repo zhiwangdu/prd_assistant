@@ -667,6 +667,13 @@ then accepts `params`, validates a conservative object-schema subset
 still come only from Server configuration. For tools with `{input_file}`, V2
 adds a reserved `params.inputFiles` array to the descriptor; task MCP also
 accepts V1-style top-level `inputFile` and maps it to that same selector.
+Each configured action runs with `cwd` set to a materialized V2 tool workspace
+under `data_dir/tmp/tool_workspaces/...`. V2 copies the current run's
+`manifest.json`, `grep_results.json`, and, when present, `tool_inputs/index.json`
+into that workspace, then expands Rust/V1 placeholders: `{workspace}`,
+`{manifest_path}`, `{grep_results_path}`, `{action_id}`, `{input_file}`, and
+`{params.name}`. Unsupported placeholder-like tokens such as `{unknown}` fail
+before subprocess execution.
 
 If a configured tool argument contains `{input_file}`, explicit selectors are
 resolved first. They can reference current Workspace text paths, their
