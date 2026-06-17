@@ -22,7 +22,7 @@ Server 还提供只读工具目录和工具包导出：
 
 - `POST /api/mcp/readonly` 中的 `logagent://tools/catalog` 和 `logagent.list_tools` 只返回工具目录、configured args、match rules 和内置 metadata 工具 descriptor，不执行工具；目录中也包含 `logagent.get_metadata_tag_fields`。V2 对应的 `logagent-v2://tools/catalog` 和 `logagent.list_tools` 返回 `schemaVersion`、完整 `tools` descriptors 和 V1-compatible `configuredTools` summary。
 - `GET /api/exports/tools.zip` 打包当前 enabled 且解析为普通可执行文件的 configured 工具二进制、enabled `pprof_analyzer` 的 Go executable、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、无执行权限或读取失败的工具在 manifest 标记 skipped，内置工具不导出。
-- `logagent.fetch` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝 `tools/call logagent.fetch`。
+- `logagent.fetch` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝 `tools/call logagent.fetch`。V2 `GET /api/v2/fetch/runs` 只读列出 `toolId=logagent.fetch` 的持久化 tool runs，并支持 `endpointId`、`fetchId`、V1 风格 `fetch_id`、`workspaceId` 和 `limit` 过滤。
 - `logagent.huawei_cloud_package_sync` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝执行任何非只读内置工具。
 
 ## 首批工具

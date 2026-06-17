@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Run History API
+
+- Added `GET /api/v2/fetch/runs` as the V2 Fetch run-history endpoint for
+  persisted `toolId=logagent.fetch` tool runs.
+- The endpoint is read-only, returns the current Fetch enabled flag, and
+  supports `endpointId`, `fetchId`, V1-style `fetch_id`, `workspaceId`, and
+  `limit` filters without executing network requests.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused Fetch run-history API regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (76 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Deploy Tool Build Shell Parity
 
 - Updated `deploy/rebuild-v2-install.sh` to load `$HOME/.cargo/env` when

@@ -3182,6 +3182,64 @@ fi
             server.server_close()
             thread.join(timeout=2)
 
+    def test_fetch_runs_route_lists_fetch_tool_runs(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                fetch_enabled=True,
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("fetch runs", "diagnose", "en-US")
+            first = store.create_tool_run(
+                workspace["id"],
+                "logagent.fetch",
+                {"endpointId": "fetch_a"},
+            )
+            second = store.create_tool_run(
+                workspace["id"],
+                "logagent.fetch",
+                {"fetchId": "fetch_b"},
+            )
+            store.create_tool_run(workspace["id"], "mock_tool", {})
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                listed = client.get("/api/v2/fetch/runs", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                listed_body = listed.json()
+                self.assertTrue(listed_body["enabled"])
+                self.assertEqual(
+                    [item["id"] for item in listed_body["runs"]],
+                    [second["id"], first["id"]],
+                )
+
+                endpoint_filtered = client.get(
+                    "/api/v2/fetch/runs?endpointId=fetch_a",
+                    headers=headers,
+                )
+                self.assertEqual(endpoint_filtered.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in endpoint_filtered.json()["runs"]],
+                    [first["id"]],
+                )
+
+                fetch_id_filtered = client.get(
+                    "/api/v2/fetch/runs?fetch_id=fetch_b",
+                    headers=headers,
+                )
+                self.assertEqual(fetch_id_filtered.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in fetch_id_filtered.json()["runs"]],
+                    [second["id"]],
+                )
+
     def test_fetch_runtime_params_apply_overrides_and_body_artifact(self) -> None:
         captured: dict[str, str] = {}
 

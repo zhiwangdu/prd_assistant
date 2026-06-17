@@ -21,6 +21,7 @@ SENSITIVE_QUERY_TOKENS = ("token", "secret", "password", "api_key", "apikey", "s
 CONTROLLED_HEADERS = {"host", "content-length", "transfer-encoding", "connection"}
 REDACTED = "__REDACTED__"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+FETCH_TOOL_ID = "logagent.fetch"
 SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)((?:[A-Za-z0-9_-]*(?:token|secret|password|api_key|apikey|session)"
     r"[A-Za-z0-9_-]*)\s*[=:]\s*)([^&\s,}]+)"

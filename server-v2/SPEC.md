@@ -315,6 +315,7 @@ POST /api/v2/fetch/endpoints
 GET  /api/v2/fetch/endpoints/:endpoint_id
 PATCH /api/v2/fetch/endpoints/:endpoint_id
 DELETE /api/v2/fetch/endpoints/:endpoint_id
+GET  /api/v2/fetch/runs
 POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
@@ -741,6 +742,9 @@ headers for that single request; controlled headers are rejected. Runtime
 endpoint bodies and runtime body overrides must be rejected before HTTP
 execution when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.
+`GET /api/v2/fetch/runs` lists persisted Fetch tool runs without executing a
+request and supports `endpointId`, `fetchId`, V1-style `fetch_id`,
+`workspaceId`, and `limit` filters.
 Result artifacts include redacted request metadata, top-level `httpOk`,
 `statusCode`, `redirectCount`, `finalUrl`, `truncated`, `credentialVersion`,
 and a separate bounded response body artifact referenced by both logical

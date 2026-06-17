@@ -34,6 +34,7 @@ from .fetch import (
     endpoint_for_storage,
     endpoint_with_credential_summary,
     execute_fetch_endpoint,
+    FETCH_TOOL_ID,
     hydrate_fetch_endpoint,
     normalize_fetch_endpoint,
     normalize_fetch_run_params,
@@ -1126,6 +1127,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ],
         }
 
+    @app.get("/api/v2/fetch/runs")
+    async def list_fetch_runs(
+        _: Auth,
+        fetchId: str | None = None,
+        endpointId: str | None = None,
+        fetch_id: str | None = Query(default=None),
+        workspaceId: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
+        try:
+            endpoint_filter = normalize_fetch_run_filter(fetchId or endpointId or fetch_id)
+            runs = store.list_tool_runs(
+                tool_id=FETCH_TOOL_ID,
+                workspace_id=workspaceId,
+                limit=limit,
+            )
+            if endpoint_filter:
+                runs = [
+                    run
+                    for run in runs
+                    if fetch_run_endpoint_id(run) == endpoint_filter
+                ]
+            return {"enabled": settings.fetch_enabled, "runs": runs}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.post("/api/v2/fetch/imports/preview")
     async def preview_fetch_import(_: Auth, payload: FetchCurlImportPreviewCreate) -> dict:
         try:
@@ -1608,6 +1637,23 @@ def normalize_tags(tags: list[str]) -> list[str]:
     if len(normalized) > 20:
         raise ValueError("executor tags exceed maximum length of 20")
     return normalized
+
+
+def normalize_fetch_run_filter(value: str | None) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    if len(normalized) > 200:
+        raise ValueError("fetch run filter is too long")
+    return normalized
+
+
+def fetch_run_endpoint_id(run: dict) -> str | None:
+    params = run.get("toolParams")
+    if not isinstance(params, dict):
+        return None
+    endpoint_id = params.get("endpointId") or params.get("fetchId")
+    return endpoint_id if isinstance(endpoint_id, str) else None
 
 
 def compact_remote_runs(runs: list[dict]) -> list[dict]:
