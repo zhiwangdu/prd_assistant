@@ -215,7 +215,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS` | `10` | SSH connect timeout option |
 | `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS` | `30` | Default remote command timeout |
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
-| `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `off` host-key behavior |
+| `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `no` host-key behavior |
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
@@ -428,7 +428,8 @@ remote command timeout. Runs are DB-backed jobs. The worker invokes the
 configured SSH executable with fixed argv. `LOGAGENT_V2_REMOTE_SSH_COMMAND`
 expands environment variables and `~`; when remote execution is enabled it must
 resolve to an absolute path, matching the Rust/V1 `remote_execution.ssh_binary`
-boundary:
+boundary. `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` is validated at startup and must
+be `accept-new`, `strict`, or `no`:
 
 ```text
 /usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>

@@ -1050,6 +1050,10 @@ remote command smoke runner. They are not a full Environment Collector.
   environment variables and `~`, and must resolve to an absolute path when
   remote execution is enabled. If remote execution is disabled, a relative
   command may remain in configuration but cannot be executed.
+- `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` is normalized to lower-case at startup
+  and must be one of `accept-new`, `strict`, or `no`, matching the Rust/V1
+  `remote_execution.host_key_policy` validation. Unknown values fail settings
+  loading instead of falling back to a default.
 - stdout and stderr are capped by `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`, stored
   as files, and previewed in `result.json`.
 - Non-zero exit code, timeout, and SSH start failure are recorded in

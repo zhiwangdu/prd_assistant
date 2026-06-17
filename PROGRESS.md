@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Host Key Policy Validation
+
+- V2 Remote Executor now validates `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` during
+  settings loading. Accepted values are exactly `accept-new`, `strict`, and
+  `no`, matching Rust/V1 `remote_execution.host_key_policy`.
+- Unknown values such as `off` now fail startup instead of silently falling back
+  to `accept-new`. The execution-layer `StrictHostKeyChecking` mapper also
+  rejects unknown values defensively.
+- Added regression coverage for valid policy normalization and invalid policy
+  rejection at both settings and execution mapping layers.
+- Updated V2 Server and Environment Collector docs/specs.
+- Verification passed: focused remote host-key policy regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (87 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote SSH Command Boundary
 
 - V2 Remote Executor now defaults `LOGAGENT_V2_REMOTE_SSH_COMMAND` to

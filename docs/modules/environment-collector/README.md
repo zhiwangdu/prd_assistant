@@ -26,6 +26,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - V2 clean-room Server 已提供同类 Remote Executor 基础能力：`/api/v2/executors` 管理 SQLite executor，`/api/v2/executor-command-templates` 暴露环境配置的白名单模板，`/api/v2/executor-runs` 创建 DB-backed remote command job，并把 `result.json`、`stdout.txt`、`stderr.txt` 写入 `LOGAGENT_V2_DATA_DIR/remote_runs/<run_id>/remote_command/`。
 - V2 command template descriptor 与 Rust/V1 对齐：`enabled` 同时反映全局 remote execution 开关和模板自身开关，`timeoutSeconds` 总是模板覆盖值或默认远程命令 timeout。
 - V2 `LOGAGENT_V2_REMOTE_SSH_COMMAND` 默认 `/usr/bin/ssh`，支持环境变量和 `~` 展开；启用 remote execution 时必须解析为绝对路径，禁用时可保留相对值但不可执行。
+- V2 `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` 启动时只接受 `accept-new`、`strict` 或 `no`，未知值直接失败，不再静默回退到默认策略。
 - V2 已接入 `collect_environment` 审批后的 evidence 闭环：如果 action input
   含有效 `executorId` 和 `commandId`，Server 会通过 Remote Executor 执行该
   白名单命令，完成后写入 `environment_evidence/<action_id>/result.json`，

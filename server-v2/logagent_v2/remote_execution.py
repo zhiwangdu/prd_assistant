@@ -156,9 +156,11 @@ def strict_host_key_checking_value(policy: str) -> str:
     normalized = policy.strip().lower()
     if normalized == "strict":
         return "yes"
-    if normalized in {"off", "no", "disabled"}:
+    if normalized == "no":
         return "no"
-    return "accept-new"
+    if normalized == "accept-new":
+        return "accept-new"
+    raise ValueError("remote host key policy must be one of accept-new, strict, or no")
 
 
 def cap_output(value: bytes, max_bytes: int) -> tuple[bytes, bool]:

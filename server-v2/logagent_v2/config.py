@@ -265,7 +265,8 @@ class Settings:
         )
         remote_host_key_policy = os.environ.get(
             "LOGAGENT_V2_REMOTE_HOST_KEY_POLICY", "accept-new"
-        )
+        ).strip().lower()
+        validate_remote_host_key_policy(remote_host_key_policy)
         remote_commands = parse_remote_commands_env(
             os.environ.get("LOGAGENT_V2_REMOTE_COMMANDS_JSON")
         )
@@ -462,6 +463,13 @@ def validate_remote_ssh_command_path(command: str, *, enabled: bool) -> None:
         raise ValueError(
             "LOGAGENT_V2_REMOTE_SSH_COMMAND must resolve to an absolute path "
             "when remote execution is enabled"
+        )
+
+
+def validate_remote_host_key_policy(policy: str) -> None:
+    if policy not in {"accept-new", "strict", "no"}:
+        raise ValueError(
+            "LOGAGENT_V2_REMOTE_HOST_KEY_POLICY must be one of accept-new, strict, or no"
         )
 
 

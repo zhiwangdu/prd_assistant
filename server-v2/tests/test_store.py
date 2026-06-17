@@ -69,7 +69,7 @@ from logagent_v2.metadata import (
 )
 from logagent_v2.results import get_run_result
 from logagent_v2.llm import debug_log_responses, set_debug_log_responses
-from logagent_v2.remote_execution import command_templates
+from logagent_v2.remote_execution import command_templates, strict_host_key_checking_value
 from logagent_v2.settings_api import (
     agent_backend_diagnostic,
     agent_backends_summary,
@@ -1940,6 +1940,31 @@ class StoreTests(unittest.TestCase):
 
         self.assertFalse(settings.remote_execution_enabled)
         self.assertEqual(settings.remote_ssh_command, "ssh")
+
+    def test_settings_validates_remote_host_key_policy(self) -> None:
+        previous = os.environ.get("LOGAGENT_V2_REMOTE_HOST_KEY_POLICY")
+        try:
+            os.environ["LOGAGENT_V2_REMOTE_HOST_KEY_POLICY"] = "STRICT"
+            self.assertEqual(Settings.from_env().remote_host_key_policy, "strict")
+
+            os.environ["LOGAGENT_V2_REMOTE_HOST_KEY_POLICY"] = "no"
+            self.assertEqual(Settings.from_env().remote_host_key_policy, "no")
+
+            os.environ["LOGAGENT_V2_REMOTE_HOST_KEY_POLICY"] = "off"
+            with self.assertRaisesRegex(ValueError, "HOST_KEY_POLICY.*accept-new, strict, or no"):
+                Settings.from_env()
+        finally:
+            if previous is None:
+                os.environ.pop("LOGAGENT_V2_REMOTE_HOST_KEY_POLICY", None)
+            else:
+                os.environ["LOGAGENT_V2_REMOTE_HOST_KEY_POLICY"] = previous
+
+    def test_strict_host_key_checking_rejects_unknown_policy(self) -> None:
+        self.assertEqual(strict_host_key_checking_value("strict"), "yes")
+        self.assertEqual(strict_host_key_checking_value("no"), "no")
+        self.assertEqual(strict_host_key_checking_value("accept-new"), "accept-new")
+        with self.assertRaisesRegex(ValueError, "accept-new, strict, or no"):
+            strict_host_key_checking_value("off")
 
     def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
