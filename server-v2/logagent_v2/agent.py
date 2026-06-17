@@ -8,6 +8,7 @@ from .agent_audit import (
     persist_agent_response,
     persist_analysis_state,
 )
+from .alias import fallback_run_alias
 from .analysis_package import persist_analysis_package
 from .config import Settings
 from .evidence import build_initial_evidence
@@ -76,7 +77,8 @@ class AgentRuntime:
             interaction_context=interaction_context,
         )
         persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
-        self.store.update_run_status(run_id, "succeeded", "finish", final_answer)
+        alias = fallback_run_alias(final_answer, workspace.get("question", ""))
+        self.store.update_run_status(run_id, "succeeded", "finish", final_answer, alias=alias)
         return final_answer
 
     def _run_agent_round(

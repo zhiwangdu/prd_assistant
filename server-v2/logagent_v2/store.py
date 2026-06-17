@@ -143,6 +143,7 @@ class Store:
                   tool_upload_ids_json TEXT NOT NULL DEFAULT '[]',
                   tool_result_artifact_id TEXT REFERENCES artifacts(id),
                   final_answer_json TEXT,
+                  alias TEXT,
                   error_json TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
@@ -357,6 +358,7 @@ class Store:
                 conn, "runs", "tool_upload_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
             self._ensure_column_tx(conn, "runs", "tool_result_artifact_id", "TEXT")
+            self._ensure_column_tx(conn, "runs", "alias", "TEXT")
             self._ensure_column_tx(conn, "runs", "error_json", "TEXT")
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
@@ -901,33 +903,43 @@ class Store:
         return result
 
     def update_run_status(
-        self, run_id: str, status: str, phase: str, final_answer: JsonObject | None = None
+        self,
+        run_id: str,
+        status: str,
+        phase: str,
+        final_answer: JsonObject | None = None,
+        alias: str | None = None,
     ) -> JsonObject:
         ts = now_iso()
         with self.connect() as conn:
             row = conn.execute("SELECT workspace_id FROM runs WHERE id = ?", (run_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown run {run_id}")
-            conn.execute(
-                """
-                UPDATE runs
-                SET status = ?, phase = ?, final_answer_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    status,
-                    phase,
-                    encode_json(final_answer) if final_answer is not None else None,
-                    ts,
-                    run_id,
-                ),
-            )
+            encoded_final_answer = encode_json(final_answer) if final_answer is not None else None
+            if alias is None:
+                conn.execute(
+                    """
+                    UPDATE runs
+                    SET status = ?, phase = ?, final_answer_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (status, phase, encoded_final_answer, ts, run_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE runs
+                    SET status = ?, phase = ?, final_answer_json = ?, alias = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (status, phase, encoded_final_answer, alias, ts, run_id),
+                )
             self._append_event_tx(
                 conn,
                 row["workspace_id"],
                 run_id,
                 f"run.{status}",
-                {"phase": phase},
+                {"phase": phase, "alias": alias} if alias is not None else {"phase": phase},
                 ts,
             )
         return self.get_run(run_id)

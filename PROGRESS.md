@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Run Alias Persistence
+
+- Added deterministic fallback alias generation for successful V2 analysis
+  runs, matching the Rust server behavior where completed runs have a short
+  history/UI display title.
+- Added `runs.alias` schema/migration support and persisted the alias atomically
+  with the succeeded run status and final answer.
+- Added regression coverage for alias normalization/fallback and successful
+  run alias persistence/timeline payloads.
+- Updated server-v2 README/SPEC to document the alias behavior. The V2 alias
+  path currently uses the fallback summary/question rules and does not call a
+  model-specific alias prompt.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Approved Environment Evidence
 
 - Added V2 `collect_environment` approval handling parity with the Rust server:

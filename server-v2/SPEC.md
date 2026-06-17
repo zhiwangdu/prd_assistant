@@ -68,7 +68,9 @@ Implemented in this slice:
   bounded OpenAI-compatible provider loop for advertised Server-owned tools and
   an evidence-validated JSON final answer. Each round persists
   `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
-  artifacts before the run reaches a terminal state.
+  artifacts before the run reaches a terminal state. Successful analysis runs
+  persist a deterministic fallback alias derived from the final summary or
+  question for history/UI display.
 - `analysis_package.json` generation after initial evidence collection, exposed
   as task MCP resource for Agent loop context.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
@@ -76,7 +78,8 @@ Implemented in this slice:
 - Evidence and artifact listing for a run, including uploaded input artifacts
   and evidence artifact outputs.
 - Run analysis summary endpoint combining run metadata, timeline, evidence,
-  artifacts, analysis resources, and final result for WebUI inspection.
+  artifacts, analysis resources, final result, and run alias for WebUI
+  inspection.
 - Read-only MCP endpoint with `initialize`, `resources/list`, `resources/read`,
   `tools/list`, and tools/resources for tool catalog, Metadata, Case Memory,
   Skill registry, and Domain Adapter summaries.

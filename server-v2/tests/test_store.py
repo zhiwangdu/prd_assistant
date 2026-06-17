@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
+from logagent_v2.alias import fallback_run_alias, normalize_run_alias
 from logagent_v2.analysis import get_run_analysis
 from logagent_v2.artifacts import (
     resolve_artifact_path,
@@ -113,6 +114,24 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(WebuiStaticNotFound):
                 resolve_webui_asset(webui_dir, "../secret")
 
+    def test_fallback_run_alias_normalizes_summary_or_question(self) -> None:
+        self.assertEqual(
+            normalize_run_alias("Compaction timeout analysis."),
+            "Compaction timeout analysis",
+        )
+        self.assertIsNone(normalize_run_alias("task_1781102775938_1"))
+        self.assertEqual(
+            fallback_run_alias(
+                {"summary": "LogAgent task"},
+                "why did the write path timeout?",
+            ),
+            "why did the write path timeout?",
+        )
+        self.assertEqual(
+            fallback_run_alias({"summary": "x"}, "run_123"),
+            "Analysis result",
+        )
+
     def test_workspace_update_and_soft_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "logagent.sqlite")
@@ -176,6 +195,9 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(finished["phase"], "finish")
             self.assertEqual(finished["finalAnswer"]["confidence"], "low")
             self.assertEqual(finished["finalAnswer"]["evidenceRefs"], ["grep_results.json#matches/0"])
+            self.assertTrue(finished["alias"])
+            self.assertNotIn("task_", finished["alias"].lower())
+            self.assertEqual(store.list_runs(workspace["id"])[0]["alias"], finished["alias"])
 
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "manifest" for item in evidence))
@@ -323,7 +345,9 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(analysis["result"]["finalAnswer"]["confidence"], "low")
             events = store.list_timeline(run["id"])
             self.assertTrue(any(event["kind"] == "evidence.created" for event in events))
-            self.assertTrue(any(event["kind"] == "run.succeeded" for event in events))
+            succeeded_events = [event for event in events if event["kind"] == "run.succeeded"]
+            self.assertTrue(succeeded_events)
+            self.assertEqual(succeeded_events[-1]["payload"]["alias"], finished["alias"])
 
     def test_run_analysis_includes_pending_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

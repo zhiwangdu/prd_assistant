@@ -50,7 +50,8 @@ slice provides the durable foundation for the V2 product model:
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
-  HTTP and task MCP read surfaces.
+  HTTP and task MCP read surfaces, plus deterministic fallback run alias
+  persistence for history/UI display.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
@@ -422,9 +423,12 @@ details plus final-answer validation status, and the state artifact records the
 latest round status. Task MCP exposes them as `agent_request`,
 `agent_response`, and `analysis_state` resources.
 
-Successful runs also write `result.json` and `result.md`. `GET
+Successful runs also write `result.json` and `result.md`, then persist a short
+deterministic alias derived from the final summary or question. `GET
 /api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
-evidence metadata, while task MCP exposes `result` and `result_markdown`.
+evidence metadata, while task MCP exposes `result` and `result_markdown`. The
+alias is stored on the Run record for history/UI display; it is not model
+evidence and does not affect final-answer validation.
 
 ## Uploads
 
