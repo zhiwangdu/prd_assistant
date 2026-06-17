@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 pprof Analyzer Config Boundary
+
+- V2 `Settings.from_env` now treats `pprof_analyzer` like a Rust/V1 configured
+  command: it is disabled by default unless `LOGAGENT_V2_PPROF_GO_COMMAND` or
+  `LOGAGENT_TOOL_PPROF_GO` is configured, or `LOGAGENT_V2_PPROF_ENABLED=1` is
+  paired with a configured command.
+- When pprof is enabled, the Go command expands environment variables and `~`
+  and must resolve to an absolute path during settings loading.
+- Runtime/export checks still decide whether the absolute path exists and is
+  packageable, preserving existing skipped/export diagnostics.
+- Added regression coverage for default-disabled pprof, missing enabled
+  command, relative enabled command rejection, disabled relative tolerance, and
+  env-expanded absolute commands.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused pprof config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (96 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Provider Config Validation
 
 - V2 now validates environment-loaded Agent provider settings during

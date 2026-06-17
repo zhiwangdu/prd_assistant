@@ -193,7 +193,7 @@ Environment variables:
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
 | `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
 | `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
-| `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
+| `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or unset | Go executable for `go tool pprof`; required and absolute when pprof is enabled |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact `host`, `host:port`, or `http(s)://host[:port]` allowlist; required when Fetch is enabled |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
@@ -707,6 +707,9 @@ single completed upload (`acceptedSuffixes=["*"]`) and validating only the
 single-upload count plus structured SQL/object-key params.
 `pprof_analyzer` catalog metadata uses the Rust/V1 configured command shape
 (`source=configured`, `backend=command`) while remaining manual-only in V2.
+It is disabled by default unless `LOGAGENT_V2_PPROF_GO_COMMAND` or
+`LOGAGENT_TOOL_PPROF_GO` is set, or `LOGAGENT_V2_PPROF_ENABLED=1` is used with
+an absolute Go command path.
 Its result JSON includes parsed `profileType`, `total`, top rows, V2 artifact
 id mappings, and Rust/V1-style `artifactPaths` for
 `tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.

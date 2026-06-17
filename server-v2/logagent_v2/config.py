@@ -196,13 +196,17 @@ class Settings:
         max_concurrent_jobs = int(os.environ.get("LOGAGENT_V2_MAX_CONCURRENT_JOBS", "2"))
         inline_worker = os.environ.get("LOGAGENT_V2_INLINE_WORKER", "1") != "0"
         tools = parse_tools_env(os.environ.get("LOGAGENT_V2_TOOLS_JSON"))
-        pprof_go_command = (
-            os.environ.get("LOGAGENT_V2_PPROF_GO_COMMAND")
-            or os.environ.get("LOGAGENT_TOOL_PPROF_GO")
+        raw_pprof_go_command = env_first(
+            "LOGAGENT_V2_PPROF_GO_COMMAND",
+            "LOGAGENT_TOOL_PPROF_GO",
         )
         pprof_enabled = env_bool(
             "LOGAGENT_V2_PPROF_ENABLED",
-            default=bool(pprof_go_command),
+            default=bool(non_empty_string(raw_pprof_go_command)),
+        )
+        pprof_go_command = parse_pprof_go_command_env(
+            raw_pprof_go_command,
+            enabled=pprof_enabled,
         )
         huawei_package_sync = parse_huawei_package_sync_env(
             enabled=env_bool("LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED", default=False),
@@ -591,6 +595,18 @@ def parse_agent_binary_path_env(raw: str | None, *, enabled: bool) -> Path | Non
     if enabled and not path.is_absolute():
         raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH must resolve to an absolute path")
     return path
+
+
+def parse_pprof_go_command_env(raw: str | None, *, enabled: bool) -> str | None:
+    command = non_empty_string(raw)
+    if not command:
+        if enabled:
+            raise ValueError("LOGAGENT_V2_PPROF_GO_COMMAND is required when pprof is enabled")
+        return None
+    command = expand_tool_command(command)
+    if enabled and not Path(command).is_absolute():
+        raise ValueError("LOGAGENT_V2_PPROF_GO_COMMAND must resolve to an absolute path")
+    return command
 
 
 def validate_agent_provider_settings(

@@ -2109,6 +2109,52 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(settings.agent_provider, "binary")
         self.assertEqual(settings.agent_binary_path, Path("/opt/logagent/bin/agent"))
 
+    def test_settings_validates_pprof_go_command_when_enabled(self) -> None:
+        env_names = {
+            "LOGAGENT_V2_PPROF_ENABLED",
+            "LOGAGENT_V2_PPROF_GO_COMMAND",
+            "LOGAGENT_TOOL_PPROF_GO",
+            "LOGAGENT_TEST_PPROF_DIR",
+        }
+        previous = {key: os.environ.get(key) for key in env_names}
+        try:
+            os.environ.pop("LOGAGENT_V2_PPROF_ENABLED", None)
+            os.environ.pop("LOGAGENT_V2_PPROF_GO_COMMAND", None)
+            os.environ.pop("LOGAGENT_TOOL_PPROF_GO", None)
+            settings = Settings.from_env()
+            self.assertFalse(settings.pprof_enabled)
+            self.assertIsNone(settings.pprof_go_command)
+
+            os.environ["LOGAGENT_V2_PPROF_ENABLED"] = "1"
+            with self.assertRaisesRegex(ValueError, "PPROF_GO_COMMAND.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_PPROF_GO_COMMAND"] = "go"
+            with self.assertRaisesRegex(ValueError, "PPROF_GO_COMMAND.*absolute path"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_PPROF_ENABLED"] = "0"
+            settings = Settings.from_env()
+            self.assertFalse(settings.pprof_enabled)
+            self.assertEqual(settings.pprof_go_command, "go")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.environ["LOGAGENT_TEST_PPROF_DIR"] = tmpdir
+                os.environ["LOGAGENT_V2_PPROF_ENABLED"] = "1"
+                os.environ["LOGAGENT_V2_PPROF_GO_COMMAND"] = (
+                    "${LOGAGENT_TEST_PPROF_DIR}/go"
+                )
+                settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertTrue(settings.pprof_enabled)
+        self.assertEqual(settings.pprof_go_command, str(Path(tmpdir) / "go"))
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",

@@ -1565,7 +1565,7 @@ def parse_pprof_top(text: str) -> list[JsonObject]:
 
 
 def resolve_pprof_go_command(settings: Settings) -> str | None:
-    command = settings.pprof_go_command or shutil.which("go")
+    command = settings.pprof_go_command
     if not command:
         return None
     path = Path(command)

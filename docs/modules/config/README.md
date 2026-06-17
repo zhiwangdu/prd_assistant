@@ -261,7 +261,7 @@ metadata:
 - `tools.<name>.max_input_files` 控制规则版 Tool Runner 在单个任务中最多为该工具生成多少个输入文件 action，默认 1，非正值按 1 处理。
 - 真实 `flux_query_analyzer`、`influxql_analyzer`、`opengemini_storage_analyzer` 和 `influxdb_storage_analyzer` 源码通过 `third_party/` submodules 引用，推荐运行 `scripts/build-tools.sh` 后用 `examples/server-*-tool.yaml` 或对应 smoke 脚本验证；deploy/runtime 配置可直接把 `path` 指到 `${LOGAGENT_APP_DIR}/bin/tools/...`。如果源码 submodule 需要走内网镜像，可设置 `LOGAGENT_SUBMODULE_BASE_URL`，或按仓库分别设置 `LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL`、`LOGAGENT_SUBMODULE_INFLUXDB_URL`。
 - `influxql_analyzer` 输入为 JSONL 查询日志，参数为 `-input {input_file} -output json -detail-limit 5`；`flux_query_analyzer` 输入为 Flux 查询 JSONL/NDJSON，参数为 `--input {input_file} --format json` 加 bounded top/error 参数；两个 storage analyzers 输入为只读存储文件或目录。
-- `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。
+- `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。V2 默认关闭 pprof；启用时 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO` 必须解析为绝对路径。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - `remote_execution.enabled` 默认 true；`ssh_binary` 启用时必须是绝对路径。

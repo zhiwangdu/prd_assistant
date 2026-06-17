@@ -213,7 +213,7 @@ tools:
 - 禁用工具不读取 `path_env`。
 - 用户输入不能覆盖 tool path 或自由 argv。
 - `examples/server-flux-tool.yaml`、`examples/server-influxql-tool.yaml`、`examples/server-opengemini-storage-tool.yaml` 和 `examples/server-influxdb-storage-tool.yaml` 分别只启用一个真实工具，用于本地 smoke；真实工具由 `scripts/build-tools.sh` 从 `third_party/` submodules 构建，并通过对应 `LOGAGENT_TOOL_*` 环境变量指向产物。构建阶段支持 `LOGAGENT_SUBMODULE_BASE_URL` 和单仓库 `LOGAGENT_SUBMODULE_*_URL` 覆盖 submodule clone 地址，部署配置可以把这些变量放在 `.env`。
-- `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
+- `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。V2 默认关闭 pprof；启用时 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO` 必须解析为绝对路径。
 - `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
 - `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。
 - `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。
