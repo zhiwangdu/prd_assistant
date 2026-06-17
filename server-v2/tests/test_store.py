@@ -3796,6 +3796,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(by_name["host"]["typeLabel"], "Tag")
             self.assertEqual(by_name["value"]["typeLabel"], "Float")
             self.assertEqual(fields["missingFields"], ["missing"])
+            self.assertTrue(fields["defaultRetentionPolicyUsed"])
 
             readonly_instances = readonly_mcp_response(
                 settings,
@@ -3829,6 +3830,10 @@ class StoreTests(unittest.TestCase):
             )
             tag_body = json.loads(readonly_tags["result"]["content"][0]["text"])
             self.assertEqual([item["name"] for item in tag_body["fields"]], ["host"])
+            self.assertEqual(
+                [item["name"] for item in tag_body["result"]["fields"]],
+                ["host"],
+            )
 
             workspace = store.create_workspace("metadata context", "diagnose", "en-US")
             run = store.create_run(workspace["id"])
@@ -3852,10 +3857,49 @@ class StoreTests(unittest.TestCase):
             )
             task_body = json.loads(task_response["result"]["content"][0]["text"])
             self.assertFalse(task_body["finalEvidenceAllowed"])
+            self.assertTrue(task_body["artifactPath"].startswith("metadata_slices/field_types_"))
+            self.assertEqual(task_body["backgroundRef"], f"{task_body['artifactPath']}#fields")
+            self.assertEqual(task_body["evidenceRefs"], [task_body["backgroundRef"]])
+            self.assertEqual(task_body["result"]["artifactPath"], task_body["artifactPath"])
+            self.assertEqual(task_body["result"]["backgroundRef"], task_body["backgroundRef"])
+            self.assertTrue(task_body["result"]["defaultRetentionPolicyUsed"])
             evidence = store.list_evidence(run["id"])
             metadata_slices = [item for item in evidence if item["kind"] == "metadata_slice"]
             self.assertEqual(len(metadata_slices), 1)
             self.assertFalse(metadata_slices[0]["final_allowed"])
+            self.assertEqual(metadata_slices[0]["payload"]["path"], task_body["artifactPath"])
+
+            task_tags_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 16,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_tag_fields",
+                        "arguments": {
+                            "instanceId": "inst1",
+                            "database": "db0",
+                            "measurement": "cpu",
+                        },
+                    },
+                },
+            )
+            task_tags_body = json.loads(task_tags_response["result"]["content"][0]["text"])
+            self.assertTrue(
+                task_tags_body["artifactPath"].startswith("metadata_slices/tag_fields_")
+            )
+            self.assertEqual(
+                [item["name"] for item in task_tags_body["result"]["fields"]],
+                ["host"],
+            )
+            self.assertEqual(task_tags_body["evidenceRefs"], [task_tags_body["backgroundRef"]])
+            metadata_slices = [
+                item for item in store.list_evidence(run["id"]) if item["kind"] == "metadata_slice"
+            ]
+            self.assertEqual(len(metadata_slices), 2)
 
     def test_task_mcp_metadata_v1_aliases_query_bounded_slices(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -73,6 +73,8 @@ LogAgent MCP tools 支持：
 - `logagent.recall_cases`
 - `logagent.get_metadata_topology`
 - `logagent.query_metadata`
+- `logagent.get_metadata_field_types`
+- `logagent.get_metadata_tag_fields`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
@@ -96,6 +98,8 @@ LogAgent MCP tools 支持：
 - `logagent.preview_system_context`
 - `logagent.list_metadata_instances`
 - `logagent.get_metadata_snapshot`
+- `logagent.get_metadata_field_types`
+- `logagent.get_metadata_tag_fields`
 - `logagent.list_tools`
 - `logagent.list_domain_adapters`
 
@@ -114,7 +118,7 @@ LogAgent MCP tools 支持：
 
 - Server 生成 `analysis_package.json`、短启动 `claude_prompt.md` 和 `claude_mcp_config.json`。
 - Claude CLI argv/stdin 不能承载完整 `analysis_package.json`；Claude Code 通过 MCP resources/tools 获取证据和请求领域能力。
-- `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 不能承载完整 Metadata payload；只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json` 背景 slice。
+- `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 不能承载完整 Metadata payload；只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json` 背景 slice。`logagent.get_metadata_field_types` / `logagent.get_metadata_tag_fields` 在 task MCP 中写入 `metadata_slices/field_types_<stable_id>.json` / `metadata_slices/tag_fields_<stable_id>.json`，响应同时提供 V2 顶层 `fields` 和 Rust/V1 `result` 包装。
 - `mcp_calls.jsonl` 记录成功的任务 MCP `resources/read` 和 `tools/call` 调用，包含 call id、arguments、status、result 和 evidence/background refs；Python V2 通过 `mcp_calls` task resource 与 run analysis resources 暴露解析后的调用列表。
 - Python V2 持久化当前 run 用户问题为 `session_text_input.json`，并把 `session_text_input.json#question` 放入 `analysis_package` / Agent provider allowed refs；最终答案校验必须确认该 ref 来自当前 run 的 final-allowed `user_question` artifact。
 - Python V2 最终答案校验兼容 V1 Case refs：`case_context.json#cases/<index>` 会按当前 run 的 `case_context` artifact 校验，模型输出的 `case_<id>` 或 `历史案例 case_<id>` 会规范化为 canonical Case ref。

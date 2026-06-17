@@ -23,7 +23,7 @@
 - `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
 - task `analysisLanguage` 进入 `analysis_state.json`、`analysis_package.json` 和 Claude Code startup prompt，约束自然语言输出使用 `zh-CN` 或 `en-US`
 - Domain Adapter 内置 registry
-- Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`、`query_metadata`
+- Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`、`query_metadata`、`get_metadata_field_types`、`get_metadata_tag_fields`
 - `request_user_input` 进入 `WAITING_FOR_USER`，用户回答后恢复同一任务
 - `request_approval` 进入 `WAITING_FOR_APPROVAL`，批准或拒绝后恢复同一任务
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
@@ -108,13 +108,15 @@ LogAgent MCP tools：
 - `logagent.recall_cases`
 - `logagent.get_metadata_topology`（兼容 alias，返回 Metadata outline）
 - `logagent.query_metadata`
+- `logagent.get_metadata_field_types`
+- `logagent.get_metadata_tag_fields`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 
 Server 必须在执行前验证 MCP tool 名称、输入 schema、白名单、预算和审批策略。LLM Gateway 和 Claude Code 不得绕过 Server 调用能力模块。
 `logagent.search_logs` 后续检索支持 V1 兼容的可选 `maxMatches`，按 1..200 裁剪；每次调用必须写入独立 `log_searches/logsearch_*.json`，返回 `matches[].text`、`keywordCounts`、`unmatchedKeywords` 和稳定 `log_searches/...#matches/<index>` refs，不得覆盖初始 `grep_results.json`。响应必须保留 V2 `search` 对象，同时补齐 Rust/V1 顶层 `artifactPath`、`totalMatches`、`keywordCounts`、`unmatchedKeywords`、`matches`、`evidenceRefs` 和 `note`。Claude Code prompt 必须要求模型基于命中行正文判断异常，不能只把 `totalMatches` 当作具体异常类型、技术栈或根因证据。
 `logagent.get_log_slice` 必须支持两种输入形态：V2 中心行形态 `path` + `lineNumber` + 可选 `before/after`，以及 V1 兼容 range 形态 `path` + `startLine/endLine`。两种形态不能在同一调用中混用，range 形态要求 `endLine >= startLine` 且 `endLine - startLine <= 500`。响应必须保留 V2 `slice` 对象，同时补齐 Rust/V1 顶层 `artifactPath`、`evidenceRefs` 和 `lines`。
-`analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只提供 Metadata outline；完整 `metadata_context.json` 保留在 workspace，必须通过 `logagent.query_metadata` 读取 bounded slice，slice 写入 `metadata_slices/<stable_id>.json` 并作为背景上下文处理。
+`analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只提供 Metadata outline；完整 `metadata_context.json` 保留在 workspace，必须通过 `logagent.query_metadata` 读取 bounded slice，slice 写入 `metadata_slices/<stable_id>.json` 并作为背景上下文处理。需要从全局已导入 Metadata 精确查询 field/tag 类型时，使用 `logagent.get_metadata_field_types` / `logagent.get_metadata_tag_fields`；task MCP 会写入 `metadata_slices/field_types_<stable_id>.json` / `metadata_slices/tag_fields_<stable_id>.json`，这些 slice 同样是背景上下文。
 Claude Code startup prompt 必须依据 task `analysisLanguage` 约束自然语言字段：`zh-CN` 优先简体中文，`en-US` 使用英文；协议名、JSON key、路径、工具名、产品名和 evidence refs 不翻译。
 
 ## 用户追问

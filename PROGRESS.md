@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Field Tool MCP Compatibility
+
+- Aligned V2 task MCP `logagent.get_metadata_field_types` and
+  `logagent.get_metadata_tag_fields` with Rust/V1 response envelopes.
+- Task field/tag queries now write stable background slices under
+  `metadata_slices/field_types_<stable_id>.json` and
+  `metadata_slices/tag_fields_<stable_id>.json`, and return `artifactPath`,
+  `backgroundRef`, `evidenceRefs`, `finalEvidenceAllowed=false`, and a
+  Rust/V1 `result` wrapper while preserving V2 top-level `fields`.
+- Readonly MCP field/tag queries now also expose the `result` wrapper without
+  writing task artifacts.
+- Field/tag query results now include `defaultRetentionPolicyUsed` when
+  resolving an omitted RP through the DB default RP.
+- Updated V2 server, Interfaces, Analysis Agent, and Metadata README/SPEC docs.
+- Added regression coverage for readonly wrapping, task field/tag artifact
+  paths, background refs, evidence refs, and default RP reporting.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Log Result Aliases
 
 - Added Rust/V1-compatible top-level response fields to V2 task MCP

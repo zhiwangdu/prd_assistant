@@ -302,8 +302,9 @@ metadata_slices/<stable_id>.json
 - `analysis_package.json` 不内联完整 context，只写 `metadataContextOutline`，包含 `metadataContextPath`、选中 ID、产品/版本/环境、section count 和查询入口。
 - 任务 MCP `resources/read metadata_context` 和 `logagent.get_metadata_topology` 返回 outline；`logagent.query_metadata` 支持 `section`、`database`、`retentionPolicy`、`measurement`、`nodeId`、`ownerNodeId`、`ptId`、`shardId`、`indexId`、`limit`、`cursor`。
 - `logagent.query_metadata` section 覆盖 `overview | nodes | databases | retention_policies | measurements | fields | shard_groups | shards | index_groups | indexes | partition_views`，返回 bounded `items`、`total`、`nextCursor`、`truncated` 和 `backgroundRef`，并写入 `metadata_slices/<stable_id>.json` / `mcp_calls.jsonl`。
-- `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 fields，结果写入 `metadata_slices/field_types_<stable_id>.json`。
-- `logagent.get_metadata_tag_fields` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field`；结果复用 field types 响应结构，只保留 `typ=6` / `typeLabel=Tag` 的 fields，`missingFields=[]`，并写入 `metadata_slices/tag_fields_<stable_id>.json`。
+- `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 fields，省略 RP 且命中 DB 默认 RP 时返回 `defaultRetentionPolicyUsed=true`；task MCP 结果写入 `metadata_slices/field_types_<stable_id>.json`。
+- `logagent.get_metadata_tag_fields` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field`；结果复用 field types 响应结构，只保留 `typ=6` / `typeLabel=Tag` 的 fields，`missingFields=[]`，并在 task MCP 写入 `metadata_slices/tag_fields_<stable_id>.json`。
+- task MCP field/tag 响应必须返回 `artifactPath`、`backgroundRef`、`evidenceRefs`、`finalEvidenceAllowed=false` 和 Rust/V1 `result` 包装，同时保留 V2 顶层字段；readonly MCP 不写 artifact，但同样返回 `result` 包装。
 
 Python V2 clean-room Server 的 task MCP 对齐同一工具面：
 `logagent.get_metadata_topology` 返回当前 run outline、section counts 和查询提示；

@@ -8,7 +8,7 @@ from typing import Any
 from .artifacts import write_artifact_bytes
 from .config import Settings
 from .fetch import fetch_text, redact_url
-from .store import JsonObject, Store
+from .store import JsonObject, Store, now_iso
 
 
 FIELD_TYPE_LABELS = {
@@ -1526,7 +1526,7 @@ def query_field_types(
     db = find_named(snapshot.get("cluster", {}).get("databases", []), database)
     if db is None:
         raise ValueError(f"database {database} not found")
-    rp = find_retention_policy(db, retention_policy)
+    rp, default_retention_policy_used = find_retention_policy(db, retention_policy)
     if rp is None:
         raise ValueError("retention policy not found")
     mst = find_named(rp.get("measurements", []), measurement)
@@ -1548,6 +1548,7 @@ def query_field_types(
         "instanceId": instance_id,
         "database": db.get("name"),
         "retentionPolicy": rp.get("name"),
+        "defaultRetentionPolicyUsed": default_retention_policy_used,
         "measurement": mst.get("name"),
         "fields": fields,
         "missingFields": sorted(missing),
@@ -1556,16 +1557,18 @@ def query_field_types(
     }
 
 
-def find_retention_policy(db: JsonObject, retention_policy: str | None) -> JsonObject | None:
+def find_retention_policy(
+    db: JsonObject, retention_policy: str | None
+) -> tuple[JsonObject | None, bool]:
     policies = db.get("retentionPolicies", [])
     if retention_policy:
-        return find_named(policies, retention_policy)
+        return find_named(policies, retention_policy), False
     default_name = db.get("defaultRetentionPolicy")
     if default_name:
         found = find_named(policies, default_name)
         if found is not None:
-            return found
-    return policies[0] if policies else None
+            return found, True
+    return (policies[0], False) if policies else (None, False)
 
 
 def find_named(items: list[JsonObject], name: str) -> JsonObject | None:
@@ -1720,7 +1723,7 @@ def call_metadata_tool(
         instance_id = require_string(arguments, "instanceId")
         value = store.get_metadata_snapshot(instance_id)
     elif name in {"logagent.get_metadata_field_types", "logagent.get_metadata_tag_fields"}:
-        value = query_field_types(
+        raw_value = query_field_types(
             store=store,
             instance_id=require_string(arguments, "instanceId"),
             database=require_string(arguments, "database"),
@@ -1729,11 +1732,54 @@ def call_metadata_tool(
             field=arguments.get("field"),
             tags_only=name == "logagent.get_metadata_tag_fields",
         )
+        if settings is not None and run is not None:
+            return metadata_field_tool_task_payload(
+                settings=settings,
+                store=store,
+                run=run,
+                tool_name=name,
+                arguments=arguments,
+                value=raw_value,
+            )
+        return {**raw_value, "result": raw_value}
     else:
         raise ValueError(f"unsupported metadata tool {name}")
     if settings is not None and run is not None:
         persist_metadata_slice(settings, store, run, name, value)
     return value
+
+
+def metadata_field_tool_task_payload(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    tool_name: str,
+    arguments: JsonObject,
+    value: JsonObject,
+) -> JsonObject:
+    prefix = (
+        "tag_fields"
+        if tool_name == "logagent.get_metadata_tag_fields"
+        else "field_types"
+    )
+    artifact_path = f"metadata_slices/{prefix}_{stable_json_digest(arguments)}.json"
+    background_ref = f"{artifact_path}#fields"
+    result = {
+        **value,
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "createdAt": now_iso(),
+        "finalEvidenceAllowed": False,
+    }
+    persist_metadata_query_slice(settings, store, run, tool_name, result, artifact_path)
+    return {
+        **value,
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "evidenceRefs": [background_ref],
+        "finalEvidenceAllowed": False,
+        "result": result,
+    }
 
 
 def persist_metadata_query_slice(

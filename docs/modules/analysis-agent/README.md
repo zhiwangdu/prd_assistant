@@ -105,6 +105,8 @@ Claude 通过 MCP tools 请求领域能力：
 - `logagent.recall_cases`
 - `logagent.get_metadata_topology`（兼容 alias，返回 outline）
 - `logagent.query_metadata`
+- `logagent.get_metadata_field_types`
+- `logagent.get_metadata_tag_fields`
 - `logagent.request_user_input`
 - `logagent.request_approval`
 

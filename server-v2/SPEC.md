@@ -751,6 +751,14 @@ in draft `sourceUrl`, and then runs the fetched content through the same
 normalization and preview/confirm path. The Fetch request-size limit primarily
 applies to configured endpoint execution because metadata URL fetch uses GET.
 
+Task MCP and readonly MCP expose `logagent.get_metadata_field_types` and
+`logagent.get_metadata_tag_fields`. Task calls write Rust/V1-compatible
+background slices to `metadata_slices/field_types_<stable_id>.json` and
+`metadata_slices/tag_fields_<stable_id>.json`, return `artifactPath`,
+`backgroundRef`, `evidenceRefs`, `finalEvidenceAllowed=false`, and keep both
+the V2 top-level `fields` shape and the Rust/V1 `result` wrapper. Readonly MCP
+returns the same `result` wrapper without writing task artifacts.
+
 Current direct import request:
 
 ```json

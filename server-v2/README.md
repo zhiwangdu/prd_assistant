@@ -798,6 +798,13 @@ logagent.get_metadata_field_types
 logagent.get_metadata_tag_fields
 ```
 
+Task MCP field/tag queries persist Rust/V1-compatible background slices under
+`metadata_slices/field_types_<stable_id>.json` and
+`metadata_slices/tag_fields_<stable_id>.json`. Their responses keep the V2
+top-level `fields` shape and also expose the Rust/V1 `result` wrapper plus
+`artifactPath`, `backgroundRef`, `evidenceRefs`, and `finalEvidenceAllowed`.
+Readonly MCP uses the same `result` wrapper without writing a task artifact.
+
 Task MCP also exposes V1-compatible run-scoped Metadata tools:
 
 ```text
