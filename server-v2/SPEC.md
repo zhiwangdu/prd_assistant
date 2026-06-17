@@ -1389,9 +1389,10 @@ current evidence.
 
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
-bounded tool input summaries, system/metadata context outlines, bounded
-`analysisState` resume context, allowed current-run evidence refs starting with
-`session_text_input.json#question`, and final-evidence policy including
+bounded tool input summaries, bounded artifact index outline, system/metadata
+context outlines, bounded `analysisState` resume context, allowed current-run
+evidence refs starting with `session_text_input.json#question`, and
+final-evidence policy including
 `case_context.json#cases/<index>`. Its resource index includes Agent audit
 resources and optional Rust/V1 Claude runtime compatibility resources
 `claude_mcp_config` and `claude_session`. It

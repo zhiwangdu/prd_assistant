@@ -21,6 +21,9 @@
 - Claude structured outcome / FinalAnswer schema 和 parser
 - Claude Code 配置摘要和 dry-run 诊断
 - `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json`
+- `analysis_package.json` 包含 bounded artifact index outline，列出当前 run
+  已知 artifact 的 path/source/role/size/contentType，供 Agent 发现
+  support artifacts 后再通过任务 MCP `artifact_index` 或具体资源读取细节
 - task `analysisLanguage` 进入 `analysis_state.json`、`analysis_package.json` 和 Claude Code startup prompt，约束自然语言输出使用 `zh-CN` 或 `en-US`
 - Domain Adapter 内置 registry
 - Claude MCP `search_logs`、`get_log_slice`、`run_domain_tool`、`recall_cases`、`get_metadata_topology`、`query_metadata`、`get_metadata_field_types`、`get_metadata_tag_fields`

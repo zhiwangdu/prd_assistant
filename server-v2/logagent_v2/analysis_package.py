@@ -10,6 +10,7 @@ from .store import JsonObject, Store
 MAX_PACKAGE_FILES = 50
 MAX_PACKAGE_MATCHES = 50
 MAX_CONTEXT_RESOURCES = 10
+MAX_PACKAGE_ARTIFACTS = 50
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
@@ -83,6 +84,7 @@ def build_analysis_package(
         },
         "analysisState": analysis_state_outline(store, run_id),
         "resources": task_resource_index(run_id),
+        "artifactIndex": artifact_index_outline(store, run_id),
         "manifest": manifest_outline(manifest),
         "grepResults": grep_outline(grep_results, matches),
         "toolInputIndex": tool_input_outline(evidence_bundle.get("toolInputIndex")),
@@ -197,6 +199,52 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         }
         for name in names
     ]
+
+
+def artifact_index_outline(store: Store, run_id: str) -> JsonObject:
+    run_artifacts = store.list_run_artifacts(run_id)
+    artifacts: list[JsonObject] = []
+    for upload in run_artifacts["uploads"]:
+        artifacts.append(
+            {
+                "path": f"uploads/{upload['upload_id']}/{upload['filename']}",
+                "source": "upload",
+                "artifactId": upload["artifact_id"],
+                "sizeBytes": upload["size_bytes"],
+                "contentType": upload["content_type"],
+            }
+        )
+    for item in run_artifacts["evidenceArtifacts"]:
+        payload = item.get("evidence_payload") or {}
+        artifacts.append(
+            {
+                "path": payload.get("path") or item["relative_path"],
+                "source": "evidence",
+                "artifactId": item["artifact_id"],
+                "evidenceKind": item["evidence_kind"],
+                "finalAllowed": item["final_allowed"],
+                "sizeBytes": item["size_bytes"],
+                "contentType": item["content_type"],
+            }
+        )
+    for item in run_artifacts.get("supportArtifacts", []):
+        artifacts.append(
+            {
+                "path": item.get("logical_path") or item["relative_path"],
+                "source": "support",
+                "artifactId": item["artifact_id"],
+                "role": item.get("role"),
+                "actionId": item.get("action_id"),
+                "sizeBytes": item["size_bytes"],
+                "contentType": item["content_type"],
+            }
+        )
+    return {
+        "artifactCount": len(artifacts),
+        "supportArtifactCount": len(run_artifacts.get("supportArtifacts", [])),
+        "truncated": len(artifacts) > MAX_PACKAGE_ARTIFACTS,
+        "artifacts": artifacts[:MAX_PACKAGE_ARTIFACTS],
+    }
 
 
 def allowed_evidence_refs(

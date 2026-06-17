@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Analysis Package Artifact Index
+
+- `analysis_package.json` now includes a bounded `artifactIndex` outline with
+  current run upload, evidence, and support artifact paths, sources, roles,
+  sizes, content types, and artifact ids.
+- This makes remote environment command output support artifacts discoverable
+  from the next Agent request package without inlining artifact contents.
+- Added regression coverage for normal analysis packages and environment
+  evidence packages.
+- Updated server-v2 and Analysis Agent README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused workspace/environment analysis-package pytest, related
+  `analysis_package or artifact_index or collect_environment` pytest
+  selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Environment Remote Output Artifacts
 
 - V2 `collect_environment` remote execution now copies the completed remote

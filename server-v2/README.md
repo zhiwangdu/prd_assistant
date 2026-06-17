@@ -676,7 +676,8 @@ and a finalize-with-current-evidence directive when the user requests it.
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
 resource URIs, manifest outline, grep match preview, analyzer tool input
-outline, system/metadata context outlines, bounded resume `analysisState`
+outline, bounded artifact index outline, system/metadata context outlines,
+bounded resume `analysisState`
 (recent user messages, action results, pending actions, and
 `finalizeRequested`), and the current allowed evidence refs, including
 `session_text_input.json#question`. The resource index includes optional

@@ -465,6 +465,11 @@ class StoreTests(unittest.TestCase):
             self.assertIn("analysis_state", {item["name"] for item in package["resources"]})
             self.assertIn("claude_mcp_config", {item["name"] for item in package["resources"]})
             self.assertIn("claude_session", {item["name"] for item in package["resources"]})
+            self.assertGreaterEqual(package["artifactIndex"]["artifactCount"], 4)
+            self.assertIn(
+                "manifest.json",
+                {item["path"] for item in package["artifactIndex"]["artifacts"]},
+            )
             self.assertFalse(package["systemContext"]["resources"])
             resource_response = task_mcp_response(
                 settings,
@@ -7145,6 +7150,10 @@ fi
             package = json.loads(package_response["result"]["contents"][0]["text"])
             self.assertEqual(
                 package["backgroundEvidence"][0]["payload"]["actionId"], action["id"]
+            )
+            self.assertIn(
+                f"environment_evidence/{action['id']}/result.json",
+                {item["path"] for item in package["artifactIndex"]["artifacts"]},
             )
             self.assertIn(
                 "environment_evidence",
