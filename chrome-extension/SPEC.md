@@ -12,6 +12,8 @@
 - 根据 URL 前缀和文件后缀过滤。
 - 弹出 Chrome notification，由用户点击确认发送。
 - 调用 Native Agent `POST /imports`，由 Native Agent 附加到当前活动 Session。
+- 插件不区分 Rust V1 Server 和 `server-v2`；V2 由 Native Agent
+  `server_api=v2` 负责上传和 Session 绑定。
 - 成功通知显示 `LogAgent session updated`。
 - Options 页面支持配置 Agent 地址、URL 前缀和文件后缀。
 
@@ -54,6 +56,7 @@ Content-Type: application/json
 ## 安全约束
 
 - 插件只把本地路径交给 Native Agent，不直接上传到远端 Server。
+- 插件只依赖 Native Agent 本地接口，不保存或推断远端 Server API 版本。
 - 是否允许读取该路径由 Native Agent 的 `allowed_dirs` 决定。
 - 插件不保存 API Key。
 

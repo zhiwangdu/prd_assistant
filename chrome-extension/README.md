@@ -25,6 +25,8 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 - Native Agent 已在本机启动。
 - Native Agent 的 `allowed_dirs` 包含浏览器下载目录。
 - Server 已启动，或 Native Agent 的 `server_base_url` 指向 ECS Server。
+- 插件只调用 Native Agent `/imports`，不需要区分远端是 Rust V1 Server
+  还是 `server-v2`；V2 切换由 Native Agent 的 `server_api: "v2"` 配置完成。
 - Chrome 对下载文件路径可见。当前实现依赖 `chrome.downloads.search()` 返回的 `filename`。
 
 ## 本地验证
@@ -105,6 +107,10 @@ chrome.downloads.onChanged.addListener((delta) => {
 ```
 
 ## Native Agent 接口
+
+该接口对 Chrome Extension 保持稳定。Native Agent 可以继续对接 Rust V1
+Server，也可以通过 `server_api: "v2"` 上传到 `server-v2` Session-scoped
+接口。
 
 ```http
 POST http://127.0.0.1:<port>/imports

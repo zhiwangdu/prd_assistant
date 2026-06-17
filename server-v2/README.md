@@ -23,6 +23,9 @@ slice provides the durable foundation for the V2 product model:
   Session `ready`, and rejects Session deletion while any task is unfinished.
   Session task APIs return Rust-style TaskSummary fields while retaining raw
   V2 Run records under `runs` for diagnostics.
+- Native Agent import compatibility through `native_agent.server_api: "v2"`:
+  Chrome Extension still calls local `/imports`; Native Agent creates or reuses
+  a V2 `ws_...` Session and uploads through Session-scoped V2 APIs.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
@@ -643,6 +646,8 @@ Session APIs expose the same stored uploads through an attachment set:
 `file` for direct upload or JSON `{"uploadIds":[...]}` to attach existing
 Workspace uploads. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
 detaches an upload only before any task run exists; the Upload row and artifact
+remain stored. Native Agent V2 mode uses these Session-scoped upload APIs, so
+browser imports do not require Chrome Extension code changes.
 remain available for explicit tool runs.
 
 Chunked uploads persist session state in SQLite and temporary bytes under

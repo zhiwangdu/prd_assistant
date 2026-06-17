@@ -6,6 +6,8 @@ Last updated: 2026-06-18
 
 - Native Agent added `native_agent.server_api` with default `v1` and V2 mode
   for `server-v2` Session-scoped upload APIs.
+- Chrome Extension and server-v2 docs now state that browser import remains
+  stable at Native Agent `/imports`; no extension code change is needed for V2.
 - V2 imports now create or reuse the active `ws_...` Session before upload,
   use `/api/v2/sessions/:session_id/uploads` for small files, use
   `/api/v2/sessions/:session_id/uploads/init` plus

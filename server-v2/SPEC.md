@@ -60,6 +60,9 @@ Implemented in this slice:
   Rust-style TaskSummary objects with `taskId`, `taskKind`, `sessionId`,
   `analysisLanguage`, `status`, `phase`, and `url`, while retaining raw Run
   records under `runs`.
+- Native Agent V2 target support: browser imports still enter the local Native
+  Agent `/imports` endpoint, and `native_agent.server_api=v2` maps them to
+  `POST /api/v2/sessions` plus Session-scoped upload APIs.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
@@ -501,6 +504,12 @@ Session state is stored in SQLite, while partial bytes live under
 `tmp/upload_sessions/<session_id>/`. Completion marks the session `completed`
 with the resulting `upload_id` and `artifact_id`; repeated complete calls can
 return the completed session.
+
+Native Agent V2 mode uses `POST /api/v2/sessions/:session_id/uploads` for small
+imports and `POST /api/v2/sessions/:session_id/uploads/init` plus the upload
+session chunk/complete endpoints for larger imports. It returns the final
+`upl_...` id after chunk completion, while the temporary upload session keeps
+its `ups_...` id.
 
 ## Initial Evidence Pipeline
 
