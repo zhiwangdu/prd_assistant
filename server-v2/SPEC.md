@@ -122,7 +122,11 @@ Implemented in this slice:
   evidence artifact outputs, and Rust/V1-style aggregate fields for manifest,
   grep results, Session text input, metadata/system/case context, analysis
   package, Agent audit artifacts, optional Claude MCP config/session artifacts,
-  MCP calls, and tool results.
+  MCP calls, and tool results. Tool output files that support a result but are
+  not standalone evidence, including configured subprocess stdout/stderr, Fetch
+  response bodies, and pprof top/tree/raw/SVG files, are listed as
+  `supportArtifacts` and included in task MCP `artifact_index` with
+  `source="support"` and their Rust/V1 logical `tool_results/...` paths.
 - Run analysis summary endpoint combining run metadata, timeline, evidence,
   artifacts, analysis resources, final result, and run alias for WebUI
   inspection.

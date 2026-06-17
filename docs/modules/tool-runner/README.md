@@ -120,6 +120,13 @@ tools:
   产物；实际 V2 artifact ID 会回填到 result/evidence 的
   `stdoutArtifactId` / `stderrArtifactId`，记录中仍保留
   `stdoutPath` / `stderrPath` 逻辑路径和 bounded preview。
+- Python V2 run artifact 聚合会把工具结果的非 evidence 支持产物列入
+  `supportArtifacts`，并同步加入 task MCP `artifact_index`：configured
+  subprocess stdout/stderr 使用 `tool_results/<action_id>/stdout.txt` /
+  `stderr.txt`，Fetch response body 使用
+  `tool_results/<action_id>/response_body.bin`，`pprof_analyzer` 的
+  top/tree/raw/stderr/SVG 输出使用对应 Rust/V1 逻辑路径；这些条目标记为
+  `source="support"`，不作为最终答案 evidence。
 - Python V2 configured subprocess `result.json` 已补齐 Rust/V1
   `ToolRunRecord` 形态：`schemaVersion=2`、`tool`、`status`、`durationMs`、
   `command`、`stdoutPath`、`stderrPath` 和 `error`；同时保留 V2

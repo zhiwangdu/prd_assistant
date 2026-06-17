@@ -86,6 +86,11 @@ Database
 - V2 Analyze 页面必须读取 `/api/v2/runs/:run_id/analysis` 中的 `pendingActions`；`WAITING_FOR_USER` 时调用 `/api/v2/runs/:run_id/messages` 提交补充或 `resumeMode=finalize`，接受返回的 `answeredActions` 并通过后续轮询刷新 pending actions，`WAITING_FOR_APPROVAL` 时调用 `/api/v2/actions/:action_id/decisions` 批准或拒绝并恢复 run。
 - V2 Analyze 页面在 run `SUCCEEDED` 且存在 final answer 时必须提供 Case 保存区，用 final answer 预填标题、现象、根因、解决方案和 evidence refs，允许用户编辑后调用 `/api/v2/runs/:run_id/case` 写入 V2 Memory。
 - V2 Analyze 页面的 artifact 下载必须由前端 `fetch` 携带 Authorization header 调用 `/api/v2/artifacts/:artifact_id`，不能依赖无法带 Bearer header 的裸链接。
+- V2 Analyze 页面的 artifact 列表必须同时展示 uploads、evidence artifacts
+  和后端返回的 `supportArtifacts`。support artifacts 不是最终答案 evidence，
+  但必须用后端提供的 Rust/V1 逻辑路径展示，并通过同一 Bearer header 下载流
+  程读取真实 artifact，例如 Tool Runner stdout/stderr、Fetch response body
+  和 pprof top/tree/raw/stderr/SVG 文件。
 - 状态展示使用 `QUEUED`、`RUNNING`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL`、`SUCCEEDED`、`FAILED`。
 - 执行阶段作为次级进度展示，不能由前端直接修改。
 - `WAITING_FOR_USER` 按 pending action payload 中的 `questionId` 提交回答，重复提交使用由 run、action、resumeMode 和消息内容派生的稳定幂等 key。

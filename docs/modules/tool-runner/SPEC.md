@@ -107,6 +107,14 @@ bounded artifact，并在 result/evidence 中暴露 `stdoutArtifactId` /
 非 0 退出、timeout 和 subprocess 启动失败必须写成 `FAILED` / `TIMED_OUT`
 result。
 
+V2 run artifact 聚合必须把工具结果引用的非 evidence 支持产物列入
+`supportArtifacts`，并在 task MCP `artifact_index` 中暴露同一批 artifact：
+configured subprocess stdout/stderr、Fetch response body、`pprof_analyzer`
+top/tree/raw/stderr/SVG 等都必须使用 Rust/V1 逻辑路径
+`tool_results/<action_id>/...`，同时保留实际 V2 artifact id、content type、
+sha256 和 size。支持产物必须标记 `source="support"`，不得被当作最终答案
+evidence ref。
+
 当 stdout 是 JSON 时，Tool Runner 会尽量提取：
 
 - `summary` / `message` / `title`
@@ -200,6 +208,10 @@ Huawei package sync 的 `result.json` 至少包含：
 - `path_env` 缺失、为空或解析出非绝对路径时启动失败。
 - 工具超时后任务记录失败原因。
 - stdout/stderr 可追溯。
+- `/api/v2/runs/:run_id/artifacts` 和 task MCP `artifact_index` 必须能发现
+  工具支持产物，包括 configured subprocess `stdout.txt` / `stderr.txt`、
+  Fetch `response_body.bin` 和 pprof top/tree/raw/stderr/SVG 输出，并保持
+  `finalAllowed=false`。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
 - Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建对应工具并验证 stdout JSON。
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。

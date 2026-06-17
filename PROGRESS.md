@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Support Artifact Index
+
+- V2 run artifact aggregation now exposes non-evidence tool support files under
+  `supportArtifacts`, including configured subprocess stdout/stderr, Fetch
+  response bodies, and pprof top/tree/raw/stderr/SVG outputs.
+- Task MCP `artifact_index` now includes those support files with
+  Rust/V1-style logical `tool_results/<action_id>/...` paths and
+  `source="support"`, while keeping them `finalAllowed=false`.
+- V2 Analyze artifact list now counts, displays, and downloads
+  `supportArtifacts` through the same authenticated artifact endpoint used for
+  uploads and evidence artifacts.
+- Updated V2 Server, Tool Runner, and WebUI README/SPEC docs.
+- Verification passed: focused configured-tool and pprof regressions,
+  `PYTHONPATH=. uv run --extra dev pytest tests/test_store.py -k
+  "task_mcp_runs_configured_tool_by_id or pprof_tool_result_includes_v1_artifact_paths"`
+  (`2 passed`), `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, `PYTHONPATH=. uv run --extra dev pytest` (`120 passed`, with the
+  existing Starlette/httpx deprecation warning), plus WebUI `npm run lint`,
+  `npm run typecheck`, and `npm run build`.
+
 ## 2026-06-18 V2 Tool Runner Numeric Field Parser Parity
 
 - V2 Tool Runner generic stdout JSON parser now matches Rust/V1 string-field

@@ -631,6 +631,27 @@ def build_task_artifact_index(store: Store, run: JsonObject) -> JsonObject:
             "createdAt": item["evidence_created_at"],
         }
 
+    for item in run_artifacts.get("supportArtifacts", []):
+        path = item.get("logical_path") or item["relative_path"]
+        artifacts_by_path[path] = {
+            "path": path,
+            "bytes": item["size_bytes"],
+            "sizeBytes": item["size_bytes"],
+            "artifactId": item["artifact_id"],
+            "evidenceId": item.get("source_evidence_id"),
+            "evidenceKind": item.get("source_evidence_kind"),
+            "finalAllowed": False,
+            "summary": item.get("role"),
+            "source": "support",
+            "role": item.get("role"),
+            "actionId": item.get("action_id"),
+            "relativePath": item["relative_path"],
+            "contentType": item["content_type"],
+            "schemaName": item["schema_name"],
+            "sha256": item["sha256"],
+            "createdAt": item["created_at"],
+        }
+
     artifacts = list(artifacts_by_path.values())
     return {
         "schemaVersion": 1,

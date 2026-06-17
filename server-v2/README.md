@@ -107,6 +107,10 @@ slice provides the durable foundation for the V2 product model:
   aggregate fields for manifest, grep results, Session text input,
   metadata/system/case context, analysis package, Agent audit artifacts, MCP
   calls, optional Claude MCP config/session artifacts, and tool results.
+  Tool-generated support files that are not themselves evidence, such as
+  configured subprocess stdout/stderr, Fetch response bodies, and pprof
+  top/tree/raw/SVG output files, are returned under `supportArtifacts` and are
+  also included in the task MCP `artifact_index` with `source="support"`.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`

@@ -10,6 +10,10 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，作为 System Context 页面内的 V2 Metadata 工作台区块提供。
 - `Analyze`：已切换为 Python V2 原生入口，直接调用 `/api/v2/*`。可新建 Workspace、选择历史 Workspace、回填并保存 Workspace 问题/模式、软删除历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、pending actions、resources、最终结果和 artifacts；运行资源区会展开 `analysis_state.json` 中的 LangGraph runtime、Agent request/response 审计、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 摘要；当 V2 run 等待用户或审批时，可提交补充、请求基于当前证据收尾、批准或拒绝 action，补充消息会带上 pending action 的 `questionId`，补充和审批都会生成稳定 `idempotencyKey`，返回的 `answeredActions` 会被后续轮询反映到 pending actions；成功 run 可编辑并保存为 V2 task Case，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Rust Session-first Analyze 页面不再默认渲染。
+- V2 Analyze artifacts 列表会合并 uploads、evidence artifacts 和 V2
+  `supportArtifacts`。support artifacts 用 Rust/V1 逻辑路径展示，并可通过同一
+  `/api/v2/artifacts/:artifact_id` 下载，覆盖 Tool Runner stdout/stderr、
+  Fetch response body 和 pprof top/tree/raw/stderr/SVG 等结果支持文件。
 - V2 Analyze timeline 使用 Python V2 timeline event 的 `kind` 字段作为事件标签，并兼容旧 `event_type` 字段。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：已切换为 V2 Memory 工作台，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Rust Memory 页面不再默认渲染。

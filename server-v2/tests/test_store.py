@@ -2891,6 +2891,29 @@ class StoreTests(unittest.TestCase):
                 results_body["toolResults"][0]["path"],
                 f"tool_results/{results_body['toolResults'][0]['actionId']}/result.json",
             )
+            artifacts = get_run_artifacts(settings, store, run["id"])
+            support_by_path = {
+                item["logical_path"]: item for item in artifacts["supportArtifacts"]
+            }
+            self.assertEqual(
+                support_by_path["tool_results/mock_tool/stdout.txt"]["artifact_id"],
+                payload["result"]["stdoutArtifactId"],
+            )
+            self.assertEqual(
+                support_by_path["tool_results/mock_tool/stderr.txt"]["artifact_id"],
+                payload["result"]["stderrArtifactId"],
+            )
+            index_by_path = {
+                item["path"]: item for item in artifacts["artifactIndex"]["artifacts"]
+            }
+            self.assertEqual(
+                index_by_path["tool_results/mock_tool/stdout.txt"]["source"],
+                "support",
+            )
+            self.assertEqual(
+                index_by_path["tool_results/mock_tool/stderr.txt"]["source"],
+                "support",
+            )
 
     def test_env_source_built_tool_defaults_match_v1_examples(self) -> None:
         env_values = {
@@ -4101,6 +4124,30 @@ fi
             self.assertEqual(result["artifacts"], result["artifactIds"])
             self.assertIn("top", result["artifactIds"])
             self.assertIn("stderr", result["artifactIds"])
+            run_artifacts = store.list_run_artifacts(tool_run["id"])
+            support_by_path = {
+                item["logical_path"]: item for item in run_artifacts["supportArtifacts"]
+            }
+            self.assertEqual(
+                support_by_path[f"tool_results/{action_id}/top.txt"]["artifact_id"],
+                result["artifactIds"]["top"],
+            )
+            self.assertEqual(
+                support_by_path[f"tool_results/{action_id}/tree.txt"]["artifact_id"],
+                result["artifactIds"]["tree"],
+            )
+            self.assertEqual(
+                support_by_path[f"tool_results/{action_id}/raw.txt"]["artifact_id"],
+                result["artifactIds"]["raw"],
+            )
+            self.assertEqual(
+                support_by_path[f"tool_results/{action_id}/stderr.txt"]["artifact_id"],
+                result["artifactIds"]["stderr"],
+            )
+            self.assertEqual(
+                support_by_path[f"tool_results/{action_id}/graph.svg"]["artifact_id"],
+                result["artifactIds"]["svg"],
+            )
 
     def test_huawei_package_sync_result_matches_v1_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

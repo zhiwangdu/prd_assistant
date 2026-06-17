@@ -593,7 +593,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
             <Metric label={copy.updated} value={selectedRun?.updated_at ? new Date(selectedRun.updated_at).toLocaleString() : selectedWorkspace?.updated_at ? new Date(selectedWorkspace.updated_at).toLocaleString() : "-"} />
             <Metric label={copy.uploads} value={String(uploads.length)} />
             <Metric label={copy.evidence} value={String(analysis?.evidence.length ?? 0)} />
-            <Metric label={copy.artifacts} value={String((analysis?.artifacts.uploads.length ?? 0) + (analysis?.artifacts.evidenceArtifacts.length ?? 0))} />
+            <Metric label={copy.artifacts} value={String((analysis?.artifacts.uploads.length ?? 0) + (analysis?.artifacts.evidenceArtifacts.length ?? 0) + (analysis?.artifacts.supportArtifacts?.length ?? 0))} />
             <Metric label={copy.resources} value={String(countResources(analysis))} />
           </div>
         ) : null}
@@ -635,6 +635,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
             apiKey={apiKey}
             artifacts={analysis.artifacts.evidenceArtifacts}
             uploads={analysis.artifacts.uploads}
+            supportArtifacts={analysis.artifacts.supportArtifacts ?? []}
             onDownload={(artifactId, relativePath) => void handleDownloadArtifact(artifactId, relativePath)}
           />
         ) : null}
@@ -931,8 +932,17 @@ function RuntimeResourcesPanel({ copy, analysis }: { copy: BridgeCopy; analysis:
   );
 }
 
-function ArtifactList({ copy, artifacts, uploads, onDownload }: { copy: BridgeCopy; apiKey: string; artifacts: V2EvidenceArtifact[]; uploads: V2RunAnalysis["artifacts"]["uploads"]; onDownload: (artifactId: string, relativePath: string) => void }) {
-  const items = [
+function ArtifactList({ copy, artifacts, uploads, supportArtifacts, onDownload }: { copy: BridgeCopy; apiKey: string; artifacts: V2EvidenceArtifact[]; uploads: V2RunAnalysis["artifacts"]["uploads"]; supportArtifacts: NonNullable<V2RunAnalysis["artifacts"]["supportArtifacts"]>; onDownload: (artifactId: string, relativePath: string) => void }) {
+  type ArtifactListItem = {
+    id: string;
+    kind: string;
+    summary: string;
+    relativePath: string;
+    logicalPath?: string;
+    sizeBytes: number;
+    contentType: string;
+  };
+  const items: ArtifactListItem[] = [
     ...uploads.map((upload) => ({
       id: upload.artifact_id,
       kind: copy.uploads,
@@ -946,6 +956,15 @@ function ArtifactList({ copy, artifacts, uploads, onDownload }: { copy: BridgeCo
       kind: artifact.evidence_kind,
       summary: artifact.evidence_summary,
       relativePath: artifact.relative_path,
+      sizeBytes: artifact.size_bytes,
+      contentType: artifact.content_type
+    })),
+    ...supportArtifacts.map((artifact) => ({
+      id: artifact.artifact_id,
+      kind: artifact.source_evidence_kind ?? "support",
+      summary: artifact.role ?? artifact.logical_path,
+      relativePath: artifact.relative_path,
+      logicalPath: artifact.logical_path,
       sizeBytes: artifact.size_bytes,
       contentType: artifact.content_type
     }))
@@ -969,7 +988,8 @@ function ArtifactList({ copy, artifacts, uploads, onDownload }: { copy: BridgeCo
                   <Download className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{item.relativePath}</p>
+              <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{item.logicalPath ?? item.relativePath}</p>
+              {item.logicalPath ? <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.relativePath}</p> : null}
               <p className="mt-1 text-xs text-muted-foreground">{item.contentType} · {item.sizeBytes.toLocaleString()} bytes</p>
             </div>
           ))}

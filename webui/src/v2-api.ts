@@ -93,6 +93,21 @@ export type V2EvidenceArtifact = {
   artifact_created_at: string;
 };
 
+export type V2SupportArtifact = {
+  artifact_id: string;
+  logical_path: string;
+  relative_path: string;
+  size_bytes: number;
+  content_type: string;
+  schema_name?: string | null;
+  preview?: Record<string, unknown>;
+  created_at: string;
+  role?: string | null;
+  action_id?: string | null;
+  source_evidence_id?: string | null;
+  source_evidence_kind?: string | null;
+};
+
 export type V2RunArtifacts = {
   run: V2Run;
   uploads: Array<{
@@ -105,6 +120,7 @@ export type V2RunArtifacts = {
     created_at: string;
   }>;
   evidenceArtifacts: V2EvidenceArtifact[];
+  supportArtifacts?: V2SupportArtifact[];
 };
 
 export type V2FinalAnswer = {

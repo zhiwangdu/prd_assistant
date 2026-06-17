@@ -32,6 +32,117 @@ def decode_json(value: str | None, default: Any = None) -> Any:
     return json.loads(value)
 
 
+def artifact_support_specs(value: Any) -> list[JsonObject]:
+    if not isinstance(value, dict):
+        return []
+    action_id = value.get("actionId")
+    if not isinstance(action_id, str) or not action_id:
+        action_id = None
+    specs: list[JsonObject] = []
+    seen: set[str] = set()
+
+    def add(artifact_id: Any, role: str, logical_path: Any) -> None:
+        if not isinstance(artifact_id, str) or not artifact_id:
+            return
+        if artifact_id in seen:
+            return
+        if not isinstance(logical_path, str) or not logical_path:
+            logical_path = default_tool_support_path(action_id, role)
+        seen.add(artifact_id)
+        specs.append(
+            {
+                "artifact_id": artifact_id,
+                "role": role,
+                "logical_path": logical_path,
+                "action_id": action_id,
+            }
+        )
+
+    add(value.get("stdoutArtifactId"), "stdout", value.get("stdoutPath"))
+    add(value.get("stderrArtifactId"), "stderr", value.get("stderrPath"))
+    add(value.get("bodyArtifactId"), "response_body", value.get("bodyArtifactPath"))
+    response = value.get("response")
+    if isinstance(response, dict):
+        add(
+            response.get("bodyArtifactId"),
+            "response_body",
+            response.get("bodyArtifactPath"),
+        )
+    add(value.get("manifestArtifactId"), "manifest", "manifest.json")
+    add(value.get("grepArtifactId"), "grep_results", "grep_results.json")
+
+    artifact_ids = value.get("artifactIds")
+    if isinstance(artifact_ids, dict):
+        add_artifact_id_map(specs, seen, action_id, artifact_ids, value.get("artifactPaths"))
+    artifacts = value.get("artifacts")
+    if isinstance(artifacts, dict):
+        add_artifact_id_map(specs, seen, action_id, artifacts, value.get("artifactPaths"))
+    return specs
+
+
+def add_artifact_id_map(
+    specs: list[JsonObject],
+    seen: set[str],
+    action_id: str | None,
+    artifact_ids: JsonObject,
+    artifact_paths: Any,
+) -> None:
+    paths = artifact_paths if isinstance(artifact_paths, dict) else {}
+    for role, artifact_id in artifact_ids.items():
+        if not isinstance(role, str):
+            continue
+        if not isinstance(artifact_id, str) or not artifact_id or artifact_id in seen:
+            continue
+        path = support_path_for_role(action_id, role, paths)
+        seen.add(artifact_id)
+        specs.append(
+            {
+                "artifact_id": artifact_id,
+                "role": role,
+                "logical_path": path,
+                "action_id": action_id,
+            }
+        )
+
+
+def support_path_for_role(
+    action_id: str | None,
+    role: str,
+    artifact_paths: JsonObject,
+) -> str:
+    role_path_fields = {
+        "stdout": "stdoutPath",
+        "stderr": "stderrPath",
+        "top": "topTextPath",
+        "tree": "treeTextPath",
+        "raw": "rawTextPath",
+        "svg": "svgPath",
+        "body": "bodyArtifactPath",
+        "response_body": "bodyArtifactPath",
+    }
+    path_field = role_path_fields.get(role, f"{role}Path")
+    path = artifact_paths.get(path_field)
+    if isinstance(path, str) and path:
+        return path
+    return default_tool_support_path(action_id, role)
+
+
+def default_tool_support_path(action_id: str | None, role: str) -> str:
+    if not action_id:
+        return role
+    filenames = {
+        "stdout": "stdout.txt",
+        "stderr": "stderr.txt",
+        "top": "top.txt",
+        "tree": "tree.txt",
+        "raw": "raw.txt",
+        "svg": "graph.svg",
+        "body": "response_body.bin",
+        "response_body": "response_body.bin",
+    }
+    return f"tool_results/{action_id}/{filenames.get(role, f'{role}.bin')}"
+
+
 def session_status_from_run_status(status: str) -> str:
     if status == "queued":
         return "ready"
@@ -886,11 +997,76 @@ class Store:
             }
             for upload in uploads
         ]
+        support_artifacts = self._run_support_artifacts(
+            run,
+            evidence_artifacts,
+            {item["artifact_id"] for item in upload_artifacts}
+            | {item["artifact_id"] for item in evidence_artifacts},
+        )
         return {
             "run": run,
             "uploads": upload_artifacts,
             "evidenceArtifacts": evidence_artifacts,
+            "supportArtifacts": support_artifacts,
         }
+
+    def _run_support_artifacts(
+        self,
+        run: JsonObject,
+        evidence_artifacts: list[JsonObject],
+        seen_artifact_ids: set[str],
+    ) -> list[JsonObject]:
+        specs: list[JsonObject] = []
+        for item in evidence_artifacts:
+            for spec in artifact_support_specs(item.get("evidence_payload")):
+                spec["source_evidence_id"] = item["evidence_id"]
+                spec["source_evidence_kind"] = item["evidence_kind"]
+                specs.append(spec)
+        if run.get("kind") == "tool_run":
+            for spec in artifact_support_specs(run.get("finalAnswer")):
+                spec["source_evidence_id"] = None
+                spec["source_evidence_kind"] = "tool_run_result"
+                specs.append(spec)
+
+        support_artifacts: list[JsonObject] = []
+        if not specs:
+            return support_artifacts
+        with self.connect() as conn:
+            for spec in specs:
+                artifact_id = spec.get("artifact_id")
+                if artifact_id in seen_artifact_ids:
+                    continue
+                row = conn.execute(
+                    """
+                    SELECT id, relative_path, sha256, size_bytes, content_type,
+                           schema_name, preview_json, created_at
+                    FROM artifacts
+                    WHERE id = ? AND workspace_id = ?
+                    """,
+                    (artifact_id, run["workspace_id"]),
+                ).fetchone()
+                if row is None:
+                    continue
+                seen_artifact_ids.add(artifact_id)
+                item = dict(row)
+                support_artifacts.append(
+                    {
+                        "artifact_id": item["id"],
+                        "logical_path": spec.get("logical_path") or item["relative_path"],
+                        "relative_path": item["relative_path"],
+                        "sha256": item["sha256"],
+                        "size_bytes": item["size_bytes"],
+                        "content_type": item["content_type"],
+                        "schema_name": item["schema_name"],
+                        "preview": decode_json(item.get("preview_json"), {}),
+                        "created_at": item["created_at"],
+                        "role": spec.get("role"),
+                        "action_id": spec.get("action_id"),
+                        "source_evidence_id": spec.get("source_evidence_id"),
+                        "source_evidence_kind": spec.get("source_evidence_kind"),
+                    }
+                )
+        return support_artifacts
 
     def list_upload_sessions(self, workspace_id: str | None = None) -> list[JsonObject]:
         with self.connect() as conn:
