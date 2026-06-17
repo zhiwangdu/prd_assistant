@@ -1,8 +1,9 @@
-import { Globe2, Play, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Download, Globe2, Play, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import {
   deleteV2FetchEndpoint,
+  downloadV2Artifact,
   importV2FetchCurl,
   listV2FetchEndpoints,
   previewV2FetchCurl,
@@ -155,6 +156,15 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function downloadFetchArtifact(artifactId: string, relativePath: string) {
+    try {
+      await downloadV2Artifact(apiKey, artifactId, filenameFromPath(relativePath));
+      setStatus(`Downloaded artifact ${relativePath}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -233,7 +243,7 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
               </div>
             ) : null}
             {selectedEndpoint ? <EndpointDetails endpoint={selectedEndpoint} sensitive={[]} /> : <EmptyState>Select a V2 endpoint.</EmptyState>}
-            {result ? <FetchResult result={result} /> : null}
+            {result ? <FetchResult result={result} onDownload={(artifactId, relativePath) => void downloadFetchArtifact(artifactId, relativePath)} /> : null}
           </div>
         </div>
       </CardContent>
@@ -257,8 +267,10 @@ function EndpointDetails({ endpoint, sensitive }: { endpoint: V2FetchEndpoint; s
   );
 }
 
-function FetchResult({ result }: { result: V2FetchRunResult }) {
+function FetchResult({ result, onDownload }: { result: V2FetchRunResult; onDownload: (artifactId: string, relativePath: string) => void }) {
   const response = isRecord(result.result.response) ? result.result.response : null;
+  const resultArtifactId = result.artifact.id ?? result.artifact.artifact_id ?? null;
+  const bodyArtifact = fetchBodyArtifact(result);
   return (
     <div className="space-y-3 rounded-lg border border-border p-3">
       <div className="grid gap-2 md:grid-cols-3">
@@ -266,7 +278,22 @@ function FetchResult({ result }: { result: V2FetchRunResult }) {
         <Metric label="HTTP" value={String(response?.statusCode ?? "-")} />
         <Metric label="Duration" value={`${String(result.result.durationMs ?? "-")}ms`} />
       </div>
-      <PathLine label="Artifact" value={result.artifact.relative_path} />
+      <ArtifactLine
+        artifactId={resultArtifactId}
+        label="Result artifact"
+        logicalPath={String(result.result.evidenceRef ?? result.artifact.relative_path)}
+        relativePath={result.artifact.relative_path}
+        onDownload={onDownload}
+      />
+      {bodyArtifact ? (
+        <ArtifactLine
+          artifactId={bodyArtifact.artifactId}
+          label="Response body"
+          logicalPath={bodyArtifact.logicalPath}
+          relativePath={bodyArtifact.relativePath}
+          onDownload={onDownload}
+        />
+      ) : null}
       <PathLine label="Evidence" value={`${result.evidence.id} · ${result.evidence.summary}`} />
       {response ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-50 p-3 text-xs">{String(response.bodyPreview ?? "")}</pre> : null}
       <JsonBlock title="Result JSON" value={result.result} />
@@ -282,12 +309,47 @@ function PathLine({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all font-mono text-xs">{value}</p></div>;
 }
 
+function ArtifactLine({ artifactId, label, logicalPath, relativePath, onDownload }: { artifactId: string | null; label: string; logicalPath: string; relativePath: string; onDownload: (artifactId: string, relativePath: string) => void }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="mt-1 break-all font-mono text-xs">{logicalPath}</p>
+          {logicalPath !== relativePath ? <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{relativePath}</p> : null}
+        </div>
+        <Button className="h-8 w-8 shrink-0 px-0" disabled={!artifactId} variant="outline" title="Download artifact" aria-label="Download artifact" onClick={() => artifactId ? onDownload(artifactId, relativePath) : undefined}>
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function JsonBlock({ title, value }: { title: string; value: unknown }) {
   return <div><p className="mb-2 text-xs text-muted-foreground">{title}</p><pre className="max-h-52 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify(value, null, 2)}</pre></div>;
 }
 
+function fetchBodyArtifact(result: V2FetchRunResult) {
+  const response = isRecord(result.result.response) ? result.result.response : {};
+  const artifactId = stringValue(result.result.bodyArtifactId) ?? stringValue(response.bodyArtifactId);
+  const relativePath = stringValue(result.result.bodyArtifactRelativePath) ?? stringValue(response.bodyArtifactRelativePath);
+  const logicalPath = stringValue(result.result.bodyArtifactPath) ?? stringValue(response.bodyArtifactPath) ?? relativePath;
+  if (!artifactId || !relativePath) return null;
+  return { artifactId, relativePath, logicalPath: logicalPath ?? relativePath };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function filenameFromPath(path: string) {
+  const value = path.split("/").filter(Boolean).pop();
+  return value || "artifact";
 }
 
 function errorMessage(reason: unknown) {

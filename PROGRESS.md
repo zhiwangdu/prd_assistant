@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Fetch Artifact Downloads
+
+- V2 Fetch Workbench result panels now expose both the Fetch `result.json`
+  artifact and the bounded `response_body.bin` artifact when a run-scoped Fetch
+  call completes.
+- Result and response body downloads use the shared authenticated
+  `/api/v2/artifacts/:artifact_id` flow instead of unauthenticated links.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Manual Tool Run Artifacts
 
 - V2 Tools Workbench now polls the selected non-terminal manual `tool_run`
