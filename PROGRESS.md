@@ -1,6 +1,20 @@
 # Development Progress
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
+
+## 2026-06-18 V2 Claude Runtime Contract Artifacts
+
+- V2 analysis runs now automatically write Rust/V1-style Claude runtime
+  contract artifacts: `claude_prompt.md`, `claude_mcp_config.json`, and
+  `claude_session.json`.
+- The generated MCP config points at `/api/v2/mcp/task/:run_id` and uses
+  `Bearer ${LOGAGENT_V2_API_KEY}` as an environment placeholder, so the real
+  API key is not persisted in artifacts.
+- `/api/v2/runs/:run_id/artifacts` now exposes `claudePromptPath` and
+  `claudePrompt` alongside the existing Claude MCP config/session aggregate
+  fields.
+- Added regression coverage that these artifacts are created automatically for
+  a stub run and are included in the artifact aggregate response.
 
 ## 2026-06-17 V2 Analysis Package Runtime Resource Index
 

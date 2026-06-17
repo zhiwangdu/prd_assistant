@@ -421,6 +421,9 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(any(item["kind"] == "log_search" for item in evidence))
             self.assertTrue(any(item["kind"] == "result" for item in evidence))
             self.assertTrue(any(item["kind"] == "result_markdown" for item in evidence))
+            self.assertTrue(any(item["kind"] == "claude_prompt" for item in evidence))
+            self.assertTrue(any(item["kind"] == "claude_mcp_config" for item in evidence))
+            self.assertTrue(any(item["kind"] == "claude_session" for item in evidence))
             package_evidence = next(
                 item for item in evidence if item["kind"] == "analysis_package"
             )
@@ -516,52 +519,6 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["status"], "completed")
             self.assertEqual(response_doc["validation"]["status"], "passed")
             self.assertEqual(response_doc["validatedFinalAnswer"]["confidence"], "low")
-            claude_config_doc = {
-                "schemaVersion": 1,
-                "mcpServers": {"logagent": {"command": "logagent-v2"}},
-            }
-            claude_session_doc = {
-                "schemaVersion": 1,
-                "runtimeStatus": "succeeded",
-                "claudeSessionId": "sess-test",
-                "mcpConfigPath": "claude_mcp_config.json",
-            }
-            claude_config_artifact = write_artifact_bytes(
-                settings,
-                store,
-                workspace["id"],
-                "claude_mcp_config.json",
-                json.dumps(claude_config_doc).encode("utf-8"),
-                "application/json",
-                schema_name="logagent.v2.claude_mcp_config.v1",
-            )
-            store.create_evidence(
-                workspace["id"],
-                run["id"],
-                "claude_mcp_config",
-                False,
-                "Claude MCP config artifact captured.",
-                {"path": "claude_mcp_config.json"},
-                artifact_id=claude_config_artifact["id"],
-            )
-            claude_session_artifact = write_artifact_bytes(
-                settings,
-                store,
-                workspace["id"],
-                "claude_session.json",
-                json.dumps(claude_session_doc).encode("utf-8"),
-                "application/json",
-                schema_name="logagent.v2.claude_session.v1",
-            )
-            store.create_evidence(
-                workspace["id"],
-                run["id"],
-                "claude_session",
-                False,
-                "Claude session artifact captured.",
-                {"path": "claude_session.json"},
-                artifact_id=claude_session_artifact["id"],
-            )
             claude_resource = task_mcp_response(
                 settings,
                 store,
@@ -573,12 +530,9 @@ class StoreTests(unittest.TestCase):
                     "params": {"uri": f"logagent-v2://run/{run['id']}/claude_session"},
                 },
             )
-            self.assertEqual(
-                json.loads(claude_resource["result"]["contents"][0]["text"])[
-                    "claudeSessionId"
-                ],
-                "sess-test",
-            )
+            claude_session = json.loads(claude_resource["result"]["contents"][0]["text"])
+            self.assertEqual(claude_session["runtimeStatus"], "contract_ready")
+            self.assertEqual(claude_session["mcpConfigPath"], "claude_mcp_config.json")
             artifacts = get_run_artifacts(settings, store, run["id"])
             self.assertEqual(artifacts["taskId"], run["id"])
             self.assertEqual(artifacts["manifestPath"], "manifest.json")
@@ -594,13 +548,21 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(artifacts["systemContextPath"], "system_context.json")
             self.assertEqual(artifacts["analysisPackagePath"], "analysis_package.json")
             self.assertEqual(artifacts["agentResponsePath"], "agent_response.json")
+            self.assertEqual(artifacts["claudePromptPath"], "claude_prompt.md")
+            self.assertIn("resources/list", artifacts["claudePrompt"]["text"])
             self.assertEqual(artifacts["claudeMcpConfigPath"], "claude_mcp_config.json")
             self.assertEqual(
-                artifacts["claudeMcpConfig"]["mcpServers"]["logagent"]["command"],
-                "logagent-v2",
+                artifacts["claudeMcpConfig"]["mcpServers"]["logagent"]["type"],
+                "http",
+            )
+            self.assertEqual(
+                artifacts["claudeMcpConfig"]["mcpServers"]["logagent"]["headers"][
+                    "Authorization"
+                ],
+                "Bearer ${LOGAGENT_V2_API_KEY}",
             )
             self.assertEqual(artifacts["claudeSessionPath"], "claude_session.json")
-            self.assertEqual(artifacts["claudeSession"]["claudeSessionId"], "sess-test")
+            self.assertEqual(artifacts["claudeSession"]["runtimeStatus"], "contract_ready")
             self.assertEqual(artifacts["analysisStatePath"], "analysis_state.json")
             self.assertEqual(artifacts["mcpCallsPath"], "mcp_calls.jsonl")
             self.assertIn(

@@ -11,6 +11,7 @@ from .agent_audit import (
 from .alias import fallback_run_alias
 from .analysis_package import persist_analysis_package
 from .config import Settings
+from .claude_contracts import persist_claude_contracts
 from .evidence import SESSION_TEXT_INPUT_REF, build_initial_evidence, persist_session_text_input
 from .final_answer import normalize_and_validate_final_answer
 from .llm import (
@@ -65,6 +66,13 @@ class AgentRuntime:
             workspace_id,
             run_id,
             evidence_bundle,
+        )
+        persist_claude_contracts(
+            self.settings,
+            self.store,
+            workspace_id,
+            run_id,
+            analysis_package["artifact"]["id"],
         )
         self.store.update_run_status(run_id, "running", "agent_round")
         interaction_context = self._interaction_context(run_id)

@@ -569,9 +569,12 @@ artifact records the latest round status. Successful task MCP `resources/read`
 and `tools/call` requests append JSONL records with call id, arguments, status,
 result summary, and evidence/background refs. Task MCP exposes them as
 `agent_request`, `agent_response`, `analysis_state`, and `mcp_calls` resources.
-It also advertises optional Rust/V1 Claude runtime compatibility resources
-`claude_mcp_config` and `claude_session`; current Python V2 Agent runs do not
-create those artifacts, but imported or future evidence rows are readable.
+Each run also writes Rust/V1 Claude runtime contract artifacts:
+`claude_prompt.md`, `claude_mcp_config.json`, and `claude_session.json`. The
+MCP config points at the V2 task HTTP MCP endpoint and uses
+`${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the real API key
+is not written to artifacts. The Python V2 provider loop may still execute
+in-process instead of launching Claude Code CLI.
 Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
 lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
@@ -583,7 +586,7 @@ response for WebUI and Rust/V1 migration callers: `manifestPath`/`manifest`,
 `metadataContextPath`/`metadataContext`, `systemContextPath`/`systemContext`,
 `caseContextPath`/`caseContext`, `analysisPackagePath`/`analysisPackage`,
 `agentResponsePath`/`agentResponse`, `analysisStatePath`/`analysisState`,
-`claudeMcpConfigPath`/`claudeMcpConfig`,
+`claudePromptPath`/`claudePrompt`, `claudeMcpConfigPath`/`claudeMcpConfig`,
 `claudeSessionPath`/`claudeSession`, `mcpCallsPath`/`mcpCalls`, and
 `toolResults`.
 

@@ -9,7 +9,7 @@ from .mcp import (
     read_task_tool_results,
 )
 from .mcp_audit import read_mcp_calls
-from .results import get_run_result
+from .results import get_run_result, latest_evidence, read_text_artifact
 from .store import JsonObject, Store
 
 
@@ -44,6 +44,7 @@ RUN_ARTIFACT_KINDS = {
         "analysis_package.json",
     ),
     "agent_response": ("agentResponsePath", "agentResponse", "agent_response.json"),
+    "claude_prompt": ("claudePromptPath", "claudePrompt", "claude_prompt.md"),
     "claude_mcp_config": (
         "claudeMcpConfigPath",
         "claudeMcpConfig",
@@ -132,6 +133,12 @@ def optional_latest_artifact(
             return read_task_tool_results(settings, store, run)
         if kind == "mcp_calls":
             return read_mcp_calls(settings, store, run_id)
+        if kind == "claude_prompt":
+            evidence = latest_evidence(store, run_id, "claude_prompt")
+            return {
+                "path": "claude_prompt.md",
+                "text": read_text_artifact(settings, store, evidence["artifact_id"]),
+            }
         return read_latest_evidence_artifact(settings, store, run_id, kind)
     except ValueError:
         return None

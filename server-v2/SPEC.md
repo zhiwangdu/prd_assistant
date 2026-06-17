@@ -1303,9 +1303,12 @@ the request and response artifact ids. `mcp_calls` captures successful task MCP
 the provider loop, as JSONL with call id, arguments, status, result, and
 evidence/background refs. These evidence rows are background-only
 (`final_allowed=false`) and exposed through task MCP resources.
-Task MCP also advertises optional Rust/V1 Claude runtime compatibility
-resources `claude_mcp_config` and `claude_session`; current Python V2 Agent
-runs do not create them, but matching evidence artifacts are readable.
+Each run also writes Rust/V1 Claude runtime contract artifacts:
+`claude_prompt.md`, `claude_mcp_config.json`, and `claude_session.json`.
+`claude_mcp_config.json` points at the V2 task HTTP MCP endpoint and uses
+`${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the resolved API
+key is not written to artifacts. The Python V2 provider loop may still execute
+in-process instead of launching Claude Code CLI.
 Task MCP also exposes aggregate compatibility resources: `artifact_index`
 enumerates current run upload and evidence artifacts with stable logical paths,
 `tool_results` returns parsed `tool_result` and `fetch_result` artifacts under
