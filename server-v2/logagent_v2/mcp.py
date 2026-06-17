@@ -130,6 +130,8 @@ def readonly_mcp_response(
                 "capabilities": {"resources": {}, "tools": {}},
                 "serverInfo": {"name": "logagent-v2-readonly", "version": "0.1.0"},
             }
+        elif method == "ping":
+            result = {}
         elif method == "resources/list":
             result = {"resources": readonly_resource_descriptors(settings, store)}
         elif method == "tools/list":
@@ -247,6 +249,8 @@ def readonly_mcp_response(
                     }
                 ]
             }
+        elif method == "prompts/list":
+            result = {"prompts": []}
         else:
             raise ValueError(f"unsupported MCP method {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}

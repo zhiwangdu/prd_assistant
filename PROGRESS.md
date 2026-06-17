@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly MCP Protocol Methods
+
+- Added V1-compatible readonly MCP `ping` and `prompts/list` methods.
+  `ping` returns an empty object and `prompts/list` returns an empty prompt
+  list, matching the Rust readonly MCP behavior.
+- Updated V2 Server and Interfaces docs/specs.
+- Verification passed: focused readonly MCP protocol regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 MCP JSON-RPC Batch Support
 
 - Added JSON-RPC batch array support to V2 readonly and task MCP handlers,
