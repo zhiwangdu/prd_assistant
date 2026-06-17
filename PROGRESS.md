@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Import Draft Patch Compatibility
+
+- Added `PATCH /api/v2/cases/imports/:import_id` to match the Rust/V1 Case
+  import draft correction flow before confirmation.
+- Added V2 Case Memory helper logic that updates unconfirmed drafts, normalizes
+  editable fields, recomputes `validationErrors`, persists the draft in SQLite,
+  and rejects edits after an import has been confirmed.
+- Updated V2 Server and Case Store docs/specs.
+- Verification passed: focused Case import draft patch regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (75 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Command Template Descriptor Compatibility
 
 - Aligned V2 Remote Executor command template descriptors with Rust/V1:

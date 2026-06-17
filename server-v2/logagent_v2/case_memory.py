@@ -128,6 +128,26 @@ def confirm_case_import(
     return {"import": case_import_preview(confirmed), "case": case}
 
 
+def update_case_import_draft(
+    store: Store,
+    import_id: str,
+    overrides: JsonObject,
+) -> JsonObject:
+    case_import = store.get_case_import(import_id)
+    if case_import["status"] == "confirmed":
+        raise ValueError("case import draft is already confirmed")
+    draft = dict(case_import.get("draft", {}))
+    draft.update(normalize_case_import_overrides(overrides or {}))
+    validation_errors = validate_case_draft(draft)
+    updated = store.update_case_import(
+        import_id,
+        status="previewed",
+        draft=draft,
+        validation_errors=validation_errors,
+    )
+    return {"import": case_import_preview(updated)}
+
+
 def append_case_import_message(store: Store, import_id: str, message: str) -> JsonObject:
     case_import = store.get_case_import(import_id)
     if case_import["status"] == "confirmed":

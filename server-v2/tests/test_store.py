@@ -30,6 +30,7 @@ from logagent_v2.case_memory import (
     create_task_case,
     preview_case_import,
     update_case as update_case_record,
+    update_case_import_draft,
 )
 from logagent_v2.config import RemoteCommandTemplate, Settings, ToolDefinition
 from logagent_v2.environment import persist_approved_environment_evidence
@@ -4817,16 +4818,44 @@ grep_results.json#matches/0
             with self.assertRaises(ValueError):
                 confirm_case_import(store, preview["import"]["importId"])
 
-            updated = append_case_import_message(
+            patched = update_case_import_draft(
                 store,
                 preview["import"]["importId"],
+                {
+                    "rootCause": "Missing index caused slow query.",
+                    "solution": "Create the missing index.",
+                },
+            )
+            self.assertEqual(patched["import"]["validationErrors"], [])
+            confirmed_from_patch = confirm_case_import(
+                store,
+                preview["import"]["importId"],
+            )
+            self.assertEqual(
+                confirmed_from_patch["case"]["rootCause"],
+                "Missing index caused slow query.",
+            )
+            with self.assertRaises(ValueError):
+                update_case_import_draft(
+                    store,
+                    preview["import"]["importId"],
+                    {"solution": "Change after confirm"},
+                )
+
+            message_preview = preview_case_import(store, "Only another symptom line")
+            updated = append_case_import_message(
+                store,
+                message_preview["import"]["importId"],
                 "Root Cause: Missing index caused slow query.\n"
                 "Solution: Create the missing index.",
             )
             self.assertEqual(updated["import"]["messages"][0]["role"], "user")
             self.assertEqual(updated["import"]["validationErrors"], [])
 
-            confirmed_from_message = confirm_case_import(store, preview["import"]["importId"])
+            confirmed_from_message = confirm_case_import(
+                store,
+                message_preview["import"]["importId"],
+            )
             self.assertEqual(
                 confirmed_from_message["case"]["rootCause"],
                 "Missing index caused slow query.",
@@ -4844,6 +4873,56 @@ grep_results.json#matches/0
             )
             self.assertEqual(completed["case"]["title"], "Manual title")
             self.assertEqual(completed["import"]["validationErrors"], [])
+
+    def test_case_import_patch_route_updates_draft(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                preview_response = client.post(
+                    "/api/v2/cases/imports/preview",
+                    headers=headers,
+                    json={"content": "Title: Imported case\nSymptom: Query timeout"},
+                )
+                self.assertEqual(preview_response.status_code, 200)
+                import_id = preview_response.json()["import"]["importId"]
+
+                patch_response = client.patch(
+                    f"/api/v2/cases/imports/{import_id}",
+                    headers=headers,
+                    json={
+                        "rootCause": "Compaction backlog blocked reads.",
+                        "solution": "Increase compaction workers.",
+                        "evidenceRefs": ["grep_results.json#matches/0"],
+                    },
+                )
+                self.assertEqual(patch_response.status_code, 200)
+                patched_import = patch_response.json()["import"]
+                self.assertEqual(patched_import["validationErrors"], [])
+                self.assertEqual(
+                    patched_import["draft"]["evidenceRefs"],
+                    ["grep_results.json#matches/0"],
+                )
+
+                confirm_response = client.post(
+                    f"/api/v2/cases/imports/{import_id}/confirm",
+                    headers=headers,
+                    json={},
+                )
+                self.assertEqual(confirm_response.status_code, 200)
+                self.assertEqual(confirm_response.json()["case"]["sourceType"], "manual")
+
+                rejected_patch = client.patch(
+                    f"/api/v2/cases/imports/{import_id}",
+                    headers=headers,
+                    json={"solution": "Late edit"},
+                )
+                self.assertEqual(rejected_patch.status_code, 400)
 
     def test_case_search_uses_fts_and_updates_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -22,6 +22,7 @@ from .case_memory import (
     create_task_case,
     preview_case_import,
     update_case,
+    update_case_import_draft,
 )
 from .config import Settings
 from .environment import (
@@ -1491,6 +1492,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict:
         try:
             return append_case_import_message(store, import_id, payload.message)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.patch("/api/v2/cases/imports/{import_id}")
+    async def patch_case_import(
+        _: Auth,
+        import_id: str,
+        payload: CaseUpdate,
+    ) -> dict:
+        try:
+            return update_case_import_draft(
+                store,
+                import_id,
+                payload.model_dump(exclude_unset=True),
+            )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

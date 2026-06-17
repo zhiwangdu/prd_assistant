@@ -333,6 +333,7 @@ GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/preview
 POST /api/v2/cases/imports/:import_id/messages
+PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
@@ -906,6 +907,7 @@ POST /api/v2/cases/imports/preview
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/messages
+PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 ```
 
@@ -913,10 +915,11 @@ Preview parses JSON Case fields or plain text sections such as `Title`,
 `Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and
 `Evidence Refs`. Missing required fields are returned as `validationErrors`.
 Follow-up messages are appended to the draft, persisted in SQLite, and combined
-with the original source text for another parse pass. Confirm may provide
-overrides to complete or edit the draft; only confirm writes to `cases` and
-updates the FTS index, and it remains blocked until required fields are
-complete.
+with the original source text for another parse pass. Patch updates an
+unconfirmed draft with manual field corrections and recomputes
+`validationErrors` without writing to `cases`. Confirm may provide overrides to
+complete or edit the draft; only confirm writes to `cases` and updates the FTS
+index, and it remains blocked until required fields are complete.
 
 Case MCP tools:
 

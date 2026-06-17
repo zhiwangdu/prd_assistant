@@ -292,6 +292,7 @@ GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/preview
 POST /api/v2/cases/imports/:import_id/messages
+PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
@@ -876,10 +877,13 @@ stores the source text, parsed draft, validation errors, and follow-up message
 history without mutating `cases`. `POST
 /api/v2/cases/imports/:import_id/messages` appends a user supplement, combines
 all messages with the original source text, reparses the draft, and adds an
-assistant question when required fields are still missing. `POST
-/api/v2/cases/imports/:import_id/confirm` may provide field overrides; only a
-complete confirmed draft creates a `manual` Case and updates the FTS index.
-Re-confirming an already confirmed import returns the existing Case.
+assistant question when required fields are still missing. `PATCH
+/api/v2/cases/imports/:import_id` applies manual draft corrections and
+recomputes validation errors without mutating `cases`; confirmed imports reject
+further patch attempts. `POST /api/v2/cases/imports/:import_id/confirm` may
+provide field overrides; only a complete confirmed draft creates a `manual`
+Case and updates the FTS index. Re-confirming an already confirmed import
+returns the existing Case.
 
 Search is dependency-light and local: V2 maintains a SQLite FTS5 table beside
 `cases` and ranks query matches with `bm25`. The indexed text covers `title`,
