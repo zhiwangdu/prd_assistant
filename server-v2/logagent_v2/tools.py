@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
 import email.utils
 import hmac
 import json
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from fnmatch import fnmatchcase
 from hashlib import sha256
@@ -1587,6 +1589,7 @@ def run_huawei_package_sync_tool(
     run: JsonObject,
     params: JsonObject,
 ) -> JsonObject:
+    params = validate_tool_run_params(settings, HUAWEI_PACKAGE_SYNC_TOOL_ID, params)
     config = settings.huawei_package_sync
     if not config.enabled:
         raise ValueError("Huawei package sync is disabled")
@@ -1599,6 +1602,7 @@ def run_huawei_package_sync_tool(
     validate_obs_object_key(object_key)
     action_id = f"act_tool_huawei_package_sync_{run['id']}"
     started = time.monotonic()
+    warnings: list[str] = []
     failed_step = None
     error = None
     obs_put = None
@@ -1622,31 +1626,80 @@ def run_huawei_package_sync_tool(
             failed_step = "gaussdb_query"
         error = message[:2000]
     status = "FAILED" if error else "OK"
+    if bool((query_result or {}).get("truncated")):
+        warnings.append("GaussDB query rows truncated to first 200 row(s)")
+    duration_ms = int((time.monotonic() - started) * 1000)
+    logical_result_path = f"tool_results/{action_id}/result.json"
+    gaussdb_meta = huawei_gaussdb_metadata(config.gaussdb_dsn)
     result = {
         "schemaVersion": 1,
         "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID,
+        "tool": HUAWEI_PACKAGE_SYNC_TOOL_ID,
         "actionId": action_id,
         "status": status,
         "summary": (
-            "Huawei package sync completed."
+            f"Uploaded {upload['filename']} to OBS and queried GaussDB records"
             if status == "OK"
-            else f"Huawei package sync failed at {failed_step}: {error}"
+            else f"Huawei package sync failed at {failed_step}"
         ),
+        "warnings": warnings,
         "objectKey": object_key,
         "objectUrl": huawei_object_url(settings, object_key),
+        "input": {
+            "uploadId": upload["id"],
+            "filename": upload["filename"],
+            "size": upload.get("artifact_size_bytes"),
+            "rawPath": upload.get("artifact_relative_path"),
+        },
         "upload": {"uploadId": upload["id"], "filename": upload["filename"]},
+        "obs": {
+            "endpoint": config.obs_endpoint,
+            "bucket": config.obs_bucket,
+            "objectKey": object_key,
+            "url": huawei_object_url(settings, object_key),
+            "put": obs_put,
+            "head": obs_head,
+        },
         "obsPut": obs_put,
         "obsHead": obs_head,
+        "gaussdb": {
+            **gaussdb_meta,
+            "updateAffectedRows": (update_result or {}).get("affectedRows"),
+            "queryRowCount": (query_result or {}).get("rowCount"),
+            "queryRows": (query_result or {}).get("rows"),
+            "queryRowsTruncated": bool((query_result or {}).get("truncated")),
+        },
         "gaussdbUpdate": update_result,
         "gaussdbQuery": query_result,
+        "sql": {
+            "updateSqlProvided": True,
+            "updateSqlLength": len(params["updateSql"]),
+            "querySqlProvided": True,
+            "querySqlLength": len(params["querySql"]),
+        },
+        "timings": {
+            "obsPutMs": (obs_put or {}).get("durationMs"),
+            "gaussdbUpdateMs": (update_result or {}).get("durationMs"),
+            "obsHeadMs": (obs_head or {}).get("durationMs"),
+            "gaussdbQueryMs": (query_result or {}).get("durationMs"),
+            "totalMs": duration_ms,
+        },
         "failedStep": failed_step,
         "error": error,
-        "durationMs": int((time.monotonic() - started) * 1000),
+        "durationMs": duration_ms,
+        "credentialMetadata": {
+            "obsAccessKeyEnv": "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY",
+            "obsSecretKeyEnv": "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY",
+            "obsSecurityTokenEnv": "LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN",
+            "gaussdbDsnEnv": "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
+        },
         "credentialEnv": {
             "obsAccessKey": "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY",
             "obsSecretKey": "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY",
             "gaussdbDsn": "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
         },
+        "evidenceRefs": [logical_result_path],
+        "createdAt": datetime.now(UTC).isoformat(),
     }
     artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
     evidence = store.create_evidence(
@@ -1659,6 +1712,30 @@ def run_huawei_package_sync_tool(
         payload={"artifactId": artifact["id"], "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID, "actionId": action_id},
     )
     return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def huawei_gaussdb_metadata(dsn: str | None) -> JsonObject:
+    if not dsn:
+        return {
+            "host": None,
+            "port": None,
+            "database": None,
+            "user": None,
+            "sslmode": None,
+        }
+    parsed = urllib.parse.urlparse(dsn)
+    query = urllib.parse.parse_qs(parsed.query)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    return {
+        "host": parsed.hostname,
+        "port": port,
+        "database": parsed.path.lstrip("/") or None,
+        "user": urllib.parse.unquote(parsed.username) if parsed.username else None,
+        "sslmode": (query.get("sslmode") or [None])[0],
+    }
 
 
 def write_tool_result_artifact(

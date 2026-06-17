@@ -34,6 +34,7 @@ from logagent_v2.case_memory import (
     update_case_import_draft,
 )
 from logagent_v2.config import (
+    HuaweiPackageSyncSettings,
     RemoteCommandTemplate,
     Settings,
     ToolDefinition,
@@ -91,6 +92,7 @@ from logagent_v2.system_context import (
     list_system_context_resource_summaries,
     preview_system_context_resources,
 )
+import logagent_v2.tools as tools_module
 from logagent_v2.tools import (
     execute_tool_run,
     findings_from_stdout,
@@ -3409,6 +3411,150 @@ fi
             self.assertEqual(result["artifacts"], result["artifactIds"])
             self.assertIn("top", result["artifactIds"])
             self.assertIn("stderr", result["artifactIds"])
+
+    def test_huawei_package_sync_result_matches_v1_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            settings = Settings(
+                data_dir=tmp_path / "data",
+                api_key="test",
+                huawei_package_sync=HuaweiPackageSyncSettings(
+                    enabled=True,
+                    obs_endpoint="https://obs.example.com",
+                    obs_bucket="bucket-a",
+                    obs_object_prefix="packages/demo",
+                    obs_access_key="access",
+                    obs_secret_key="secret",
+                    gaussdb_dsn=(
+                        "postgresql://dbuser:secret@gauss.example.com:5432/pkgdb"
+                        "?sslmode=require"
+                    ),
+                    timeout_seconds=5,
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("huawei package sync", "tool_run", "en-US")
+            package_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "package.tar.gz",
+                b"package-bytes",
+                "application/gzip",
+            )
+            upload = store.create_upload(
+                workspace["id"],
+                "package.tar.gz",
+                package_artifact["id"],
+            )
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="logagent.huawei_cloud_package_sync",
+                params={
+                    "objectKey": "",
+                    "updateSql": " update packages set active = true ",
+                    "querySql": " select id from packages ",
+                },
+                upload_ids=[upload["id"]],
+            )
+
+            calls = []
+
+            def fake_obs_request(settings_arg, method, object_key, body):
+                calls.append(("obs", method, object_key, len(body)))
+                if method == "PUT":
+                    return {
+                        "statusCode": 200,
+                        "etag": '"put-etag"',
+                        "contentLength": len(body),
+                        "durationMs": 7,
+                    }
+                return {
+                    "statusCode": 200,
+                    "etag": '"head-etag"',
+                    "contentLength": 12,
+                    "durationMs": 3,
+                }
+
+            def fake_execute_gaussdb_sql(dsn, sql, fetch):
+                calls.append(("sql", sql, fetch))
+                if fetch:
+                    return {
+                        "rowCount": 1,
+                        "truncated": True,
+                        "rows": [{"id": "pkg-1"}],
+                        "durationMs": 11,
+                    }
+                return {"affectedRows": 2, "durationMs": 5}
+
+            original_obs_request = tools_module.huawei_obs_request
+            original_execute_sql = tools_module.execute_gaussdb_sql
+            try:
+                tools_module.huawei_obs_request = fake_obs_request
+                tools_module.execute_gaussdb_sql = fake_execute_gaussdb_sql
+                executed = execute_tool_run(settings, store, tool_run["id"])
+            finally:
+                tools_module.huawei_obs_request = original_obs_request
+                tools_module.execute_gaussdb_sql = original_execute_sql
+
+            result = executed["result"]
+            action_id = result["actionId"]
+
+            self.assertEqual(
+                calls,
+                [
+                    ("obs", "PUT", "packages/demo/package.tar.gz", len(b"package-bytes")),
+                    ("sql", "update packages set active = true", False),
+                    ("obs", "HEAD", "packages/demo/package.tar.gz", 0),
+                    ("sql", "select id from packages", True),
+                ],
+            )
+            self.assertEqual(result["tool"], "logagent.huawei_cloud_package_sync")
+            self.assertEqual(result["status"], "OK")
+            self.assertEqual(
+                result["summary"],
+                "Uploaded package.tar.gz to OBS and queried GaussDB records",
+            )
+            self.assertEqual(result["objectKey"], "packages/demo/package.tar.gz")
+            self.assertEqual(result["objectUrl"], "https://obs.example.com/bucket-a/packages/demo/package.tar.gz")
+            self.assertEqual(result["input"]["uploadId"], upload["id"])
+            self.assertEqual(result["input"]["filename"], "package.tar.gz")
+            self.assertEqual(result["input"]["size"], len(b"package-bytes"))
+            self.assertTrue(result["input"]["rawPath"].endswith("/package.tar.gz"))
+            self.assertEqual(result["obs"]["endpoint"], "https://obs.example.com")
+            self.assertEqual(result["obs"]["bucket"], "bucket-a")
+            self.assertEqual(result["obs"]["put"]["etag"], '"put-etag"')
+            self.assertEqual(result["obs"]["head"]["etag"], '"head-etag"')
+            self.assertEqual(result["gaussdb"]["host"], "gauss.example.com")
+            self.assertEqual(result["gaussdb"]["port"], 5432)
+            self.assertEqual(result["gaussdb"]["database"], "pkgdb")
+            self.assertEqual(result["gaussdb"]["user"], "dbuser")
+            self.assertEqual(result["gaussdb"]["sslmode"], "require")
+            self.assertEqual(result["gaussdb"]["updateAffectedRows"], 2)
+            self.assertEqual(result["gaussdb"]["queryRowCount"], 1)
+            self.assertEqual(result["gaussdb"]["queryRows"], [{"id": "pkg-1"}])
+            self.assertTrue(result["gaussdb"]["queryRowsTruncated"])
+            self.assertEqual(result["sql"]["updateSqlLength"], len("update packages set active = true"))
+            self.assertEqual(result["sql"]["querySqlLength"], len("select id from packages"))
+            self.assertEqual(result["timings"]["obsPutMs"], 7)
+            self.assertEqual(result["timings"]["gaussdbUpdateMs"], 5)
+            self.assertEqual(result["timings"]["obsHeadMs"], 3)
+            self.assertEqual(result["timings"]["gaussdbQueryMs"], 11)
+            self.assertIn("GaussDB query rows truncated", result["warnings"][0])
+            self.assertEqual(
+                result["evidenceRefs"],
+                [f"tool_results/{action_id}/result.json"],
+            )
+            self.assertNotIn("secret", json.dumps(result))
+            evidence = store.list_evidence(tool_run["id"])
+            huawei_evidence = next(
+                item
+                for item in evidence
+                if item["payload"].get("toolId") == "logagent.huawei_cloud_package_sync"
+            )
+            self.assertFalse(huawei_evidence["final_allowed"])
 
     def test_readonly_mcp_tools_catalog_matches_v1_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

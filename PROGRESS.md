@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Huawei Package Sync Result Parity
+
+- V2 `logagent.huawei_cloud_package_sync` worker execution now revalidates and
+  normalizes tool params before running, matching the HTTP route behavior during
+  recovered or internally-created tool jobs.
+- Huawei package sync result JSON now includes Rust/V1-style `tool`, `input`,
+  `obs`, `gaussdb`, `sql`, `timings`, `warnings`, `credentialMetadata`,
+  logical `evidenceRefs`, and `createdAt` fields while retaining the existing
+  V2 `obsPut`, `obsHead`, `gaussdbUpdate`, and `gaussdbQuery` fields.
+- GaussDB DSN metadata is summarized without writing the password to the
+  result artifact; truncated query output records a warning.
+- Added a regression that monkeypatches OBS/GaussDB calls, verifies call order,
+  default object-key generation, V1 result fields, secret redaction, and
+  background-only evidence.
+- Verification passed: focused Huawei result regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (112 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Approval Decision Idempotency
 
 - `POST /api/v2/actions/:action_id/decisions` now rejects non-
