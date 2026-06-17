@@ -2,6 +2,33 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Code CLI Provider
+
+- Added `LOGAGENT_V2_AGENT_PROVIDER=claude_code` to the Python V2 Agent runtime.
+- V2 now materializes per-run `claude_prompt.md` and
+  `claude_mcp_config.json` under `data_dir/tmp/claude_sessions/<run_id>/`,
+  launches the configured Claude Code CLI with
+  `--print --output-format json --json-schema --mcp-config
+  claude_mcp_config.json --strict-mcp-config`, and injects
+  `LOGAGENT_V2_API_KEY` only through the child process environment.
+- Claude Code stdout parsing now accepts native Claude envelopes using
+  `structured_output`, `structuredOutput`, or `result`. Completed outcomes
+  require `finalAnswer`; `waiting_for_user` and `waiting_for_approval` are
+  bridged into the existing `logagent.request_user_input` and
+  `logagent.request_approval` task MCP tools.
+- Added Claude Code provider configuration for
+  `LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH`, max output
+  bytes, permission mode, native tools, allowed tools, and disallowed tools.
+  Settings diagnostics validate the CLI path without launching a task session
+  and never return local executable paths or API keys.
+- `claude_code` run aliases use the local summary/question fallback instead of
+  starting a second Claude Code session.
+- Updated V2 Server, Config, and Agent Backends README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused provider/settings regressions, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Automatic Tool Runner Phase
 
 - V2 analysis now runs matching input-based configured subprocess tools after

@@ -46,7 +46,7 @@ def generate_run_alias(
 ) -> str:
     fallback = fallback_run_alias(final_answer, str(workspace.get("question") or ""))
     provider = (settings.agent_provider or "stub").lower()
-    if provider == "stub":
+    if provider in {"stub", "claude_code"}:
         return fallback
     prompt = build_run_alias_prompt(workspace, final_answer, evidence_bundle or {})
     try:

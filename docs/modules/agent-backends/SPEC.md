@@ -19,6 +19,8 @@
 - `claude_session.json` 持久化 session id、mode、permission profile、prompt delivery 和 response artifact。
 - `mcp_calls.jsonl` 记录 MCP resource/tool 调用。
 - 等待用户和等待审批仍复用 `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 状态。
+- Python V2 已提供 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` provider。它保留 V2 LangGraph orchestration，但每轮 provider call 会写入短 prompt 和 HTTP task MCP config，调用 Claude Code CLI，并解析 Claude envelope 中的 `structured_output` / `structuredOutput` / `result`。
+- Python V2 `claude_code` provider 接受 `completed` / `succeeded` / `final_answer` + `finalAnswer`，`waiting_for_user` + `pendingPrompt`，以及 `waiting_for_approval` + `pendingApproval`；等待 outcome 会转成 V2 现有的 `logagent.request_user_input` / `logagent.request_approval` task MCP tool call。
 
 ## 配置
 
@@ -97,6 +99,7 @@ MCP tools：
 ## 验收标准
 
 - 未配置 Claude Code command path 时启动失败。
+- Python V2 选择 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` 时，`LOGAGENT_V2_CLAUDE_CODE_PATH` 或兼容的 `LOGAGENT_CLAUDE_CODE_PATH` 必须解析为绝对路径；运行时诊断还必须拒绝非 regular 或不可执行路径。
 - `PLAN_ANALYSIS` artifact API 能返回 `analysisPackage`、`claudeMcpConfig`、`claudeSession`、`agentResponse` 和 `mcpCalls`。
 - 大 `analysis_package.json` 不能进入 Claude CLI argv 或启动 stdin；CLI stdin 只包含短 prompt 和 MCP resource 读取指令。
 - 大 Metadata payload 不能进入 `analysis_package.json` 或任务 MCP 默认 `metadata_context` resource；`query_metadata` 的 limit/cursor 生效，slice 只能作为背景上下文。

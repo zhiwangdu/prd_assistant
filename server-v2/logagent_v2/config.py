@@ -147,6 +147,12 @@ class Settings:
     agent_api_key: str | None = None
     agent_binary_path: Path | None = None
     agent_binary_max_output_bytes: int = 1024 * 1024
+    claude_code_path: Path | None = None
+    claude_code_max_output_bytes: int = 1024 * 1024
+    claude_code_permission_mode: str = "dontAsk"
+    claude_code_tools: str = ""
+    claude_code_allowed_tools: tuple[str, ...] = ("mcp__logagent__*",)
+    claude_code_disallowed_tools: tuple[str, ...] = ()
     agent_timeout_seconds: int = 60
     agent_max_rounds: int = 3
     agent_max_output_tokens: int = 2048
@@ -250,18 +256,46 @@ class Settings:
             raw_agent_binary_path,
             enabled=agent_provider == "binary",
         )
+        raw_claude_code_path = env_first(
+            "LOGAGENT_V2_CLAUDE_CODE_PATH",
+            "LOGAGENT_CLAUDE_CODE_PATH",
+        )
+        claude_code_path = parse_claude_code_path_env(
+            raw_claude_code_path,
+            enabled=agent_provider == "claude_code",
+        )
         validate_agent_provider_settings(
             agent_provider,
             agent_base_url=agent_base_url,
             agent_model=agent_model,
             agent_api_key=agent_api_key,
             agent_binary_path=agent_binary_path,
+            claude_code_path=claude_code_path,
         )
         agent_binary_max_output_bytes = int(
             os.environ.get(
                 "LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES",
                 str(1024 * 1024),
             )
+        )
+        claude_code_max_output_bytes = int(
+            os.environ.get(
+                "LOGAGENT_V2_CLAUDE_CODE_MAX_OUTPUT_BYTES",
+                str(1024 * 1024),
+            )
+        )
+        claude_code_permission_mode = (
+            non_empty_string(os.environ.get("LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE"))
+            or "dontAsk"
+        )
+        claude_code_tools = os.environ.get("LOGAGENT_V2_CLAUDE_CODE_TOOLS", "").strip()
+        claude_code_allowed_tools = parse_csv_env(
+            os.environ.get("LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS"),
+            default=("mcp__logagent__*",),
+        )
+        claude_code_disallowed_tools = parse_csv_env(
+            os.environ.get("LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS"),
+            default=(),
         )
         agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
         agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "3"))
@@ -323,6 +357,12 @@ class Settings:
             agent_api_key=agent_api_key,
             agent_binary_path=agent_binary_path,
             agent_binary_max_output_bytes=max(1024, agent_binary_max_output_bytes),
+            claude_code_path=claude_code_path,
+            claude_code_max_output_bytes=max(1024, claude_code_max_output_bytes),
+            claude_code_permission_mode=claude_code_permission_mode,
+            claude_code_tools=claude_code_tools,
+            claude_code_allowed_tools=claude_code_allowed_tools,
+            claude_code_disallowed_tools=claude_code_disallowed_tools,
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
             agent_max_output_tokens=max(1, agent_max_output_tokens),
@@ -678,9 +718,10 @@ def non_empty_string(value: str | None) -> str | None:
 
 def parse_agent_provider_env(raw: str | None) -> str:
     provider = (raw or "stub").strip().lower()
-    if provider not in {"stub", "openai_compatible", "binary"}:
+    if provider not in {"stub", "openai_compatible", "binary", "claude_code"}:
         raise ValueError(
-            "LOGAGENT_V2_AGENT_PROVIDER must be one of stub, openai_compatible, or binary"
+            "LOGAGENT_V2_AGENT_PROVIDER must be one of stub, openai_compatible, "
+            "binary, or claude_code"
         )
     return provider
 
@@ -695,6 +736,28 @@ def parse_agent_binary_path_env(raw: str | None, *, enabled: bool) -> Path | Non
     if enabled and not path.is_absolute():
         raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH must resolve to an absolute path")
     return path
+
+
+def parse_claude_code_path_env(raw: str | None, *, enabled: bool) -> Path | None:
+    value = non_empty_string(raw)
+    if not value:
+        if enabled:
+            raise ValueError(
+                "LOGAGENT_V2_CLAUDE_CODE_PATH or LOGAGENT_CLAUDE_CODE_PATH "
+                "is required for claude_code provider"
+            )
+        return None
+    path = Path(os.path.expandvars(os.path.expanduser(value)))
+    if enabled and not path.is_absolute():
+        raise ValueError("LOGAGENT_V2_CLAUDE_CODE_PATH must resolve to an absolute path")
+    return path
+
+
+def parse_csv_env(raw: str | None, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    value = non_empty_string(raw)
+    if not value:
+        return default
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def parse_pprof_go_command_env(raw: str | None, *, enabled: bool) -> str | None:
@@ -716,6 +779,7 @@ def validate_agent_provider_settings(
     agent_model: str | None,
     agent_api_key: str | None,
     agent_binary_path: Path | None,
+    claude_code_path: Path | None,
 ) -> None:
     if provider == "openai_compatible":
         if not agent_base_url:
@@ -732,6 +796,11 @@ def validate_agent_provider_settings(
             )
     if provider == "binary" and agent_binary_path is None:
         raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH is required for binary provider")
+    if provider == "claude_code" and claude_code_path is None:
+        raise ValueError(
+            "LOGAGENT_V2_CLAUDE_CODE_PATH or LOGAGENT_CLAUDE_CODE_PATH "
+            "is required for claude_code provider"
+        )
 
 
 def validate_huawei_obs_endpoint(endpoint: str) -> None:

@@ -186,14 +186,14 @@ tools:
 - 配置有默认值，但示例文件必须展示推荐值。
 - `native_agent.state_path` 默认 `~/.logagent/native-agent-state.json`，用于保存当前活动 `sessionId`。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
-- `llm.provider` 默认 `stub`；真实 Provider 缺少 URL、模型名或 API Key 环境变量时启动失败。V2 `LOGAGENT_V2_AGENT_PROVIDER` 只允许 `stub`、`openai_compatible` 或 `binary`。
-- `llm.provider` 支持 `stub`、`openai_compatible` 和预留的 `binary`。
+- `llm.provider` 默认 `stub`；真实 Provider 缺少 URL、模型名、API Key 或 CLI 路径环境变量时启动失败。V2 `LOGAGENT_V2_AGENT_PROVIDER` 只允许 `stub`、`openai_compatible`、`binary` 或 `claude_code`。
+- `llm.provider` 支持 `stub`、`openai_compatible`、预留的 `binary` 和 Claude Code CLI provider。
 - `llm.model_env` 配置后优先于 `llm.model`；对应环境变量缺失或模型名为空时启动失败。
 - `llm.provider: "binary"` 时必须配置 `binary_path` 或 `binary_path_env`；解析后的二进制路径必须是绝对路径。V2 `LOGAGENT_V2_AGENT_BINARY_PATH` 在选择 binary provider 时必须解析为绝对路径。
 - binary provider 运行时固定调用 `<binary_path> run <prompt>`，用户输入不能覆盖二进制路径或 argv。
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
-- 未配置 `claude_code.command_path` 时默认要求 `LOGAGENT_CLAUDE_CODE_PATH`。
-- `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径。
+- 未配置 `claude_code.command_path` 时默认要求 `LOGAGENT_CLAUDE_CODE_PATH`。Python V2 选择 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` 时要求 `LOGAGENT_V2_CLAUDE_CODE_PATH` 或兼容的 `LOGAGENT_CLAUDE_CODE_PATH`。
+- `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径；Python V2 运行时还会校验 regular/executable。
 - `claude_code.default_mode` 仅支持 `diagnose`、`code_investigation` 和 `fix`。
 - `claude_code.max_session_seconds` 默认 600 秒，控制单次 Claude Code session 的超时边界；显式配置非正值按 1 秒下限裁剪。
 - `mcp.transport` 当前只支持 `stdio`。

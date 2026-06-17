@@ -1255,8 +1255,10 @@ behavior. `openai_compatible` posts a compact Chat Completions request to
 `LOGAGENT_V2_AGENT_MODEL`, `LOGAGENT_V2_AGENT_API_KEY`, and
 `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`. Environment-loaded settings fail fast if
 the provider is unsupported, if `openai_compatible` is missing base URL, model,
-or API key, or if `binary` is missing a command path that resolves to an
-absolute path. The request includes the Workspace
+or API key, if `binary` is missing a command path that resolves to an absolute
+path, or if `claude_code` is missing
+`LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH` resolving to an
+absolute path. The compact prompt used by non-Claude providers includes the Workspace
 question/mode/language, manifest counts, a bounded initial grep preview,
 allowed current-run evidence refs, recent user messages/action results from
 resumed runs, available read-only tools, and prior tool observations.
@@ -1274,6 +1276,30 @@ containing either a tool-call request object or the final-answer object.
 still report non-regular or non-executable paths, start failures, timeout,
 non-zero exit, oversized stdout, invalid UTF-8, invalid JSON, and schema or
 evidence-ref failures as provider failures.
+
+`claude_code` invokes the configured Claude Code CLI without a shell. The
+provider writes `claude_prompt.md` and `claude_mcp_config.json` into
+`data_dir/tmp/claude_sessions/<run_id>/`, sets `LOGAGENT_V2_API_KEY` only in
+the child process environment, and uses fixed argv:
+
+```text
+<claude_code_path> --print --output-format json --json-schema <schema>
+  --mcp-config claude_mcp_config.json --strict-mcp-config
+  --permission-mode <mode> --tools <tools>
+  [--allowedTools <csv>] [--disallowedTools <csv>]
+```
+
+The stdin prompt is the short Claude startup instruction and must tell Claude
+to begin with MCP `resources/list` and then read the task `analysis_package`
+resource. Full log text, full Metadata topology, and large tool context must
+stay in task MCP resources/artifacts rather than argv or stdin.
+`LOGAGENT_V2_CLAUDE_CODE_MAX_OUTPUT_BYTES` bounds stdout. Claude stdout may be
+a native Claude envelope whose `structured_output`, `structuredOutput`, or
+`result` contains a structured outcome. V2 accepts `runtimeStatus=completed`
+/ `succeeded` / `final_answer` with `finalAnswer`, `waiting_for_user` with
+`pendingPrompt`, and `waiting_for_approval` with `pendingApproval`. Waiting
+outcomes are converted into the existing `logagent.request_user_input` and
+`logagent.request_approval` task MCP tool calls before normal pause handling.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
@@ -1336,8 +1362,9 @@ Each run also writes Rust/V1 Claude runtime contract artifacts:
 `claude_prompt.md`, `claude_mcp_config.json`, and `claude_session.json`.
 `claude_mcp_config.json` points at the V2 task HTTP MCP endpoint and uses
 `${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the resolved API
-key is not written to artifacts. The Python V2 provider loop may still execute
-in-process instead of launching Claude Code CLI.
+key is never persisted. When `LOGAGENT_V2_AGENT_PROVIDER=claude_code`, the
+same prompt/config are materialized into the temporary Claude session
+directory and used by the CLI invocation.
 Task MCP also exposes aggregate compatibility resources: `artifact_index`
 enumerates current run upload and evidence artifacts with stable logical paths,
 `tool_results` returns parsed `tool_result` and `fetch_result` artifacts under

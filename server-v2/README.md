@@ -244,12 +244,18 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes; non-positive values clamp to 1 |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects; negative values clamp to 0 |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key; required when Fetch is enabled and used for encrypted credential sets |
-| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary`; invalid values fail settings loading |
+| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, `binary`, or `claude_code`; invalid values fail settings loading |
 | `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, required when that provider is selected |
 | `LOGAGENT_V2_AGENT_MODEL` | unset | Model name, required for `openai_compatible` |
 | `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token, required for `openai_compatible` |
 | `LOGAGENT_V2_AGENT_BINARY_PATH` | unset | Binary provider command path; required and absolute when `binary` is selected |
 | `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from the binary Agent provider |
+| `LOGAGENT_V2_CLAUDE_CODE_PATH` | `LOGAGENT_CLAUDE_CODE_PATH` or unset | Claude Code CLI path; required and absolute when `claude_code` is selected |
+| `LOGAGENT_V2_CLAUDE_CODE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from Claude Code CLI |
+| `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE` | `dontAsk` | Permission mode passed to Claude Code CLI |
+| `LOGAGENT_V2_CLAUDE_CODE_TOOLS` | empty | Native Claude Code tool list passed with `--tools`; empty disables built-in native tools |
+| `LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS` | `mcp__logagent__*` | Comma-separated Claude Code allowed tools |
+| `LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS` | unset | Comma-separated Claude Code disallowed tools |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
@@ -450,16 +456,20 @@ those resources into Skills. Metadata instances appear as read-only
 V2 exposes Settings diagnostics under `/api/v2/settings/*`. The LLM section is
 mapped to the V2 Agent provider configuration: `stub` is local,
 `openai_compatible` calls the configured OpenAI-compatible `/models` and
-`/chat/completions` endpoints, and `binary` validates the configured executable
-then runs the same final-answer parse path through a local process. Responses
-never include API keys or the configured binary path.
+`/chat/completions` endpoints, `binary` validates the configured executable
+then runs the same final-answer parse path through a local process, and
+`claude_code` validates the configured Claude Code CLI path without launching a
+task session from the settings chat test. Responses never include API keys or
+configured executable paths.
 
 `/api/v2/settings/agent-backends` describes the in-process V2 Agent runtime
-instead of the Rust Server's Claude Code CLI backend. The diagnostic endpoint is
-a dry-run configuration check; for `binary` it checks that
-`LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable. Both the
-summary and diagnostic response include `graphRuntime` with the LangGraph
-engine, graph name, and node list used by analysis runs. The Domain
+plus optional provider execution mode. The diagnostic endpoint is a dry-run
+configuration check; for `binary` it checks that
+`LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable, and for
+`claude_code` it applies the same path checks to
+`LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH`. Both the summary
+and diagnostic response include `graphRuntime` with the LangGraph engine, graph
+name, and node list used by analysis runs. The Domain
 Adapter endpoint returns the built-in `opengemini_influxdb` active adapter plus
 `cassandra` and `rocksdb` skeleton adapters. The same adapter summaries are also
 available through readonly MCP `logagent-v2://domain-adapters` and
@@ -558,6 +568,27 @@ object accepted from OpenAI-compatible content. Non-zero exit, timeout,
 oversized stdout, invalid UTF-8, and parse/schema failures are persisted in
 `agent_response.json`.
 
+`LOGAGENT_V2_AGENT_PROVIDER=claude_code` keeps the same LangGraph run lifecycle
+but executes each provider round by launching the configured Claude Code CLI.
+V2 writes a per-run working directory under `data_dir/tmp/claude_sessions/`,
+materializes `claude_prompt.md` and `claude_mcp_config.json`, injects
+`LOGAGENT_V2_API_KEY` only into the child process environment, and invokes:
+
+```text
+<claude_code_path> --print --output-format json --json-schema <schema> \
+  --mcp-config claude_mcp_config.json --strict-mcp-config \
+  --permission-mode <mode> --tools <tools> [--allowedTools ...] [--disallowedTools ...]
+```
+
+The startup stdin is the short Claude prompt that instructs Claude to read task
+context through the HTTP task MCP `analysis_package` resource. Large log,
+Metadata, and tool context are not placed in argv or stdin. Claude Code stdout
+must be a Claude JSON envelope whose `structured_output` / `structuredOutput`
+or `result` contains `runtimeStatus=completed` with `finalAnswer`,
+`waiting_for_user` with `pendingPrompt`, or `waiting_for_approval` with
+`pendingApproval`. Waiting states are bridged into the existing
+`logagent.request_user_input` and `logagent.request_approval` task MCP tools.
+
 The run lifecycle is executed by a LangGraph state graph with
 `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,
 `execute_tool_calls`, `validate_final_answer`, and `finalize_result` nodes. The
@@ -611,8 +642,9 @@ Each run also writes Rust/V1 Claude runtime contract artifacts:
 `claude_prompt.md`, `claude_mcp_config.json`, and `claude_session.json`. The
 MCP config points at the V2 task HTTP MCP endpoint and uses
 `${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the real API key
-is not written to artifacts. The Python V2 provider loop may still execute
-in-process instead of launching Claude Code CLI.
+is not written to artifacts. When `LOGAGENT_V2_AGENT_PROVIDER=claude_code`,
+the same contract files are also materialized into the temporary Claude session
+directory used by the real CLI invocation.
 Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
 lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
@@ -630,8 +662,9 @@ response for WebUI and Rust/V1 migration callers: `manifestPath`/`manifest`,
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 alias. OpenAI-compatible and binary Agent providers receive a separate
-`run_alias` JSON prompt after the final answer is validated; stub mode and any
-alias provider failure fall back to the final summary or question. `GET
+`run_alias` JSON prompt after the final answer is validated; stub and
+`claude_code` modes, plus any alias provider failure, fall back to the final
+summary or question. `GET
 /api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
 evidence metadata, while task MCP exposes `result` and `result_markdown`. The
 alias is stored on the Run record for history/UI display; it is not model

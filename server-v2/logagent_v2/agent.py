@@ -125,6 +125,8 @@ class AgentRuntime:
             workspace_id,
             run_id,
         )
+        evidence_bundle["workspaceId"] = workspace_id
+        evidence_bundle["runId"] = run_id
         self.store.update_run_status(run_id, "running", "run_tool")
         auto_tool_results = run_matching_configured_tools(
             self.settings,

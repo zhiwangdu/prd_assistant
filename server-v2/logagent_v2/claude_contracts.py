@@ -178,10 +178,7 @@ def build_claude_session_contract(
         "analysisPackageArtifactId": analysis_package_artifact_id,
         "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
         "promptPath": CLAUDE_PROMPT_PATH,
-        "note": (
-            "V2 generated Claude Code-compatible task contracts. The in-process "
-            "Agent provider loop may execute instead of launching Claude Code CLI."
-        ),
+        "note": claude_session_note(settings),
     }
 
 
@@ -192,3 +189,15 @@ def server_base_url(settings: Settings) -> str:
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{settings.port}"
+
+
+def claude_session_note(settings: Settings) -> str:
+    if settings.agent_provider == "claude_code":
+        return (
+            "V2 generated Claude Code task contracts and will launch the configured "
+            "Claude Code CLI provider for Agent rounds."
+        )
+    return (
+        "V2 generated Claude Code-compatible task contracts. The in-process Agent "
+        "provider loop may execute instead of launching Claude Code CLI."
+    )

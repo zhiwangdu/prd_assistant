@@ -1356,6 +1356,191 @@ class StoreTests(unittest.TestCase):
             self.assertNotIn(binary.as_posix(), json.dumps(response_doc))
             self.assertEqual(response_doc["validation"]["status"], "passed")
 
+    def test_agent_runtime_uses_claude_code_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            capture = root / "claude_capture.json"
+            claude = root / "fake-claude"
+            answer = {
+                "summary": "claude summary",
+                "symptoms": ["timeout line"],
+                "likelyRootCauses": [
+                    {
+                        "cause": "claude cause",
+                        "evidenceRefs": ["grep_results.json#matches/0"],
+                    }
+                ],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": ["grep_results.json#matches/0"],
+            }
+            envelope = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "session_id": "sess-v2-claude",
+                "structured_output": {
+                    "runtimeStatus": "completed",
+                    "finalAnswer": answer,
+                },
+            }
+            claude.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, pathlib, sys\n"
+                "stdin = sys.stdin.read()\n"
+                "mcp_path = pathlib.Path('claude_mcp_config.json')\n"
+                "if '--mcp-config' not in sys.argv or not mcp_path.exists():\n"
+                "    raise SystemExit(3)\n"
+                "config = json.loads(mcp_path.read_text())\n"
+                "capture = {\n"
+                "    'argv': sys.argv[1:],\n"
+                "    'stdin': stdin,\n"
+                "    'cwd': os.getcwd(),\n"
+                "    'envKey': os.environ.get('LOGAGENT_V2_API_KEY'),\n"
+                "    'mcpConfig': config,\n"
+                "}\n"
+                f"pathlib.Path({json.dumps(capture.as_posix())}).write_text(json.dumps(capture))\n"
+                f"print({json.dumps(json.dumps(envelope))})\n",
+                encoding="utf-8",
+            )
+            claude.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="claude_code",
+                agent_model=None,
+                claude_code_path=claude,
+                claude_code_allowed_tools=("mcp__logagent__*",),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("why timeout?", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"query timeout on shard 1\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            final_answer = AgentRuntime(settings, store).run_analysis(
+                workspace["id"], run["id"]
+            )
+
+            self.assertEqual(final_answer["summary"], "claude summary")
+            self.assertEqual(store.get_run(run["id"])["alias"], "claude summary")
+            captured = json.loads(capture.read_text(encoding="utf-8"))
+            self.assertIn("--print", captured["argv"])
+            self.assertIn("--output-format", captured["argv"])
+            self.assertIn("json", captured["argv"])
+            self.assertIn("--strict-mcp-config", captured["argv"])
+            self.assertIn("--allowedTools", captured["argv"])
+            self.assertEqual(captured["envKey"], "test")
+            self.assertIn("resources/list", captured["stdin"])
+            self.assertIn("analysis_package", captured["stdin"])
+            self.assertNotIn("query timeout on shard", captured["stdin"])
+            auth = captured["mcpConfig"]["mcpServers"]["logagent"]["headers"]["Authorization"]
+            self.assertEqual(auth, "Bearer ${LOGAGENT_V2_API_KEY}")
+            agent_request = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 41,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                },
+            )
+            request_doc = json.loads(agent_request["result"]["contents"][0]["text"])
+            self.assertEqual(request_doc["provider"], "claude_code")
+            self.assertEqual(request_doc["model"], "claude-code-cli")
+            self.assertEqual(request_doc["transport"]["type"], "claude_code_cli")
+            self.assertTrue(request_doc["transport"]["commandPathConfigured"])
+            self.assertNotIn(claude.as_posix(), json.dumps(request_doc))
+            self.assertNotIn("Bearer test", json.dumps(request_doc))
+            agent_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                },
+            )
+            response_doc = json.loads(agent_response["result"]["contents"][0]["text"])
+            self.assertEqual(response_doc["provider"], "claude_code")
+            self.assertEqual(response_doc["status"], "completed")
+            self.assertEqual(response_doc["response"]["exitCode"], 0)
+            self.assertEqual(response_doc["response"]["runtimeStatus"], "completed")
+            self.assertEqual(response_doc["response"]["sessionId"], "sess-v2-claude")
+            self.assertEqual(response_doc["validation"]["status"], "passed")
+            self.assertNotIn(claude.as_posix(), json.dumps(response_doc))
+            self.assertNotIn("Bearer test", json.dumps(response_doc))
+
+    def test_claude_code_provider_can_pause_for_user_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            claude = root / "fake-claude"
+            envelope = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "session_id": "sess-v2-waiting",
+                "structured_output": {
+                    "runtimeStatus": "waiting_for_user",
+                    "pendingPrompt": {
+                        "questionId": "q-version",
+                        "question": "Which product version is affected?",
+                        "reason": "version-specific diagnostics need the branch.",
+                    },
+                },
+            }
+            claude.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                f"print({json.dumps(json.dumps(envelope))})\n",
+                encoding="utf-8",
+            )
+            claude.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="claude_code",
+                claude_code_path=claude,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need version-aware analysis", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            result = AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            self.assertEqual(result["status"], "waiting_for_user")
+            updated_run = store.get_run(run["id"])
+            self.assertEqual(updated_run["status"], "waiting_for_user")
+            self.assertEqual(updated_run["phase"], "waiting_for_user")
+            pending = [
+                action for action in store.list_actions(run["id"])
+                if action["status"] == "pending"
+            ]
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0]["kind"], "user_input")
+            self.assertEqual(pending[0]["payload"]["questionId"], "q-version")
+            self.assertEqual(
+                pending[0]["payload"]["question"],
+                "Which product version is affected?",
+            )
+
     def test_agent_provider_validation_failure_keeps_audit_artifacts(self) -> None:
         class InvalidRefProviderHandler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
@@ -2938,6 +3123,11 @@ class StoreTests(unittest.TestCase):
             "LOGAGENT_V2_AGENT_MODEL",
             "LOGAGENT_V2_AGENT_API_KEY",
             "LOGAGENT_V2_AGENT_BINARY_PATH",
+            "LOGAGENT_V2_CLAUDE_CODE_PATH",
+            "LOGAGENT_CLAUDE_CODE_PATH",
+            "LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS",
+            "LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS",
+            "LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE",
         }
         previous = {key: os.environ.get(key) for key in env_names}
         try:
@@ -2975,6 +3165,22 @@ class StoreTests(unittest.TestCase):
 
             os.environ["LOGAGENT_V2_AGENT_BINARY_PATH"] = "/opt/logagent/bin/agent"
             settings = Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_PROVIDER"] = "claude_code"
+            os.environ.pop("LOGAGENT_V2_CLAUDE_CODE_PATH", None)
+            os.environ.pop("LOGAGENT_CLAUDE_CODE_PATH", None)
+            with self.assertRaisesRegex(ValueError, "CLAUDE_CODE_PATH.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_PATH"] = "relative-claude"
+            with self.assertRaisesRegex(ValueError, "CLAUDE_CODE_PATH.*absolute path"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_PATH"] = "/opt/homebrew/bin/claude"
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS"] = "mcp__logagent__*,Read"
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS"] = "Bash"
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE"] = "acceptEdits"
+            settings = Settings.from_env()
         finally:
             for key, value in previous.items():
                 if value is None:
@@ -2982,8 +3188,11 @@ class StoreTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
-        self.assertEqual(settings.agent_provider, "binary")
-        self.assertEqual(settings.agent_binary_path, Path("/opt/logagent/bin/agent"))
+        self.assertEqual(settings.agent_provider, "claude_code")
+        self.assertEqual(settings.claude_code_path, Path("/opt/homebrew/bin/claude"))
+        self.assertEqual(settings.claude_code_allowed_tools, ("mcp__logagent__*", "Read"))
+        self.assertEqual(settings.claude_code_disallowed_tools, ("Bash",))
+        self.assertEqual(settings.claude_code_permission_mode, "acceptEdits")
 
     def test_settings_validates_pprof_go_command_when_enabled(self) -> None:
         env_names = {
@@ -8384,6 +8593,35 @@ grep_results.json#matches/0
             chat = test_agent_chat(settings, "hello")
             self.assertEqual(chat["provider"], "binary")
             self.assertEqual(chat["response"], "binary settings ok")
+
+    def test_v2_settings_claude_code_provider_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            claude = root / "settings-claude"
+            claude.write_text("#!/usr/bin/env sh\necho '{}'\n", encoding="utf-8")
+            claude.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="claude_code",
+                claude_code_path=claude,
+            )
+
+            summary = llm_settings_summary(settings)
+            self.assertEqual(summary["provider"], "claude_code")
+            self.assertEqual(summary["configuredModel"], "claude-code-cli")
+            self.assertTrue(summary["claudeCodePathConfigured"])
+            self.assertEqual(list_agent_models(settings)["models"], ["claude-code-cli"])
+            diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
+            self.assertEqual(diagnostic["status"], "configured")
+            self.assertEqual(
+                diagnostic["executionMode"],
+                "claude_code_cli_mcp_session",
+            )
+            self.assertTrue(agent_backends_summary(settings)["backends"][0]["commandConfigured"])
+            chat = test_agent_chat(settings, "hello")
+            self.assertEqual(chat["provider"], "claude_code")
+            self.assertIn("configured", chat["response"])
 
     def test_v2_domain_adapters_are_exposed_in_readonly_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

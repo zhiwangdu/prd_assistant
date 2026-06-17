@@ -14,6 +14,7 @@ from .llm import (
     extract_chat_content,
     log_provider_response_content,
     validate_binary_path,
+    validate_claude_code_path,
 )
 from .store import JsonObject
 
@@ -31,6 +32,8 @@ def llm_settings_summary(settings: Settings) -> JsonObject:
         "apiKeyConfigured": bool(settings.agent_api_key),
         "binaryPathConfigured": bool(settings.agent_binary_path),
         "binaryMaxOutputBytes": settings.agent_binary_max_output_bytes,
+        "claudeCodePathConfigured": bool(settings.claude_code_path),
+        "claudeCodeMaxOutputBytes": settings.claude_code_max_output_bytes,
     }
 
 
@@ -60,6 +63,13 @@ def list_agent_models(settings: Settings) -> JsonObject:
     if provider == "binary":
         return {
             "provider": "binary",
+            "configuredModel": model,
+            "models": [model],
+            "raw": {"data": [{"id": model, "object": "model"}]},
+        }
+    if provider == "claude_code":
+        return {
+            "provider": "claude_code",
             "configuredModel": model,
             "models": [model],
             "raw": {"data": [{"id": model, "object": "model"}]},
@@ -136,6 +146,21 @@ def test_agent_chat(settings: Settings, message: str) -> JsonObject:
         final_answer = result.get("finalAnswer")
         response = final_answer.get("summary") if isinstance(final_answer, dict) else ""
         return {"provider": provider, "model": model, "response": response, "raw": result}
+    if provider == "claude_code":
+        if settings.claude_code_path is None:
+            raise ValueError("LOGAGENT_V2_CLAUDE_CODE_PATH is required")
+        validation_error = validate_claude_code_path(settings.claude_code_path)
+        if validation_error is not None:
+            raise ValueError(validation_error)
+        return {
+            "provider": provider,
+            "model": model,
+            "response": (
+                "Claude Code CLI provider is configured; task analysis runs exercise "
+                "the MCP-backed session."
+            ),
+            "raw": {"commandConfigured": True},
+        }
     raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
 
 
@@ -155,7 +180,7 @@ def agent_backends_summary(settings: Settings) -> JsonObject:
                 "timeoutSeconds": settings.agent_timeout_seconds,
                 "maxInputBytes": 0,
                 "maxOutputBytes": MAX_PROVIDER_RESPONSE_BYTES,
-                "executionMode": f"{provider}_tool_loop",
+                "executionMode": agent_execution_mode(provider),
                 "defaultMode": "diagnose",
                 "permissionProfile": "server_owned_readonly_tools",
             }
@@ -204,6 +229,24 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
             f"Binary max output bytes={settings.agent_binary_max_output_bytes}."
         )
         status = "configured"
+    elif provider == "claude_code":
+        if settings.claude_code_path is None:
+            raise ValueError(
+                "missing required Agent provider setting(s): LOGAGENT_V2_CLAUDE_CODE_PATH"
+            )
+        validation_error = validate_claude_code_path(settings.claude_code_path)
+        if validation_error is not None:
+            raise ValueError(validation_error)
+        details.append(
+            "Claude Code CLI path is valid and the task MCP config is generated per run."
+        )
+        details.append(
+            "Claude Code receives LOGAGENT_V2_API_KEY through process environment only."
+        )
+        details.append(
+            f"Claude Code max output bytes={settings.claude_code_max_output_bytes}."
+        )
+        status = "configured"
     else:
         raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
     return {
@@ -211,7 +254,7 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
         "backendType": "langgraph_oriented_agent",
         "enabled": True,
         "status": status,
-        "executionMode": f"{provider}_tool_loop",
+        "executionMode": agent_execution_mode(provider),
         "graphRuntime": graph_runtime,
         "details": details,
     }
@@ -299,6 +342,8 @@ def configured_model(settings: Settings) -> str:
         return "stub"
     if normalized_provider(settings) == "binary":
         return "binary-reserved"
+    if normalized_provider(settings) == "claude_code":
+        return "claude-code-cli"
     return ""
 
 
@@ -313,7 +358,18 @@ def agent_backend_configured(settings: Settings) -> bool:
             settings.agent_binary_path
             and validate_binary_path(settings.agent_binary_path) is None
         )
+    if provider == "claude_code":
+        return bool(
+            settings.claude_code_path
+            and validate_claude_code_path(settings.claude_code_path) is None
+        )
     return False
+
+
+def agent_execution_mode(provider: str) -> str:
+    if provider == "claude_code":
+        return "claude_code_cli_mcp_session"
+    return f"{provider}_tool_loop"
 
 
 def openai_base_url(settings: Settings, suffix: str) -> str:

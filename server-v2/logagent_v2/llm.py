@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from .case_memory import task_case_tool_descriptors
+from .claude_contracts import (
+    CLAUDE_MCP_CONFIG_PATH,
+    CLAUDE_PROMPT_PATH,
+    build_claude_mcp_config,
+    build_claude_prompt,
+)
 from .config import Settings
 from .fetch import fetch_tool_descriptors
 from .metadata import task_metadata_tool_descriptors
@@ -144,6 +150,35 @@ def build_agent_provider_request(
             "payload": {"prompt": prompt},
             "allowedEvidenceRefs": allowed_refs,
         }
+    if provider == "claude_code":
+        run_id = evidence_bundle.get("runId")
+        claude_prompt = build_claude_prompt(str(run_id)) if isinstance(run_id, str) else ""
+        return {
+            "provider": "claude_code",
+            "model": settings.agent_model or "claude-code-cli",
+            "transport": {
+                "type": "claude_code_cli",
+                "commandPathConfigured": settings.claude_code_path is not None,
+                "timeoutSeconds": settings.agent_timeout_seconds,
+                "maxOutputBytes": settings.claude_code_max_output_bytes,
+                "permissionMode": settings.claude_code_permission_mode,
+                "tools": settings.claude_code_tools,
+                "allowedTools": list(settings.claude_code_allowed_tools),
+                "disallowedTools": list(settings.claude_code_disallowed_tools),
+                "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
+                "promptPath": CLAUDE_PROMPT_PATH,
+            },
+            "payload": {
+                "prompt": claude_prompt,
+                "runId": run_id,
+                "promptDelivery": {
+                    "mode": "stdin_file",
+                    "largeContextVia": "mcp_resource",
+                    "resource": "analysis_package",
+                },
+            },
+            "allowedEvidenceRefs": allowed_refs,
+        }
     return {
         "provider": provider,
         "model": settings.agent_model,
@@ -166,6 +201,8 @@ def execute_agent_provider_request(settings: Settings, request_payload: JsonObje
         return call_openai_compatible(settings, request_payload)
     if provider == "binary":
         return call_binary_provider(settings, request_payload)
+    if provider == "claude_code":
+        return call_claude_code_provider(settings, request_payload)
     return failed_provider_result(
         provider=provider,
         model=request_payload.get("model"),
@@ -394,6 +431,168 @@ def call_binary_provider(
     }
 
 
+def call_claude_code_provider(
+    settings: Settings,
+    request_payload: JsonObject,
+) -> JsonObject:
+    claude_path = settings.claude_code_path
+    model = request_payload.get("model") or settings.agent_model or "claude-code-cli"
+    if claude_path is None:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message=(
+                "LOGAGENT_V2_CLAUDE_CODE_PATH or LOGAGENT_CLAUDE_CODE_PATH is required"
+            ),
+        )
+    validation_error = validate_claude_code_path(claude_path)
+    if validation_error is not None:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message=validation_error,
+        )
+    payload = request_payload.get("payload")
+    prompt = payload.get("prompt") if isinstance(payload, dict) else None
+    run_id = payload.get("runId") if isinstance(payload, dict) else None
+    if not isinstance(run_id, str) or not run_id.strip():
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message="claude_code provider runId is required",
+        )
+    if not isinstance(prompt, str) or not prompt.strip():
+        prompt = build_claude_prompt(run_id)
+    session_dir = claude_code_session_dir(settings, run_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / CLAUDE_PROMPT_PATH).write_text(prompt, encoding="utf-8")
+    (session_dir / CLAUDE_MCP_CONFIG_PATH).write_text(
+        json.dumps(build_claude_mcp_config(settings, run_id), ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["LOGAGENT_V2_API_KEY"] = settings.api_key
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            claude_code_argv(settings, claude_path),
+            input=prompt.encode("utf-8"),
+            cwd=session_dir,
+            env=env,
+            capture_output=True,
+            timeout=settings.agent_timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="timeout",
+            error_type="TimeoutExpired",
+            message=f"Claude Code provider timed out after {settings.agent_timeout_seconds}s",
+            response={
+                "timeoutSeconds": settings.agent_timeout_seconds,
+                "cmd": claude_code_argv_preview(settings),
+                "workDir": "<claude_session_dir>",
+            },
+        )
+    except OSError as error:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="transport",
+            error_type=error.__class__.__name__,
+            message=f"failed to start Claude Code provider: {error}",
+            response={
+                "cmd": claude_code_argv_preview(settings),
+                "workDir": "<claude_session_dir>",
+            },
+        )
+    duration_ms = int((time.monotonic() - started) * 1000)
+    stdout = completed.stdout
+    stderr = completed.stderr
+    response_payload: JsonObject = {
+        "exitCode": completed.returncode,
+        "durationMs": duration_ms,
+        "cmd": claude_code_argv_preview(settings),
+        "workDir": "<claude_session_dir>",
+        "promptPath": CLAUDE_PROMPT_PATH,
+        "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
+        "stderrPreview": stderr[:MAX_PROVIDER_PREVIEW_CHARS].decode(
+            "utf-8", errors="replace"
+        ),
+    }
+    if completed.returncode != 0:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="process",
+            error_type="NonZeroExit",
+            message=f"Claude Code provider exited with code {completed.returncode}",
+            response=response_payload,
+        )
+    if len(stdout) > settings.claude_code_max_output_bytes:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="output",
+            error_type="OutputTooLarge",
+            message=(
+                "Claude Code provider stdout exceeded "
+                f"{settings.claude_code_max_output_bytes} bytes"
+            ),
+            response=response_payload,
+        )
+    try:
+        raw_text = stdout.decode("utf-8")
+    except UnicodeDecodeError as error:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="decode",
+            error_type=error.__class__.__name__,
+            message=str(error),
+            response=response_payload,
+        )
+    response_payload["stdoutPreview"] = raw_text[:MAX_PROVIDER_PREVIEW_CHARS]
+    try:
+        log_provider_response_content(raw_text)
+        parsed = parse_claude_session_output(raw_text)
+    except Exception as error:
+        return failed_provider_result(
+            provider="claude_code",
+            model=model,
+            stage="parse",
+            error_type=error.__class__.__name__,
+            message=str(error),
+            response=response_payload,
+        )
+    response_payload["runtimeStatus"] = parsed["runtimeStatus"]
+    if parsed.get("sessionId"):
+        response_payload["sessionId"] = parsed["sessionId"]
+    if parsed["runtimeStatus"] in {"waiting_for_user", "waiting_for_approval"}:
+        return {
+            "provider": "claude_code",
+            "model": model,
+            "status": "completed",
+            "response": response_payload,
+            "finalAnswer": claude_waiting_to_tool_calls(parsed),
+        }
+    return {
+        "provider": "claude_code",
+        "model": model,
+        "status": "completed",
+        "response": response_payload,
+        "finalAnswer": parsed["finalAnswer"],
+    }
+
+
 def validate_binary_path(binary_path: Path) -> str | None:
     if not binary_path.is_absolute():
         return "LOGAGENT_V2_AGENT_BINARY_PATH must be an absolute path"
@@ -406,6 +605,274 @@ def validate_binary_path(binary_path: Path) -> str | None:
 
 def binary_argv_preview(_binary_path: Path) -> list[str]:
     return ["<binary_path>", "run", "<prompt>"]
+
+
+def validate_claude_code_path(claude_path: Path) -> str | None:
+    if not claude_path.is_absolute():
+        return "LOGAGENT_V2_CLAUDE_CODE_PATH must be an absolute path"
+    if not claude_path.is_file():
+        return "LOGAGENT_V2_CLAUDE_CODE_PATH is not a regular file"
+    if not os.access(claude_path, os.X_OK):
+        return "LOGAGENT_V2_CLAUDE_CODE_PATH is not executable"
+    return None
+
+
+def claude_code_session_dir(settings: Settings, run_id: str) -> Path:
+    return settings.tmp_dir / "claude_sessions" / safe_session_segment(run_id)
+
+
+def safe_session_segment(value: str) -> str:
+    return "".join(
+        char if char.isascii() and (char.isalnum() or char in {"_", "-"}) else "_"
+        for char in value
+    )[:160] or "run"
+
+
+def claude_code_argv(settings: Settings, claude_path: Path) -> list[str]:
+    argv = [
+        claude_path.as_posix(),
+        "--print",
+        "--output-format",
+        "json",
+        "--json-schema",
+        json.dumps(claude_session_json_schema(), ensure_ascii=True),
+        "--mcp-config",
+        CLAUDE_MCP_CONFIG_PATH,
+        "--strict-mcp-config",
+        "--permission-mode",
+        settings.claude_code_permission_mode,
+        "--tools",
+        settings.claude_code_tools,
+    ]
+    if settings.claude_code_allowed_tools:
+        argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
+    if settings.claude_code_disallowed_tools:
+        argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    return argv
+
+
+def claude_code_argv_preview(settings: Settings) -> list[str]:
+    argv = [
+        "<claude_code_path>",
+        "--print",
+        "--output-format",
+        "json",
+        "--json-schema",
+        "<json_schema>",
+        "--mcp-config",
+        CLAUDE_MCP_CONFIG_PATH,
+        "--strict-mcp-config",
+        "--permission-mode",
+        settings.claude_code_permission_mode,
+        "--tools",
+        settings.claude_code_tools,
+    ]
+    if settings.claude_code_allowed_tools:
+        argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
+    if settings.claude_code_disallowed_tools:
+        argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    return argv
+
+
+def claude_session_json_schema() -> JsonObject:
+    final_answer_schema: JsonObject = {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "summary": {"type": "string"},
+            "symptoms": {"type": "array", "items": {"type": "string"}},
+            "likelyRootCauses": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "cause": {"type": "string"},
+                        "evidenceRefs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["cause", "evidenceRefs"],
+                },
+            },
+            "nextChecks": {"type": "array", "items": {"type": "string"}},
+            "fixSuggestions": {"type": "array", "items": {"type": "string"}},
+            "missingInformation": {"type": "array", "items": {"type": "string"}},
+            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+            "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "summary",
+            "symptoms",
+            "likelyRootCauses",
+            "nextChecks",
+            "fixSuggestions",
+            "missingInformation",
+            "confidence",
+            "evidenceRefs",
+        ],
+    }
+    return {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "runtimeStatus": {
+                "type": "string",
+                "enum": [
+                    "completed",
+                    "succeeded",
+                    "final_answer",
+                    "waiting_for_user",
+                    "waiting_for_approval",
+                ],
+            },
+            "finalAnswer": final_answer_schema,
+            "pendingPrompt": {"type": ["object", "string"]},
+            "pendingApproval": {"type": ["object", "string"]},
+        },
+        "required": ["runtimeStatus"],
+    }
+
+
+def parse_claude_session_output(content: str) -> JsonObject:
+    decoded = json.loads(content.strip())
+    if not isinstance(decoded, dict):
+        raise ValueError("Claude Code output must be a JSON object")
+    if decoded.get("is_error") is True:
+        result = decoded.get("result")
+        raise ValueError(f"Claude Code returned an error: {result}")
+    for key in ("structured_output", "structuredOutput", "result"):
+        if key in decoded:
+            candidate = decoded[key]
+            break
+    else:
+        candidate = decoded
+    structured = decode_claude_structured_output(candidate)
+    runtime_status = structured.get("runtimeStatus") or structured.get("runtime_status")
+    session_id = decoded.get("session_id") or decoded.get("sessionId")
+    if runtime_status in {"completed", "succeeded", "final_answer"}:
+        final_answer = (
+            structured["finalAnswer"]
+            if "finalAnswer" in structured
+            else structured.get("final_answer")
+        )
+        if not isinstance(final_answer, dict):
+            raise ValueError("Claude Code completed output requires finalAnswer")
+        return {
+            "runtimeStatus": "completed",
+            "finalAnswer": final_answer,
+            "sessionId": session_id,
+        }
+    if runtime_status == "waiting_for_user":
+        pending = (
+            structured["pendingPrompt"]
+            if "pendingPrompt" in structured
+            else structured.get("pending_prompt")
+        )
+        if pending is None:
+            raise ValueError("Claude Code waiting_for_user output requires pendingPrompt")
+        return {
+            "runtimeStatus": "waiting_for_user",
+            "pendingPrompt": pending,
+            "sessionId": session_id,
+        }
+    if runtime_status == "waiting_for_approval":
+        pending = (
+            structured["pendingApproval"]
+            if "pendingApproval" in structured
+            else structured.get("pending_approval")
+        )
+        if pending is None:
+            raise ValueError(
+                "Claude Code waiting_for_approval output requires pendingApproval"
+            )
+        return {
+            "runtimeStatus": "waiting_for_approval",
+            "pendingApproval": pending,
+            "sessionId": session_id,
+        }
+    raise ValueError(f"unsupported Claude Code runtimeStatus: {runtime_status}")
+
+
+def decode_claude_structured_output(candidate: Any) -> JsonObject:
+    if isinstance(candidate, dict):
+        return candidate
+    if isinstance(candidate, str):
+        text = candidate.strip()
+        if text.startswith("```"):
+            text = strip_json_fence(text)
+        decoded = json.loads(text)
+        if isinstance(decoded, dict):
+            return decoded
+    raise ValueError("Claude Code structured output must be a JSON object")
+
+
+def claude_waiting_to_tool_calls(parsed: JsonObject) -> JsonObject:
+    if parsed["runtimeStatus"] == "waiting_for_user":
+        return {
+            "type": "tool_calls",
+            "toolCalls": [
+                {
+                    "name": "logagent.request_user_input",
+                    "arguments": normalize_pending_prompt(parsed.get("pendingPrompt")),
+                }
+            ],
+        }
+    return {
+        "type": "tool_calls",
+        "toolCalls": [
+            {
+                "name": "logagent.request_approval",
+                "arguments": normalize_pending_approval(parsed.get("pendingApproval")),
+            }
+        ],
+    }
+
+
+def normalize_pending_prompt(value: Any) -> JsonObject:
+    if isinstance(value, str):
+        return {"question": value}
+    if not isinstance(value, dict):
+        raise ValueError("pendingPrompt must be an object or string")
+    question = value.get("question") or value.get("message") or value.get("prompt")
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError("pendingPrompt requires question")
+    arguments: JsonObject = {"question": question.strip()}
+    optional_fields = {
+        "questionId": value.get("questionId") or value.get("question_id"),
+        "reason": value.get("reason"),
+        "answerFormat": value.get("answerFormat") or value.get("answer_format"),
+    }
+    for key, item in optional_fields.items():
+        if isinstance(item, str) and item.strip():
+            arguments[key] = item.strip()
+    if "required" in value:
+        arguments["required"] = bool(value["required"])
+    return arguments
+
+
+def normalize_pending_approval(value: Any) -> JsonObject:
+    if isinstance(value, str):
+        return {"reason": value}
+    if not isinstance(value, dict):
+        raise ValueError("pendingApproval must be an object or string")
+    reason = value.get("reason") or value.get("message") or value.get("summary")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("pendingApproval requires reason")
+    arguments: JsonObject = {"reason": reason.strip()}
+    action_type = value.get("actionType") or value.get("action_type")
+    if isinstance(action_type, str) and action_type.strip():
+        arguments["actionType"] = action_type.strip()
+    input_value = value.get("input")
+    if isinstance(input_value, dict):
+        arguments["input"] = input_value
+    evidence_refs = value.get("evidenceRefs") or value.get("evidence_refs")
+    if isinstance(evidence_refs, list):
+        arguments["evidenceRefs"] = [
+            item for item in evidence_refs if isinstance(item, str)
+        ]
+    return arguments
 
 
 def build_agent_prompt(
