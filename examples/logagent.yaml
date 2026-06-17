@@ -6,6 +6,7 @@ server:
 native_agent:
   bind: "127.0.0.1:17321"
   server_base_url: "http://127.0.0.1:8080"
+  server_api: "v1"
   api_key_env: "LOGAGENT_NATIVE_API_KEY"
   allowed_dirs:
     - "~/Downloads"

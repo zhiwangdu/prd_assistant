@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Native Agent V2 Target
+
+- Native Agent added `native_agent.server_api` with default `v1` and V2 mode
+  for `server-v2` Session-scoped upload APIs.
+- V2 imports now create or reuse the active `ws_...` Session before upload,
+  use `/api/v2/sessions/:session_id/uploads` for small files, use
+  `/api/v2/sessions/:session_id/uploads/init` plus
+  `/api/v2/uploads/:upload_session_id/chunks|complete` for chunked files, and
+  return the completed `upl_...` upload id.
+- Added `examples/native-agent-v2-50993.yaml`; existing Native Agent examples
+  now explicitly declare `server_api: "v1"`.
+- Updated Native Agent and root README/SPEC docs for V1/V2 import behavior.
+- Verification passed: `cargo fmt --check`,
+  `cargo check -p logagent-native-agent`,
+  `cargo test -p logagent-native-agent`, `git diff --check`, and an isolated
+  V2 HTTP smoke on temporary ports `51033`/`17329` that imported
+  `testing/fixtures/downloads/sample.log` through `/imports` and confirmed the
+  resulting `upl_...` was attached to the created `ws_...` Session.
+
 ## 2026-06-18 WebUI V2 Product Naming
 
 - Default V2 pages now use Workbench/Console titles instead of user-visible

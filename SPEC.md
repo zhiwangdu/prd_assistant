@@ -149,7 +149,7 @@ flowchart TD
 ## 当前已实现
 
 - Chrome Extension 识别下载完成并调用 Native Agent。
-- Native Agent 接收本地导入请求，校验路径、后缀和大小，上传 Server。
+- Native Agent 接收本地导入请求，校验路径、后缀和大小，可配置上传到 Rust V1 Server 或 V2 Session-scoped 上传接口。
 - Server 支持 multipart 上传、分片上传、任务创建、任务产物读取。
 - Server 支持 Log Analysis Session：创建/列表/读取/草稿更新、删除非运行中 Session、附加/移除上传、按 Session 创建多次 task run、统一 timeline。删除 Session 只移除 Session record 和 Session timeline，不级联删除上传、task workspace 或结果产物。
 - Log Analysis Session 支持不上传日志直接启动分析；Task snapshot 的 `uploadIds` 和 `inputs` 为空，pipeline 仍生成 `session_text_input.json`、空 `manifest.json` / `grep_results.json` 并进入 Analysis Orchestrator。
@@ -198,7 +198,7 @@ flowchart TD
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 基于已落地的 Remote Executor，继续实现测试环境通过 SSH/SCP 采集日志和运行环境信息，并接入 Analysis Agent 审批动作。
-- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、核心 MCP 面和默认 WebUI 路由已迁移到 V2。
+- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
 
 ## 全局验收
 

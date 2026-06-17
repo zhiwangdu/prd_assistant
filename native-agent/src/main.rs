@@ -43,6 +43,8 @@ struct NativeAgentConfig {
     bind: String,
     #[serde(default = "default_server_base_url")]
     server_base_url: String,
+    #[serde(default)]
+    server_api: ServerApi,
     #[serde(default = "default_api_key_env")]
     api_key_env: String,
     #[serde(default)]
@@ -67,6 +69,7 @@ struct StorageConfig {
 struct AppConfig {
     bind: String,
     server_base_url: String,
+    server_api: ServerApi,
     api_key: String,
     allowed_dirs: Vec<PathBuf>,
     allowed_suffixes: Vec<String>,
@@ -80,6 +83,53 @@ struct AppConfig {
 struct AppState {
     config: AppConfig,
     client: reqwest::Client,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ServerApi {
+    #[serde(alias = "legacy", alias = "rust")]
+    V1,
+    #[serde(alias = "python-v2")]
+    V2,
+}
+
+impl Default for ServerApi {
+    fn default() -> Self {
+        Self::V1
+    }
+}
+
+impl ServerApi {
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::V1 => "/api",
+            Self::V2 => "/api/v2",
+        }
+    }
+
+    fn uses_session_scoped_uploads(self) -> bool {
+        matches!(self, Self::V2)
+    }
+}
+
+impl AppConfig {
+    fn server_origin(&self) -> &str {
+        self.server_base_url.trim_end_matches('/')
+    }
+
+    fn api_url(&self, path: impl AsRef<str>) -> String {
+        format!(
+            "{}{}{}",
+            self.server_origin(),
+            self.server_api.prefix(),
+            path.as_ref()
+        )
+    }
+
+    fn web_session_url(&self, session_id: &str) -> String {
+        format!("{}/sessions/{}", self.server_origin(), session_id)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,13 +185,6 @@ struct WorkspaceCurrentRequest {
 #[serde(rename_all = "camelCase")]
 struct WorkspaceCurrentResponse {
     session_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InitUploadRequest {
-    filename: String,
-    size: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -217,41 +260,55 @@ async fn import_file(
     Json(req): Json<ImportRequest>,
 ) -> Result<Json<ImportResponse>, AppError> {
     let file_path = validate_import(&state.config, &req).await?;
-    let upload_id = upload_file(&state, &file_path, &req).await?;
-    let session_id = match read_current_session(&state.config).await? {
+    let session_id = if state.config.server_api.uses_session_scoped_uploads() {
+        Some(ensure_current_session(&state, &file_path, &req).await?)
+    } else {
+        None
+    };
+    let upload_id = upload_file(&state, &file_path, &req, session_id.as_deref()).await?;
+    let session_id = match session_id {
         Some(session_id) => session_id,
         None => {
-            let filename = req
-                .filename
-                .clone()
-                .or_else(|| {
-                    file_path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().to_string())
-                })
-                .unwrap_or_else(|| "log import".to_string());
-            let session_id = create_session(
-                &state,
-                format!("Native import {filename}"),
-                req.source_url.clone(),
-            )
-            .await?;
-            write_current_session(&state.config, Some(session_id.clone())).await?;
+            let session_id = ensure_current_session(&state, &file_path, &req).await?;
+            attach_upload_to_session(&state, &session_id, &upload_id).await?;
             session_id
         }
     };
-    attach_upload_to_session(&state, &session_id, &upload_id).await?;
 
     Ok(Json(ImportResponse {
         upload_id,
         session_id: session_id.clone(),
         task_id: None,
-        url: Some(format!(
-            "{}/sessions/{}",
-            state.config.server_base_url.trim_end_matches('/'),
-            session_id
-        )),
+        url: Some(state.config.web_session_url(&session_id)),
     }))
+}
+
+async fn ensure_current_session(
+    state: &AppState,
+    file_path: &Path,
+    req: &ImportRequest,
+) -> Result<String, AppError> {
+    if let Some(session_id) = read_current_session(&state.config).await? {
+        return Ok(session_id);
+    }
+
+    let filename = req
+        .filename
+        .clone()
+        .or_else(|| {
+            file_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "log import".to_string());
+    let session_id = create_session(
+        state,
+        format!("Native import {filename}"),
+        req.source_url.clone(),
+    )
+    .await?;
+    write_current_session(&state.config, Some(session_id.clone())).await?;
+    Ok(session_id)
 }
 
 async fn get_current_workspace(
@@ -340,12 +397,13 @@ async fn upload_file(
     state: &AppState,
     file_path: &Path,
     req: &ImportRequest,
+    session_id: Option<&str>,
 ) -> Result<String, AppError> {
     let metadata = tokio::fs::metadata(file_path)
         .await
         .map_err(|err| AppError::bad_request(format!("cannot read file metadata: {err}")))?;
     if metadata.len() > state.config.upload_chunk_bytes {
-        return upload_file_chunked(state, file_path, req, metadata.len()).await;
+        return upload_file_chunked(state, file_path, req, session_id, metadata.len()).await;
     }
 
     let part = multipart::Part::file(file_path)
@@ -366,10 +424,7 @@ async fn upload_file(
         .text("filename", filename)
         .text("source", "native-agent".to_string());
 
-    let url = format!(
-        "{}/api/uploads",
-        state.config.server_base_url.trim_end_matches('/')
-    );
+    let url = small_upload_url(&state.config, session_id)?;
     let response = state
         .client
         .post(url)
@@ -399,6 +454,7 @@ async fn upload_file_chunked(
     state: &AppState,
     file_path: &Path,
     req: &ImportRequest,
+    session_id: Option<&str>,
     size: u64,
 ) -> Result<String, AppError> {
     let filename = req
@@ -411,7 +467,7 @@ async fn upload_file_chunked(
         })
         .unwrap_or_else(|| "upload.bin".to_string());
 
-    let upload_id = init_chunked_upload(state, filename, size).await?;
+    let upload_id = init_chunked_upload(state, session_id, filename, size).await?;
     let mut file = tokio::fs::File::open(file_path).await.map_err(|err| {
         AppError::bad_request(format!("cannot open file for chunked upload: {err}"))
     })?;
@@ -430,24 +486,38 @@ async fn upload_file_chunked(
         offset += read as u64;
     }
 
-    complete_chunked_upload(state, &upload_id).await?;
-    Ok(upload_id)
+    let completed_upload_id = complete_chunked_upload(state, &upload_id).await?;
+    if state.config.server_api.uses_session_scoped_uploads() {
+        return completed_upload_id.ok_or_else(|| {
+            AppError::bad_gateway("server complete upload response missing upload.id")
+        });
+    }
+    Ok(completed_upload_id.unwrap_or(upload_id))
 }
 
 async fn init_chunked_upload(
     state: &AppState,
+    session_id: Option<&str>,
     filename: String,
     size: u64,
 ) -> Result<String, AppError> {
-    let url = format!(
-        "{}/api/uploads/init",
-        state.config.server_base_url.trim_end_matches('/')
-    );
+    let url = init_upload_url(&state.config, session_id)?;
+    let payload = match state.config.server_api {
+        ServerApi::V1 => serde_json::json!({
+            "filename": filename,
+            "size": size,
+        }),
+        ServerApi::V2 => serde_json::json!({
+            "filename": filename,
+            "sizeBytes": size,
+            "contentType": "application/octet-stream",
+        }),
+    };
     let response = state
         .client
         .post(url)
         .bearer_auth(&state.config.api_key)
-        .json(&InitUploadRequest { filename, size })
+        .json(&payload)
         .send()
         .await
         .map_err(|err| AppError::bad_gateway(format!("init upload request failed: {err}")))?;
@@ -463,7 +533,7 @@ async fn init_chunked_upload(
     let body: serde_json::Value = response.json().await.map_err(|err| {
         AppError::bad_gateway(format!("invalid init upload response JSON: {err}"))
     })?;
-    upload_id_from_value(&body)
+    upload_session_id_from_value(&body)
         .ok_or_else(|| AppError::bad_gateway("server init upload response missing uploadId/id"))
 }
 
@@ -473,12 +543,9 @@ async fn upload_chunk(
     offset: u64,
     bytes: &[u8],
 ) -> Result<(), AppError> {
-    let url = format!(
-        "{}/api/uploads/{}/chunks?offset={}",
-        state.config.server_base_url.trim_end_matches('/'),
-        upload_id,
-        offset
-    );
+    let url = state
+        .config
+        .api_url(format!("/uploads/{upload_id}/chunks?offset={offset}"));
     let response = state
         .client
         .post(url)
@@ -500,12 +567,13 @@ async fn upload_chunk(
     Ok(())
 }
 
-async fn complete_chunked_upload(state: &AppState, upload_id: &str) -> Result<(), AppError> {
-    let url = format!(
-        "{}/api/uploads/{}/complete",
-        state.config.server_base_url.trim_end_matches('/'),
-        upload_id
-    );
+async fn complete_chunked_upload(
+    state: &AppState,
+    upload_id: &str,
+) -> Result<Option<String>, AppError> {
+    let url = state
+        .config
+        .api_url(format!("/uploads/{upload_id}/complete"));
     let response = state
         .client
         .post(url)
@@ -521,8 +589,14 @@ async fn complete_chunked_upload(state: &AppState, upload_id: &str) -> Result<()
             "complete upload failed with status {status}: {body}"
         )));
     }
-    let _ = response.bytes().await;
-    Ok(())
+    let body = response.text().await.unwrap_or_default();
+    if body.trim().is_empty() {
+        return Ok(None);
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
+        AppError::bad_gateway(format!("invalid complete upload response JSON: {err}"))
+    })?;
+    Ok(upload_id_from_value(&parsed))
 }
 
 async fn create_session(
@@ -530,10 +604,7 @@ async fn create_session(
     title: String,
     source_url: Option<String>,
 ) -> Result<String, AppError> {
-    let url = format!(
-        "{}/api/sessions",
-        state.config.server_base_url.trim_end_matches('/')
-    );
+    let url = state.config.api_url("/sessions");
     let payload = CreateSessionRequest { title, source_url };
     let response = state
         .client
@@ -567,11 +638,9 @@ async fn attach_upload_to_session(
     session_id: &str,
     upload_id: &str,
 ) -> Result<(), AppError> {
-    let url = format!(
-        "{}/api/sessions/{}/uploads",
-        state.config.server_base_url.trim_end_matches('/'),
-        session_id
-    );
+    let url = state
+        .config
+        .api_url(format!("/sessions/{session_id}/uploads"));
     let response = state
         .client
         .post(url)
@@ -599,8 +668,43 @@ fn upload_id_from_value(value: &serde_json::Value) -> Option<String> {
         .get("uploadId")
         .or_else(|| value.get("upload_id"))
         .or_else(|| value.get("id"))
+        .or_else(|| value.get("upload").and_then(|upload| upload.get("id")))
         .and_then(|v| v.as_str())
         .map(ToString::to_string)
+}
+
+fn upload_session_id_from_value(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("uploadId")
+        .or_else(|| value.get("upload_id"))
+        .or_else(|| value.get("id"))
+        .or_else(|| value.get("session").and_then(|session| session.get("id")))
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
+fn small_upload_url(config: &AppConfig, session_id: Option<&str>) -> Result<String, AppError> {
+    match config.server_api {
+        ServerApi::V1 => Ok(config.api_url("/uploads")),
+        ServerApi::V2 => {
+            let session_id = session_id.ok_or_else(|| {
+                AppError::bad_request("server_api v2 requires a session before upload")
+            })?;
+            Ok(config.api_url(format!("/sessions/{session_id}/uploads")))
+        }
+    }
+}
+
+fn init_upload_url(config: &AppConfig, session_id: Option<&str>) -> Result<String, AppError> {
+    match config.server_api {
+        ServerApi::V1 => Ok(config.api_url("/uploads/init")),
+        ServerApi::V2 => {
+            let session_id = session_id.ok_or_else(|| {
+                AppError::bad_request("server_api v2 requires a session before upload init")
+            })?;
+            Ok(config.api_url(format!("/sessions/{session_id}/uploads/init")))
+        }
+    }
 }
 
 fn load_config(path: &Path) -> anyhow::Result<AppConfig> {
@@ -624,6 +728,7 @@ fn load_config(path: &Path) -> anyhow::Result<AppConfig> {
     Ok(AppConfig {
         bind: native.bind,
         server_base_url: native.server_base_url,
+        server_api: native.server_api,
         api_key,
         allowed_dirs: native.allowed_dirs,
         allowed_suffixes: native
@@ -642,6 +747,7 @@ fn default_native_agent_config() -> NativeAgentConfig {
     NativeAgentConfig {
         bind: default_bind(),
         server_base_url: default_server_base_url(),
+        server_api: ServerApi::default(),
         api_key_env: default_api_key_env(),
         allowed_dirs: vec![],
         allowed_suffixes: default_file_suffixes(),
@@ -751,7 +857,7 @@ async fn write_current_session(
 }
 
 fn validate_session_id(session_id: &str) -> Result<(), AppError> {
-    let valid = session_id.starts_with("sess_")
+    let valid = (session_id.starts_with("sess_") || session_id.starts_with("ws_"))
         && session_id
             .bytes()
             .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
@@ -805,6 +911,7 @@ mod tests {
         AppConfig {
             bind: "127.0.0.1:0".to_string(),
             server_base_url: "http://127.0.0.1:0".to_string(),
+            server_api: ServerApi::V1,
             api_key: "test-key".to_string(),
             allowed_dirs: Vec::new(),
             allowed_suffixes: default_file_suffixes(),
@@ -834,5 +941,60 @@ mod tests {
         assert_eq!(read_current_session(&config).await.unwrap(), None);
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn server_api_urls_are_versioned() {
+        let mut config = test_config(PathBuf::from("state.json"));
+        config.server_base_url = "http://127.0.0.1:50993/".to_string();
+
+        assert_eq!(
+            config.api_url("/sessions"),
+            "http://127.0.0.1:50993/api/sessions"
+        );
+        assert_eq!(
+            small_upload_url(&config, None).unwrap(),
+            "http://127.0.0.1:50993/api/uploads"
+        );
+        assert_eq!(
+            init_upload_url(&config, None).unwrap(),
+            "http://127.0.0.1:50993/api/uploads/init"
+        );
+
+        config.server_api = ServerApi::V2;
+        assert_eq!(
+            config.api_url("/sessions"),
+            "http://127.0.0.1:50993/api/v2/sessions"
+        );
+        assert_eq!(
+            small_upload_url(&config, Some("ws_test")).unwrap(),
+            "http://127.0.0.1:50993/api/v2/sessions/ws_test/uploads"
+        );
+        assert_eq!(
+            init_upload_url(&config, Some("ws_test")).unwrap(),
+            "http://127.0.0.1:50993/api/v2/sessions/ws_test/uploads/init"
+        );
+    }
+
+    #[test]
+    fn parses_v2_nested_upload_responses() {
+        let upload = serde_json::json!({"upload": {"id": "upl_nested"}});
+        let upload_session = serde_json::json!({"session": {"id": "ups_nested"}});
+
+        assert_eq!(
+            upload_id_from_value(&upload),
+            Some("upl_nested".to_string())
+        );
+        assert_eq!(
+            upload_session_id_from_value(&upload_session),
+            Some("ups_nested".to_string())
+        );
+    }
+
+    #[test]
+    fn session_validation_accepts_v1_and_v2_ids() {
+        assert!(validate_session_id("sess_current").is_ok());
+        assert!(validate_session_id("ws_current").is_ok());
+        assert!(validate_session_id("run_current").is_err());
     }
 }

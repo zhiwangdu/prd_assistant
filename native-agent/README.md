@@ -26,6 +26,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 上传日志包到服务端。
 - 维护本机活动 Session。
 - 上传完成后把文件附加到活动 Session；没有活动 Session 时自动创建一个 `Native import ...` Session 并设为活动。
+- 可通过 `native_agent.server_api` 指向 Rust V1 Server 或 `server-v2`。
 - 返回任务 URL 给插件或自动打开 WebUI。
 
 ## 本地接口
@@ -82,7 +83,7 @@ curl -X POST http://127.0.0.1:17321/imports \
 ```json
 {
   "uploadId": "upl_...",
-  "sessionId": "sess_...",
+  "sessionId": "sess_... 或 ws_...",
   "taskId": null,
   "url": "http://127.0.0.1:8080/sessions/sess_..."
 }
@@ -109,6 +110,7 @@ LOGAGENT_NATIVE_API_KEY=<same-as-server> \
 
 - `native_agent.bind` 建议保持 `127.0.0.1:17321`。
 - `native_agent.server_base_url` 指向 ECS 上的 Server 地址。
+- `native_agent.server_api` 支持 `v1` 和 `v2`，默认 `v1`；连接 `server-v2` 时使用 `v2`。
 - `native_agent.allowed_dirs` 包含浏览器下载目录。
 - `storage.max_upload_bytes` 与 Server 保持一致或更小。
 - `native_agent.upload_chunk_bytes` 控制分片上传大小，默认 512KB。
@@ -118,9 +120,12 @@ LOGAGENT_NATIVE_API_KEY=<same-as-server> \
 
 - 小于等于 `native_agent.upload_chunk_bytes` 的文件走普通 multipart。
 - 大于该阈值的文件自动走分片上传：
-  - `POST /api/uploads/init`
-  - `POST /api/uploads/{upload_id}/chunks?offset=...`
-  - `POST /api/uploads/{upload_id}/complete`
+  - V1: `POST /api/uploads/init`
+  - V2: `POST /api/v2/sessions/{session_id}/uploads/init`
+  - V1: `POST /api/uploads/{upload_id}/chunks?offset=...`
+  - V2: `POST /api/v2/uploads/{upload_session_id}/chunks?offset=...`
+  - V1: `POST /api/uploads/{upload_id}/complete`
+  - V2: `POST /api/v2/uploads/{upload_session_id}/complete`
 - 如果 ECS 前面有网关限制单请求大小，把 `upload_chunk_bytes` 配得小于网关限制，例如 `524288`。
 
 macOS 可用 launchd 自启动；Linux 可用 systemd user service。MVP 阶段也可以手动运行。
@@ -134,17 +139,32 @@ Native Agent 从本地配置读取服务端地址和 API Key。API Key 不写死
 ```yaml
 native_agent:
   server_base_url: "http://logagent:8080"
+  server_api: "v1"
   api_key_env: "LOGAGENT_NATIVE_API_KEY"
 ```
 
-上传：
+连接 `server-v2` 默认本机端口：
+
+```bash
+export LOGAGENT_NATIVE_API_KEY=dev-token
+cargo run -p logagent-native-agent -- --config examples/native-agent-v2-50993.yaml
+```
+
+V1 上传：
 
 ```http
 POST /api/uploads
 Authorization: Bearer <api_key>
 ```
 
-附加到 Session：
+V2 上传会先确保活动 Session，然后直接使用 Session 作用域接口：
+
+```http
+POST /api/v2/sessions/:session_id/uploads
+Authorization: Bearer <api_key>
+```
+
+V1 附加到 Session：
 
 ```http
 POST /api/sessions/:session_id/uploads
@@ -160,6 +180,8 @@ Authorization: Bearer <api_key>
 ```http
 POST /api/sessions
 ```
+
+V2 使用对应的 `POST /api/v2/sessions`，返回的 `sessionId` 为 `ws_...`。
 
 ## 安全边界
 
