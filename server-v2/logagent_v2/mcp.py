@@ -59,6 +59,8 @@ def task_mcp_response(
                 "capabilities": {"resources": {}, "tools": {}},
                 "serverInfo": {"name": "logagent-v2-task", "version": "0.1.0"},
             }
+        elif method == "ping":
+            result = {}
         elif method == "resources/list":
             result = {"resources": task_resources(run)}
         elif method == "resources/read":
@@ -102,6 +104,8 @@ def task_mcp_response(
                 value,
                 evidence_refs_from_result(value),
             )
+        elif method == "prompts/list":
+            result = {"prompts": []}
         else:
             raise ValueError(f"unsupported MCP method {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}

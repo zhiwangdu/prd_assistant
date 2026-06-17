@@ -1373,6 +1373,20 @@ class StoreTests(unittest.TestCase):
             self.assertIsInstance(batch, list)
             self.assertEqual([item["id"] for item in batch], [101, 102])
             self.assertEqual(batch[0]["result"]["serverInfo"]["name"], "logagent-v2-task")
+            ping = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 103, "method": "ping"},
+            )
+            self.assertEqual(ping["result"], {})
+            prompts = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 104, "method": "prompts/list"},
+            )
+            self.assertEqual(prompts["result"]["prompts"], [])
             names = {item["name"] for item in listed["result"]["resources"]}
             resource_uris = {item["uri"] for item in listed["result"]["resources"]}
             self.assertIn("manifest", names)
