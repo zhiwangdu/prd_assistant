@@ -11,8 +11,11 @@ Last updated: 2026-06-18
   evidence validation, and result persistence remain Server-owned and bounded;
   the graph envelope now records `graphRuntime` metadata in
   `analysis_state.json`.
+- V2 Settings Agent backend summary and dry-run diagnostics now expose the same
+  `graphRuntime` metadata for WebUI and runtime audits.
 - Added regression coverage that a completed stub run exposes
-  `graphRuntime.engine=langgraph` and the expected node list through task MCP.
+  `graphRuntime.engine=langgraph` and the expected node list through task MCP
+  and Settings diagnostics.
 
 ## 2026-06-18 V2 LLM Debug Route Parity Coverage
 

@@ -436,7 +436,9 @@ never include API keys or the configured binary path.
 `/api/v2/settings/agent-backends` describes the in-process V2 Agent runtime
 instead of the Rust Server's Claude Code CLI backend. The diagnostic endpoint is
 a dry-run configuration check; for `binary` it checks that
-`LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable. The Domain
+`LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable. Both the
+summary and diagnostic response include `graphRuntime` with the LangGraph
+engine, graph name, and node list used by analysis runs. The Domain
 Adapter endpoint returns the built-in `opengemini_influxdb` active adapter plus
 `cassandra` and `rocksdb` skeleton adapters. The same adapter summaries are also
 available through readonly MCP `logagent-v2://domain-adapters` and

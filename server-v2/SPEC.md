@@ -1134,11 +1134,12 @@ rather than compatibility routes for the Rust Server:
   executable and parses stdout as a final answer; `openai_compatible` calls the
   configured `/chat/completions` endpoint with the V2 max output token limit.
 - `GET /api/v2/settings/agent-backends` summarizes the in-process V2 Agent
-  runtime as `logagent_v2_agent`.
+  runtime as `logagent_v2_agent` and returns `graphRuntime` metadata for the
+  LangGraph engine, graph name, and node list used by analysis runs.
 - `POST /api/v2/settings/agent-backends/:backend_id/test` performs a dry-run
   configuration diagnostic only. It must not execute shell commands. For
   `binary`, it validates that the configured path is absolute, regular, and
-  executable.
+  executable. It returns the same `graphRuntime` metadata.
 - `GET /api/v2/settings/domain-adapters` returns the built-in adapter registry:
   `opengemini_influxdb` is active, while `cassandra` and `rocksdb` are
   skeleton adapters.

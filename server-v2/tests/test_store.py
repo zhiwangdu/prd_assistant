@@ -7964,8 +7964,14 @@ grep_results.json#matches/0
             backends = agent_backends_summary(settings)
             self.assertEqual(backends["defaultBackend"], "logagent_v2_agent")
             self.assertEqual(backends["backends"][0]["backendType"], "langgraph_oriented_agent")
+            self.assertEqual(backends["backends"][0]["graphRuntime"]["engine"], "langgraph")
+            self.assertEqual(
+                backends["backends"][0]["graphRuntime"]["nodes"],
+                ["collect_initial_evidence", "agent_round", "finalize_result"],
+            )
             diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
             self.assertEqual(diagnostic["status"], "configured")
+            self.assertEqual(diagnostic["graphRuntime"]["graph"], "logagent_v2_analysis")
             self.assertTrue(diagnostic["details"])
 
             self.assertFalse(debug_log_responses())

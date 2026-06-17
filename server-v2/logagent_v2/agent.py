@@ -11,6 +11,7 @@ from .agent_audit import (
     persist_agent_response,
     persist_analysis_state,
 )
+from .agent_graph import graph_runtime_metadata
 from .alias import fallback_run_alias
 from .analysis_package import persist_analysis_package
 from .config import Settings
@@ -30,11 +31,6 @@ from .skills import persist_system_context
 from .store import JsonObject, Store
 
 MAX_TOOL_CALLS_PER_ROUND = 4
-AGENT_GRAPH_NODES = (
-    "collect_initial_evidence",
-    "agent_round",
-    "finalize_result",
-)
 
 
 class AgentGraphState(TypedDict, total=False):
@@ -47,14 +43,6 @@ class AgentGraphState(TypedDict, total=False):
     finalAnswer: JsonObject
     runtimeStatus: str
     result: JsonObject
-
-
-def graph_runtime_metadata() -> JsonObject:
-    return {
-        "engine": "langgraph",
-        "graph": "logagent_v2_analysis",
-        "nodes": list(AGENT_GRAPH_NODES),
-    }
 
 
 class AgentRuntime:

@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from .agent_graph import graph_runtime_metadata
 from .config import Settings
 from .llm import (
     MAX_PROVIDER_RESPONSE_BYTES,
@@ -140,12 +141,14 @@ def test_agent_chat(settings: Settings, message: str) -> JsonObject:
 
 def agent_backends_summary(settings: Settings) -> JsonObject:
     provider = normalized_provider(settings)
+    graph_runtime = graph_runtime_metadata()
     return {
         "defaultBackend": "logagent_v2_agent",
         "backends": [
             {
                 "id": "logagent_v2_agent",
                 "backendType": "langgraph_oriented_agent",
+                "graphRuntime": graph_runtime,
                 "enabled": True,
                 "defaultBackend": True,
                 "commandConfigured": agent_backend_configured(settings),
@@ -164,8 +167,12 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
     if backend_id != "logagent_v2_agent":
         raise ValueError(f"unknown V2 agent backend {backend_id}")
     provider = normalized_provider(settings)
+    graph_runtime = graph_runtime_metadata()
     details = [
-        "V2 runs execute inside the FastAPI worker through Server-owned tools.",
+        (
+            "V2 runs execute inside the FastAPI worker through a LangGraph "
+            f"{graph_runtime['graph']} state graph."
+        ),
         f"Provider={provider}, timeout={settings.agent_timeout_seconds}s, "
         f"maxRounds={settings.agent_max_rounds}.",
     ]
@@ -205,6 +212,7 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
         "enabled": True,
         "status": status,
         "executionMode": f"{provider}_tool_loop",
+        "graphRuntime": graph_runtime,
         "details": details,
     }
 
