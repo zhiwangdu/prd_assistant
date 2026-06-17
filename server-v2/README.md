@@ -554,7 +554,9 @@ resource URIs, manifest outline, grep match preview, analyzer tool input
 outline, system/metadata context outlines, bounded resume `analysisState`
 (recent user messages, action results, pending actions, and
 `finalizeRequested`), and the current allowed evidence refs, including
-`session_text_input.json#question`. Task MCP exposes it as
+`session_text_input.json#question`. The resource index includes optional
+Rust/V1 Claude runtime compatibility resources `claude_mcp_config` and
+`claude_session` alongside Agent audit resources. Task MCP exposes it as
 `logagent://task/<run_id>/analysis_package` and retains the
 `logagent-v2://run/<run_id>/analysis_package` alias.
 

@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Analysis Package Runtime Resource Index
+
+- V2 `analysis_package.resources` now includes the optional Rust/V1 Claude
+  runtime compatibility resources `claude_mcp_config` and `claude_session`,
+  matching the task MCP `resources/list` surface.
+- Added regression coverage so future package index changes cannot hide those
+  resources from Agents that discover task resources through
+  `analysis_package.json`.
+
 ## 2026-06-17 V2 Analysis Package Resume State
 
 - V2 `analysis_package.json` now includes a bounded `analysisState` section

@@ -449,6 +449,8 @@ class StoreTests(unittest.TestCase):
             )
             self.assertIn("analysis_package", {item["name"] for item in package["resources"]})
             self.assertIn("analysis_state", {item["name"] for item in package["resources"]})
+            self.assertIn("claude_mcp_config", {item["name"] for item in package["resources"]})
+            self.assertIn("claude_session", {item["name"] for item in package["resources"]})
             self.assertFalse(package["systemContext"]["resources"])
             resource_response = task_mcp_response(
                 settings,
