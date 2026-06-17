@@ -543,17 +543,21 @@ def build_metadata_context(
         instances=instances,
         question=workspace.get("question", ""),
         task_mode=workspace.get("mode", ""),
+        bound_instance_id=workspace.get("instanceId"),
         max_instances=max_instances,
     )
+    selection_mode = "session_binding" if workspace.get("instanceId") else "auto"
     return {
         "schemaVersion": 1,
         "workspaceId": workspace_id,
         "runId": run_id,
         "selection": {
-            "mode": "auto",
+            "mode": selection_mode,
             "totalInstances": len(instances),
             "selectedInstances": len(selected),
             "maxInstances": max_instances,
+            "boundInstanceId": workspace.get("instanceId"),
+            "boundNodeId": workspace.get("nodeId"),
         },
         "resources": selected,
         "finalEvidenceAllowed": False,
@@ -565,10 +569,29 @@ def select_metadata_instances(
     instances: list[JsonObject],
     question: str,
     task_mode: str,
+    bound_instance_id: str | None,
     max_instances: int,
 ) -> list[JsonObject]:
     scored: list[tuple[int, int, str, JsonObject]] = []
+    selected_instance_ids: set[str] = set()
+    if bound_instance_id:
+        for index, instance in enumerate(instances):
+            if instance["instanceId"] != bound_instance_id:
+                continue
+            snapshot = store.get_metadata_snapshot(instance["instanceId"])
+            resource = metadata_context_resource(
+                instance,
+                snapshot,
+                "session_binding",
+                1000,
+                ["session.instanceId"],
+            )
+            scored.append((1000, index, "session_binding", resource))
+            selected_instance_ids.add(instance["instanceId"])
+            break
     for index, instance in enumerate(instances):
+        if instance["instanceId"] in selected_instance_ids:
+            continue
         snapshot = store.get_metadata_snapshot(instance["instanceId"])
         score, match_reasons = metadata_match_score(instance, snapshot, question, task_mode)
         if score > 0:

@@ -91,7 +91,9 @@ Implemented in this slice:
   persist a deterministic fallback alias derived from the final summary or
   question for history/UI display.
 - `analysis_package.json` generation after initial evidence collection, exposed
-  as task MCP resource for Agent loop context.
+  as task MCP resource for Agent loop context. The package includes Session
+  title, source URL, Metadata binding, System Context ids, Skill ids, and
+  attached upload ids in its `workspace` section.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
 - Evidence and artifact listing for a run, including uploaded input artifacts
@@ -190,9 +192,10 @@ Implemented in this slice:
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
-  storage, saved raw snapshot refresh, field/tag type query APIs, per-run `metadata_context`
-  auto-selection, readonly MCP tools, and task MCP V1-compatible topology
-  alias plus bounded background slices.
+  storage, saved raw snapshot refresh, field/tag type query APIs, explicit
+  Session `instanceId` / `nodeId` binding for per-run `metadata_context`,
+  auto-selection fallback, readonly MCP tools, and task MCP V1-compatible
+  topology alias plus bounded background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
   local hash-vector recall, edit/disable API, readonly MCP search, and task MCP

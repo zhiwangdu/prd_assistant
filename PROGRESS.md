@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Metadata Binding Propagation
+
+- V2 Metadata context generation now honors explicit Session `instanceId` /
+  `nodeId` binding before auto-selecting metadata instances from the question.
+- Bound metadata resources are marked with `selectionReason=session_binding`,
+  and `metadata_context.json` records `boundInstanceId` and `boundNodeId` in
+  its selection block.
+- `analysis_package.json` now carries Session title, source URL, instance/node
+  binding, System Context ids, Skill ids, and attached upload ids in the
+  `workspace` section so the Agent receives the product-level Session context.
+- Added regression coverage where the question matches one metadata instance
+  but the Session binding selects another.
+- Verification passed: focused Metadata context binding regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (108 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Task Summaries
 
 - V2 Session task APIs now return product-level TaskSummary fields instead of

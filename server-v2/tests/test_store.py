@@ -6329,6 +6329,52 @@ fi
             self.assertEqual(len(metadata_contexts), 1)
             self.assertFalse(metadata_contexts[0]["final_allowed"])
 
+            bound_workspace = store.create_workspace(
+                "prod-og cpu usage timeout in metrics",
+                "diagnose",
+                "en-US",
+                instance_id="backup-og",
+                node_id="backup-og:data-2",
+            )
+            bound_run = store.create_run(bound_workspace["id"])
+            AgentRuntime(settings, store).run_analysis(bound_workspace["id"], bound_run["id"])
+            bound_context_response = task_mcp_response(
+                settings,
+                store,
+                bound_run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 171,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{bound_run['id']}/metadata_context"},
+                },
+            )
+            bound_context = json.loads(
+                bound_context_response["result"]["contents"][0]["text"]
+            )
+            self.assertEqual(bound_context["selection"]["mode"], "session_binding")
+            self.assertEqual(bound_context["selection"]["boundInstanceId"], "backup-og")
+            self.assertEqual(bound_context["selection"]["boundNodeId"], "backup-og:data-2")
+            self.assertEqual(bound_context["resources"][0]["instanceId"], "backup-og")
+            self.assertEqual(
+                bound_context["resources"][0]["selectionReason"],
+                "session_binding",
+            )
+            package_response = task_mcp_response(
+                settings,
+                store,
+                bound_run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 172,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{bound_run['id']}/analysis_package"},
+                },
+            )
+            package = json.loads(package_response["result"]["contents"][0]["text"])
+            self.assertEqual(package["workspace"]["instanceId"], "backup-og")
+            self.assertEqual(package["workspace"]["nodeId"], "backup-og:data-2")
+
     def test_case_memory_manual_task_and_mcp_background_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

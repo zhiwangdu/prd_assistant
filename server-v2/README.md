@@ -91,8 +91,9 @@ slice provides the durable foundation for the V2 product model:
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
-  auto-selection, HTTP API, readonly MCP tools, and task MCP
-  `logagent.get_metadata_topology` / `logagent.query_metadata` bounded slices.
+  auto-selection, explicit Session `instanceId` / `nodeId` binding, HTTP API,
+  readonly MCP tools, and task MCP `logagent.get_metadata_topology` /
+  `logagent.query_metadata` bounded slices.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 plus local vector recall,
   edit/disable API, readonly MCP search, and task MCP

@@ -64,10 +64,16 @@ def build_analysis_package(
         "schemaVersion": 1,
         "workspace": {
             "workspaceId": workspace_id,
+            "title": workspace.get("title"),
             "question": workspace.get("question"),
+            "sourceUrl": workspace.get("sourceUrl"),
+            "instanceId": workspace.get("instanceId"),
+            "nodeId": workspace.get("nodeId"),
             "mode": workspace.get("mode"),
             "language": workspace.get("language"),
+            "systemContextIds": workspace.get("systemContextIds", []),
             "skillIds": workspace.get("skillIds", []),
+            "uploadIds": workspace.get("uploadIds", []),
         },
         "run": {
             "runId": run_id,
