@@ -26,7 +26,7 @@ from .skills import (
 )
 from .store import JsonObject, Store, now_iso
 from .system_context import preview_system_context_resources
-from .tools import PPROF_ANALYZER_ID, run_configured_tool, tool_descriptors
+from .tools import run_configured_tool, tool_catalog, tool_descriptors
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
@@ -346,43 +346,6 @@ def readonly_resource_descriptors(settings: Settings, store: Store) -> list[Json
                 }
             )
     return descriptors
-
-
-def tool_catalog(settings: Settings) -> dict:
-    descriptors = tool_descriptors(settings)
-    configured_tools = [
-        {
-            "toolId": tool["toolId"],
-            "enabled": tool["enabled"],
-            "timeoutSeconds": find_configured_tool_timeout(settings, tool["toolId"]),
-            "maxInputFiles": tool.get("maxInputFiles", tool.get("maxFiles")),
-            "configuredArgs": list(find_configured_tool_args(settings, tool["toolId"])),
-            "match": tool.get("match", {"filePatterns": [], "keywords": []}),
-        }
-        for tool in descriptors
-        if tool.get("source") == "configured"
-    ]
-    return {
-        "schemaVersion": 1,
-        "tools": descriptors,
-        "configuredTools": configured_tools,
-    }
-
-
-def find_configured_tool_args(settings: Settings, tool_id: str) -> tuple[str, ...]:
-    for tool in settings.tools:
-        if tool.id == tool_id:
-            return tool.args
-    return ()
-
-
-def find_configured_tool_timeout(settings: Settings, tool_id: str) -> int | None:
-    for tool in settings.tools:
-        if tool.id == tool_id:
-            return tool.timeout_seconds
-    if tool_id == PPROF_ANALYZER_ID:
-        return 60
-    return None
 
 
 def task_resources(run: dict) -> list[dict]:

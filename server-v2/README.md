@@ -137,6 +137,11 @@ slice provides the durable foundation for the V2 product model:
   adapter resources in the compatibility list/preview surface.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
+- `/api/v2/tools`, readonly MCP `logagent://tools/catalog` /
+  `logagent-v2://tools/catalog`, and readonly `logagent.list_tools` now share
+  the same catalog envelope: `schemaVersion`, complete `tools` descriptors,
+  and V1-compatible `configuredTools` summaries with configured args, timeout,
+  match rules, and `maxInputFiles`.
 - Agent runtime executed through a real LangGraph state graph with separate
   nodes for initial evidence collection, provider request preparation,
   provider calls, tool execution, final-answer validation, and final result
@@ -969,12 +974,11 @@ id mappings, and Rust/V1-style `artifactPaths` for
 The pprof subprocess argv matches Rust/V1: top/tree/svg use
 `-nodecount=<nodeCount>`, and all pprof subcommands use `-symbolize=none`.
 
-Readonly MCP exposes the same tool registry as `logagent://tools/catalog`,
-the retained `logagent-v2://tools/catalog` alias, and `logagent.list_tools`.
-All return
-`schemaVersion`, full `tools` descriptors, and a V1-compatible
-`configuredTools` summary with configured args, timeout, match rules, and
-`maxInputFiles`. The readonly endpoint never runs tools.
+`GET /api/v2/tools`, readonly MCP `logagent://tools/catalog`, the retained
+`logagent-v2://tools/catalog` alias, and `logagent.list_tools` expose the same
+tool catalog envelope. All return `schemaVersion`, full `tools` descriptors,
+and a V1-compatible `configuredTools` summary with configured args, timeout,
+match rules, and `maxInputFiles`. The readonly MCP endpoint never runs tools.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
 and the enabled `pprof_analyzer` Go executable.

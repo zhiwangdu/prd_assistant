@@ -85,7 +85,7 @@ from .system_context import (
     patch_system_context_version,
     preview_system_context_resources,
 )
-from .tools import get_tool_descriptor, tool_descriptors, validate_manual_tool_run
+from .tools import get_tool_descriptor, tool_catalog, validate_manual_tool_run
 from .webui_static import WebuiStaticNotFound, resolve_webui_asset
 from .worker import JobRunner
 
@@ -1191,7 +1191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
-        return {"tools": tool_descriptors(settings)}
+        return tool_catalog(settings)
 
     @app.post("/api/v2/tools/{tool_id}/runs", status_code=202)
     async def create_tool_run(_: Auth, tool_id: str, payload: ToolRunCreate) -> dict:

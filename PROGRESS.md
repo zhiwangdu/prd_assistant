@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tools Catalog Envelope Parity
+
+- V2 now uses a shared `tool_catalog()` payload for HTTP `/api/v2/tools`,
+  readonly MCP `logagent://tools/catalog` / `logagent-v2://tools/catalog`, and
+  readonly `logagent.list_tools`.
+- `/api/v2/tools` remains WebUI-compatible by preserving the `tools` field and
+  now also returns `schemaVersion` plus V1-compatible `configuredTools`
+  summaries with configured args, timeout, match rules, and `maxInputFiles`.
+- Added regression coverage for the shared catalog payload and updated
+  server-v2 and Tool Runner docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused tool catalog pytest selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Agent Provider Audit Metadata
 
 - V2 OpenAI-compatible Agent provider now promotes stable audit metadata into

@@ -3834,6 +3834,41 @@ class StoreTests(unittest.TestCase):
             )
 
             descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
+            catalog = tools_module.tool_catalog(settings)
+            self.assertEqual(catalog["schemaVersion"], 1)
+            self.assertIn("tools", catalog)
+            self.assertIn("configuredTools", catalog)
+            configured_catalog = {
+                item["toolId"]: item for item in catalog["configuredTools"]
+            }
+            self.assertEqual(
+                configured_catalog["mock_tool"]["configuredArgs"],
+                ["-c", "print('ok')"],
+            )
+            self.assertEqual(configured_catalog["mock_tool"]["timeoutSeconds"], 5)
+            self.assertEqual(configured_catalog["mock_tool"]["maxInputFiles"], 1)
+            self.assertEqual(
+                configured_catalog["mock_tool"]["match"]["filePatterns"],
+                ["*.log", "*timeout*"],
+            )
+            self.assertIn("disabled_tool", configured_catalog)
+            settings.ensure_dirs()
+            Store(settings.sqlite_path).initialize()
+            from fastapi.testclient import TestClient
+            from logagent_v2.api import create_app
+
+            with TestClient(create_app(settings)) as client:
+                response = client.get(
+                    "/api/v2/tools",
+                    headers={"Authorization": "Bearer test"},
+                )
+                self.assertEqual(response.status_code, 200)
+                api_catalog = response.json()
+                self.assertEqual(api_catalog["schemaVersion"], 1)
+                self.assertEqual(
+                    api_catalog["configuredTools"],
+                    catalog["configuredTools"],
+                )
 
             self.assertEqual(descriptors["mock_tool"]["source"], "configured")
             self.assertEqual(descriptors["mock_tool"]["backend"], "command")

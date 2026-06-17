@@ -170,7 +170,9 @@ Implemented in this slice:
   variables, or standard source-built analyzer filenames auto-discovered under
   `LOGAGENT_V2_TOOLS_DIR` / `$LOGAGENT_V2_APP_DIR/bin/tools`, listed through
   `/api/v2/tools`, runnable through manual tool-run APIs, and exposed to task
-  MCP `logagent.run_domain_tool`. Tools with `{input_file}`
+  MCP `logagent.run_domain_tool`. The HTTP catalog shares the readonly MCP
+  catalog envelope: `schemaVersion`, complete `tools` descriptors, and
+  V1-compatible `configuredTools` summaries. Tools with `{input_file}`
   can use explicit `inputFile`/`inputFiles` workspace selectors, otherwise
   consume matching materialized tool inputs before execution, then fall back to
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
@@ -680,7 +682,11 @@ catalog shape as Rust/V1.
 
 The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
 readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
-configured tool execution. Task MCP `logagent.run_domain_tool` only exposes
+configured tool execution. `/api/v2/tools`, readonly MCP
+`logagent://tools/catalog`, `logagent-v2://tools/catalog`, and
+`logagent.list_tools` must expose the same catalog envelope with
+`schemaVersion`, complete `tools` descriptors, and V1-compatible
+`configuredTools` summaries. Task MCP `logagent.run_domain_tool` only exposes
 configured subprocess tools. Its `tools/list` descriptor input schema must
 advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
 call shape with `anyOf`. The OpenAI-compatible and binary Agent provider
@@ -725,12 +731,13 @@ filename against the selected tool descriptor's `acceptedSuffixes`. Descriptor
 values may be suffixes such as `.tar.gz`, glob-style patterns such as `*.log`,
 or `*` for unrestricted single-upload built-ins.
 
-Readonly MCP `logagent://tools/catalog`, retained `logagent-v2://tools/catalog`,
-and `logagent.list_tools` expose the same catalog payload shape used by the
-Rust server: `schemaVersion`, complete `tools` descriptors, and
-`configuredTools` summaries containing configured args, timeout, match rules,
-and `maxInputFiles`. This readonly surface is catalog-only and cannot execute
-configured or built-in tools. Static readonly resources support both
+HTTP `/api/v2/tools`, readonly MCP `logagent://tools/catalog`, retained
+`logagent-v2://tools/catalog`, and `logagent.list_tools` expose the same catalog
+payload shape used by the Rust server: `schemaVersion`, complete `tools`
+descriptors, and `configuredTools` summaries containing configured args,
+timeout, match rules, and `maxInputFiles`. The readonly MCP surface is
+catalog-only and cannot execute configured or built-in tools. Static readonly
+resources support both
 `logagent://...` and `logagent-v2://...` URIs, and dynamic skill/metadata
 snapshot reads accept the same aliasing.
 

@@ -88,6 +88,49 @@ def tool_descriptors(settings: Settings) -> list[JsonObject]:
     return descriptors
 
 
+def tool_catalog(settings: Settings) -> JsonObject:
+    descriptors = tool_descriptors(settings)
+    return {
+        "schemaVersion": 1,
+        "tools": descriptors,
+        "configuredTools": configured_tool_summaries(settings, descriptors),
+    }
+
+
+def configured_tool_summaries(
+    settings: Settings,
+    descriptors: list[JsonObject] | None = None,
+) -> list[JsonObject]:
+    return [
+        {
+            "toolId": tool["toolId"],
+            "enabled": tool["enabled"],
+            "timeoutSeconds": find_configured_tool_timeout(settings, tool["toolId"]),
+            "maxInputFiles": tool.get("maxInputFiles", tool.get("maxFiles")),
+            "configuredArgs": list(find_configured_tool_args(settings, tool["toolId"])),
+            "match": tool.get("match", {"filePatterns": [], "keywords": []}),
+        }
+        for tool in (descriptors or tool_descriptors(settings))
+        if tool.get("source") == "configured"
+    ]
+
+
+def find_configured_tool_args(settings: Settings, tool_id: str) -> tuple[str, ...]:
+    for tool in settings.tools:
+        if tool.id == tool_id:
+            return tool.args
+    return ()
+
+
+def find_configured_tool_timeout(settings: Settings, tool_id: str) -> int | None:
+    for tool in settings.tools:
+        if tool.id == tool_id:
+            return tool.timeout_seconds
+    if tool_id == PPROF_ANALYZER_ID:
+        return 60
+    return None
+
+
 def built_in_tool_descriptors(settings: Settings) -> list[JsonObject]:
     return [
         preprocess_descriptor(),
