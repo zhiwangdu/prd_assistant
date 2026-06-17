@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Command Template Descriptor Compatibility
+
+- Aligned V2 Remote Executor command template descriptors with Rust/V1:
+  `enabled` now combines global remote execution state with template state, and
+  `timeoutSeconds` is always populated from the template override or default
+  remote command timeout.
+- Kept remote command execution and queue behavior unchanged.
+- Updated V2 Server and Environment Collector docs/specs.
+- Verification passed: focused Remote Executor descriptor regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (74 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Cluster and Snapshot Fetch APIs
 
 - Added V2 Metadata cluster detail and cluster node routes derived from

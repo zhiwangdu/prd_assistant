@@ -995,6 +995,10 @@ remote command smoke runner. They are not a full Environment Collector.
 - Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`. If
   unset, V2 exposes a default `smoke_ls_root` template with argv
   `["ls", "-la", "/root"]`.
+- Command template descriptors must match the Rust/V1 behavior: `enabled`
+  combines global remote execution state with template state, and
+  `timeoutSeconds` is always the template override or default remote command
+  timeout.
 - Creating a run validates that remote execution is enabled, the executor is
   enabled, and the command template exists and is enabled.
 - The worker constructs a fixed SSH argv using the configured SSH executable,

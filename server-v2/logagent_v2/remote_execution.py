@@ -11,7 +11,7 @@ from .store import JsonObject, Store
 
 
 def command_templates(settings: Settings) -> list[JsonObject]:
-    return [public_command_template(template) for template in settings.remote_commands]
+    return [public_command_template(settings, template) for template in settings.remote_commands]
 
 
 def command_template(settings: Settings, command_id: str) -> RemoteCommandTemplate | None:
@@ -21,14 +21,16 @@ def command_template(settings: Settings, command_id: str) -> RemoteCommandTempla
     return None
 
 
-def public_command_template(template: RemoteCommandTemplate) -> JsonObject:
+def public_command_template(
+    settings: Settings, template: RemoteCommandTemplate
+) -> JsonObject:
     return {
         "commandId": template.command_id,
         "displayName": template.display_name,
         "description": template.description,
-        "enabled": template.enabled,
+        "enabled": settings.remote_execution_enabled and template.enabled,
         "argv": list(template.argv),
-        "timeoutSeconds": template.timeout_seconds,
+        "timeoutSeconds": template.timeout_seconds or settings.remote_command_timeout_seconds,
     }
 
 

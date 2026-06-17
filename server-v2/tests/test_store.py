@@ -5668,7 +5668,10 @@ grep_results.json#matches/0
                 }
             )
             self.assertEqual(executor["executorId"][:9], "executor_")
-            self.assertEqual(command_templates(settings)[0]["commandId"], "smoke_ls_root")
+            template_descriptor = command_templates(settings)[0]
+            self.assertEqual(template_descriptor["commandId"], "smoke_ls_root")
+            self.assertEqual(template_descriptor["enabled"], True)
+            self.assertEqual(template_descriptor["timeoutSeconds"], 5)
 
             run = store.create_remote_run(
                 executor["executorId"],
@@ -5697,6 +5700,26 @@ grep_results.json#matches/0
             self.assertIn("ls", stdout_preview)
             result_path = settings.data_dir / finished["result"]["resultPath"]
             self.assertTrue(result_path.exists())
+
+    def test_remote_command_template_descriptors_include_global_enabled_and_timeout(self) -> None:
+        settings = Settings(
+            data_dir=Path("/tmp/logagent-v2-test-unused"),
+            api_key="test",
+            remote_execution_enabled=False,
+            remote_command_timeout_seconds=44,
+            remote_commands=(
+                RemoteCommandTemplate(
+                    command_id="smoke",
+                    display_name="Smoke",
+                    description="disabled globally",
+                    argv=("true",),
+                ),
+            ),
+        )
+
+        descriptor = command_templates(settings)[0]
+        self.assertEqual(descriptor["enabled"], False)
+        self.assertEqual(descriptor["timeoutSeconds"], 44)
 
 
 if __name__ == "__main__":

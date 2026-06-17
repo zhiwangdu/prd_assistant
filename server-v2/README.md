@@ -406,8 +406,11 @@ timestamps. Deleting an executor disables it instead of removing historical run
 records.
 
 Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
-V2 exposes the low-risk `smoke_ls_root` template. Runs are DB-backed jobs. The
-worker invokes the configured SSH executable with fixed argv:
+V2 exposes the low-risk `smoke_ls_root` template. Template descriptors match
+the Rust/V1 behavior: `enabled` also reflects global remote execution state,
+and `timeoutSeconds` is always filled with the template override or default
+remote command timeout. Runs are DB-backed jobs. The worker invokes the
+configured SSH executable with fixed argv:
 
 ```text
 ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>
