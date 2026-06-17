@@ -2,20 +2,23 @@
 
 Last updated: 2026-06-18
 
-## 2026-06-18 V2 LangGraph Runtime Envelope
+## 2026-06-18 V2 LangGraph Planner Node Split
 
 - V2 `AgentRuntime.run_analysis` now executes through a real LangGraph
-  `StateGraph` named `logagent_v2_analysis` with
-  `collect_initial_evidence`, `agent_round`, and `finalize_result` nodes.
+  `StateGraph` named `logagent_v2_analysis` with separate
+  `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,
+  `execute_tool_calls`, `validate_final_answer`, and `finalize_result` nodes.
+- Provider tool-call responses now route through the `execute_tool_calls` node,
+  non-waiting observations loop back to `prepare_agent_request`, normal
+  answers route through `validate_final_answer`, and waiting/approval tool
+  calls end the current graph invocation in the matching waiting state.
 - Existing provider/tool-loop behavior, waiting states, audit artifacts,
   evidence validation, and result persistence remain Server-owned and bounded;
-  the graph envelope now records `graphRuntime` metadata in
-  `analysis_state.json`.
-- V2 Settings Agent backend summary and dry-run diagnostics now expose the same
-  `graphRuntime` metadata for WebUI and runtime audits.
-- Added regression coverage that a completed stub run exposes
-  `graphRuntime.engine=langgraph` and the expected node list through task MCP
-  and Settings diagnostics.
+  `analysis_state.json`, Settings Agent backend summary, and dry-run
+  diagnostics now report the expanded graph node list.
+- Added regression coverage that completed stub runs and Settings diagnostics
+  expose the shared `AGENT_GRAPH_NODES` list through task MCP and backend
+  metadata.
 
 ## 2026-06-18 V2 Provider-Backed Run Alias
 

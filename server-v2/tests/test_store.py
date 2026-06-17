@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
+from logagent_v2.agent_graph import AGENT_GRAPH_NODES
 from logagent_v2.alias import fallback_run_alias, normalize_run_alias
 from logagent_v2.analysis import get_run_analysis, get_run_artifacts
 from logagent_v2.artifacts import (
@@ -488,7 +489,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(state["graphRuntime"]["graph"], "logagent_v2_analysis")
             self.assertEqual(
                 state["graphRuntime"]["nodes"],
-                ["collect_initial_evidence", "agent_round", "finalize_result"],
+                list(AGENT_GRAPH_NODES),
             )
             self.assertEqual(state["rounds"][0]["status"], "completed")
             request_response = task_mcp_response(
@@ -8073,7 +8074,7 @@ grep_results.json#matches/0
             self.assertEqual(backends["backends"][0]["graphRuntime"]["engine"], "langgraph")
             self.assertEqual(
                 backends["backends"][0]["graphRuntime"]["nodes"],
-                ["collect_initial_evidence", "agent_round", "finalize_result"],
+                list(AGENT_GRAPH_NODES),
             )
             diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
             self.assertEqual(diagnostic["status"], "configured")

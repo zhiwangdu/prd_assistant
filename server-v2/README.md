@@ -119,8 +119,9 @@ slice provides the durable foundation for the V2 product model:
   adapter resources in the compatibility list/preview surface.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
-- Agent runtime executed through a real LangGraph state graph envelope for
-  initial evidence collection, Agent round execution, and final result
+- Agent runtime executed through a real LangGraph state graph with separate
+  nodes for initial evidence collection, provider request preparation,
+  provider calls, tool execution, final-answer validation, and final result
   persistence. The graph uses the default stub final answer or an optional
   bounded OpenAI-compatible / local binary provider-tool loop for
   evidence-validated JSON final answers, provider-requested waiting/approval
@@ -544,10 +545,11 @@ object accepted from OpenAI-compatible content. Non-zero exit, timeout,
 oversized stdout, invalid UTF-8, and parse/schema failures are persisted in
 `agent_response.json`.
 
-The run lifecycle is wrapped in a LangGraph state graph with
-`collect_initial_evidence`, `agent_round`, and `finalize_result` nodes. The
+The run lifecycle is executed by a LangGraph state graph with
+`collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,
+`execute_tool_calls`, `validate_final_answer`, and `finalize_result` nodes. The
 latest `analysis_state.json` records `graphRuntime.engine=langgraph` and the
-node list so runtime artifacts prove which orchestration envelope executed the
+node list so runtime artifacts prove which orchestration graph executed the
 run.
 
 The provider may return a `tool_calls` object for tools advertised in the
@@ -562,12 +564,14 @@ the provider can legally cite evidence it requested. The provider must
 eventually return one JSON final-answer object; V2 normalizes it and rejects
 unsupported or non-current evidence refs before marking the run `succeeded`.
 
-This is a bounded provider-directed tool loop inside one LangGraph node.
-Waiting/approval tools are not advertised to the provider. Full LangGraph
-planner decomposition remains future work, but resumed runs include a bounded
-`interactionContext` with recent user messages,
-answered/approved/rejected actions, pending actions, and a
-finalize-with-current-evidence directive when the user requests it.
+Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` and
+implemented as explicit graph transitions: provider tool-call responses route
+through `execute_tool_calls`, normal answers route through
+`validate_final_answer`, waiting/approval tools end the current graph invocation
+in a waiting state, and non-waiting tool observations loop back to
+`prepare_agent_request`. Resumed runs include a bounded `interactionContext`
+with recent user messages, answered/approved/rejected actions, pending actions,
+and a finalize-with-current-evidence directive when the user requests it.
 
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP

@@ -198,7 +198,7 @@ flowchart TD
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。
 - 基于已落地的 Remote Executor，继续实现测试环境通过 SSH/SCP 采集日志和运行环境信息，并接入 Analysis Agent 审批动作。
-- V2 clean-room 分支继续推进完整 WebUI V2 cutover、LangGraph planner 拆分、真实领域 fixture 和产品化验证；日志解压/search、Agent provider loop、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor 和核心 MCP 面已迁移到 V2。
+- V2 clean-room 分支继续推进完整 WebUI V2 cutover、真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor 和核心 MCP 面已迁移到 V2。
 
 ## 全局验收
 

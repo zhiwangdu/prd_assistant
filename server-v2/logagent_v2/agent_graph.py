@@ -4,7 +4,10 @@ from .store import JsonObject
 
 AGENT_GRAPH_NODES = (
     "collect_initial_evidence",
-    "agent_round",
+    "prepare_agent_request",
+    "call_agent_provider",
+    "execute_tool_calls",
+    "validate_final_answer",
     "finalize_result",
 )
 

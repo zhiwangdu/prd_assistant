@@ -40,6 +40,16 @@ class AgentGraphState(TypedDict, total=False):
     evidenceBundle: JsonObject
     analysisPackageArtifactId: str
     interactionContext: JsonObject
+    toolObservations: list[JsonObject]
+    rounds: list[JsonObject]
+    attempt: int
+    providerRequest: JsonObject
+    providerResponse: JsonObject
+    requestArtifactId: str
+    responseArtifactId: str
+    baseRound: JsonObject
+    toolCalls: list[JsonObject]
+    waitingStatus: str
     finalAnswer: JsonObject
     runtimeStatus: str
     result: JsonObject
@@ -69,15 +79,28 @@ class AgentRuntime:
     def _build_agent_graph(self):
         graph = StateGraph(AgentGraphState)
         graph.add_node("collect_initial_evidence", self._graph_collect_initial_evidence)
-        graph.add_node("agent_round", self._graph_agent_round)
+        graph.add_node("prepare_agent_request", self._graph_prepare_agent_request)
+        graph.add_node("call_agent_provider", self._graph_call_agent_provider)
+        graph.add_node("execute_tool_calls", self._graph_execute_tool_calls)
+        graph.add_node("validate_final_answer", self._graph_validate_final_answer)
         graph.add_node("finalize_result", self._graph_finalize_result)
         graph.add_edge(START, "collect_initial_evidence")
-        graph.add_edge("collect_initial_evidence", "agent_round")
+        graph.add_edge("collect_initial_evidence", "prepare_agent_request")
+        graph.add_edge("prepare_agent_request", "call_agent_provider")
         graph.add_conditional_edges(
-            "agent_round",
-            self._graph_after_agent_round,
-            {"finalize_result": "finalize_result", "end": END},
+            "call_agent_provider",
+            self._graph_after_provider_call,
+            {
+                "execute_tool_calls": "execute_tool_calls",
+                "validate_final_answer": "validate_final_answer",
+            },
         )
+        graph.add_conditional_edges(
+            "execute_tool_calls",
+            self._graph_after_tool_calls,
+            {"prepare_agent_request": "prepare_agent_request", "end": END},
+        )
+        graph.add_edge("validate_final_answer", "finalize_result")
         graph.add_edge("finalize_result", END)
         return graph.compile(name="logagent_v2_analysis")
 
@@ -121,51 +144,410 @@ class AgentRuntime:
             "evidenceBundle": evidence_bundle,
             "analysisPackageArtifactId": analysis_package["artifact"]["id"],
             "interactionContext": self._interaction_context(run_id),
-            "runtimeStatus": "agent_round",
+            "toolObservations": [],
+            "rounds": [],
+            "attempt": 0,
+            "runtimeStatus": "prepare_agent_request",
         }
 
-    def _graph_agent_round(self, state: AgentGraphState) -> AgentGraphState:
+    def _graph_prepare_agent_request(self, state: AgentGraphState) -> AgentGraphState:
         workspace_id = state["workspaceId"]
         run_id = state["runId"]
         workspace = state["workspace"]
         evidence_bundle = state["evidenceBundle"]
+        attempt = int(state.get("attempt", 0)) + 1
+        rounds = list(state.get("rounds") or [])
+        if attempt > self.settings.agent_max_rounds:
+            error = ValueError(
+                f"agent reached LOGAGENT_V2_AGENT_MAX_ROUNDS={self.settings.agent_max_rounds}"
+            )
+            provider_response = {
+                **failed_agent_response(state.get("providerRequest") or {}, error),
+                "validation": {"status": "not_run"},
+            }
+            response_audit = persist_agent_response(
+                settings=self.settings,
+                store=self.store,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                attempt=self.settings.agent_max_rounds,
+                provider_response=provider_response,
+                request_artifact_id=state.get("requestArtifactId"),
+            )
+            self._persist_failed_state(
+                workspace_id,
+                run_id,
+                rounds,
+                state.get("baseRound") or {},
+                response_audit["artifact"]["id"],
+                provider_response,
+            )
+            raise error
         interaction_context = self._interaction_context(run_id)
-        final_answer = self._run_agent_round(
-            workspace=workspace,
+        tool_observations = list(state.get("toolObservations") or [])
+        provider_request = build_agent_provider_request(
+            self.settings,
+            workspace,
+            evidence_bundle,
+            tool_observations,
+            interaction_context,
+        )
+        request_audit = persist_agent_request(
+            settings=self.settings,
+            store=self.store,
             workspace_id=workspace_id,
             run_id=run_id,
-            evidence_bundle=evidence_bundle,
+            attempt=attempt,
+            provider_request=provider_request,
             analysis_package_artifact_id=state.get("analysisPackageArtifactId"),
-            interaction_context=interaction_context,
         )
-        if final_answer is None:
-            run = self.store.get_run(run_id)
-            if run["status"] in {"waiting_for_user", "waiting_for_approval"}:
-                return {
-                    "interactionContext": interaction_context,
-                    "runtimeStatus": run["status"],
-                    "result": {
-                        "graphRuntime": graph_runtime_metadata(),
-                        "status": run["status"],
-                        "phase": run["phase"],
-                        "pendingActions": [
-                            action
-                            for action in self.store.list_actions(run_id)
-                            if action.get("status") == "pending"
-                        ],
+        request_artifact_id = request_audit["artifact"]["id"]
+        base_round = {
+            "attempt": attempt,
+            "provider": provider_request.get("provider"),
+            "model": provider_request.get("model"),
+            "requestArtifactId": request_artifact_id,
+            "allowedEvidenceRefCount": len(provider_request.get("allowedEvidenceRefs", [])),
+            "toolObservationCount": len(tool_observations),
+        }
+        rounds.append({**base_round, "status": "requested"})
+        self._persist_state(
+            workspace_id,
+            run_id,
+            status="running",
+            phase="agent_round",
+            rounds=rounds,
+        )
+        return {
+            "attempt": attempt,
+            "interactionContext": interaction_context,
+            "toolObservations": tool_observations,
+            "providerRequest": provider_request,
+            "requestArtifactId": request_artifact_id,
+            "baseRound": base_round,
+            "rounds": rounds,
+            "runtimeStatus": "call_agent_provider",
+        }
+
+    def _graph_call_agent_provider(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
+        provider_request = state["providerRequest"]
+        attempt = state["attempt"]
+        request_artifact_id = state["requestArtifactId"]
+        rounds = list(state.get("rounds") or [])
+        base_round = state.get("baseRound") or {}
+        try:
+            provider_response = execute_agent_provider_request(self.settings, provider_request)
+        except Exception as error:
+            provider_response = {
+                **failed_agent_response(provider_request, error),
+                "validation": {"status": "not_run"},
+            }
+            response_audit = persist_agent_response(
+                settings=self.settings,
+                store=self.store,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                attempt=attempt,
+                provider_response=provider_response,
+                request_artifact_id=request_artifact_id,
+            )
+            self._persist_failed_state(
+                workspace_id,
+                run_id,
+                rounds,
+                base_round,
+                response_audit["artifact"]["id"],
+                provider_response,
+            )
+            raise
+        if provider_response.get("status") == "skipped":
+            provider_response = {
+                **provider_response,
+                "status": "completed",
+                "finalAnswer": self._stub_final_answer(
+                    state["workspace"],
+                    state["evidenceBundle"],
+                    state.get("interactionContext"),
+                ),
+            }
+        if provider_response.get("status") != "completed":
+            provider_response = {
+                **provider_response,
+                "validation": {"status": "not_run"},
+            }
+            response_audit = persist_agent_response(
+                settings=self.settings,
+                store=self.store,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                attempt=attempt,
+                provider_response=provider_response,
+                request_artifact_id=request_artifact_id,
+            )
+            self._persist_failed_state(
+                workspace_id,
+                run_id,
+                rounds,
+                base_round,
+                response_audit["artifact"]["id"],
+                provider_response,
+            )
+            error = provider_response.get("error")
+            message = error.get("message") if isinstance(error, dict) else None
+            raise ValueError(message or "agent provider failed")
+        raw_final_answer = provider_response.get("finalAnswer")
+        if not isinstance(raw_final_answer, dict):
+            error = ValueError("agent provider did not return a JSON object")
+            provider_response = {
+                **provider_response,
+                "validation": {
+                    "status": "failed",
+                    "type": error.__class__.__name__,
+                    "message": str(error),
+                },
+            }
+            response_audit = persist_agent_response(
+                settings=self.settings,
+                store=self.store,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                attempt=attempt,
+                provider_response=provider_response,
+                request_artifact_id=request_artifact_id,
+            )
+            self._persist_failed_state(
+                workspace_id,
+                run_id,
+                rounds,
+                base_round,
+                response_audit["artifact"]["id"],
+                provider_response,
+            )
+            raise error
+        if is_tool_call_request(raw_final_answer):
+            try:
+                tool_calls = normalize_tool_calls(
+                    raw_final_answer,
+                    allowed_tool_names=agent_allowed_tool_names(
+                        self.settings,
+                        state.get("interactionContext"),
+                    ),
+                )
+            except Exception as error:
+                provider_response = {
+                    **provider_response,
+                    "validation": {
+                        "status": "failed",
+                        "type": error.__class__.__name__,
+                        "message": str(error)[:4000],
                     },
                 }
-            raise ValueError("agent paused without a waiting run state")
+                response_audit = persist_agent_response(
+                    settings=self.settings,
+                    store=self.store,
+                    workspace_id=workspace_id,
+                    run_id=run_id,
+                    attempt=attempt,
+                    provider_response=provider_response,
+                    request_artifact_id=request_artifact_id,
+                )
+                self._persist_failed_state(
+                    workspace_id,
+                    run_id,
+                    rounds,
+                    base_round,
+                    response_audit["artifact"]["id"],
+                    provider_response,
+                )
+                raise
+            return {
+                "providerResponse": provider_response,
+                "toolCalls": tool_calls,
+                "runtimeStatus": "execute_tool_calls",
+            }
         return {
-            "interactionContext": interaction_context,
+            "providerResponse": provider_response,
+            "runtimeStatus": "validate_final_answer",
+        }
+
+    def _graph_after_provider_call(self, state: AgentGraphState) -> str:
+        if state.get("runtimeStatus") == "execute_tool_calls":
+            return "execute_tool_calls"
+        return "validate_final_answer"
+
+    def _graph_execute_tool_calls(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
+        attempt = state["attempt"]
+        rounds = list(state.get("rounds") or [])
+        base_round = state.get("baseRound") or {}
+        tool_calls = list(state.get("toolCalls") or [])
+        observations = self._execute_tool_calls(run_id, attempt, tool_calls)
+        waiting_status = waiting_status_from_observations(observations)
+        tool_observations = [*(state.get("toolObservations") or []), *observations]
+        provider_response = {
+            **state["providerResponse"],
+            "toolCalls": tool_calls,
+            "toolObservations": observations,
+            "validation": (
+                {
+                    "status": "paused",
+                    "runtimeStatus": waiting_status,
+                }
+                if waiting_status
+                else {"status": "tool_calls_executed"}
+            ),
+        }
+        response_audit = persist_agent_response(
+            settings=self.settings,
+            store=self.store,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            attempt=attempt,
+            provider_response=provider_response,
+            request_artifact_id=state["requestArtifactId"],
+        )
+        if waiting_status:
+            rounds[-1] = {
+                **base_round,
+                "status": waiting_status,
+                "responseArtifactId": response_audit["artifact"]["id"],
+                "toolCallCount": len(tool_calls),
+                "validation": {
+                    "status": "paused",
+                    "runtimeStatus": waiting_status,
+                },
+            }
+            self._persist_state(
+                workspace_id,
+                run_id,
+                status=waiting_status,
+                phase=waiting_status,
+                rounds=rounds,
+                final_answer_status="waiting",
+            )
+            run = self.store.get_run(run_id)
+            return {
+                "toolObservations": tool_observations,
+                "rounds": rounds,
+                "waitingStatus": waiting_status,
+                "runtimeStatus": waiting_status,
+                "result": {
+                    "graphRuntime": graph_runtime_metadata(),
+                    "status": run["status"],
+                    "phase": run["phase"],
+                    "pendingActions": [
+                        action
+                        for action in self.store.list_actions(run_id)
+                        if action.get("status") == "pending"
+                    ],
+                },
+            }
+        rounds[-1] = {
+            **base_round,
+            "status": "tool_calls_executed",
+            "responseArtifactId": response_audit["artifact"]["id"],
+            "toolCallCount": len(tool_calls),
+            "validation": {"status": "tool_calls_executed"},
+        }
+        self._persist_state(
+            workspace_id,
+            run_id,
+            status="running",
+            phase="agent_round",
+            rounds=rounds,
+            final_answer_status="pending",
+        )
+        return {
+            "toolObservations": tool_observations,
+            "rounds": rounds,
+            "responseArtifactId": response_audit["artifact"]["id"],
+            "runtimeStatus": "prepare_agent_request",
+        }
+
+    def _graph_after_tool_calls(self, state: AgentGraphState) -> str:
+        if state.get("waitingStatus") in {"waiting_for_user", "waiting_for_approval"}:
+            return "end"
+        return "prepare_agent_request"
+
+    def _graph_validate_final_answer(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
+        attempt = state["attempt"]
+        rounds = list(state.get("rounds") or [])
+        base_round = state.get("baseRound") or {}
+        provider_response = state["providerResponse"]
+        raw_final_answer = provider_response.get("finalAnswer")
+        try:
+            final_answer = normalize_and_validate_final_answer(
+                self.settings,
+                self.store,
+                run_id,
+                raw_final_answer,
+            )
+        except Exception as error:
+            provider_response = {
+                **provider_response,
+                "validation": {
+                    "status": "failed",
+                    "type": error.__class__.__name__,
+                    "message": str(error)[:4000],
+                },
+            }
+            response_audit = persist_agent_response(
+                settings=self.settings,
+                store=self.store,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                attempt=attempt,
+                provider_response=provider_response,
+                request_artifact_id=state["requestArtifactId"],
+            )
+            self._persist_failed_state(
+                workspace_id,
+                run_id,
+                rounds,
+                base_round,
+                response_audit["artifact"]["id"],
+                provider_response,
+            )
+            raise
+        provider_response = {
+            **provider_response,
+            "validatedFinalAnswer": final_answer,
+            "validation": {"status": "passed"},
+        }
+        response_audit = persist_agent_response(
+            settings=self.settings,
+            store=self.store,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            attempt=attempt,
+            provider_response=provider_response,
+            request_artifact_id=state["requestArtifactId"],
+        )
+        rounds[-1] = {
+            **base_round,
+            "status": "completed",
+            "responseArtifactId": response_audit["artifact"]["id"],
+            "validation": {"status": "passed"},
+        }
+        self._persist_state(
+            workspace_id,
+            run_id,
+            status="succeeded",
+            phase="finish",
+            rounds=rounds,
+            final_answer_status="validated",
+        )
+        return {
+            "rounds": rounds,
+            "responseArtifactId": response_audit["artifact"]["id"],
             "runtimeStatus": "final_answer_ready",
             "finalAnswer": final_answer,
         }
-
-    def _graph_after_agent_round(self, state: AgentGraphState) -> str:
-        if isinstance(state.get("finalAnswer"), dict):
-            return "finalize_result"
-        return "end"
 
     def _graph_finalize_result(self, state: AgentGraphState) -> AgentGraphState:
         workspace_id = state["workspaceId"]
@@ -185,287 +567,6 @@ class AgentRuntime:
             "runtimeStatus": "succeeded",
             "result": final_answer,
         }
-
-    def _run_agent_round(
-        self,
-        workspace: JsonObject,
-        workspace_id: str,
-        run_id: str,
-        evidence_bundle: JsonObject,
-        analysis_package_artifact_id: str | None,
-        interaction_context: JsonObject | None,
-    ) -> JsonObject | None:
-        tool_observations: list[JsonObject] = []
-        rounds: list[JsonObject] = []
-        last_provider_request: JsonObject | None = None
-        last_base_round: JsonObject | None = None
-        last_request_artifact_id: str | None = None
-
-        for attempt in range(1, self.settings.agent_max_rounds + 1):
-            provider_request = build_agent_provider_request(
-                self.settings,
-                workspace,
-                evidence_bundle,
-                tool_observations,
-                interaction_context,
-            )
-            last_provider_request = provider_request
-            request_audit = persist_agent_request(
-                settings=self.settings,
-                store=self.store,
-                workspace_id=workspace_id,
-                run_id=run_id,
-                attempt=attempt,
-                provider_request=provider_request,
-                analysis_package_artifact_id=analysis_package_artifact_id,
-            )
-            request_artifact_id = request_audit["artifact"]["id"]
-            last_request_artifact_id = request_artifact_id
-            base_round = {
-                "attempt": attempt,
-                "provider": provider_request.get("provider"),
-                "model": provider_request.get("model"),
-                "requestArtifactId": request_artifact_id,
-                "allowedEvidenceRefCount": len(provider_request.get("allowedEvidenceRefs", [])),
-                "toolObservationCount": len(tool_observations),
-            }
-            last_base_round = base_round
-            rounds.append({**base_round, "status": "requested"})
-            self._persist_state(
-                workspace_id,
-                run_id,
-                status="running",
-                phase="agent_round",
-                rounds=rounds,
-            )
-
-            response_audit: JsonObject | None = None
-            state_failed = False
-            try:
-                provider_response = execute_agent_provider_request(
-                    self.settings, provider_request
-                )
-                if provider_response.get("status") == "skipped":
-                    provider_response = {
-                        **provider_response,
-                        "status": "completed",
-                        "finalAnswer": self._stub_final_answer(
-                            workspace, evidence_bundle, interaction_context
-                        ),
-                    }
-                if provider_response.get("status") != "completed":
-                    provider_response = {
-                        **provider_response,
-                        "validation": {"status": "not_run"},
-                    }
-                    response_audit = persist_agent_response(
-                        settings=self.settings,
-                        store=self.store,
-                        workspace_id=workspace_id,
-                        run_id=run_id,
-                        attempt=attempt,
-                        provider_response=provider_response,
-                        request_artifact_id=request_artifact_id,
-                    )
-                    self._persist_failed_state(
-                        workspace_id,
-                        run_id,
-                        rounds,
-                        base_round,
-                        response_audit["artifact"]["id"],
-                        provider_response,
-                    )
-                    state_failed = True
-                    error = provider_response.get("error")
-                    message = error.get("message") if isinstance(error, dict) else None
-                    raise ValueError(message or "agent provider failed")
-
-                raw_final_answer = provider_response.get("finalAnswer")
-                if not isinstance(raw_final_answer, dict):
-                    raise ValueError("agent provider did not return a JSON object")
-
-                if is_tool_call_request(raw_final_answer):
-                    tool_calls = normalize_tool_calls(
-                        raw_final_answer,
-                        allowed_tool_names=agent_allowed_tool_names(
-                            self.settings, interaction_context
-                        ),
-                    )
-                    observations = self._execute_tool_calls(run_id, attempt, tool_calls)
-                    waiting_status = waiting_status_from_observations(observations)
-                    tool_observations.extend(observations)
-                    provider_response = {
-                        **provider_response,
-                        "toolCalls": tool_calls,
-                        "toolObservations": observations,
-                        "validation": (
-                            {
-                                "status": "paused",
-                                "runtimeStatus": waiting_status,
-                            }
-                            if waiting_status
-                            else {"status": "tool_calls_executed"}
-                        ),
-                    }
-                    response_audit = persist_agent_response(
-                        settings=self.settings,
-                        store=self.store,
-                        workspace_id=workspace_id,
-                        run_id=run_id,
-                        attempt=attempt,
-                        provider_response=provider_response,
-                        request_artifact_id=request_artifact_id,
-                    )
-                    if waiting_status:
-                        rounds[-1] = {
-                            **base_round,
-                            "status": waiting_status,
-                            "responseArtifactId": response_audit["artifact"]["id"],
-                            "toolCallCount": len(tool_calls),
-                            "validation": {
-                                "status": "paused",
-                                "runtimeStatus": waiting_status,
-                            },
-                        }
-                        self._persist_state(
-                            workspace_id,
-                            run_id,
-                            status=waiting_status,
-                            phase=waiting_status,
-                            rounds=rounds,
-                            final_answer_status="waiting",
-                        )
-                        return None
-                    rounds[-1] = {
-                        **base_round,
-                        "status": "tool_calls_executed",
-                        "responseArtifactId": response_audit["artifact"]["id"],
-                        "toolCallCount": len(tool_calls),
-                        "validation": {"status": "tool_calls_executed"},
-                    }
-                    self._persist_state(
-                        workspace_id,
-                        run_id,
-                        status="running",
-                        phase="agent_round",
-                        rounds=rounds,
-                        final_answer_status="pending",
-                    )
-                    continue
-
-                try:
-                    final_answer = normalize_and_validate_final_answer(
-                        self.settings, self.store, run_id, raw_final_answer
-                    )
-                except Exception as error:
-                    provider_response = {
-                        **provider_response,
-                        "validation": {
-                            "status": "failed",
-                            "type": error.__class__.__name__,
-                            "message": str(error)[:4000],
-                        },
-                    }
-                    response_audit = persist_agent_response(
-                        settings=self.settings,
-                        store=self.store,
-                        workspace_id=workspace_id,
-                        run_id=run_id,
-                        attempt=attempt,
-                        provider_response=provider_response,
-                        request_artifact_id=request_artifact_id,
-                    )
-                    self._persist_failed_state(
-                        workspace_id,
-                        run_id,
-                        rounds,
-                        base_round,
-                        response_audit["artifact"]["id"],
-                        provider_response,
-                    )
-                    state_failed = True
-                    raise
-
-                provider_response = {
-                    **provider_response,
-                    "validatedFinalAnswer": final_answer,
-                    "validation": {"status": "passed"},
-                }
-                response_audit = persist_agent_response(
-                    settings=self.settings,
-                    store=self.store,
-                    workspace_id=workspace_id,
-                    run_id=run_id,
-                    attempt=attempt,
-                    provider_response=provider_response,
-                    request_artifact_id=request_artifact_id,
-                )
-                rounds[-1] = {
-                    **base_round,
-                    "status": "completed",
-                    "responseArtifactId": response_audit["artifact"]["id"],
-                    "validation": {"status": "passed"},
-                }
-                self._persist_state(
-                    workspace_id,
-                    run_id,
-                    status="succeeded",
-                    phase="finish",
-                    rounds=rounds,
-                    final_answer_status="validated",
-                )
-                return final_answer
-            except Exception as error:
-                if response_audit is None:
-                    provider_response = {
-                        **failed_agent_response(provider_request, error),
-                        "validation": {"status": "not_run"},
-                    }
-                    response_audit = persist_agent_response(
-                        settings=self.settings,
-                        store=self.store,
-                        workspace_id=workspace_id,
-                        run_id=run_id,
-                        attempt=attempt,
-                        provider_response=provider_response,
-                        request_artifact_id=request_artifact_id,
-                    )
-                if not state_failed:
-                    self._persist_failed_state(
-                        workspace_id,
-                        run_id,
-                        rounds,
-                        base_round,
-                        response_audit["artifact"]["id"],
-                        provider_response,
-                    )
-                raise
-
-        error = ValueError(
-            f"agent reached LOGAGENT_V2_AGENT_MAX_ROUNDS={self.settings.agent_max_rounds}"
-        )
-        provider_response = {
-            **failed_agent_response(last_provider_request or {}, error),
-            "validation": {"status": "not_run"},
-        }
-        response_audit = persist_agent_response(
-            settings=self.settings,
-            store=self.store,
-            workspace_id=workspace_id,
-            run_id=run_id,
-            attempt=self.settings.agent_max_rounds,
-            provider_response=provider_response,
-            request_artifact_id=last_request_artifact_id,
-        )
-        self._persist_failed_state(
-            workspace_id,
-            run_id,
-            rounds,
-            last_base_round or {},
-            response_audit["artifact"]["id"],
-            provider_response,
-        )
-        raise error
 
     def _persist_state(
         self,
