@@ -25,6 +25,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - 默认模板 `smoke_ls_root` 执行 `ls -la /root`，用于验证如 `root@112.74.50.120` 的免密 SSH。
 - V2 clean-room Server 已提供同类 Remote Executor 基础能力：`/api/v2/executors` 管理 SQLite executor，`/api/v2/executor-command-templates` 暴露环境配置的白名单模板，`/api/v2/executor-runs` 创建 DB-backed remote command job，并把 `result.json`、`stdout.txt`、`stderr.txt` 写入 `LOGAGENT_V2_DATA_DIR/remote_runs/<run_id>/remote_command/`。
 - V2 command template descriptor 与 Rust/V1 对齐：`enabled` 同时反映全局 remote execution 开关和模板自身开关，`timeoutSeconds` 总是模板覆盖值或默认远程命令 timeout。
+- V2 command template id 与 Rust/V1 对齐：只允许非空 ASCII 字母、数字、`_` 和 `-`。
 - V2 `LOGAGENT_V2_REMOTE_SSH_COMMAND` 默认 `/usr/bin/ssh`，支持环境变量和 `~` 展开；启用 remote execution 时必须解析为绝对路径，禁用时可保留相对值但不可执行。
 - V2 `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` 启动时只接受 `accept-new`、`strict` 或 `no`，未知值直接失败，不再静默回退到默认策略。
 - V2 已接入 `collect_environment` 审批后的 evidence 闭环：如果 action input
@@ -133,6 +134,7 @@ collected/
 - 只采集白名单路径。
 - 只执行白名单 argv 命令。
 - WebUI 显式 remote command run 只能选择已配置模板，不允许输入自由 shell 命令。
+- Remote command template id 只能使用非空 ASCII 字母、数字、`_` 和 `-`，避免配置 ID 进入 API/job 路径时出现转义语义。
 - V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command id，
   不接受自由命令或由用户消息临时扩展白名单。
 - SSH key 不进入 LLM Prompt。

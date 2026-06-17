@@ -59,6 +59,7 @@ class RemoteCommandTemplate:
     @classmethod
     def from_json(cls, value: dict) -> "RemoteCommandTemplate":
         command_id = str(value.get("commandId") or value.get("command_id") or value["id"])
+        validate_remote_command_id(command_id)
         argv = tuple(str(arg) for arg in value.get("argv", []))
         if not argv:
             raise ValueError("remote command template argv must not be empty")
@@ -471,6 +472,15 @@ def validate_remote_host_key_policy(policy: str) -> None:
         raise ValueError(
             "LOGAGENT_V2_REMOTE_HOST_KEY_POLICY must be one of accept-new, strict, or no"
         )
+
+
+def validate_remote_command_id(command_id: str) -> None:
+    valid = bool(command_id) and all(
+        char.isascii() and (char.isalnum() or char in {"_", "-"})
+        for char in command_id
+    )
+    if not valid:
+        raise ValueError(f"invalid remote command id {command_id}")
 
 
 def env_first(*names: str) -> str | None:

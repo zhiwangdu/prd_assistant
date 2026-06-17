@@ -214,7 +214,7 @@ tools:
 - `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。
 - `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
 - `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。
-- `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板必须有非空 argv。
+- `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。
 - WebUI Remote Executor 只能选择 `remote_execution.commands` 白名单模板，不能提交自由命令。
 - Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。

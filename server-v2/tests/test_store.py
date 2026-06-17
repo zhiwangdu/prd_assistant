@@ -37,6 +37,7 @@ from logagent_v2.config import (
     RemoteCommandTemplate,
     Settings,
     ToolDefinition,
+    parse_remote_commands_env,
     parse_tools_env,
 )
 from logagent_v2.environment import persist_approved_environment_evidence
@@ -1958,6 +1959,18 @@ class StoreTests(unittest.TestCase):
                 os.environ.pop("LOGAGENT_V2_REMOTE_HOST_KEY_POLICY", None)
             else:
                 os.environ["LOGAGENT_V2_REMOTE_HOST_KEY_POLICY"] = previous
+
+    def test_parse_remote_commands_env_validates_command_id(self) -> None:
+        templates = parse_remote_commands_env(
+            json.dumps([{"id": "smoke-1_ok", "argv": ["true"]}])
+        )
+        self.assertEqual(templates[0].command_id, "smoke-1_ok")
+
+        for command_id in ["", "bad id", "bad/id", "bad.id"]:
+            with self.subTest(command_id=command_id):
+                raw = json.dumps([{"id": command_id, "argv": ["true"]}])
+                with self.assertRaisesRegex(ValueError, "invalid remote command id"):
+                    parse_remote_commands_env(raw)
 
     def test_strict_host_key_checking_rejects_unknown_policy(self) -> None:
         self.assertEqual(strict_host_key_checking_value("strict"), "yes")

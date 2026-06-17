@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Command ID Validation
+
+- V2 Remote Executor command templates now validate `commandId` while loading
+  `LOGAGENT_V2_REMOTE_COMMANDS_JSON`, matching Rust/V1
+  `remote_execution.commands.<command_id>`.
+- Accepted IDs are non-empty ASCII letters, digits, `_`, and `-` only. Inputs
+  such as empty IDs, spaces, slashes, or dots now fail configuration parsing
+  before they can enter API descriptors, queued jobs, or artifact paths.
+- Added regression coverage for valid and invalid command template IDs.
+- Updated V2 Server, Environment Collector, and Configuration docs/specs.
+- Verification passed: focused remote command template ID regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (88 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Host Key Policy Validation
 
 - V2 Remote Executor now validates `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` during
