@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 System Context Compatibility Resources
+
+- V2 System Context Workbench now calls `/api/v2/system-context/resources` in
+  addition to Skills and Metadata APIs, showing managed System Context
+  resources alongside read-only `meta_<instanceId>` Metadata adapters.
+- Added WebUI controls to create V1-compatible resources, edit resource
+  summary fields, append new content versions, activate older versions, and
+  select resources/adapters for `/api/v2/system-context/preview`.
+- The preview panel now renders the backend-selected resources and prompt while
+  keeping V2 analysis runs on the existing Skill-backed System Context path.
+- Updated WebUI and System Context README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 V2 Local Build And Service Script
 
 - Added `scripts/v2-local.sh` for local V2 build/start/stop/restart/status/logs

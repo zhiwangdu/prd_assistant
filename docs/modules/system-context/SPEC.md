@@ -49,6 +49,10 @@ Metadata adapter 摘要；`POST /api/v2/system-context/preview` 可以按
 `contextIds`、task kind、产品、版本、环境和 `instanceId` 生成 prompt preview。
 V2 兼容资源当前不自动注入新分析运行，运行时知识仍优先迁移为 Skills。
 
+WebUI 的 V2 System Context Workbench 必须覆盖这些兼容 API：列表、创建、
+详情读取、摘要字段编辑、版本追加、版本激活、显式资源/Metadata adapter
+preview，并展示后端返回的 prompt。
+
 `POST /api/skills/imports` 是 Skill 管理入口，不直接写 `system_context.json`；导入成功后的 Skill 可在后续 Session draft 中显式选择并固化到 task snapshot。
 
 `POST /api/mcp/readonly` 中的 `logagent.preview_system_context` 是只读预览入口，只返回将注入的 resource 摘要和 prompt preview，不创建 task，不写 workspace，不修改 Skill 或 Metadata。
@@ -100,4 +104,5 @@ knowledge_note
 - 只读 HTTP MCP `logagent.preview_system_context` 可按 `skillIds`、`product`、`version`、`environment` 和 `instanceId` 预览 Skill-backed System Context，返回合并 `resources`、拆分 `skillResources` / `systemResources` 和 prompt preview，且不产生持久化副作用。
 - V2 `/api/v2/system-context/*` 可创建资源、创建 draft 版本、激活版本，并
   在 preview 中显式包含资源或 `meta_<instanceId>` Metadata adapter。
+- WebUI V2 System Context Workbench 可操作上述兼容资源生命周期和 preview。
 - Metadata 原有 API 和 WebUI 拓扑展示保持可用。

@@ -17,7 +17,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - V2 Analyze timeline 使用 Python V2 timeline event 的 `kind` 字段作为事件标签，并兼容旧 `event_type` 字段。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
 - `Memory`：已切换为 V2 Memory 工作台，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Rust Memory 页面不再默认渲染。
-- `System Context`：已切换为 V2 System Context + V2 Metadata 工作台，直接调用 Python V2 `/api/v2/skills*`、`/api/v2/metadata/instances` 和 `/api/v2/metadata/*`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载、JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、用已保存 raw JSON 刷新实例、实例删除和 snapshot JSON 查看。旧 Rust Skills/Metadata 页面不再默认渲染。
+- `System Context`：已切换为 V2 System Context + V2 Metadata 工作台，直接调用 Python V2 `/api/v2/skills*`、`/api/v2/system-context/*`、`/api/v2/metadata/instances` 和 `/api/v2/metadata/*`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载、V1-compatible System Context resource 列表/创建/编辑、版本追加/激活、资源+Metadata adapter prompt preview、JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、用已保存 raw JSON 刷新实例、实例删除和 snapshot JSON 查看。旧 Rust Skills/Metadata 页面不再默认渲染。
 - `Tools / Tool plugins`：已切换为 V2 Tools 工作台，调用 Python V2 `/api/v2/tools` 展示工具目录，展示 `source`、`tags`、`readOnly`、`editable`、`exportable`、`manualOnly`、文件数量约束、`acceptedSuffixes`、`outputViews`、`match`、`paramsTemplate` 和 `paramsSchema`，支持下载 `/api/v2/exports/tools.zip`。页面同时支持两种 V2 原生运行方式：输入 V2 `run_id` 后按选中工具的 `paramsTemplate` 预填 params，通过 `/api/v2/mcp/task/:run_id` 调用 task MCP；或在 Manual `tool_run` 区复用/自动创建 Workspace、上传匹配文件并调用 `/api/v2/tools/:tool_id/runs`，随后刷新 `/api/v2/tools/runs`、轮询选中的非终态 run、读取 `/api/v2/tools/runs/:run_id/result` 和 `/api/v2/tools/runs/:run_id/artifacts`，并通过带 Authorization header 的 `/api/v2/artifacts/:artifact_id` 下载 upload、evidence 和 support artifacts。旧 Rust 独立上传型 Tool Runner 页面不再默认渲染。
 - `Tools / Fetch`：已切换为 V2 Fetch 工作台，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 和 run override JSON（`variables`、`headers`、`body`）后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact；也支持不绑定已有分析 run 的 standalone Fetch `tool_run`，可选复用 Workspace 或自动创建隔离 Workspace，调用 `/api/v2/fetch/endpoints/:endpoint_id/runs` 创建、`/api/v2/fetch/runs` 刷新历史、选择非终态 run 后轮询并读取结果。结果面板展示 result artifact、response body artifact、evidence 和 body preview，并通过带 Authorization header 的 artifact API 下载 `result.json` 与 `response_body.bin`。旧 Rust Fetch 页面不再默认渲染。
 - `Tools / Executors`：已切换为 V2 Executors 工作台，调用 Python V2 `/api/v2/executors*` 和 `/api/v2/executor-runs*`：支持 V2 executor 新增/编辑/禁用、白名单命令模板选择、DB-backed remote command run 创建/轮询、stdout/stderr/result 路径和预览展示，并通过受保护的 `/api/v2/executor-runs/:run_id/files/result|stdout|stderr` 下载三类结果文件；同时显示 executor last check、模板 description/timeout、run attempts、executor/command IDs、created/updated timestamps、SSH argv preview 和 started/completed timestamps。旧 Rust Executors 页面不再默认渲染。
@@ -84,8 +84,10 @@ System Context 能力：
 - 查看 Skill displayName、description、revision、匹配字段、reference 摘要和 SKILL.md 注入片段。
 - Refresh 旁的 Import 表单可填写 `skillId`、`name`、`description`，选择 `.md/.markdown` 文件或直接粘贴 Markdown；文件存在 Codex frontmatter 时会预填 name/description 并把正文写入编辑框。
 - 导入成功后自动刷新 Skills 列表、选中新 Skill，并可在 Analyze Session draft 中显式选择。
+- V2 Compatibility resources 区块调用 `/api/v2/system-context/resources` 管理 V1 风格资源：可创建 prompt pack / architecture doc / runbook / glossary / tool capability / knowledge note / diagnostic skill，编辑标题、scope、tags、产品/版本/环境和启用状态，追加新版本并选择是否立即激活。
+- Resource preview 调用 `/api/v2/system-context/preview`，可显式包含资源或只读 `meta_<instanceId>` Metadata adapter，并展示后端生成的 prompt preview。
 - System Context 页面内的 V2 Metadata 工作台继续提供 Metadata 导入、实例管理、snapshot 查看和 raw JSON 刷新能力。
-- 旧 `/api/system-context/resources` 默认只作为 Metadata adapter 列表入口；旧非 Metadata resource 编辑入口不再展示。
+- 旧 Rust `/api/system-context/resources` 默认只作为 Metadata adapter 列表入口；V2 兼容资源通过 `/api/v2/system-context/*` 管理，仍不作为新分析运行的默认知识主路径。
 
 重要语义：
 
@@ -302,6 +304,14 @@ V2 APIs：
 - `POST /api/v2/skills/imports`
 - `POST /api/v2/skills/preview`
 - `GET /api/v2/exports/skills.zip`
+- `GET /api/v2/system-context/resources`
+- `POST /api/v2/system-context/resources`
+- `GET /api/v2/system-context/resources/:context_id`
+- `PATCH /api/v2/system-context/resources/:context_id`
+- `POST /api/v2/system-context/resources/:context_id/versions`
+- `PATCH /api/v2/system-context/resources/:context_id/versions/:version_id`
+- `POST /api/v2/system-context/resources/:context_id/versions/:version_id/activate`
+- `POST /api/v2/system-context/preview`
 - `GET /api/v2/metadata/instances`
 - `GET /api/v2/metadata/instances/:instance_id/snapshot`
 - `POST /api/v2/metadata/instances/:instance_id/refresh`

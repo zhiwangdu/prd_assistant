@@ -296,11 +296,19 @@ export type V2SkillSummary = {
 
 export type V2SystemContextPreview = {
   schemaVersion: number;
-  workspaceId: string | null;
-  runId: string | null;
+  workspaceId?: string | null;
+  runId?: string | null;
+  prompt?: string;
   resources: Array<{
     kind: string;
     skillId?: string;
+    contextId?: string;
+    versionId?: string | null;
+    title?: string;
+    source?: string;
+    contentType?: string;
+    promptPriority?: number;
+    promptChars?: number;
     selectionReason?: string;
     matchScore?: number;
     revision?: string;
@@ -309,6 +317,110 @@ export type V2SystemContextPreview = {
     content?: string;
     references?: V2SkillReference[];
   }>;
+};
+
+export type V2SystemContextResourceKind =
+  | "prompt_pack"
+  | "architecture_doc"
+  | "runbook"
+  | "glossary"
+  | "tool_capability"
+  | "knowledge_note"
+  | "diagnostic_skill"
+  | "metadata_instance";
+
+export type V2SystemContextScope = "global" | "log_analysis" | "tool_run" | "case_import";
+export type V2SystemContextContentType = "markdown" | "plain_text" | "json";
+export type V2SystemContextVersionStatus = "draft" | "active" | "archived";
+
+export type V2SystemContextPromptPolicy = {
+  includeByDefault: boolean;
+  maxChars: number;
+  priority: number;
+  allowedTaskKinds: Array<"log_analysis" | "tool_run">;
+};
+
+export type V2SystemContextResourceSummary = {
+  contextId: string;
+  kind: V2SystemContextResourceKind;
+  title: string;
+  description?: string | null;
+  scope: V2SystemContextScope;
+  enabled: boolean;
+  tags: string[];
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  activeVersionId?: string | null;
+  activeSummary?: string | null;
+  contentType?: V2SystemContextContentType | "metadata_adapter" | null;
+  source: "system_context" | "metadata_adapter" | string;
+  updatedAt?: string | null;
+};
+
+export type V2SystemContextVersion = {
+  versionId: string;
+  revision: number;
+  status: V2SystemContextVersionStatus;
+  contentType: V2SystemContextContentType;
+  content: string;
+  summary?: string | null;
+  promptPolicy: V2SystemContextPromptPolicy;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2SystemContextResource = Omit<V2SystemContextResourceSummary, "activeSummary" | "contentType" | "source" | "updatedAt"> & {
+  schemaVersion: number;
+  versions: V2SystemContextVersion[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type V2SystemContextResourceInput = {
+  kind: Exclude<V2SystemContextResourceKind, "metadata_instance">;
+  title: string;
+  description?: string | null;
+  scope: V2SystemContextScope;
+  enabled: boolean;
+  tags: string[];
+  product?: string | null;
+  version?: string | null;
+  environment?: string | null;
+  contentType: V2SystemContextContentType;
+  content: string;
+  summary?: string | null;
+  promptPolicy: V2SystemContextPromptPolicy;
+};
+
+export type V2SystemContextResourcePatch = Partial<Pick<
+  V2SystemContextResourceInput,
+  "title" | "description" | "scope" | "enabled" | "tags" | "product" | "version" | "environment"
+>>;
+
+export type V2SystemContextVersionInput = {
+  contentType: V2SystemContextContentType;
+  content: string;
+  summary?: string | null;
+  promptPolicy: V2SystemContextPromptPolicy;
+  activate: boolean;
+};
+
+export type V2SystemContextResourcePreview = {
+  schemaVersion: number;
+  resources: Array<{
+    contextId: string;
+    versionId?: string | null;
+    kind: V2SystemContextResourceKind;
+    title: string;
+    contentType: V2SystemContextContentType | "metadata_adapter";
+    summary?: string | null;
+    content?: string;
+    source: "system_context" | "metadata_adapter" | string;
+    promptPriority?: number;
+    promptChars?: number;
+  }>;
+  prompt: string;
 };
 
 export type V2MetadataInstanceSummary = {
@@ -778,6 +890,53 @@ export async function previewV2SystemContext(apiKey: string, skillIds: string[])
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify({ skillIds })
+  });
+}
+
+export async function listV2SystemContextResources(apiKey: string) {
+  return fetchJson<{ resources: V2SystemContextResourceSummary[] }>("/api/v2/system-context/resources", { headers: authHeaders(apiKey) });
+}
+
+export async function getV2SystemContextResource(apiKey: string, contextId: string) {
+  return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}`, { headers: authHeaders(apiKey) });
+}
+
+export async function createV2SystemContextResource(apiKey: string, input: V2SystemContextResourceInput) {
+  return fetchJson<V2SystemContextResource>("/api/v2/system-context/resources", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function patchV2SystemContextResource(apiKey: string, contextId: string, input: V2SystemContextResourcePatch) {
+  return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}`, {
+    method: "PATCH",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createV2SystemContextVersion(apiKey: string, contextId: string, input: V2SystemContextVersionInput) {
+  return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}/versions`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function activateV2SystemContextVersion(apiKey: string, contextId: string, versionId: string) {
+  return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}/versions/${encodeURIComponent(versionId)}/activate`, {
+    method: "POST",
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function previewV2SystemContextResources(apiKey: string, input: { contextIds: string[]; taskKind?: "log_analysis" | "tool_run"; product?: string | null; version?: string | null; environment?: string | null; instanceId?: string | null }) {
+  return fetchJson<V2SystemContextResourcePreview>("/api/v2/system-context/preview", {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
   });
 }
 
