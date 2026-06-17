@@ -1,4 +1,4 @@
-import { BookOpenCheck, CheckCircle2, Download, FileArchive, MessageSquare, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, Cpu, Download, FileArchive, FileJson, MessageSquare, Network, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import type { UiLanguage } from "./i18n";
@@ -80,6 +80,22 @@ const copyByLanguage = {
     artifacts: "Artifacts",
     timeline: "Timeline",
     resources: "Resources",
+    runtimeResources: "运行资源",
+    runtimeResourcesDescription: "展示 V2 Agent graph、Agent 审计、Claude contract 和 MCP 调用产物。",
+    graphRuntime: "Graph runtime",
+    graphNodes: "Graph nodes",
+    agentAudit: "Agent 审计",
+    claudeContracts: "Claude contracts",
+    mcpAudit: "MCP 审计",
+    resourceReady: "已生成",
+    resourceMissing: "未生成",
+    roundCount: "轮次",
+    callCount: "调用数",
+    lastCall: "最近调用",
+    provider: "Provider",
+    model: "Model",
+    validation: "Validation",
+    attempt: "Attempt",
     result: "最终结果",
     confidence: "置信度",
     symptoms: "现象",
@@ -161,6 +177,22 @@ const copyByLanguage = {
     artifacts: "Artifacts",
     timeline: "Timeline",
     resources: "Resources",
+    runtimeResources: "Runtime resources",
+    runtimeResourcesDescription: "Shows V2 Agent graph, Agent audit, Claude contract, and MCP call artifacts.",
+    graphRuntime: "Graph runtime",
+    graphNodes: "Graph nodes",
+    agentAudit: "Agent audit",
+    claudeContracts: "Claude contracts",
+    mcpAudit: "MCP audit",
+    resourceReady: "ready",
+    resourceMissing: "missing",
+    roundCount: "Rounds",
+    callCount: "Calls",
+    lastCall: "Last call",
+    provider: "Provider",
+    model: "Model",
+    validation: "Validation",
+    attempt: "Attempt",
     result: "Final result",
     confidence: "confidence",
     symptoms: "Symptoms",
@@ -584,6 +616,8 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           <TimelineView copy={copy} analysis={analysis} />
         </div>
 
+        <RuntimeResourcesPanel copy={copy} analysis={analysis} />
+
         {selectedRun?.status === "succeeded" && finalAnswer ? (
           <RunCasePanel
             copy={copy}
@@ -848,6 +882,55 @@ function TimelineView({ copy, analysis }: { copy: BridgeCopy; analysis: V2RunAna
   );
 }
 
+function RuntimeResourcesPanel({ copy, analysis }: { copy: BridgeCopy; analysis: V2RunAnalysis | null }) {
+  if (!analysis) return null;
+  const graphRuntime = graphRuntimeFromAnalysis(analysis);
+  const rows = runtimeResourceRows(copy, analysis);
+  const mcpCalls = resourceRecord(analysis, "mcp_calls");
+  const callCount = numberField(mcpCalls, "callCount") ?? 0;
+  const latestCall = latestMcpCall(mcpCalls);
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-primary" />
+            <h3 className="text-sm font-semibold">{copy.runtimeResources}</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{copy.runtimeResourcesDescription}</p>
+        </div>
+        <Badge variant={graphRuntime ? "success" : "secondary"}>{graphRuntime?.engine ?? copy.resourceMissing}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <Metric label={copy.graphRuntime} value={graphRuntime ? `${graphRuntime.engine} · ${graphRuntime.graph}` : copy.resourceMissing} />
+        <Metric label={copy.graphNodes} value={graphRuntime?.nodes.join(", ") || copy.resourceMissing} />
+        <Metric label={copy.mcpAudit} value={`${copy.callCount}: ${callCount}${latestCall ? ` · ${copy.lastCall}: ${latestCall}` : ""}`} />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {rows.map((row) => (
+          <div className="rounded-md border border-border p-3" key={row.key}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {row.icon === "network" ? <Network className="mr-2 inline h-4 w-4 text-slate-400" /> : <FileJson className="mr-2 inline h-4 w-4 text-slate-400" />}
+                  {row.label}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{row.group}</p>
+              </div>
+              <Badge variant={row.available ? "success" : "secondary"}>{row.available ? copy.resourceReady : copy.resourceMissing}</Badge>
+            </div>
+            {row.details.length ? (
+              <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                {row.details.map((detail) => <li className="break-words" key={detail}>{detail}</li>)}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ArtifactList({ copy, artifacts, uploads, onDownload }: { copy: BridgeCopy; apiKey: string; artifacts: V2EvidenceArtifact[]; uploads: V2RunAnalysis["artifacts"]["uploads"]; onDownload: (artifactId: string, relativePath: string) => void }) {
   const items = [
     ...uploads.map((upload) => ({
@@ -925,6 +1008,190 @@ function isTerminal(status: V2RunStatus) {
 function countResources(analysis: V2RunAnalysis | null) {
   if (!analysis) return 0;
   return Object.values(analysis.resources).filter(Boolean).length;
+}
+
+type RuntimeResourceRow = {
+  key: string;
+  label: string;
+  group: string;
+  icon: "file" | "network";
+  available: boolean;
+  details: string[];
+};
+
+type GraphRuntimeSummary = {
+  engine: string;
+  graph: string;
+  nodes: string[];
+};
+
+function runtimeResourceRows(copy: BridgeCopy, analysis: V2RunAnalysis): RuntimeResourceRow[] {
+  return [
+    runtimeResourceRow(copy, analysis, "analysis_package", "analysis_package.json", copy.agentAudit, "file", analysisPackageDetails),
+    runtimeResourceRow(copy, analysis, "analysis_state", "analysis_state.json", copy.agentAudit, "file", (record) => analysisStateDetails(copy, record)),
+    runtimeResourceRow(copy, analysis, "agent_request", "agent_request.json", copy.agentAudit, "file", (record) => agentRequestDetails(copy, record)),
+    runtimeResourceRow(copy, analysis, "agent_response", "agent_response.json", copy.agentAudit, "file", (record) => agentResponseDetails(copy, record)),
+    runtimeResourceRow(copy, analysis, "claude_mcp_config", "claude_mcp_config.json", copy.claudeContracts, "network", claudeMcpConfigDetails),
+    runtimeResourceRow(copy, analysis, "claude_session", "claude_session.json", copy.claudeContracts, "file", claudeSessionDetails),
+    runtimeResourceRow(copy, analysis, "mcp_calls", "mcp_calls.jsonl", copy.mcpAudit, "network", (record) => mcpCallDetails(copy, record))
+  ];
+}
+
+function runtimeResourceRow(
+  copy: BridgeCopy,
+  analysis: V2RunAnalysis,
+  key: string,
+  label: string,
+  group: string,
+  icon: "file" | "network",
+  detailBuilder: (record: Record<string, unknown>) => string[]
+): RuntimeResourceRow {
+  const record = resourceRecord(analysis, key);
+  return {
+    key,
+    label,
+    group,
+    icon,
+    available: Boolean(record),
+    details: record ? detailBuilder(record) : [copy.resourceMissing]
+  };
+}
+
+function graphRuntimeFromAnalysis(analysis: V2RunAnalysis): GraphRuntimeSummary | null {
+  const analysisState = resourceRecord(analysis, "analysis_state");
+  const graphRuntime = asRecord(analysisState?.graphRuntime);
+  if (!graphRuntime) return null;
+  const engine = stringField(graphRuntime, "engine");
+  const graph = stringField(graphRuntime, "graph");
+  if (!engine || !graph) return null;
+  return {
+    engine,
+    graph,
+    nodes: stringArrayField(graphRuntime, "nodes")
+  };
+}
+
+function analysisPackageDetails(record: Record<string, unknown>) {
+  const workspace = asRecord(record.workspace);
+  const run = asRecord(record.run);
+  return compactDetails([
+    textDetail("Run", stringField(run, "runId")),
+    textDetail("Question", truncate(stringField(workspace, "question"), 90)),
+    textDetail("Resources", arrayField(record, "resources").length),
+    textDetail("Allowed refs", arrayField(record, "allowedEvidenceRefs").length)
+  ]);
+}
+
+function analysisStateDetails(copy: BridgeCopy, record: Record<string, unknown>) {
+  return compactDetails([
+    textDetail("Status", stringField(record, "status")),
+    textDetail("Phase", stringField(record, "phase")),
+    textDetail(copy.roundCount, arrayField(record, "rounds").length),
+    textDetail("Final answer", stringField(record, "finalAnswerStatus"))
+  ]);
+}
+
+function agentRequestDetails(copy: BridgeCopy, record: Record<string, unknown>) {
+  return compactDetails([
+    textDetail(copy.attempt, numberField(record, "attempt")),
+    textDetail(copy.provider, stringField(record, "provider")),
+    textDetail(copy.model, stringField(record, "model")),
+    textDetail("Allowed refs", arrayField(record, "allowedEvidenceRefs").length)
+  ]);
+}
+
+function agentResponseDetails(copy: BridgeCopy, record: Record<string, unknown>) {
+  const validation = asRecord(record.validation);
+  return compactDetails([
+    textDetail(copy.attempt, numberField(record, "attempt")),
+    textDetail("Status", stringField(record, "status")),
+    textDetail(copy.provider, stringField(record, "provider")),
+    textDetail(copy.model, stringField(record, "model")),
+    textDetail(copy.validation, stringField(validation, "status")),
+    textDetail("Tool calls", arrayField(record, "toolCalls").length)
+  ]);
+}
+
+function claudeMcpConfigDetails(record: Record<string, unknown>) {
+  const servers = asRecord(record.mcpServers);
+  const names = servers ? Object.keys(servers) : [];
+  const logagent = asRecord(servers?.logagent);
+  return compactDetails([
+    textDetail("Servers", names.join(", ")),
+    textDetail("URL", stringField(logagent, "url"))
+  ]);
+}
+
+function claudeSessionDetails(record: Record<string, unknown>) {
+  return compactDetails([
+    textDetail("Runtime", stringField(record, "runtimeStatus")),
+    textDetail("Provider runtime", stringField(record, "providerRuntime")),
+    textDetail("MCP config", stringField(record, "mcpConfigPath")),
+    textDetail("Prompt", stringField(record, "promptPath"))
+  ]);
+}
+
+function mcpCallDetails(copy: BridgeCopy, record: Record<string, unknown>) {
+  return compactDetails([
+    textDetail(copy.callCount, numberField(record, "callCount") ?? arrayField(record, "calls").length),
+    textDetail(copy.lastCall, latestMcpCall(record)),
+    textDetail("Final evidence", booleanField(record, "finalEvidenceAllowed"))
+  ]);
+}
+
+function latestMcpCall(record: Record<string, unknown> | null) {
+  const calls = arrayField(record, "calls").map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
+  const latest = calls[calls.length - 1];
+  if (!latest) return null;
+  const name = stringField(latest, "name") || "call";
+  const status = stringField(latest, "status");
+  return status ? `${name} (${status})` : name;
+}
+
+function resourceRecord(analysis: V2RunAnalysis, key: string) {
+  return asRecord(analysis.resources[key]);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringField(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberField(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanField(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "boolean" ? String(value) : null;
+}
+
+function arrayField(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function stringArrayField(record: Record<string, unknown>, key: string) {
+  return arrayField(record, key).filter((value): value is string => typeof value === "string");
+}
+
+function textDetail(label: string, value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") return null;
+  return `${label}: ${value}`;
+}
+
+function compactDetails(values: Array<string | null>) {
+  return values.filter((value): value is string => Boolean(value));
+}
+
+function truncate(value: string | null, maxLength: number) {
+  if (!value || value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1))}...`;
 }
 
 function summarizePayload(payload: Record<string, unknown>) {

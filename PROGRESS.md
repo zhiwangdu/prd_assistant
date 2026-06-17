@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Analyze Runtime Resources
+
+- V2 Analyze bridge now expands `/api/v2/runs/:run_id/analysis.resources`
+  into a runtime resources panel instead of showing only a resource count.
+- The panel summarizes `analysis_state.json` LangGraph runtime metadata,
+  Agent request/response audit details, Claude MCP/session contract artifacts,
+  and `mcp_calls.jsonl` call count / latest call.
+- Updated WebUI README/SPEC for the V2 runtime resource inspection surface.
+
 ## 2026-06-18 V2 Readonly MCP Resource Envelopes
 
 - V2 readonly MCP `resources/read` now returns Rust/V1-style
