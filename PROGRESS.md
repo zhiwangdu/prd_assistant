@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Session Runtime Artifact
+
+- V2 now writes a fresh `claude_session.json` runtime artifact after Claude
+  Code provider responses that include session metadata, replacing the latest
+  task MCP `claude_session` resource from the initial `contract_ready` artifact
+  to a runtime session record.
+- The runtime session artifact records `claudeSessionId`, `resumedSessionId`,
+  usage/cost, prompt delivery, attempt, and the linked `agent_response`
+  artifact id.
+- Added regression coverage for final-answer and resumed Claude Code paths.
+- Updated V2 Server and Agent Backends README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused Claude Code provider regressions, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Claude Usage And Cost Audit
 
 - V2 Claude Code provider now preserves Claude envelope `usage` and

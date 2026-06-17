@@ -182,6 +182,80 @@ def build_claude_session_contract(
     }
 
 
+def persist_claude_runtime_session(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    attempt: int,
+    provider_response: JsonObject,
+    response_artifact_id: str,
+) -> JsonObject | None:
+    if provider_response.get("provider") != "claude_code":
+        return None
+    response = provider_response.get("response")
+    if not isinstance(response, dict):
+        return None
+    session_id = response.get("sessionId")
+    resumed_session_id = response.get("resumedSessionId")
+    if not isinstance(session_id, str) and not isinstance(resumed_session_id, str):
+        return None
+    session = {
+        "schemaVersion": 1,
+        "runtimeStatus": response.get("runtimeStatus"),
+        "runId": run_id,
+        "attempt": attempt,
+        "providerRuntime": "claude_code",
+        "createdAt": now_iso(),
+        "claudeSessionId": session_id if isinstance(session_id, str) else None,
+        "resumedSessionId": (
+            resumed_session_id if isinstance(resumed_session_id, str) else None
+        ),
+        "responseArtifactId": response_artifact_id,
+        "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
+        "promptPath": CLAUDE_PROMPT_PATH,
+        "promptDelivery": {
+            "mode": "stdin_file",
+            "largeContextVia": "mcp_resource",
+        },
+        "usage": response.get("usage"),
+        "cost": response.get("cost"),
+        "note": "V2 Claude Code CLI runtime session captured after provider execution.",
+    }
+    data = json.dumps(without_none(session), ensure_ascii=True, indent=2).encode("utf-8")
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=CLAUDE_SESSION_PATH,
+        data=data,
+        content_type="application/json",
+        schema_name="logagent.v2.claude_session.v1",
+        preview={
+            "path": CLAUDE_SESSION_PATH,
+            "runId": run_id,
+            "runtimeStatus": response.get("runtimeStatus"),
+            "providerRuntime": "claude_code",
+            "responseArtifactId": response_artifact_id,
+        },
+    )
+    evidence = store.create_evidence(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        kind="claude_session",
+        final_allowed=False,
+        summary="Claude Code runtime session captured.",
+        payload={
+            "artifactId": artifact["id"],
+            "path": CLAUDE_SESSION_PATH,
+            "runtimeStatus": response.get("runtimeStatus"),
+            "responseArtifactId": response_artifact_id,
+        },
+        artifact_id=artifact["id"],
+    )
+    return {"session": session, "artifact": artifact, "evidence": evidence}
+
+
 def server_base_url(settings: Settings) -> str:
     host = settings.host
     if host in {"0.0.0.0", "::", ""}:
@@ -189,6 +263,10 @@ def server_base_url(settings: Settings) -> str:
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{settings.port}"
+
+
+def without_none(value: JsonObject) -> JsonObject:
+    return {key: item for key, item in value.items() if item is not None}
 
 
 def claude_session_note(settings: Settings) -> str:

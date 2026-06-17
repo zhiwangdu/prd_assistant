@@ -1304,7 +1304,10 @@ If the previous Claude response stored `response.sessionId`, resumed runs pass
 that value as `--resume <session_id>` on the next Claude Code CLI invocation and
 record `response.resumedSessionId` in the next `agent_response` audit artifact.
 Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` must be preserved
-under `response.usage` and `response.cost.usd`.
+under `response.usage` and `response.cost.usd`. When the response contains
+session metadata, V2 must write a fresh `claude_session.json` runtime artifact
+with the latest `claudeSessionId`, optional `resumedSessionId`, usage/cost,
+prompt delivery, and linked `agent_response` artifact id.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
@@ -1369,7 +1372,9 @@ Each run also writes Rust/V1 Claude runtime contract artifacts:
 `${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the resolved API
 key is never persisted. When `LOGAGENT_V2_AGENT_PROVIDER=claude_code`, the
 same prompt/config are materialized into the temporary Claude session
-directory and used by the CLI invocation.
+directory and used by the CLI invocation. After a Claude Code provider response
+with session metadata, the latest `claude_session` task MCP resource must return
+the runtime session artifact instead of the initial `contract_ready` artifact.
 Task MCP also exposes aggregate compatibility resources: `artifact_index`
 enumerates current run upload and evidence artifacts with stable logical paths,
 `tool_results` returns parsed `tool_result` and `fetch_result` artifacts under

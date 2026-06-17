@@ -16,7 +16,7 @@ from .alias import generate_run_alias
 from .analysis_package import persist_analysis_package
 from .artifacts import resolve_artifact_path
 from .config import Settings
-from .claude_contracts import persist_claude_contracts
+from .claude_contracts import persist_claude_contracts, persist_claude_runtime_session
 from .evidence import SESSION_TEXT_INPUT_REF, build_initial_evidence, persist_session_text_input
 from .final_answer import normalize_and_validate_final_answer
 from .llm import (
@@ -187,6 +187,13 @@ class AgentRuntime:
                 provider_response=provider_response,
                 request_artifact_id=state.get("requestArtifactId"),
             )
+            self._persist_claude_runtime_session(
+                workspace_id,
+                run_id,
+                self.settings.agent_max_rounds,
+                provider_response,
+                response_audit,
+            )
             self._persist_failed_state(
                 workspace_id,
                 run_id,
@@ -266,6 +273,9 @@ class AgentRuntime:
                 provider_response=provider_response,
                 request_artifact_id=request_artifact_id,
             )
+            self._persist_claude_runtime_session(
+                workspace_id, run_id, attempt, provider_response, response_audit
+            )
             self._persist_failed_state(
                 workspace_id,
                 run_id,
@@ -299,6 +309,9 @@ class AgentRuntime:
                 provider_response=provider_response,
                 request_artifact_id=request_artifact_id,
             )
+            self._persist_claude_runtime_session(
+                workspace_id, run_id, attempt, provider_response, response_audit
+            )
             self._persist_failed_state(
                 workspace_id,
                 run_id,
@@ -329,6 +342,9 @@ class AgentRuntime:
                 attempt=attempt,
                 provider_response=provider_response,
                 request_artifact_id=request_artifact_id,
+            )
+            self._persist_claude_runtime_session(
+                workspace_id, run_id, attempt, provider_response, response_audit
             )
             self._persist_failed_state(
                 workspace_id,
@@ -365,6 +381,9 @@ class AgentRuntime:
                     attempt=attempt,
                     provider_response=provider_response,
                     request_artifact_id=request_artifact_id,
+                )
+                self._persist_claude_runtime_session(
+                    workspace_id, run_id, attempt, provider_response, response_audit
                 )
                 self._persist_failed_state(
                     workspace_id,
@@ -421,6 +440,9 @@ class AgentRuntime:
             attempt=attempt,
             provider_response=provider_response,
             request_artifact_id=state["requestArtifactId"],
+        )
+        self._persist_claude_runtime_session(
+            workspace_id, run_id, attempt, provider_response, response_audit
         )
         if waiting_status:
             rounds[-1] = {
@@ -518,6 +540,9 @@ class AgentRuntime:
                 provider_response=provider_response,
                 request_artifact_id=state["requestArtifactId"],
             )
+            self._persist_claude_runtime_session(
+                workspace_id, run_id, attempt, provider_response, response_audit
+            )
             self._persist_failed_state(
                 workspace_id,
                 run_id,
@@ -540,6 +565,9 @@ class AgentRuntime:
             attempt=attempt,
             provider_response=provider_response,
             request_artifact_id=state["requestArtifactId"],
+        )
+        self._persist_claude_runtime_session(
+            workspace_id, run_id, attempt, provider_response, response_audit
         )
         rounds[-1] = {
             **base_round,
@@ -630,6 +658,28 @@ class AgentRuntime:
             phase="agent_round",
             rounds=rounds,
             final_answer_status="invalid",
+        )
+
+    def _persist_claude_runtime_session(
+        self,
+        workspace_id: str,
+        run_id: str,
+        attempt: int,
+        provider_response: JsonObject,
+        response_audit: JsonObject,
+    ) -> None:
+        artifact = response_audit.get("artifact")
+        response_artifact_id = artifact.get("id") if isinstance(artifact, dict) else None
+        if not isinstance(response_artifact_id, str):
+            return
+        persist_claude_runtime_session(
+            settings=self.settings,
+            store=self.store,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            attempt=attempt,
+            provider_response=provider_response,
+            response_artifact_id=response_artifact_id,
         )
 
     def _execute_tool_calls(

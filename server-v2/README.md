@@ -592,7 +592,10 @@ When a waiting run resumes and the previous Claude response recorded
 `response.sessionId`, V2 adds `--resume <session_id>` to the next Claude Code
 CLI invocation and records `response.resumedSessionId` in `agent_response.json`.
 Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` are preserved as
-`response.usage` and `response.cost.usd`.
+`response.usage` and `response.cost.usd`. After each Claude Code provider
+response with session metadata, V2 also writes a fresh `claude_session.json`
+runtime artifact with `claudeSessionId`, `resumedSessionId`, usage/cost, prompt
+delivery, and the linked `agent_response` artifact id.
 
 The run lifecycle is executed by a LangGraph state graph with
 `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,
@@ -649,7 +652,9 @@ MCP config points at the V2 task HTTP MCP endpoint and uses
 `${LOGAGENT_V2_API_KEY}` as an Authorization placeholder, so the real API key
 is not written to artifacts. When `LOGAGENT_V2_AGENT_PROVIDER=claude_code`,
 the same contract files are also materialized into the temporary Claude session
-directory used by the real CLI invocation.
+directory used by the real CLI invocation. Once Claude Code returns session
+metadata, the latest `claude_session` task MCP resource points to the runtime
+session artifact instead of the initial `contract_ready` artifact.
 Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
 lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and

@@ -1489,6 +1489,25 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["validation"]["status"], "passed")
             self.assertNotIn(claude.as_posix(), json.dumps(response_doc))
             self.assertNotIn("Bearer test", json.dumps(response_doc))
+            claude_session = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 43,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/claude_session"},
+                },
+            )
+            session_doc = json.loads(claude_session["result"]["contents"][0]["text"])
+            self.assertEqual(session_doc["runtimeStatus"], "completed")
+            self.assertEqual(session_doc["claudeSessionId"], "sess-v2-claude")
+            response_evidence = [
+                item for item in store.list_evidence(run["id"])
+                if item["kind"] == "agent_response"
+            ][-1]
+            self.assertEqual(session_doc["responseArtifactId"], response_evidence["artifact_id"])
 
     def test_claude_code_provider_can_pause_for_user_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1603,6 +1622,20 @@ class StoreTests(unittest.TestCase):
                 response_doc["response"]["resumedSessionId"],
                 "sess-v2-waiting",
             )
+            claude_session = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 44,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/claude_session"},
+                },
+            )
+            session_doc = json.loads(claude_session["result"]["contents"][0]["text"])
+            self.assertEqual(session_doc["claudeSessionId"], "sess-v2-final")
+            self.assertEqual(session_doc["resumedSessionId"], "sess-v2-waiting")
 
     def test_agent_provider_validation_failure_keeps_audit_artifacts(self) -> None:
         class InvalidRefProviderHandler(BaseHTTPRequestHandler):
