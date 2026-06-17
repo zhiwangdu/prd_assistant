@@ -22,6 +22,7 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
   const [name, setName] = useState("");
   const [preview, setPreview] = useState<V2FetchPreview | null>(null);
   const [runId, setRunId] = useState("");
+  const [runParamsText, setRunParamsText] = useState(JSON.stringify({ variables: {}, headers: {}, body: null }, null, 2));
   const [result, setResult] = useState<V2FetchRunResult | null>(null);
   const [status, setStatus] = useState("V2 Fetch waiting to load");
   const [loading, setLoading] = useState(false);
@@ -130,10 +131,21 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
       setStatus("V2 fetch execution requires a run id");
       return;
     }
+    let runParams: unknown;
+    try {
+      runParams = JSON.parse(runParamsText);
+    } catch (reason) {
+      setStatus(`Invalid run params JSON: ${errorMessage(reason)}`);
+      return;
+    }
+    if (!isRecord(runParams)) {
+      setStatus("Run params must be a JSON object");
+      return;
+    }
     setLoading(true);
     setResult(null);
     try {
-      const response = await runV2FetchEndpoint(apiKey, runId.trim(), selectedEndpoint.id);
+      const response = await runV2FetchEndpoint(apiKey, runId.trim(), selectedEndpoint.id, runParams);
       setResult(response);
       setStatus(String(response.result.summary ?? `V2 fetch recorded ${response.artifact.id ?? response.artifact.relative_path}`));
     } catch (reason) {
@@ -204,6 +216,15 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
               <p className="mt-1 text-xs text-muted-foreground">{selectedEndpoint ? `${selectedEndpoint.method} ${selectedEndpoint.url}` : "Select an endpoint"}</p>
             </div>
             <Input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="V2 run id, e.g. run_..." />
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Run overrides JSON</p>
+              <textarea
+                className="min-h-28 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20"
+                spellCheck={false}
+                value={runParamsText}
+                onChange={(event) => setRunParamsText(event.target.value)}
+              />
+            </div>
             {selectedEndpoint ? (
               <div className="flex flex-wrap gap-2">
                 <Button disabled={loading} variant="outline" onClick={() => void toggleEndpoint(selectedEndpoint)}>{selectedEndpoint.enabled ? "Disable" : "Enable"}</Button>

@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Fetch Run Overrides
+
+- V2 Fetch bridge now accepts run-scoped override JSON when executing
+  `/api/v2/runs/:run_id/fetch/:endpoint_id`.
+- The bridge forwards `variables`, header overrides, and body overrides to the
+  V2 backend, matching the task MCP `logagent.fetch` parameter path.
+- Updated WebUI V2 API typings and WebUI README/SPEC for Fetch override
+  execution.
+
 ## 2026-06-18 WebUI V2 Tool Descriptor Parity
 
 - V2 Tools bridge now exposes the descriptor fields needed to verify V1 tool

@@ -338,6 +338,12 @@ export type V2FetchRunResult = {
   evidence: V2Evidence;
 };
 
+export type V2FetchRunOverrides = {
+  variables?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: string | null;
+};
+
 export type V2LlmSummary = {
   provider: string;
   configuredModel: string;
@@ -812,10 +818,11 @@ export async function deleteV2FetchEndpoint(apiKey: string, endpointId: string) 
   });
 }
 
-export async function runV2FetchEndpoint(apiKey: string, runId: string, endpointId: string) {
+export async function runV2FetchEndpoint(apiKey: string, runId: string, endpointId: string, input: V2FetchRunOverrides = {}) {
   return fetchJson<V2FetchRunResult>(`/api/v2/runs/${encodeURIComponent(runId)}/fetch/${encodeURIComponent(endpointId)}`, {
     method: "POST",
-    headers: authHeaders(apiKey)
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
   });
 }
 
