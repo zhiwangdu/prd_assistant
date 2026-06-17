@@ -412,8 +412,10 @@ class AgentRuntime:
         timeline = self.store.list_timeline(run_id)
         user_messages = [
             {
+                "questionId": event.get("payload", {}).get("questionId"),
                 "message": event.get("payload", {}).get("message"),
                 "resumeMode": event.get("payload", {}).get("resumeMode"),
+                "idempotencyKey": event.get("payload", {}).get("idempotencyKey"),
                 "createdAt": event.get("created_at"),
             }
             for event in timeline

@@ -886,6 +886,94 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(interaction["actionResults"][-1]["status"], "answered")
             self.assertEqual(interaction["pendingActions"], [])
 
+    def test_run_message_api_validates_waiting_question_and_idempotency(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need input", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "user_input",
+                {
+                    "questionId": "q-version",
+                    "question": "Which version?",
+                    "required": True,
+                },
+            )
+            queued_workspace = store.create_workspace("not waiting", "diagnose", "en-US")
+            queued_run = store.create_run(queued_workspace["id"])
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                not_waiting = client.post(
+                    f"/api/v2/runs/{queued_run['id']}/messages",
+                    headers=headers,
+                    json={"message": "hello"},
+                )
+                self.assertEqual(not_waiting.status_code, 409)
+
+                store.update_run_status(run["id"], "waiting_for_user", "waiting_for_user")
+                unknown = client.post(
+                    f"/api/v2/runs/{run['id']}/messages",
+                    headers=headers,
+                    json={"questionId": "q-missing", "message": "version 1.2.3"},
+                )
+                self.assertEqual(unknown.status_code, 400)
+
+                first = client.post(
+                    f"/api/v2/runs/{run['id']}/messages",
+                    headers=headers,
+                    json={
+                        "questionId": "q-version",
+                        "message": "version 1.2.3",
+                        "resumeMode": "finalize",
+                        "idempotencyKey": "msg-version-1",
+                    },
+                )
+                self.assertEqual(first.status_code, 200)
+                first_body = first.json()
+                self.assertFalse(first_body["duplicate"])
+                self.assertEqual(first_body["answeredActions"][0]["id"], action["id"])
+                self.assertEqual(first_body["job"]["runId"], run["id"])
+                self.assertEqual(store.get_action(action["id"])["status"], "answered")
+                self.assertEqual(store.get_run(run["id"])["status"], "queued")
+
+                duplicate = client.post(
+                    f"/api/v2/runs/{run['id']}/messages",
+                    headers=headers,
+                    json={
+                        "questionId": "q-version",
+                        "message": "version 1.2.3",
+                        "resumeMode": "finalize",
+                        "idempotencyKey": "msg-version-1",
+                    },
+                )
+                self.assertEqual(duplicate.status_code, 200)
+                duplicate_body = duplicate.json()
+                self.assertTrue(duplicate_body["duplicate"])
+                self.assertEqual(
+                    duplicate_body["event"]["id"],
+                    first_body["event"]["id"],
+                )
+                self.assertEqual(duplicate_body["answeredActions"], [])
+                self.assertIsNone(duplicate_body["job"])
+                message_events = [
+                    event for event in store.list_timeline(run["id"])
+                    if event["kind"] == "user.message"
+                ]
+                self.assertEqual(len(message_events), 1)
+                self.assertEqual(message_events[0]["payload"]["questionId"], "q-version")
+
     def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
@@ -5572,6 +5660,7 @@ fi
                     "params": {
                         "name": "logagent.request_user_input",
                         "arguments": {
+                            "questionId": "q-version",
                             "question": "Which version?",
                             "reason": "version affects diagnostics",
                         },
@@ -5581,6 +5670,7 @@ fi
             prompt_payload = json.loads(prompt_response["result"]["content"][0]["text"])
             prompt_action = store.get_action(prompt_payload["action"]["id"])
             self.assertEqual(prompt_action["kind"], "user_input")
+            self.assertEqual(prompt_action["payload"]["questionId"], "q-version")
             self.assertEqual(prompt_payload["runtimeStatus"], "waiting_for_user")
             self.assertEqual(prompt_payload["artifactPath"], "mcp_waiting_request.json")
             self.assertEqual(

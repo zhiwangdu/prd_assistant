@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 User Message Resume Idempotency
+
+- `POST /api/v2/runs/:run_id/messages` now matches Rust waiting semantics more
+  closely: it rejects non-`waiting_for_user` runs with 409, validates optional
+  `questionId` against pending `user_input` actions, and supports
+  `idempotencyKey` retry de-duplication.
+- Task MCP `logagent.request_user_input` now accepts optional `questionId` and
+  stores it in the pending action payload. User messages with a matching
+  `questionId` answer only that pending action.
+- Agent resume context now carries user-message `questionId` and
+  `idempotencyKey` alongside message text and `resumeMode`.
+- Added API regression coverage for non-waiting rejection, unknown question
+  rejection, successful answer/requeue, and duplicate idempotency handling.
+- Verification passed: focused user-message resume idempotency regressions,
+  ruff for `server-v2/logagent_v2` and `server-v2/tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (110 passed, 1 warning),
+  compileall for `server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Agent Follow-up Evidence Refs
 
 - V2 Agent provider requests now merge evidence refs discovered in prior tool

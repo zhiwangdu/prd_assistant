@@ -180,7 +180,9 @@ Implemented in this slice:
   `logagent.request_approval`; pending actions are persisted, exposed in run
   analysis summaries, user supplements mark pending user-input actions as
   answered, and user message/approval APIs requeue the run with bounded
-  `interactionContext` in the next Agent request. Calls also persist a
+  `interactionContext` in the next Agent request. User message submission
+  requires `waiting_for_user`, validates optional `questionId`, and de-duplicates
+  retry requests by `idempotencyKey`. Calls also persist a
   V1-compatible `mcp_waiting_request.json` background artifact and return
   `artifactPath`, `runtimeStatus`, and `evidenceRefs`; `request_approval`
   accepts the V1 shape with only `reason` and defaults missing `actionType` to
@@ -1316,10 +1318,16 @@ Both calls write `mcp_waiting_request.json` and return the V2 `action` plus
 Rust/V1 `artifactPath`, `runtimeStatus`, and `evidenceRefs`.
 `GET /api/v2/runs/:run_id/analysis` returns `actions` and `pendingActions` so
 WebUI can render the same recovery controls as the Rust task detail page.
+`POST /api/v2/runs/:run_id/messages` accepts only `waiting_for_user` runs,
+returns 409 for other states, and optionally validates `questionId` against a
+pending `user_input` action id or payload question id. Repeated submissions
+with the same `idempotencyKey` return the original `user.message` timeline
+event without re-answering actions or creating another job.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
-SQLite job queue. User messages also mark pending `user_input` actions as
-`answered`. The next Agent request includes a bounded `interactionContext`
+SQLite job queue. User messages also mark pending matching `user_input`
+actions as `answered`. The next Agent request includes a bounded
+`interactionContext`
 containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has

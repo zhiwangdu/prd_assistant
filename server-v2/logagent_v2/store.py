@@ -1858,20 +1858,27 @@ class Store:
         run_id: str,
         message: str,
         resume_mode: str,
+        question_id: str | None = None,
     ) -> list[JsonObject]:
         run = self.get_run(run_id)
         ts = now_iso()
-        result = {"message": message, "resumeMode": resume_mode}
+        result = {"message": message, "resumeMode": resume_mode, "questionId": question_id}
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id FROM actions
+                SELECT id, payload_json FROM actions
                 WHERE run_id = ? AND kind = 'user_input' AND status = 'pending'
                 ORDER BY created_at ASC, id ASC
                 """,
                 (run_id,),
             ).fetchall()
-            action_ids = [row["id"] for row in rows]
+            action_ids = [
+                row["id"]
+                for row in rows
+                if question_id is None
+                or row["id"] == question_id
+                or decode_json(row["payload_json"], {}).get("questionId") == question_id
+            ]
             for action_id in action_ids:
                 conn.execute(
                     """
@@ -1887,7 +1894,11 @@ class Store:
                     run["workspace_id"],
                     run_id,
                     "action.user_input.answered",
-                    {"actionIds": action_ids, "resumeMode": resume_mode},
+                    {
+                        "actionIds": action_ids,
+                        "questionId": question_id,
+                        "resumeMode": resume_mode,
+                    },
                     ts,
                 )
         return [self.get_action(action_id) for action_id in action_ids]

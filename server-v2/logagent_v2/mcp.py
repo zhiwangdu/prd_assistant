@@ -863,6 +863,7 @@ def request_user_input_descriptor() -> dict:
         "inputSchema": {
             "type": "object",
             "properties": {
+                "questionId": {"type": "string", "minLength": 1},
                 "question": {"type": "string", "minLength": 1},
                 "reason": {"type": "string"},
                 "required": {"type": "boolean", "default": True},
@@ -898,10 +899,16 @@ def call_request_user_input(
     question = arguments.get("question")
     if not isinstance(question, str) or not question.strip():
         raise ValueError("logagent.request_user_input requires question")
+    question_id = arguments.get("questionId")
+    if question_id is not None and (
+        not isinstance(question_id, str) or not question_id.strip()
+    ):
+        raise ValueError("logagent.request_user_input questionId must be a string")
     action = store.create_action(
         run["id"],
         "user_input",
         {
+            "questionId": question_id.strip() if isinstance(question_id, str) else None,
             "question": question.strip(),
             "reason": arguments.get("reason"),
             "required": bool(arguments.get("required", True)),

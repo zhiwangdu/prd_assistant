@@ -133,7 +133,9 @@ class AttachSessionUploads(BaseModel):
 
 class MessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
+    questionId: str | None = Field(default=None, min_length=1, max_length=200)
     resumeMode: Literal["continue", "finalize"] = "continue"
+    idempotencyKey: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class DecisionCreate(BaseModel):
@@ -480,6 +482,34 @@ def _task_summary(workspace: dict, run: dict) -> dict:
         "createdAt": run.get("created_at"),
         "updatedAt": run.get("updated_at"),
     }
+
+
+def normalize_optional_message_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def find_idempotent_user_message(
+    store: Store,
+    run_id: str,
+    idempotency_key: str,
+) -> dict | None:
+    for event in reversed(store.list_timeline(run_id)):
+        payload = event.get("payload")
+        if (
+            event.get("kind") == "user.message"
+            and isinstance(payload, dict)
+            and payload.get("idempotencyKey") == idempotency_key
+        ):
+            return event
+    return None
+
+
+def user_action_matches_question(action: dict, question_id: str) -> bool:
+    payload = action.get("payload") if isinstance(action.get("payload"), dict) else {}
+    return action.get("id") == question_id or payload.get("questionId") == question_id
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -996,20 +1026,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             run = store.get_run(run_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+        idempotency_key = normalize_optional_message_id(payload.idempotencyKey)
+        if idempotency_key is not None:
+            existing = find_idempotent_user_message(store, run_id, idempotency_key)
+            if existing is not None:
+                return {
+                    "event": existing,
+                    "answeredActions": [],
+                    "job": None,
+                    "duplicate": True,
+                }
+        if run["status"] != "waiting_for_user":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "run is not waiting for user input",
+                    "status": run["status"],
+                },
+            )
+        pending_user_actions = [
+            action
+            for action in store.list_actions(run_id)
+            if action.get("kind") == "user_input" and action.get("status") == "pending"
+        ]
+        if payload.questionId is not None and not any(
+            user_action_matches_question(action, payload.questionId)
+            for action in pending_user_actions
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown pending questionId {payload.questionId}",
+            )
         event = store.append_event(
             run["workspace_id"],
             run_id,
             "user.message",
-            {"message": payload.message, "resumeMode": payload.resumeMode},
+            {
+                "message": payload.message,
+                "questionId": payload.questionId,
+                "resumeMode": payload.resumeMode,
+                "idempotencyKey": idempotency_key,
+            },
         )
         answered_actions = store.answer_user_input_actions(
-            run_id, payload.message, payload.resumeMode
+            run_id,
+            payload.message,
+            payload.resumeMode,
+            question_id=payload.questionId,
         )
         job = None
-        if run["status"] == "waiting_for_user":
-            store.update_run_status(run_id, "queued", "queued")
-            job = store.enqueue_run(run_id)
-        return {"event": event, "answeredActions": answered_actions, "job": job}
+        store.update_run_status(run_id, "queued", "queued")
+        job = store.enqueue_run(run_id)
+        return {
+            "event": event,
+            "answeredActions": answered_actions,
+            "job": job,
+            "duplicate": False,
+        }
 
     @app.post("/api/v2/actions/{action_id}/decisions")
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
