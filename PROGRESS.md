@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Deploy Health Wait
+
+- Aligned V2 deploy service control with the Rust server's quick start/stop
+  behavior. `deploy/logagent-v2ctl.sh start` now waits for the configured
+  health URL to succeed before returning.
+- Startup now detects early process exit, enforces
+  `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`, removes stale pid files on failure,
+  and returns a non-zero status when V2 is not ready.
+- V2 service status/stop/restart are pid-file scoped by default to avoid
+  controlling another runtime directory's V2 process; global process discovery
+  remains opt-in via `LOGAGENT_V2_DISCOVER_PROCESS=1`.
+- Added `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` to deploy `.env.example` and
+  updated V2 Server and Deployment docs/specs.
+- Verification passed: `bash -n deploy/logagent-v2ctl.sh`,
+  `bash -n deploy/rebuild-v2-install.sh`, isolated V2 status smoke,
+  invalid timeout smoke, and `git diff --check`.
+
 ## 2026-06-17 V2 Skill Reference MCP Envelope
 
 - Aligned V2 task MCP `logagent.get_skill_reference` with the Rust/V1

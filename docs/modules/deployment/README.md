@@ -76,6 +76,11 @@ cp logagent.example.yaml logagent.yaml
 
 `deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。`deploy/.env.example` 还提供 V2 Fetch allowlist、request/response size、redirect 和 credential secret 示例，以及 submodule 内网镜像变量：`LOGAGENT_SUBMODULE_BASE_URL` 适合四个工具仓库位于同一 Git namespace 的场景，单仓库变量 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL` 和 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 优先级更高。
 
+V2 `deploy/logagent-v2ctl.sh start` 和 `restart` 会等待配置的 health URL
+成功；如果进程启动后退出或超过 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`
+仍未 ready，脚本会清理 stale pid 并以非零状态退出。控制脚本默认只信任
+当前 runtime 的 pid file，不通过全局进程扫描接管其它运行目录的 V2 进程。
+
 个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：
 
 - `POST /api/mcp/readonly`：只读 HTTP MCP 知识入口。

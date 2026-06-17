@@ -92,6 +92,8 @@ Optional variables:
 - `LOGAGENT_V2_VENV_DIR`: V2 virtualenv directory, defaults to `$LOGAGENT_APP_DIR/server-v2/.venv`.
 - `LOGAGENT_V2_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.pid`.
 - `LOGAGENT_V2_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.log`.
+- `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`: V2 start health wait timeout, defaults to `30`.
+- `LOGAGENT_V2_DISCOVER_PROCESS`: optional global process discovery for lost pid files, defaults to `0`.
 - `LOGAGENT_V2_FETCH_ENABLED`: optional V2 Fetch endpoint execution switch, disabled by default.
 - `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`: comma-separated exact host or host:port allowlist for V2 Fetch execution.
 - `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`: defaults to `1048576`, limiting saved endpoint bodies and runtime body overrides.
@@ -232,6 +234,12 @@ V2 has equivalent controls:
 ./logagent-v2ctl.sh restart
 ./logagent-v2ctl.sh stop
 ```
+
+`logagent-v2ctl.sh` is scoped to the configured V2 pid file by default, so
+multiple runtime directories do not accidentally control each other's V2
+processes. `start` and `restart` wait for the configured V2 health URL to
+return success. If the process exits or the health check times out, the script
+removes the stale pid file and returns a non-zero status.
 
 Check the UI after startup:
 

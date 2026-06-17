@@ -12,7 +12,7 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 - `scripts/start-local.sh` 支持真实 LLM、stub 和前台调试模式；后台模式必须在非交互 shell 中保持 Server 进程存活。
 - 工作目录脚本通过 `LOGAGENT_WORK_DIR` 定位运行目录，支持初始化 `bin/config/data/logs/run/webui`、快速编译 Server、快速编译 WebUI、启动、停止、重启、状态和日志查看；缺少 `LOGAGENT_WORK_DIR` 时必须报错。
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本 best-effort 加载 `$HOME/.bashrc` 后自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
-- `deploy/logagent-v2ctl.sh` 和 `deploy/rebuild-v2-install.sh` 提供 V2 Python/FastAPI runtime 的快速构建、安装、启动、停止、重启、状态和日志查看。V2 默认使用 `$LOGAGENT_APP_DIR/server-v2/.venv`、`$LOGAGENT_APP_DIR/data-v2`、`$LOGAGENT_APP_DIR/webui/out` 和端口 `50993`。`rebuild-v2-install.sh --with-tools` 会把 source-built analyzers 构建到 `$LOGAGENT_APP_DIR/bin/tools`，`--tools-only --only-tool <name>` 用于快速单工具重建。
+- `deploy/logagent-v2ctl.sh` 和 `deploy/rebuild-v2-install.sh` 提供 V2 Python/FastAPI runtime 的快速构建、安装、启动、停止、重启、状态和日志查看。V2 默认使用 `$LOGAGENT_APP_DIR/server-v2/.venv`、`$LOGAGENT_APP_DIR/data-v2`、`$LOGAGENT_APP_DIR/webui/out` 和端口 `50993`。`logagent-v2ctl.sh start/restart` 会等待 health ready，启动失败时清理 stale pid 并返回非零状态；默认只按当前 runtime 的 pid file 判定运行进程，避免多实例互相误控。`rebuild-v2-install.sh --with-tools` 会把 source-built analyzers 构建到 `$LOGAGENT_APP_DIR/bin/tools`，`--tools-only --only-tool <name>` 用于快速单工具重建。
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm、Go，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
 - `scripts/build-tools.sh` 从 `third_party/` submodules 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers；`scripts/build-server.sh` 会安装到 `$LOGAGENT_WORK_DIR/bin/tools/`，`deploy/rebuild-install.sh` 会安装到 `$LOGAGENT_APP_DIR/bin/tools/`。构建前会调用 `scripts/configure-tool-submodules.sh`，支持通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 把 submodule clone 地址覆盖到本地 Git config，以便内网镜像环境初始化 submodule；该脚本不得改写顶层仓库 `origin`。
 - `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会预创建 Memory/Case 相关运行目录，包括 `data/memory`、`data/cases` 和 `data/case_imports`；`rebuild-install.sh` 在存在 `$HOME/.cargo/env` 时加载它，以支持非交互 SSH shell 下的 rustup cargo。
@@ -68,6 +68,8 @@ WEBUI -> Server 同源 API
 - `deploy/install-deps.sh --dry-run` 和 `--help` 可执行，不修改宿主。
 - deploy 模板启动前会创建 `data/memory`、`data/cases` 和 `data/case_imports`，且重建安装不能删除已有运行数据。
 - V2 deploy 模板能创建 virtualenv、安装 `server-v2`、初始化 SQLite、同步 WebUI、启动/停止/重启服务，并且不删除已有 `data-v2`。
+- V2 `logagent-v2ctl.sh start/restart` 必须等待 `/health` 成功；进程提前退出或 health 超时必须清理 pid 文件并返回失败。
+- V2 控制脚本默认必须按当前 runtime pid file 管理进程，不得在未显式开启发现模式时通过全局 `pgrep` 控制其它运行目录的 V2 实例。
 - V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、pprof 和 Huawei package sync 的环境变量样例。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
 - 运行目录和 deploy rebuild 脚本会从 submodules 构建 source-built analyzers，并把默认配置中的工具路径指向对应构建产物。

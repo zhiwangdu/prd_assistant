@@ -163,7 +163,10 @@ was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
 `$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
 Use `--with-tools` to also build source-referenced analyzer submodules into
 `$LOGAGENT_APP_DIR/bin/tools`, or `--tools-only --only-tool <name>` for a fast
-tool-only rebuild.
+tool-only rebuild. `logagent-v2ctl.sh start` and `restart` wait for `/health`
+until `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` expires, and clean stale pid files
+when startup fails. The control script is pid-file scoped by default so separate
+runtime directories do not control each other's V2 processes.
 
 ## Configuration
 

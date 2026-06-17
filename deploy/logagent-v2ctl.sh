@@ -25,6 +25,7 @@ VENV_DIR="${LOGAGENT_V2_VENV_DIR:-$APP_DIR/server-v2/.venv}"
 PYTHON="${LOGAGENT_V2_PYTHON:-$VENV_DIR/bin/python}"
 PID_FILE="${LOGAGENT_V2_PID_FILE:-$APP_DIR/logagent-v2.pid}"
 LOG_FILE="${LOGAGENT_V2_LOG_FILE:-$APP_DIR/logagent-v2.log}"
+STARTUP_TIMEOUT_SECONDS="${LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS:-30}"
 
 export LOGAGENT_V2_DATA_DIR="${LOGAGENT_V2_DATA_DIR:-$APP_DIR/data-v2}"
 export LOGAGENT_V2_WEBUI_DIR="${LOGAGENT_V2_WEBUI_DIR:-$APP_DIR/webui/out}"
@@ -33,6 +34,11 @@ export LOGAGENT_V2_PORT="${LOGAGENT_V2_PORT:-50993}"
 export LOGAGENT_V2_API_KEY="${LOGAGENT_V2_API_KEY:-${LOGAGENT_NATIVE_API_KEY:-dev-token}}"
 
 HEALTH_URL="${LOGAGENT_V2_HEALTH_URL:-http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/health}"
+
+if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || ((STARTUP_TIMEOUT_SECONDS < 1)); then
+  echo "LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+fi
 
 usage() {
   echo "Usage: $0 {start|stop|restart|status|logs}"
@@ -44,6 +50,33 @@ prepare_runtime_dirs() {
     "$(dirname "$LOG_FILE")" \
     "$LOGAGENT_V2_DATA_DIR" \
     "$LOGAGENT_V2_WEBUI_DIR"
+}
+
+wait_for_health() {
+  local pid="$1"
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl not found; skipped health wait for $HEALTH_URL"
+    return 0
+  fi
+
+  local elapsed
+  for ((elapsed = 0; elapsed < STARTUP_TIMEOUT_SECONDS; elapsed++)); do
+    if curl --max-time 1 --silent --fail "$HEALTH_URL" >/dev/null; then
+      echo "LogAgent V2 server is ready: pid=$pid url=http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "LogAgent V2 server exited during startup. See $LOG_FILE" >&2
+      rm -f "$PID_FILE"
+      return 1
+    fi
+    sleep 1
+  done
+
+  echo "LogAgent V2 health check timed out after ${STARTUP_TIMEOUT_SECONDS}s. See $LOG_FILE" >&2
+  kill "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+  return 1
 }
 
 process_matches_server() {
@@ -62,6 +95,10 @@ find_running_pid() {
       return 0
     fi
     rm -f "$PID_FILE"
+  fi
+
+  if [[ "${LOGAGENT_V2_DISCOVER_PROCESS:-0}" != "1" ]]; then
+    return 0
   fi
 
   local candidate
@@ -102,6 +139,7 @@ start_server() {
   echo "Data dir: $LOGAGENT_V2_DATA_DIR"
   echo "WebUI dir: $LOGAGENT_V2_WEBUI_DIR"
   echo "Log file: $LOG_FILE"
+  wait_for_health "$pid"
 }
 
 stop_server() {
