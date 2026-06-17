@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Source-Built Analyzer Defaults
+
+- Aligned V2's environment-variable analyzer auto-registration with the Rust/V1
+  `examples/server-tools.yaml` defaults.
+- `LOGAGENT_V2_TOOL_*_ANALYZER` now creates descriptors with the same args,
+  timeouts, `maxInputFiles`, match patterns, and keywords: Flux/InfluxQL keep
+  30s and 3 inputs, openGemini storage uses the full TSSP/TSI/mergeset pattern
+  set and 10 inputs, and InfluxDB storage uses 60s and 5 inputs.
+- Added regression coverage for env-based source-built analyzer defaults.
+- Updated V2 Server, Tool Runner, and Deployment docs/specs.
+- Verification passed: focused source-built analyzer config regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (80 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Manual Tool Upload Suffix Validation
 
 - Manual V2 tool-run creation now validates attached upload filenames against

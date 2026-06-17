@@ -194,6 +194,13 @@ Environment variables:
 | `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
 | `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
+
+Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
+source-built analyzer as a configured subprocess tool using the same args,
+timeouts, `maxInputFiles`, match patterns, and keywords as
+`examples/server-tools.yaml`. The storage defaults preserve the wider V1
+settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
+`timeoutSeconds=60` and `maxInputFiles=5`.
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |

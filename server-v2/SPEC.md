@@ -123,6 +123,12 @@ Implemented in this slice:
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
   `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
+- Source-built analyzer environment variables create default configured
+  descriptors aligned with `examples/server-tools.yaml`: Flux and InfluxQL use
+  the V1 query analyzer args with `timeoutSeconds=30` and `maxInputFiles=3`,
+  openGemini storage uses the full TSSP/TSI/mergeset file-pattern set with
+  `maxInputFiles=10`, and InfluxDB storage uses `timeoutSeconds=60`,
+  `maxInputFiles=5`, and the V1 TSM/TSI patterns.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
   `logagent.huawei_cloud_package_sync`, plus the V1-style configured command

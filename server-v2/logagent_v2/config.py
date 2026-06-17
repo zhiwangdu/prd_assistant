@@ -329,6 +329,8 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
             "flux_query_analyzer",
             "Flux Query Analyzer",
             env_first("LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER", "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"),
+            30,
+            3,
             (
                 "--input",
                 "{input_file}",
@@ -351,6 +353,8 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
                 "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER",
                 "LOGAGENT_TOOL_INFLUXQL_ANALYZER",
             ),
+            30,
+            3,
             ("-input", "{input_file}", "-output", "json", "-detail-limit", "5"),
             ("*.jsonl",),
             ("influxql", '"query"', "select", "show series", "show measurements"),
@@ -362,9 +366,28 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
                 "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER",
                 "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER",
             ),
+            30,
+            10,
             ("--input", "{input_file}", "--format", "json"),
-            ("*.tssp", "*.tssp.init", "*tsi*", "*mergeset*"),
-            ("tssp", "tsi", "mergeset"),
+            (
+                "*.tssp",
+                "*.tssp.init",
+                "metadata.json",
+                "metaindex.bin",
+                "index.bin",
+                "items.bin",
+                "lens.bin",
+                "*_mergeset.bf",
+                "*_mergeset.bf.last",
+                "*_mergeset.bf.init",
+            ),
+            (
+                "tssp",
+                "mergeset",
+                "metadata.json",
+                "invalid file",
+                "open tssp",
+            ),
         ),
         (
             "influxdb_storage_analyzer",
@@ -373,13 +396,24 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
                 "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER",
                 "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER",
             ),
+            60,
+            5,
             ("-input", "{input_file}", "-kind", "auto", "-max-samples", "10"),
-            ("*.tsm", "*.tsi", "*_series*"),
-            ("tsm", "tsi", "_series"),
+            ("*.tsm", "*.tsi"),
+            ("_series", "tsm", "tsi", "series file"),
         ),
     ]
     tools = []
-    for tool_id, display_name, command, args, patterns, keywords in definitions:
+    for (
+        tool_id,
+        display_name,
+        command,
+        timeout_seconds,
+        max_input_files,
+        args,
+        patterns,
+        keywords,
+    ) in definitions:
         if not command:
             continue
         tools.append(
@@ -389,9 +423,9 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
                 command=command,
                 args=args,
                 enabled=True,
-                timeout_seconds=30,
+                timeout_seconds=timeout_seconds,
                 max_output_bytes=1024 * 1024,
-                max_input_files=3,
+                max_input_files=max_input_files,
                 match_file_patterns=patterns,
                 match_keywords=keywords,
             )

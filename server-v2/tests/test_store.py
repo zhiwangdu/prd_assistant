@@ -4,6 +4,7 @@ import base64
 import gzip
 import io
 import json
+import os
 import sys
 import tarfile
 import tempfile
@@ -32,7 +33,12 @@ from logagent_v2.case_memory import (
     update_case as update_case_record,
     update_case_import_draft,
 )
-from logagent_v2.config import RemoteCommandTemplate, Settings, ToolDefinition
+from logagent_v2.config import (
+    RemoteCommandTemplate,
+    Settings,
+    ToolDefinition,
+    parse_tools_env,
+)
 from logagent_v2.environment import persist_approved_environment_evidence
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
@@ -1758,6 +1764,70 @@ class StoreTests(unittest.TestCase):
                 results_body["toolResults"][0]["path"],
                 f"tool_results/{results_body['toolResults'][0]['actionId']}/result.json",
             )
+
+    def test_env_source_built_tool_defaults_match_v1_examples(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": "/opt/logagent/tools/flux_query_analyzer",
+            "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "/opt/logagent/tools/influxql-analyzer",
+            "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER": (
+                "/opt/logagent/tools/opengemini-storage-analyzer"
+            ),
+            "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER": (
+                "/opt/logagent/tools/influxdb_storage_analyzer"
+            ),
+            "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            for key, value in env_values.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+            tools = {tool.id: tool for tool in parse_tools_env(None)}
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(tools["flux_query_analyzer"].timeout_seconds, 30)
+        self.assertEqual(tools["flux_query_analyzer"].max_input_files, 3)
+        self.assertEqual(
+            tools["flux_query_analyzer"].match_file_patterns,
+            ("*.jsonl", "*.ndjson"),
+        )
+        self.assertEqual(tools["influxql_analyzer"].timeout_seconds, 30)
+        self.assertEqual(tools["influxql_analyzer"].max_input_files, 3)
+        self.assertEqual(tools["influxql_analyzer"].match_file_patterns, ("*.jsonl",))
+        self.assertEqual(tools["opengemini_storage_analyzer"].max_input_files, 10)
+        self.assertEqual(
+            tools["opengemini_storage_analyzer"].match_file_patterns,
+            (
+                "*.tssp",
+                "*.tssp.init",
+                "metadata.json",
+                "metaindex.bin",
+                "index.bin",
+                "items.bin",
+                "lens.bin",
+                "*_mergeset.bf",
+                "*_mergeset.bf.last",
+                "*_mergeset.bf.init",
+            ),
+        )
+        self.assertEqual(tools["influxdb_storage_analyzer"].timeout_seconds, 60)
+        self.assertEqual(tools["influxdb_storage_analyzer"].max_input_files, 5)
+        self.assertEqual(
+            tools["influxdb_storage_analyzer"].match_file_patterns,
+            ("*.tsm", "*.tsi"),
+        )
+        self.assertIn("series file", tools["influxdb_storage_analyzer"].match_keywords)
 
     def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

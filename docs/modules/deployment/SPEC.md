@@ -70,7 +70,7 @@ WEBUI -> Server 同源 API
 - V2 deploy 模板能创建 virtualenv、安装 `server-v2`、初始化 SQLite、同步 WebUI、启动/停止/重启服务，并且不删除已有 `data-v2`。
 - V2 `logagent-v2ctl.sh start/restart` 必须等待 `/health` 成功；进程提前退出或 health 超时必须清理 pid 文件并返回失败。
 - V2 控制脚本默认必须按当前 runtime pid file 管理进程，不得在未显式开启发现模式时通过全局 `pgrep` 控制其它运行目录的 V2 实例。
-- V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，非交互 SSH shell 下也能通过 `$HOME/.cargo/env` 找到 rustup-managed `cargo`，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、pprof 和 Huawei package sync 的环境变量样例。
+- V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，非交互 SSH shell 下也能通过 `$HOME/.cargo/env` 找到 rustup-managed `cargo`，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、pprof 和 Huawei package sync 的环境变量样例。设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 后，V2 会按 `examples/server-tools.yaml` 的 args、timeout、`maxInputFiles` 和 match rules 自动注册对应 analyzer。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
 - 运行目录和 deploy rebuild 脚本会从 submodules 构建 source-built analyzers，并把默认配置中的工具路径指向对应构建产物。
 - 内网环境可以在不修改 `.gitmodules` 的情况下通过 `.env` 或环境变量指定 source-built analyzer submodule clone URL；`build-tools.sh` 和手工 `configure-tool-submodules.sh` 都必须把这些 URL 写入本地 Git submodule config，并且在 submodule 目录存在但未初始化时不得把顶层仓库 `origin` 改成 submodule URL。
