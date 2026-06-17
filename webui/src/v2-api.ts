@@ -210,13 +210,20 @@ export type V2ToolDescriptor = {
   editable?: boolean;
   exportable?: boolean;
   runnable: boolean;
+  tags?: string[];
   source?: "built_in" | "configured" | string;
+  manualOnly?: boolean;
+  minFiles?: number;
+  maxFiles?: number;
   maxInputFiles?: number;
+  acceptedSuffixes?: string[];
   match?: {
     filePatterns?: string[];
     keywords?: string[];
   };
   paramsSchema?: Record<string, unknown>;
+  paramsTemplate?: Record<string, unknown>;
+  outputViews?: string[];
   allowedHosts?: string[];
 };
 

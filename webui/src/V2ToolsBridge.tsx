@@ -40,9 +40,9 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   }, [refreshTools]);
 
   useEffect(() => {
-    setParamsText("{}");
+    setParamsText(JSON.stringify(selectedTool?.paramsTemplate ?? {}, null, 2));
     setResultText("");
-  }, [selectedToolId]);
+  }, [selectedTool]);
 
   async function runTool() {
     if (!apiKey.trim()) {
@@ -142,7 +142,10 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
                     <Badge variant="secondary">{tool.backend}</Badge>
                     <Badge variant="outline">{tool.source ?? "configured"}</Badge>
                     {tool.runnable ? <Badge variant="success">runnable</Badge> : <Badge variant="secondary">not runnable</Badge>}
+                    {tool.exportable ? <Badge variant="outline">exportable</Badge> : null}
+                    {tool.manualOnly ? <Badge variant="outline">manual only</Badge> : null}
                   </div>
+                  {tool.tags?.length ? <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{tool.tags.join(", ")}</p> : null}
                 </button>
               )) : <EmptyState>No V2 tools.</EmptyState>}
             </div>
@@ -155,14 +158,24 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
                   <h3 className="text-sm font-semibold">{selectedTool.displayName}</h3>
                   <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selectedTool.toolId}</p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Metric label="backend" value={selectedTool.backend} />
+                  <Metric label="source" value={selectedTool.source ?? "configured"} />
                   <Metric label="readOnly" value={String(selectedTool.readOnly)} />
+                  <Metric label="editable" value={String(Boolean(selectedTool.editable))} />
+                  <Metric label="exportable" value={String(Boolean(selectedTool.exportable))} />
+                  <Metric label="manualOnly" value={String(Boolean(selectedTool.manualOnly))} />
+                  <Metric label="file range" value={`${selectedTool.minFiles ?? "-"}..${selectedTool.maxFiles ?? selectedTool.maxInputFiles ?? "-"}`} />
                   <Metric label="maxInputFiles" value={String(selectedTool.maxInputFiles ?? "-")} />
                   <Metric label="allowedHosts" value={(selectedTool.allowedHosts ?? []).join(", ") || "-"} />
+                  <Metric label="acceptedSuffixes" value={(selectedTool.acceptedSuffixes ?? []).join(", ") || "-"} />
+                  <Metric label="outputViews" value={(selectedTool.outputViews ?? []).join(", ") || "-"} />
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
+                  <JsonBlock title="paramsTemplate" value={selectedTool.paramsTemplate ?? {}} />
                   <JsonBlock title="match" value={selectedTool.match ?? {}} />
+                </div>
+                <div>
                   <JsonBlock title="paramsSchema" value={selectedTool.paramsSchema ?? {}} />
                 </div>
               </>

@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Tool Descriptor Parity
+
+- V2 Tools bridge now exposes the descriptor fields needed to verify V1 tool
+  migration: tags, editable/exportable/manualOnly flags, file-count bounds,
+  accepted suffixes, output views, match rules, params template, and params
+  schema.
+- Selecting a V2 tool now pre-fills the task MCP Params JSON from
+  `paramsTemplate`, so built-in tools and source-built analyzer tools can be
+  invoked without guessing their parameter shape.
+- Updated WebUI V2 API typings and WebUI README/SPEC for the richer tool
+  descriptor display.
+
 ## 2026-06-18 WebUI V2 Analyze Runtime Resources
 
 - V2 Analyze bridge now expands `/api/v2/runs/:run_id/analysis.resources`
