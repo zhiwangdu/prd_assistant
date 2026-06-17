@@ -162,7 +162,7 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <Globe2 className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Fetch Bridge</CardTitle>
+              <CardTitle>V2 Fetch Workbench</CardTitle>
             </div>
             <CardDescription>V2 cURL import, endpoint management, and run-scoped Fetch execution</CardDescription>
           </div>

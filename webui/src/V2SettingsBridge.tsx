@@ -169,7 +169,7 @@ export function V2SettingsBridge({ apiKey }: Props) {
           <div>
             <div className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Settings Bridge</CardTitle>
+              <CardTitle>V2 Settings Console</CardTitle>
             </div>
             <CardDescription>Python V2 Agent provider diagnostics, readonly MCP exports, and built-in Domain Adapter summaries</CardDescription>
           </div>

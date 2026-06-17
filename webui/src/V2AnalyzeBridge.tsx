@@ -41,8 +41,8 @@ type RunCaseDraft = {
 
 const copyByLanguage = {
   "zh-CN": {
-    title: "V2 分析桥接",
-    description: "连接 Python V2 的 Workspace、上传、Run、Analysis 和 Artifact 能力",
+    title: "V2 分析工作台",
+    description: "Python V2 Workspace、上传、Run、Analysis 和 Artifact 工作台",
     defaultQuestion: "分析日志中的主要异常、可能原因和建议检查项。",
     questionPlaceholder: "希望 V2 Agent 分析的问题",
     apiKeyRequired: "请填写 API Key",
@@ -138,8 +138,8 @@ const copyByLanguage = {
     }
   },
   "en-US": {
-    title: "V2 Analyze Bridge",
-    description: "Connects Python V2 workspace, upload, run, analysis, and artifact capabilities",
+    title: "V2 Analyze Workbench",
+    description: "Python V2 workspace, upload, run, analysis, and artifact workbench",
     defaultQuestion: "Analyze the main log anomalies, possible causes, and suggested checks.",
     questionPlaceholder: "Question for the V2 Agent",
     apiKeyRequired: "API Key required",

@@ -171,7 +171,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <BookOpenCheck className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Memory Bridge</CardTitle>
+              <CardTitle>V2 Memory Workbench</CardTitle>
             </div>
             <CardDescription>直接调用 Python V2 Case Memory：search、preview import、confirm、edit、enable/disable</CardDescription>
           </div>

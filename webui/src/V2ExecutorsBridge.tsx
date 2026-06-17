@@ -212,7 +212,7 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <Server className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Executors Bridge</CardTitle>
+              <CardTitle>V2 Executors Workbench</CardTitle>
             </div>
             <CardDescription>Python V2 Remote Executor CRUD, whitelisted SSH command runs, and persisted stdout/stderr/result inspection</CardDescription>
           </div>

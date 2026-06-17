@@ -110,7 +110,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <Wrench className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Tools Bridge</CardTitle>
+              <CardTitle>V2 Tools Workbench</CardTitle>
             </div>
             <CardDescription>V2 tool catalog and run-scoped task MCP execution</CardDescription>
           </div>

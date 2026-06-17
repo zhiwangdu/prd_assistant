@@ -213,7 +213,7 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <Boxes className="h-5 w-5 text-primary" />
-              <CardTitle>V2 Metadata Bridge</CardTitle>
+              <CardTitle>V2 Metadata Workbench</CardTitle>
             </div>
             <CardDescription>V2 metadata import preview/confirm, direct import, instance listing, delete, and snapshot inspection</CardDescription>
           </div>

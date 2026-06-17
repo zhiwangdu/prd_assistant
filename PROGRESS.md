@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Product Naming
+
+- Default V2 pages now use Workbench/Console titles instead of user-visible
+  Bridge labels, matching the V2 default-route cutover.
+- Source filenames and exported component names keep the existing
+  `V2*Bridge.tsx` names for now to avoid unrelated rename churn.
+- Updated WebUI README/SPEC for the product naming rule.
+
 ## 2026-06-18 WebUI V2 Default Cutover
 
 - The React App default routes now render V2 Analyze, Memory, System Context,

@@ -47,6 +47,7 @@ Database
 
 - 顶部栏全局产品名为 `LogAgent Analysis Workbench`，副标题描述 evidence、memory、system context 和 tools，避免把整个 WebUI 限定为 Metadata Console。
 - 顶部导航默认选中 `Analyze`，可见顺序必须是 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`。
+- 默认 V2 页面用户可见标题必须使用 Workbench 或 Console 语义，不能继续称为临时 bridge/桥接层。源码文件名可暂时保留 `V2*Bridge.tsx` 以避免无关重命名。
 - 顶部必须提供 WebUI 语言选择，当前支持 `zh-CN` 和 `en-US`，默认 `zh-CN`。语言选择保存在浏览器 localStorage；在 `Analyze` 中会同步到当前 Session 的 `analysisLanguage`，创建新 run 时由 Server 快照到 task。
 - `Analyze` 中固定 UI 文案、状态、阶段、置信度和常见 timeline event 必须优先使用简体中文展示；仅当专业名词无法准确翻译时保留英文，例如 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref`、`InstanceID`、`NodeID`、产品名和 JSON/path。切换到 `en-US` 时这些固定展示改为英文。
 - Metadata 不再作为顶层导航项；V2 Metadata 导入、实例管理和 snapshot 查看通过 System Context 页面内的 V2 Metadata 工作台区块进入。

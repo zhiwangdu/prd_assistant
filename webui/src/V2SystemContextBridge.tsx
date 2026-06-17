@@ -169,7 +169,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
           <div>
             <div className="flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-primary" />
-              <CardTitle>V2 System Context Bridge</CardTitle>
+              <CardTitle>V2 System Context Workbench</CardTitle>
             </div>
             <CardDescription>V2 Diagnostic Skills, System Context preview, skills export, and Metadata instance summary</CardDescription>
           </div>
