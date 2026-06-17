@@ -125,11 +125,12 @@ Implemented in this slice:
 - Metadata foundation with direct JSON/YAML/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
   storage, saved raw snapshot refresh, field/tag type query APIs, per-run `metadata_context`
-  auto-selection, readonly MCP tools, and task MCP background slices.
+  auto-selection, readonly MCP tools, and task MCP V1-compatible topology
+  alias plus bounded background slices.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
   local hash-vector recall, edit/disable API, readonly MCP search, and task MCP
-  background case context.
+  V1-compatible Case recall background context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
@@ -741,7 +742,14 @@ existing openGemini labels:
 ```
 
 Readonly MCP resources/tools expose imported instance lists, snapshots, field
-type lookups, and tag-field lookups. Task MCP exposes the same tools and writes
+type lookups, and tag-field lookups. Task MCP exposes the same catalog tools
+plus V1-compatible `logagent.get_metadata_topology` and
+`logagent.query_metadata`. `get_metadata_topology` returns the current run
+outline with section counts and query hints. `query_metadata` reads bounded
+`overview`, `nodes`, `databases`, `retention_policies`, `measurements`,
+`fields`, `shard_groups`, `shards`, `index_groups`, `indexes`, and
+`partition_views` slices from the run-selected snapshots using
+section-specific filters and `limit`/`cursor`. Task MCP Metadata calls write
 results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
 background context and cannot be cited by final answers as root-cause evidence.
 
@@ -795,9 +803,10 @@ V2 falls back to token-overlap scoring plus vector recall. Disabled cases are
 excluded by default and can be included with `includeDisabled=true`.
 
 Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`. Task MCP
-exposes the same tools and writes results as `case_context` evidence with
-`final_allowed=false`. Historical Cases are background references; final answers
-still need current-task evidence refs.
+exposes the same tools plus V1-compatible `logagent.recall_cases`, which only
+returns enabled Cases. Task MCP Case calls write results as `case_context`
+evidence with `final_allowed=false`. Historical Cases are background
+references; final answers still need current-task evidence refs.
 
 ## Skills And System Context
 

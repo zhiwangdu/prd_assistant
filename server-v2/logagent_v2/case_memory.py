@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from typing import Any
 
 from .artifacts import write_artifact_bytes
@@ -427,6 +428,25 @@ def case_tool_descriptors() -> list[JsonObject]:
     ]
 
 
+def task_case_tool_descriptors() -> list[JsonObject]:
+    return [
+        {
+            "name": "logagent.recall_cases",
+            "description": "Recall active enabled cases from LogAgent memory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        *case_tool_descriptors(),
+    ]
+
+
 def call_case_tool(
     settings: Settings | None,
     store: Store,
@@ -434,15 +454,25 @@ def call_case_tool(
     name: str,
     arguments: JsonObject,
 ) -> JsonObject:
-    if name == "logagent.search_cases":
+    if name in {"logagent.search_cases", "logagent.recall_cases"}:
+        query = optional_string(arguments.get("query"))
+        if name == "logagent.recall_cases" and query is None:
+            raise ValueError("query is required")
         value = {
             "cases": store.search_cases(
-                query=optional_string(arguments.get("query")),
+                query=query,
                 limit=int(arguments.get("limit", 5)),
-                include_disabled=bool(arguments.get("includeDisabled", False)),
+                include_disabled=False
+                if name == "logagent.recall_cases"
+                else bool(arguments.get("includeDisabled", False)),
             ),
             "finalEvidenceAllowed": False,
         }
+        value["caseCount"] = len(value["cases"])
+        if name == "logagent.recall_cases":
+            artifact_path = f"case_recall/recall_{stable_case_digest(arguments)}.json"
+            value["artifactPath"] = artifact_path
+            value["backgroundRef"] = f"{artifact_path}#cases"
     elif name == "logagent.get_case":
         value = {"case": store.get_case(require_string(arguments, "caseId"))}
     else:
@@ -479,6 +509,11 @@ def persist_case_context(
         artifact_id=artifact["id"],
         payload={"artifactId": artifact["id"], "tool": tool_name},
     )
+
+
+def stable_case_digest(value: JsonObject) -> str:
+    data = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256(data.encode("utf-8")).hexdigest()[:16]
 
 
 def require_string(arguments: JsonObject, field: str) -> str:

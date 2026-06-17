@@ -305,6 +305,12 @@ metadata_slices/<stable_id>.json
 - `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 fields，结果写入 `metadata_slices/field_types_<stable_id>.json`。
 - `logagent.get_metadata_tag_fields` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field`；结果复用 field types 响应结构，只保留 `typ=6` / `typeLabel=Tag` 的 fields，`missingFields=[]`，并写入 `metadata_slices/tag_fields_<stable_id>.json`。
 
+Python V2 clean-room Server 的 task MCP 对齐同一工具面：
+`logagent.get_metadata_topology` 返回当前 run outline、section counts 和查询提示；
+`logagent.query_metadata` 从 run-selected SQLite snapshot 读取 bounded slice，支持相同
+section/filter/cursor 契约，并以 `metadata_slice` evidence 记录 `backgroundRef`。
+V2 readonly MCP 保持全局只读入口，仅暴露 imported instance/snapshot/field/tag 查询。
+
 用于 Analysis Orchestrator、Claude Code、Tool Runner、Code Evidence 和 Environment Collector 的受控证据输入。
 
 ## WEBUI

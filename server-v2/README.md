@@ -59,11 +59,12 @@ slice provides the durable foundation for the V2 product model:
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
-  auto-selection, HTTP API, and
-  readonly/task MCP tools.
+  auto-selection, HTTP API, readonly MCP tools, and task MCP
+  `logagent.get_metadata_topology` / `logagent.query_metadata` bounded slices.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 plus local vector recall,
-  edit/disable API, and readonly/task MCP search.
+  edit/disable API, readonly MCP search, and task MCP
+  V1-compatible `logagent.recall_cases`.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
   `system_context` run snapshot, readonly/task MCP reference reading, and
@@ -757,9 +758,21 @@ logagent.get_metadata_field_types
 logagent.get_metadata_tag_fields
 ```
 
-Task MCP Metadata calls persist `metadata_slice` evidence as background context
-with `final_allowed=false`; final answers cannot cite these slices as root-cause
-evidence.
+Task MCP also exposes V1-compatible run-scoped Metadata tools:
+
+```text
+logagent.get_metadata_topology
+logagent.query_metadata
+```
+
+`logagent.get_metadata_topology` returns the current run Metadata outline with
+section counts and query hints. `logagent.query_metadata` reads bounded
+`overview`, `nodes`, `databases`, `retention_policies`, `measurements`,
+`fields`, `shard_groups`, `shards`, `index_groups`, `indexes`, and
+`partition_views` slices from the selected run Metadata snapshots using
+section-specific filters plus `limit`/`cursor`. Task MCP Metadata calls persist
+`metadata_slice` evidence as background context with `final_allowed=false`;
+final answers cannot cite these slices as root-cause evidence.
 
 When a run starts, V2 also writes `metadata_context.json` as background
 evidence. If exactly one metadata instance exists, it is selected as
@@ -813,16 +826,19 @@ overrides to complete or edit the draft; only confirm writes to `cases` and
 updates the FTS index, and it remains blocked until required fields are
 complete.
 
-Readonly MCP and task MCP expose:
+Case MCP tools:
 
 ```text
+logagent.recall_cases
 logagent.search_cases
 logagent.get_case
 ```
 
-Task MCP Case calls persist `case_context` evidence as background context with
-`final_allowed=false`. Historical cases are references for investigation and do
-not replace current-task evidence.
+Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`.
+`logagent.recall_cases` is task-MCP-only and keeps the Rust V1 name for enabled
+Case recall. Task MCP Case calls persist `case_context` evidence as background
+context with `final_allowed=false`. Historical cases are references for
+investigation and do not replace current-task evidence.
 
 ## Skills And System Context
 

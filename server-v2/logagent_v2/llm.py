@@ -12,10 +12,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .case_memory import case_tool_descriptors
+from .case_memory import task_case_tool_descriptors
 from .config import Settings
 from .fetch import fetch_tool_descriptors
-from .metadata import metadata_tool_descriptors
+from .metadata import task_metadata_tool_descriptors
 from .skills import skill_tool_descriptors
 from .store import JsonObject
 from .tools import tool_descriptors
@@ -475,8 +475,8 @@ def agent_available_tools(settings: Settings) -> list[JsonObject]:
     tools = [
         search_logs_tool_descriptor(),
         get_log_slice_tool_descriptor(),
-        *metadata_tool_descriptors(),
-        *case_tool_descriptors(),
+        *task_metadata_tool_descriptors(),
+        *task_case_tool_descriptors(),
         *skill_tool_descriptors(),
     ]
     if any(

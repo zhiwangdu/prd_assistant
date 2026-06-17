@@ -924,6 +924,9 @@ class StoreTests(unittest.TestCase):
                 available_tool_names = {
                     tool["name"] for tool in captured_prompts[0]["availableTools"]
                 }
+                self.assertIn("logagent.recall_cases", available_tool_names)
+                self.assertIn("logagent.get_metadata_topology", available_tool_names)
+                self.assertIn("logagent.query_metadata", available_tool_names)
                 self.assertIn("logagent.search_cases", available_tool_names)
                 self.assertIn("logagent.list_metadata_instances", available_tool_names)
                 self.assertIn("logagent.list_skills", available_tool_names)
@@ -3175,6 +3178,181 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(len(metadata_slices), 1)
             self.assertFalse(metadata_slices[0]["final_allowed"])
 
+    def test_task_mcp_metadata_v1_aliases_query_bounded_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            raw = {
+                "ClusterID": 42,
+                "DataNodes": [{"ID": 1, "Host": "10.0.0.1", "Status": "alive"}],
+                "PtView": [
+                    {
+                        "Database": "db0",
+                        "PtId": 7,
+                        "OwnerNodeID": 2,
+                        "Status": 1,
+                        "Version": 3,
+                    }
+                ],
+                "Databases": {
+                    "db0": {
+                        "DefaultRetentionPolicy": "autogen",
+                        "RetentionPolicies": {
+                            "autogen": {
+                                "Measurements": {
+                                    "cpu": {
+                                        "Schema": {
+                                            "host": 6,
+                                            "usage": {"Typ": 3},
+                                        }
+                                    }
+                                },
+                                "ShardGroups": [
+                                    {
+                                        "ID": 10,
+                                        "ShardIds": [100, 101],
+                                        "Owners": [7],
+                                    }
+                                ],
+                                "IndexGroups": [
+                                    {
+                                        "ID": 20,
+                                        "Indexes": [
+                                            {"ID": 200, "Owners": [7], "Tier": 1}
+                                        ],
+                                    }
+                                ],
+                            }
+                        },
+                    }
+                },
+            }
+            import_metadata(
+                store,
+                instance_id="inst-meta",
+                template_type="opengemini",
+                content=json.dumps(raw),
+                remark="metadata alias cluster",
+            )
+            workspace = store.create_workspace(
+                "inst-meta db0 shard owner investigation",
+                "diagnose",
+                "en-US",
+            )
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            listed = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 30, "method": "tools/list"},
+            )
+            tool_names = {tool["name"] for tool in listed["result"]["tools"]}
+            self.assertIn("logagent.get_metadata_topology", tool_names)
+            self.assertIn("logagent.query_metadata", tool_names)
+
+            topology_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_topology",
+                        "arguments": {},
+                    },
+                },
+            )
+            topology = json.loads(topology_response["result"]["content"][0]["text"])
+            self.assertEqual(topology["kind"], "metadata_context_outline")
+            self.assertEqual(topology["selected"]["instanceId"], "inst-meta")
+            self.assertEqual(topology["counts"]["shards"], 2)
+            self.assertEqual(
+                topology["sections"]["shards"]["query"]["tool"],
+                "logagent.query_metadata",
+            )
+            self.assertFalse(topology["finalEvidenceAllowed"])
+
+            query_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.query_metadata",
+                        "arguments": {
+                            "section": "shards",
+                            "database": "db0",
+                            "ownerNodeId": 2,
+                            "limit": 1,
+                        },
+                    },
+                },
+            )
+            query_body = json.loads(query_response["result"]["content"][0]["text"])
+            self.assertEqual(query_body["section"], "shards")
+            self.assertEqual(query_body["total"], 2)
+            self.assertEqual(query_body["items"][0]["id"], 100)
+            self.assertEqual(query_body["nextCursor"], "1")
+            self.assertTrue(query_body["truncated"])
+            self.assertFalse(query_body["finalEvidenceAllowed"])
+            self.assertTrue(query_body["backgroundRef"].startswith("metadata_slices/slice_"))
+            metadata_slices = [
+                item for item in store.list_evidence(run["id"])
+                if item["kind"] == "metadata_slice"
+                and item["payload"].get("tool") == "logagent.query_metadata"
+            ]
+            self.assertEqual(len(metadata_slices), 1)
+            self.assertEqual(
+                metadata_slices[0]["payload"]["backgroundRef"],
+                query_body["backgroundRef"],
+            )
+
+            index_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.query_metadata",
+                        "arguments": {
+                            "section": "indexes",
+                            "database": "db0",
+                            "ptId": 7,
+                        },
+                    },
+                },
+            )
+            index_body = json.loads(index_response["result"]["content"][0]["text"])
+            self.assertEqual(index_body["items"][0]["id"], 200)
+
+            invalid_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 34,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.query_metadata",
+                        "arguments": {"section": "nodes", "database": "db0"},
+                    },
+                },
+            )
+            self.assertIn("filter database is not supported", invalid_response["error"]["message"])
+
     def test_metadata_context_auto_selection_run_resource(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
@@ -3364,6 +3542,26 @@ class StoreTests(unittest.TestCase):
             case_context = [item for item in evidence if item["kind"] == "case_context"]
             self.assertEqual(len(case_context), 1)
             self.assertFalse(case_context[0]["final_allowed"])
+
+            recall_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 18,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.recall_cases",
+                        "arguments": {"query": "timeout", "limit": 5},
+                    },
+                },
+            )
+            recall_body = json.loads(recall_response["result"]["content"][0]["text"])
+            self.assertEqual(recall_body["caseCount"], 1)
+            self.assertEqual(recall_body["cases"][0]["caseId"], task_case["caseId"])
+            self.assertTrue(recall_body["backgroundRef"].startswith("case_recall/recall_"))
+            self.assertFalse(recall_body["finalEvidenceAllowed"])
 
     def test_case_import_preview_confirm_and_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

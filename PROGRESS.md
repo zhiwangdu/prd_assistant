@@ -2,6 +2,28 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Compatibility Aliases
+
+- Added V2 task MCP compatibility tools for Rust V1 names:
+  `logagent.recall_cases`, `logagent.get_metadata_topology`, and
+  `logagent.query_metadata`.
+- `logagent.recall_cases` now recalls enabled Cases through the V2 Case Memory
+  store and persists background-only `case_context` evidence.
+- `logagent.get_metadata_topology` returns a run-scoped Metadata outline with
+  section counts and query hints; `logagent.query_metadata` reads bounded
+  section/filter/cursor slices from the run-selected SQLite metadata snapshots.
+- Query Metadata slices persist background-only `metadata_slice` evidence with
+  logical `metadata_slices/slice_<hash>.json#items` refs and remain excluded
+  from final root-cause evidence refs.
+- Agent provider prompts now advertise the task MCP alias tool surface, while
+  readonly MCP remains global/catalog-only for Case and Metadata.
+- Added regression coverage for task MCP tools/list, Metadata topology/query
+  aliases, invalid Metadata filters, Case recall alias, and Agent available
+  tool advertising.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Readonly Tool Catalog Shape
 
 - Updated V2 readonly MCP `logagent-v2://tools/catalog` and

@@ -175,6 +175,14 @@ POST /api/v2/metadata/instances/:instance_id/refresh
 V2 刷新从 SQLite 中已保存的 `raw_json` 重新运行当前 normalizer 并覆盖
 `metadata_instances.snapshot_json`，不会重新请求原始 URL。
 
+Python V2 task MCP 也提供 Rust V1 兼容的
+`logagent.get_metadata_topology` 和 `logagent.query_metadata`。前者返回当前
+run 的 Metadata outline、section counts 和查询提示；后者从当前 run 自动选中的
+Metadata instance snapshot 中按 `section`、section-specific filters、`limit`
+和 `cursor` 读取 bounded slice，并写入 background-only `metadata_slice`
+evidence。Readonly MCP 仍只暴露全局 imported instance/snapshot/field/tag 查询，
+不暴露 run-scoped `query_metadata`。
+
 真实 openGemini 元数据导入：
 
 ```json

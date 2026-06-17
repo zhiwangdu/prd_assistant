@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 
 from .artifacts import resolve_artifact_path
-from .case_memory import call_case_tool, case_tool_descriptors
+from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
 from .fetch import call_fetch_tool, fetch_tool_descriptors
-from .metadata import call_metadata_tool, metadata_tool_descriptors
+from .metadata import (
+    call_metadata_tool,
+    call_task_metadata_tool,
+    metadata_tool_descriptors,
+    task_metadata_tool_descriptors,
+)
 from .results import latest_evidence, read_text_artifact
 from .settings_api import domain_adapter_summaries
 from .skills import (
@@ -23,7 +28,9 @@ from .tools import run_configured_tool, tool_descriptors
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
+TASK_METADATA_TOOL_NAMES = {tool["name"] for tool in task_metadata_tool_descriptors()}
 CASE_TOOL_NAMES = {tool["name"] for tool in case_tool_descriptors()}
+TASK_CASE_TOOL_NAMES = {tool["name"] for tool in task_case_tool_descriptors()}
 SKILL_TOOL_NAMES = {tool["name"] for tool in skill_tool_descriptors()}
 FETCH_TOOL_NAMES = {tool["name"] for tool in fetch_tool_descriptors()}
 
@@ -52,8 +59,8 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                     run_domain_tool_descriptor(settings),
                     request_user_input_descriptor(),
                     request_approval_descriptor(),
-                    *metadata_tool_descriptors(),
-                    *case_tool_descriptors(),
+                    *task_metadata_tool_descriptors(),
+                    *task_case_tool_descriptors(),
                     *skill_tool_descriptors(),
                     *fetch_tool_descriptors(),
                 ]
@@ -417,8 +424,19 @@ def search_logs_descriptor() -> dict:
 def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) -> dict:
     name = params.get("name")
     arguments = params.get("arguments") or {}
-    if name in METADATA_TOOL_NAMES:
-        value = call_metadata_tool(settings, store, run, name, arguments)
+    if name in TASK_METADATA_TOOL_NAMES:
+        if name in METADATA_TOOL_NAMES:
+            value = call_metadata_tool(settings, store, run, name, arguments)
+        else:
+            context = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
+            value = call_task_metadata_tool(
+                settings,
+                store,
+                run,
+                name,
+                arguments,
+                context,
+            )
         return {
             "content": [
                 {
@@ -427,7 +445,7 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
                 }
             ]
         }
-    if name in CASE_TOOL_NAMES:
+    if name in TASK_CASE_TOOL_NAMES:
         value = call_case_tool(settings, store, run, name, arguments)
         return {
             "content": [

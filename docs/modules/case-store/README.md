@@ -50,6 +50,11 @@ V2 草稿、校验错误和消息历史都持久化在 SQLite `case_imports` 表
 
 只读 HTTP MCP 通过 `logagent://cases/recent`、`logagent.search_cases` 和 `logagent.get_case` 暴露已确认 Case，供个人本地 Claude Code 读取；该入口不能创建、编辑、禁用或确认 Case。
 
+Python V2 clean-room Server 的 task MCP 额外暴露 Rust V1 兼容
+`logagent.recall_cases`，只返回 enabled Case，并把召回结果写入
+background-only `case_context` evidence。Readonly MCP 继续只暴露
+`logagent.search_cases` 和 `logagent.get_case`。
+
 ## 人工确认
 
 任务分析完成后，WebUI 提供：

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from typing import Any
 
 from .artifacts import write_artifact_bytes
@@ -28,6 +29,29 @@ METADATA_CONTEXT_MAX_RETENTION_POLICIES = 4
 METADATA_CONTEXT_MAX_MEASUREMENTS = 8
 METADATA_CONTEXT_MAX_FIELDS = 16
 METADATA_TOKEN_RE = re.compile(r"[a-z0-9_.:-]+|[\u4e00-\u9fff]{2,}")
+METADATA_QUERY_FILTERS = {
+    "overview": (),
+    "nodes": ("nodeId",),
+    "databases": ("database",),
+    "retention_policies": ("database", "retentionPolicy"),
+    "measurements": ("database", "retentionPolicy", "measurement"),
+    "fields": ("database", "retentionPolicy", "measurement"),
+    "shard_groups": ("database", "retentionPolicy", "ownerNodeId", "ptId", "shardId"),
+    "shards": ("database", "retentionPolicy", "ownerNodeId", "ptId", "shardId"),
+    "index_groups": ("database", "retentionPolicy", "ownerNodeId", "ptId", "indexId"),
+    "indexes": ("database", "retentionPolicy", "ownerNodeId", "ptId", "indexId"),
+    "partition_views": ("database", "ownerNodeId", "ptId"),
+}
+METADATA_QUERY_FILTER_NAMES = {
+    "database",
+    "retentionPolicy",
+    "measurement",
+    "nodeId",
+    "ownerNodeId",
+    "ptId",
+    "shardId",
+    "indexId",
+}
 
 
 def import_metadata(
@@ -356,6 +380,7 @@ def normalize_retention_policy(name: str, value: Any) -> JsonObject:
         "shardGroupDuration": rp.get("ShardGroupDuration") or rp.get("shardGroupDuration"),
         "measurements": measurements,
         "shardGroups": ensure_list(rp.get("ShardGroups") or rp.get("shardGroups")),
+        "indexGroups": ensure_list(rp.get("IndexGroups") or rp.get("indexGroups")),
     }
 
 
@@ -784,6 +809,710 @@ def persist_metadata_context(
     return {"context": context, "artifact": artifact}
 
 
+def metadata_context_outline(store: Store, context: JsonObject) -> JsonObject:
+    counts = metadata_section_counts(store, context)
+    resources = selected_metadata_resources(context)
+    first = resources[0] if resources else {}
+    return {
+        "schemaVersion": 1,
+        "kind": "metadata_context_outline",
+        "metadataContextPath": "metadata_context.json",
+        "fullContextInPackage": False,
+        "fullContextAccess": {
+            "tool": "logagent.query_metadata",
+            "resource": "logagent-v2://run/<run_id>/metadata_context",
+            "note": (
+                "resources/read metadata_context returns the run outline; use "
+                "logagent.query_metadata for bounded metadata slices."
+            ),
+        },
+        "selection": context.get("selection", {}),
+        "selected": {
+            "instanceId": first.get("instanceId"),
+            "instanceIds": [item.get("instanceId") for item in resources],
+        },
+        "product": first.get("product"),
+        "version": first.get("version"),
+        "environment": first.get("environment"),
+        "resources": resources,
+        "counts": {
+            "nodes": counts["nodes"],
+            "databases": counts["databases"],
+            "retentionPolicies": counts["retention_policies"],
+            "measurements": counts["measurements"],
+            "fields": counts["fields"],
+            "shardGroups": counts["shard_groups"],
+            "shards": counts["shards"],
+            "indexGroups": counts["index_groups"],
+            "indexes": counts["indexes"],
+            "partitionViews": counts["partition_views"],
+        },
+        "sections": {
+            section: metadata_section_outline(counts[section], filters)
+            for section, filters in METADATA_QUERY_FILTERS.items()
+        },
+        "finalEvidenceAllowed": False,
+    }
+
+
+def query_metadata_context(
+    store: Store,
+    context: JsonObject,
+    arguments: JsonObject,
+) -> JsonObject:
+    query = parse_metadata_slice_query(arguments)
+    all_items = metadata_items_for_section(store, context, query)
+    total = len(all_items)
+    cursor = query["cursor"]
+    limit = query["limit"]
+    if cursor > total:
+        raise ValueError("cursor is beyond the result set")
+    end = min(cursor + limit, total)
+    return {
+        "schemaVersion": 1,
+        "section": query["section"],
+        "filters": {
+            name: query["filters"].get(name)
+            for name in sorted(METADATA_QUERY_FILTER_NAMES)
+        },
+        "limit": limit,
+        "cursor": str(cursor) if cursor else None,
+        "total": total,
+        "nextCursor": str(end) if end < total else None,
+        "truncated": end < total,
+        "items": all_items[cursor:end],
+    }
+
+
+def parse_metadata_slice_query(arguments: JsonObject) -> JsonObject:
+    if not isinstance(arguments, dict):
+        raise ValueError("metadata query arguments must be an object")
+    allowed_keys = {"section", "limit", "cursor"} | METADATA_QUERY_FILTER_NAMES
+    unknown = sorted(key for key in arguments if key not in allowed_keys)
+    if unknown:
+        raise ValueError(f"unsupported metadata query field {unknown[0]}")
+    section = arguments.get("section")
+    if not isinstance(section, str) or not section.strip():
+        raise ValueError("section is required")
+    section = section.strip()
+    if section not in METADATA_QUERY_FILTERS:
+        raise ValueError(f"unsupported metadata section {section}")
+    limit = coerce_limit(arguments.get("limit"))
+    cursor = coerce_cursor(arguments.get("cursor"))
+    filters = {
+        "database": optional_filter_string(arguments.get("database"), "database"),
+        "retentionPolicy": optional_filter_string(
+            arguments.get("retentionPolicy"), "retentionPolicy"
+        ),
+        "measurement": optional_filter_string(arguments.get("measurement"), "measurement"),
+        "nodeId": optional_filter_string(arguments.get("nodeId"), "nodeId"),
+        "ownerNodeId": optional_filter_int(arguments.get("ownerNodeId"), "ownerNodeId"),
+        "ptId": optional_filter_int(arguments.get("ptId"), "ptId"),
+        "shardId": optional_filter_int(arguments.get("shardId"), "shardId"),
+        "indexId": optional_filter_int(arguments.get("indexId"), "indexId"),
+    }
+    for name, value in filters.items():
+        if value is not None and name not in METADATA_QUERY_FILTERS[section]:
+            raise ValueError(f"filter {name} is not supported for metadata section {section}")
+    return {
+        "section": section,
+        "limit": limit,
+        "cursor": cursor,
+        "filters": filters,
+    }
+
+
+def coerce_limit(value: Any) -> int:
+    if value is None:
+        return 50
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("limit must be an integer")
+    if value < 1 or value > 200:
+        raise ValueError("limit must be between 1 and 200")
+    return value
+
+
+def coerce_cursor(value: Any) -> int:
+    if value is None:
+        return 0
+    parsed = coerce_int_value(value)
+    if parsed is None or parsed < 0:
+        raise ValueError("cursor must be a non-negative integer offset")
+    return parsed
+
+
+def optional_filter_string(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    stripped = value.strip()
+    return stripped or None
+
+
+def optional_filter_int(value: Any, name: str) -> int | None:
+    if value is None:
+        return None
+    parsed = coerce_int_value(value)
+    if parsed is None or parsed < 0:
+        raise ValueError(f"{name} must be an unsigned integer")
+    return parsed
+
+
+def metadata_section_outline(count: int, filters: tuple[str, ...]) -> JsonObject:
+    return {
+        "available": count > 0,
+        "count": count,
+        "query": {
+            "tool": "logagent.query_metadata",
+            "limitMax": 200,
+            "filters": list(filters),
+        },
+    }
+
+
+def metadata_section_counts(store: Store, context: JsonObject) -> dict[str, int]:
+    counts = {"overview": 1}
+    for section in METADATA_QUERY_FILTERS:
+        if section == "overview":
+            continue
+        counts[section] = len(
+            metadata_items_for_section(
+                store,
+                context,
+                {"section": section, "filters": {}, "limit": 200, "cursor": 0},
+            )
+        )
+    return counts | {"overview": len(metadata_overview_items(context))}
+
+
+def metadata_items_for_section(
+    store: Store,
+    context: JsonObject,
+    query: JsonObject,
+) -> list[JsonObject]:
+    section = query["section"]
+    if section == "overview":
+        return metadata_overview_items(context)
+    if section == "nodes":
+        return metadata_node_items(store, context, query)
+    if section == "databases":
+        return metadata_database_items(store, context, query)
+    if section == "retention_policies":
+        return metadata_retention_policy_items(store, context, query)
+    if section == "measurements":
+        return metadata_measurement_items(store, context, query)
+    if section == "fields":
+        return metadata_field_items(store, context, query)
+    if section == "shard_groups":
+        return metadata_shard_group_items(store, context, query)
+    if section == "shards":
+        return metadata_shard_items(store, context, query)
+    if section == "index_groups":
+        return metadata_index_group_items(store, context, query)
+    if section == "indexes":
+        return metadata_index_items(store, context, query)
+    if section == "partition_views":
+        return metadata_partition_view_items(store, context, query)
+    raise ValueError(f"unsupported metadata section {section}")
+
+
+def metadata_overview_items(context: JsonObject) -> list[JsonObject]:
+    return [
+        {
+            "schemaVersion": context.get("schemaVersion"),
+            "selection": context.get("selection", {}),
+            "resourceCount": len(selected_metadata_resources(context)),
+            "resources": selected_metadata_resources(context),
+            "finalEvidenceAllowed": False,
+        }
+    ]
+
+
+def metadata_node_items(store: Store, context: JsonObject, query: JsonObject) -> list[JsonObject]:
+    items = []
+    for _resource, snapshot in selected_metadata_snapshots(store, context):
+        for node in ensure_list(snapshot.get("cluster", {}).get("nodes")):
+            if not isinstance(node, dict):
+                continue
+            if not filter_string_matches(node.get("nodeId"), query, "nodeId"):
+                continue
+            items.append(dict(node))
+    return items
+
+
+def metadata_database_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, snapshot in selected_metadata_snapshots(store, context):
+        for database in cluster_databases(snapshot):
+            name = database.get("name")
+            if not filter_string_matches(name, query, "database"):
+                continue
+            policies = ensure_list(database.get("retentionPolicies"))
+            items.append(
+                {
+                    "instanceId": resource.get("instanceId"),
+                    "name": name,
+                    "defaultRetentionPolicy": database.get("defaultRetentionPolicy"),
+                    "replicaN": database.get("replicaN"),
+                    "retentionPolicyCount": len(policies),
+                }
+            )
+    return items
+
+
+def metadata_retention_policy_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, _snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        measurements = ensure_list(policy.get("measurements"))
+        shard_groups = ensure_list(policy.get("shardGroups"))
+        index_groups = ensure_list(policy.get("indexGroups"))
+        items.append(
+            {
+                "instanceId": resource.get("instanceId"),
+                "database": database.get("name"),
+                "name": policy.get("name"),
+                "replicaN": policy.get("replicaN"),
+                "duration": policy.get("duration"),
+                "shardGroupDuration": policy.get("shardGroupDuration"),
+                "measurementCount": len(measurements),
+                "shardGroupCount": len(shard_groups),
+                "indexGroupCount": len(index_groups),
+            }
+        )
+    return items
+
+
+def metadata_measurement_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, _snapshot, database, policy, measurement in selected_measurements(
+        store, context, query
+    ):
+        fields = ensure_list(measurement.get("schema"))
+        items.append(
+            {
+                "instanceId": resource.get("instanceId"),
+                "database": database.get("name"),
+                "retentionPolicy": policy.get("name"),
+                "name": measurement.get("name"),
+                "versionName": measurement.get("versionName"),
+                "shardKeyType": measurement.get("shardKeyType"),
+                "engineType": measurement.get("engineType"),
+                "fieldCount": len(fields),
+            }
+        )
+    return items
+
+
+def metadata_field_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, _snapshot, database, policy, measurement in selected_measurements(
+        store, context, query
+    ):
+        for field in ensure_list(measurement.get("schema")):
+            if not isinstance(field, dict):
+                continue
+            items.append(
+                {
+                    "instanceId": resource.get("instanceId"),
+                    "database": database.get("name"),
+                    "retentionPolicy": policy.get("name"),
+                    "measurement": measurement.get("name"),
+                    "name": field.get("name"),
+                    "typ": field.get("typ"),
+                    "typeLabel": field.get("typeLabel"),
+                    "endTime": field.get("endTime"),
+                }
+            )
+    return items
+
+
+def metadata_shard_group_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        for group in ensure_list(policy.get("shardGroups")):
+            if not isinstance(group, dict):
+                continue
+            shard_ids = shard_ids_for_group(group)
+            owners = owner_ids_for_item(group)
+            if not filter_int_contains(shard_ids, query, "shardId"):
+                continue
+            if not pt_owner_filters_match(snapshot, database.get("name"), owners, query):
+                continue
+            items.append(
+                {
+                    "instanceId": resource.get("instanceId"),
+                    "database": database.get("name"),
+                    "retentionPolicy": policy.get("name"),
+                    "id": coerce_int_value(first_value(group, "id", "ID")),
+                    "startTime": first_value(group, "startTime", "StartTime"),
+                    "endTime": first_value(group, "endTime", "EndTime"),
+                    "shardIds": shard_ids,
+                    "owners": owners,
+                    "shardCount": len(shard_ids),
+                    "deletedAt": first_value(group, "deletedAt", "DeletedAt"),
+                    "truncatedAt": first_value(group, "truncatedAt", "TruncatedAt"),
+                    "engineType": first_value(group, "engineType", "EngineType"),
+                    "version": first_value(group, "version", "Version"),
+                }
+            )
+    return items
+
+
+def metadata_shard_items(store: Store, context: JsonObject, query: JsonObject) -> list[JsonObject]:
+    items = []
+    for resource, snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        for group in ensure_list(policy.get("shardGroups")):
+            if not isinstance(group, dict):
+                continue
+            group_owners = owner_ids_for_item(group)
+            for shard in shards_for_group(group):
+                shard_id = coerce_int_value(first_value(shard, "id", "ID"))
+                if not filter_int_matches(shard_id, query, "shardId"):
+                    continue
+                owners = owner_ids_for_item(shard) or group_owners
+                if not pt_owner_filters_match(snapshot, database.get("name"), owners, query):
+                    continue
+                items.append(
+                    {
+                        "instanceId": resource.get("instanceId"),
+                        "database": database.get("name"),
+                        "retentionPolicy": policy.get("name"),
+                        "shardGroupId": coerce_int_value(first_value(group, "id", "ID")),
+                        "id": shard_id,
+                        "owners": owners,
+                        "min": first_value(shard, "min", "Min"),
+                        "max": first_value(shard, "max", "Max"),
+                        "tier": first_value(shard, "tier", "Tier"),
+                        "indexId": first_value(shard, "indexId", "IndexID", "IndexId"),
+                        "readOnly": first_value(shard, "readOnly", "ReadOnly"),
+                        "markDelete": first_value(shard, "markDelete", "MarkDelete"),
+                    }
+                )
+    return items
+
+
+def metadata_index_group_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        for group in ensure_list(policy.get("indexGroups")):
+            if not isinstance(group, dict):
+                continue
+            indexes = indexes_for_group(group)
+            index_ids = [
+                item_id
+                for item_id in (
+                    coerce_int_value(first_value(index, "id", "ID")) for index in indexes
+                )
+                if item_id is not None
+            ]
+            owners = owner_ids_for_item(group)
+            if not filter_int_contains(index_ids, query, "indexId"):
+                continue
+            if not pt_owner_filters_match(snapshot, database.get("name"), owners, query):
+                continue
+            items.append(
+                {
+                    "instanceId": resource.get("instanceId"),
+                    "database": database.get("name"),
+                    "retentionPolicy": policy.get("name"),
+                    "id": coerce_int_value(first_value(group, "id", "ID")),
+                    "startTime": first_value(group, "startTime", "StartTime"),
+                    "endTime": first_value(group, "endTime", "EndTime"),
+                    "deletedAt": first_value(group, "deletedAt", "DeletedAt"),
+                    "engineType": first_value(group, "engineType", "EngineType"),
+                    "owners": owners,
+                    "indexCount": len(indexes),
+                }
+            )
+    return items
+
+
+def metadata_index_items(store: Store, context: JsonObject, query: JsonObject) -> list[JsonObject]:
+    items = []
+    for resource, snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        for group in ensure_list(policy.get("indexGroups")):
+            if not isinstance(group, dict):
+                continue
+            group_owners = owner_ids_for_item(group)
+            for index in indexes_for_group(group):
+                index_id = coerce_int_value(first_value(index, "id", "ID"))
+                if not filter_int_matches(index_id, query, "indexId"):
+                    continue
+                owners = owner_ids_for_item(index) or group_owners
+                if not pt_owner_filters_match(snapshot, database.get("name"), owners, query):
+                    continue
+                items.append(
+                    {
+                        "instanceId": resource.get("instanceId"),
+                        "database": database.get("name"),
+                        "retentionPolicy": policy.get("name"),
+                        "indexGroupId": coerce_int_value(first_value(group, "id", "ID")),
+                        "id": index_id,
+                        "tier": first_value(index, "tier", "Tier"),
+                        "owners": owners,
+                        "markDelete": first_value(index, "markDelete", "MarkDelete"),
+                    }
+                )
+    return items
+
+
+def metadata_partition_view_items(
+    store: Store, context: JsonObject, query: JsonObject
+) -> list[JsonObject]:
+    items = []
+    for resource, snapshot in selected_metadata_snapshots(store, context):
+        for view in partition_views(snapshot):
+            database = partition_view_database(view)
+            pt_id = partition_view_pt_id(view)
+            owner_node_id = partition_view_owner_node_id(view)
+            if not filter_string_matches(database, query, "database"):
+                continue
+            if not filter_int_matches(pt_id, query, "ptId"):
+                continue
+            if not filter_int_matches(owner_node_id, query, "ownerNodeId"):
+                continue
+            items.append(
+                {
+                    "instanceId": resource.get("instanceId"),
+                    "database": database,
+                    "ptId": pt_id,
+                    "ownerNodeId": owner_node_id,
+                    "status": first_value(view, "status", "Status"),
+                    "statusText": first_value(view, "statusText", "StatusText"),
+                    "version": first_value(view, "version", "Version"),
+                    "replicaGroupId": first_value(view, "replicaGroupId", "RGID"),
+                }
+            )
+    return items
+
+
+def selected_retention_policies(
+    store: Store,
+    context: JsonObject,
+    query: JsonObject,
+) -> list[tuple[JsonObject, JsonObject, JsonObject, JsonObject]]:
+    items = []
+    for resource, snapshot in selected_metadata_snapshots(store, context):
+        for database in cluster_databases(snapshot):
+            if not filter_string_matches(database.get("name"), query, "database"):
+                continue
+            for policy in ensure_list(database.get("retentionPolicies")):
+                if not isinstance(policy, dict):
+                    continue
+                if not filter_string_matches(policy.get("name"), query, "retentionPolicy"):
+                    continue
+                items.append((resource, snapshot, database, policy))
+    return items
+
+
+def selected_measurements(
+    store: Store,
+    context: JsonObject,
+    query: JsonObject,
+) -> list[tuple[JsonObject, JsonObject, JsonObject, JsonObject, JsonObject]]:
+    items = []
+    for resource, snapshot, database, policy in selected_retention_policies(
+        store, context, query
+    ):
+        for measurement in ensure_list(policy.get("measurements")):
+            if not isinstance(measurement, dict):
+                continue
+            if not filter_string_matches(measurement.get("name"), query, "measurement"):
+                continue
+            items.append((resource, snapshot, database, policy, measurement))
+    return items
+
+
+def selected_metadata_resources(context: JsonObject) -> list[JsonObject]:
+    resources = context.get("resources", [])
+    if not isinstance(resources, list):
+        return []
+    return [
+        item
+        for item in resources
+        if isinstance(item, dict) and isinstance(item.get("instanceId"), str)
+    ]
+
+
+def selected_metadata_snapshots(
+    store: Store, context: JsonObject
+) -> list[tuple[JsonObject, JsonObject]]:
+    snapshots = []
+    for resource in selected_metadata_resources(context):
+        instance_id = resource["instanceId"]
+        try:
+            snapshot = store.get_metadata_snapshot(instance_id)
+        except KeyError:
+            continue
+        snapshots.append((resource, snapshot))
+    return snapshots
+
+
+def cluster_databases(snapshot: JsonObject) -> list[JsonObject]:
+    cluster = snapshot.get("cluster", {})
+    if not isinstance(cluster, dict):
+        return []
+    return [item for item in ensure_list(cluster.get("databases")) if isinstance(item, dict)]
+
+
+def partition_views(snapshot: JsonObject) -> list[JsonObject]:
+    cluster = snapshot.get("cluster", {})
+    if not isinstance(cluster, dict):
+        return []
+    return [item for item in ensure_list(cluster.get("partitionViews")) if isinstance(item, dict)]
+
+
+def filter_string_matches(value: Any, query: JsonObject, name: str) -> bool:
+    expected = query.get("filters", {}).get(name)
+    if expected is None:
+        return True
+    return str(value) == expected
+
+
+def filter_int_matches(value: Any, query: JsonObject, name: str) -> bool:
+    expected = query.get("filters", {}).get(name)
+    if expected is None:
+        return True
+    return coerce_int_value(value) == expected
+
+
+def filter_int_contains(values: list[int], query: JsonObject, name: str) -> bool:
+    expected = query.get("filters", {}).get(name)
+    if expected is None:
+        return True
+    return expected in values
+
+
+def pt_owner_filters_match(
+    snapshot: JsonObject,
+    database: Any,
+    pt_ids: list[int],
+    query: JsonObject,
+) -> bool:
+    wanted_pt_id = query.get("filters", {}).get("ptId")
+    wanted_owner_node_id = query.get("filters", {}).get("ownerNodeId")
+    if wanted_pt_id is not None and wanted_pt_id not in pt_ids:
+        return False
+    if wanted_owner_node_id is None:
+        return True
+    if wanted_owner_node_id in pt_ids:
+        return True
+    for view in partition_views(snapshot):
+        if database is not None and str(partition_view_database(view)) != str(database):
+            continue
+        if partition_view_pt_id(view) in pt_ids and (
+            partition_view_owner_node_id(view) == wanted_owner_node_id
+        ):
+            return True
+    return False
+
+
+def shard_ids_for_group(group: JsonObject) -> list[int]:
+    raw_ids = first_value(group, "shardIds", "ShardIds")
+    ids = list_int_values(raw_ids)
+    if ids:
+        return ids
+    return [
+        shard_id
+        for shard_id in (
+            coerce_int_value(first_value(shard, "id", "ID")) for shard in shards_for_group(group)
+        )
+        if shard_id is not None
+    ]
+
+
+def shards_for_group(group: JsonObject) -> list[JsonObject]:
+    shards = first_value(group, "shards", "Shards")
+    if isinstance(shards, list):
+        return [item for item in shards if isinstance(item, dict)]
+    return [
+        {"id": shard_id, "owners": owner_ids_for_item(group)}
+        for shard_id in list_int_values(first_value(group, "shardIds", "ShardIds"))
+    ]
+
+
+def indexes_for_group(group: JsonObject) -> list[JsonObject]:
+    indexes = first_value(group, "indexes", "Indexes")
+    if isinstance(indexes, list):
+        return [item for item in indexes if isinstance(item, dict)]
+    return []
+
+
+def owner_ids_for_item(item: JsonObject) -> list[int]:
+    return list_int_values(first_value(item, "owners", "Owners", "ownerIds", "OwnerIds"))
+
+
+def partition_view_database(view: JsonObject) -> Any:
+    return first_value(view, "database", "Database", "db", "DB")
+
+
+def partition_view_pt_id(view: JsonObject) -> int | None:
+    return coerce_int_value(first_value(view, "ptId", "PtId", "PTID", "pt_id"))
+
+
+def partition_view_owner_node_id(view: JsonObject) -> int | None:
+    return coerce_int_value(
+        first_value(view, "ownerNodeId", "OwnerNodeID", "OwnerNodeId", "owner")
+    )
+
+
+def first_value(item: JsonObject, *keys: str) -> Any:
+    if not isinstance(item, dict):
+        return None
+    for key in keys:
+        if key in item:
+            return item.get(key)
+    return None
+
+
+def list_int_values(value: Any) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        values = value
+    else:
+        values = [value]
+    parsed = []
+    for item in values:
+        number = coerce_int_value(item)
+        if number is not None:
+            parsed.append(number)
+    return parsed
+
+
+def coerce_int_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def query_field_types(
     store: Store,
     instance_id: str,
@@ -876,6 +1605,56 @@ def metadata_tool_descriptors() -> list[JsonObject]:
     ]
 
 
+def task_metadata_tool_descriptors() -> list[JsonObject]:
+    return [
+        get_metadata_topology_descriptor(),
+        query_metadata_descriptor(),
+        *metadata_tool_descriptors(),
+    ]
+
+
+def get_metadata_topology_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.get_metadata_topology",
+        "description": (
+            "Compatibility alias that returns the task metadata overview outline. "
+            "Use logagent.query_metadata for bounded metadata slices."
+        ),
+        "inputSchema": {"type": "object", "additionalProperties": False},
+    }
+
+
+def query_metadata_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.query_metadata",
+        "description": (
+            "Read a bounded, paged slice from the current task metadata context. "
+            "Returned slices are background context, not final evidence."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "enum": list(METADATA_QUERY_FILTERS.keys()),
+                },
+                "database": {"type": "string"},
+                "retentionPolicy": {"type": "string"},
+                "measurement": {"type": "string"},
+                "nodeId": {"type": "string"},
+                "ownerNodeId": {"type": "integer", "minimum": 0},
+                "ptId": {"type": "integer", "minimum": 0},
+                "shardId": {"type": "integer", "minimum": 0},
+                "indexId": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                "cursor": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+            },
+            "required": ["section"],
+            "additionalProperties": False,
+        },
+    }
+
+
 def metadata_field_types_descriptor(name: str, tags_only: bool) -> JsonObject:
     properties: JsonObject = {
         "instanceId": {"type": "string", "minLength": 1},
@@ -900,6 +1679,32 @@ def metadata_field_types_descriptor(name: str, tags_only: bool) -> JsonObject:
             "additionalProperties": False,
         },
     }
+
+
+def call_task_metadata_tool(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    name: str,
+    arguments: JsonObject,
+    context: JsonObject,
+) -> JsonObject:
+    if name == "logagent.get_metadata_topology":
+        return metadata_context_outline(store, context)
+    if name == "logagent.query_metadata":
+        value = query_metadata_context(store, context, arguments)
+        slice_id = f"slice_{stable_json_digest(arguments)}"
+        artifact_path = f"metadata_slices/{slice_id}.json"
+        value = {
+            **value,
+            "metadataContextPath": "metadata_context.json",
+            "artifactPath": artifact_path,
+            "backgroundRef": f"{artifact_path}#items",
+            "finalEvidenceAllowed": False,
+        }
+        persist_metadata_query_slice(settings, store, run, name, value, artifact_path)
+        return value
+    return call_metadata_tool(settings, store, run, name, arguments)
 
 
 def call_metadata_tool(
@@ -931,6 +1736,41 @@ def call_metadata_tool(
     return value
 
 
+def persist_metadata_query_slice(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    tool_name: str,
+    value: JsonObject,
+    artifact_path: str,
+) -> None:
+    data = json.dumps(value, ensure_ascii=True, indent=2).encode("utf-8")
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        filename=artifact_path.rsplit("/", 1)[-1],
+        data=data,
+        content_type="application/json",
+        schema_name="logagent.v2.metadata_slice.v1",
+        preview={"tool": tool_name, "path": artifact_path, "sizeBytes": len(data)},
+    )
+    store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="metadata_slice",
+        final_allowed=False,
+        summary=f"Metadata background slice from {tool_name}.",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "tool": tool_name,
+            "path": artifact_path,
+            "backgroundRef": value.get("backgroundRef"),
+        },
+    )
+
+
 def persist_metadata_slice(
     settings: Settings,
     store: Store,
@@ -958,6 +1798,11 @@ def persist_metadata_slice(
         artifact_id=artifact["id"],
         payload={"artifactId": artifact["id"], "tool": tool_name},
     )
+
+
+def stable_json_digest(value: JsonObject) -> str:
+    data = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256(data.encode("utf-8")).hexdigest()[:16]
 
 
 def require_string(arguments: JsonObject, field: str) -> str:
