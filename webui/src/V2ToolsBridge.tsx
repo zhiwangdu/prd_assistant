@@ -1,18 +1,37 @@
-import { Download, Play, RefreshCw, Wrench } from "lucide-react";
+import { Download, FileArchive, Play, RefreshCw, UploadCloud, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
-import { callV2TaskTool, downloadV2ToolsZip, listV2Tools, type V2ToolDescriptor } from "./v2-api";
+import {
+  callV2TaskTool,
+  createV2ToolRun,
+  createV2Workspace,
+  downloadV2ToolsZip,
+  getV2ToolRun,
+  getV2ToolRunResult,
+  listV2ToolRuns,
+  listV2Tools,
+  uploadV2Files,
+  type V2ToolDescriptor,
+  type V2ToolRun
+} from "./v2-api";
 
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [selectedToolId, setSelectedToolId] = useState("");
   const [runId, setRunId] = useState("");
+  const [manualWorkspaceId, setManualWorkspaceId] = useState("");
+  const [manualFiles, setManualFiles] = useState<File[]>([]);
+  const [manualRuns, setManualRuns] = useState<V2ToolRun[]>([]);
+  const [selectedManualRunId, setSelectedManualRunId] = useState("");
+  const [manualResultText, setManualResultText] = useState("");
+  const [manualUploadProgress, setManualUploadProgress] = useState(0);
   const [paramsText, setParamsText] = useState("{}");
   const [resultText, setResultText] = useState("");
   const [status, setStatus] = useState("V2 tools waiting to load");
   const [loading, setLoading] = useState(false);
 
   const selectedTool = useMemo(() => tools.find((tool) => tool.toolId === selectedToolId) ?? tools[0] ?? null, [selectedToolId, tools]);
+  const selectedManualRun = useMemo(() => manualRuns.find((run) => run.id === selectedManualRunId) ?? null, [manualRuns, selectedManualRunId]);
 
   const refreshTools = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -35,13 +54,43 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
   }, [apiKey, selectedToolId]);
 
+  const refreshManualRuns = useCallback(async () => {
+    if (!apiKey.trim()) {
+      setManualRuns([]);
+      return;
+    }
+    const response = await listV2ToolRuns(apiKey, {
+      toolId: selectedTool?.toolId,
+      workspaceId: manualWorkspaceId.trim() || undefined,
+      limit: 20
+    });
+    setManualRuns(response.runs);
+    if (selectedManualRunId) {
+      const current = response.runs.find((run) => run.id === selectedManualRunId);
+      if (current?.status === "succeeded") {
+        const result = await getV2ToolRunResult(apiKey, selectedManualRunId);
+        setManualResultText(JSON.stringify(result.result, null, 2));
+      } else if (current) {
+        setManualResultText(JSON.stringify(current, null, 2));
+      }
+    }
+  }, [apiKey, manualWorkspaceId, selectedManualRunId, selectedTool?.toolId]);
+
   useEffect(() => {
     void refreshTools();
   }, [refreshTools]);
 
   useEffect(() => {
+    void refreshManualRuns().catch(() => undefined);
+  }, [refreshManualRuns]);
+
+  useEffect(() => {
     setParamsText(JSON.stringify(selectedTool?.paramsTemplate ?? {}, null, 2));
     setResultText("");
+    setManualResultText("");
+    setManualFiles([]);
+    setSelectedManualRunId("");
+    setManualUploadProgress(0);
   }, [selectedTool]);
 
   async function runTool() {
@@ -91,6 +140,89 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function runManualTool() {
+    if (!apiKey.trim()) {
+      setStatus("API Key required");
+      return;
+    }
+    if (!selectedTool) {
+      setStatus("Select a V2 tool");
+      return;
+    }
+    if (!selectedTool.enabled || !selectedTool.runnable) {
+      setStatus(`${selectedTool.displayName} is not runnable`);
+      return;
+    }
+    const minFiles = toolMinFiles(selectedTool);
+    const maxFiles = toolMaxFiles(selectedTool);
+    if (manualFiles.length < minFiles || manualFiles.length > maxFiles) {
+      setStatus(`Choose ${minFiles}..${maxFiles} file(s) for manual tool_run`);
+      return;
+    }
+    let params: unknown;
+    try {
+      params = JSON.parse(paramsText);
+    } catch (reason) {
+      setStatus(`Invalid JSON params: ${errorMessage(reason)}`);
+      return;
+    }
+    if (!isJsonObject(params)) {
+      setStatus("Params must be a JSON object");
+      return;
+    }
+    setLoading(true);
+    setManualResultText("");
+    try {
+      let workspaceId = manualWorkspaceId.trim();
+      if (!workspaceId) {
+        setStatus("Creating manual tool workspace");
+        const workspace = await createV2Workspace(apiKey, {
+          question: `Manual tool run: ${selectedTool.toolId}`,
+          mode: "diagnose",
+          language: "zh-CN"
+        });
+        workspaceId = workspace.id;
+        setManualWorkspaceId(workspaceId);
+      }
+      setManualUploadProgress(manualFiles.length ? 0 : 100);
+      const uploads = manualFiles.length
+        ? await uploadV2Files(apiKey, workspaceId, manualFiles, setManualUploadProgress)
+        : [];
+      setStatus(`Creating tool_run for ${selectedTool.toolId}`);
+      const run = await createV2ToolRun(apiKey, selectedTool.toolId, {
+        workspaceId,
+        uploadIds: uploads.map((upload) => upload.id),
+        params
+      });
+      setSelectedManualRunId(run.id);
+      setManualRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setManualResultText(JSON.stringify(run, null, 2));
+      setStatus(`Created V2 tool_run ${run.id}`);
+      await refreshManualRuns();
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectManualRun(runId: string) {
+    setSelectedManualRunId(runId);
+    setManualResultText("");
+    try {
+      const run = await getV2ToolRun(apiKey, runId);
+      if (run.status === "succeeded") {
+        const result = await getV2ToolRunResult(apiKey, runId);
+        setManualResultText(JSON.stringify(result.result, null, 2));
+      } else {
+        setManualResultText(JSON.stringify(run, null, 2));
+      }
+      setStatus(`Loaded V2 tool_run ${runId}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    }
+  }
+
   async function downloadTools() {
     setLoading(true);
     try {
@@ -125,7 +257,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)_420px]">
+        <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)_460px]">
           <div className="rounded-lg border border-border p-3">
             <h3 className="mb-3 text-sm font-semibold">V2 catalog</h3>
             <div className="max-h-[420px] space-y-2 overflow-auto">
@@ -182,21 +314,72 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
             ) : <EmptyState>Select a V2 tool.</EmptyState>}
           </div>
 
-          <div className="space-y-4 rounded-lg border border-border p-4">
-            <div>
-              <h3 className="text-sm font-semibold">Run-scoped execution</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Configured tools run through `logagent.run_domain_tool`; `logagent.fetch` expects an `endpointId` param.</p>
+          <div className="space-y-4">
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Run-scoped execution</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Configured tools run through `logagent.run_domain_tool`; `logagent.fetch` expects an `endpointId` param.</p>
+              </div>
+              <Input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="V2 run id, e.g. run_..." />
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Params JSON</p>
+                <textarea className="min-h-32 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20" spellCheck={false} value={paramsText} onChange={(event) => setParamsText(event.target.value)} />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">{status}</span>
+                <Button disabled={loading || !selectedTool || !runId.trim()} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />Run via task MCP</Button>
+              </div>
+              {resultText ? <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre> : null}
             </div>
-            <Input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="V2 run id, e.g. run_..." />
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Params JSON</p>
-              <textarea className="min-h-32 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20" spellCheck={false} value={paramsText} onChange={(event) => setParamsText(event.target.value)} />
+
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Manual tool_run</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Upload files to a V2 Workspace and queue `/api/v2/tools/:tool_id/runs`.</p>
+              </div>
+              <Input value={manualWorkspaceId} onChange={(event) => setManualWorkspaceId(event.target.value)} placeholder="Workspace id; blank creates one" />
+              {selectedTool && toolMaxFiles(selectedTool) > 0 ? (
+                <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 px-4 text-center text-sm text-muted-foreground">
+                  <UploadCloud className="mb-2 h-6 w-6" />
+                  {manualFiles.length ? manualFiles.map((file) => file.name).join(", ") : `Choose ${toolMinFiles(selectedTool)}..${toolMaxFiles(selectedTool)} file(s)`}
+                  <input
+                    accept={fileAccept(selectedTool)}
+                    className="hidden"
+                    multiple={toolMaxFiles(selectedTool) > 1}
+                    type="file"
+                    onChange={(event) => setManualFiles(Array.from(event.target.files ?? []).slice(0, toolMaxFiles(selectedTool)))}
+                  />
+                </label>
+              ) : (
+                <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">This tool does not require uploaded files.</div>
+              )}
+              <div>
+                <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{manualUploadProgress}%</span></div>
+                <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${manualUploadProgress}%` }} /></div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Button className="h-8 px-3" disabled={loading || !apiKey.trim()} variant="outline" onClick={() => void refreshManualRuns()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />Runs
+                </Button>
+                <Button disabled={loading || !selectedTool || !selectedTool.runnable} onClick={() => void runManualTool()}>
+                  <Play className="mr-2 h-4 w-4" />Create tool_run
+                </Button>
+              </div>
+              {manualRuns.length ? (
+                <div className="max-h-44 space-y-2 overflow-auto">
+                  {manualRuns.map((run) => (
+                    <button className={`w-full rounded-md border p-2 text-left ${selectedManualRun?.id === run.id ? "border-primary bg-slate-50" : "border-border"}`} key={run.id} onClick={() => void selectManualRun(run.id)}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs"><FileArchive className="mr-1 inline h-3.5 w-3.5 text-slate-400" />{run.id}</span>
+                        <Badge variant={run.status === "succeeded" ? "success" : run.status === "failed" ? "destructive" : "secondary"}>{run.status}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{run.phase} · {new Date(run.created_at).toLocaleString()}</p>
+                    </button>
+                  ))}
+                </div>
+              ) : <EmptyState>No manual tool runs.</EmptyState>}
+              {manualResultText ? <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{manualResultText}</pre> : null}
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs text-muted-foreground">{status}</span>
-              <Button disabled={loading || !selectedTool || !runId.trim()} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />Run via task MCP</Button>
-            </div>
-            {resultText ? <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre> : null}
           </div>
         </div>
       </CardContent>
@@ -215,6 +398,19 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
       <pre className="max-h-52 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify(value, null, 2)}</pre>
     </div>
   );
+}
+
+function toolMinFiles(tool: V2ToolDescriptor) {
+  return tool.minFiles ?? 0;
+}
+
+function toolMaxFiles(tool: V2ToolDescriptor) {
+  return tool.maxFiles ?? tool.maxInputFiles ?? 0;
+}
+
+function fileAccept(tool: V2ToolDescriptor) {
+  const suffixes = (tool.acceptedSuffixes ?? []).filter((suffix) => suffix && suffix !== "*");
+  return suffixes.join(",");
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

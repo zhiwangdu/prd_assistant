@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Manual Tool Runs
+
+- V2 Tools Workbench now supports the Server V2 manual `tool_run` API in
+  addition to run-scoped task MCP execution.
+- Users can reuse an existing Workspace id or leave it blank for the WebUI to
+  create a dedicated tool-run Workspace, upload files through V2 Workspace
+  upload APIs, queue `/api/v2/tools/:tool_id/runs`, refresh
+  `/api/v2/tools/runs`, and read `/api/v2/tools/runs/:run_id/result`.
+- Added typed V2 API helpers for tool-run create/list/get/result calls and
+  wired the manual run history/result panel into `V2ToolsBridge`.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 V2 Tool Support Artifact Index
 
 - V2 run artifact aggregation now exposes non-evidence tool support files under

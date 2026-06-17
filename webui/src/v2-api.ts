@@ -243,6 +243,21 @@ export type V2ToolDescriptor = {
   allowedHosts?: string[];
 };
 
+export type V2ToolRun = Omit<V2Run, "finalAnswer"> & {
+  kind: "tool_run";
+  toolId?: string | null;
+  toolParams?: Record<string, unknown>;
+  toolUploadIds?: string[];
+  toolResultArtifactId?: string | null;
+  finalAnswer?: Record<string, unknown> | null;
+};
+
+export type V2ToolRunResult = {
+  run: V2ToolRun;
+  artifact: V2Artifact;
+  result: Record<string, unknown>;
+};
+
 export type V2McpResponse = {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -687,6 +702,34 @@ export async function updateV2Case(apiKey: string, caseId: string, updates: V2Ca
 
 export async function listV2Tools(apiKey: string) {
   return fetchJson<{ tools: V2ToolDescriptor[] }>("/api/v2/tools", { headers: authHeaders(apiKey) });
+}
+
+export async function createV2ToolRun(apiKey: string, toolId: string, input: { workspaceId: string; uploadIds?: string[]; params?: Record<string, unknown> }) {
+  return fetchJson<V2ToolRun>(`/api/v2/tools/${encodeURIComponent(toolId)}/runs`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify({
+      workspaceId: input.workspaceId,
+      uploadIds: input.uploadIds ?? [],
+      params: input.params ?? {}
+    })
+  });
+}
+
+export async function listV2ToolRuns(apiKey: string, input: { toolId?: string; workspaceId?: string; limit?: number } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(input.limit ?? 30));
+  if (input.toolId) params.set("toolId", input.toolId);
+  if (input.workspaceId) params.set("workspaceId", input.workspaceId);
+  return fetchJson<{ runs: V2ToolRun[] }>(`/api/v2/tools/runs?${params.toString()}`, { headers: authHeaders(apiKey) });
+}
+
+export async function getV2ToolRun(apiKey: string, runId: string) {
+  return fetchJson<V2ToolRun>(`/api/v2/tools/runs/${encodeURIComponent(runId)}`, { headers: authHeaders(apiKey) });
+}
+
+export async function getV2ToolRunResult(apiKey: string, runId: string) {
+  return fetchJson<V2ToolRunResult>(`/api/v2/tools/runs/${encodeURIComponent(runId)}/result`, { headers: authHeaders(apiKey) });
 }
 
 export async function callV2TaskTool(apiKey: string, runId: string, name: string, args: Record<string, unknown>) {
