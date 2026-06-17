@@ -15,6 +15,7 @@ import {
   type V2AgentBackendDiagnosticResult,
   type V2AgentBackendsSummary,
   type V2DomainAdapterSummary,
+  type V2GraphRuntime,
   type V2LlmChatResult,
   type V2LlmModelsResult,
   type V2LlmSummary,
@@ -225,6 +226,7 @@ export function V2SettingsBridge({ apiKey }: Props) {
                           <Badge variant={backend.commandConfigured ? "success" : "warning"}>{backend.commandConfigured ? "configured" : "incomplete"}</Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">{backend.executionMode} · {backend.permissionProfile ?? "-"} · timeout {backend.timeoutSeconds}s</p>
+                        {backend.graphRuntime ? <GraphRuntimeView runtime={backend.graphRuntime} /> : null}
                       </div>
                       <Button className="h-8 px-3" disabled={testingBackendId === backend.id} variant="outline" onClick={() => void runBackendTest(backend.id)}>
                         <PlugZap className={`mr-2 h-4 w-4 ${testingBackendId === backend.id ? "animate-pulse" : ""}`} />
@@ -235,7 +237,12 @@ export function V2SettingsBridge({ apiKey }: Props) {
                 ))}
               </div>
             ) : <EmptyState>{status}</EmptyState>}
-            <ResultView result={backendResult} empty="Run backend dry-run diagnostic." renderSummary={(result) => <StatusLine result={result} />} />
+            <ResultView result={backendResult} empty="Run backend dry-run diagnostic." renderSummary={(result) => (
+              <>
+                <StatusLine result={result} />
+                {result.result?.graphRuntime ? <GraphRuntimeView runtime={result.result.graphRuntime} /> : null}
+              </>
+            )} />
           </div>
 
           <div className="rounded-lg border border-border p-4">
@@ -336,6 +343,22 @@ function ResultView<T>({ result, empty, renderSummary }: { result: V2LlmTestResp
 
 function StatusLine<T>({ result }: { result: V2LlmTestResponse<T> }) {
   return result.ok ? <Badge variant="success"><CheckCircle2 className="mr-1 h-3 w-3" />OK</Badge> : <Badge variant="destructive">Failed</Badge>;
+}
+
+function GraphRuntimeView({ runtime }: { runtime: V2GraphRuntime }) {
+  return (
+    <div className="mt-3 rounded-md border border-border bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{runtime.engine}</Badge>
+        <code className="break-all text-xs text-slate-700">{runtime.graph}</code>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {runtime.nodes.map((node) => (
+          <Badge key={node} variant="outline">{node}</Badge>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function errorMessage(reason: unknown) {

@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Agent Graph Runtime Display
+
+- V2 Settings bridge now renders the Agent backend `graphRuntime` summary from
+  `/api/v2/settings/agent-backends`, including LangGraph engine, graph name,
+  and concrete runtime node list.
+- Agent backend dry-run diagnostic results also display their returned
+  `graphRuntime` before the raw JSON payload, so UI users can verify the active
+  V2 Agent graph without inspecting artifacts manually.
+- Updated WebUI V2 API typings and WebUI README/SPEC for the LangGraph runtime
+  display.
+
 ## 2026-06-18 V2 LangGraph Planner Node Split
 
 - V2 `AgentRuntime.run_analysis` now executes through a real LangGraph

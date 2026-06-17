@@ -361,9 +361,16 @@ export type V2LlmChatResult = {
   response: string;
 };
 
+export type V2GraphRuntime = {
+  engine: string;
+  graph: string;
+  nodes: string[];
+};
+
 export type V2AgentBackendSummary = {
   id: string;
   backendType: string;
+  graphRuntime?: V2GraphRuntime;
   enabled: boolean;
   defaultBackend: boolean;
   commandConfigured: boolean;
@@ -386,6 +393,7 @@ export type V2AgentBackendDiagnosticResult = {
   enabled: boolean;
   status: string;
   executionMode: string;
+  graphRuntime?: V2GraphRuntime;
   details: string[];
 };
 
