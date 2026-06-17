@@ -32,6 +32,7 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - `agent_response.json` 记录 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、MCP call path、native tool policy、duration、error 和 stdout preview。
 - Settings API 继续使用 `/api/settings/agent-backends` 作为前端兼容入口，但返回的是单一 `claude_code` 后端摘要。
 - Python V2 迁移路径已支持 `LOGAGENT_V2_AGENT_PROVIDER=claude_code`：V2 的 LangGraph runtime 在每个 provider round 生成同类 `claude_prompt.md` / `claude_mcp_config.json`，启动配置的 Claude Code CLI，通过 HTTP task MCP 读取 `analysis_package`，并把 `waiting_for_user` / `waiting_for_approval` structured output 转换为现有 task MCP 等待工具。
+- Python V2 恢复等待任务时会从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并在下一次 Claude Code CLI 调用追加 `--resume <session_id>`。
 - Python V2 的 settings diagnostics 不启动真实 Claude session，只校验 `LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH` 是否 absolute、regular、executable；真实调用结果仍由 `agent_request.json` / `agent_response.json` 审计。
 
 ## CLI 与 Agent SDK 取舍

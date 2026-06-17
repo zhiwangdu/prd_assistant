@@ -14,6 +14,7 @@ from .agent_audit import (
 from .agent_graph import graph_runtime_metadata
 from .alias import generate_run_alias
 from .analysis_package import persist_analysis_package
+from .artifacts import resolve_artifact_path
 from .config import Settings
 from .claude_contracts import persist_claude_contracts
 from .evidence import SESSION_TEXT_INPUT_REF, build_initial_evidence, persist_session_text_input
@@ -713,9 +714,30 @@ class AgentRuntime:
             "actionResults": action_results[-10:],
             "pendingActions": pending_actions[-10:],
         }
+        claude_session_id = self._latest_claude_session_id(run_id)
+        if claude_session_id:
+            context["claudeSessionId"] = claude_session_id
         if user_messages and user_messages[-1].get("resumeMode") == "finalize":
             context["resumeDirective"] = "finalize_with_current_evidence"
         return context
+
+    def _latest_claude_session_id(self, run_id: str) -> str | None:
+        for evidence in reversed(self.store.list_evidence(run_id)):
+            if evidence.get("kind") != "agent_response" or not evidence.get("artifact_id"):
+                continue
+            try:
+                artifact = self.store.get_artifact(evidence["artifact_id"])
+                path = resolve_artifact_path(self.settings, artifact["relative_path"])
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if document.get("provider") != "claude_code":
+                continue
+            response = document.get("response")
+            session_id = response.get("sessionId") if isinstance(response, dict) else None
+            if isinstance(session_id, str) and session_id.strip():
+                return session_id.strip()
+        return None
 
     def _stub_final_answer(
         self,

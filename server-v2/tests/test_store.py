@@ -1490,7 +1490,8 @@ class StoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             claude = root / "fake-claude"
-            envelope = {
+            capture = root / "claude_resume_capture.json"
+            waiting_envelope = {
                 "type": "result",
                 "subtype": "success",
                 "is_error": False,
@@ -1504,10 +1505,36 @@ class StoreTests(unittest.TestCase):
                     },
                 },
             }
+            final_envelope = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "session_id": "sess-v2-final",
+                "structured_output": {
+                    "runtimeStatus": "completed",
+                    "finalAnswer": {
+                        "summary": "resumed claude summary",
+                        "symptoms": [],
+                        "likelyRootCauses": [],
+                        "nextChecks": [],
+                        "fixSuggestions": [],
+                        "missingInformation": [],
+                        "confidence": "low",
+                        "evidenceRefs": ["session_text_input.json#question"],
+                    },
+                },
+            }
             claude.write_text(
                 "#!/usr/bin/env python3\n"
-                "import json\n"
-                f"print({json.dumps(json.dumps(envelope))})\n",
+                "import json, pathlib, sys\n"
+                f"capture_path = pathlib.Path({json.dumps(capture.as_posix())})\n"
+                "records = json.loads(capture_path.read_text()) if capture_path.exists() else []\n"
+                "records.append({'argv': sys.argv[1:]})\n"
+                "capture_path.write_text(json.dumps(records))\n"
+                "if '--resume' in sys.argv:\n"
+                f"    print({json.dumps(json.dumps(final_envelope))})\n"
+                "else:\n"
+                f"    print({json.dumps(json.dumps(waiting_envelope))})\n",
                 encoding="utf-8",
             )
             claude.chmod(0o755)
@@ -1539,6 +1566,38 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(
                 pending[0]["payload"]["question"],
                 "Which product version is affected?",
+            )
+
+            store.answer_user_input_actions(
+                run["id"], "Version 1.2.3 is affected.", "continue"
+            )
+            final_answer = AgentRuntime(settings, store).run_analysis(
+                workspace["id"], run["id"]
+            )
+
+            self.assertEqual(final_answer["summary"], "resumed claude summary")
+            captured = json.loads(capture.read_text(encoding="utf-8"))
+            self.assertEqual(len(captured), 2)
+            self.assertNotIn("--resume", captured[0]["argv"])
+            self.assertIn("--resume", captured[1]["argv"])
+            resume_index = captured[1]["argv"].index("--resume")
+            self.assertEqual(captured[1]["argv"][resume_index + 1], "sess-v2-waiting")
+            agent_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 43,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                },
+            )
+            response_doc = json.loads(agent_response["result"]["contents"][0]["text"])
+            self.assertEqual(response_doc["response"]["sessionId"], "sess-v2-final")
+            self.assertEqual(
+                response_doc["response"]["resumedSessionId"],
+                "sess-v2-waiting",
             )
 
     def test_agent_provider_validation_failure_keeps_audit_artifacts(self) -> None:

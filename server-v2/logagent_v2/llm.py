@@ -153,6 +153,11 @@ def build_agent_provider_request(
     if provider == "claude_code":
         run_id = evidence_bundle.get("runId")
         claude_prompt = build_claude_prompt(str(run_id)) if isinstance(run_id, str) else ""
+        resume_session_id = (
+            interaction_context.get("claudeSessionId")
+            if isinstance(interaction_context, dict)
+            else None
+        )
         return {
             "provider": "claude_code",
             "model": settings.agent_model or "claude-code-cli",
@@ -167,10 +172,13 @@ def build_agent_provider_request(
                 "disallowedTools": list(settings.claude_code_disallowed_tools),
                 "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
                 "promptPath": CLAUDE_PROMPT_PATH,
+                "resumeSessionConfigured": isinstance(resume_session_id, str)
+                and bool(resume_session_id.strip()),
             },
             "payload": {
                 "prompt": claude_prompt,
                 "runId": run_id,
+                "resumeSessionId": resume_session_id,
                 "promptDelivery": {
                     "mode": "stdin_file",
                     "largeContextVia": "mcp_resource",
@@ -459,6 +467,13 @@ def call_claude_code_provider(
     payload = request_payload.get("payload")
     prompt = payload.get("prompt") if isinstance(payload, dict) else None
     run_id = payload.get("runId") if isinstance(payload, dict) else None
+    resume_session_id = (
+        payload.get("resumeSessionId") if isinstance(payload, dict) else None
+    )
+    if isinstance(resume_session_id, str):
+        resume_session_id = resume_session_id.strip() or None
+    else:
+        resume_session_id = None
     if not isinstance(run_id, str) or not run_id.strip():
         return failed_provider_result(
             provider="claude_code",
@@ -481,7 +496,7 @@ def call_claude_code_provider(
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            claude_code_argv(settings, claude_path),
+            claude_code_argv(settings, claude_path, resume_session_id),
             input=prompt.encode("utf-8"),
             cwd=session_dir,
             env=env,
@@ -498,7 +513,7 @@ def call_claude_code_provider(
             message=f"Claude Code provider timed out after {settings.agent_timeout_seconds}s",
             response={
                 "timeoutSeconds": settings.agent_timeout_seconds,
-                "cmd": claude_code_argv_preview(settings),
+                "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
                 "workDir": "<claude_session_dir>",
             },
         )
@@ -510,7 +525,7 @@ def call_claude_code_provider(
             error_type=error.__class__.__name__,
             message=f"failed to start Claude Code provider: {error}",
             response={
-                "cmd": claude_code_argv_preview(settings),
+                "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
                 "workDir": "<claude_session_dir>",
             },
         )
@@ -520,7 +535,7 @@ def call_claude_code_provider(
     response_payload: JsonObject = {
         "exitCode": completed.returncode,
         "durationMs": duration_ms,
-        "cmd": claude_code_argv_preview(settings),
+        "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
         "workDir": "<claude_session_dir>",
         "promptPath": CLAUDE_PROMPT_PATH,
         "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
@@ -576,6 +591,8 @@ def call_claude_code_provider(
     response_payload["runtimeStatus"] = parsed["runtimeStatus"]
     if parsed.get("sessionId"):
         response_payload["sessionId"] = parsed["sessionId"]
+    if resume_session_id:
+        response_payload["resumedSessionId"] = resume_session_id
     if parsed["runtimeStatus"] in {"waiting_for_user", "waiting_for_approval"}:
         return {
             "provider": "claude_code",
@@ -628,7 +645,11 @@ def safe_session_segment(value: str) -> str:
     )[:160] or "run"
 
 
-def claude_code_argv(settings: Settings, claude_path: Path) -> list[str]:
+def claude_code_argv(
+    settings: Settings,
+    claude_path: Path,
+    resume_session_id: str | None = None,
+) -> list[str]:
     argv = [
         claude_path.as_posix(),
         "--print",
@@ -648,10 +669,12 @@ def claude_code_argv(settings: Settings, claude_path: Path) -> list[str]:
         argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
     if settings.claude_code_disallowed_tools:
         argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    if resume_session_id:
+        argv.extend(["--resume", resume_session_id])
     return argv
 
 
-def claude_code_argv_preview(settings: Settings) -> list[str]:
+def claude_code_argv_preview(settings: Settings, include_resume: bool = False) -> list[str]:
     argv = [
         "<claude_code_path>",
         "--print",
@@ -671,6 +694,8 @@ def claude_code_argv_preview(settings: Settings) -> list[str]:
         argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
     if settings.claude_code_disallowed_tools:
         argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    if include_resume:
+        argv.extend(["--resume", "<session_id>"])
     return argv
 
 

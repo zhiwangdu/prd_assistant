@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Code Session Resume
+
+- V2 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` now resumes Claude Code sessions
+  after waiting states. AgentRuntime reads the latest `agent_response.json`
+  for `response.sessionId`, injects it into the next provider request as
+  `resumeSessionId`, and the Claude Code CLI provider appends
+  `--resume <session_id>`.
+- `agent_response.json` records `response.resumedSessionId` on resumed Claude
+  Code calls, so audit artifacts show both the new session id and the session
+  being resumed without exposing API keys or executable paths.
+- Updated V2 Server and Agent Backends README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused Claude Code provider regressions, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Claude Code CLI Provider
 
 - Added `LOGAGENT_V2_AGENT_PROVIDER=claude_code` to the Python V2 Agent runtime.

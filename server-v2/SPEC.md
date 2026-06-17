@@ -1300,6 +1300,9 @@ a native Claude envelope whose `structured_output`, `structuredOutput`, or
 `pendingPrompt`, and `waiting_for_approval` with `pendingApproval`. Waiting
 outcomes are converted into the existing `logagent.request_user_input` and
 `logagent.request_approval` task MCP tool calls before normal pause handling.
+If the previous Claude response stored `response.sessionId`, resumed runs pass
+that value as `--resume <session_id>` on the next Claude Code CLI invocation and
+record `response.resumedSessionId` in the next `agent_response` audit artifact.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,

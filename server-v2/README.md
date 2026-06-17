@@ -588,6 +588,9 @@ or `result` contains `runtimeStatus=completed` with `finalAnswer`,
 `waiting_for_user` with `pendingPrompt`, or `waiting_for_approval` with
 `pendingApproval`. Waiting states are bridged into the existing
 `logagent.request_user_input` and `logagent.request_approval` task MCP tools.
+When a waiting run resumes and the previous Claude response recorded
+`response.sessionId`, V2 adds `--resume <session_id>` to the next Claude Code
+CLI invocation and records `response.resumedSessionId` in `agent_response.json`.
 
 The run lifecycle is executed by a LangGraph state graph with
 `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,
