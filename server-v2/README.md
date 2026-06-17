@@ -662,6 +662,9 @@ artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
 currently includes manual built-ins for metadata tools,
 `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
 default-off `logagent.huawei_cloud_package_sync`.
+Huawei package sync matches the Rust/V1 catalog behavior by accepting any
+single completed upload (`acceptedSuffixes=["*"]`) and validating only the
+single-upload count plus structured SQL/object-key params.
 `pprof_analyzer` result JSON includes parsed `profileType`, `total`, top rows,
 V2 artifact id mappings, and Rust/V1-style `artifactPaths` for
 `tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.

@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Huawei Package Sync Descriptor
+
+- Aligned V2 `logagent.huawei_cloud_package_sync` catalog descriptor with the
+  Rust/V1 built-in tool shape by advertising `acceptedSuffixes=["*"]`.
+- Execution still requires exactly one completed upload and validated
+  `objectKey` / `updateSql` / `querySql` params; this change fixes catalog/WebUI
+  behavior for arbitrary package filenames.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused tool registry regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (71 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 pprof Tool Result Paths
 
 - Aligned V2 built-in `pprof_analyzer` manual tool results with the Rust/V1

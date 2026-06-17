@@ -1747,6 +1747,10 @@ class StoreTests(unittest.TestCase):
             self.assertIn("logagent.fetch", descriptors)
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+            self.assertEqual(
+                descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
+                ["*"],
+            )
 
     def test_pprof_tool_result_includes_v1_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

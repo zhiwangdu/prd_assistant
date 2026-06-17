@@ -278,7 +278,7 @@ def huawei_package_sync_descriptor(settings: Settings) -> JsonObject:
         "runnable": runnable,
         "minFiles": 1,
         "maxFiles": 1,
-        "acceptedSuffixes": [".zip", ".tar", ".tar.gz", ".tgz", ".log", ".txt"],
+        "acceptedSuffixes": ["*"],
         "paramsSchema": {
             "type": "object",
             "properties": {

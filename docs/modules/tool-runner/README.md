@@ -88,7 +88,7 @@ tools:
 - 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
 - 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable/paramsTemplate`；内置工具使用 `source=built_in`，只读、不可编辑、不可导出，是否支持页面手动运行由 `runnable` 决定。
 - `logagent.fetch` 使用 `source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。
-- `logagent.huawei_cloud_package_sync` 使用 `source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`；只有 `huawei_cloud.package_sync.enabled=true` 且 OBS/GaussDB 凭据环境变量解析成功时才可运行。它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
+- `logagent.huawei_cloud_package_sync` 使用 `source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`；只有 `huawei_cloud.package_sync.enabled=true` 且 OBS/GaussDB 凭据环境变量解析成功时才可运行。它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
 
 ## 当前实现状态
 
@@ -116,7 +116,7 @@ tools:
 - 内置日志包预处理 tool 当前为 `logagent.preprocess_log_package`，支持批量 `.tar.gz` 上传，运行结果写入 `tool_results/<action_id>/result.json`，摘要包含节点、日志组、轮转 gzip、忽略文件和 materialized tool inputs。
 - 内置 metadata tools 当前包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields`。其中 tag fields 工具复用 field types 的 instance/database/measurement/RP 定位规则，但不提供 `field` 参数，只返回 Tag 类型字段。
 - 内置 Fetch tool 当前为 `logagent.fetch`，参数兼容 `endpointId` 和 V1 `fetchId`，并支持可选 string map `variables`、可选临时 string map `headers` 和可选 string `body` override。`variables` 只替换 endpoint URL 中的 `{name}` 占位符，并在替换后执行 allowlist 校验；临时 headers 只作用于本次请求且拒绝受控头。`logagent.list_fetch_endpoints` 在 Fetch 关闭时返回错误，开启时返回 Rust/V1 `schemaVersion=1`、endpoint summary 和 `finalEvidenceAllowed=false`。运行结果写入 `tool_results/<action_id>/result.json`，同时保存 bounded response body artifact 并提供逻辑 `tool_results/<action_id>/response_body.bin` 和实际 V2 artifact id/path；最终答案可引用 `tool_results/<action_id>/result.json#response`。
-- 内置 Huawei package sync tool 当前为 `logagent.huawei_cloud_package_sync`，参数为可选 `objectKey`、必填 `updateSql` 和必填 `querySql`。运行结果写入 `tool_results/<action_id>/result.json`，包含 OBS PUT/HEAD 状态、GaussDB affected rows、最多 200 行 query preview、失败步骤、耗时和凭据环境变量名；不保存原始 SQL 和密钥值。OBS/GaussDB 网络或 SQL 执行失败会写入 `status=FAILED` 的 result artifact，工具任务本身仍可成功完成以便 WebUI 展示错误细节。
+- 内置 Huawei package sync tool 当前为 `logagent.huawei_cloud_package_sync`，参数为可选 `objectKey`、必填 `updateSql` 和必填 `querySql`，接受任意一个已完成 upload 作为同步包。运行结果写入 `tool_results/<action_id>/result.json`，包含 OBS PUT/HEAD 状态、GaussDB affected rows、最多 200 行 query preview、失败步骤、耗时和凭据环境变量名；不保存原始 SQL 和密钥值。OBS/GaussDB 网络或 SQL 执行失败会写入 `status=FAILED` 的 result artifact，工具任务本身仍可成功完成以便 WebUI 展示错误细节。
 - 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、configured args、match rules 和内置 metadata 工具 descriptor；V2 对应 `logagent-v2://tools/catalog`，返回同样的 `schemaVersion`、完整 `tools` 和 V1-compatible `configuredTools` 形态；该入口不运行工具。
 - `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；内置工具不进入导出包。
 
