@@ -52,7 +52,9 @@ slice provides the durable foundation for the V2 product model:
   the completed command output as background environment evidence before
   resuming the analysis run.
 - Final answer schema normalization and evidence ref validation before a run
-  can be marked `succeeded`.
+  can be marked `succeeded`; the run question is persisted as
+  `session_text_input.json` and can be cited as
+  `session_text_input.json#question`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
   HTTP and task MCP read surfaces, plus deterministic fallback run alias
   persistence for history/UI display.
@@ -462,7 +464,7 @@ Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
 resource URIs, manifest outline, grep match preview, analyzer tool input
 outline, system/metadata context outlines, and the current allowed evidence
-refs. Task MCP exposes it as
+refs, including `session_text_input.json#question`. Task MCP exposes it as
 `logagent-v2://run/<run_id>/analysis_package`.
 
 Every Agent round also writes background-only audit artifacts:
@@ -477,7 +479,8 @@ result summary, and evidence/background refs. Task MCP exposes them as
 Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
 lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
-`case_context` returns the latest background Case recall/search context.
+`case_context` returns the latest background Case recall/search context. The
+artifact index includes the persisted run question at `session_text_input.json`.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 deterministic alias derived from the final summary or question. `GET

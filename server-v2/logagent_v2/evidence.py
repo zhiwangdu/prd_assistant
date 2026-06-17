@@ -36,6 +36,7 @@ TEXT_SUFFIXES = {
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 BASE_KEYWORDS = ["error", "fail", "fatal", "panic", "exception", "timeout", "warn", "slow"]
 BACKGROUND_EVIDENCE_KINDS = {"environment_evidence"}
+SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 NODE_LOG_PACKAGE_RE = re.compile(
     r"^(?P<package_id>[^_]+)_(?P<instance_id>[^_]+)_(?P<node_id>[^_]+)_"
     r"(?P<timestamp>[^_]+)_logs\.(?:tar\.gz|tgz)$",
@@ -68,6 +69,44 @@ class NodeLogPackage:
 class MaterializedToolInput:
     entry: JsonObject
     artifact: JsonObject
+
+
+def persist_session_text_input(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    question: str,
+) -> JsonObject:
+    document = {
+        "schemaVersion": 1,
+        "question": question,
+    }
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename="session_text_input.json",
+        data=json.dumps(document, ensure_ascii=True, indent=2).encode("utf-8"),
+        content_type="application/json",
+        schema_name="logagent.v2.session_text_input.v1",
+        preview={"questionPreview": question[:300]},
+    )
+    evidence = store.create_evidence(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        kind="user_question",
+        final_allowed=True,
+        summary="User question captured as initial evidence.",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": "session_text_input.json",
+            "ref": SESSION_TEXT_INPUT_REF,
+            "question": question,
+        },
+    )
+    return {"document": document, "artifact": artifact, "evidence": evidence}
 
 
 def build_initial_evidence(

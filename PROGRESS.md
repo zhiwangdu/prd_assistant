@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Text Input Evidence
+
+- Added V2 `session_text_input.json` persistence for each analysis run's
+  Workspace question, stored as final-allowed `user_question` evidence.
+- `analysis_package.json` and Agent provider requests now include
+  `session_text_input.json#question` in allowed evidence refs, before bounded
+  log match refs.
+- Final-answer validation now accepts `session_text_input.json#question` only
+  when it resolves to the current run's final-allowed question artifact.
+- `artifact_index` now naturally includes `session_text_input.json` through the
+  evidence artifact index.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Aggregate Resources
 
 - Added V1-compatible V2 task MCP resources `artifact_index`, `case_context`,

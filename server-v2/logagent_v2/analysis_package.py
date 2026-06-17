@@ -10,6 +10,7 @@ from .store import JsonObject, Store
 MAX_PACKAGE_FILES = 50
 MAX_PACKAGE_MATCHES = 50
 MAX_CONTEXT_RESOURCES = 10
+SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
 def persist_analysis_package(
@@ -81,11 +82,10 @@ def build_analysis_package(
         "systemContext": context_outline(settings, store, run_id, "system_context"),
         "metadataContext": context_outline(settings, store, run_id, "metadata_context"),
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
-        "allowedEvidenceRefs": [
-            match["ref"] for match in matches if isinstance(match.get("ref"), str)
-        ],
+        "allowedEvidenceRefs": allowed_evidence_refs(matches),
         "finalEvidencePolicy": {
             "allowed": [
+                "session_text_input.json#question",
                 "grep_results.json#matches/<index>",
                 "log_searches/<id>.json#matches/<index>",
                 "log_slices/<id>.json#lines",
@@ -134,6 +134,15 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         }
         for name in names
     ]
+
+
+def allowed_evidence_refs(matches: list[JsonObject]) -> list[str]:
+    refs = [
+        match["ref"]
+        for match in matches
+        if isinstance(match, dict) and isinstance(match.get("ref"), str)
+    ]
+    return [SESSION_TEXT_INPUT_REF, *refs]
 
 
 def manifest_outline(manifest: JsonObject) -> JsonObject:

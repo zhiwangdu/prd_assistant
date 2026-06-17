@@ -22,6 +22,7 @@ from .tools import tool_descriptors
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
+SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 _DEBUG_LOCK = threading.Lock()
 _DEBUG_LOG_RESPONSES = False
 
@@ -435,7 +436,7 @@ def build_agent_prompt(
             "fileCount": manifest.get("fileCount"),
             "uploadCount": manifest.get("uploadCount"),
         },
-        "allowedEvidenceRefs": [item["ref"] for item in evidence_preview if item.get("ref")],
+        "allowedEvidenceRefs": allowed_evidence_refs(evidence_bundle),
         "evidencePreview": evidence_preview,
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
         "toolObservations": tool_observations or [],
@@ -556,12 +557,13 @@ def allowed_evidence_refs(evidence_bundle: JsonObject) -> list[str]:
     grep_results = evidence_bundle.get("grepResults", {})
     matches = grep_results.get("matches", [])
     if not isinstance(matches, list):
-        return []
-    return [
+        return [SESSION_TEXT_INPUT_REF]
+    refs = [
         match["ref"]
         for match in matches[:20]
         if isinstance(match, dict) and isinstance(match.get("ref"), str)
     ]
+    return [SESSION_TEXT_INPUT_REF, *refs]
 
 
 def sanitize_url(url: str | None) -> str | None:

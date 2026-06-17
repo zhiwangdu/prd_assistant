@@ -63,10 +63,11 @@ Implemented in this slice:
   lines. Generated entries are compatible with the V1 `ToolInputEntry` shape
   and include V2 artifact ids for local execution.
 - `manifest.json` and `grep_results.json` artifact generation.
-- Agent runtime that records initial question evidence, consumes the initial
-  evidence pipeline, and either returns a deterministic stub summary or calls a
-  bounded OpenAI-compatible or local binary provider loop for advertised
-  Server-owned tools and an evidence-validated JSON final answer. Each round persists
+- Agent runtime that records initial question evidence as
+  `session_text_input.json`, consumes the initial evidence pipeline, and either
+  returns a deterministic stub summary or calls a bounded OpenAI-compatible or
+  local binary provider loop for advertised Server-owned tools and an
+  evidence-validated JSON final answer. Each round persists
   `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
   artifacts before the run reaches a terminal state. Successful analysis runs
   persist a deterministic fallback alias derived from the final summary or
@@ -119,7 +120,8 @@ Implemented in this slice:
   record the completed command output before resuming the analysis run.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
-  log search, log slice, or tool finding evidence.
+  `session_text_input.json#question`, log search, log slice, Fetch response, or
+  tool finding evidence.
 - Final result persistence as `result.json` and `result.md` background
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
@@ -984,9 +986,10 @@ remains future work.
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
 bounded tool input summaries, system/metadata context outlines, allowed
-current-run evidence refs, and final-evidence policy. It intentionally omits
-full Skill content, full Metadata topology, and raw uploaded text. Task MCP
-exposes it at `logagent-v2://run/<run_id>/analysis_package`.
+current-run evidence refs starting with `session_text_input.json#question`, and
+final-evidence policy. It intentionally omits full Skill content, full Metadata
+topology, and raw uploaded text. Task MCP exposes it at
+`logagent-v2://run/<run_id>/analysis_package`.
 
 The Agent boundary is audited with schema version 1 artifacts. `agent_request`
 captures the provider/stub, model, transport metadata, allowed evidence refs,
@@ -1003,7 +1006,8 @@ enumerates current run upload and evidence artifacts with stable logical paths,
 `tool_results` returns parsed `tool_result` and `fetch_result` artifacts under
 the canonical `tool_results/<action_id>/result.json` shape, and `case_context`
 returns the latest background-only Case search/recall context or an empty
-context when no Case tool has run.
+context when no Case tool has run. `artifact_index` includes the persisted run
+question at `session_text_input.json`.
 
 After final-answer validation succeeds, V2 writes `result.json` with schema
 version 1 and `result.md` as a Markdown rendering of the same final answer.

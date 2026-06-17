@@ -18,6 +18,7 @@ TOOL_FINDING_RE = re.compile(
     r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#findings/(\d+)$"
 )
 FETCH_RESPONSE_RE = re.compile(r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#response$")
+SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
 class FinalAnswerValidationError(ValueError):
@@ -130,6 +131,14 @@ def is_valid_ref(
     if not isinstance(ref, str) or not ref.strip():
         return False
 
+    if ref == SESSION_TEXT_INPUT_REF:
+        return any(
+            item["kind"] == "user_question"
+            and item["payload"].get("ref") == SESSION_TEXT_INPUT_REF
+            and artifact_question_exists(settings, store, item)
+            for item in evidence_items
+        )
+
     log_match = LOG_MATCH_RE.match(ref)
     if log_match:
         path = log_match.group(1)
@@ -197,6 +206,11 @@ def artifact_ref_exists(
 
 def artifact_response_exists(settings: Settings, store: Store, evidence: JsonObject) -> bool:
     return isinstance(read_evidence_artifact(settings, store, evidence).get("response"), dict)
+
+
+def artifact_question_exists(settings: Settings, store: Store, evidence: JsonObject) -> bool:
+    question = read_evidence_artifact(settings, store, evidence).get("question")
+    return isinstance(question, str) and bool(question.strip())
 
 
 def read_evidence_artifact(settings: Settings, store: Store, evidence: JsonObject) -> JsonObject:

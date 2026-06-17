@@ -11,7 +11,7 @@ from .agent_audit import (
 from .alias import fallback_run_alias
 from .analysis_package import persist_analysis_package
 from .config import Settings
-from .evidence import build_initial_evidence
+from .evidence import SESSION_TEXT_INPUT_REF, build_initial_evidence, persist_session_text_input
 from .final_answer import normalize_and_validate_final_answer
 from .llm import (
     agent_allowed_tool_names,
@@ -43,13 +43,12 @@ class AgentRuntime:
     def run_analysis(self, workspace_id: str, run_id: str) -> JsonObject:
         workspace = self.store.get_workspace(workspace_id)
         self.store.update_run_status(run_id, "running", "collect_initial_evidence")
-        self.store.create_evidence(
-            workspace_id=workspace_id,
-            run_id=run_id,
-            kind="user_question",
-            final_allowed=True,
-            summary="User question captured as initial evidence.",
-            payload={"question": workspace["question"]},
+        persist_session_text_input(
+            self.settings,
+            self.store,
+            workspace_id,
+            run_id,
+            workspace["question"],
         )
         persist_system_context(self.settings, self.store, workspace_id, run_id)
         persist_metadata_context(self.settings, self.store, workspace_id, run_id)
@@ -480,7 +479,7 @@ class AgentRuntime:
                 "fixSuggestions": [],
                 "missingInformation": missing_information,
                 "confidence": "low",
-                "evidenceRefs": [],
+                "evidenceRefs": [SESSION_TEXT_INPUT_REF],
                 "userMessage": last_message.get("message") if isinstance(last_message, dict) else None,
             }
         if not matches:

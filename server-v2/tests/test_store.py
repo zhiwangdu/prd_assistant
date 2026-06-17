@@ -230,7 +230,10 @@ class StoreTests(unittest.TestCase):
             package = json.loads(package_response["result"]["contents"][0]["text"])
             self.assertEqual(package["workspace"]["question"], "why did the query timeout?")
             self.assertEqual(package["manifest"]["fileCount"], 1)
-            self.assertEqual(package["allowedEvidenceRefs"], ["grep_results.json#matches/0"])
+            self.assertEqual(
+                package["allowedEvidenceRefs"],
+                ["session_text_input.json#question", "grep_results.json#matches/0"],
+            )
             self.assertIn("analysis_package", {item["name"] for item in package["resources"]})
             self.assertIn("analysis_state", {item["name"] for item in package["resources"]})
             self.assertFalse(package["systemContext"]["resources"])
@@ -276,7 +279,10 @@ class StoreTests(unittest.TestCase):
             request_doc = json.loads(request_response["result"]["contents"][0]["text"])
             self.assertEqual(request_doc["provider"], "stub")
             self.assertEqual(request_doc["transport"]["type"], "local_stub")
-            self.assertEqual(request_doc["allowedEvidenceRefs"], ["grep_results.json#matches/0"])
+            self.assertEqual(
+                request_doc["allowedEvidenceRefs"],
+                ["session_text_input.json#question", "grep_results.json#matches/0"],
+            )
             response = task_mcp_response(
                 settings,
                 store,
@@ -336,9 +342,42 @@ class StoreTests(unittest.TestCase):
             self.assertIn("log_search", artifact_kinds)
             self.assertIn("analysis_package", artifact_kinds)
             self.assertIn("result", artifact_kinds)
+            self.assertIn("user_question", artifact_kinds)
             self.assertTrue(
                 all(item["artifact_id"] for item in run_artifacts["evidenceArtifacts"])
             )
+            question_artifact = next(
+                item
+                for item in run_artifacts["evidenceArtifacts"]
+                if item["evidence_kind"] == "user_question"
+            )
+            self.assertEqual(question_artifact["evidence_payload"]["path"], "session_text_input.json")
+            question_path = resolve_artifact_path(settings, question_artifact["relative_path"])
+            self.assertEqual(
+                json.loads(question_path.read_text(encoding="utf-8"))["question"],
+                "why did the query timeout?",
+            )
+            validated = normalize_and_validate_final_answer(
+                settings,
+                store,
+                run["id"],
+                {
+                    "summary": "Question-only evidence is citeable.",
+                    "symptoms": [],
+                    "likelyRootCauses": [
+                        {
+                            "cause": "The user described the target failure mode.",
+                            "evidenceRefs": ["session_text_input.json#question"],
+                        }
+                    ],
+                    "nextChecks": [],
+                    "fixSuggestions": [],
+                    "missingInformation": [],
+                    "confidence": "low",
+                    "evidenceRefs": ["session_text_input.json#question"],
+                },
+            )
+            self.assertEqual(validated["evidenceRefs"], ["session_text_input.json#question"])
             analysis = get_run_analysis(settings, store, run["id"])
             self.assertEqual(analysis["run"]["id"], run["id"])
             self.assertEqual(analysis["workspace"]["id"], workspace["id"])
@@ -348,7 +387,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(analysis["resources"]["agent_response"]["status"], "completed")
             self.assertEqual(
                 analysis["resources"]["analysis_package"]["allowedEvidenceRefs"],
-                ["grep_results.json#matches/0"],
+                ["session_text_input.json#question", "grep_results.json#matches/0"],
             )
             self.assertEqual(analysis["result"]["finalAnswer"]["confidence"], "low")
             events = store.list_timeline(run["id"])
@@ -1396,6 +1435,7 @@ class StoreTests(unittest.TestCase):
             )
             index_body = json.loads(index_response["result"]["contents"][0]["text"])
             index_paths = {item["path"] for item in index_body["artifacts"]}
+            self.assertIn("session_text_input.json", index_paths)
             self.assertIn("manifest.json", index_paths)
             self.assertIn("grep_results.json", index_paths)
             self.assertIn("mcp_calls.jsonl", index_paths)
