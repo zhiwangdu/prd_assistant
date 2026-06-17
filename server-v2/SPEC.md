@@ -18,8 +18,9 @@ auditable agent boundary.
 
 ## Product Model
 
-- `Session`: product-facing diagnosis container. In this slice it is an HTTP
-  alias over `Workspace`; `sessionId` equals the Workspace id.
+- `Session`: product-facing diagnosis container. In this slice it is backed by
+  `Workspace`; `sessionId` equals the Workspace id, while Rust-style Session
+  fields are persisted on the Workspace row.
 - `Workspace`: top-level diagnosis container.
 - `Run`: one Agent execution inside a Workspace.
 - `TimelineEvent`: append-only product event stream.
@@ -48,9 +49,10 @@ Implemented in this slice:
   rows remain readable by id.
 - Session-first API aliases for create/list/read/update/delete, uploads,
   restartable upload sessions, task creation/listing, and full Session
-  timeline. `taskId` equals the underlying Run id, `activeTaskId` is the newest
-  Run, and Session deletion is rejected while any Run is not `succeeded` or
-  `failed`.
+  timeline. `title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
+  `skillIds`, and language are persisted. `taskId` equals the underlying Run
+  id, `activeTaskId` is the newest Run, queued Runs map to Session `ready`, and
+  Session deletion is rejected while any Run is not `succeeded` or `failed`.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked

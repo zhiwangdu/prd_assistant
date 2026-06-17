@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Field Persistence
+
+- V2 Workspaces now persist Rust-style Session fields used by the Session-first
+  API: `title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
+  `skillIds`, `analysisLanguage`, and draft/ready Session status.
+- Existing SQLite databases are migrated in place with additive Workspace
+  columns, and old records derive `title` from `question` when the title column
+  is empty.
+- Session PATCH now supports updating persisted title/question/source/metadata
+  binding/context fields, clearing source/instance/node fields with JSON null,
+  and manually setting Session status to `draft` or `ready`.
+- Session status now follows the Rust product model more closely: uploads move
+  a draft Session to `ready`, queued Runs show Session `ready`, and run status
+  changes update the backing Workspace timestamp/status.
+- Verification passed: focused Workspace/Session alias regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (108 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Alias API
 
 - Added Session-first HTTP aliases under `/api/v2/sessions` while keeping the

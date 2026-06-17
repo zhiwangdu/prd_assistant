@@ -74,7 +74,7 @@ from .settings_api import (
     validate_settings_message,
 )
 from .skills import get_skill, import_skill, list_skills, preview_system_context
-from .store import Store
+from .store import Store, UNSET
 from .system_context import (
     activate_system_context_version,
     create_system_context_resource,
@@ -105,7 +105,7 @@ class WorkspaceUpdate(BaseModel):
 
 
 class SessionCreate(BaseModel):
-    title: str | None = Field(default=None, max_length=300)
+    title: str | None = Field(default=None, max_length=160)
     question: str | None = Field(default=None, max_length=20000)
     sourceUrl: str | None = Field(default=None, max_length=2000)
     instanceId: str | None = Field(default=None, max_length=200)
@@ -116,7 +116,7 @@ class SessionCreate(BaseModel):
 
 
 class SessionUpdate(BaseModel):
-    title: str | None = Field(default=None, max_length=300)
+    title: str | None = Field(default=None, max_length=160)
     question: str | None = Field(default=None, min_length=1, max_length=20000)
     sourceUrl: str | None = Field(default=None, max_length=2000)
     instanceId: str | None = Field(default=None, max_length=200)
@@ -124,6 +124,7 @@ class SessionUpdate(BaseModel):
     analysisLanguage: Literal["zh-CN", "en-US"] | None = None
     systemContextIds: list[str] | None = Field(default=None, max_length=20)
     skillIds: list[str] | None = Field(default=None, max_length=20)
+    status: Literal["draft", "ready"] | None = None
 
 
 class MessageCreate(BaseModel):
@@ -380,10 +381,29 @@ class UploadSessionInit(BaseModel):
 
 
 TERMINAL_RUN_STATUSES = {"succeeded", "failed"}
+DEFAULT_SESSION_QUESTION = "分析日志中的主要异常、可能原因和建议检查项。"
 
 
-def _session_title(workspace: dict, title: str | None = None) -> str:
-    explicit = (title or "").strip()
+def _clean_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _session_create_question(value: str | None) -> str:
+    return _clean_optional(value) or DEFAULT_SESSION_QUESTION
+
+
+def _session_create_title(value: str | None, question: str) -> str:
+    explicit = _clean_optional(value)
+    if explicit:
+        return explicit
+    return question[:80] or "New log analysis session"
+
+
+def _session_title(workspace: dict) -> str:
+    explicit = _clean_optional(workspace.get("title"))
     if explicit:
         return explicit
     question = str(workspace.get("question") or "").strip()
@@ -392,21 +412,26 @@ def _session_title(workspace: dict, title: str | None = None) -> str:
     return question[:120]
 
 
-def _session_status(workspace: dict, runs: list[dict]) -> str:
+def _session_status(workspace: dict, uploads: list[dict], runs: list[dict]) -> str:
     if workspace.get("status") == "deleted":
         return "deleted"
     if not runs:
-        return "draft"
+        session_status = str(workspace.get("sessionStatus") or "draft")
+        if session_status in {"draft", "ready"}:
+            return session_status
+        return "ready" if uploads else "draft"
     latest = runs[0]
     status = str(latest.get("status") or "draft")
-    if status in {"queued", "running", "waiting_for_user", "waiting_for_approval"}:
+    if status == "queued":
+        return "ready"
+    if status in {"running", "waiting_for_user", "waiting_for_approval"}:
         return status
     if status in TERMINAL_RUN_STATUSES:
         return status
     return "ready"
 
 
-def _session_record(store: Store, workspace: dict, title: str | None = None) -> dict:
+def _session_record(store: Store, workspace: dict) -> dict:
     uploads = store.list_uploads(workspace["id"])
     runs = store.list_runs(workspace["id"])
     active_task_id = runs[0]["id"] if runs else None
@@ -414,18 +439,18 @@ def _session_record(store: Store, workspace: dict, title: str | None = None) -> 
         "schemaVersion": 1,
         "sessionId": workspace["id"],
         "workspaceId": workspace["id"],
-        "title": _session_title(workspace, title),
+        "title": _session_title(workspace),
         "question": workspace.get("question"),
-        "sourceUrl": None,
-        "instanceId": None,
-        "nodeId": None,
+        "sourceUrl": workspace.get("sourceUrl"),
+        "instanceId": workspace.get("instanceId"),
+        "nodeId": workspace.get("nodeId"),
         "analysisLanguage": workspace.get("language"),
-        "systemContextIds": [],
+        "systemContextIds": workspace.get("systemContextIds", []),
         "skillIds": workspace.get("skillIds", []),
         "uploadIds": [upload["id"] for upload in uploads],
         "taskIds": [run["id"] for run in runs],
         "activeTaskId": active_task_id,
-        "status": _session_status(workspace, runs),
+        "status": _session_status(workspace, uploads, runs),
         "uploadCount": len(uploads),
         "taskCount": len(runs),
         "createdAt": workspace.get("created_at"),
@@ -504,14 +529,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/sessions", status_code=201)
     async def create_session(_: Auth, payload: SessionCreate) -> dict:
-        question = (payload.question or payload.title or "New log analysis session").strip()
-        if not question:
-            question = "New log analysis session"
+        question = _session_create_question(payload.question)
         workspace = store.create_workspace(
             question,
             "diagnose",
             payload.analysisLanguage,
             skill_ids=payload.skillIds,
+            title=_session_create_title(payload.title, question),
+            source_url=_clean_optional(payload.sourceUrl),
+            instance_id=_clean_optional(payload.instanceId),
+            node_id=_clean_optional(payload.nodeId),
+            system_context_ids=payload.systemContextIds,
         )
         return _session_record(store, workspace)
 
@@ -533,14 +561,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.patch("/api/v2/sessions/{session_id}")
     async def update_session(_: Auth, session_id: str, payload: SessionUpdate) -> dict:
         try:
+            fields_set = payload.model_fields_set
             question = payload.question.strip() if payload.question is not None else None
             if question is not None and not question:
                 raise ValueError("question cannot be empty")
             workspace = store.update_workspace(
                 session_id,
+                title=_clean_optional(payload.title) if payload.title is not None else None,
                 question=question,
+                source_url=(
+                    _clean_optional(payload.sourceUrl)
+                    if "sourceUrl" in fields_set
+                    else UNSET
+                ),
+                instance_id=(
+                    _clean_optional(payload.instanceId)
+                    if "instanceId" in fields_set
+                    else UNSET
+                ),
+                node_id=(
+                    _clean_optional(payload.nodeId) if "nodeId" in fields_set else UNSET
+                ),
                 language=payload.analysisLanguage,
+                system_context_ids=payload.systemContextIds,
                 skill_ids=payload.skillIds,
+                session_status=payload.status,
             )
             return _session_record(store, workspace)
         except KeyError as error:

@@ -15,6 +15,7 @@ from .ids import new_id
 
 JsonObject = dict[str, Any]
 CASE_VECTOR_DIMS = 64
+UNSET = object()
 
 
 def now_iso() -> str:
@@ -29,6 +30,12 @@ def decode_json(value: str | None, default: Any = None) -> Any:
     if value is None:
         return default
     return json.loads(value)
+
+
+def session_status_from_run_status(status: str) -> str:
+    if status == "queued":
+        return "ready"
+    return status
 
 
 def case_tokens(value: str) -> set[str]:
@@ -122,10 +129,16 @@ class Store:
                 """
                 CREATE TABLE IF NOT EXISTS workspaces (
                   id TEXT PRIMARY KEY,
+                  title TEXT,
                   question TEXT NOT NULL,
+                  source_url TEXT,
+                  instance_id TEXT,
+                  node_id TEXT,
                   mode TEXT NOT NULL,
                   language TEXT NOT NULL,
                   status TEXT NOT NULL,
+                  session_status TEXT NOT NULL DEFAULT 'draft',
+                  system_context_ids_json TEXT NOT NULL DEFAULT '[]',
                   skill_ids_json TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
@@ -359,6 +372,27 @@ class Store:
                 """
             )
             self._ensure_column_tx(
+                conn, "workspaces", "title", "TEXT"
+            )
+            self._ensure_column_tx(
+                conn, "workspaces", "source_url", "TEXT"
+            )
+            self._ensure_column_tx(
+                conn, "workspaces", "instance_id", "TEXT"
+            )
+            self._ensure_column_tx(
+                conn, "workspaces", "node_id", "TEXT"
+            )
+            self._ensure_column_tx(
+                conn, "workspaces", "session_status", "TEXT NOT NULL DEFAULT 'draft'"
+            )
+            self._ensure_column_tx(
+                conn,
+                "workspaces",
+                "system_context_ids_json",
+                "TEXT NOT NULL DEFAULT '[]'",
+            )
+            self._ensure_column_tx(
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
             self._ensure_column_tx(conn, "runs", "kind", "TEXT NOT NULL DEFAULT 'analysis'")
@@ -446,24 +480,59 @@ class Store:
 
     def _workspace_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
+        if not item.get("title"):
+            item["title"] = str(item.get("question") or "")[:120] or "Untitled session"
+        item["sourceUrl"] = item.pop("source_url", None)
+        item["instanceId"] = item.pop("instance_id", None)
+        item["nodeId"] = item.pop("node_id", None)
+        item["sessionStatus"] = item.pop("session_status", "draft")
+        item["systemContextIds"] = decode_json(item.pop("system_context_ids_json", None), [])
         item["skillIds"] = decode_json(item.pop("skill_ids_json", None), [])
         return item
 
     def create_workspace(
-        self, question: str, mode: str, language: str, skill_ids: list[str] | None = None
+        self,
+        question: str,
+        mode: str,
+        language: str,
+        skill_ids: list[str] | None = None,
+        title: str | None = None,
+        source_url: str | None = None,
+        instance_id: str | None = None,
+        node_id: str | None = None,
+        system_context_ids: list[str] | None = None,
+        session_status: str = "draft",
     ) -> JsonObject:
         workspace_id = new_id("ws")
         ts = now_iso()
         skill_ids = skill_ids or []
+        system_context_ids = system_context_ids or []
+        title = title or question[:120] or "Untitled session"
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO workspaces(
-                  id, question, mode, language, status, skill_ids_json, created_at, updated_at
+                  id, title, question, source_url, instance_id, node_id, mode, language, status,
+                  session_status, system_context_ids_json, skill_ids_json, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (workspace_id, question, mode, language, "active", encode_json(skill_ids), ts, ts),
+                (
+                    workspace_id,
+                    title,
+                    question,
+                    source_url,
+                    instance_id,
+                    node_id,
+                    mode,
+                    language,
+                    "active",
+                    session_status,
+                    encode_json(system_context_ids),
+                    encode_json(skill_ids),
+                    ts,
+                    ts,
+                ),
             )
             self._append_event_tx(
                 conn,
@@ -471,9 +540,15 @@ class Store:
                 None,
                 "workspace.created",
                 {
+                    "title": title,
                     "question": question,
+                    "sourceUrl": source_url,
+                    "instanceId": instance_id,
+                    "nodeId": node_id,
                     "mode": mode,
                     "language": language,
+                    "sessionStatus": session_status,
+                    "systemContextIds": system_context_ids,
                     "skillIds": skill_ids,
                 },
                 ts,
@@ -510,30 +585,60 @@ class Store:
         mode: str | None = None,
         language: str | None = None,
         skill_ids: list[str] | None = None,
+        title: str | None = None,
+        source_url: str | None = None,
+        instance_id: str | None = None,
+        node_id: str | None = None,
+        system_context_ids: list[str] | None = None,
+        session_status: str | None = None,
     ) -> JsonObject:
         current = self.get_workspace(workspace_id)
         if current["status"] == "deleted":
             raise ValueError("workspace is deleted")
+        next_title = title if title is not None else current["title"]
         next_question = question if question is not None else current["question"]
+        next_source_url = current["sourceUrl"] if source_url is UNSET else source_url
+        next_instance_id = current["instanceId"] if instance_id is UNSET else instance_id
+        next_node_id = current["nodeId"] if node_id is UNSET else node_id
         next_mode = mode if mode is not None else current["mode"]
         next_language = language if language is not None else current["language"]
+        next_session_status = (
+            session_status if session_status is not None else current["sessionStatus"]
+        )
+        next_system_context_ids = (
+            system_context_ids
+            if system_context_ids is not None
+            else current["systemContextIds"]
+        )
         next_skill_ids = skill_ids if skill_ids is not None else current["skillIds"]
         ts = now_iso()
         with self.connect() as conn:
             conn.execute(
                 """
                 UPDATE workspaces
-                SET question = ?,
+                SET title = ?,
+                    question = ?,
+                    source_url = ?,
+                    instance_id = ?,
+                    node_id = ?,
                     mode = ?,
                     language = ?,
+                    session_status = ?,
+                    system_context_ids_json = ?,
                     skill_ids_json = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
                 (
+                    next_title,
                     next_question,
+                    next_source_url,
+                    next_instance_id,
+                    next_node_id,
                     next_mode,
                     next_language,
+                    next_session_status,
+                    encode_json(next_system_context_ids),
                     encode_json(next_skill_ids),
                     ts,
                     workspace_id,
@@ -545,9 +650,15 @@ class Store:
                 None,
                 "workspace.updated",
                 {
+                    "title": next_title,
                     "question": next_question,
+                    "sourceUrl": next_source_url,
+                    "instanceId": next_instance_id,
+                    "nodeId": next_node_id,
                     "mode": next_mode,
                     "language": next_language,
+                    "sessionStatus": next_session_status,
+                    "systemContextIds": next_system_context_ids,
                     "skillIds": next_skill_ids,
                 },
                 ts,
@@ -732,6 +843,15 @@ class Store:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (run_id, workspace_id, "queued", "queued", encode_json(budget), ts, ts),
+            )
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET session_status = 'ready',
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (ts, workspace_id),
             )
             self._append_event_tx(
                 conn,
@@ -967,6 +1087,7 @@ class Store:
             row = conn.execute("SELECT workspace_id FROM runs WHERE id = ?", (run_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown run {run_id}")
+            workspace_id = row["workspace_id"]
             encoded_final_answer = encode_json(final_answer) if final_answer is not None else None
             if alias is None:
                 conn.execute(
@@ -986,9 +1107,18 @@ class Store:
                     """,
                     (status, phase, encoded_final_answer, alias, ts, run_id),
                 )
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET session_status = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (session_status_from_run_status(status), ts, workspace_id),
+            )
             self._append_event_tx(
                 conn,
-                row["workspace_id"],
+                workspace_id,
                 run_id,
                 f"run.{status}",
                 {"phase": phase, "alias": alias} if alias is not None else {"phase": phase},
@@ -1049,6 +1179,18 @@ class Store:
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (upload_id, workspace_id, filename, artifact_id, ts),
+            )
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET session_status = CASE
+                      WHEN session_status = 'draft' THEN 'ready'
+                      ELSE session_status
+                    END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (ts, workspace_id),
             )
             self._append_event_tx(
                 conn,

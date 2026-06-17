@@ -198,7 +198,11 @@ class StoreTests(unittest.TestCase):
                     json={
                         "title": "Timeout analysis",
                         "question": "why timeout?",
+                        "sourceUrl": "webui-smoke",
+                        "instanceId": "inst-a",
+                        "nodeId": "node-a",
                         "analysisLanguage": "en-US",
+                        "systemContextIds": ["ctx-a"],
                         "skillIds": ["skill-a"],
                     },
                 )
@@ -207,19 +211,49 @@ class StoreTests(unittest.TestCase):
                 session_id = session["sessionId"]
                 self.assertTrue(session_id.startswith("ws_"))
                 self.assertEqual(session["workspaceId"], session_id)
+                self.assertEqual(session["title"], "Timeout analysis")
                 self.assertEqual(session["question"], "why timeout?")
+                self.assertEqual(session["sourceUrl"], "webui-smoke")
+                self.assertEqual(session["instanceId"], "inst-a")
+                self.assertEqual(session["nodeId"], "node-a")
                 self.assertEqual(session["analysisLanguage"], "en-US")
+                self.assertEqual(session["systemContextIds"], ["ctx-a"])
                 self.assertEqual(session["skillIds"], ["skill-a"])
                 self.assertEqual(session["status"], "draft")
 
                 patched = client.patch(
                     f"/api/v2/sessions/{session_id}",
                     headers=headers,
-                    json={"question": "updated question", "analysisLanguage": "zh-CN"},
+                    json={
+                        "title": "Updated title",
+                        "question": "updated question",
+                        "sourceUrl": None,
+                        "instanceId": "inst-b",
+                        "nodeId": None,
+                        "analysisLanguage": "zh-CN",
+                        "systemContextIds": ["ctx-b"],
+                        "status": "ready",
+                    },
                 )
                 self.assertEqual(patched.status_code, 200)
-                self.assertEqual(patched.json()["question"], "updated question")
-                self.assertEqual(patched.json()["analysisLanguage"], "zh-CN")
+                patched_body = patched.json()
+                self.assertEqual(patched_body["title"], "Updated title")
+                self.assertEqual(patched_body["question"], "updated question")
+                self.assertIsNone(patched_body["sourceUrl"])
+                self.assertEqual(patched_body["instanceId"], "inst-b")
+                self.assertIsNone(patched_body["nodeId"])
+                self.assertEqual(patched_body["analysisLanguage"], "zh-CN")
+                self.assertEqual(patched_body["systemContextIds"], ["ctx-b"])
+                self.assertEqual(patched_body["status"], "ready")
+
+                fetched = client.get(
+                    f"/api/v2/sessions/{session_id}",
+                    headers=headers,
+                )
+                self.assertEqual(fetched.status_code, 200)
+                self.assertEqual(fetched.json()["title"], "Updated title")
+                self.assertEqual(fetched.json()["instanceId"], "inst-b")
+                self.assertIsNone(fetched.json()["sourceUrl"])
 
                 uploaded = client.post(
                     f"/api/v2/sessions/{session_id}/uploads",
@@ -235,6 +269,12 @@ class StoreTests(unittest.TestCase):
                 )
                 self.assertEqual(uploads.status_code, 200)
                 self.assertEqual([item["id"] for item in uploads.json()["uploads"]], [upload_id])
+                after_upload = client.get(
+                    f"/api/v2/sessions/{session_id}",
+                    headers=headers,
+                )
+                self.assertEqual(after_upload.status_code, 200)
+                self.assertEqual(after_upload.json()["status"], "ready")
 
                 task = client.post(
                     f"/api/v2/sessions/{session_id}/tasks",
@@ -245,6 +285,13 @@ class StoreTests(unittest.TestCase):
                 self.assertTrue(task_body["taskId"].startswith("run_"))
                 self.assertEqual(task_body["runId"], task_body["taskId"])
                 self.assertEqual(task_body["sessionId"], session_id)
+                after_task = client.get(
+                    f"/api/v2/sessions/{session_id}",
+                    headers=headers,
+                )
+                self.assertEqual(after_task.status_code, 200)
+                self.assertEqual(after_task.json()["status"], "ready")
+                self.assertEqual(after_task.json()["activeTaskId"], task_body["taskId"])
 
                 tasks = client.get(
                     f"/api/v2/sessions/{session_id}/tasks",
