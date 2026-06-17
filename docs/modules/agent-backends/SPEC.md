@@ -24,6 +24,12 @@
 - Python V2 在等待态恢复后必须从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并把它作为下一轮 Claude Code CLI 的 `--resume <session_id>` 参数。
 - Python V2 必须保留 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd`，并写入 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
 - Python V2 必须在 Claude Code 响应后写入新的 `claude_session.json` runtime artifact，记录 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery 和对应 `agent_response` artifact id。
+- Python V2 必须按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
+  `diagnose` 为只读 MCP-only profile，`code_investigation` 允许 Read/Grep/Bash，
+  `fix` 允许 Read/Grep/Bash/Edit/Write。所有 profile 必须自动包含
+  `mcp__logagent__*`，扁平 `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE` /
+  `TOOLS` / `ALLOWED_TOOLS` / `DISALLOWED_TOOLS` 仅覆盖 `diagnose` profile，
+  `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` 可按 mode key 覆盖任意 profile。
 
 ## 配置
 
@@ -44,6 +50,12 @@ mcp:
 - `claude_code.command_path` 或 `command_path_env` 必须解析为绝对路径。
 - `default_mode` 必须有 permission profile。
 - Server 自动把 `mcp__logagent__*` 注入所有 permission profile 的 `allowed_tools`，确保任务 MCP tools 在 `dontAsk` 模式下可用；`tools: ""` 仍只用于禁用 native built-in tools。
+- Python V2 的 `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` 使用
+  `diagnose`、`code_investigation`、`fix` 作为 key，profile 字段接受
+  `permissionMode` / `permission_mode`、`tools`、`allowedTools` /
+  `allowed_tools`、`disallowedTools` / `disallowed_tools`、`nativeBash` /
+  `native_bash`、`nativeEdit` / `native_edit` 和 `worktreeRequired` /
+  `worktree_required`。
 - `mcp.transport` 当前只支持 `stdio`。
 - 旧 `agent_backends` 配置不再作为运行入口。
 

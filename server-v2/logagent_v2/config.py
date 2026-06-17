@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+LOGAGENT_MCP_ALLOWED_TOOL_GLOB = "mcp__logagent__*"
+ANALYSIS_MODES = ("diagnose", "code_investigation", "fix")
+
 
 @dataclass(frozen=True)
 class ToolDefinition:
@@ -110,6 +113,74 @@ class HuaweiPackageSyncSettings:
     timeout_seconds: int = 30
 
 
+@dataclass(frozen=True)
+class ClaudeCodePermissionProfile:
+    name: str
+    permission_mode: str
+    tools: str
+    allowed_tools: tuple[str, ...]
+    disallowed_tools: tuple[str, ...] = ()
+    native_bash: bool = False
+    native_edit: bool = False
+    worktree_required: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "permissionMode": self.permission_mode,
+            "tools": self.tools,
+            "allowedTools": list(self.allowed_tools),
+            "disallowedTools": list(self.disallowed_tools),
+            "nativeBash": self.native_bash,
+            "nativeEdit": self.native_edit,
+            "worktreeRequired": self.worktree_required,
+        }
+
+
+def default_claude_code_permission_profiles() -> dict[str, ClaudeCodePermissionProfile]:
+    return {
+        "diagnose": ClaudeCodePermissionProfile(
+            name="diagnose",
+            permission_mode="dontAsk",
+            tools="",
+            allowed_tools=(LOGAGENT_MCP_ALLOWED_TOOL_GLOB,),
+            disallowed_tools=("Bash", "Edit", "Write", "Read", "Grep"),
+            native_bash=False,
+            native_edit=False,
+            worktree_required=False,
+        ),
+        "code_investigation": ClaudeCodePermissionProfile(
+            name="code_investigation",
+            permission_mode="dontAsk",
+            tools="Read,Grep,Bash",
+            allowed_tools=with_logagent_mcp_allowed_tools(("Read", "Grep", "Bash")),
+            disallowed_tools=("Edit", "Write"),
+            native_bash=True,
+            native_edit=False,
+            worktree_required=False,
+        ),
+        "fix": ClaudeCodePermissionProfile(
+            name="fix",
+            permission_mode="acceptEdits",
+            tools="Read,Grep,Bash,Edit,Write",
+            allowed_tools=with_logagent_mcp_allowed_tools(
+                ("Read", "Grep", "Bash", "Edit", "Write")
+            ),
+            disallowed_tools=(),
+            native_bash=True,
+            native_edit=True,
+            worktree_required=True,
+        ),
+    }
+
+
+def with_logagent_mcp_allowed_tools(values: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(item.strip() for item in values if item.strip())
+    if LOGAGENT_MCP_ALLOWED_TOOL_GLOB in normalized:
+        return normalized
+    return (*normalized, LOGAGENT_MCP_ALLOWED_TOOL_GLOB)
+
+
 def default_webui_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "webui" / "out"
 
@@ -151,8 +222,17 @@ class Settings:
     claude_code_max_output_bytes: int = 1024 * 1024
     claude_code_permission_mode: str = "dontAsk"
     claude_code_tools: str = ""
-    claude_code_allowed_tools: tuple[str, ...] = ("mcp__logagent__*",)
-    claude_code_disallowed_tools: tuple[str, ...] = ()
+    claude_code_allowed_tools: tuple[str, ...] = (LOGAGENT_MCP_ALLOWED_TOOL_GLOB,)
+    claude_code_disallowed_tools: tuple[str, ...] = (
+        "Bash",
+        "Edit",
+        "Write",
+        "Read",
+        "Grep",
+    )
+    claude_code_permission_profiles: dict[str, ClaudeCodePermissionProfile] = field(
+        default_factory=default_claude_code_permission_profiles
+    )
     agent_timeout_seconds: int = 60
     agent_max_rounds: int = 3
     agent_max_output_tokens: int = 2048
@@ -297,6 +377,27 @@ class Settings:
             os.environ.get("LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS"),
             default=(),
         )
+        claude_code_permission_profiles = parse_claude_code_permission_profiles_env(
+            os.environ.get("LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON"),
+            legacy_permission_mode=claude_code_permission_mode,
+            legacy_tools=claude_code_tools,
+            legacy_allowed_tools=claude_code_allowed_tools,
+            legacy_disallowed_tools=claude_code_disallowed_tools,
+            legacy_env_present=any(
+                non_empty_string(os.environ.get(name))
+                for name in (
+                    "LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE",
+                    "LOGAGENT_V2_CLAUDE_CODE_TOOLS",
+                    "LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS",
+                    "LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS",
+                )
+            ),
+        )
+        diagnose_profile = claude_code_permission_profiles["diagnose"]
+        claude_code_permission_mode = diagnose_profile.permission_mode
+        claude_code_tools = diagnose_profile.tools
+        claude_code_allowed_tools = diagnose_profile.allowed_tools
+        claude_code_disallowed_tools = diagnose_profile.disallowed_tools
         agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
         agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "3"))
         agent_max_output_tokens = int(
@@ -363,6 +464,7 @@ class Settings:
             claude_code_tools=claude_code_tools,
             claude_code_allowed_tools=claude_code_allowed_tools,
             claude_code_disallowed_tools=claude_code_disallowed_tools,
+            claude_code_permission_profiles=claude_code_permission_profiles,
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
             agent_max_output_tokens=max(1, agent_max_output_tokens),
@@ -375,6 +477,19 @@ class Settings:
             remote_commands=remote_commands,
             webui_dir=webui_dir,
         )
+
+
+def claude_code_profile_for_mode(
+    settings: Settings, analysis_mode: object
+) -> ClaudeCodePermissionProfile:
+    try:
+        mode = normalize_analysis_mode(analysis_mode)
+    except ValueError:
+        mode = "diagnose"
+    return settings.claude_code_permission_profiles.get(
+        mode,
+        default_claude_code_permission_profiles()[mode],
+    )
 
 
 def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
@@ -758,6 +873,151 @@ def parse_csv_env(raw: str | None, *, default: tuple[str, ...]) -> tuple[str, ..
     if not value:
         return default
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def parse_claude_code_permission_profiles_env(
+    raw: str | None,
+    *,
+    legacy_permission_mode: str,
+    legacy_tools: str,
+    legacy_allowed_tools: tuple[str, ...],
+    legacy_disallowed_tools: tuple[str, ...],
+    legacy_env_present: bool,
+) -> dict[str, ClaudeCodePermissionProfile]:
+    profiles = default_claude_code_permission_profiles()
+    value = non_empty_string(raw)
+    if value:
+        decoded = json.loads(value)
+        if not isinstance(decoded, dict):
+            raise ValueError(
+                "LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON must be an object"
+            )
+        for raw_mode, raw_profile in decoded.items():
+            mode = normalize_analysis_mode(raw_mode)
+            if not isinstance(raw_profile, dict):
+                raise ValueError(f"Claude Code permission profile {mode} must be an object")
+            profiles[mode] = parse_claude_code_permission_profile(
+                mode,
+                raw_profile,
+                profiles[mode],
+            )
+    if legacy_env_present:
+        base = profiles["diagnose"]
+        profiles["diagnose"] = ClaudeCodePermissionProfile(
+            name=base.name,
+            permission_mode=legacy_permission_mode,
+            tools=legacy_tools,
+            allowed_tools=with_logagent_mcp_allowed_tools(legacy_allowed_tools),
+            disallowed_tools=legacy_disallowed_tools,
+            native_bash=base.native_bash,
+            native_edit=base.native_edit,
+            worktree_required=base.worktree_required,
+        )
+    return profiles
+
+
+def parse_claude_code_permission_profile(
+    mode: str,
+    raw: dict[str, Any],
+    base: ClaudeCodePermissionProfile,
+) -> ClaudeCodePermissionProfile:
+    permission_mode = (
+        optional_profile_string(
+            raw.get("permissionMode") if "permissionMode" in raw else raw.get("permission_mode"),
+            f"Claude Code permission profile {mode}.permissionMode",
+        )
+        or base.permission_mode
+    )
+    tools = raw.get("tools")
+    if tools is None:
+        tools = base.tools
+    if not isinstance(tools, str):
+        raise ValueError(f"Claude Code permission profile {mode}.tools must be a string")
+    allowed_raw = raw.get("allowedTools")
+    if allowed_raw is None:
+        allowed_raw = raw.get("allowed_tools")
+    disallowed_raw = raw.get("disallowedTools")
+    if disallowed_raw is None:
+        disallowed_raw = raw.get("disallowed_tools")
+    return ClaudeCodePermissionProfile(
+        name=optional_profile_string(
+            raw.get("name"),
+            f"Claude Code permission profile {mode}.name",
+        )
+        or base.name
+        or mode,
+        permission_mode=permission_mode,
+        tools=tools.strip(),
+        allowed_tools=with_logagent_mcp_allowed_tools(
+            tuple_from_string_list(allowed_raw, default=base.allowed_tools)
+        ),
+        disallowed_tools=tuple_from_string_list(
+            disallowed_raw,
+            default=base.disallowed_tools,
+        ),
+        native_bash=profile_bool(
+            raw,
+            "nativeBash",
+            "native_bash",
+            base.native_bash,
+            mode,
+        ),
+        native_edit=profile_bool(
+            raw,
+            "nativeEdit",
+            "native_edit",
+            base.native_edit,
+            mode,
+        ),
+        worktree_required=profile_bool(
+            raw,
+            "worktreeRequired",
+            "worktree_required",
+            base.worktree_required,
+            mode,
+        ),
+    )
+
+
+def normalize_analysis_mode(value: object) -> str:
+    if not isinstance(value, str) or value.strip() not in ANALYSIS_MODES:
+        raise ValueError(
+            "analysisMode must be one of diagnose, code_investigation, or fix"
+        )
+    return value.strip()
+
+
+def optional_profile_string(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return non_empty_string(value)
+
+
+def profile_bool(
+    raw: dict[str, Any],
+    camel_name: str,
+    snake_name: str,
+    default: bool,
+    mode: str,
+) -> bool:
+    value = raw.get(camel_name, raw.get(snake_name, default))
+    if not isinstance(value, bool):
+        raise ValueError(f"Claude Code permission profile {mode}.{camel_name} must be boolean")
+    return value
+
+
+def tuple_from_string_list(
+    value: object,
+    *,
+    default: tuple[str, ...],
+) -> tuple[str, ...]:
+    if value is None:
+        return default
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Claude Code permission profile tool lists must be string arrays")
+    return tuple(item.strip() for item in value if item.strip())
 
 
 def parse_pprof_go_command_env(raw: str | None, *, enabled: bool) -> str | None:

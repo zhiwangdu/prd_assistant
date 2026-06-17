@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 from .artifacts import write_artifact_bytes
-from .config import Settings
+from .config import (
+    ClaudeCodePermissionProfile,
+    Settings,
+    claude_code_profile_for_mode,
+    default_claude_code_permission_profiles,
+)
 from .store import JsonObject, Store, now_iso
 
 
@@ -19,7 +24,16 @@ def persist_claude_contracts(
     run_id: str,
     analysis_package_artifact_id: str | None,
 ) -> JsonObject:
-    prompt = build_claude_prompt(run_id)
+    workspace = store.get_workspace(workspace_id)
+    analysis_mode = str(workspace.get("mode") or "diagnose")
+    analysis_language = str(workspace.get("language") or "zh-CN")
+    permission_profile = claude_code_profile_for_mode(settings, analysis_mode)
+    prompt = build_claude_prompt(
+        run_id,
+        analysis_mode=analysis_mode,
+        analysis_language=analysis_language,
+        permission_profile=permission_profile,
+    )
     prompt_artifact = write_artifact_bytes(
         settings=settings,
         store=store,
@@ -31,6 +45,8 @@ def persist_claude_contracts(
         preview={
             "path": CLAUDE_PROMPT_PATH,
             "runId": run_id,
+            "analysisMode": permission_profile.name,
+            "permissionProfile": permission_profile.name,
             "analysisPackageArtifactId": analysis_package_artifact_id,
         },
     )
@@ -44,6 +60,8 @@ def persist_claude_contracts(
             "artifactId": prompt_artifact["id"],
             "path": CLAUDE_PROMPT_PATH,
             "analysisPackageArtifactId": analysis_package_artifact_id,
+            "analysisMode": permission_profile.name,
+            "permissionProfile": permission_profile.name,
         },
         artifact_id=prompt_artifact["id"],
     )
@@ -82,6 +100,9 @@ def persist_claude_contracts(
         settings,
         run_id,
         analysis_package_artifact_id=analysis_package_artifact_id,
+        analysis_mode=permission_profile.name,
+        analysis_language=analysis_language,
+        permission_profile=permission_profile,
     )
     session_artifact = write_artifact_bytes(
         settings=settings,
@@ -139,7 +160,14 @@ def build_claude_mcp_config(settings: Settings, run_id: str) -> JsonObject:
     }
 
 
-def build_claude_prompt(run_id: str) -> str:
+def build_claude_prompt(
+    run_id: str,
+    *,
+    analysis_mode: str = "diagnose",
+    analysis_language: str = "zh-CN",
+    permission_profile: ClaudeCodePermissionProfile | None = None,
+) -> str:
+    profile = permission_profile or default_claude_code_permission_profiles()["diagnose"]
     return "\n".join(
         [
             "You are Claude Code running as the LogAgent V2 diagnostic layer.",
@@ -148,6 +176,11 @@ def build_claude_prompt(run_id: str) -> str:
             "`resources/list`, then read the `analysis_package` resource for this run.",
             "",
             f"Run id: `{run_id}`",
+            f"Analysis mode: `{analysis_mode}`",
+            f"Response language: `{analysis_language}`",
+            f"Permission profile: `{profile.name}`",
+            f"Native Bash allowed: `{str(profile.native_bash).lower()}`",
+            f"Native Edit allowed: `{str(profile.native_edit).lower()}`",
             "",
             "Use LogAgent MCP tools for log search, log slices, metadata, case recall, "
             "skill references, fetch, and configured domain tools. Do not invent "
@@ -168,17 +201,37 @@ def build_claude_session_contract(
     settings: Settings,
     run_id: str,
     analysis_package_artifact_id: str | None,
+    analysis_mode: str = "diagnose",
+    analysis_language: str = "zh-CN",
+    permission_profile: ClaudeCodePermissionProfile | None = None,
 ) -> JsonObject:
+    profile = permission_profile or claude_code_profile_for_mode(settings, analysis_mode)
     return {
         "schemaVersion": 1,
         "runtimeStatus": "contract_ready",
         "runId": run_id,
         "providerRuntime": settings.agent_provider,
         "createdAt": now_iso(),
+        "analysisMode": profile.name,
+        "analysisLanguage": analysis_language,
+        "permissionProfile": profile.name,
+        "nativeToolPolicy": native_tool_policy(profile),
         "analysisPackageArtifactId": analysis_package_artifact_id,
         "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
         "promptPath": CLAUDE_PROMPT_PATH,
         "note": claude_session_note(settings),
+    }
+
+
+def native_tool_policy(profile: ClaudeCodePermissionProfile) -> JsonObject:
+    return {
+        "permissionMode": profile.permission_mode,
+        "tools": profile.tools,
+        "allowedTools": list(profile.allowed_tools),
+        "disallowedTools": list(profile.disallowed_tools),
+        "nativeBash": profile.native_bash,
+        "nativeEdit": profile.native_edit,
+        "worktreeRequired": profile.worktree_required,
     }
 
 
@@ -207,6 +260,9 @@ def persist_claude_runtime_session(
         "attempt": attempt,
         "providerRuntime": "claude_code",
         "createdAt": now_iso(),
+        "analysisMode": response.get("analysisMode"),
+        "permissionProfile": response.get("permissionProfile"),
+        "nativeToolPolicy": response.get("nativeToolPolicy"),
         "claudeSessionId": session_id if isinstance(session_id, str) else None,
         "resumedSessionId": (
             resumed_session_id if isinstance(resumed_session_id, str) else None

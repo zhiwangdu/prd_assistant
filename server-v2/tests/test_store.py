@@ -39,6 +39,7 @@ from logagent_v2.config import (
     RemoteCommandTemplate,
     Settings,
     ToolDefinition,
+    claude_code_profile_for_mode,
     parse_remote_commands_env,
     parse_tools_env,
 )
@@ -1414,12 +1415,11 @@ class StoreTests(unittest.TestCase):
                 agent_provider="claude_code",
                 agent_model=None,
                 claude_code_path=claude,
-                claude_code_allowed_tools=("mcp__logagent__*",),
             )
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
-            workspace = store.create_workspace("why timeout?", "diagnose", "en-US")
+            workspace = store.create_workspace("why timeout?", "code_investigation", "en-US")
             artifact = write_artifact_bytes(
                 settings,
                 store,
@@ -1443,9 +1443,28 @@ class StoreTests(unittest.TestCase):
             self.assertIn("json", captured["argv"])
             self.assertIn("--strict-mcp-config", captured["argv"])
             self.assertIn("--allowedTools", captured["argv"])
+            self.assertIn("--disallowedTools", captured["argv"])
+            self.assertEqual(
+                captured["argv"][captured["argv"].index("--permission-mode") + 1],
+                "dontAsk",
+            )
+            self.assertEqual(
+                captured["argv"][captured["argv"].index("--tools") + 1],
+                "Read,Grep,Bash",
+            )
+            allowed_tools = captured["argv"][captured["argv"].index("--allowedTools") + 1]
+            self.assertIn("Read", allowed_tools)
+            self.assertIn("Grep", allowed_tools)
+            self.assertIn("Bash", allowed_tools)
+            self.assertIn("mcp__logagent__*", allowed_tools)
+            disallowed_tools = captured["argv"][captured["argv"].index("--disallowedTools") + 1]
+            self.assertIn("Edit", disallowed_tools)
+            self.assertIn("Write", disallowed_tools)
             self.assertEqual(captured["envKey"], "test")
             self.assertIn("resources/list", captured["stdin"])
             self.assertIn("analysis_package", captured["stdin"])
+            self.assertIn("Analysis mode: `code_investigation`", captured["stdin"])
+            self.assertIn("Permission profile: `code_investigation`", captured["stdin"])
             self.assertNotIn("query timeout on shard", captured["stdin"])
             auth = captured["mcpConfig"]["mcpServers"]["logagent"]["headers"]["Authorization"]
             self.assertEqual(auth, "Bearer ${LOGAGENT_V2_API_KEY}")
@@ -1464,6 +1483,13 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(request_doc["provider"], "claude_code")
             self.assertEqual(request_doc["model"], "claude-code-cli")
             self.assertEqual(request_doc["transport"]["type"], "claude_code_cli")
+            self.assertEqual(request_doc["transport"]["analysisMode"], "code_investigation")
+            self.assertEqual(
+                request_doc["transport"]["permissionProfile"]["name"],
+                "code_investigation",
+            )
+            self.assertTrue(request_doc["transport"]["nativeToolPolicy"]["nativeBash"])
+            self.assertFalse(request_doc["transport"]["nativeToolPolicy"]["nativeEdit"])
             self.assertTrue(request_doc["transport"]["commandPathConfigured"])
             self.assertNotIn(claude.as_posix(), json.dumps(request_doc))
             self.assertNotIn("Bearer test", json.dumps(request_doc))
@@ -1484,6 +1510,9 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["response"]["exitCode"], 0)
             self.assertEqual(response_doc["response"]["runtimeStatus"], "completed")
             self.assertEqual(response_doc["response"]["sessionId"], "sess-v2-claude")
+            self.assertEqual(response_doc["response"]["analysisMode"], "code_investigation")
+            self.assertEqual(response_doc["response"]["permissionProfile"], "code_investigation")
+            self.assertTrue(response_doc["response"]["nativeToolPolicy"]["nativeBash"])
             self.assertEqual(response_doc["response"]["usage"]["input_tokens"], 12)
             self.assertEqual(response_doc["response"]["cost"]["usd"], 0.0123)
             self.assertEqual(response_doc["validation"]["status"], "passed")
@@ -1502,6 +1531,8 @@ class StoreTests(unittest.TestCase):
             )
             session_doc = json.loads(claude_session["result"]["contents"][0]["text"])
             self.assertEqual(session_doc["runtimeStatus"], "completed")
+            self.assertEqual(session_doc["analysisMode"], "code_investigation")
+            self.assertEqual(session_doc["permissionProfile"], "code_investigation")
             self.assertEqual(session_doc["claudeSessionId"], "sess-v2-claude")
             response_evidence = [
                 item for item in store.list_evidence(run["id"])
@@ -3224,6 +3255,8 @@ class StoreTests(unittest.TestCase):
             "LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS",
             "LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS",
             "LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE",
+            "LOGAGENT_V2_CLAUDE_CODE_TOOLS",
+            "LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON",
         }
         previous = {key: os.environ.get(key) for key in env_names}
         try:
@@ -3277,6 +3310,23 @@ class StoreTests(unittest.TestCase):
             os.environ["LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS"] = "Bash"
             os.environ["LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE"] = "acceptEdits"
             settings = Settings.from_env()
+            legacy_settings = settings
+
+            os.environ.pop("LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS", None)
+            os.environ.pop("LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS", None)
+            os.environ.pop("LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE", None)
+            os.environ["LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON"] = json.dumps(
+                {
+                    "code_investigation": {
+                        "permissionMode": "plan",
+                        "tools": "Read",
+                        "allowedTools": ["Read"],
+                        "disallowedTools": ["Bash"],
+                        "nativeBash": False,
+                    }
+                }
+            )
+            settings = Settings.from_env()
         finally:
             for key, value in previous.items():
                 if value is None:
@@ -3284,11 +3334,25 @@ class StoreTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
-        self.assertEqual(settings.agent_provider, "claude_code")
-        self.assertEqual(settings.claude_code_path, Path("/opt/homebrew/bin/claude"))
-        self.assertEqual(settings.claude_code_allowed_tools, ("mcp__logagent__*", "Read"))
-        self.assertEqual(settings.claude_code_disallowed_tools, ("Bash",))
-        self.assertEqual(settings.claude_code_permission_mode, "acceptEdits")
+        self.assertEqual(legacy_settings.agent_provider, "claude_code")
+        self.assertEqual(legacy_settings.claude_code_path, Path("/opt/homebrew/bin/claude"))
+        self.assertEqual(legacy_settings.claude_code_allowed_tools, ("mcp__logagent__*", "Read"))
+        self.assertEqual(legacy_settings.claude_code_disallowed_tools, ("Bash",))
+        self.assertEqual(legacy_settings.claude_code_permission_mode, "acceptEdits")
+        legacy_profile = claude_code_profile_for_mode(legacy_settings, "diagnose")
+        self.assertEqual(legacy_profile.permission_mode, "acceptEdits")
+        self.assertEqual(legacy_profile.allowed_tools, ("mcp__logagent__*", "Read"))
+        self.assertEqual(legacy_profile.disallowed_tools, ("Bash",))
+
+        code_profile = claude_code_profile_for_mode(settings, "code_investigation")
+        self.assertEqual(code_profile.permission_mode, "plan")
+        self.assertEqual(code_profile.tools, "Read")
+        self.assertEqual(code_profile.allowed_tools, ("Read", "mcp__logagent__*"))
+        self.assertEqual(code_profile.disallowed_tools, ("Bash",))
+        self.assertFalse(code_profile.native_bash)
+        fix_profile = claude_code_profile_for_mode(settings, "fix")
+        self.assertEqual(fix_profile.permission_mode, "acceptEdits")
+        self.assertTrue(fix_profile.native_edit)
 
     def test_settings_validates_pprof_go_command_when_enabled(self) -> None:
         env_names = {

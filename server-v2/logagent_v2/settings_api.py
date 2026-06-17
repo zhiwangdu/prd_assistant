@@ -7,7 +7,7 @@ import urllib.request
 from typing import Any
 
 from .agent_graph import graph_runtime_metadata
-from .config import Settings
+from .config import Settings, claude_code_profile_for_mode
 from .llm import (
     MAX_PROVIDER_RESPONSE_BYTES,
     call_binary_provider,
@@ -34,6 +34,7 @@ def llm_settings_summary(settings: Settings) -> JsonObject:
         "binaryMaxOutputBytes": settings.agent_binary_max_output_bytes,
         "claudeCodePathConfigured": bool(settings.claude_code_path),
         "claudeCodeMaxOutputBytes": settings.claude_code_max_output_bytes,
+        "claudeCodePermissionProfiles": claude_code_permission_profiles(settings),
     }
 
 
@@ -182,7 +183,7 @@ def agent_backends_summary(settings: Settings) -> JsonObject:
                 "maxOutputBytes": MAX_PROVIDER_RESPONSE_BYTES,
                 "executionMode": agent_execution_mode(provider),
                 "defaultMode": "diagnose",
-                "permissionProfile": "server_owned_readonly_tools",
+                "permissionProfiles": claude_code_permission_profiles(settings),
             }
         ],
     }
@@ -246,6 +247,14 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
         details.append(
             f"Claude Code max output bytes={settings.claude_code_max_output_bytes}."
         )
+        details.append(
+            "Claude Code permission profiles: "
+            + ", ".join(
+                f"{profile['name']}({profile['permissionMode']})"
+                for profile in claude_code_permission_profiles(settings)
+            )
+            + "."
+        )
         status = "configured"
     else:
         raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
@@ -306,6 +315,13 @@ def domain_adapter_summaries() -> list[JsonObject]:
                 "Skeleton adapter for LOG, MANIFEST, OPTIONS, SST, compaction, flush, and write-stall evidence."
             ],
         },
+    ]
+
+
+def claude_code_permission_profiles(settings: Settings) -> list[JsonObject]:
+    return [
+        claude_code_profile_for_mode(settings, mode).to_json()
+        for mode in ("diagnose", "code_investigation", "fix")
     ]
 
 

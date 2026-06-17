@@ -252,10 +252,11 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from the binary Agent provider |
 | `LOGAGENT_V2_CLAUDE_CODE_PATH` | `LOGAGENT_CLAUDE_CODE_PATH` or unset | Claude Code CLI path; required and absolute when `claude_code` is selected |
 | `LOGAGENT_V2_CLAUDE_CODE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from Claude Code CLI |
-| `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE` | `dontAsk` | Permission mode passed to Claude Code CLI |
-| `LOGAGENT_V2_CLAUDE_CODE_TOOLS` | empty | Native Claude Code tool list passed with `--tools`; empty disables built-in native tools |
-| `LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS` | `mcp__logagent__*` | Comma-separated Claude Code allowed tools |
-| `LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS` | unset | Comma-separated Claude Code disallowed tools |
+| `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE` | `dontAsk` | Legacy flat override for the `diagnose` Claude Code permission profile |
+| `LOGAGENT_V2_CLAUDE_CODE_TOOLS` | empty | Legacy flat `diagnose` native Claude Code tool list passed with `--tools`; empty disables built-in native tools |
+| `LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS` | `mcp__logagent__*` | Legacy flat `diagnose` allowed tools; `mcp__logagent__*` is auto-added |
+| `LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS` | V1 diagnose defaults | Legacy flat `diagnose` disallowed tools |
+| `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` | unset | JSON object keyed by `diagnose`, `code_investigation`, or `fix` to override per-mode Claude Code permission profiles |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
@@ -596,6 +597,16 @@ Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` are preserved as
 response with session metadata, V2 also writes a fresh `claude_session.json`
 runtime artifact with `claudeSessionId`, `resumedSessionId`, usage/cost, prompt
 delivery, and the linked `agent_response` artifact id.
+
+The CLI permission policy is selected from the Workspace `mode` using the V1
+profile names: `diagnose` disables native tools and disallows
+`Bash/Edit/Write/Read/Grep`, `code_investigation` allows `Read,Grep,Bash` and
+disallows edits, and `fix` uses `acceptEdits` with `Read,Grep,Bash,Edit,Write`.
+Every profile automatically includes `mcp__logagent__*` in `allowedTools`.
+Legacy flat Claude Code env vars override the `diagnose` profile; use
+`LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` for per-mode overrides.
+`agent_request.json`, `agent_response.json`, and runtime `claude_session.json`
+record `analysisMode`, `permissionProfile`, and `nativeToolPolicy`.
 
 The run lifecycle is executed by a LangGraph state graph with
 `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,

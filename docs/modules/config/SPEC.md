@@ -195,6 +195,13 @@ tools:
 - 未配置 `claude_code.command_path` 时默认要求 `LOGAGENT_CLAUDE_CODE_PATH`。Python V2 选择 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` 时要求 `LOGAGENT_V2_CLAUDE_CODE_PATH` 或兼容的 `LOGAGENT_CLAUDE_CODE_PATH`。
 - `claude_code.command_path` 或 `command_path_env` 解析结果必须是绝对路径；Python V2 运行时还会校验 regular/executable。
 - `claude_code.default_mode` 仅支持 `diagnose`、`code_investigation` 和 `fix`。
+- Python V2 必须支持 `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON`
+  覆盖 `diagnose`、`code_investigation`、`fix` 的 permission profile，并自动给
+  每个 profile 的 allowed tools 补入 `mcp__logagent__*`。扁平
+  `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE`、`LOGAGENT_V2_CLAUDE_CODE_TOOLS`、
+  `LOGAGENT_V2_CLAUDE_CODE_ALLOWED_TOOLS` 和
+  `LOGAGENT_V2_CLAUDE_CODE_DISALLOWED_TOOLS` 只覆盖 `diagnose` profile，以兼容旧
+  V2 部署。
 - `claude_code.max_session_seconds` 默认 600 秒，控制单次 Claude Code session 的超时边界；显式配置非正值按 1 秒下限裁剪。
 - `mcp.transport` 当前只支持 `stdio`。
 - `fetch.enabled` 默认 false；启用时必须配置非空 `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 和可解码为 32-byte 原始 key 的 `fetch.secret_key_env` / `LOGAGENT_V2_FETCH_SECRET_KEY` 环境变量。

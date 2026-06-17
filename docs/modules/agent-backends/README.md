@@ -35,6 +35,12 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - Python V2 恢复等待任务时会从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并在下一次 Claude Code CLI 调用追加 `--resume <session_id>`。
 - Python V2 会把 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd` 保存到 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
 - Python V2 会在 Claude Code 响应后写入新的 `claude_session.json` runtime artifact，记录 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery 和对应 `agent_response` artifact id。
+- Python V2 现在也按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
+  `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/Bash，
+  `fix` 允许 Read/Grep/Bash/Edit/Write；每个 profile 都自动允许
+  `mcp__logagent__*`。扁平 `LOGAGENT_V2_CLAUDE_CODE_*` 权限变量只作为
+  `diagnose` profile 的兼容覆盖；多模式覆盖使用
+  `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON`。
 - Python V2 的 settings diagnostics 不启动真实 Claude session，只校验 `LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH` 是否 absolute、regular、executable；真实调用结果仍由 `agent_request.json` / `agent_response.json` 审计。
 
 ## CLI 与 Agent SDK 取舍
@@ -55,6 +61,16 @@ claude_code:
       tools: ""
       allowed_tools: ["mcp__logagent__*"]
       disallowed_tools: ["Bash", "Edit", "Write", "Read", "Grep"]
+    code_investigation:
+      permission_mode: "dontAsk"
+      tools: "Read,Grep,Bash"
+      allowed_tools: ["Read", "Grep", "Bash", "mcp__logagent__*"]
+      disallowed_tools: ["Edit", "Write"]
+    fix:
+      permission_mode: "acceptEdits"
+      tools: "Read,Grep,Bash,Edit,Write"
+      allowed_tools: ["Read", "Grep", "Bash", "Edit", "Write", "mcp__logagent__*"]
+      disallowed_tools: []
 
 mcp:
   enabled: true

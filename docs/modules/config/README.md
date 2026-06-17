@@ -241,6 +241,10 @@ metadata:
 - `claude_code.default_mode` 支持 `diagnose`、`code_investigation` 和 `fix`，默认 `diagnose`。
 - `claude_code.max_session_seconds` 控制一次 Claude Code headless session 的最长运行时间，推荐值为 600 秒，避免较大日志包的 MCP 检索和工具调用在规划分析阶段过早超时。
 - `claude_code.permission_profiles` 可覆盖各模式的 `permission_mode`、native tools、allowed/disallowed tools 和 worktree 要求。Server 会自动给所有 profile 的 `allowed_tools` 追加 `mcp__logagent__*`，使 `dontAsk` 模式下的任务 MCP tools 不需要用户侧 Claude CLI 交互批准；`diagnose` 的 `tools: ""` 仍表示禁用 built-in native tools。
+- Python V2 对应提供 `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON`，JSON
+  object 以 `diagnose`、`code_investigation`、`fix` 为 key；扁平
+  `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE`、`TOOLS`、`ALLOWED_TOOLS` 和
+  `DISALLOWED_TOOLS` 仅作为 `diagnose` profile 的兼容覆盖。
 - `mcp.enabled` 默认 true，`mcp.transport` 当前只支持 `stdio`。
 - `fetch.enabled` 默认 false。启用时必须配置 `fetch.secret_key_env`；V2 使用 `LOGAGENT_V2_FETCH_SECRET_KEY`，对应环境变量值必须是 32-byte base64 key，并且 `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 不能为空。
 - `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 条目可写为 `host`、`host:port` 或 `http(s)://host[:port]`；URL 形式会固定 scheme 和端口，省略端口时使用默认端口。Fetch 执行只允许命中这些 `http/https` 目标，每个 redirect hop 都重新校验。

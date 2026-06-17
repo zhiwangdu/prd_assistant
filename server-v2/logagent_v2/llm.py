@@ -19,7 +19,7 @@ from .claude_contracts import (
     build_claude_mcp_config,
     build_claude_prompt,
 )
-from .config import Settings
+from .config import ClaudeCodePermissionProfile, Settings, claude_code_profile_for_mode
 from .fetch import fetch_tool_descriptors
 from .metadata import task_metadata_tool_descriptors
 from .skills import skill_tool_descriptors
@@ -152,7 +152,19 @@ def build_agent_provider_request(
         }
     if provider == "claude_code":
         run_id = evidence_bundle.get("runId")
-        claude_prompt = build_claude_prompt(str(run_id)) if isinstance(run_id, str) else ""
+        analysis_mode = workspace.get("mode") or "diagnose"
+        analysis_language = workspace.get("language") or "zh-CN"
+        profile = claude_code_profile_for_mode(settings, analysis_mode)
+        claude_prompt = (
+            build_claude_prompt(
+                str(run_id),
+                analysis_mode=str(analysis_mode),
+                analysis_language=str(analysis_language),
+                permission_profile=profile,
+            )
+            if isinstance(run_id, str)
+            else ""
+        )
         resume_session_id = (
             interaction_context.get("claudeSessionId")
             if isinstance(interaction_context, dict)
@@ -166,10 +178,13 @@ def build_agent_provider_request(
                 "commandPathConfigured": settings.claude_code_path is not None,
                 "timeoutSeconds": settings.agent_timeout_seconds,
                 "maxOutputBytes": settings.claude_code_max_output_bytes,
-                "permissionMode": settings.claude_code_permission_mode,
-                "tools": settings.claude_code_tools,
-                "allowedTools": list(settings.claude_code_allowed_tools),
-                "disallowedTools": list(settings.claude_code_disallowed_tools),
+                "analysisMode": profile.name,
+                "permissionProfile": profile.to_json(),
+                "permissionMode": profile.permission_mode,
+                "tools": profile.tools,
+                "allowedTools": list(profile.allowed_tools),
+                "disallowedTools": list(profile.disallowed_tools),
+                "nativeToolPolicy": native_tool_policy(profile),
                 "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
                 "promptPath": CLAUDE_PROMPT_PATH,
                 "resumeSessionConfigured": isinstance(resume_session_id, str)
@@ -184,6 +199,7 @@ def build_agent_provider_request(
                     "largeContextVia": "mcp_resource",
                     "resource": "analysis_package",
                 },
+                "analysisMode": profile.name,
             },
             "allowedEvidenceRefs": allowed_refs,
         }
@@ -467,6 +483,8 @@ def call_claude_code_provider(
     payload = request_payload.get("payload")
     prompt = payload.get("prompt") if isinstance(payload, dict) else None
     run_id = payload.get("runId") if isinstance(payload, dict) else None
+    analysis_mode = payload.get("analysisMode") if isinstance(payload, dict) else None
+    profile = claude_code_profile_for_mode(settings, analysis_mode)
     resume_session_id = (
         payload.get("resumeSessionId") if isinstance(payload, dict) else None
     )
@@ -483,7 +501,11 @@ def call_claude_code_provider(
             message="claude_code provider runId is required",
         )
     if not isinstance(prompt, str) or not prompt.strip():
-        prompt = build_claude_prompt(run_id)
+        prompt = build_claude_prompt(
+            run_id,
+            analysis_mode=profile.name,
+            permission_profile=profile,
+        )
     session_dir = claude_code_session_dir(settings, run_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / CLAUDE_PROMPT_PATH).write_text(prompt, encoding="utf-8")
@@ -496,7 +518,7 @@ def call_claude_code_provider(
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            claude_code_argv(settings, claude_path, resume_session_id),
+            claude_code_argv(settings, claude_path, profile, resume_session_id),
             input=prompt.encode("utf-8"),
             cwd=session_dir,
             env=env,
@@ -513,7 +535,11 @@ def call_claude_code_provider(
             message=f"Claude Code provider timed out after {settings.agent_timeout_seconds}s",
             response={
                 "timeoutSeconds": settings.agent_timeout_seconds,
-                "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
+                "cmd": claude_code_argv_preview(
+                    settings,
+                    profile,
+                    bool(resume_session_id),
+                ),
                 "workDir": "<claude_session_dir>",
             },
         )
@@ -525,7 +551,11 @@ def call_claude_code_provider(
             error_type=error.__class__.__name__,
             message=f"failed to start Claude Code provider: {error}",
             response={
-                "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
+                "cmd": claude_code_argv_preview(
+                    settings,
+                    profile,
+                    bool(resume_session_id),
+                ),
                 "workDir": "<claude_session_dir>",
             },
         )
@@ -535,10 +565,13 @@ def call_claude_code_provider(
     response_payload: JsonObject = {
         "exitCode": completed.returncode,
         "durationMs": duration_ms,
-        "cmd": claude_code_argv_preview(settings, bool(resume_session_id)),
+        "cmd": claude_code_argv_preview(settings, profile, bool(resume_session_id)),
         "workDir": "<claude_session_dir>",
         "promptPath": CLAUDE_PROMPT_PATH,
         "mcpConfigPath": CLAUDE_MCP_CONFIG_PATH,
+        "analysisMode": profile.name,
+        "permissionProfile": profile.name,
+        "nativeToolPolicy": native_tool_policy(profile),
         "stderrPreview": stderr[:MAX_PROVIDER_PREVIEW_CHARS].decode(
             "utf-8", errors="replace"
         ),
@@ -628,6 +661,18 @@ def binary_argv_preview(_binary_path: Path) -> list[str]:
     return ["<binary_path>", "run", "<prompt>"]
 
 
+def native_tool_policy(profile: ClaudeCodePermissionProfile) -> JsonObject:
+    return {
+        "permissionMode": profile.permission_mode,
+        "tools": profile.tools,
+        "allowedTools": list(profile.allowed_tools),
+        "disallowedTools": list(profile.disallowed_tools),
+        "nativeBash": profile.native_bash,
+        "nativeEdit": profile.native_edit,
+        "worktreeRequired": profile.worktree_required,
+    }
+
+
 def validate_claude_code_path(claude_path: Path) -> str | None:
     if not claude_path.is_absolute():
         return "LOGAGENT_V2_CLAUDE_CODE_PATH must be an absolute path"
@@ -652,6 +697,7 @@ def safe_session_segment(value: str) -> str:
 def claude_code_argv(
     settings: Settings,
     claude_path: Path,
+    profile: ClaudeCodePermissionProfile,
     resume_session_id: str | None = None,
 ) -> list[str]:
     argv = [
@@ -665,20 +711,24 @@ def claude_code_argv(
         CLAUDE_MCP_CONFIG_PATH,
         "--strict-mcp-config",
         "--permission-mode",
-        settings.claude_code_permission_mode,
+        profile.permission_mode,
         "--tools",
-        settings.claude_code_tools,
+        profile.tools,
     ]
-    if settings.claude_code_allowed_tools:
-        argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
-    if settings.claude_code_disallowed_tools:
-        argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    if profile.allowed_tools:
+        argv.extend(["--allowedTools", ",".join(profile.allowed_tools)])
+    if profile.disallowed_tools:
+        argv.extend(["--disallowedTools", ",".join(profile.disallowed_tools)])
     if resume_session_id:
         argv.extend(["--resume", resume_session_id])
     return argv
 
 
-def claude_code_argv_preview(settings: Settings, include_resume: bool = False) -> list[str]:
+def claude_code_argv_preview(
+    settings: Settings,
+    profile: ClaudeCodePermissionProfile,
+    include_resume: bool = False,
+) -> list[str]:
     argv = [
         "<claude_code_path>",
         "--print",
@@ -690,14 +740,14 @@ def claude_code_argv_preview(settings: Settings, include_resume: bool = False) -
         CLAUDE_MCP_CONFIG_PATH,
         "--strict-mcp-config",
         "--permission-mode",
-        settings.claude_code_permission_mode,
+        profile.permission_mode,
         "--tools",
-        settings.claude_code_tools,
+        profile.tools,
     ]
-    if settings.claude_code_allowed_tools:
-        argv.extend(["--allowedTools", ",".join(settings.claude_code_allowed_tools)])
-    if settings.claude_code_disallowed_tools:
-        argv.extend(["--disallowedTools", ",".join(settings.claude_code_disallowed_tools)])
+    if profile.allowed_tools:
+        argv.extend(["--allowedTools", ",".join(profile.allowed_tools)])
+    if profile.disallowed_tools:
+        argv.extend(["--disallowedTools", ",".join(profile.disallowed_tools)])
     if include_resume:
         argv.extend(["--resume", "<session_id>"])
     return argv

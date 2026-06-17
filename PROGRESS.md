@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Permission Profiles
+
+- V2 Claude Code provider now selects Rust/V1-style permission profiles from
+  the Workspace analysis mode: `diagnose` is MCP-only, `code_investigation`
+  enables Read/Grep/Bash without edits, and `fix` enables Read/Grep/Bash/Edit/
+  Write with `acceptEdits`.
+- `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` can override individual
+  mode profiles, while the older flat `LOGAGENT_V2_CLAUDE_CODE_*` permission
+  variables remain a compatibility override for the `diagnose` profile.
+- `agent_request.json`, `agent_response.json`, and runtime
+  `claude_session.json` now record `analysisMode`, `permissionProfile`, and
+  `nativeToolPolicy`; Settings summaries also expose the profile set.
+- Added regression coverage for code-investigation CLI argv selection and
+  profile env parsing.
+- Verification passed: focused Claude/settings regressions,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Claude Session Runtime Artifact
 
 - V2 now writes a fresh `claude_session.json` runtime artifact after Claude

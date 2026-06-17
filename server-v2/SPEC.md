@@ -1293,6 +1293,20 @@ The stdin prompt is the short Claude startup instruction and must tell Claude
 to begin with MCP `resources/list` and then read the task `analysis_package`
 resource. Full log text, full Metadata topology, and large tool context must
 stay in task MCP resources/artifacts rather than argv or stdin.
+The CLI permission policy must be selected from the current Workspace
+`mode`/analysis mode. Defaults match Rust/V1:
+`diagnose` uses `dontAsk`, `tools=""`, allows only `mcp__logagent__*`, and
+disallows `Bash/Edit/Write/Read/Grep`; `code_investigation` uses `dontAsk`,
+`tools="Read,Grep,Bash"`, allows `Read/Grep/Bash/mcp__logagent__*`, and
+disallows `Edit/Write`; `fix` uses `acceptEdits`,
+`tools="Read,Grep,Bash,Edit,Write"`, allows those native tools plus
+`mcp__logagent__*`, and has no default disallowed tools. Flat
+`LOGAGENT_V2_CLAUDE_CODE_PERMISSION_MODE` / `TOOLS` / `ALLOWED_TOOLS` /
+`DISALLOWED_TOOLS` remain a compatibility override for the `diagnose` profile;
+`LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON` can override any profile
+by mode key and V2 must still auto-add `mcp__logagent__*` to `allowedTools`.
+`agent_request.json`, `agent_response.json`, and runtime `claude_session.json`
+must record `analysisMode`, `permissionProfile`, and `nativeToolPolicy`.
 `LOGAGENT_V2_CLAUDE_CODE_MAX_OUTPUT_BYTES` bounds stdout. Claude stdout may be
 a native Claude envelope whose `structured_output`, `structuredOutput`, or
 `result` contains a structured outcome. V2 accepts `runtimeStatus=completed`
