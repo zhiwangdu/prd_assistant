@@ -647,8 +647,9 @@ currently includes manual built-ins for metadata tools,
 `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
 default-off `logagent.huawei_cloud_package_sync`.
 
-Readonly MCP exposes the same tool registry as
-`logagent-v2://tools/catalog` and `logagent.list_tools`. Both return
+Readonly MCP exposes the same tool registry as `logagent://tools/catalog`,
+the retained `logagent-v2://tools/catalog` alias, and `logagent.list_tools`.
+All return
 `schemaVersion`, full `tools` descriptors, and a V1-compatible
 `configuredTools` summary with configured args, timeout, match rules, and
 `maxInputFiles`. The readonly endpoint never runs tools.

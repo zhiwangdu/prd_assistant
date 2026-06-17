@@ -88,6 +88,9 @@ LogAgent MCP tools 支持：
 - `logagent://tools/catalog`
 - `logagent://domain-adapters`
 
+Python V2 同时保留 `logagent-v2://...` URI alias；resource 内容中的
+`uri` 回显调用方请求的 URI。
+
 只读 HTTP MCP tools 支持：
 
 - `logagent.search_cases`

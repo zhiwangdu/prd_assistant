@@ -547,11 +547,14 @@ through `/api/v2/tools/runs/:run_id/result`. Configured tools with
 `{input_file}` may pass reserved `params.inputFiles` to select existing
 Workspace inputs without re-uploading files.
 
-Readonly MCP `logagent-v2://tools/catalog` and `logagent.list_tools` expose the
-same catalog payload shape used by the Rust server: `schemaVersion`, complete
-`tools` descriptors, and `configuredTools` summaries containing configured
-args, timeout, match rules, and `maxInputFiles`. This readonly surface is
-catalog-only and cannot execute configured or built-in tools.
+Readonly MCP `logagent://tools/catalog`, retained `logagent-v2://tools/catalog`,
+and `logagent.list_tools` expose the same catalog payload shape used by the
+Rust server: `schemaVersion`, complete `tools` descriptors, and
+`configuredTools` summaries containing configured args, timeout, match rules,
+and `maxInputFiles`. This readonly surface is catalog-only and cannot execute
+configured or built-in tools. Static readonly resources support both
+`logagent://...` and `logagent-v2://...` URIs, and dynamic skill/metadata
+snapshot reads accept the same aliasing.
 
 Configured tools may declare `paramsSchema`. V2 validates a conservative object
 schema subset: required fields, `additionalProperties=false`, primitive

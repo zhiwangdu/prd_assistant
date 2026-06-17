@@ -112,40 +112,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                 "serverInfo": {"name": "logagent-v2-readonly", "version": "0.1.0"},
             }
         elif method == "resources/list":
-            result = {
-                "resources": [
-                    {
-                        "uri": "logagent-v2://tools/catalog",
-                        "name": "tools_catalog",
-                        "description": "Configured and built-in V2 tool catalog.",
-                        "mimeType": "application/json",
-                    },
-                    {
-                        "uri": "logagent-v2://metadata/instances",
-                        "name": "metadata_instances",
-                        "description": "Imported V2 metadata instances",
-                        "mimeType": "application/json",
-                    },
-                    {
-                        "uri": "logagent-v2://cases/recent",
-                        "name": "cases_recent",
-                        "description": "Recent enabled V2 cases",
-                        "mimeType": "application/json",
-                    },
-                    {
-                        "uri": "logagent-v2://skills",
-                        "name": "skills",
-                        "description": "Imported V2 diagnostic skills",
-                        "mimeType": "application/json",
-                    },
-                    {
-                        "uri": "logagent-v2://domain-adapters",
-                        "name": "domain_adapters",
-                        "description": "Built-in V2 domain adapter summaries",
-                        "mimeType": "application/json",
-                    },
-                ]
-            }
+            result = {"resources": readonly_resource_descriptors()}
         elif method == "tools/list":
             result = {
                 "tools": [
@@ -227,25 +194,28 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                 raise ValueError(f"unsupported readonly tool {name}")
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
-            if uri == "logagent-v2://tools/catalog":
+            canonical_uri = canonical_readonly_uri(uri)
+            if canonical_uri == "logagent-v2://tools/catalog":
                 value = tool_catalog(settings)
-            elif uri == "logagent-v2://metadata/instances":
+            elif canonical_uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
-            elif uri == "logagent-v2://cases/recent":
+            elif canonical_uri == "logagent-v2://cases/recent":
                 value = {"cases": store.search_cases(query=None, limit=10)}
-            elif uri == "logagent-v2://skills":
+            elif canonical_uri == "logagent-v2://skills":
                 value = {"skills": list_skills(settings)}
-            elif uri == "logagent-v2://domain-adapters":
+            elif canonical_uri == "logagent-v2://domain-adapters":
                 value = {"domainAdapters": domain_adapter_summaries()}
-            elif isinstance(uri, str) and uri.startswith("logagent-v2://skills/"):
-                skill_id = uri.removeprefix("logagent-v2://skills/")
+            elif isinstance(canonical_uri, str) and canonical_uri.startswith(
+                "logagent-v2://skills/"
+            ):
+                skill_id = canonical_uri.removeprefix("logagent-v2://skills/")
                 value = get_skill(settings, skill_id)
-            elif isinstance(uri, str) and uri.startswith(
+            elif isinstance(canonical_uri, str) and canonical_uri.startswith(
                 "logagent-v2://metadata/instances/"
-            ) and uri.endswith("/snapshot"):
-                instance_id = uri.removeprefix("logagent-v2://metadata/instances/").removesuffix(
-                    "/snapshot"
-                )
+            ) and canonical_uri.endswith("/snapshot"):
+                instance_id = canonical_uri.removeprefix(
+                    "logagent-v2://metadata/instances/"
+                ).removesuffix("/snapshot")
                 value = store.get_metadata_snapshot(instance_id)
             else:
                 raise ValueError(f"unsupported readonly resource {uri}")
@@ -267,6 +237,54 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
             "id": request_id,
             "error": {"code": -32000, "message": str(error)},
         }
+
+
+def canonical_readonly_uri(uri: object) -> object:
+    if isinstance(uri, str) and uri.startswith("logagent://"):
+        return f"logagent-v2://{uri.removeprefix('logagent://')}"
+    return uri
+
+
+def readonly_resource_descriptors() -> list[JsonObject]:
+    resources = [
+        {
+            "path": "tools/catalog",
+            "name": "tools_catalog",
+            "description": "Configured and built-in V2 tool catalog.",
+        },
+        {
+            "path": "metadata/instances",
+            "name": "metadata_instances",
+            "description": "Imported V2 metadata instances",
+        },
+        {
+            "path": "cases/recent",
+            "name": "cases_recent",
+            "description": "Recent enabled V2 cases",
+        },
+        {
+            "path": "skills",
+            "name": "skills",
+            "description": "Imported V2 diagnostic skills",
+        },
+        {
+            "path": "domain-adapters",
+            "name": "domain_adapters",
+            "description": "Built-in V2 domain adapter summaries",
+        },
+    ]
+    descriptors = []
+    for scheme in ("logagent://", "logagent-v2://"):
+        for resource in resources:
+            descriptors.append(
+                {
+                    "uri": f"{scheme}{resource['path']}",
+                    "name": resource["name"],
+                    "description": resource["description"],
+                    "mimeType": "application/json",
+                }
+            )
+    return descriptors
 
 
 def tool_catalog(settings: Settings) -> dict:

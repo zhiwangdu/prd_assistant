@@ -1731,13 +1731,14 @@ class StoreTests(unittest.TestCase):
                     "jsonrpc": "2.0",
                     "id": 14,
                     "method": "resources/read",
-                    "params": {"uri": "logagent-v2://tools/catalog"},
+                    "params": {"uri": "logagent://tools/catalog"},
                 },
             )
             catalog = json.loads(resource["result"]["contents"][0]["text"])
             self.assertEqual(catalog["schemaVersion"], 1)
             self.assertIn("tools", catalog)
             self.assertIn("configuredTools", catalog)
+            self.assertEqual(resource["result"]["contents"][0]["uri"], "logagent://tools/catalog")
             configured = {
                 item["toolId"]: item for item in catalog["configuredTools"]
             }
@@ -3811,6 +3812,36 @@ class StoreTests(unittest.TestCase):
             readonly_body = json.loads(readonly_instances["result"]["contents"][0]["text"])
             self.assertEqual(readonly_body["instances"][0]["instanceId"], "inst1")
 
+            readonly_instances_alias = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 131,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://metadata/instances"},
+                },
+            )
+            readonly_alias_body = json.loads(
+                readonly_instances_alias["result"]["contents"][0]["text"]
+            )
+            self.assertEqual(readonly_alias_body["instances"][0]["instanceId"], "inst1")
+
+            readonly_snapshot_alias = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 132,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://metadata/instances/inst1/snapshot"},
+                },
+            )
+            snapshot_alias_body = json.loads(
+                readonly_snapshot_alias["result"]["contents"][0]["text"]
+            )
+            self.assertEqual(snapshot_alias_body["instance"]["instanceId"], "inst1")
+
             readonly_tags = readonly_mcp_response(
                 settings,
                 store,
@@ -4987,7 +5018,21 @@ grep_results.json#matches/0
             resource_uris = {
                 item["uri"] for item in resources["result"]["resources"]
             }
+            self.assertIn("logagent://domain-adapters", resource_uris)
             self.assertIn("logagent-v2://domain-adapters", resource_uris)
+
+            alias_resource = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 11,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://domain-adapters"},
+                },
+            )
+            alias_payload = json.loads(alias_resource["result"]["contents"][0]["text"])
+            self.assertEqual(alias_payload["domainAdapters"][0]["id"], "opengemini_influxdb")
 
             tool_call = readonly_mcp_response(
                 settings,

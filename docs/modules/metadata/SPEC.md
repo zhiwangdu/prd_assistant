@@ -27,7 +27,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - Claude Code 初始 evidence package 和任务 MCP `metadata_context` resource 只暴露 `metadataContextOutline`；完整 Metadata 需通过 `logagent.query_metadata` 按 section/filter/分页读取 bounded slice。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_field_types`，从指定 `instanceId/database/measurement` 查询 field 类型；RP 可省略并回退到 DB 默认 RP，field 可省略以返回全部字段。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_tag_fields`，从指定 `instanceId/database/measurement` 返回全部 Tag 类型字段；RP 可省略并回退到 DB 默认 RP，不支持 `field` 参数。
-- 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store。
+- 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store；resource 支持 V1 `logagent://metadata/...` URI，并保留 `logagent-v2://metadata/...` alias。
 
 仍待实现：
 

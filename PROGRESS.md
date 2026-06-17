@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly MCP Resource URI Aliases
+
+- Added V1-compatible readonly MCP resource URI support for `logagent://...`
+  while retaining existing `logagent-v2://...` URIs.
+- `resources/list` now advertises both URI schemes for tools catalog, metadata
+  instances, recent cases, skills, and domain adapters.
+- `resources/read` now normalizes V1 URIs for static resources and dynamic
+  `skills/<skill_id>` / `metadata/instances/<instance_id>/snapshot` reads while
+  echoing the caller-provided URI in the MCP content.
+- Updated V2 server, Interfaces, and Metadata README/SPEC docs.
+- Added regression coverage for V1 tools catalog, metadata instance list,
+  metadata snapshot, and domain adapter resource reads.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Field Tool MCP Compatibility
 
 - Aligned V2 task MCP `logagent.get_metadata_field_types` and
