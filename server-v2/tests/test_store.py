@@ -2332,6 +2332,24 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(descriptors["mock_tool"]["exportable"], True)
             self.assertEqual(descriptors["mock_tool"]["minFiles"], 1)
             self.assertEqual(descriptors["mock_tool"]["acceptedSuffixes"], ["*.log", "*timeout*"])
+            mock_schema = descriptors["mock_tool"]["paramsSchema"]
+            self.assertEqual(
+                mock_schema["configuredArgs"]["value"],
+                ["-c", "print('ok')"],
+            )
+            self.assertEqual(
+                mock_schema["match"]["properties"]["filePatterns"]["value"],
+                ["*.log", "*timeout*"],
+            )
+            self.assertEqual(
+                mock_schema["match"]["properties"]["keywords"]["value"],
+                ["timeout"],
+            )
+            self.assertEqual(
+                mock_schema["properties"]["configuredArgs"],
+                mock_schema["configuredArgs"],
+            )
+            self.assertEqual(mock_schema["properties"]["match"], mock_schema["match"])
             self.assertIn("manual-run", descriptors["mock_tool"]["tags"])
             self.assertIn("tool-runner", descriptors["mock_tool"]["tags"])
             self.assertIn("external", descriptors["mock_tool"]["tags"])
@@ -2768,6 +2786,14 @@ fi
             self.assertEqual(configured["pprof_analyzer"]["configuredArgs"], [])
             tools = {item["toolId"]: item for item in catalog["tools"]}
             self.assertEqual(tools["mock_tool"]["source"], "configured")
+            self.assertEqual(
+                tools["mock_tool"]["paramsSchema"]["configuredArgs"]["value"],
+                ["-c", "print('ok')"],
+            )
+            self.assertEqual(
+                tools["mock_tool"]["paramsSchema"]["match"]["properties"]["keywords"]["value"],
+                ["timeout"],
+            )
             self.assertEqual(tools["pprof_analyzer"]["source"], "configured")
             self.assertEqual(tools["pprof_analyzer"]["manualOnly"], True)
             self.assertEqual(tools["logagent.fetch"]["source"], "built_in")
@@ -2881,6 +2907,16 @@ fi
             settings.ensure_dirs()
             descriptor = tool_descriptors(settings)[0]
             self.assertEqual(descriptor["paramsSchema"]["required"], ["mode", "limit"])
+            self.assertEqual(
+                descriptor["paramsSchema"]["configuredArgs"]["value"],
+                [
+                    "-c",
+                    script,
+                    "{params.mode}",
+                    "{params.limit}",
+                    "{params.enabled}",
+                ],
+            )
 
             store = Store(settings.sqlite_path)
             store.initialize()

@@ -637,7 +637,10 @@ action id so different parameter sets do not reuse one result path. Configured
 tool descriptors must retain the Rust/V1 catalog semantics:
 `source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from
-`match.filePatterns`.
+`match.filePatterns`. Their `paramsSchema` must expose Rust/V1 read-only
+`configuredArgs` and `match` entries, and V2 additionally mirrors those entries
+under `properties` so schema-oriented clients can render them alongside
+reserved `inputFiles` and any configured custom params.
 
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and

@@ -103,6 +103,10 @@ def configured_tool_params_schema(tool: ToolDefinition) -> JsonObject:
     schema = dict(base)
     properties = schema.get("properties")
     properties = dict(properties) if isinstance(properties, dict) else {}
+    readonly_properties = configured_tool_readonly_schema_properties(tool)
+    for key, value in readonly_properties.items():
+        schema.setdefault(key, value)
+        properties.setdefault(key, value)
     if tool_requires_input(tool):
         properties["inputFiles"] = {
             "type": "array",
@@ -111,6 +115,32 @@ def configured_tool_params_schema(tool: ToolDefinition) -> JsonObject:
         }
     schema["properties"] = properties
     return schema
+
+
+def configured_tool_readonly_schema_properties(tool: ToolDefinition) -> JsonObject:
+    return {
+        "configuredArgs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "readOnly": True,
+            "value": list(tool.args),
+        },
+        "match": {
+            "type": "object",
+            "properties": {
+                "filePatterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "value": list(tool.match_file_patterns),
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "value": list(tool.match_keywords),
+                },
+            },
+        },
+    }
 
 
 def configured_tool_params_template(tool: ToolDefinition) -> JsonObject:

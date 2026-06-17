@@ -700,10 +700,12 @@ artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
 configured subprocess descriptors use the Rust/V1 command shape:
 `source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from
-`match.filePatterns`. V2 currently includes manual built-ins for metadata tools,
-`logagent.preprocess_log_package`, `logagent.fetch`, and default-off
-`logagent.huawei_cloud_package_sync`, plus the V1-style configured command
-adapter `pprof_analyzer`.
+`match.filePatterns`. Their `paramsSchema` also exposes Rust/V1 read-only
+`configuredArgs` and `match` entries, with the same data mirrored under
+`properties` for V2 clients that expect object-schema fields. V2 currently
+includes manual built-ins for metadata tools, `logagent.preprocess_log_package`,
+`logagent.fetch`, and default-off `logagent.huawei_cloud_package_sync`, plus the
+V1-style configured command adapter `pprof_analyzer`.
 Metadata built-in descriptors use the Rust/V1 catalog shape with
 `backend=builtin`, `read-only` / `manual-run` tags, and field/tag params
 templates that include `retentionPolicy` where supported.

@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Configured Tool Descriptor Parity
+
+- V2 configured subprocess tool descriptors now expose Rust/V1 read-only
+  `paramsSchema.configuredArgs` and `paramsSchema.match` entries, including
+  configured argv templates, match file patterns, and keywords.
+- The same read-only entries are mirrored under `paramsSchema.properties` so V2
+  schema-oriented clients can render them alongside reserved `inputFiles` and
+  custom params without changing execution or validation behavior.
+- Added regression coverage for `/api/v2/tools` descriptors, readonly MCP tool
+  catalog output, and custom-params configured tools.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused configured-tool descriptor regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Descriptor Catalog Parity
 
 - V2 Tools catalog metadata built-ins now match the Rust/V1 descriptor shape:
