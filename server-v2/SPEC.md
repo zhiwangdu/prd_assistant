@@ -689,10 +689,10 @@ TSSP/TSI/TSM/_series payloads pass directly to source-built analyzer binaries.
 
 V2 Fetch endpoints are stored in SQLite table `fetch_endpoints` with name,
 method, redacted URL, redacted headers, optional redacted body material, enabled
-flag, and timestamps. Sensitive request material is stored separately in
-`fetch_credential_sets` as encrypted JSON using `LOGAGENT_V2_FETCH_SECRET_KEY`.
-The public API returns redacted endpoint previews; raw request material is only
-hydrated inside the server-side executor.
+flag, `followRedirects`, and timestamps. Sensitive request material is stored
+separately in `fetch_credential_sets` as encrypted JSON using
+`LOGAGENT_V2_FETCH_SECRET_KEY`. The public API returns redacted endpoint
+previews; raw request material is only hydrated inside the server-side executor.
 
 Endpoints can be created directly or imported from DevTools bash cURL commands:
 
@@ -703,10 +703,12 @@ POST /api/v2/fetch/imports
 
 The cURL importer supports request method, headers, body, cookies,
 `--compressed`, `--head`, and `--location`, and accepts a leading `$` shell
-prompt from copied terminal commands. It rejects unsupported flags such as form
-uploads, proxy, cert, file, or resolver options rather than widening the network
-or filesystem boundary. Import previews redact sensitive query, header, and
-JSON/form body fields and return detected sensitive field locations.
+prompt from copied terminal commands. `--location` sets `followRedirects=true`;
+otherwise imported and directly created endpoints default to no redirect
+following. It rejects unsupported flags such as form uploads, proxy, cert, file,
+or resolver options rather than widening the network or filesystem boundary.
+Import previews redact sensitive query, header, and JSON/form body fields and
+return detected sensitive field locations.
 
 If a URL query parameter, header, or body field name looks like a token,
 secret, password, API key, session, Authorization, or Cookie, creating or
@@ -731,11 +733,13 @@ endpoints are saved. Sensitive headers, query parameters, and JSON/form body fie
 containing token/secret/password/api key style names are redacted from API, MCP,
 and artifact previews.
 
-Redirects are followed manually up to `LOGAGENT_V2_FETCH_MAX_REDIRECTS`. Every
-redirect target is revalidated with the same scheme/host allowlist before the
-next request is sent. Sensitive headers such as Authorization, Cookie, and
-X-Api-Key are stripped when a redirect crosses origin. Each response artifact
-records `finalUrl`, `redirectCount`, and redacted redirect hops.
+Redirects are not followed unless the endpoint has `followRedirects=true`. When
+enabled, redirects are followed manually up to
+`LOGAGENT_V2_FETCH_MAX_REDIRECTS`. Every redirect target is revalidated with the
+same scheme/host allowlist before the next request is sent. Sensitive headers
+such as Authorization, Cookie, and X-Api-Key are stripped when a redirect
+crosses origin. Each response artifact records `finalUrl`, `redirectCount`, and
+redacted redirect hops.
 
 Task MCP exposes:
 

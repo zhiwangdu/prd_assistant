@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Redirect Policy Parity
+
+- V2 Fetch endpoints now persist `followRedirects`, with SQLite migration for
+  existing `fetch_endpoints` rows.
+- Fetch execution no longer follows redirects by default. Imported cURL
+  commands with `--location` or endpoints created/updated with
+  `followRedirects=true` opt into bounded manual redirects with per-hop
+  allowlist validation and sensitive-header stripping across origins.
+- Fetch responses now treat only HTTP 2xx as `httpOk`, matching the Rust/V1
+  result semantics for non-followed 3xx responses.
+- Added regression coverage for default no-follow redirect behavior,
+  opt-in redirect execution, blocked redirect allowlist validation, and
+  `--location` import persistence.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused Fetch redirect/import regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (83 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch cURL Prompt Import
 
 - V2 Fetch cURL import now accepts copied bash commands with a leading `$`

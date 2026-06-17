@@ -723,6 +723,9 @@ method, headers, body, cookies, compression, HEAD, and location; commands may
 include a leading `$` shell prompt from terminal copy/paste. Execution is
 disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
 URLs whose host or host:port exactly matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`.
+Fetch does not follow redirects by default; imported cURL commands with
+`--location` or endpoints created with `followRedirects=true` opt into bounded
+manual redirects.
 Runtime calls accept either `endpointId` or the V1-compatible `fetchId`,
 optional string `variables` that replace `{name}` placeholders in the endpoint
 URL before allowlist validation, optional temporary string `headers`, and an

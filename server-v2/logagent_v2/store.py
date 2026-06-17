@@ -287,6 +287,7 @@ class Store:
                   headers_json TEXT NOT NULL,
                   body TEXT,
                   enabled INTEGER NOT NULL,
+                  follow_redirects INTEGER NOT NULL DEFAULT 0,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -370,6 +371,9 @@ class Store:
             self._ensure_column_tx(conn, "runs", "alias", "TEXT")
             self._ensure_column_tx(conn, "runs", "error_json", "TEXT")
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
+            self._ensure_column_tx(
+                conn, "fetch_endpoints", "follow_redirects", "INTEGER NOT NULL DEFAULT 0"
+            )
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column_tx(
                 conn, "case_imports", "messages_json", "TEXT NOT NULL DEFAULT '[]'"
@@ -2166,6 +2170,7 @@ class Store:
         headers: JsonObject,
         body: str | None,
         enabled: bool,
+        follow_redirects: bool = False,
     ) -> JsonObject:
         endpoint_id = new_id("fetch")
         ts = now_iso()
@@ -2173,8 +2178,9 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO fetch_endpoints(
-                  id, name, method, url, headers_json, body, enabled, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  id, name, method, url, headers_json, body, enabled, follow_redirects,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     endpoint_id,
@@ -2184,6 +2190,7 @@ class Store:
                     encode_json(headers),
                     body,
                     1 if enabled else 0,
+                    1 if follow_redirects else 0,
                     ts,
                     ts,
                 ),
@@ -2269,7 +2276,7 @@ class Store:
                 """
                 UPDATE fetch_endpoints
                 SET name = ?, method = ?, url = ?, headers_json = ?, body = ?,
-                    enabled = ?, updated_at = ?
+                    enabled = ?, follow_redirects = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -2279,6 +2286,7 @@ class Store:
                     encode_json(merged.get("headers", {})),
                     merged.get("body"),
                     1 if merged.get("enabled", True) else 0,
+                    1 if merged.get("followRedirects", False) else 0,
                     ts,
                     endpoint_id,
                 ),
@@ -2296,6 +2304,7 @@ class Store:
         item = dict(row)
         item["headers"] = decode_json(item.pop("headers_json"), {})
         item["enabled"] = bool(item["enabled"])
+        item["followRedirects"] = bool(item.pop("follow_redirects", 0))
         item["createdAt"] = item.pop("created_at")
         item["updatedAt"] = item.pop("updated_at")
         return item

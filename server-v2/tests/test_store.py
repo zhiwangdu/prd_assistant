@@ -3887,6 +3887,14 @@ fi
                 settings.ensure_dirs()
                 store = Store(settings.sqlite_path)
                 store.initialize()
+                no_follow_endpoint = store.create_fetch_endpoint(
+                    name="redirect no follow",
+                    method="GET",
+                    url=f"http://127.0.0.1:{server.server_port}/redirect-ok",
+                    headers={"Authorization": "Bearer secret"},
+                    body=None,
+                    enabled=True,
+                )
                 ok_endpoint = store.create_fetch_endpoint(
                     name="redirect ok",
                     method="GET",
@@ -3894,6 +3902,7 @@ fi
                     headers={"Authorization": "Bearer secret"},
                     body=None,
                     enabled=True,
+                    follow_redirects=True,
                 )
                 blocked_endpoint = store.create_fetch_endpoint(
                     name="redirect blocked",
@@ -3902,9 +3911,31 @@ fi
                     headers={"Authorization": "Bearer secret"},
                     body=None,
                     enabled=True,
+                    follow_redirects=True,
                 )
                 workspace = store.create_workspace("fetch redirect", "diagnose", "en-US")
                 run = store.create_run(workspace["id"])
+
+                no_follow_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 240,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": no_follow_endpoint["id"]},
+                        },
+                    },
+                )
+                no_follow_payload = json.loads(no_follow_response["result"]["content"][0]["text"])
+                no_follow_result = no_follow_payload["result"]
+                self.assertEqual(no_follow_result["status"], "OK")
+                self.assertEqual(no_follow_result["response"]["statusCode"], 302)
+                self.assertFalse(no_follow_result["httpOk"])
+                self.assertEqual(no_follow_result["response"]["redirectCount"], 0)
 
                 ok_response = task_mcp_response(
                     settings,
@@ -3962,6 +3993,7 @@ fi
         endpoint = preview["endpoint"]
         self.assertEqual(endpoint["method"], "POST")
         self.assertIn("api_key=__REDACTED__", endpoint["url"])
+        self.assertTrue(endpoint["followRedirects"])
         self.assertEqual(endpoint["headers"]["Authorization"], "__REDACTED__")
         self.assertIn('"password": "__REDACTED__"', endpoint["bodyPreview"])
         self.assertIn({"location": "query", "name": "api_key"}, preview["detectedSensitiveFields"])
@@ -3983,10 +4015,12 @@ fi
 
         head = endpoint_from_curl("curl -I https://api.example.com/health")
         self.assertEqual(head["method"], "HEAD")
+        self.assertFalse(head["followRedirects"])
 
         prompted = endpoint_from_curl("$ curl -I https://api.example.com/health")
         self.assertEqual(prompted["method"], "HEAD")
         self.assertEqual(prompted["url"], "https://api.example.com/health")
+        self.assertFalse(prompted["followRedirects"])
 
         with self.assertRaisesRegex(ValueError, "unsupported curl flag --form"):
             preview_curl_import("curl https://api.example.com --form file=@/tmp/a")

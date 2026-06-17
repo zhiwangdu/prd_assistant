@@ -281,6 +281,7 @@ class FetchEndpointCreate(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool = True
+    followRedirects: bool = False
 
 
 class FetchCurlImportPreviewCreate(BaseModel):
@@ -300,6 +301,7 @@ class FetchEndpointUpdate(BaseModel):
     headers: dict[str, str] | None = None
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool | None = None
+    followRedirects: bool | None = None
 
 
 class FetchRunCreate(BaseModel):
@@ -1186,6 +1188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 headers=stored["headers"],
                 body=stored.get("body"),
                 enabled=stored["enabled"],
+                follow_redirects=stored.get("followRedirects", False),
             )
             persist_fetch_credentials(settings, store, created["id"], endpoint)
             return public_fetch_endpoint(
@@ -1207,6 +1210,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 headers=stored["headers"],
                 body=stored.get("body"),
                 enabled=stored["enabled"],
+                follow_redirects=stored.get("followRedirects", False),
             )
             persist_fetch_credentials(settings, store, created["id"], endpoint)
             return public_fetch_endpoint(

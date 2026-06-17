@@ -43,6 +43,7 @@ def normalize_fetch_endpoint(value: JsonObject) -> JsonObject:
         "headers": headers,
         "body": value.get("body") if isinstance(value.get("body"), str) else None,
         "enabled": bool(value.get("enabled", True)),
+        "followRedirects": bool(value.get("followRedirects", False)),
     }
 
 
@@ -70,6 +71,7 @@ def endpoint_from_curl(
         "headers": parsed["headers"],
         "body": parsed.get("body"),
         "enabled": enabled,
+        "followRedirects": bool(parsed.get("followRedirects", False)),
     }
     return normalize_fetch_endpoint(endpoint)
 
@@ -92,6 +94,7 @@ def parse_curl(curl: str) -> JsonObject:
     url: str | None = None
     headers: JsonObject = {}
     body: str | None = None
+    follow_redirects = False
     index = 1
     while index < len(argv):
         token = argv[index]
@@ -112,7 +115,9 @@ def parse_curl(curl: str) -> JsonObject:
             body = next_value(token)
         elif token in {"-b", "--cookie"}:
             headers["Cookie"] = next_value(token)
-        elif token in {"-L", "--location", "--compressed"}:
+        elif token in {"-L", "--location"}:
+            follow_redirects = True
+        elif token == "--compressed":
             pass
         elif token in {"-I", "--head"}:
             method = "HEAD"
@@ -149,7 +154,13 @@ def parse_curl(curl: str) -> JsonObject:
     if not url:
         raise ValueError("curl import is missing URL")
     validate_http_url(url)
-    return {"method": method, "url": url, "headers": headers, "body": body}
+    return {
+        "method": method,
+        "url": url,
+        "headers": headers,
+        "body": body,
+        "followRedirects": follow_redirects,
+    }
 
 
 def parse_header(value: str) -> tuple[str, str]:
@@ -409,7 +420,7 @@ def hydrate_fetch_endpoint(
     if not isinstance(secret_endpoint, dict):
         raise ValueError("fetch credential set is invalid")
     hydrated = dict(endpoint)
-    for key in ("name", "method", "url", "headers", "body", "enabled"):
+    for key in ("name", "method", "url", "headers", "body", "enabled", "followRedirects"):
         if key in secret_endpoint:
             hydrated[key] = secret_endpoint[key]
     return hydrated
@@ -694,6 +705,7 @@ def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject
     url = endpoint["url"]
     headers = dict(endpoint.get("headers", {}))
     redirects: list[JsonObject] = []
+    follow_redirects = bool(endpoint.get("followRedirects", False))
     for redirect_count in range(settings.fetch_max_redirects + 1):
         validate_url_allowed(settings, url)
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -702,7 +714,7 @@ def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject
                 return response_from_http(settings, response, int(response.status), url, redirects)
         except urllib.error.HTTPError as error:
             status_code = int(error.code)
-            if status_code not in REDIRECT_STATUSES:
+            if status_code not in REDIRECT_STATUSES or not follow_redirects:
                 return response_from_http(settings, error, status_code, url, redirects)
             location = error.headers.get("Location")
             if not location:
@@ -743,7 +755,7 @@ def response_from_http(
         raw = raw[: settings.fetch_max_response_bytes]
     return {
         "statusCode": status_code,
-        "httpOk": 200 <= status_code < 400,
+        "httpOk": 200 <= status_code < 300,
         "finalUrl": redact_url(final_url),
         "redirectCount": len(redirects or []),
         "redirects": redirects or [],
