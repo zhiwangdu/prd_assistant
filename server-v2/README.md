@@ -50,7 +50,9 @@ slice provides the durable foundation for the V2 product model:
   finding-level `finalEvidenceRefs` when the tool produced findings.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
-  default-off `logagent.huawei_cloud_package_sync`.
+  default-off `logagent.huawei_cloud_package_sync`; metadata field filters use
+  the Rust/V1 trim-and-reject-empty-array-entry semantics, and tag-field tools
+  reject the `field` parameter.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   DevTools bash cURL import, default-off allowlist execution, task MCP
   `logagent.fetch`, runtime `endpointId`/`fetchId` parameters with URL
@@ -898,6 +900,9 @@ Task MCP field/tag queries persist Rust/V1-compatible background slices under
 top-level `fields` shape and also expose the Rust/V1 `result` wrapper plus
 `artifactPath`, `backgroundRef`, `evidenceRefs`, and `finalEvidenceAllowed`.
 Readonly MCP uses the same `result` wrapper without writing a task artifact.
+`field` filters are trimmed; a blank string is treated as omitted, array entries
+must be non-empty after trim, and `logagent.get_metadata_tag_fields` rejects
+`field`.
 The field filter schema uses the Rust/V1-compatible `oneOf` form: either one
 string or a non-empty string array.
 

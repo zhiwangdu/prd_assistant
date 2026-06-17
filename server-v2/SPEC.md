@@ -135,7 +135,9 @@ Implemented in this slice:
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
   `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
-  adapter `pprof_analyzer`.
+  adapter `pprof_analyzer`. Metadata field filters use the Rust/V1
+  trim-and-reject-empty-array-entry semantics, and tag-field tools reject the
+  `field` parameter.
 - Huawei package sync descriptors match Rust/V1 by using
   `acceptedSuffixes=["*"]`; execution still requires exactly one completed
   upload and validated object-key / SQL params.
@@ -854,7 +856,9 @@ background slices to `metadata_slices/field_types_<stable_id>.json` and
 the V2 top-level `fields` shape and the Rust/V1 `result` wrapper. Readonly MCP
 returns the same `result` wrapper without writing task artifacts. The field
 filter schema uses the Rust/V1-compatible `oneOf` form: either one string or a
-non-empty string array.
+non-empty string array. Field filters are trimmed; a blank string is treated as
+omitted, array entries must be non-empty after trim, and
+`logagent.get_metadata_tag_fields` rejects `field`.
 
 Current direct import request:
 

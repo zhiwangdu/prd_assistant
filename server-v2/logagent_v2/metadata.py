@@ -1621,12 +1621,29 @@ def find_named(items: list[JsonObject], name: str) -> JsonObject | None:
     return None
 
 
-def normalize_field_filter(field: str | list[str] | None) -> set[str] | None:
+def normalize_field_filter_value(field: Any) -> str | list[str] | None:
     if field is None:
         return None
     if isinstance(field, str):
-        return {field}
-    return {item for item in field if isinstance(item, str)}
+        value = field.strip()
+        return value or None
+    if isinstance(field, list):
+        values = []
+        for item in field:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("field entries must be non-empty strings")
+            values.append(item.strip())
+        return values or None
+    raise ValueError("field must be a string or string array")
+
+
+def normalize_field_filter(field: Any) -> set[str] | None:
+    value = normalize_field_filter_value(field)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return {value}
+    return set(value)
 
 
 def metadata_tool_descriptors() -> list[JsonObject]:
@@ -1771,6 +1788,8 @@ def call_metadata_tool(
         snapshot = store.get_metadata_snapshot(instance_id)
         value = {**snapshot, "snapshot": snapshot}
     elif name in {"logagent.get_metadata_field_types", "logagent.get_metadata_tag_fields"}:
+        if name == "logagent.get_metadata_tag_fields" and "field" in arguments:
+            raise ValueError("metadata tag field params do not support field")
         raw_value = query_field_types(
             store=store,
             instance_id=require_string(arguments, "instanceId"),

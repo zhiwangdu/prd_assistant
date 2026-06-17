@@ -27,7 +27,11 @@ from .evidence import (
     write_json_artifact,
 )
 from .fetch import fetch_catalog_descriptor
-from .metadata import metadata_field_filter_schema, query_field_types
+from .metadata import (
+    metadata_field_filter_schema,
+    normalize_field_filter_value,
+    query_field_types,
+)
 from .store import JsonObject, Store
 
 PARAM_PLACEHOLDER_RE = re.compile(r"\{params\.([A-Za-z0-9_]+)\}")
@@ -391,13 +395,9 @@ def validate_tool_run_params(
         if isinstance(params.get("retentionPolicy"), str) and params["retentionPolicy"].strip():
             result["retentionPolicy"] = params["retentionPolicy"].strip()
         if "field" in params and tool_id == METADATA_GET_FIELD_TYPES_ID:
-            field = params["field"]
-            if isinstance(field, str):
-                result["field"] = field.strip()
-            elif isinstance(field, list) and all(isinstance(item, str) for item in field):
-                result["field"] = [item.strip() for item in field if item.strip()]
-            else:
-                raise ValueError("field must be a string or string array")
+            field = normalize_field_filter_value(params["field"])
+            if field is not None:
+                result["field"] = field
         return result
     if tool_id == PPROF_ANALYZER_ID:
         reject_unknown_params(tool_id, params, {"sampleIndex", "nodeCount", "generateSvg"})

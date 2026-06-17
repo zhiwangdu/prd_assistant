@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Field Param Parity
+
+- V2 metadata field filters now match Rust/V1 across Tools API, readonly MCP,
+  and task MCP paths.
+- `logagent.get_metadata_field_types` trims string `field` values, treats a
+  blank string as omitted, and rejects array entries that are not non-empty
+  strings after trim.
+- `logagent.get_metadata_tag_fields` now rejects the unsupported `field`
+  parameter on direct MCP calls instead of silently applying it.
+- Added regression coverage for Tools API parameter normalization, invalid
+  field arrays, readonly MCP tag-field rejection, and Metadata query filtering.
+- Updated V2 Server and Metadata docs/specs.
+- Verification passed: focused tool registry and metadata MCP regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Command Argv Normalization
 
 - V2 Remote Executor command templates now normalize `argv` while loading

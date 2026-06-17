@@ -28,7 +28,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - Claude Code 初始 evidence package 和任务 MCP `metadata_context` resource 只暴露 `metadataContextOutline`；完整 Metadata 需通过 `logagent.query_metadata` 按 section/filter/分页读取 bounded slice。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_field_types`，从指定 `instanceId/database/measurement` 查询 field 类型；RP 可省略并回退到 DB 默认 RP，field 可省略以返回全部字段。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_tag_fields`，从指定 `instanceId/database/measurement` 返回全部 Tag 类型字段；RP 可省略并回退到 DB 默认 RP，不支持 `field` 参数。
-- Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array。
+- Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array；字符串会 trim，空字符串等同省略，数组项必须是 trim 后非空字符串。
 - 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store；resource 支持 V1 `logagent://metadata/...` URI，并保留 `logagent-v2://metadata/...` alias；`logagent.get_metadata_snapshot` 响应保留 V2 顶层 snapshot 字段并补齐 Rust/V1 `snapshot` 包装。
 
 仍待实现：
@@ -311,7 +311,7 @@ metadata_slices/<stable_id>.json
 - `analysis_package.json` 不内联完整 context，只写 `metadataContextOutline`，包含 `metadataContextPath`、选中 ID、产品/版本/环境、section count 和查询入口。
 - 任务 MCP `resources/read metadata_context` 和 `logagent.get_metadata_topology` 返回 outline；`logagent.query_metadata` 支持 `section`、`database`、`retentionPolicy`、`measurement`、`nodeId`、`ownerNodeId`、`ptId`、`shardId`、`indexId`、`limit`、`cursor`。
 - `logagent.query_metadata` section 覆盖 `overview | nodes | databases | retention_policies | measurements | fields | shard_groups | shards | index_groups | indexes | partition_views`，返回 bounded `items`、`total`、`nextCursor`、`truncated` 和 `backgroundRef`，并写入 `metadata_slices/<stable_id>.json` / `mcp_calls.jsonl`。
-- `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，省略时返回 measurement 下所有 fields，省略 RP 且命中 DB 默认 RP 时返回 `defaultRetentionPolicyUsed=true`；task MCP 结果写入 `metadata_slices/field_types_<stable_id>.json`。
+- `logagent.get_metadata_field_types` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy` 和 `field`；`field` 支持字符串或字符串数组，字符串会 trim，空字符串等同省略，数组项必须是 trim 后非空字符串，省略时返回 measurement 下所有 fields，省略 RP 且命中 DB 默认 RP 时返回 `defaultRetentionPolicyUsed=true`；task MCP 结果写入 `metadata_slices/field_types_<stable_id>.json`。
 - `logagent.get_metadata_tag_fields` 必填 `instanceId`、`database`、`measurement`，可选 `retentionPolicy`，不支持 `field`；结果复用 field types 响应结构，只保留 `typ=6` / `typeLabel=Tag` 的 fields，`missingFields=[]`，并在 task MCP 写入 `metadata_slices/tag_fields_<stable_id>.json`。
 - task MCP field/tag 响应必须返回 `artifactPath`、`backgroundRef`、`evidenceRefs`、`finalEvidenceAllowed=false` 和 Rust/V1 `result` 包装，同时保留 V2 顶层字段；readonly MCP 不写 artifact，但同样返回 `result` 包装。
 

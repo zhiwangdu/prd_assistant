@@ -97,6 +97,7 @@ from logagent_v2.tools import (
     summary_from_stdout,
     tool_descriptors,
     validate_manual_tool_run,
+    validate_tool_run_params,
 )
 from logagent_v2.webui_static import WebuiStaticNotFound, resolve_webui_asset
 from logagent_v2.worker import JobRunner
@@ -2397,6 +2398,43 @@ class StoreTests(unittest.TestCase):
                 "inputSchema"
             ]["properties"]["field"]
             self.assertEqual(mcp_field_schema, field_schema)
+            self.assertEqual(
+                validate_tool_run_params(
+                    settings,
+                    "logagent.get_metadata_field_types",
+                    {
+                        "instanceId": " inst1 ",
+                        "database": " db0 ",
+                        "measurement": " cpu ",
+                        "field": " ",
+                    },
+                ),
+                {"instanceId": "inst1", "database": "db0", "measurement": "cpu"},
+            )
+            self.assertEqual(
+                validate_tool_run_params(
+                    settings,
+                    "logagent.get_metadata_field_types",
+                    {
+                        "instanceId": "inst1",
+                        "database": "db0",
+                        "measurement": "cpu",
+                        "field": [" host ", "value"],
+                    },
+                )["field"],
+                ["host", "value"],
+            )
+            with self.assertRaisesRegex(ValueError, "field entries must be non-empty strings"):
+                validate_tool_run_params(
+                    settings,
+                    "logagent.get_metadata_field_types",
+                    {
+                        "instanceId": "inst1",
+                        "database": "db0",
+                        "measurement": "cpu",
+                        "field": ["host", " "],
+                    },
+                )
             with self.assertRaisesRegex(ValueError, "does not accept upload"):
                 validate_manual_tool_run(
                     settings,
@@ -5055,6 +5093,25 @@ fi
             self.assertEqual(by_name["value"]["typeLabel"], "Float")
             self.assertEqual(fields["missingFields"], ["missing"])
             self.assertTrue(fields["defaultRetentionPolicyUsed"])
+            unfiltered_fields = query_field_types(
+                store,
+                instance_id="inst1",
+                database="db0",
+                measurement="cpu",
+                field=" ",
+            )
+            self.assertEqual(
+                [item["name"] for item in unfiltered_fields["fields"]],
+                ["host", "value"],
+            )
+            with self.assertRaisesRegex(ValueError, "field entries must be non-empty strings"):
+                query_field_types(
+                    store,
+                    instance_id="inst1",
+                    database="db0",
+                    measurement="cpu",
+                    field=["host", ""],
+                )
 
             readonly_instances = readonly_mcp_response(
                 settings,
@@ -5140,6 +5197,28 @@ fi
             self.assertEqual(
                 [item["name"] for item in tag_body["result"]["fields"]],
                 ["host"],
+            )
+            readonly_tags_with_field = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 141,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_tag_fields",
+                        "arguments": {
+                            "instanceId": "inst1",
+                            "database": "db0",
+                            "measurement": "cpu",
+                            "field": "host",
+                        },
+                    },
+                },
+            )
+            self.assertIn(
+                "metadata tag field params do not support field",
+                readonly_tags_with_field["error"]["message"],
             )
 
             workspace = store.create_workspace("metadata context", "diagnose", "en-US")
