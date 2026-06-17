@@ -128,7 +128,10 @@ Implemented in this slice:
   the V1 query analyzer args with `timeoutSeconds=30` and `maxInputFiles=3`,
   openGemini storage uses the full TSSP/TSI/mergeset file-pattern set with
   `maxInputFiles=10`, and InfluxDB storage uses `timeoutSeconds=60`,
-  `maxInputFiles=5`, and the V1 TSM/TSI patterns.
+  `maxInputFiles=5`, and the V1 TSM/TSI patterns. JSON-configured commands
+  and source-built analyzer environment paths expand environment variables and
+  `~` during configuration loading; enabled tools must resolve to absolute
+  commands before they enter the registry.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
   `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
@@ -553,12 +556,19 @@ LOGAGENT_V2_TOOLS_JSON
   -> MCP logagent.run_domain_tool { toolId|tool, inputFile?, params? }
   -> optional paramsSchema validation
   -> optional explicit or materialized tool input selection
-  -> fixed absolute command + fixed args with {input_file}/{params.name} substitution
+  -> expanded fixed absolute command + fixed args with {input_file}/{params.name} substitution
   -> tool_result artifact/evidence
 ```
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+V2 expands `${ENV}` / `$ENV` variables and `~` in `LOGAGENT_V2_TOOLS_JSON`
+commands and in source-built analyzer executable environment variables. If an
+enabled configured tool does not resolve to an absolute command path, settings
+loading fails before the descriptor is exposed through HTTP, readonly MCP, or
+task MCP surfaces. Disabled descriptors may retain unresolved or relative
+commands because they are not runnable or exported.
 
 The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
 readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
@@ -1193,8 +1203,10 @@ or multi-node Environment Collector execution.
 - Upload filenames are basename-normalized and character-filtered.
 - Archive entries are scanned in memory and rejected if they contain absolute
   paths or traversal components.
-- Tools execute only through configured whitelist descriptors, with absolute
-  command paths, fixed args, timeout, and bounded stdout/stderr.
+- Tools execute only through configured whitelist descriptors. Enabled tool
+  commands are environment/user-expanded during settings loading and must
+  resolve to absolute paths before registration; execution still uses fixed
+  args, timeout, and bounded stdout/stderr.
 - Agent final answers are rejected before success if they cite missing,
   out-of-range, unsupported, or background-only refs.
 

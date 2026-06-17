@@ -1829,6 +1829,82 @@ class StoreTests(unittest.TestCase):
         )
         self.assertIn("series file", tools["influxdb_storage_analyzer"].match_keywords)
 
+    def test_parse_tools_env_expands_command_and_allows_disabled_relative(self) -> None:
+        previous = os.environ.get("LOGAGENT_TEST_TOOL_DIR")
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.environ["LOGAGENT_TEST_TOOL_DIR"] = tmpdir
+                raw = json.dumps(
+                    [
+                        {
+                            "id": "expanded_tool",
+                            "command": "${LOGAGENT_TEST_TOOL_DIR}/mock-tool",
+                            "enabled": True,
+                        },
+                        {
+                            "id": "disabled_relative_tool",
+                            "command": "relative-disabled-tool",
+                            "enabled": False,
+                        },
+                    ]
+                )
+
+                tools = {tool.id: tool for tool in parse_tools_env(raw)}
+                self.assertEqual(
+                    tools["expanded_tool"].command,
+                    str(Path(tmpdir) / "mock-tool"),
+                )
+                self.assertEqual(
+                    tools["disabled_relative_tool"].command,
+                    "relative-disabled-tool",
+                )
+        finally:
+            if previous is None:
+                os.environ.pop("LOGAGENT_TEST_TOOL_DIR", None)
+            else:
+                os.environ["LOGAGENT_TEST_TOOL_DIR"] = previous
+
+    def test_parse_tools_env_rejects_enabled_relative_command(self) -> None:
+        raw = json.dumps(
+            [
+                {
+                    "id": "relative_tool",
+                    "command": "relative-tool",
+                    "enabled": True,
+                }
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "absolute path"):
+            parse_tools_env(raw)
+
+    def test_source_built_tool_env_rejects_relative_command(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",
+            "LOGAGENT_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            for key, value in env_values.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+            with self.assertRaisesRegex(ValueError, "influxql_analyzer.*absolute path"):
+                parse_tools_env(None)
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(

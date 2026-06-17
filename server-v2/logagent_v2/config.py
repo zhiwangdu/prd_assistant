@@ -24,13 +24,16 @@ class ToolDefinition:
     @classmethod
     def from_json(cls, value: dict) -> "ToolDefinition":
         tool_id = str(value["id"])
+        enabled = bool(value.get("enabled", True))
+        command = expand_tool_command(str(value["command"]))
+        validate_tool_command_path(tool_id, command, enabled=enabled)
         match = value.get("match") if isinstance(value.get("match"), dict) else {}
         return cls(
             id=tool_id,
             display_name=str(value.get("displayName") or value.get("display_name") or tool_id),
-            command=str(value["command"]),
+            command=command,
             args=tuple(str(arg) for arg in value.get("args", [])),
-            enabled=bool(value.get("enabled", True)),
+            enabled=enabled,
             timeout_seconds=max(1, int(value.get("timeoutSeconds", 30))),
             max_output_bytes=max(1024, int(value.get("maxOutputBytes", 1024 * 1024))),
             max_input_files=max(1, int(value.get("maxInputFiles", 1))),
@@ -416,6 +419,8 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
     ) in definitions:
         if not command:
             continue
+        command = expand_tool_command(command)
+        validate_tool_command_path(tool_id, command, enabled=True)
         tools.append(
             ToolDefinition(
                 id=tool_id,
@@ -431,6 +436,17 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
             )
         )
     return tools
+
+
+def expand_tool_command(command: str) -> str:
+    return str(Path(os.path.expanduser(os.path.expandvars(command))))
+
+
+def validate_tool_command_path(tool_id: str, command: str, *, enabled: bool) -> None:
+    if not enabled:
+        return
+    if not command.strip() or not Path(command).is_absolute():
+        raise ValueError(f"tool {tool_id} command must resolve to an absolute path")
 
 
 def env_first(*names: str) -> str | None:

@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Command Path Validation
+
+- V2 now expands environment variables and `~` in `LOGAGENT_V2_TOOLS_JSON`
+  command paths and `LOGAGENT_V2_TOOL_*_ANALYZER` source-built analyzer
+  shortcuts during configuration loading.
+- Enabled configured tools must resolve to absolute command paths before they
+  enter the Tool Plugin registry, so HTTP catalogs, readonly MCP, tools.zip,
+  manual tool runs, and task MCP no longer see a tool as runnable when it would
+  later fail only at execution-time path validation.
+- Disabled JSON tool descriptors may still keep relative commands; they remain
+  non-runnable and non-exportable.
+- Added regression coverage for command expansion, enabled relative command
+  rejection, and source-built analyzer relative path rejection.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused tool command config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (83 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Source-Built Analyzer Defaults
 
 - Aligned V2's environment-variable analyzer auto-registration with the Rust/V1

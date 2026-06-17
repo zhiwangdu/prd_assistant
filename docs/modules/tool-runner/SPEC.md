@@ -18,7 +18,10 @@ Python V2 的 `LOGAGENT_V2_TOOL_*_ANALYZER` 快捷环境变量会生成与
 查询工具使用 V1 示例 args、`timeoutSeconds=30` 和 `maxInputFiles=3`；
 openGemini storage 使用完整 TSSP/TSI/mergeset 文件模式和
 `maxInputFiles=10`；InfluxDB storage 使用 `timeoutSeconds=60`、
-`maxInputFiles=5` 和 V1 TSM/TSI 文件模式。
+`maxInputFiles=5` 和 V1 TSM/TSI 文件模式。V2 在加载
+`LOGAGENT_V2_TOOLS_JSON.command` 和这些 source-built analyzer 环境变量时
+会展开 `${ENV}` / `$ENV` 和 `~`；enabled 工具必须解析为绝对路径后才进入
+工具 registry，disabled 描述可保留相对路径但不会 runnable 或 exportable。
 
 Server 还实现内置 `logagent.preprocess_log_package` 和 `logagent.fetch` runnable tools。预处理 tool 复用 Analyze 解压链路，按节点日志包生成 `tool_inputs` 和摘要 result；Fetch tool 复用 `tool_run`、Tools 目录和 `tool_results` artifact，但执行由 `fetch.enabled`、AES-256-GCM credential store、HTTP allowlist 和 reqwest 负责；二者都不导出到 `tools.zip`。
 
@@ -150,7 +153,8 @@ Huawei package sync 的 `result.json` 至少包含：
 ## 安全约束
 
 - 只能调用配置白名单里的工具。
-- 启用工具必须解析出绝对路径；禁用工具不读取 `path_env`。
+- 启用工具必须在配置加载阶段解析出绝对路径；禁用工具不读取
+  `path_env`，V2 的 disabled JSON descriptor 也不会 runnable 或 exportable。
 - 参数必须由模板和结构化输入生成，不能拼接任意用户命令。
 - 工具执行需要超时和输出大小限制。
 - 工作目录限制在 task workspace 或只读工具目录。

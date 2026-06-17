@@ -187,20 +187,13 @@ Environment variables:
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
-| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors |
+| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
 | `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
 | `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
 | `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
 | `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
-
-Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
-source-built analyzer as a configured subprocess tool using the same args,
-timeouts, `maxInputFiles`, match patterns, and keywords as
-`examples/server-tools.yaml`. The storage defaults preserve the wider V1
-settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
-`timeoutSeconds=60` and `maxInputFiles=5`.
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
@@ -232,6 +225,16 @@ settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
 | `LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY` | unset | Huawei OBS access key |
 | `LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY` | unset | Huawei OBS secret key |
 | `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync |
+
+Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
+source-built analyzer as a configured subprocess tool using the same args,
+timeouts, `maxInputFiles`, match patterns, and keywords as
+`examples/server-tools.yaml`. The storage defaults preserve the wider V1
+settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
+`timeoutSeconds=60` and `maxInputFiles=5`. Source-built analyzer paths and
+`LOGAGENT_V2_TOOLS_JSON` commands expand environment variables and `~` during
+configuration loading; enabled tools fail startup if the resolved command is
+not absolute.
 
 Tool descriptor example:
 
