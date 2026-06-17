@@ -10,7 +10,9 @@ deploy/
   .env.example
   install-deps.sh
   logagent.example.yaml
+  logagent-v2ctl.sh
   logagentctl.sh
+  rebuild-v2-install.sh
   rebuild-install.sh
 ```
 
@@ -19,6 +21,7 @@ Runtime files stay one level above this directory:
 ```text
 $LOGAGENT_APP_DIR/
   bin/logagent-server
+  server-v2/.venv/
   bin/tools/
     influxql-analyzer
     flux_query_analyzer
@@ -35,9 +38,16 @@ $LOGAGENT_APP_DIR/
     executors/          # WebUI-managed ECS SSH executor records
     memory/
       memory.sqlite     # Memory SQLite index, currently memoryType=case
+  data-v2/
+    logagent.sqlite     # V2 SQLite state
+    artifacts/
+    tmp/
+    skills/
   webui/out/
   logagent-server.pid
   logagent-server.log
+  logagent-v2.pid
+  logagent-v2.log
 ```
 
 ## Environment
@@ -73,6 +83,15 @@ Optional variables:
 - `LOGAGENT_HEALTH_URL`: defaults to `http://127.0.0.1:50992/health`.
 - `LOGAGENT_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.pid`.
 - `LOGAGENT_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-server.log`.
+- `LOGAGENT_V2_APP_DIR`: V2 runtime directory, defaults to `LOGAGENT_APP_DIR`.
+- `LOGAGENT_V2_API_KEY`: V2 bearer token, defaults to `LOGAGENT_NATIVE_API_KEY` when unset.
+- `LOGAGENT_V2_HOST`: V2 bind host, defaults to `127.0.0.1`.
+- `LOGAGENT_V2_PORT`: V2 bind port, defaults to `50993`.
+- `LOGAGENT_V2_DATA_DIR`: V2 SQLite/artifact directory, defaults to `$LOGAGENT_APP_DIR/data-v2`.
+- `LOGAGENT_V2_WEBUI_DIR`: V2 static WebUI directory, defaults to `$LOGAGENT_APP_DIR/webui/out`.
+- `LOGAGENT_V2_VENV_DIR`: V2 virtualenv directory, defaults to `$LOGAGENT_APP_DIR/server-v2/.venv`.
+- `LOGAGENT_V2_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.pid`.
+- `LOGAGENT_V2_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.log`.
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
 - `LOGAGENT_CLAUDE_CODE_PATH`: required by the default `logagent.yaml`. Set it to the absolute Claude Code CLI path, usually the output of `which claude`.
 - `LOGAGENT_SUBMODULE_BASE_URL`: optional internal Git namespace for all source-built analyzer submodules.
@@ -146,6 +165,25 @@ The script builds `logagent-server`, builds source-referenced diagnostic tools i
 
 When developing from the Mac workspace, `scripts/build-all.sh` also runs `scripts/auto-deploy-lan.sh` after the local Server and WebUI build completes. The helper only runs on macOS, pings `192.168.31.128`, and when reachable SSHes to `duzhiwang@192.168.31.128`, runs `git pull --ff-only` in the remote source tree, then runs the remote runtime `deploy/rebuild-install.sh` and `logagentctl.sh start/status`.
 
+V2 uses a Python virtualenv instead of a Rust binary. Build/install V2 from the
+same source checkout and sync the WebUI static build:
+
+```bash
+./rebuild-v2-install.sh
+```
+
+Useful variants:
+
+```bash
+./rebuild-v2-install.sh --server-only
+./rebuild-v2-install.sh --no-restart
+```
+
+The script creates `$LOGAGENT_V2_VENV_DIR`, installs `server-v2` with pip,
+initializes the V2 SQLite database under `$LOGAGENT_V2_DATA_DIR`, runs the WebUI
+build unless `--server-only` is set, syncs `webui/out` to
+`$LOGAGENT_V2_WEBUI_DIR`, and restarts V2 only if it was already running.
+
 Useful overrides:
 
 ```bash
@@ -165,10 +203,26 @@ LOGAGENT_LAN_REMOTE_DEPLOY_DIR=/home/duzhiwang/workspace/data/prd_assistant/depl
 ./logagentctl.sh stop
 ```
 
+V2 has equivalent controls:
+
+```bash
+./logagent-v2ctl.sh start
+./logagent-v2ctl.sh status
+./logagent-v2ctl.sh logs
+./logagent-v2ctl.sh restart
+./logagent-v2ctl.sh stop
+```
+
 Check the UI after startup:
 
 ```text
 http://127.0.0.1:50992/
+```
+
+Check the V2 UI after startup:
+
+```text
+http://127.0.0.1:50993/
 ```
 
 The WebUI opens on `Log Analysis`; top navigation is `Log Analysis`, `Memory`, `System Context`, `Tools`.

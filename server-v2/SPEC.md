@@ -36,6 +36,9 @@ Implemented in this slice:
 - Public `GET /` static WebUI hosting from `webui/out`; non-API SPA routes
   return `index.html`, static assets are served directly, and unknown `/api/*`
   paths still return 404.
+- Deploy template controls through `deploy/rebuild-v2-install.sh` and
+  `deploy/logagent-v2ctl.sh` for runtime virtualenv install, SQLite
+  initialization, WebUI static sync, start, stop, restart, status, and logs.
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted
@@ -263,6 +266,20 @@ Default data layout:
     upload_sessions/
       <session_id>/
         <filename>
+```
+
+Runtime deploy defaults:
+
+```text
+$LOGAGENT_APP_DIR/
+  server-v2/.venv/
+  data-v2/
+    logagent.sqlite
+    artifacts/
+    tmp/
+  webui/out/
+  logagent-v2.pid
+  logagent-v2.log
 ```
 
 SQLite tables:
@@ -915,3 +932,8 @@ The current slice is accepted when:
   worker can complete the stub Agent result.
 - Interrupted `running` jobs are recovered on startup without waiting for the
   previous lock timeout.
+- `deploy/rebuild-v2-install.sh` can create the V2 virtualenv, install
+  `server-v2`, initialize SQLite, sync WebUI static files, and preserve
+  existing `data-v2`.
+- `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
+  V2 logs using the same `.env` loading pattern as the Rust deploy controls.

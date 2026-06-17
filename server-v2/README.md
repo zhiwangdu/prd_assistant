@@ -106,6 +106,24 @@ GET /
 GET /health
 ```
 
+## Runtime Deploy
+
+For the runtime-style deploy template, copy or use `deploy/` with a configured
+`.env`, then install and control V2 separately from the Rust server:
+
+```bash
+cd deploy
+./rebuild-v2-install.sh
+./logagent-v2ctl.sh start
+./logagent-v2ctl.sh status
+./logagent-v2ctl.sh stop
+```
+
+`rebuild-v2-install.sh` creates `$LOGAGENT_V2_VENV_DIR`, installs `server-v2`,
+initializes SQLite, builds and syncs `webui/out`, and restarts V2 only when it
+was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
+`$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
+
 ## Configuration
 
 Environment variables:

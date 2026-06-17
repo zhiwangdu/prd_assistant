@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Deploy Quick Controls
+
+- Added `deploy/logagent-v2ctl.sh` for V2 start, stop, restart, status, and
+  log tailing with the same `.env` loading pattern as the Rust deploy controls.
+- Added `deploy/rebuild-v2-install.sh` to create the runtime virtualenv,
+  install `server-v2`, initialize SQLite, build/sync WebUI static files, and
+  restart V2 only when it was already running.
+- Extended deploy environment examples plus Deployment and server-v2 docs for
+  V2 runtime defaults: `server-v2/.venv`, `data-v2`, `webui/out`, and port
+  `50993`.
+- Verification passed: `bash -n deploy/logagent-v2ctl.sh deploy/rebuild-v2-install.sh deploy/logagentctl.sh deploy/rebuild-install.sh`,
+  `deploy/rebuild-v2-install.sh --help`, `deploy/logagent-v2ctl.sh` usage
+  exit-code check, and `git diff --check`.
+
 ## 2026-06-17 V2 Status Documentation Cleanup
 
 - Updated server-v2 docs to reflect the implemented readonly MCP resources and
