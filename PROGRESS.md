@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Configured Tool ID Validation
+
+- V2 now validates `LOGAGENT_V2_TOOLS_JSON.id` while loading configured
+  subprocess tools, matching Rust/V1 `tools.<name>` validation.
+- Accepted configured tool IDs are non-empty ASCII letters, digits, `_`, and
+  `-` only. Invalid IDs such as empty values, spaces, slashes, or dots now fail
+  configuration parsing before entering the Tool Plugin registry, MCP catalog,
+  manual tool runs, exports, or artifact path derivation.
+- Built-in `logagent.*` tools remain fixed server capabilities outside the
+  user-configured tool namespace.
+- Added regression coverage for invalid configured tool IDs.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused configured tool ID regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (89 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Command ID Validation
 
 - V2 Remote Executor command templates now validate `commandId` while loading

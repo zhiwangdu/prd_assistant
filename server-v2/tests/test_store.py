@@ -1878,6 +1878,21 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "absolute path"):
             parse_tools_env(raw)
 
+    def test_parse_tools_env_rejects_invalid_tool_id(self) -> None:
+        for tool_id in ["", "bad id", "bad/id", "bad.id"]:
+            with self.subTest(tool_id=tool_id):
+                raw = json.dumps(
+                    [
+                        {
+                            "id": tool_id,
+                            "command": "/tmp/mock-tool",
+                            "enabled": False,
+                        }
+                    ]
+                )
+                with self.assertRaisesRegex(ValueError, "invalid tool name"):
+                    parse_tools_env(raw)
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",

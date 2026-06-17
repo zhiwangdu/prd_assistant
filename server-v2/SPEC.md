@@ -569,6 +569,9 @@ enabled configured tool does not resolve to an absolute command path, settings
 loading fails before the descriptor is exposed through HTTP, readonly MCP, or
 task MCP surfaces. Disabled descriptors may retain unresolved or relative
 commands because they are not runnable or exported.
+User-configured tool IDs follow the Rust/V1 `tools.<name>` safe pattern:
+non-empty ASCII letters, digits, `_`, and `-` only. Built-in `logagent.*` tools
+are fixed server capabilities and are not loaded from `LOGAGENT_V2_TOOLS_JSON`.
 
 The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
 readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP

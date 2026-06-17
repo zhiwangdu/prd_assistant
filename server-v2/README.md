@@ -187,7 +187,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
-| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
+| `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
 | `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
 | `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
@@ -234,7 +234,9 @@ settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
 `timeoutSeconds=60` and `maxInputFiles=5`. Source-built analyzer paths and
 `LOGAGENT_V2_TOOLS_JSON` commands expand environment variables and `~` during
 configuration loading; enabled tools fail startup if the resolved command is
-not absolute.
+not absolute. User-configured tool IDs use the Rust/V1 `tools.<name>` safe
+pattern: non-empty ASCII letters, digits, `_`, and `-` only. Built-in
+`logagent.*` tools live outside that configured-tool namespace.
 
 Tool descriptor example:
 

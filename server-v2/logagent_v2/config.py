@@ -24,6 +24,7 @@ class ToolDefinition:
     @classmethod
     def from_json(cls, value: dict) -> "ToolDefinition":
         tool_id = str(value["id"])
+        validate_tool_name(tool_id)
         enabled = bool(value.get("enabled", True))
         command = expand_tool_command(str(value["command"]))
         validate_tool_command_path(tool_id, command, enabled=enabled)
@@ -455,6 +456,15 @@ def validate_tool_command_path(tool_id: str, command: str, *, enabled: bool) -> 
         return
     if not command.strip() or not Path(command).is_absolute():
         raise ValueError(f"tool {tool_id} command must resolve to an absolute path")
+
+
+def validate_tool_name(name: str) -> None:
+    valid = bool(name) and all(
+        char.isascii() and (char.isalnum() or char in {"_", "-"})
+        for char in name
+    )
+    if not valid:
+        raise ValueError(f"invalid tool name {name}")
 
 
 def validate_remote_ssh_command_path(command: str, *, enabled: bool) -> None:

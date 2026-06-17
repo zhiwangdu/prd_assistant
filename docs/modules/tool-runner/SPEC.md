@@ -22,6 +22,9 @@ openGemini storage 使用完整 TSSP/TSI/mergeset 文件模式和
 `LOGAGENT_V2_TOOLS_JSON.command` 和这些 source-built analyzer 环境变量时
 会展开 `${ENV}` / `$ENV` 和 `~`；enabled 工具必须解析为绝对路径后才进入
 工具 registry，disabled 描述可保留相对路径但不会 runnable 或 exportable。
+`LOGAGENT_V2_TOOLS_JSON.id` 与 Rust/V1 `tools.<name>` 对齐，只允许非空
+ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具是固定 Server 能力，
+不从该用户配置命名空间加载。
 
 Server 还实现内置 `logagent.preprocess_log_package` 和 `logagent.fetch` runnable tools。预处理 tool 复用 Analyze 解压链路，按节点日志包生成 `tool_inputs` 和摘要 result；Fetch tool 复用 `tool_run`、Tools 目录和 `tool_results` artifact，但执行由 `fetch.enabled`、AES-256-GCM credential store、HTTP allowlist 和 reqwest 负责；二者都不导出到 `tools.zip`。
 
