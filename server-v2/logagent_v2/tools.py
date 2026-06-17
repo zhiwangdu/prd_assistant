@@ -27,7 +27,7 @@ from .evidence import (
     write_json_artifact,
 )
 from .fetch import fetch_catalog_descriptor
-from .metadata import query_field_types
+from .metadata import metadata_field_filter_schema, query_field_types
 from .store import JsonObject, Store
 
 PARAM_PLACEHOLDER_RE = re.compile(r"\{params\.([A-Za-z0-9_]+)\}")
@@ -192,7 +192,7 @@ def metadata_catalog_descriptors() -> list[JsonObject]:
             "database": {"type": "string"},
             "measurement": {"type": "string"},
             "retentionPolicy": {"type": "string"},
-            "field": {"type": ["string", "array"]},
+            "field": metadata_field_filter_schema(),
         },
         "required": ["instanceId", "database", "measurement"],
         "additionalProperties": False,

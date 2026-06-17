@@ -1701,6 +1701,15 @@ def query_metadata_descriptor() -> JsonObject:
     }
 
 
+def metadata_field_filter_schema() -> JsonObject:
+    return {
+        "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        ]
+    }
+
+
 def metadata_field_types_descriptor(name: str, tags_only: bool) -> JsonObject:
     properties: JsonObject = {
         "instanceId": {"type": "string", "minLength": 1},
@@ -1709,12 +1718,7 @@ def metadata_field_types_descriptor(name: str, tags_only: bool) -> JsonObject:
         "retentionPolicy": {"type": "string"},
     }
     if not tags_only:
-        properties["field"] = {
-            "oneOf": [
-                {"type": "string"},
-                {"type": "array", "items": {"type": "string"}},
-            ]
-        }
+        properties["field"] = metadata_field_filter_schema()
     return {
         "name": name,
         "description": "Query imported metadata field types.",

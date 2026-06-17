@@ -852,6 +852,8 @@ Task MCP field/tag queries persist Rust/V1-compatible background slices under
 top-level `fields` shape and also expose the Rust/V1 `result` wrapper plus
 `artifactPath`, `backgroundRef`, `evidenceRefs`, and `finalEvidenceAllowed`.
 Readonly MCP uses the same `result` wrapper without writing a task artifact.
+The field filter schema uses the Rust/V1-compatible `oneOf` form: either one
+string or a non-empty string array.
 
 Task MCP also exposes V1-compatible run-scoped Metadata tools:
 

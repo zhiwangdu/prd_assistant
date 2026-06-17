@@ -29,6 +29,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 任务 stdio MCP 新增 `logagent.query_metadata`，支持按 section/filter/limit/cursor 读取 bounded slice，并写入 `metadata_slices/<stable_id>.json` 审计背景上下文；`logagent.get_metadata_topology` 作为兼容 alias 返回 outline。
 - 任务 stdio MCP 和只读 HTTP MCP 新增 `logagent.get_metadata_field_types`，支持从指定 `instanceId/database/measurement` 查询一个、多个或全部 field 的类型；省略 RP 时使用 DB 默认 RP。
 - 任务 stdio MCP 和只读 HTTP MCP 新增 `logagent.get_metadata_tag_fields`，复用同一 instance/database/measurement/RP 定位逻辑，但只返回 `typ=6` / `typeLabel=Tag` 的字段，不支持 `field` 参数。
+- Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array。
 - 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields` 暴露已导入 Metadata，供个人本地 Claude Code 读取；`logagent.get_metadata_snapshot` 响应保留 V2 顶层 snapshot 字段并补齐 Rust/V1 `snapshot` 包装。Python V2 同时接受 `logagent-v2://...` 旧 alias，该入口不导入或修改 Metadata。
 
 暂未实现：

@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Field Filter Schema Compatibility
+
+- Aligned V2 Metadata field filter schemas with Rust/V1 across Tools catalog,
+  readonly MCP, and task MCP: `field` now uses `oneOf` for a single string or a
+  non-empty string array.
+- Shared the schema between metadata MCP descriptors and built-in tool catalog
+  descriptors to prevent future drift.
+- Updated V2 Server and Metadata docs/specs.
+- Verification passed: focused Metadata descriptor regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (75 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Configured Tool Descriptor Compatibility
 
 - Aligned regular V2 configured subprocess tool descriptors with the Rust/V1

@@ -55,6 +55,7 @@ from logagent_v2.metadata import (
     confirm_metadata_import,
     import_metadata_from_url,
     import_metadata,
+    metadata_tool_descriptors,
     preview_metadata_import,
     preview_metadata_import_from_url,
     query_field_types,
@@ -1827,6 +1828,19 @@ class StoreTests(unittest.TestCase):
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
                 ["*"],
             )
+            field_schema = descriptors["logagent.get_metadata_field_types"][
+                "paramsSchema"
+            ]["properties"]["field"]
+            self.assertEqual(field_schema["oneOf"][0]["type"], "string")
+            self.assertEqual(field_schema["oneOf"][1]["type"], "array")
+            self.assertEqual(field_schema["oneOf"][1]["minItems"], 1)
+            mcp_metadata = {
+                item["name"]: item for item in metadata_tool_descriptors()
+            }
+            mcp_field_schema = mcp_metadata["logagent.get_metadata_field_types"][
+                "inputSchema"
+            ]["properties"]["field"]
+            self.assertEqual(mcp_field_schema, field_schema)
 
     def test_pprof_tool_result_includes_v1_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

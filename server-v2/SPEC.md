@@ -803,7 +803,9 @@ background slices to `metadata_slices/field_types_<stable_id>.json` and
 `metadata_slices/tag_fields_<stable_id>.json`, return `artifactPath`,
 `backgroundRef`, `evidenceRefs`, `finalEvidenceAllowed=false`, and keep both
 the V2 top-level `fields` shape and the Rust/V1 `result` wrapper. Readonly MCP
-returns the same `result` wrapper without writing task artifacts.
+returns the same `result` wrapper without writing task artifacts. The field
+filter schema uses the Rust/V1-compatible `oneOf` form: either one string or a
+non-empty string array.
 
 Current direct import request:
 
