@@ -385,11 +385,9 @@ def validate_tool_run_params(
             "querySql": require_string_param(tool_id, params, "querySql"),
         }
     if tool_id == "logagent.fetch":
-        reject_unknown_params(tool_id, params, {"endpointId", "fetchId"})
-        endpoint_id = params.get("endpointId") or params.get("fetchId")
-        if not isinstance(endpoint_id, str) or not endpoint_id.strip():
-            raise ValueError("logagent.fetch requires endpointId")
-        return {"endpointId": endpoint_id.strip()}
+        from .fetch import normalize_fetch_run_params
+
+        return normalize_fetch_run_params(params)
     tool = get_tool(settings, tool_id)
     return validate_configured_tool_params(tool, params)
 
@@ -436,17 +434,16 @@ def execute_tool_by_id(
     if tool_id == PPROF_ANALYZER_ID:
         return run_pprof_tool(settings, store, run, params)
     if tool_id == "logagent.fetch":
-        from .fetch import execute_fetch_endpoint
+        from .fetch import execute_fetch_endpoint, normalize_fetch_run_params
 
-        endpoint_id = params.get("endpointId") or params.get("fetchId")
-        if not isinstance(endpoint_id, str) or not endpoint_id.strip():
-            raise ValueError("logagent.fetch requires endpointId")
+        run_params = normalize_fetch_run_params(params)
         return execute_fetch_endpoint(
             settings=settings,
             store=store,
             workspace_id=run["workspace_id"],
             run_id=run["id"],
-            endpoint_id=endpoint_id.strip(),
+            endpoint_id=run_params["endpointId"],
+            run_params=run_params,
         )
     if tool_id == HUAWEI_PACKAGE_SYNC_TOOL_ID:
         return run_huawei_package_sync_tool(settings, store, run, params)

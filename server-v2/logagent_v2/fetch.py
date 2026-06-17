@@ -221,6 +221,94 @@ def normalize_headers(value: Any) -> JsonObject:
     return headers
 
 
+def normalize_fetch_run_params(value: JsonObject) -> JsonObject:
+    if not isinstance(value, dict):
+        raise ValueError("logagent.fetch params must be an object")
+    unknown = sorted(set(value) - {"endpointId", "fetchId", "variables", "headers", "body"})
+    if unknown:
+        raise ValueError(f"logagent.fetch received unsupported params: {', '.join(unknown)}")
+    endpoint_id = value.get("endpointId") or value.get("fetchId")
+    if not isinstance(endpoint_id, str) or not endpoint_id.strip():
+        raise ValueError("logagent.fetch requires endpointId")
+
+    normalized: JsonObject = {
+        "endpointId": endpoint_id.strip(),
+        "variables": normalize_fetch_variables(value.get("variables") or {}),
+        "headers": normalize_fetch_runtime_headers(value.get("headers") or {}),
+    }
+    if "body" in value and value.get("body") is not None:
+        body = value["body"]
+        if not isinstance(body, str):
+            raise ValueError("logagent.fetch body override must be a string")
+        normalized["body"] = body
+    return normalized
+
+
+def normalize_fetch_variables(value: Any) -> JsonObject:
+    if not isinstance(value, dict):
+        raise ValueError("logagent.fetch variables must be an object")
+    variables: JsonObject = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError("logagent.fetch variable names must be strings")
+        validate_fetch_variable_name(key)
+        if not isinstance(item, str):
+            raise ValueError(f"logagent.fetch variable {key} must be a string")
+        variables[key] = item
+    return variables
+
+
+def normalize_fetch_runtime_headers(value: Any) -> JsonObject:
+    if not isinstance(value, dict):
+        raise ValueError("logagent.fetch headers must be an object")
+    headers: JsonObject = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError("logagent.fetch header names must be strings")
+        name = key.strip()
+        if not name:
+            continue
+        if name.lower() in CONTROLLED_HEADERS:
+            raise ValueError(f"logagent.fetch header override {name} is controlled by Server")
+        if not isinstance(item, str):
+            raise ValueError(f"logagent.fetch header {name} must be a string")
+        headers[name] = item
+    return headers
+
+
+def validate_fetch_variable_name(name: str) -> None:
+    if not name or not all(char.isascii() and (char.isalnum() or char == "_") for char in name):
+        raise ValueError(f"invalid fetch variable name {name}")
+
+
+def apply_fetch_variables(template: str, variables: JsonObject) -> str:
+    output = template
+    for key, value in variables.items():
+        output = output.replace("{" + key + "}", value)
+    if "{" in output or "}" in output:
+        raise ValueError("fetch URL template contains unresolved variables")
+    return output
+
+
+def prepare_fetch_endpoint(endpoint: JsonObject, run_params: JsonObject) -> JsonObject:
+    variables = run_params.get("variables") or {}
+    prepared = dict(endpoint)
+    prepared["url"] = apply_fetch_variables(endpoint["url"], variables)
+    headers = dict(endpoint.get("headers", {}))
+    headers.update(run_params.get("headers") or {})
+    prepared["headers"] = headers
+    if "body" in run_params:
+        prepared["body"] = run_params["body"]
+    return prepared
+
+
+def redact_variables(variables: JsonObject) -> JsonObject:
+    return {
+        str(key): REDACTED if is_sensitive_name(str(key)) else str(value)
+        for key, value in variables.items()
+    }
+
+
 def public_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
     result = dict(endpoint)
     result["url"] = redact_url(result["url"])
@@ -352,10 +440,19 @@ def fetch_catalog_descriptor(settings: Settings) -> JsonObject:
             "properties": {
                 "endpointId": {"type": "string"},
                 "fetchId": {"type": "string"},
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+                "body": {"type": "string"},
             },
             "additionalProperties": False,
         },
-        "paramsTemplate": {"endpointId": ""},
+        "paramsTemplate": {"endpointId": "", "variables": {}, "headers": {}},
         "outputViews": ["summary", "request", "response"],
         "allowedHosts": list(settings.fetch_allowed_hosts),
     }
@@ -373,8 +470,20 @@ def fetch_tool_descriptors() -> list[JsonObject]:
             "description": "Run one configured fetch endpoint by endpointId.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"endpointId": {"type": "string", "minLength": 1}},
-                "required": ["endpointId"],
+                "properties": {
+                    "endpointId": {"type": "string", "minLength": 1},
+                    "fetchId": {"type": "string", "minLength": 1},
+                    "variables": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "body": {"type": "string"},
+                },
+                "anyOf": [{"required": ["endpointId"]}, {"required": ["fetchId"]}],
                 "additionalProperties": False,
             },
         },
@@ -398,10 +507,15 @@ def call_fetch_tool(
             ],
         }
     if name == "logagent.fetch":
-        endpoint_id = arguments.get("endpointId")
-        if not isinstance(endpoint_id, str) or not endpoint_id:
-            raise ValueError("endpointId is required")
-        return execute_fetch_endpoint(settings, store, run["workspace_id"], run["id"], endpoint_id)
+        run_params = normalize_fetch_run_params(arguments)
+        return execute_fetch_endpoint(
+            settings,
+            store,
+            run["workspace_id"],
+            run["id"],
+            run_params["endpointId"],
+            run_params=run_params,
+        )
     raise ValueError(f"unsupported fetch tool {name}")
 
 
@@ -411,20 +525,31 @@ def execute_fetch_endpoint(
     workspace_id: str,
     run_id: str,
     endpoint_id: str,
+    run_params: JsonObject | None = None,
 ) -> JsonObject:
     if not settings.fetch_enabled:
         raise ValueError("fetch is disabled")
+    run_params = normalize_fetch_run_params(
+        {"endpointId": endpoint_id, **(run_params or {})}
+    )
+    endpoint_id = run_params["endpointId"]
     endpoint = hydrate_fetch_endpoint(settings, store, store.get_fetch_endpoint(endpoint_id))
     if not endpoint["enabled"]:
         raise ValueError(f"fetch endpoint {endpoint_id} is disabled")
+    credential = store.get_fetch_credential_set(endpoint_id)
+    endpoint = prepare_fetch_endpoint(endpoint, run_params)
     validate_url_allowed(settings, endpoint["url"])
     action_id = new_id("fetchact")
     started = time.monotonic()
     status = "OK"
     error = None
     response: JsonObject
+    body_bytes = b""
     try:
         response = perform_http_request(settings, endpoint)
+        raw_body = response.pop("_bodyBytes", b"")
+        if isinstance(raw_body, bytes):
+            body_bytes = raw_body
     except Exception as exc:
         status = "FAILED"
         error = str(exc)[:2000]
@@ -437,22 +562,54 @@ def execute_fetch_endpoint(
         }
     duration_ms = int((time.monotonic() - started) * 1000)
     ref = f"tool_results/{action_id}/result.json#response"
+    logical_body_path = f"tool_results/{action_id}/response_body.bin"
+    body_artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_response_body.bin",
+        data=body_bytes,
+        content_type="application/octet-stream",
+        schema_name="logagent.v2.fetch_response_body.v1",
+        preview={
+            "tool": "logagent.fetch",
+            "endpointId": endpoint_id,
+            "actionId": action_id,
+            "path": logical_body_path,
+            "sizeBytes": len(body_bytes),
+        },
+    )
+    response["bodyArtifactPath"] = logical_body_path
+    response["bodyArtifactId"] = body_artifact["id"]
+    response["bodyArtifactRelativePath"] = body_artifact["relative_path"]
+    response["truncated"] = bool(response.get("bodyTruncated", False))
     result = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "tool": "logagent.fetch",
         "toolId": "logagent.fetch",
         "actionId": action_id,
         "endpointId": endpoint_id,
+        "fetchId": endpoint_id,
         "status": status,
         "summary": fetch_summary(endpoint, response, status, error),
+        "httpOk": bool(response.get("httpOk", False)),
+        "statusCode": response.get("statusCode"),
+        "redirectCount": response.get("redirectCount", 0),
+        "finalUrl": response.get("finalUrl"),
         "request": {
             "name": endpoint["name"],
             "method": endpoint["method"],
             "url": redact_url(endpoint["url"]),
             "headers": redact_headers(endpoint.get("headers", {})),
             "bodyPreview": redact_body_preview((endpoint.get("body") or "")[:500]),
+            "variables": redact_variables(run_params.get("variables") or {}),
         },
         "response": response,
+        "bodyArtifactPath": logical_body_path,
+        "bodyArtifactId": body_artifact["id"],
+        "bodyArtifactRelativePath": body_artifact["relative_path"],
+        "truncated": bool(response.get("bodyTruncated", False)),
+        "credentialVersion": credential["updatedAt"] if credential is not None else None,
         "durationMs": duration_ms,
         "error": error,
         "evidenceRef": ref,
@@ -464,7 +621,7 @@ def execute_fetch_endpoint(
         filename=f"{action_id}_fetch_result.json",
         data=json.dumps(result, ensure_ascii=True, indent=2).encode("utf-8"),
         content_type="application/json",
-        schema_name="logagent.v2.fetch_result.v1",
+        schema_name="logagent.v2.fetch_result.v2",
         preview={
             "tool": "logagent.fetch",
             "endpointId": endpoint_id,
@@ -484,6 +641,7 @@ def execute_fetch_endpoint(
             "tool": "logagent.fetch",
             "actionId": action_id,
             "endpointId": endpoint_id,
+            "bodyArtifactId": body_artifact["id"],
             "ref": ref,
         },
     )
@@ -558,6 +716,7 @@ def response_from_http(
         "headers": redact_headers(dict(response.headers.items())),
         "bodyPreview": raw[:4000].decode("utf-8", errors="replace"),
         "bodyTruncated": truncated,
+        "_bodyBytes": raw,
     }
 
 

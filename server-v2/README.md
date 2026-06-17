@@ -45,7 +45,9 @@ slice provides the durable foundation for the V2 product model:
   default-off `logagent.huawei_cloud_package_sync`.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   DevTools bash cURL import, default-off allowlist execution, task MCP
-  `logagent.fetch`, and `fetch_result` final evidence refs.
+  `logagent.fetch`, runtime `endpointId`/`fetchId` parameters with URL
+  variables, temporary headers and body override, response body artifacts, and
+  `fetch_result` final evidence refs.
 - Waiting-state action foundation for task MCP `logagent.request_user_input`
   and `logagent.request_approval`, exposed through run analysis summaries for
   WebUI recovery; user supplements answer pending user-input actions and recent
@@ -658,12 +660,20 @@ DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
 method, headers, body, cookies, compression, HEAD, and location. Execution is
 disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
 URLs whose host or host:port exactly matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`.
+Runtime calls accept either `endpointId` or the V1-compatible `fetchId`,
+optional string `variables` that replace `{name}` placeholders in the endpoint
+URL before allowlist validation, optional temporary string `headers`, and an
+optional string `body` override. Controlled headers such as `Host` and
+`Content-Length` are rejected for both saved endpoints and runtime overrides.
 Request URLs, sensitive headers, and sensitive JSON/form-style body preview
 fields are redacted in API, MCP, and artifact previews. Redirects are followed
 manually up to
 `LOGAGENT_V2_FETCH_MAX_REDIRECTS`; every hop is revalidated against the same
 allowlist, and sensitive headers are stripped when redirecting across origin.
-Fetch stores bounded response previews as `fetch_result` evidence.
+Fetch stores bounded response previews as `fetch_result` evidence and stores
+the bounded raw response body as a separate body artifact. Results include the
+logical V1-style `tool_results/<action_id>/response_body.bin` path plus the
+actual V2 artifact id and relative path.
 
 Sensitive Fetch endpoint material is split into an encrypted credential set.
 If a URL query parameter, header, or body field looks like a token, secret,

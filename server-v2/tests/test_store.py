@@ -2748,6 +2748,123 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_fetch_runtime_params_apply_overrides_and_body_artifact(self) -> None:
+        captured: dict[str, str] = {}
+
+        class RuntimeFetchHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                captured["path"] = self.path
+                captured["x_base"] = self.headers.get("X-Base", "")
+                captured["x_run"] = self.headers.get("X-Run", "")
+                captured["authorization"] = self.headers.get("Authorization", "")
+                captured["body"] = self.rfile.read(length).decode("utf-8")
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "path": captured["path"],
+                        "body": captured["body"],
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), RuntimeFetchHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    fetch_enabled=True,
+                    fetch_allowed_hosts=("127.0.0.1",),
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                endpoint = store.create_fetch_endpoint(
+                    name="runtime metadata",
+                    method="POST",
+                    url=(
+                        f"http://127.0.0.1:{server.server_port}"
+                        "/metadata/{instance}?token={token}&keep=1"
+                    ),
+                    headers={"X-Base": "base"},
+                    body="default=body",
+                    enabled=True,
+                )
+                workspace = store.create_workspace("fetch runtime", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+
+                fetch_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 24,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {
+                                "fetchId": endpoint["id"],
+                                "variables": {
+                                    "instance": "i001",
+                                    "token": "runtime-secret",
+                                },
+                                "headers": {
+                                    "X-Run": "trace-1",
+                                    "Authorization": "Bearer runtime-secret",
+                                },
+                                "body": "password=runtime-secret&keep=override",
+                            },
+                        },
+                    },
+                )
+                payload = json.loads(fetch_response["result"]["content"][0]["text"])
+
+                self.assertEqual(captured["path"], "/metadata/i001?token=runtime-secret&keep=1")
+                self.assertEqual(captured["x_base"], "base")
+                self.assertEqual(captured["x_run"], "trace-1")
+                self.assertEqual(captured["authorization"], "Bearer runtime-secret")
+                self.assertEqual(captured["body"], "password=runtime-secret&keep=override")
+
+                result = payload["result"]
+                self.assertEqual(result["schemaVersion"], 2)
+                self.assertTrue(result["httpOk"])
+                self.assertEqual(result["statusCode"], 200)
+                self.assertEqual(result["fetchId"], endpoint["id"])
+                self.assertIn("token=__REDACTED__", result["request"]["url"])
+                self.assertEqual(result["request"]["variables"]["token"], "__REDACTED__")
+                self.assertEqual(result["request"]["variables"]["instance"], "i001")
+                self.assertEqual(result["request"]["headers"]["Authorization"], "__REDACTED__")
+                self.assertEqual(result["request"]["headers"]["X-Run"], "trace-1")
+                self.assertEqual(
+                    result["request"]["bodyPreview"],
+                    "password=__REDACTED__&keep=override",
+                )
+                self.assertEqual(
+                    result["bodyArtifactPath"],
+                    f"tool_results/{result['actionId']}/response_body.bin",
+                )
+                self.assertEqual(result["response"]["bodyArtifactId"], result["bodyArtifactId"])
+                body_artifact = store.get_artifact(result["bodyArtifactId"])
+                body_path = resolve_artifact_path(settings, body_artifact["relative_path"])
+                self.assertIn(
+                    '"body": "password=runtime-secret&keep=override"',
+                    body_path.read_text(encoding="utf-8"),
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_fetch_sensitive_credentials_are_encrypted_and_hydrated(self) -> None:
         captured: dict[str, str] = {}
 

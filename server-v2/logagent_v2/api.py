@@ -35,6 +35,7 @@ from .fetch import (
     execute_fetch_endpoint,
     hydrate_fetch_endpoint,
     normalize_fetch_endpoint,
+    normalize_fetch_run_params,
     persist_fetch_credentials,
     preview_curl_import,
     public_fetch_endpoint,
@@ -294,6 +295,12 @@ class FetchEndpointUpdate(BaseModel):
     headers: dict[str, str] | None = None
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool | None = None
+
+
+class FetchRunCreate(BaseModel):
+    variables: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = Field(default=None, max_length=200000)
 
 
 class ToolRunCreate(BaseModel):
@@ -1208,15 +1215,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/api/v2/runs/{run_id}/fetch/{endpoint_id}")
-    async def run_fetch_endpoint(_: Auth, run_id: str, endpoint_id: str) -> dict:
+    async def run_fetch_endpoint(
+        _: Auth, run_id: str, endpoint_id: str, payload: FetchRunCreate | None = None
+    ) -> dict:
         try:
             run = store.get_run(run_id)
+            params = normalize_fetch_run_params(
+                {
+                    "endpointId": endpoint_id,
+                    **(
+                        payload.model_dump(exclude_none=True)
+                        if payload is not None
+                        else {}
+                    ),
+                }
+            )
             return execute_fetch_endpoint(
                 settings=settings,
                 store=store,
                 workspace_id=run["workspace_id"],
                 run_id=run_id,
                 endpoint_id=endpoint_id,
+                run_params=params,
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

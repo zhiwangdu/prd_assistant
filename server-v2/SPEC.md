@@ -112,8 +112,10 @@ Implemented in this slice:
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP
-  `logagent.fetch` only when enabled and allowlisted. Sensitive endpoint
-  material is split into encrypted credential sets.
+  `logagent.fetch` only when enabled and allowlisted. Runtime calls accept
+  `endpointId` or V1-compatible `fetchId`, URL template variables, temporary
+  headers, and body override. Sensitive endpoint material is split into
+  encrypted credential sets.
 - Waiting-state foundation through task MCP `logagent.request_user_input` and
   `logagent.request_approval`; pending actions are persisted, exposed in run
   analysis summaries, user supplements mark pending user-input actions as
@@ -672,12 +674,24 @@ Task MCP exposes:
 
 ```text
 logagent.list_fetch_endpoints
-logagent.fetch { endpointId }
+logagent.fetch { endpointId | fetchId, variables?, headers?, body? }
 ```
 
 `logagent.fetch` writes a `fetch_result` artifact/evidence item. Network errors
 produce a failed Fetch result rather than crashing the run. HTTP 4xx/5xx
 responses are stored as responses.
+
+Runtime `variables` must be a string map whose keys are ASCII
+`[A-Za-z0-9_]`; they replace `{name}` placeholders in the endpoint URL before
+allowlist validation, and unresolved `{...}` placeholders fail the run.
+Runtime `headers` must be a string map and are merged over saved endpoint
+headers for that single request; controlled headers are rejected. Runtime
+`body`, when present, overrides the saved endpoint body for that request.
+Result artifacts include redacted request metadata, top-level `httpOk`,
+`statusCode`, `redirectCount`, `finalUrl`, `truncated`, `credentialVersion`,
+and a separate bounded response body artifact referenced by both logical
+`tool_results/<action_id>/response_body.bin` and actual V2 artifact id/path
+fields.
 
 Fetch response evidence refs use:
 

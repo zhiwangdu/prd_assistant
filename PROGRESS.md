@@ -2,6 +2,28 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Runtime Overrides
+
+- Added V1-compatible runtime params to V2 `logagent.fetch`: `endpointId` or
+  `fetchId`, string-map `variables`, temporary string-map `headers`, and string
+  `body` override.
+- Fetch URL variables now replace `{name}` placeholders before HTTP allowlist
+  validation; unresolved placeholders and controlled runtime headers are
+  rejected.
+- Fetch result artifacts now use schema v2 and include Rust-style top-level
+  `httpOk`, `statusCode`, `redirectCount`, `finalUrl`, `truncated`,
+  `credentialVersion`, and response body artifact references while preserving
+  existing response preview fields.
+- Each Fetch run now stores the bounded raw response body as a separate V2
+  artifact and exposes both logical
+  `tool_results/<action_id>/response_body.bin` and actual artifact id/path.
+- Updated `server-v2` and Tool Runner README/SPEC docs and added regression
+  coverage for `fetchId`, URL variables, temporary headers, body override, and
+  response body artifact persistence.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Storage Analyzer Directory Inputs
 
 - Added V2 directory artifact support for tool inputs without changing the
