@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly MCP Dynamic Resources
+
+- Aligned V2 readonly MCP `resources/list` with Rust/V1 discovery behavior:
+  dynamic Skill resources and Metadata snapshot resources are now advertised in
+  addition to static collection resources.
+- Dynamic readonly resources are listed under both `logagent://...` and
+  `logagent-v2://...` schemes, matching the existing dual-scheme
+  `resources/read` support.
+- Updated V2 Server and Interfaces docs/specs.
+- Verification passed: focused readonly dynamic-resource regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Waiting Tool Marker Compatibility
 
 - Aligned V2 task MCP `logagent.request_user_input` and

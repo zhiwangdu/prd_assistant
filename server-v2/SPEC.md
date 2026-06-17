@@ -86,7 +86,10 @@ Implemented in this slice:
   inspection.
 - Read-only MCP endpoint with `initialize`, `resources/list`, `resources/read`,
   `tools/list`, and tools/resources for V1-shaped tool catalog, Metadata,
-  Case Memory, Skill registry, and Domain Adapter summaries.
+  Case Memory, Skill registry, and Domain Adapter summaries. `resources/list`
+  advertises static collection resources plus dynamic per-Skill and
+  per-Metadata snapshot resources for both `logagent://...` and
+  `logagent-v2://...` URI schemes.
 - Task MCP endpoint with `summary`, `artifact_index`, `evidence`, `manifest`,
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
   `analysis_state`, `agent_request`, `agent_response`, `case_context`,

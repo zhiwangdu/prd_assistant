@@ -113,7 +113,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                 "serverInfo": {"name": "logagent-v2-readonly", "version": "0.1.0"},
             }
         elif method == "resources/list":
-            result = {"resources": readonly_resource_descriptors()}
+            result = {"resources": readonly_resource_descriptors(settings, store)}
         elif method == "tools/list":
             result = {
                 "tools": [
@@ -246,7 +246,7 @@ def canonical_readonly_uri(uri: object) -> object:
     return uri
 
 
-def readonly_resource_descriptors() -> list[JsonObject]:
+def readonly_resource_descriptors(settings: Settings, store: Store) -> list[JsonObject]:
     resources = [
         {
             "path": "tools/catalog",
@@ -274,6 +274,24 @@ def readonly_resource_descriptors() -> list[JsonObject]:
             "description": "Built-in V2 domain adapter summaries",
         },
     ]
+    for skill in list_skills(settings):
+        skill_id = skill["skillId"]
+        resources.append(
+            {
+                "path": f"skills/{skill_id}",
+                "name": f"skill_{skill_id}",
+                "description": f"Diagnostic skill {skill.get('displayName') or skill_id}",
+            }
+        )
+    for instance in store.list_metadata_instances():
+        instance_id = instance["instanceId"]
+        resources.append(
+            {
+                "path": f"metadata/instances/{instance_id}/snapshot",
+                "name": f"metadata_snapshot_{instance_id}",
+                "description": f"Metadata snapshot for instance {instance_id}",
+            }
+        )
     descriptors = []
     for scheme in ("logagent://", "logagent-v2://"):
         for resource in resources:

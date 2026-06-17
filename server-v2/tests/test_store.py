@@ -3871,6 +3871,23 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(instances[0]["nodeCount"], 1)
             self.assertEqual(instances[0]["databaseCount"], 1)
 
+            readonly_resources = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 129, "method": "resources/list"},
+            )
+            readonly_resource_uris = {
+                item["uri"] for item in readonly_resources["result"]["resources"]
+            }
+            self.assertIn(
+                "logagent://metadata/instances/inst1/snapshot",
+                readonly_resource_uris,
+            )
+            self.assertIn(
+                "logagent-v2://metadata/instances/inst1/snapshot",
+                readonly_resource_uris,
+            )
+
             fields = query_field_types(
                 store,
                 instance_id="inst1",
@@ -4743,6 +4760,20 @@ grep_results.json#matches/0
             readonly_body = json.loads(readonly_ref["result"]["content"][0]["text"])
             self.assertFalse(readonly_body["finalEvidenceAllowed"])
             self.assertIn("PT ownership", readonly_body["content"])
+
+            readonly_resources = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 21, "method": "resources/list"},
+            )
+            readonly_resource_uris = {
+                item["uri"] for item in readonly_resources["result"]["resources"]
+            }
+            self.assertIn("logagent://skills/opengemini-diagnosis", readonly_resource_uris)
+            self.assertIn(
+                "logagent-v2://skills/opengemini-diagnosis",
+                readonly_resource_uris,
+            )
 
     def test_system_context_auto_matches_skills_from_question(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
