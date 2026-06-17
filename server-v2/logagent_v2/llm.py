@@ -87,7 +87,7 @@ def build_agent_provider_request(
     prompt = build_agent_prompt(
         settings, workspace, evidence_bundle, tool_observations, interaction_context
     )
-    allowed_refs = allowed_evidence_refs(evidence_bundle)
+    allowed_refs = allowed_evidence_refs(evidence_bundle, tool_observations)
     if provider == "stub":
         return {
             "provider": "stub",
@@ -436,7 +436,7 @@ def build_agent_prompt(
             "fileCount": manifest.get("fileCount"),
             "uploadCount": manifest.get("uploadCount"),
         },
-        "allowedEvidenceRefs": allowed_evidence_refs(evidence_bundle),
+        "allowedEvidenceRefs": allowed_evidence_refs(evidence_bundle, tool_observations),
         "evidencePreview": evidence_preview,
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
         "toolObservations": tool_observations or [],
@@ -553,17 +553,54 @@ def run_domain_tool_descriptor(settings: Settings) -> JsonObject:
     }
 
 
-def allowed_evidence_refs(evidence_bundle: JsonObject) -> list[str]:
+def allowed_evidence_refs(
+    evidence_bundle: JsonObject,
+    tool_observations: list[JsonObject] | None = None,
+) -> list[str]:
     grep_results = evidence_bundle.get("grepResults", {})
     matches = grep_results.get("matches", [])
     if not isinstance(matches, list):
-        return [SESSION_TEXT_INPUT_REF]
-    refs = [
-        match["ref"]
-        for match in matches[:20]
-        if isinstance(match, dict) and isinstance(match.get("ref"), str)
-    ]
-    return [SESSION_TEXT_INPUT_REF, *refs]
+        initial_refs = [SESSION_TEXT_INPUT_REF]
+    else:
+        initial_refs = [
+            SESSION_TEXT_INPUT_REF,
+            *[
+                match["ref"]
+                for match in matches[:20]
+                if isinstance(match, dict) and isinstance(match.get("ref"), str)
+            ],
+        ]
+    refs: list[str] = []
+    for ref in [*initial_refs, *tool_observation_evidence_refs(tool_observations or [])]:
+        if ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def tool_observation_evidence_refs(tool_observations: list[JsonObject]) -> list[str]:
+    refs: list[str] = []
+    for observation in tool_observations:
+        for ref in collect_tool_evidence_refs(observation):
+            if ref not in refs:
+                refs.append(ref)
+    return refs
+
+
+def collect_tool_evidence_refs(value: object) -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in {"evidenceRefs", "finalEvidenceRefs"} and isinstance(child, list):
+                refs.extend(item for item in child if isinstance(item, str))
+                continue
+            if key in {"ref", "evidenceRef"} and isinstance(child, str):
+                refs.append(child)
+                continue
+            refs.extend(collect_tool_evidence_refs(child))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(collect_tool_evidence_refs(item))
+    return refs
 
 
 def sanitize_url(url: str | None) -> str | None:

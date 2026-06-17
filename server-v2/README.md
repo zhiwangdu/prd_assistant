@@ -530,9 +530,12 @@ prompt: log search/slice, Metadata, Case Memory, Skill references, Fetch
 catalog, configured domain tools, and Fetch execution when Fetch is enabled. V2
 validates the requested tool name against the advertised set, executes through
 the existing task MCP call path, feeds the observations into the next round, and
-stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must eventually return
-one JSON final-answer object; V2 normalizes it and rejects unsupported or
-non-current evidence refs before marking the run `succeeded`.
+stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. Follow-up evidence refs returned by
+tools, such as `log_searches/...#matches/<index>` or tool
+`finalEvidenceRefs`, are merged into the next round's `allowedEvidenceRefs` so
+the provider can legally cite evidence it requested. The provider must
+eventually return one JSON final-answer object; V2 normalizes it and rejects
+unsupported or non-current evidence refs before marking the run `succeeded`.
 
 This is a bounded provider-directed tool loop. Waiting/approval tools are not
 advertised to the provider. Full LangGraph planning remains future work, but

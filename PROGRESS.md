@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Follow-up Evidence Refs
+
+- V2 Agent provider requests now merge evidence refs discovered in prior tool
+  observations into the next round's `allowedEvidenceRefs`.
+- The extractor covers `evidenceRefs`, `finalEvidenceRefs`, nested match
+  `ref`, and `evidenceRef` fields, with stable de-duplication after the initial
+  Session question and grep refs.
+- Added regression coverage that an OpenAI-compatible provider can request
+  `logagent.search_logs`, receive a `log_searches/...#matches/0` ref, and see
+  that ref in the second-round prompt's `allowedEvidenceRefs`.
+- Verification passed: focused Agent follow-up evidence regression, ruff for
+  `server-v2/logagent_v2` and `server-v2/tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, compileall for
+  `server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Claude Runtime Artifact Compatibility
 
 - V2 task MCP now advertises optional Rust/V1 Claude runtime resources

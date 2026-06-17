@@ -1361,6 +1361,10 @@ class StoreTests(unittest.TestCase):
                     captured_prompts[1]["toolObservations"][0]["name"],
                     "logagent.search_logs",
                 )
+                follow_up_ref = captured_prompts[1]["toolObservations"][0]["result"][
+                    "search"
+                ]["matches"][0]["ref"]
+                self.assertIn(follow_up_ref, captured_prompts[1]["allowedEvidenceRefs"])
                 state_response = task_mcp_response(
                     settings,
                     store,

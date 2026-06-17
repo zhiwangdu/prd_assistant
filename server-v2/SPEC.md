@@ -87,9 +87,11 @@ Implemented in this slice:
   local binary provider loop for advertised Server-owned tools and an
   evidence-validated JSON final answer. Each round persists
   `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
-  artifacts before the run reaches a terminal state. Successful analysis runs
-  persist a deterministic fallback alias derived from the final summary or
-  question for history/UI display.
+  artifacts before the run reaches a terminal state. Follow-up evidence refs
+  returned by tool observations are added to the next round's
+  `allowedEvidenceRefs`. Successful analysis runs persist a deterministic
+  fallback alias derived from the final summary or question for history/UI
+  display.
 - `analysis_package.json` generation after initial evidence collection, exposed
   as task MCP resource for Agent loop context. The package includes Session
   title, source URL, Metadata binding, System Context ids, Skill ids, and
@@ -1238,7 +1240,11 @@ advertised. V2 validates the tool name and arguments as JSON objects, executes
 the Server-owned task MCP tool, records the resulting evidence/artifacts through
 the existing tool implementation, and feeds the structured observation into the
 next provider round. The loop is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with
-default 3.
+default 3. Evidence refs returned by tool observations, including
+`evidenceRefs`, `finalEvidenceRefs`, match `ref`, and `evidenceRef` fields, are
+deduplicated into the next provider request and prompt `allowedEvidenceRefs` so
+the provider can cite follow-up evidence without violating final-answer
+validation.
 
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
