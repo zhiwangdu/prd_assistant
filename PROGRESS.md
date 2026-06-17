@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Search Max Matches
+
+- Added V1-compatible optional `maxMatches` to V2 task MCP
+  `logagent.search_logs`.
+- Search calls now validate `maxMatches` as an integer and clamp it to 1..200
+  before creating the follow-up `log_searches/<search_id>.json` artifact.
+- Updated V2 server, Analysis Agent, and Interfaces README/SPEC docs.
+- Added regression coverage that verifies `maxMatches=1` truncates a follow-up
+  search result to one match.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Request Size Limit
 
 - Added `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` with a 1MiB default to match the

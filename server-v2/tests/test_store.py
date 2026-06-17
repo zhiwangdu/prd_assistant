@@ -1478,6 +1478,43 @@ class StoreTests(unittest.TestCase):
                 "mcp_calls",
             )
 
+    def test_task_mcp_search_logs_honors_max_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("panic search", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "panic.log",
+                b"panic one\npanic two\npanic three\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "panic.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            search = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_logs",
+                        "arguments": {"keywords": ["panic"], "maxMatches": 1},
+                    },
+                },
+            )
+            payload = json.loads(search["result"]["content"][0]["text"])
+            self.assertEqual(payload["search"]["totalMatches"], 1)
+            self.assertTrue(payload["search"]["truncated"])
+            self.assertEqual(len(payload["search"]["matches"]), 1)
+
     def test_task_mcp_runs_configured_tool_by_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(

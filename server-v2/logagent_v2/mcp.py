@@ -607,7 +607,8 @@ def search_logs_descriptor() -> dict:
                     "items": {"type": "string", "minLength": 1},
                     "minItems": 1,
                     "maxItems": 16,
-                }
+                },
+                "maxMatches": {"type": "integer", "minimum": 1, "maximum": 200},
             },
             "required": ["keywords"],
             "additionalProperties": False,
@@ -687,7 +688,18 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         if not isinstance(keyword, str) or not keyword.strip():
             raise ValueError("keywords must be non-empty strings")
         normalized.append(keyword.strip()[:128])
-    result = run_log_search(settings, store, run["workspace_id"], run["id"], normalized)
+    max_matches = arguments.get("maxMatches", 50)
+    if isinstance(max_matches, bool) or not isinstance(max_matches, int):
+        raise ValueError("logagent.search_logs maxMatches must be an integer")
+    max_matches = max(1, min(max_matches, 200))
+    result = run_log_search(
+        settings,
+        store,
+        run["workspace_id"],
+        run["id"],
+        normalized,
+        max_matches=max_matches,
+    )
     text = json.dumps(
         {
             "search": result["search"],

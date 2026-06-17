@@ -91,8 +91,9 @@ Implemented in this slice:
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
   `analysis_state`, `agent_request`, `agent_response`, `case_context`,
   `tool_results`, `mcp_calls`, `result`, and `result_markdown` resources.
-- Task MCP `logagent.search_logs`, which creates follow-up `log_search`
-  evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
+- Task MCP `logagent.search_logs`, which accepts V1-compatible optional
+  `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
+  returns stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
   Workspace text path and persists `log_slice` evidence.
 - Tool Plugin registry. Configured subprocess tools are loaded from

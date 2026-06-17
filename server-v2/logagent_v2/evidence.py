@@ -242,15 +242,17 @@ def run_log_search(
     workspace_id: str,
     run_id: str,
     keywords: list[str],
+    max_matches: int | None = None,
 ) -> JsonObject:
     uploads = store.list_uploads(workspace_id)
     text_files = collect_text_files(settings, uploads)
     search_id = new_id("logsearch")
     artifact_path = f"log_searches/{search_id}.json"
+    match_limit = max_matches if max_matches is not None else settings.max_grep_matches
     results = grep_text_files(
         text_files,
         keywords,
-        settings.max_grep_matches,
+        match_limit,
         ref_base=f"{artifact_path}#matches/",
     )
     results["searchId"] = search_id

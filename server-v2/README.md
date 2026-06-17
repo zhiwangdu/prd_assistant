@@ -566,7 +566,8 @@ It currently supports:
   `analysis_state`, `agent_request`, `agent_response`, `case_context`,
   `tool_results`, `mcp_calls`, `result`, and `result_markdown`
 - `tools/list`
-- `tools/call logagent.search_logs`
+- `tools/call logagent.search_logs` with V1-compatible optional `maxMatches`
+  clamped to 1..200
 - `tools/call logagent.get_log_slice`
 - `tools/call logagent.run_domain_tool`
 - `tools/call logagent.list_fetch_endpoints`

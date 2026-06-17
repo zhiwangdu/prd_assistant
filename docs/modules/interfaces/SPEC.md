@@ -65,7 +65,7 @@ Claude Code structured outcome 支持：
 
 LogAgent MCP tools 支持：
 
-- `logagent.search_logs`
+- `logagent.search_logs`，支持 `keywords` 和 V1 兼容可选 `maxMatches`，`maxMatches` 按 1..200 裁剪
 - `logagent.get_log_slice`
 - `logagent.run_domain_tool`
 - `logagent.list_fetch_endpoints`
