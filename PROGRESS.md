@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Preprocess Result Parity
+
+- V2 `logagent.preprocess_log_package` now exposes Rust/V1-style preprocess
+  catalog metadata for rotated log normalization and
+  `outputViews=["summary", "nodes", "log_groups", "tool_inputs", "warnings"]`.
+- Manual preprocess results now include a V1-style `nodes` aggregation with
+  package count, instance IDs, timestamps, per-log-group file counts,
+  compressed count placeholders, ignored file count, and warnings, while
+  retaining existing V2 `nodePackages`, `logGroups`, and artifact IDs.
+- Added regression coverage for preprocess descriptor fields and node-package
+  result aggregation.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused preprocess/tool registry regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Catalog Descriptor Parity
 
 - V2 `logagent.fetch` catalog metadata now matches the Rust/V1 manual-run

@@ -587,7 +587,10 @@ call shape with `anyOf`. Built-ins use dedicated task MCP tools where
 available, or the protected manual Tools API. The migrated built-ins are:
 
 - metadata catalog tools: instance list, snapshot, field types, tag fields;
-- `logagent.preprocess_log_package`;
+- `logagent.preprocess_log_package`, whose descriptor advertises rotated log
+  normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
+  results include V1-style `nodes` aggregation plus the V2 `nodePackages`
+  detail list;
 - `logagent.fetch`, whose catalog descriptor keeps the Rust/V1 manual-run
   shape: `readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
   `outputViews=["summary","request","response","body_artifact"]` while runtime

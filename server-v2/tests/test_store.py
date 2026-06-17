@@ -2371,6 +2371,14 @@ class StoreTests(unittest.TestCase):
             self.assertIn("logagent.fetch", descriptors)
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+            self.assertIn(
+                "normalize rotated logs",
+                descriptors["logagent.preprocess_log_package"]["description"],
+            )
+            self.assertEqual(
+                descriptors["logagent.preprocess_log_package"]["outputViews"],
+                ["summary", "nodes", "log_groups", "tool_inputs", "warnings"],
+            )
             self.assertFalse(descriptors["logagent.fetch"]["readOnly"])
             self.assertIn("manual-run", descriptors["logagent.fetch"]["tags"])
             self.assertEqual(
@@ -2567,6 +2575,18 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(result["fileCount"], 2)
             self.assertEqual(result["logGroups"], {"tsdb": 1, "stream": 1})
             self.assertEqual(result["nodePackages"][0]["nodeId"], "NodeA")
+            self.assertEqual(result["nodes"][0]["nodeId"], "NodeA")
+            self.assertEqual(result["nodes"][0]["packages"], 1)
+            self.assertEqual(result["nodes"][0]["instanceIds"], ["Inst"])
+            self.assertEqual(result["nodes"][0]["timestamps"], ["20260617120000"])
+            self.assertEqual(
+                result["nodes"][0]["logGroups"],
+                {
+                    "stream": {"fileCount": 1, "compressedFileCount": 0},
+                    "tsdb": {"fileCount": 1, "compressedFileCount": 0},
+                },
+            )
+            self.assertEqual(result["warnings"], [])
             self.assertTrue(
                 any(
                     item["path"] == "tool_inputs/influxql_analyzer/NodeA/20260617120000.jsonl"

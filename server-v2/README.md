@@ -581,6 +581,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - writes `tool_inputs/index.json`, `influxql_analyzer` JSONL artifacts, and
   `flux_query_analyzer` JSONL artifacts when logs contain supported query
   lines;
+- exposes the manual `logagent.preprocess_log_package` result with V1-style
+  `nodes` aggregation plus V2 `nodePackages` details;
 - records `manifest` and `log_search` evidence items; and
 - lets the current stub Agent final answer reference
   `grep_results.json#matches/<index>` when matches exist.

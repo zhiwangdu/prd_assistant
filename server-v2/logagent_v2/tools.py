@@ -123,7 +123,9 @@ def preprocess_descriptor() -> JsonObject:
     return {
         "toolId": PREPROCESS_LOG_PACKAGE_ID,
         "displayName": "Log package preprocessor",
-        "description": "Expand node log packages and materialize analyzer inputs.",
+        "description": (
+            "Expand node log packages, normalize rotated logs, and materialize analyzer inputs."
+        ),
         "source": "built_in",
         "tags": ["built-in", "log", "preprocess", "manual-run"],
         "enabled": True,
@@ -137,7 +139,7 @@ def preprocess_descriptor() -> JsonObject:
         "acceptedSuffixes": [".tar.gz", ".tgz"],
         "paramsSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         "paramsTemplate": {},
-        "outputViews": ["summary", "manifest", "tool_inputs", "log_groups", "warnings"],
+        "outputViews": ["summary", "nodes", "log_groups", "tool_inputs", "warnings"],
     }
 
 
@@ -1141,6 +1143,7 @@ def run_preprocess_tool(
             node_packages[
                 f"{text_file.node_package.get('nodeId')}:{text_file.node_package.get('timestamp')}"
             ] = text_file.node_package
+    nodes = preprocess_node_summaries(text_files)
     action_id = f"act_tool_preprocess_{run['id']}"
     result = {
         "schemaVersion": 1,
@@ -1148,13 +1151,16 @@ def run_preprocess_tool(
         "actionId": action_id,
         "status": "OK",
         "summary": (
-            f"Preprocessed {len(uploads)} upload(s), collected {len(text_files)} text file(s), "
-            f"materialized {len(tool_input_bundle.get('inputs', []))} tool input(s)."
+            f"preprocessed {len(uploads)} upload(s), {len(nodes)} node(s), "
+            f"{len(text_files)} extracted file(s), "
+            f"{len(tool_input_bundle.get('inputs', []))} materialized tool input(s)"
         ),
         "uploadCount": len(uploads),
         "fileCount": len(text_files),
+        "nodes": nodes,
         "nodePackages": list(node_packages.values()),
         "logGroups": log_groups,
+        "warnings": [],
         "manifestArtifactId": manifest_artifact["id"],
         "grepArtifactId": grep_artifact["id"],
         "toolInputIndex": tool_input_bundle.get("inputs", []),
@@ -1177,6 +1183,54 @@ def run_preprocess_tool(
         },
     )
     return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def preprocess_node_summaries(text_files: list[TextFile]) -> list[JsonObject]:
+    nodes: dict[str, JsonObject] = {}
+    package_keys: dict[str, set[str]] = {}
+    for text_file in text_files:
+        package = text_file.node_package
+        if not package:
+            continue
+        node_id = str(package.get("nodeId") or "")
+        if not node_id:
+            continue
+        entry = nodes.setdefault(
+            node_id,
+            {
+                "nodeId": node_id,
+                "packages": 0,
+                "instanceIds": [],
+                "timestamps": [],
+                "logGroups": {},
+                "ignoredFileCount": 0,
+                "warnings": [],
+            },
+        )
+        seen = package_keys.setdefault(node_id, set())
+        package_key = f"{text_file.source_upload_id}:{package.get('timestamp', '')}"
+        if package_key not in seen:
+            seen.add(package_key)
+            entry["packages"] = len(seen)
+        append_unique_string(entry["instanceIds"], package.get("instanceId"))
+        append_unique_string(entry["timestamps"], package.get("timestamp"))
+        if text_file.log_group:
+            groups = entry["logGroups"]
+            group = groups.setdefault(
+                text_file.log_group,
+                {"fileCount": 0, "compressedFileCount": 0},
+            )
+            group["fileCount"] += 1
+            source_path = text_file.original_path or text_file.path
+            if source_path.lower().endswith(".gz"):
+                group["compressedFileCount"] += 1
+    return [nodes[node_id] for node_id in sorted(nodes)]
+
+
+def append_unique_string(values: list[str], value: object) -> None:
+    if not isinstance(value, str) or not value or value in values:
+        return
+    values.append(value)
 
 
 def run_metadata_tool(
