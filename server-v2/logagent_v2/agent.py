@@ -19,6 +19,7 @@ from .llm import (
     execute_agent_provider_request,
 )
 from .mcp import call_task_tool
+from .mcp_audit import persist_mcp_call
 from .metadata import persist_metadata_context
 from .results import persist_run_result
 from .skills import persist_system_context
@@ -441,12 +442,22 @@ class AgentRuntime:
                 run,
                 {"name": name, "arguments": arguments},
             )
+            parsed_result = parse_tool_result(result)
+            persist_mcp_call(
+                self.settings,
+                self.store,
+                run,
+                name,
+                arguments,
+                "succeeded",
+                parsed_result,
+            )
             observations.append(
                 {
                     "toolCallId": f"round_{attempt}_call_{index}",
                     "name": name,
                     "arguments": arguments,
-                    "result": parse_tool_result(result),
+                    "result": parsed_result,
                 }
             )
             if waiting_status_from_observations(observations):

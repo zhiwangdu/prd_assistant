@@ -1563,6 +1563,25 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(len(state["rounds"]), 2)
                 self.assertEqual(state["rounds"][0]["status"], "tool_calls_executed")
                 self.assertEqual(state["rounds"][1]["status"], "completed")
+                mcp_calls_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 42,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/mcp_calls"},
+                    },
+                )
+                mcp_calls = json.loads(mcp_calls_response["result"]["contents"][0]["text"])
+                search_call = next(
+                    call for call in mcp_calls["calls"]
+                    if call["name"] == "logagent.search_logs"
+                )
+                self.assertTrue(
+                    search_call["evidenceRefs"][0].startswith("log_searches/")
+                )
                 first_response_evidence = [
                     item for item in store.list_evidence(run["id"])
                     if item["kind"] == "agent_response"
@@ -1681,6 +1700,26 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(response_doc["validation"]["status"], "paused")
                 self.assertEqual(
                     response_doc["validation"]["runtimeStatus"], "waiting_for_user"
+                )
+                mcp_calls_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 44,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/mcp_calls"},
+                    },
+                )
+                mcp_calls = json.loads(mcp_calls_response["result"]["contents"][0]["text"])
+                waiting_call = next(
+                    call for call in mcp_calls["calls"]
+                    if call["name"] == "logagent.request_user_input"
+                )
+                self.assertEqual(
+                    waiting_call["evidenceRefs"],
+                    ["mcp_waiting_request.json#request"],
                 )
         finally:
             server.shutdown()

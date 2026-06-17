@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Provider Tool MCP Audit
+
+- V2 Agent provider loop now writes successful provider-executed task tool calls
+  to the shared `mcp_calls.jsonl` audit artifact, matching the task MCP
+  `tools/call` visibility surface instead of only embedding observations in
+  `agent_response.json`.
+- Waiting tool calls from the provider loop are also audited, including the
+  `mcp_waiting_request.json#request` evidence ref, before the run pauses in
+  `waiting_for_user` or `waiting_for_approval`.
+- Added regressions for provider `logagent.search_logs` and
+  `logagent.request_user_input` calls appearing in the task MCP `mcp_calls`
+  resource.
+
 ## 2026-06-17 V2 Provider Waiting Tool Loop
 
 - V2 OpenAI-compatible and binary Agent provider prompts now advertise

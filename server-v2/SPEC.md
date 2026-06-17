@@ -88,9 +88,10 @@ Implemented in this slice:
   evidence-validated JSON final answer. Provider-requested
   `logagent.request_user_input` / `logagent.request_approval` calls pause the
   run in the matching waiting state instead of writing a final result. Each
-  round persists `agent_request.json`, `agent_response.json`, and
-  `analysis_state.json` audit artifacts before the run reaches a terminal
-  state. Follow-up evidence refs returned by tool observations are added to the next round's
+  round persists `agent_request.json`, `agent_response.json`,
+  `analysis_state.json`, and provider tool-call `mcp_calls.jsonl` audit
+  artifacts before the run reaches a terminal state. Follow-up evidence refs
+  returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. Successful analysis runs persist a deterministic
   fallback alias derived from the final summary or question for history/UI
   display.
@@ -1251,14 +1252,16 @@ Fetch execution when Fetch is enabled. Waiting/approval tools are advertised
 unless the run is resuming with `resumeMode=finalize`. V2 validates the tool
 name and arguments as JSON objects, executes the Server-owned task MCP tool,
 records the resulting evidence/artifacts through the existing tool
-implementation, and feeds ordinary structured observations into the next
-provider round. If a provider calls `logagent.request_user_input` or
+implementation, records the call in `mcp_calls.jsonl`, and feeds ordinary
+structured observations into the next provider round. If a provider calls
+`logagent.request_user_input` or
 `logagent.request_approval`, the tool creates the pending action, writes the
 V1-compatible waiting marker, moves the run to `waiting_for_user` or
 `waiting_for_approval`, persists the provider response validation as
-`paused`, and stops the current job without writing `result.json`. The loop is
-bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3. Evidence refs returned
-by ordinary tool observations, including
+`paused`, writes the waiting call to `mcp_calls.jsonl`, and stops the current
+job without writing `result.json`. The loop is bounded by
+`LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3. Evidence refs returned by
+ordinary tool observations, including
 `evidenceRefs`, `finalEvidenceRefs`, match `ref`, and `evidenceRef` fields, are
 deduplicated into the next provider request and prompt `allowedEvidenceRefs` so
 the provider can cite follow-up evidence without violating final-answer
@@ -1292,9 +1295,10 @@ headers. `agent_response` captures provider status, HTTP/body previews when
 available, parsed final answer, normalized final answer, and validation status
 or failure details. `analysis_state` captures the latest round status and links
 the request and response artifact ids. `mcp_calls` captures successful task MCP
-`resources/read` and `tools/call` requests as JSONL with call id, arguments,
-status, result, and evidence/background refs. These evidence rows are
-background-only (`final_allowed=false`) and exposed through task MCP resources.
+`resources/read` and `tools/call` requests, including tool calls executed by
+the provider loop, as JSONL with call id, arguments, status, result, and
+evidence/background refs. These evidence rows are background-only
+(`final_allowed=false`) and exposed through task MCP resources.
 Task MCP also advertises optional Rust/V1 Claude runtime compatibility
 resources `claude_mcp_config` and `claude_session`; current Python V2 Agent
 runs do not create them, but matching evidence artifacts are readable.

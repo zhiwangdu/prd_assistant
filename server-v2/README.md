@@ -122,7 +122,7 @@ slice provides the durable foundation for the V2 product model:
 - Agent runtime with default stub final answer plus optional bounded
   OpenAI-compatible or local binary provider/tool loop for evidence-validated
   JSON final answers, provider-requested waiting/approval pauses, and per-round
-  request/response/state audit artifacts.
+  request/response/state plus MCP-call audit artifacts.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
