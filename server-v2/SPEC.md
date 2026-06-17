@@ -711,7 +711,12 @@ configured tool execution. `/api/v2/tools`, readonly MCP
 `logagent://tools/catalog`, `logagent-v2://tools/catalog`, and
 `logagent.list_tools` must expose the same catalog envelope with
 `schemaVersion`, complete `tools` descriptors, and V1-compatible
-`configuredTools` summaries. Task MCP `logagent.run_domain_tool` only exposes
+`configuredTools` summaries. The same envelope also includes
+`sourceBuiltAnalyzers`, a fixed four-item status list for
+`flux_query_analyzer`, `influxql_analyzer`, `opengemini_storage_analyzer`, and
+`influxdb_storage_analyzer`, so deployments can confirm whether submodule
+analyzers are registered, enabled/runnable, disabled, or missing without
+inspecting process environment. Task MCP `logagent.run_domain_tool` only exposes
 configured subprocess tools. Its `tools/list` descriptor input schema must
 advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
 call shape with `anyOf`. The OpenAI-compatible and binary Agent provider
@@ -760,9 +765,9 @@ HTTP `/api/v2/tools`, readonly MCP `logagent://tools/catalog`, retained
 `logagent-v2://tools/catalog`, and `logagent.list_tools` expose the same catalog
 payload shape used by the Rust server: `schemaVersion`, complete `tools`
 descriptors, and `configuredTools` summaries containing configured args,
-timeout, match rules, and `maxInputFiles`. The readonly MCP surface is
-catalog-only and cannot execute configured or built-in tools. Static readonly
-resources support both
+timeout, match rules, and `maxInputFiles`, plus `sourceBuiltAnalyzers` status
+for the four source-built analyzer IDs. The readonly MCP surface is catalog-only
+and cannot execute configured or built-in tools. Static readonly resources support both
 `logagent://...` and `logagent-v2://...` URIs, and dynamic skill/metadata
 snapshot reads accept the same aliasing.
 

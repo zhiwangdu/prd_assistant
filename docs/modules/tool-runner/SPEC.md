@@ -40,8 +40,9 @@ Server 还提供只读工具目录和工具包导出：
 - V2 HTTP `/api/v2/tools`、`POST /api/mcp/readonly` 中的
   `logagent://tools/catalog` / `logagent-v2://tools/catalog` 和
   `logagent.list_tools` 返回同一份 catalog envelope：`schemaVersion`、完整
-  `tools` descriptors 和 V1-compatible `configuredTools` summary；只读 MCP
-  不执行工具。目录中也包含 `logagent.get_metadata_tag_fields`，configured
+  `tools` descriptors、V1-compatible `configuredTools` summary 和
+  `sourceBuiltAnalyzers` status；只读 MCP 不执行工具。目录中也包含
+  `logagent.get_metadata_tag_fields`，configured
   command descriptor 的 `paramsSchema` 同时提供 Rust/V1 顶层
   `configuredArgs` / `match` 只读项和 V2 `properties` 镜像。
 - `GET /api/exports/tools.zip` 打包当前 enabled 且解析为普通可执行文件的 configured 工具二进制、enabled `pprof_analyzer` 的 Go executable、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、无执行权限或读取失败的工具在 manifest 标记 skipped，内置工具不导出。
@@ -65,6 +66,8 @@ Server 还提供只读工具目录和工具包导出：
 - 工具参数模板
 - 工具路径，来自固定 `path` 或 `path_env` 环境变量；固定 `path` 可使用 `${ENV}` 占位符
 - 构建 source-built analyzers 时的 submodule clone URL override，来自 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；这些变量只影响本地 Git submodule 初始化，不进入 Server 运行时工具白名单，也不能改写顶层仓库 `origin`
+- 工具 catalog `sourceBuiltAnalyzers` 固定报告四个 source-built analyzer ID
+  的 registered/enabled/runnable/status 状态，作为部署观测字段，不作为执行入口。
 - `max_input_files`，单个工具在同一任务中最多自动选择的输入文件数量，默认 1
 - 日志片段、查询文本或 manifest 文件
 - 可选显式输入选择：V2 task MCP top-level `inputFile`、`params.inputFiles` 或手动 tool_run `params.inputFiles`。这些路径必须是 workspace-relative，只能解析到当前 Workspace 的 manifest 文本路径、对应 `extracted/...` 虚拟路径或当前 run 的 `tool_inputs/...` entry，不能是任意本地路径。
@@ -242,5 +245,5 @@ Huawei package sync 的 `result.json` 至少包含：
 - `tools.zip` 覆盖 configured 可执行文件打包、wrapper/config 示例生成、缺失工具 skipped、sha256/size manifest，并验证内置工具不会进入 manifest。
 - `/api/v2/tools`、只读 MCP tool catalog resource 和 `logagent.list_tools`
   必须返回同一份 V1-shaped catalog payload，包含 `schemaVersion`、`tools` 和
-  `configuredTools`。
+  `configuredTools`、`sourceBuiltAnalyzers`。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

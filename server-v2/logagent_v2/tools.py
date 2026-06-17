@@ -52,6 +52,12 @@ METADATA_TOOL_IDS = {
     METADATA_GET_TAG_FIELDS_ID,
 }
 STORAGE_TOOL_IDS = {"opengemini_storage_analyzer", "influxdb_storage_analyzer"}
+SOURCE_BUILT_ANALYZERS: tuple[tuple[str, str], ...] = (
+    ("flux_query_analyzer", "Flux Query Analyzer"),
+    ("influxql_analyzer", "InfluxQL Analyzer"),
+    ("opengemini_storage_analyzer", "openGemini Storage Analyzer"),
+    ("influxdb_storage_analyzer", "InfluxDB Storage Analyzer"),
+)
 
 
 def tool_descriptors(settings: Settings) -> list[JsonObject]:
@@ -94,6 +100,7 @@ def tool_catalog(settings: Settings) -> JsonObject:
         "schemaVersion": 1,
         "tools": descriptors,
         "configuredTools": configured_tool_summaries(settings, descriptors),
+        "sourceBuiltAnalyzers": source_built_analyzer_summaries(settings, descriptors),
     }
 
 
@@ -113,6 +120,47 @@ def configured_tool_summaries(
         for tool in (descriptors or tool_descriptors(settings))
         if tool.get("source") == "configured"
     ]
+
+
+def source_built_analyzer_summaries(
+    settings: Settings,
+    descriptors: list[JsonObject] | None = None,
+) -> list[JsonObject]:
+    descriptor_by_id = {
+        str(tool.get("toolId")): tool for tool in (descriptors or tool_descriptors(settings))
+    }
+    configured_by_id = {tool.id: tool for tool in settings.tools}
+    summaries: list[JsonObject] = []
+    for tool_id, display_name in SOURCE_BUILT_ANALYZERS:
+        descriptor = descriptor_by_id.get(tool_id)
+        configured = configured_by_id.get(tool_id)
+        enabled = bool(descriptor.get("enabled")) if descriptor else False
+        runnable = bool(descriptor.get("runnable")) if descriptor else False
+        if configured is None:
+            status = "missing"
+        elif not configured.enabled:
+            status = "disabled"
+        else:
+            status = "registered"
+        summaries.append(
+            {
+                "toolId": tool_id,
+                "displayName": display_name,
+                "registered": configured is not None,
+                "enabled": enabled,
+                "runnable": runnable,
+                "status": status,
+                "timeoutSeconds": (
+                    find_configured_tool_timeout(settings, tool_id)
+                    if configured is not None
+                    else None
+                ),
+                "maxInputFiles": (
+                    descriptor.get("maxInputFiles") if descriptor is not None else None
+                ),
+            }
+        )
+    return summaries
 
 
 def find_configured_tool_args(settings: Settings, tool_id: str) -> tuple[str, ...]:

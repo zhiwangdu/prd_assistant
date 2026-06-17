@@ -146,6 +146,10 @@ tools:
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
 - 当前 `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxdb.git` 的 `influxdb-tools` 分支；CLI 入口为 `cmd/influxdb_storage_analyzer`，用于只读检查 TSM、TSI 和 `_series` 文件。
 - Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量后会自动注册对应 source-built analyzer，默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
+- Python V2 共享工具目录返回 `sourceBuiltAnalyzers`，固定列出
+  Flux/InfluxQL/openGemini/InfluxDB 四个 source-built analyzer ID 的
+  `registered`、`enabled`、`runnable` 和 `status`，用于部署后确认 submodule
+  工具是否被当前进程识别；该字段不提供额外执行入口。
 - 四个源码 submodule 的 Go module、CI/build image 或开发说明已统一到 Go 1.26；构建 source-built analyzers 的环境需要提供 Go 1.26 或可自动下载 Go 1.26 toolchain。
 - 内网镜像环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 统一指定仓库 namespace，或通过 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL`、`LOGAGENT_SUBMODULE_INFLUXDB_URL` 分别指定 clone URL。`scripts/build-tools.sh` 会先调用 `scripts/configure-tool-submodules.sh` 写入本地 Git submodule config，再按需初始化 submodule；不会修改提交中的 `.gitmodules`，也不会改写顶层仓库 `origin`。只有 submodule 已经是独立初始化的 Git worktree 时，脚本才会同步更新该 submodule 自身的 `origin`。
 - Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。创建手动 tool run 时会校验上传数量和上传文件名是否匹配工具 descriptor 的 `acceptedSuffixes`；通过 `params.inputFiles` 显式复用已有 Workspace 输入时可不附带新上传。`pprof_analyzer` 复用 Rust/V1 configured command catalog 形态和 workspace 产物目录，由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果；V2 中 pprof 默认关闭，只有配置 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO`，或显式 `LOGAGENT_V2_PPROF_ENABLED=1` 且 Go command 解析为绝对路径时才启用。V2 结果同时保留 artifact id 映射和 Rust/V1-style `artifactPaths`（`top.txt`、`tree.txt`、`raw.txt`、`stderr.txt`、可选 `graph.svg`），并返回 `profileType`、`total` 和 top 表格。configured command tools 的 `paramsSchema` 同时暴露 Rust/V1 顶层 `configuredArgs` / `match` 只读项和 V2 `properties` 镜像；它们也可手动运行，Server 会先生成 `extracted/`、`manifest.json`、`grep_results.json` 和可能的 `tool_inputs/index.json`，也可以通过 `params.inputFiles` 显式复用已有 Workspace 输入，再按白名单 args 模板调用工具；内置 metadata tools 可无上传运行并返回 JSON result。
@@ -157,8 +161,8 @@ tools:
 - V2 HTTP `/api/v2/tools` 与只读 HTTP MCP `logagent://tools/catalog`、
   `logagent-v2://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、
   configured args、match rules 和内置 metadata 工具 descriptor，返回相同的
-  `schemaVersion`、完整 `tools` 和 V1-compatible `configuredTools` 形态；只读
-  MCP 入口不运行工具。
+  `schemaVersion`、完整 `tools`、V1-compatible `configuredTools` 和
+  `sourceBuiltAnalyzers` 形态；只读 MCP 入口不运行工具。
 - `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；内置工具不进入导出包。
 
 ## 本地真实工具 smoke

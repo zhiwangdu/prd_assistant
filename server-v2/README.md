@@ -146,7 +146,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent-v2://tools/catalog`, and readonly `logagent.list_tools` now share
   the same catalog envelope: `schemaVersion`, complete `tools` descriptors,
   and V1-compatible `configuredTools` summaries with configured args, timeout,
-  match rules, and `maxInputFiles`.
+  match rules, and `maxInputFiles`, plus `sourceBuiltAnalyzers` status for the
+  Flux/InfluxQL/openGemini/InfluxDB source-built analyzer IDs.
 - Agent runtime executed through a real LangGraph state graph with separate
   nodes for initial evidence collection, provider request preparation,
   provider calls, tool execution, final-answer validation, and final result
@@ -1024,7 +1025,10 @@ The pprof subprocess argv matches Rust/V1: top/tree/svg use
 `logagent-v2://tools/catalog` alias, and `logagent.list_tools` expose the same
 tool catalog envelope. All return `schemaVersion`, full `tools` descriptors,
 and a V1-compatible `configuredTools` summary with configured args, timeout,
-match rules, and `maxInputFiles`. The readonly MCP endpoint never runs tools.
+match rules, and `maxInputFiles`. They also return `sourceBuiltAnalyzers`,
+which reports whether the four source-built analyzer IDs are registered,
+enabled/runnable, disabled, or missing in this V2 process. The readonly MCP
+endpoint never runs tools.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
 and the enabled `pprof_analyzer` Go executable.

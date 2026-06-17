@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Source-built Analyzer Catalog Status
+
+- Added `sourceBuiltAnalyzers` to the shared V2 tool catalog returned by
+  `/api/v2/tools`, readonly MCP tool catalog resources, and
+  `logagent.list_tools`.
+- The new catalog field reports the fixed Flux, InfluxQL, openGemini storage,
+  and InfluxDB storage analyzer IDs with registered/enabled/runnable/status
+  state, so deployments can confirm whether source-built submodule analyzers
+  were recognized by the current V2 process.
+- This is an observability/catalog parity field only; tool execution still uses
+  the existing configured subprocess descriptors, task MCP validation, and
+  manual tool-run APIs.
+- Updated server-v2 and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused tool catalog pytest selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Environment SCP File Collection
 
 - Added V2 approved `collect_environment` file collection through Remote

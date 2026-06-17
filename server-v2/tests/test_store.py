@@ -4097,10 +4097,27 @@ class StoreTests(unittest.TestCase):
                 enabled=False,
                 match_file_patterns=("*.trace",),
             )
+            flux_tool = ToolDefinition(
+                id="flux_query_analyzer",
+                display_name="Flux Query Analyzer",
+                command=sys.executable,
+                args=("-c", "print('flux')"),
+                timeout_seconds=30,
+                max_input_files=3,
+            )
+            influxql_tool = ToolDefinition(
+                id="influxql_analyzer",
+                display_name="InfluxQL Analyzer",
+                command=sys.executable,
+                args=("-c", "print('influxql')"),
+                enabled=False,
+                timeout_seconds=30,
+                max_input_files=3,
+            )
             settings = Settings(
                 data_dir=Path(tmp),
                 api_key="test",
-                tools=(tool, disabled_tool),
+                tools=(tool, disabled_tool, flux_tool, influxql_tool),
             )
 
             descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
@@ -4108,6 +4125,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(catalog["schemaVersion"], 1)
             self.assertIn("tools", catalog)
             self.assertIn("configuredTools", catalog)
+            self.assertIn("sourceBuiltAnalyzers", catalog)
             configured_catalog = {
                 item["toolId"]: item for item in catalog["configuredTools"]
             }
@@ -4122,6 +4140,33 @@ class StoreTests(unittest.TestCase):
                 ["*.log", "*timeout*"],
             )
             self.assertIn("disabled_tool", configured_catalog)
+            source_built = {
+                item["toolId"]: item for item in catalog["sourceBuiltAnalyzers"]
+            }
+            self.assertEqual(
+                set(source_built),
+                {
+                    "flux_query_analyzer",
+                    "influxql_analyzer",
+                    "opengemini_storage_analyzer",
+                    "influxdb_storage_analyzer",
+                },
+            )
+            self.assertEqual(source_built["flux_query_analyzer"]["status"], "registered")
+            self.assertTrue(source_built["flux_query_analyzer"]["registered"])
+            self.assertTrue(source_built["flux_query_analyzer"]["enabled"])
+            self.assertTrue(source_built["flux_query_analyzer"]["runnable"])
+            self.assertEqual(source_built["flux_query_analyzer"]["timeoutSeconds"], 30)
+            self.assertEqual(source_built["flux_query_analyzer"]["maxInputFiles"], 3)
+            self.assertEqual(source_built["influxql_analyzer"]["status"], "disabled")
+            self.assertTrue(source_built["influxql_analyzer"]["registered"])
+            self.assertFalse(source_built["influxql_analyzer"]["enabled"])
+            self.assertEqual(
+                source_built["opengemini_storage_analyzer"]["status"],
+                "missing",
+            )
+            self.assertFalse(source_built["opengemini_storage_analyzer"]["registered"])
+            self.assertIsNone(source_built["opengemini_storage_analyzer"]["timeoutSeconds"])
             settings.ensure_dirs()
             Store(settings.sqlite_path).initialize()
             from fastapi.testclient import TestClient
@@ -4138,6 +4183,10 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(
                     api_catalog["configuredTools"],
                     catalog["configuredTools"],
+                )
+                self.assertEqual(
+                    api_catalog["sourceBuiltAnalyzers"],
+                    catalog["sourceBuiltAnalyzers"],
                 )
 
             self.assertEqual(descriptors["mock_tool"]["source"], "configured")
