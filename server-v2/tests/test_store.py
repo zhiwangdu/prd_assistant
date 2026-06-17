@@ -1385,6 +1385,8 @@ class StoreTests(unittest.TestCase):
                     "runtimeStatus": "completed",
                     "finalAnswer": answer,
                 },
+                "usage": {"input_tokens": 12, "output_tokens": 34},
+                "total_cost_usd": 0.0123,
             }
             claude.write_text(
                 "#!/usr/bin/env python3\n"
@@ -1482,6 +1484,8 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["response"]["exitCode"], 0)
             self.assertEqual(response_doc["response"]["runtimeStatus"], "completed")
             self.assertEqual(response_doc["response"]["sessionId"], "sess-v2-claude")
+            self.assertEqual(response_doc["response"]["usage"]["input_tokens"], 12)
+            self.assertEqual(response_doc["response"]["cost"]["usd"], 0.0123)
             self.assertEqual(response_doc["validation"]["status"], "passed")
             self.assertNotIn(claude.as_posix(), json.dumps(response_doc))
             self.assertNotIn("Bearer test", json.dumps(response_doc))

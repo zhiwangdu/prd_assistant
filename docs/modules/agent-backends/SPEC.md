@@ -22,6 +22,7 @@
 - Python V2 已提供 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` provider。它保留 V2 LangGraph orchestration，但每轮 provider call 会写入短 prompt 和 HTTP task MCP config，调用 Claude Code CLI，并解析 Claude envelope 中的 `structured_output` / `structuredOutput` / `result`。
 - Python V2 `claude_code` provider 接受 `completed` / `succeeded` / `final_answer` + `finalAnswer`，`waiting_for_user` + `pendingPrompt`，以及 `waiting_for_approval` + `pendingApproval`；等待 outcome 会转成 V2 现有的 `logagent.request_user_input` / `logagent.request_approval` task MCP tool call。
 - Python V2 在等待态恢复后必须从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并把它作为下一轮 Claude Code CLI 的 `--resume <session_id>` 参数。
+- Python V2 必须保留 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd`，并写入 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
 
 ## 配置
 

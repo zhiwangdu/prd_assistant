@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Usage And Cost Audit
+
+- V2 Claude Code provider now preserves Claude envelope `usage` and
+  `total_cost_usd` / `totalCostUsd` in `agent_response.json` as
+  `response.usage` and `response.cost.usd`, aligning the Python V2 audit
+  surface with the Rust/V1 Claude runner.
+- Added regression coverage to the Claude Code provider final-answer path.
+- Updated V2 Server and Agent Backends README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused Claude Code provider regressions, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Claude Code Session Resume
 
 - V2 `LOGAGENT_V2_AGENT_PROVIDER=claude_code` now resumes Claude Code sessions

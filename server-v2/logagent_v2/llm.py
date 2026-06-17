@@ -593,6 +593,10 @@ def call_claude_code_provider(
         response_payload["sessionId"] = parsed["sessionId"]
     if resume_session_id:
         response_payload["resumedSessionId"] = resume_session_id
+    if parsed.get("usage") is not None:
+        response_payload["usage"] = parsed["usage"]
+    if parsed.get("cost") is not None:
+        response_payload["cost"] = parsed["cost"]
     if parsed["runtimeStatus"] in {"waiting_for_user", "waiting_for_approval"}:
         return {
             "provider": "claude_code",
@@ -776,6 +780,7 @@ def parse_claude_session_output(content: str) -> JsonObject:
     structured = decode_claude_structured_output(candidate)
     runtime_status = structured.get("runtimeStatus") or structured.get("runtime_status")
     session_id = decoded.get("session_id") or decoded.get("sessionId")
+    telemetry = claude_envelope_telemetry(decoded)
     if runtime_status in {"completed", "succeeded", "final_answer"}:
         final_answer = (
             structured["finalAnswer"]
@@ -788,6 +793,7 @@ def parse_claude_session_output(content: str) -> JsonObject:
             "runtimeStatus": "completed",
             "finalAnswer": final_answer,
             "sessionId": session_id,
+            **telemetry,
         }
     if runtime_status == "waiting_for_user":
         pending = (
@@ -801,6 +807,7 @@ def parse_claude_session_output(content: str) -> JsonObject:
             "runtimeStatus": "waiting_for_user",
             "pendingPrompt": pending,
             "sessionId": session_id,
+            **telemetry,
         }
     if runtime_status == "waiting_for_approval":
         pending = (
@@ -816,8 +823,24 @@ def parse_claude_session_output(content: str) -> JsonObject:
             "runtimeStatus": "waiting_for_approval",
             "pendingApproval": pending,
             "sessionId": session_id,
+            **telemetry,
         }
     raise ValueError(f"unsupported Claude Code runtimeStatus: {runtime_status}")
+
+
+def claude_envelope_telemetry(decoded: JsonObject) -> JsonObject:
+    result: JsonObject = {}
+    usage = decoded.get("usage")
+    if isinstance(usage, dict):
+        result["usage"] = usage
+    cost_usd = (
+        decoded.get("total_cost_usd")
+        if "total_cost_usd" in decoded
+        else decoded.get("totalCostUsd", decoded.get("cost_usd"))
+    )
+    if isinstance(cost_usd, (int, float)) and not isinstance(cost_usd, bool):
+        result["cost"] = {"usd": cost_usd}
+    return result
 
 
 def decode_claude_structured_output(candidate: Any) -> JsonObject:

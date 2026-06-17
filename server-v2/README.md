@@ -591,6 +591,8 @@ or `result` contains `runtimeStatus=completed` with `finalAnswer`,
 When a waiting run resumes and the previous Claude response recorded
 `response.sessionId`, V2 adds `--resume <session_id>` to the next Claude Code
 CLI invocation and records `response.resumedSessionId` in `agent_response.json`.
+Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` are preserved as
+`response.usage` and `response.cost.usd`.
 
 The run lifecycle is executed by a LangGraph state graph with
 `collect_initial_evidence`, `prepare_agent_request`, `call_agent_provider`,

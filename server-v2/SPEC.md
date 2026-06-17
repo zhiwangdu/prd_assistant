@@ -1303,6 +1303,8 @@ outcomes are converted into the existing `logagent.request_user_input` and
 If the previous Claude response stored `response.sessionId`, resumed runs pass
 that value as `--resume <session_id>` on the next Claude Code CLI invocation and
 record `response.resumedSessionId` in the next `agent_response` audit artifact.
+Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` must be preserved
+under `response.usage` and `response.cost.usd`.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
