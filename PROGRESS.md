@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 LLM Debug Route Parity Coverage
+
+- Added route-level regression coverage for `GET/PUT /api/v2/debug/llm`, so
+  V2 keeps the Rust/V1 process-local LLM response logging toggle behavior
+  locked at the HTTP boundary.
+- The test verifies both API responses and the underlying process-local flag,
+  then resets the flag to avoid cross-test leakage.
+
 ## 2026-06-18 V2 Claude Runtime Contract Artifacts
 
 - V2 analysis runs now automatically write Rust/V1-style Claude runtime

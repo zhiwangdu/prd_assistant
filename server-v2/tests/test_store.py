@@ -7936,8 +7936,12 @@ grep_results.json#matches/0
             )
 
     def test_v2_settings_summaries_and_debug_toggle(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
 
             summary = llm_settings_summary(settings)
             self.assertEqual(summary["provider"], "stub")
@@ -7962,6 +7966,32 @@ grep_results.json#matches/0
             self.assertTrue(set_debug_log_responses(True))
             self.assertTrue(debug_log_responses())
             self.assertFalse(set_debug_log_responses(False))
+            try:
+                headers = {"Authorization": "Bearer test"}
+                with TestClient(create_app(settings)) as client:
+                    initial = client.get("/api/v2/debug/llm", headers=headers)
+                    self.assertEqual(initial.status_code, 200)
+                    self.assertFalse(initial.json()["llmOutputLogging"])
+
+                    enabled = client.put(
+                        "/api/v2/debug/llm",
+                        headers=headers,
+                        json={"llmOutputLogging": True},
+                    )
+                    self.assertEqual(enabled.status_code, 200)
+                    self.assertTrue(enabled.json()["llmOutputLogging"])
+                    self.assertTrue(debug_log_responses())
+
+                    disabled = client.put(
+                        "/api/v2/debug/llm",
+                        headers=headers,
+                        json={"llmOutputLogging": False},
+                    )
+                    self.assertEqual(disabled.status_code, 200)
+                    self.assertFalse(disabled.json()["llmOutputLogging"])
+                    self.assertFalse(debug_log_responses())
+            finally:
+                set_debug_log_responses(False)
 
     def test_v2_settings_report_openai_configuration_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

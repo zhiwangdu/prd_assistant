@@ -1144,7 +1144,9 @@ Readonly MCP must expose the same Domain Adapter summaries through
 
 `GET/PUT /api/v2/debug/llm` controls process-local model response-content
 logging. It is off by default, resets on restart, and may only log response
-content to stderr; prompts, headers, and API keys must never be logged.
+content to stderr; prompts, headers, and API keys must never be logged. V2 must
+keep route-level regression coverage for both reading and updating this flag,
+matching the Rust/V1 debug API capability.
 
 ## Remote Executors
 

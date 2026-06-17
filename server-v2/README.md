@@ -442,7 +442,9 @@ available through readonly MCP `logagent-v2://domain-adapters` and
 
 `/api/v2/debug/llm` toggles process-local response-content logging for provider
 debugging. It only logs model response content to stderr and does not log
-prompts, headers, or API keys. The setting resets when the process restarts.
+prompts, headers, or API keys. The setting resets when the process restarts;
+route-level regression coverage keeps the V1 `GET/PUT` debug toggle behavior
+available in V2.
 
 ## Remote Executors
 
