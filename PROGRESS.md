@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 System Context Version Editing
+
+- Added WebUI coverage for V2's V1-compatible
+  `PATCH /api/v2/system-context/resources/:context_id/versions/:version_id`
+  route.
+- The System Context resource editor can now load an existing version into the
+  version form, update content type, content, summary, and prompt policy, then
+  save the patch without creating a new revision.
+- Existing append-version and activate-version flows remain available from the
+  same panel.
+- Updated WebUI and System Context README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 System Context Compatibility Resources
 
 - V2 System Context Workbench now calls `/api/v2/system-context/resources` in

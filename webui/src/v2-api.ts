@@ -406,6 +406,13 @@ export type V2SystemContextVersionInput = {
   activate: boolean;
 };
 
+export type V2SystemContextVersionPatch = Partial<Pick<
+  V2SystemContextVersionInput,
+  "contentType" | "content" | "summary" | "promptPolicy"
+>> & {
+  status?: V2SystemContextVersionStatus;
+};
+
 export type V2SystemContextResourcePreview = {
   schemaVersion: number;
   resources: Array<{
@@ -920,6 +927,14 @@ export async function patchV2SystemContextResource(apiKey: string, contextId: st
 export async function createV2SystemContextVersion(apiKey: string, contextId: string, input: V2SystemContextVersionInput) {
   return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}/versions`, {
     method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function patchV2SystemContextVersion(apiKey: string, contextId: string, versionId: string, input: V2SystemContextVersionPatch) {
+  return fetchJson<V2SystemContextResource>(`/api/v2/system-context/resources/${encodeURIComponent(contextId)}/versions/${encodeURIComponent(versionId)}`, {
+    method: "PATCH",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify(input)
   });

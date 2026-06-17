@@ -12,6 +12,7 @@ import {
   listV2SystemContextResources,
   listV2MetadataInstances,
   listV2Skills,
+  patchV2SystemContextVersion,
   patchV2SystemContextResource,
   previewV2SystemContext,
   previewV2SystemContextResources,
@@ -24,7 +25,8 @@ import {
   type V2SystemContextResourcePreview,
   type V2SystemContextResourceSummary,
   type V2SystemContextScope,
-  type V2SystemContextPreview
+  type V2SystemContextPreview,
+  type V2SystemContextVersion
 } from "./v2-api";
 
 type ImportForm = {
@@ -127,6 +129,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
   const [resourcePreview, setResourcePreview] = useState<V2SystemContextResourcePreview | null>(null);
   const [resourceForm, setResourceForm] = useState<ResourceForm>(emptyResourceForm);
   const [versionForm, setVersionForm] = useState<ResourceForm>(emptyResourceForm);
+  const [editingVersionId, setEditingVersionId] = useState("");
   const [previewFilter, setPreviewFilter] = useState<PreviewFilterForm>(emptyPreviewFilter);
   const [metadataInstances, setMetadataInstances] = useState<V2MetadataInstanceSummary[]>([]);
   const [status, setStatus] = useState("V2 System Context waiting to load");
@@ -167,8 +170,10 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
         const detail = await getV2SystemContextResource(apiKey, nextResourceId);
         setSelectedResource(detail);
         setVersionForm(formFromActiveResource(detail));
+        setEditingVersionId("");
       } else {
         setSelectedResource(null);
+        setEditingVersionId("");
       }
       setStatus(`V2 loaded ${skillResponse.skills.length} skills, ${resourceResponse.resources.length} resources, and ${metadataResponse.instances.length} metadata instances`);
     } catch (reason) {
@@ -215,6 +220,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
     if (summary?.source !== "system_context") {
       setSelectedResource(null);
       setVersionForm(emptyResourceForm);
+      setEditingVersionId("");
       setStatus(`Selected read-only ${summary?.title ?? resourceId}`);
       return;
     }
@@ -223,6 +229,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
       const detail = await getV2SystemContextResource(apiKey, resourceId);
       setSelectedResource(detail);
       setVersionForm(formFromActiveResource(detail));
+      setEditingVersionId("");
       setStatus(`Loaded ${detail.title}`);
     } catch (reason) {
       setStatus(errorMessage(reason));
@@ -244,6 +251,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
       setSelectedResourceId(detail.contextId);
       setSelectedResource(detail);
       setVersionForm(formFromActiveResource(detail));
+      setEditingVersionId("");
       setSelectedResourcePreviewIds((current) => current.includes(detail.contextId) ? current : [...current, detail.contextId]);
       setResourceForm(emptyResourceForm);
       setResourceCreateOpen(false);
@@ -279,8 +287,32 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
       const detail = await createV2SystemContextVersion(apiKey, selectedResource.contextId, versionPayload(versionForm));
       setSelectedResource(detail);
       setVersionForm(formFromActiveResource(detail));
+      setEditingVersionId("");
       await reloadResourceSummaries();
       setStatus(`Added revision ${detail.versions.at(-1)?.revision ?? "-"}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function editVersion(version: V2SystemContextVersion) {
+    if (!selectedResource) return;
+    setVersionForm(formFromVersion(selectedResource, version));
+    setEditingVersionId(version.versionId);
+    setStatus(`Editing revision ${version.revision}`);
+  }
+
+  async function saveVersion() {
+    if (!selectedResource || !editingVersionId || !apiKey.trim()) return;
+    setLoading(true);
+    try {
+      const detail = await patchV2SystemContextVersion(apiKey, selectedResource.contextId, editingVersionId, versionPatchPayload(versionForm));
+      setSelectedResource(detail);
+      setVersionForm(formFromVersion(detail, detail.versions.find((item) => item.versionId === editingVersionId) ?? detail.versions[0]));
+      await reloadResourceSummaries();
+      setStatus(`Saved ${editingVersionId}`);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -295,6 +327,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
       const detail = await activateV2SystemContextVersion(apiKey, selectedResource.contextId, versionId);
       setSelectedResource(detail);
       setVersionForm(formFromActiveResource(detail));
+      setEditingVersionId("");
       await reloadResourceSummaries();
       setStatus(`Activated ${versionId}`);
     } catch (reason) {
@@ -385,6 +418,7 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
   const importDisabled = loading || !importForm.skillId.trim() || !importForm.name.trim() || !importForm.description.trim() || !importForm.markdown.trim();
   const resourceCreateDisabled = loading || !resourceForm.title.trim() || !resourceForm.content.trim();
   const appendVersionDisabled = loading || !selectedResource || !versionForm.content.trim();
+  const saveVersionDisabled = loading || !selectedResource || !editingVersionId || !versionForm.content.trim();
   const systemResources = resources.filter((item) => item.source === "system_context");
   const metadataResourceSummaries = resources.filter((item) => item.source === "metadata_adapter");
 
@@ -553,13 +587,18 @@ export function V2SystemContextBridge({ apiKey }: { apiKey: string }) {
 
             <ResourceDetailPanel
               appendDisabled={appendVersionDisabled}
+              editingVersionId={editingVersionId}
               loading={loading}
               onActivate={(versionId) => void activateVersion(versionId)}
               onAppend={() => void appendVersion()}
               onChangeResource={setSelectedResource}
               onChangeVersion={setVersionForm}
+              onClearVersionEdit={() => { setEditingVersionId(""); setVersionForm(selectedResource ? formFromActiveResource(selectedResource) : emptyResourceForm); }}
+              onEditVersion={editVersion}
               onSave={() => void saveResourceDetails()}
+              onSaveVersion={() => void saveVersion()}
               resource={selectedResource}
+              saveVersionDisabled={saveVersionDisabled}
               selectedSummary={resources.find((item) => item.contextId === selectedResourceId) ?? null}
               versionForm={versionForm}
             />
@@ -660,15 +699,20 @@ function ResourceCreateForm({ disabled, form, loading, onCancel, onChange, onSub
   );
 }
 
-function ResourceDetailPanel({ appendDisabled, loading, onActivate, onAppend, onChangeResource, onChangeVersion, onSave, resource, selectedSummary, versionForm }: {
+function ResourceDetailPanel({ appendDisabled, editingVersionId, loading, onActivate, onAppend, onChangeResource, onChangeVersion, onClearVersionEdit, onEditVersion, onSave, onSaveVersion, resource, saveVersionDisabled, selectedSummary, versionForm }: {
   appendDisabled: boolean;
+  editingVersionId: string;
   loading: boolean;
   onActivate: (versionId: string) => void;
   onAppend: () => void;
   onChangeResource: (resource: V2SystemContextResource | null) => void;
   onChangeVersion: (form: ResourceForm) => void;
+  onClearVersionEdit: () => void;
+  onEditVersion: (version: V2SystemContextVersion) => void;
   onSave: () => void;
+  onSaveVersion: () => void;
   resource: V2SystemContextResource | null;
+  saveVersionDisabled: boolean;
   selectedSummary: V2SystemContextResourceSummary | null;
   versionForm: ResourceForm;
 }) {
@@ -722,9 +766,12 @@ function ResourceDetailPanel({ appendDisabled, loading, onActivate, onAppend, on
       </label>
 
       <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-3">
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-primary" />
-          <h5 className="text-sm font-semibold">New version</h5>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            <h5 className="text-sm font-semibold">{editingVersionId ? "Edit version" : "New version"}</h5>
+          </div>
+          {editingVersionId ? <Badge variant="secondary">{editingVersionId}</Badge> : null}
         </div>
         <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)]">
           <SelectBox value={versionForm.contentType} onChange={(value) => onChangeVersion({ ...versionForm, contentType: value as V2SystemContextContentType })}>
@@ -739,7 +786,15 @@ function ResourceDetailPanel({ appendDisabled, loading, onActivate, onAppend, on
             <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={versionForm.activate} onChange={(event) => onChangeVersion({ ...versionForm, activate: event.target.checked })} />
             Activate after append
           </label>
-          <Button className="h-8 px-3" disabled={appendDisabled} onClick={onAppend}><Plus className="mr-2 h-4 w-4" />Append version</Button>
+          <div className="flex flex-wrap gap-2">
+            {editingVersionId ? (
+              <>
+                <Button className="h-8 px-3" disabled={loading} variant="outline" onClick={onClearVersionEdit}>Clear edit</Button>
+                <Button className="h-8 px-3" disabled={saveVersionDisabled} onClick={onSaveVersion}><Save className="mr-2 h-4 w-4" />Save version</Button>
+              </>
+            ) : null}
+            <Button className="h-8 px-3" disabled={appendDisabled} onClick={onAppend}><Plus className="mr-2 h-4 w-4" />Append version</Button>
+          </div>
         </div>
       </div>
 
@@ -753,7 +808,10 @@ function ResourceDetailPanel({ appendDisabled, loading, onActivate, onAppend, on
                   <Badge variant={version.status === "active" ? "success" : "secondary"}>rev {version.revision}</Badge>
                   <span className="font-mono text-xs text-muted-foreground">{version.versionId}</span>
                 </div>
-                {version.status === "active" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Button className="h-8 px-3" disabled={loading} variant="outline" onClick={() => onActivate(version.versionId)}>Activate</Button>}
+                <div className="flex flex-wrap gap-2">
+                  <Button className="h-8 px-3" disabled={loading} variant="outline" onClick={() => onEditVersion(version)}>Edit</Button>
+                  {version.status === "active" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Button className="h-8 px-3" disabled={loading} variant="outline" onClick={() => onActivate(version.versionId)}>Activate</Button>}
+                </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{version.contentType} · {version.summary ?? "-"}</p>
               <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-slate-50 p-2 text-xs">{version.content}</pre>
@@ -871,6 +929,15 @@ function versionPayload(form: ResourceForm) {
   };
 }
 
+function versionPatchPayload(form: ResourceForm) {
+  return {
+    contentType: form.contentType,
+    content: form.content,
+    summary: optionalText(form.summary),
+    promptPolicy: policyFromForm(form)
+  };
+}
+
 function resourcePatchFromDetail(resource: V2SystemContextResource) {
   return {
     title: resource.title.trim(),
@@ -886,6 +953,10 @@ function resourcePatchFromDetail(resource: V2SystemContextResource) {
 
 function formFromActiveResource(resource: V2SystemContextResource): ResourceForm {
   const version = resource.versions.find((item) => item.versionId === resource.activeVersionId) ?? resource.versions[0];
+  return formFromVersion(resource, version);
+}
+
+function formFromVersion(resource: V2SystemContextResource, version?: V2SystemContextVersion): ResourceForm {
   const policy = normalizePromptPolicy(version?.promptPolicy);
   return {
     ...emptyResourceForm,
