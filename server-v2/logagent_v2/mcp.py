@@ -223,13 +223,25 @@ def readonly_mcp_response(
             if canonical_uri == "logagent-v2://tools/catalog":
                 value = tool_catalog(settings)
             elif canonical_uri == "logagent-v2://metadata/instances":
-                value = {"instances": store.list_metadata_instances()}
+                value = {
+                    "schemaVersion": 1,
+                    "instances": store.list_metadata_instances(),
+                }
             elif canonical_uri == "logagent-v2://cases/recent":
-                value = {"cases": store.search_cases(query=None, limit=10)}
+                value = {
+                    "schemaVersion": 1,
+                    "cases": store.search_cases(query=None, limit=10),
+                }
             elif canonical_uri == "logagent-v2://skills":
-                value = {"skills": list_skills(settings)}
+                value = {
+                    "schemaVersion": 1,
+                    "skills": list_skills(settings),
+                }
             elif canonical_uri == "logagent-v2://domain-adapters":
-                value = {"domainAdapters": domain_adapter_summaries()}
+                value = {
+                    "schemaVersion": 1,
+                    "domainAdapters": domain_adapter_summaries(),
+                }
             elif isinstance(canonical_uri, str) and canonical_uri.startswith(
                 "logagent-v2://skills/"
             ):

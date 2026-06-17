@@ -122,9 +122,11 @@ Implemented in this slice:
   Case Memory, Skill registry, and Domain Adapter summaries. `resources/list`
   advertises static collection resources plus dynamic per-Skill and
   per-Metadata snapshot resources for both `logagent://...` and
-  `logagent-v2://...` URI schemes. Read-only and task MCP handlers accept
-  single JSON-RPC requests and JSON-RPC batch arrays; both also support
-  `ping` and empty `prompts/list`.
+  `logagent-v2://...` URI schemes. Collection `resources/read` responses for
+  Metadata instances, recent Cases, Skills, and Domain Adapters include
+  `schemaVersion=1`. Read-only and task MCP handlers accept single JSON-RPC
+  requests and JSON-RPC batch arrays; both also support `ping` and empty
+  `prompts/list`.
 - Task MCP endpoint with `summary`, `artifact_index`, `evidence`, `manifest`,
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
   `analysis_state`, `agent_request`, `agent_response`, `claude_mcp_config`,

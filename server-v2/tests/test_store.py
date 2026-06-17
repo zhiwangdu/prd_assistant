@@ -6557,6 +6557,7 @@ fi
                 },
             )
             readonly_body = json.loads(readonly_instances["result"]["contents"][0]["text"])
+            self.assertEqual(readonly_body["schemaVersion"], 1)
             self.assertEqual(readonly_body["instances"][0]["instanceId"], "inst1")
 
             readonly_instances_alias = readonly_mcp_response(
@@ -6572,6 +6573,7 @@ fi
             readonly_alias_body = json.loads(
                 readonly_instances_alias["result"]["contents"][0]["text"]
             )
+            self.assertEqual(readonly_alias_body["schemaVersion"], 1)
             self.assertEqual(readonly_alias_body["instances"][0]["instanceId"], "inst1")
 
             readonly_snapshot_alias = readonly_mcp_response(
@@ -7110,6 +7112,22 @@ fi
             readonly_body = json.loads(readonly_cases["result"]["content"][0]["text"])
             self.assertEqual(readonly_body["cases"][0]["caseId"], task_case["caseId"])
 
+            readonly_case_resource = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 161,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://cases/recent"},
+                },
+            )
+            case_resource_body = json.loads(
+                readonly_case_resource["result"]["contents"][0]["text"]
+            )
+            self.assertEqual(case_resource_body["schemaVersion"], 1)
+            self.assertEqual(case_resource_body["cases"][0]["caseId"], task_case["caseId"])
+
             task_response = task_mcp_response(
                 settings,
                 store,
@@ -7581,6 +7599,24 @@ grep_results.json#matches/0
             self.assertIn(
                 "logagent-v2://skills/opengemini-diagnosis",
                 readonly_resource_uris,
+            )
+            readonly_skill_root = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 22,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://skills"},
+                },
+            )
+            skill_root_body = json.loads(
+                readonly_skill_root["result"]["contents"][0]["text"]
+            )
+            self.assertEqual(skill_root_body["schemaVersion"], 1)
+            self.assertEqual(
+                skill_root_body["skills"][0]["skillId"],
+                "opengemini-diagnosis",
             )
 
     def test_system_context_auto_matches_skills_from_question(self) -> None:
@@ -8230,6 +8266,7 @@ grep_results.json#matches/0
                 },
             )
             alias_payload = json.loads(alias_resource["result"]["contents"][0]["text"])
+            self.assertEqual(alias_payload["schemaVersion"], 1)
             self.assertEqual(alias_payload["domainAdapters"][0]["id"], "opengemini_influxdb")
 
             tool_call = readonly_mcp_response(

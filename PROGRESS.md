@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Readonly MCP Resource Envelopes
+
+- V2 readonly MCP `resources/read` now returns Rust/V1-style
+  `schemaVersion=1` envelopes for collection resources:
+  `metadata/instances`, `cases/recent`, `skills`, and `domain-adapters`.
+- Added regression coverage for both `logagent://...` and
+  `logagent-v2://...` resource aliases where applicable.
+- Updated V2 Server README/SPEC for the readonly collection resource envelope.
+
 ## 2026-06-18 WebUI V2 Agent Graph Runtime Display
 
 - V2 Settings bridge now renders the Agent backend `graphRuntime` summary from
