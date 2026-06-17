@@ -1034,6 +1034,10 @@ def run_domain_tool_descriptor(settings: Settings) -> dict:
                 "inputFile": {"type": "string"},
                 "params": {"type": "object"},
             },
+            "anyOf": [
+                {"required": ["toolId"]},
+                {"required": ["tool", "inputFile"]},
+            ],
             "additionalProperties": False,
         },
     }

@@ -1680,6 +1680,30 @@ class StoreTests(unittest.TestCase):
             workspace = store.create_workspace("run tool", "diagnose", "en-US")
             run = store.create_run(workspace["id"])
 
+            tools_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+            )
+            run_tool_descriptor = next(
+                item
+                for item in tools_response["result"]["tools"]
+                if item["name"] == "logagent.run_domain_tool"
+            )
+            self.assertEqual(
+                run_tool_descriptor["inputSchema"]["anyOf"],
+                [{"required": ["toolId"]}, {"required": ["tool", "inputFile"]}],
+            )
+            self.assertEqual(
+                run_tool_descriptor["inputSchema"]["properties"]["tool"]["enum"],
+                ["mock_tool"],
+            )
+            self.assertEqual(
+                run_tool_descriptor["inputSchema"]["properties"]["toolId"]["enum"],
+                ["mock_tool"],
+            )
+
             response = task_mcp_response(
                 settings,
                 store,

@@ -548,7 +548,9 @@ environment overrides.
 The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
 readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
 configured tool execution. Task MCP `logagent.run_domain_tool` only exposes
-configured subprocess tools. Built-ins use dedicated task MCP tools where
+configured subprocess tools. Its `tools/list` descriptor input schema must
+advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
+call shape with `anyOf`. Built-ins use dedicated task MCP tools where
 available, or the protected manual Tools API. The migrated built-ins are:
 
 - metadata catalog tools: instance list, snapshot, field types, tag fields;

@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Domain Tool MCP Schema Compatibility
+
+- Aligned V2 task MCP `logagent.run_domain_tool` descriptor with the
+  Rust/V1 migration contract by advertising both `toolId` and `tool + inputFile`
+  call shapes through `tools/list` `anyOf`.
+- Kept the existing V2 `toolId` protocol and legacy `tool/inputFile` execution
+  path unchanged; this change makes the callable schema match the already
+  supported behavior.
+- Updated V2 Server, Interfaces, and Tool Runner docs/specs.
+- Verification passed: focused task MCP descriptor regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (71 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Huawei Package Sync Descriptor
 
 - Aligned V2 `logagent.huawei_cloud_package_sync` catalog descriptor with the

@@ -611,7 +611,8 @@ log_slices/<slice_id>.json#lines
 Configured tools can be invoked by V2 `toolId` or by the V1-compatible
 `tool` field; the model cannot provide an executable path, shell command, or
 argv. Task MCP `logagent.run_domain_tool` only exposes configured subprocess
-tools. Built-ins are available through their dedicated task MCP tools or the
+tools, and its `tools/list` input schema advertises both V2 `toolId` and
+Rust/V1 `tool + inputFile` forms with `anyOf`. Built-ins are available through their dedicated task MCP tools or the
 protected manual Tools API according to each descriptor's `runnable` policy.
 Tool stdout is parsed as JSON when possible and persisted as `tool_result`
 evidence. Generic JSON output can use
