@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote SSH Command Boundary
+
+- V2 Remote Executor now defaults `LOGAGENT_V2_REMOTE_SSH_COMMAND` to
+  `/usr/bin/ssh` instead of PATH-resolved `ssh`.
+- The configured SSH command expands environment variables and `~`; when remote
+  execution is enabled it must resolve to an absolute path, matching the
+  Rust/V1 `remote_execution.ssh_binary` boundary. Disabled remote execution may
+  keep a relative value because it cannot be executed.
+- Added Settings regression coverage for enabled relative command rejection and
+  disabled relative command tolerance.
+- Updated V2 Server and Environment Collector docs/specs.
+- Verification passed: focused remote SSH command config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (85 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Redirect Policy Parity
 
 - V2 Fetch endpoints now persist `followRedirects`, with SQLite migration for

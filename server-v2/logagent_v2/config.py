@@ -141,7 +141,7 @@ class Settings:
     agent_max_rounds: int = 3
     agent_max_output_tokens: int = 2048
     remote_execution_enabled: bool = True
-    remote_ssh_command: str = "ssh"
+    remote_ssh_command: str = "/usr/bin/ssh"
     remote_connect_timeout_seconds: int = 10
     remote_command_timeout_seconds: int = 30
     remote_max_output_bytes: int = 1024 * 1024
@@ -247,7 +247,13 @@ class Settings:
             os.environ.get("LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS", "2048")
         )
         remote_execution_enabled = os.environ.get("LOGAGENT_V2_REMOTE_EXECUTION_ENABLED", "1") != "0"
-        remote_ssh_command = os.environ.get("LOGAGENT_V2_REMOTE_SSH_COMMAND", "ssh")
+        remote_ssh_command = expand_tool_command(
+            os.environ.get("LOGAGENT_V2_REMOTE_SSH_COMMAND", "/usr/bin/ssh")
+        )
+        validate_remote_ssh_command_path(
+            remote_ssh_command,
+            enabled=remote_execution_enabled,
+        )
         remote_connect_timeout_seconds = int(
             os.environ.get("LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS", "10")
         )
@@ -447,6 +453,16 @@ def validate_tool_command_path(tool_id: str, command: str, *, enabled: bool) -> 
         return
     if not command.strip() or not Path(command).is_absolute():
         raise ValueError(f"tool {tool_id} command must resolve to an absolute path")
+
+
+def validate_remote_ssh_command_path(command: str, *, enabled: bool) -> None:
+    if not enabled:
+        return
+    if not command.strip() or not Path(command).is_absolute():
+        raise ValueError(
+            "LOGAGENT_V2_REMOTE_SSH_COMMAND must resolve to an absolute path "
+            "when remote execution is enabled"
+        )
 
 
 def env_first(*names: str) -> str | None:

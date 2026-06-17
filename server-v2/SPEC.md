@@ -1046,6 +1046,10 @@ remote command smoke runner. They are not a full Environment Collector.
 - The worker constructs a fixed SSH argv using the configured SSH executable,
   batch mode, connect timeout, host key policy, port, `user@host`, and the
   template argv. The API never accepts free-form shell input.
+- `LOGAGENT_V2_REMOTE_SSH_COMMAND` defaults to `/usr/bin/ssh`, expands
+  environment variables and `~`, and must resolve to an absolute path when
+  remote execution is enabled. If remote execution is disabled, a relative
+  command may remain in configuration but cannot be executed.
 - stdout and stderr are capped by `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`, stored
   as files, and previewed in `result.json`.
 - Non-zero exit code, timeout, and SSH start failure are recorded in

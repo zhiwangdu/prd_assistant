@@ -211,7 +211,7 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
 | `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
-| `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `ssh` | SSH executable used by Remote Executor jobs |
+| `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `/usr/bin/ssh` | Absolute SSH executable used by Remote Executor jobs when remote execution is enabled |
 | `LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS` | `10` | SSH connect timeout option |
 | `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS` | `30` | Default remote command timeout |
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
@@ -425,10 +425,13 @@ V2 exposes the low-risk `smoke_ls_root` template. Template descriptors match
 the Rust/V1 behavior: `enabled` also reflects global remote execution state,
 and `timeoutSeconds` is always filled with the template override or default
 remote command timeout. Runs are DB-backed jobs. The worker invokes the
-configured SSH executable with fixed argv:
+configured SSH executable with fixed argv. `LOGAGENT_V2_REMOTE_SSH_COMMAND`
+expands environment variables and `~`; when remote execution is enabled it must
+resolve to an absolute path, matching the Rust/V1 `remote_execution.ssh_binary`
+boundary:
 
 ```text
-ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>
+/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>
 ```
 
 The API never accepts free-form shell commands. Results are written under:

@@ -1905,6 +1905,42 @@ class StoreTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
+    def test_settings_rejects_relative_remote_ssh_command_when_enabled(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_REMOTE_EXECUTION_ENABLED": "1",
+            "LOGAGENT_V2_REMOTE_SSH_COMMAND": "ssh",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            with self.assertRaisesRegex(ValueError, "REMOTE_SSH_COMMAND.*absolute path"):
+                Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_settings_allows_relative_remote_ssh_command_when_disabled(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_REMOTE_EXECUTION_ENABLED": "0",
+            "LOGAGENT_V2_REMOTE_SSH_COMMAND": "ssh",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertFalse(settings.remote_execution_enabled)
+        self.assertEqual(settings.remote_ssh_command, "ssh")
+
     def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(
