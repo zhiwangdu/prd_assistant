@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Agent Provider Config Validation
+
+- V2 now validates environment-loaded Agent provider settings during
+  `Settings.from_env`, matching Rust/V1's fail-fast provider boundary.
+- `LOGAGENT_V2_AGENT_PROVIDER` is normalized and restricted to `stub`,
+  `openai_compatible`, or `binary`.
+- `openai_compatible` now requires non-empty base URL, model, and API key at
+  startup; `binary` requires `LOGAGENT_V2_AGENT_BINARY_PATH` and the path must
+  resolve to an absolute path. Runtime diagnostics still report file existence
+  and executable-bit problems.
+- Added regression coverage for unsupported provider values, missing OpenAI
+  fields, missing/relative binary path, and valid normalized settings.
+- Updated V2 Server and Configuration docs/specs.
+- Verification passed: focused Agent provider config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (95 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Huawei Package Sync Config Validation
 
 - V2 now parses Huawei package sync settings through a validation layer instead

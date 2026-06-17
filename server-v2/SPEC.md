@@ -1112,8 +1112,11 @@ readable context and cannot be cited as final root-cause evidence.
 `LOGAGENT_V2_AGENT_PROVIDER=stub` is the default and keeps local deterministic
 behavior. `openai_compatible` posts a compact Chat Completions request to
 `<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions` with
-`LOGAGENT_V2_AGENT_MODEL`, optional `LOGAGENT_V2_AGENT_API_KEY`, and
-`LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`. The request includes the Workspace
+`LOGAGENT_V2_AGENT_MODEL`, `LOGAGENT_V2_AGENT_API_KEY`, and
+`LOGAGENT_V2_AGENT_TIMEOUT_SECONDS`. Environment-loaded settings fail fast if
+the provider is unsupported, if `openai_compatible` is missing base URL, model,
+or API key, or if `binary` is missing a command path that resolves to an
+absolute path. The request includes the Workspace
 question/mode/language, manifest counts, a bounded initial grep preview,
 allowed current-run evidence refs, recent user messages/action results from
 resumed runs, available read-only tools, and prior tool observations.
@@ -1127,10 +1130,10 @@ resumed runs, available read-only tools, and prior tool observations.
 
 The same compact prompt is passed as one argv item. stdout must be UTF-8 JSON
 containing either a tool-call request object or the final-answer object.
-`LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` bounds stdout. Missing,
-non-absolute, non-regular, or non-executable paths, start failures, timeout,
+`LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` bounds stdout. Runtime diagnostics
+still report non-regular or non-executable paths, start failures, timeout,
 non-zero exit, oversized stdout, invalid UTF-8, invalid JSON, and schema or
-evidence-ref failures are recorded as provider failures.
+evidence-ref failures as provider failures.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,

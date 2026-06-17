@@ -233,9 +233,9 @@ metadata:
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
 - Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
-- `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。
+- `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。V2 `LOGAGENT_V2_AGENT_PROVIDER` 只允许 `stub`、`openai_compatible` 或 `binary`；选择 `openai_compatible` 时 `LOGAGENT_V2_AGENT_BASE_URL`、`LOGAGENT_V2_AGENT_MODEL` 和 `LOGAGENT_V2_AGENT_API_KEY` 必须非空。
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。
-- `llm.provider: "binary"` 为预留二进制模型调用分支；`binary_path` 或 `binary_path_env` 解析结果必须是绝对路径，运行时固定调用 `<binary_path> run <prompt>`，stdout 按结构化 LLM JSON 解析。
+- `llm.provider: "binary"` 为预留二进制模型调用分支；`binary_path` 或 `binary_path_env` 解析结果必须是绝对路径。V2 `LOGAGENT_V2_AGENT_BINARY_PATH` 选择 binary provider 时必须解析为绝对路径，运行时固定调用 `<binary_path> run <prompt>`，stdout 按结构化 LLM JSON 解析。
 - `llm.binary_max_output_bytes` 默认 1MiB，非正值按 1024 bytes 下限处理。
 - `claude_code.command_path` 或 `command_path_env` 必须解析为绝对路径；默认环境变量为 `LOGAGENT_CLAUDE_CODE_PATH`。
 - `claude_code.default_mode` 支持 `diagnose`、`code_investigation` 和 `fix`，默认 `diagnose`。

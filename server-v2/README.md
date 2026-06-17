@@ -201,11 +201,11 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key; required when Fetch is enabled and used for encrypted credential sets |
-| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary` final-answer provider |
-| `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, e.g. `https://api.openai.com/v1` |
-| `LOGAGENT_V2_AGENT_MODEL` | unset | Model name for the OpenAI-compatible provider |
-| `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token for the OpenAI-compatible provider |
-| `LOGAGENT_V2_AGENT_BINARY_PATH` | unset | Absolute executable path for the local binary Agent provider |
+| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary`; invalid values fail settings loading |
+| `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, required when that provider is selected |
+| `LOGAGENT_V2_AGENT_MODEL` | unset | Model name, required for `openai_compatible` |
+| `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token, required for `openai_compatible` |
+| `LOGAGENT_V2_AGENT_BINARY_PATH` | unset | Binary provider command path; required and absolute when `binary` is selected |
 | `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from the binary Agent provider |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |

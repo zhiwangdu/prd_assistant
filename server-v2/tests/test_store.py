@@ -2055,6 +2055,60 @@ class StoreTests(unittest.TestCase):
         descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
         self.assertTrue(descriptors["logagent.huawei_cloud_package_sync"]["runnable"])
 
+    def test_settings_validates_agent_provider_env(self) -> None:
+        env_names = {
+            "LOGAGENT_V2_AGENT_PROVIDER",
+            "LOGAGENT_V2_AGENT_BASE_URL",
+            "LOGAGENT_V2_AGENT_MODEL",
+            "LOGAGENT_V2_AGENT_API_KEY",
+            "LOGAGENT_V2_AGENT_BINARY_PATH",
+        }
+        previous = {key: os.environ.get(key) for key in env_names}
+        try:
+            os.environ["LOGAGENT_V2_AGENT_PROVIDER"] = "unknown"
+            with self.assertRaisesRegex(ValueError, "AGENT_PROVIDER.*openai_compatible"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_PROVIDER"] = "openai_compatible"
+            os.environ.pop("LOGAGENT_V2_AGENT_BASE_URL", None)
+            os.environ["LOGAGENT_V2_AGENT_MODEL"] = "model"
+            os.environ["LOGAGENT_V2_AGENT_API_KEY"] = "key"
+            with self.assertRaisesRegex(ValueError, "AGENT_BASE_URL.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_BASE_URL"] = " https://api.example.com/v1 "
+            os.environ.pop("LOGAGENT_V2_AGENT_API_KEY", None)
+            with self.assertRaisesRegex(ValueError, "AGENT_API_KEY.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_API_KEY"] = " secret "
+            settings = Settings.from_env()
+            self.assertEqual(settings.agent_provider, "openai_compatible")
+            self.assertEqual(settings.agent_base_url, "https://api.example.com/v1")
+            self.assertEqual(settings.agent_model, "model")
+            self.assertEqual(settings.agent_api_key, "secret")
+
+            os.environ["LOGAGENT_V2_AGENT_PROVIDER"] = "binary"
+            os.environ.pop("LOGAGENT_V2_AGENT_BINARY_PATH", None)
+            with self.assertRaisesRegex(ValueError, "AGENT_BINARY_PATH.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_BINARY_PATH"] = "relative-agent"
+            with self.assertRaisesRegex(ValueError, "AGENT_BINARY_PATH.*absolute path"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_AGENT_BINARY_PATH"] = "/opt/logagent/bin/agent"
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(settings.agent_provider, "binary")
+        self.assertEqual(settings.agent_binary_path, Path("/opt/logagent/bin/agent"))
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",

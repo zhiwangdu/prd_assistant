@@ -232,13 +232,21 @@ class Settings:
             os.environ.get("LOGAGENT_V2_FETCH_SECRET_KEY"),
             enabled=fetch_enabled,
         )
-        agent_provider = os.environ.get("LOGAGENT_V2_AGENT_PROVIDER", "stub")
-        agent_model = os.environ.get("LOGAGENT_V2_AGENT_MODEL")
-        agent_base_url = os.environ.get("LOGAGENT_V2_AGENT_BASE_URL")
-        agent_api_key = os.environ.get("LOGAGENT_V2_AGENT_API_KEY")
+        agent_provider = parse_agent_provider_env(os.environ.get("LOGAGENT_V2_AGENT_PROVIDER"))
+        agent_model = non_empty_string(os.environ.get("LOGAGENT_V2_AGENT_MODEL"))
+        agent_base_url = non_empty_string(os.environ.get("LOGAGENT_V2_AGENT_BASE_URL"))
+        agent_api_key = non_empty_string(os.environ.get("LOGAGENT_V2_AGENT_API_KEY"))
         raw_agent_binary_path = os.environ.get("LOGAGENT_V2_AGENT_BINARY_PATH")
-        agent_binary_path = (
-            Path(raw_agent_binary_path).expanduser() if raw_agent_binary_path else None
+        agent_binary_path = parse_agent_binary_path_env(
+            raw_agent_binary_path,
+            enabled=agent_provider == "binary",
+        )
+        validate_agent_provider_settings(
+            agent_provider,
+            agent_base_url=agent_base_url,
+            agent_model=agent_model,
+            agent_api_key=agent_api_key,
+            agent_binary_path=agent_binary_path,
         )
         agent_binary_max_output_bytes = int(
             os.environ.get(
@@ -562,6 +570,52 @@ def non_empty_string(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def parse_agent_provider_env(raw: str | None) -> str:
+    provider = (raw or "stub").strip().lower()
+    if provider not in {"stub", "openai_compatible", "binary"}:
+        raise ValueError(
+            "LOGAGENT_V2_AGENT_PROVIDER must be one of stub, openai_compatible, or binary"
+        )
+    return provider
+
+
+def parse_agent_binary_path_env(raw: str | None, *, enabled: bool) -> Path | None:
+    value = non_empty_string(raw)
+    if not value:
+        if enabled:
+            raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH is required for binary provider")
+        return None
+    path = Path(os.path.expandvars(os.path.expanduser(value)))
+    if enabled and not path.is_absolute():
+        raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH must resolve to an absolute path")
+    return path
+
+
+def validate_agent_provider_settings(
+    provider: str,
+    *,
+    agent_base_url: str | None,
+    agent_model: str | None,
+    agent_api_key: str | None,
+    agent_binary_path: Path | None,
+) -> None:
+    if provider == "openai_compatible":
+        if not agent_base_url:
+            raise ValueError(
+                "LOGAGENT_V2_AGENT_BASE_URL is required for openai_compatible provider"
+            )
+        if not agent_model:
+            raise ValueError(
+                "LOGAGENT_V2_AGENT_MODEL is required for openai_compatible provider"
+            )
+        if not agent_api_key:
+            raise ValueError(
+                "LOGAGENT_V2_AGENT_API_KEY is required for openai_compatible provider"
+            )
+    if provider == "binary" and agent_binary_path is None:
+        raise ValueError("LOGAGENT_V2_AGENT_BINARY_PATH is required for binary provider")
 
 
 def validate_huawei_obs_endpoint(endpoint: str) -> None:
