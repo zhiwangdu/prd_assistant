@@ -17,7 +17,7 @@ from pathlib import Path
 
 from logagent_v2.agent import AgentRuntime
 from logagent_v2.alias import fallback_run_alias, normalize_run_alias
-from logagent_v2.analysis import get_run_analysis
+from logagent_v2.analysis import get_run_analysis, get_run_artifacts
 from logagent_v2.artifacts import (
     resolve_artifact_path,
     safe_filename,
@@ -510,6 +510,29 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response_doc["status"], "completed")
             self.assertEqual(response_doc["validation"]["status"], "passed")
             self.assertEqual(response_doc["validatedFinalAnswer"]["confidence"], "low")
+            artifacts = get_run_artifacts(settings, store, run["id"])
+            self.assertEqual(artifacts["taskId"], run["id"])
+            self.assertEqual(artifacts["manifestPath"], "manifest.json")
+            self.assertEqual(artifacts["manifest"]["fileCount"], 1)
+            self.assertEqual(artifacts["grepResultsPath"], "grep_results.json")
+            self.assertEqual(artifacts["grepResults"]["totalMatches"], 1)
+            self.assertEqual(artifacts["textInputPath"], "session_text_input.json")
+            self.assertEqual(
+                artifacts["textInput"]["question"],
+                "why did the query timeout?",
+            )
+            self.assertEqual(artifacts["metadataContextPath"], "metadata_context.json")
+            self.assertEqual(artifacts["systemContextPath"], "system_context.json")
+            self.assertEqual(artifacts["analysisPackagePath"], "analysis_package.json")
+            self.assertEqual(artifacts["agentResponsePath"], "agent_response.json")
+            self.assertEqual(artifacts["analysisStatePath"], "analysis_state.json")
+            self.assertEqual(artifacts["mcpCallsPath"], "mcp_calls.jsonl")
+            self.assertIn(
+                "resources/read",
+                {call["name"] for call in artifacts["mcpCalls"]},
+            )
+            self.assertEqual(artifacts["toolResults"], [])
+            self.assertGreaterEqual(artifacts["artifactIndex"]["artifactCount"], 7)
             result_response = task_mcp_response(
                 settings,
                 store,

@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Run Artifact Aggregate Response
+
+- `GET /api/v2/runs/:run_id/artifacts` now keeps the raw V2 `run`, `uploads`,
+  and `evidenceArtifacts` lists while adding Rust/V1-style aggregate fields.
+- The response includes `taskId`, `artifactIndex`, parsed manifest and grep
+  results, Session text input, metadata/system/case context, analysis package,
+  Agent response/state artifacts, MCP call audit entries, and tool results.
+- Added regression coverage for the aggregate response on a completed
+  Session-backed run with text input, manifest, grep, analysis package, Agent
+  audit artifacts, and recorded MCP calls.
+- Verification passed: focused run artifact aggregate regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, compileall for
+  `server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session System Context Materialization
 
 - V2 run `system_context.json` now materializes explicit Session

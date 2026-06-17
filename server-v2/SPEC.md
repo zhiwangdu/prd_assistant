@@ -96,8 +96,10 @@ Implemented in this slice:
   attached upload ids in its `workspace` section.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
-- Evidence and artifact listing for a run, including uploaded input artifacts
-  and evidence artifact outputs.
+- Evidence and artifact listing for a run, including uploaded input artifacts,
+  evidence artifact outputs, and Rust/V1-style aggregate fields for manifest,
+  grep results, Session text input, metadata/system/case context, analysis
+  package, Agent audit artifacts, MCP calls, and tool results.
 - Run analysis summary endpoint combining run metadata, timeline, evidence,
   artifacts, analysis resources, final result, and run alias for WebUI
   inspection.
@@ -1270,6 +1272,15 @@ the canonical `tool_results/<action_id>/result.json` shape, and `case_context`
 returns the latest background-only Case search/recall context or an empty
 context when no Case tool has run. `artifact_index` includes the persisted run
 question at `session_text_input.json`.
+
+`GET /api/v2/runs/<run_id>/artifacts` preserves the V2 `run`, `uploads`, and
+`evidenceArtifacts` lists while adding a Rust/V1 migration aggregate response:
+`taskId`, `artifactIndex`, `manifestPath`/`manifest`,
+`grepResultsPath`/`grepResults`, `textInputPath`/`textInput`,
+`metadataContextPath`/`metadataContext`, `systemContextPath`/`systemContext`,
+`caseContextPath`/`caseContext`, `analysisPackagePath`/`analysisPackage`,
+`agentResponsePath`/`agentResponse`, `analysisStatePath`/`analysisState`,
+`mcpCallsPath`/`mcpCalls`, and `toolResults`.
 
 After final-answer validation succeeds, V2 writes `result.json` with schema
 version 1 and `result.md` as a Markdown rendering of the same final answer.

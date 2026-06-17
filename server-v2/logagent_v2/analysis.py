@@ -3,6 +3,7 @@ from __future__ import annotations
 from .config import Settings
 from .mcp import (
     build_task_artifact_index,
+    read_initial_grep_artifact,
     read_latest_evidence_artifact,
     read_task_case_context,
     read_task_tool_results,
@@ -25,6 +26,25 @@ ANALYSIS_RESOURCE_KINDS = (
     "metadata_context",
     "environment_evidence",
 )
+
+
+RUN_ARTIFACT_KINDS = {
+    "manifest": ("manifestPath", "manifest", "manifest.json"),
+    "metadata_context": (
+        "metadataContextPath",
+        "metadataContext",
+        "metadata_context.json",
+    ),
+    "system_context": ("systemContextPath", "systemContext", "system_context.json"),
+    "analysis_package": (
+        "analysisPackagePath",
+        "analysisPackage",
+        "analysis_package.json",
+    ),
+    "agent_response": ("agentResponsePath", "agentResponse", "agent_response.json"),
+    "analysis_state": ("analysisStatePath", "analysisState", "analysis_state.json"),
+    "user_question": ("textInputPath", "textInput", "session_text_input.json"),
+}
 
 
 def get_run_analysis(settings: Settings, store: Store, run_id: str) -> JsonObject:
@@ -51,6 +71,40 @@ def get_run_analysis(settings: Settings, store: Store, run_id: str) -> JsonObjec
             value["result"] = get_run_result(settings, store, run_id)
         except ValueError:
             value["result"] = None
+    return value
+
+
+def get_run_artifacts(settings: Settings, store: Store, run_id: str) -> JsonObject:
+    value = store.list_run_artifacts(run_id)
+    run = value["run"]
+    value["taskId"] = run_id
+    value["artifactIndex"] = build_task_artifact_index(store, run)
+
+    for kind, (path_field, value_field, logical_path) in RUN_ARTIFACT_KINDS.items():
+        artifact = optional_latest_artifact(settings, store, run_id, kind)
+        value[path_field] = logical_path if artifact is not None else None
+        value[value_field] = artifact
+
+    try:
+        grep_results = read_initial_grep_artifact(settings, store, run_id)
+    except ValueError:
+        grep_results = None
+    value["grepResultsPath"] = "grep_results.json" if grep_results is not None else None
+    value["grepResults"] = grep_results
+
+    case_context = read_task_case_context(settings, store, run)
+    value["caseContextPath"] = "case_context.json"
+    value["caseContext"] = case_context
+
+    mcp_calls = read_mcp_calls(settings, store, run_id)
+    value["mcpCallsPath"] = (
+        "mcp_calls.jsonl" if int(mcp_calls.get("callCount", 0) or 0) > 0 else None
+    )
+    value["mcpCalls"] = mcp_calls.get("calls", [])
+
+    tool_results = read_task_tool_results(settings, store, run)
+    value["toolResults"] = tool_results.get("toolResults", [])
+    value["toolResultCount"] = tool_results.get("toolResultCount", 0)
     return value
 
 

@@ -88,6 +88,11 @@ slice provides the durable foundation for the V2 product model:
 - Final result persistence as `result.json` and `result.md` artifacts, with
   HTTP and task MCP read surfaces, plus deterministic fallback run alias
   persistence for history/UI display.
+- Run artifact HTTP aggregation: `GET /api/v2/runs/<run_id>/artifacts`
+  preserves raw V2 run/upload/evidence lists and also returns Rust/V1-style
+  aggregate fields for manifest, grep results, Session text input,
+  metadata/system/case context, analysis package, Agent audit artifacts, MCP
+  calls, and tool results.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
@@ -557,6 +562,13 @@ lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
 `case_context` returns the latest background Case recall/search context. The
 artifact index includes the persisted run question at `session_text_input.json`.
+The HTTP artifacts endpoint returns the same compatibility payloads in one
+response for WebUI and Rust/V1 migration callers: `manifestPath`/`manifest`,
+`grepResultsPath`/`grepResults`, `textInputPath`/`textInput`,
+`metadataContextPath`/`metadataContext`, `systemContextPath`/`systemContext`,
+`caseContextPath`/`caseContext`, `analysisPackagePath`/`analysisPackage`,
+`agentResponsePath`/`agentResponse`, `analysisStatePath`/`analysisState`,
+`mcpCallsPath`/`mcpCalls`, and `toolResults`.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 deterministic alias derived from the final summary or question. `GET
