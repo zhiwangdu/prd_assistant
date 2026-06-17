@@ -893,6 +893,22 @@ export async function runV2FetchEndpoint(apiKey: string, runId: string, endpoint
   });
 }
 
+export async function createV2FetchEndpointRun(apiKey: string, endpointId: string, input: V2FetchRunOverrides & { workspaceId?: string } = {}) {
+  return fetchJson<V2ToolRun>(`/api/v2/fetch/endpoints/${encodeURIComponent(endpointId)}/runs`, {
+    method: "POST",
+    headers: jsonHeaders(apiKey),
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listV2FetchRuns(apiKey: string, input: { endpointId?: string; workspaceId?: string; limit?: number } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(input.limit ?? 30));
+  if (input.endpointId) params.set("endpointId", input.endpointId);
+  if (input.workspaceId) params.set("workspaceId", input.workspaceId);
+  return fetchJson<{ enabled: boolean; runs: V2ToolRun[] }>(`/api/v2/fetch/runs?${params.toString()}`, { headers: authHeaders(apiKey) });
+}
+
 export async function getV2LlmDebug(apiKey: string) {
   return fetchJson<{ llmOutputLogging: boolean }>("/api/v2/debug/llm", { headers: authHeaders(apiKey) });
 }

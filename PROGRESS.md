@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Fetch Standalone Runs
+
+- V2 Fetch Workbench now supports standalone Fetch `tool_run` creation through
+  `/api/v2/fetch/endpoints/:endpoint_id/runs`, with an optional existing
+  Workspace id or backend-created isolated Workspace.
+- The page now lists `/api/v2/fetch/runs`, filters by endpoint/workspace,
+  selects historical Fetch tool runs, polls non-terminal selected runs, and
+  reads `/api/v2/tools/runs/:run_id/result` plus
+  `/api/v2/tools/runs/:run_id/artifacts` on success.
+- Standalone Fetch tool runs reuse the same authenticated result/body/support
+  artifact download UI as run-scoped Fetch execution.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Fetch Artifact Downloads
 
 - V2 Fetch Workbench result panels now expose both the Fetch `result.json`
