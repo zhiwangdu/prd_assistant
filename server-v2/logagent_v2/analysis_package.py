@@ -86,10 +86,14 @@ def build_analysis_package(
         "manifest": manifest_outline(manifest),
         "grepResults": grep_outline(grep_results, matches),
         "toolInputIndex": tool_input_outline(evidence_bundle.get("toolInputIndex")),
+        "toolResults": evidence_bundle.get("toolResults", []),
         "systemContext": context_outline(settings, store, run_id, "system_context"),
         "metadataContext": context_outline(settings, store, run_id, "metadata_context"),
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
-        "allowedEvidenceRefs": allowed_evidence_refs(matches),
+        "allowedEvidenceRefs": allowed_evidence_refs(
+            matches,
+            evidence_bundle.get("toolResults"),
+        ),
         "finalEvidencePolicy": {
             "allowed": [
                 "session_text_input.json#question",
@@ -195,13 +199,25 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
     ]
 
 
-def allowed_evidence_refs(matches: list[JsonObject]) -> list[str]:
+def allowed_evidence_refs(
+    matches: list[JsonObject],
+    tool_results: object | None = None,
+) -> list[str]:
     refs = [
         match["ref"]
         for match in matches
         if isinstance(match, dict) and isinstance(match.get("ref"), str)
     ]
-    return [SESSION_TEXT_INPUT_REF, *refs]
+    tool_refs: list[str] = []
+    if isinstance(tool_results, list):
+        for result in tool_results:
+            if not isinstance(result, dict):
+                continue
+            final_refs = result.get("finalEvidenceRefs")
+            if not isinstance(final_refs, list):
+                continue
+            tool_refs.extend(ref for ref in final_refs if isinstance(ref, str))
+    return list(dict.fromkeys([SESSION_TEXT_INPUT_REF, *refs, *tool_refs]))
 
 
 def manifest_outline(manifest: JsonObject) -> JsonObject:

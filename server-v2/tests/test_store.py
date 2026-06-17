@@ -4809,6 +4809,186 @@ fi
                 evidence[0]["payload"]["actionId"], evidence[1]["payload"]["actionId"]
             )
 
+    def test_agent_auto_runs_matching_configured_tools_before_provider_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "text=p.read_text();"
+                "print(json.dumps({'summary':'auto '+p.name,"
+                "'findings':[{'message':text.splitlines()[0]}]}))"
+            )
+            tool = ToolDefinition(
+                id="auto_tool",
+                display_name="Auto Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                match_file_patterns=("*.log",),
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("timeout in query path", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "auto.log",
+                b"timeout while running select\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "auto.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            tool_evidence = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_result"
+            ]
+            self.assertEqual(len(tool_evidence), 1)
+            ref = f"{tool_evidence[0]['payload']['evidenceRefPrefix']}0"
+            self.assertTrue(ref.startswith("tool_results/auto_tool_"))
+
+            artifacts = get_run_artifacts(settings, store, run["id"])
+            self.assertEqual(artifacts["toolResultCount"], 1)
+            self.assertTrue(artifacts["toolResults"][0]["summary"].startswith("auto auto_tool_"))
+            self.assertEqual(artifacts["toolResults"][0]["findings"][0]["message"], "timeout while running select")
+
+            analysis_package_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "analysis_package"
+            )
+            analysis_package_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(analysis_package_evidence["artifact_id"])["relative_path"],
+            )
+            analysis_package = json.loads(analysis_package_path.read_text(encoding="utf-8"))
+            self.assertIn(ref, analysis_package["allowedEvidenceRefs"])
+            self.assertEqual(
+                analysis_package["toolResults"][0]["finalEvidenceRefs"],
+                [ref],
+            )
+
+            request_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "agent_request"
+            )
+            request_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(request_evidence["artifact_id"])["relative_path"],
+            )
+            request_body = json.loads(request_path.read_text(encoding="utf-8"))
+            self.assertIn(ref, request_body["allowedEvidenceRefs"])
+            prompt = json.loads(request_body["payload"]["prompt"])
+            self.assertEqual(prompt["preRunToolResults"][0]["finalEvidenceRefs"], [ref])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 41,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "auto_tool"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["finalEvidenceRefs"], [ref])
+            self.assertEqual(
+                len(
+                    [
+                        item
+                        for item in store.list_evidence(run["id"])
+                        if item["kind"] == "tool_result"
+                    ]
+                ),
+                1,
+            )
+
+    def test_agent_auto_tool_phase_skips_runtime_param_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "mode=sys.argv[2];"
+                "print(json.dumps({'summary':mode+' '+p.read_text().splitlines()[0],"
+                "'findings':[{'message':mode}]}))"
+            )
+            tool = ToolDefinition(
+                id="param_tool",
+                display_name="Param Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}", "{params.mode}"),
+                timeout_seconds=5,
+                match_file_patterns=("*.log",),
+                params_schema={
+                    "type": "object",
+                    "properties": {"mode": {"type": "string"}},
+                    "required": ["mode"],
+                    "additionalProperties": False,
+                },
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("timeout with param tool", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "param.log",
+                b"timeout line\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "param.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            self.assertFalse(
+                any(item["kind"] == "tool_result" for item in store.list_evidence(run["id"]))
+            )
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {
+                            "toolId": "param_tool",
+                            "params": {"mode": "manual"},
+                        },
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "manual timeout line")
+            self.assertEqual(
+                len(
+                    [
+                        item
+                        for item in store.list_evidence(run["id"])
+                        if item["kind"] == "tool_result"
+                    ]
+                ),
+                1,
+            )
+
     def test_task_mcp_run_domain_tool_accepts_legacy_tool_input_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (

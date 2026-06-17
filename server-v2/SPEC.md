@@ -92,7 +92,12 @@ Implemented in this slice:
   `session_text_input.json`, consumes the initial evidence pipeline, and either
   returns a deterministic stub summary or calls a bounded OpenAI-compatible or
   local binary provider loop for advertised Server-owned tools and an
-  evidence-validated JSON final answer. Provider-requested
+  evidence-validated JSON final answer. After manifest/grep creation and before
+  the first provider request, V2 also runs matching input-based configured
+  subprocess tools that do not need runtime params through a V1-style automatic
+  `run_tool` phase, persists their `tool_result` evidence, and injects their
+  finding refs into `analysis_package.json` and `agent_request.json`.
+  Provider-requested
   `logagent.request_user_input` / `logagent.request_approval` calls pause the
   run in the matching waiting state instead of writing a final result. Each
   round persists `agent_request.json`, `agent_response.json`,
@@ -163,7 +168,9 @@ Implemented in this slice:
   normalized into `summary/findings`. Task MCP responses retain the V2 nested
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
-  `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
+  `artifactPaths`, and finding outputs expose `finalEvidenceRefs`. Repeated task
+  MCP calls for an existing `toolId + actionId` reuse the current run's
+  persisted result evidence to keep Agent retries idempotent.
 - Source-built analyzer env vars or runtime `bin/tools` auto-discovery create
   default configured descriptors aligned with `examples/server-tools.yaml`:
   Flux and InfluxQL use the V1 query analyzer args with `timeoutSeconds=30`

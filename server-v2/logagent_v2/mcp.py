@@ -1096,6 +1096,7 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
         run["id"],
         tool_id,
         params=run_params,
+        reuse_existing=True,
     )
     payload = {
         "result": result["result"],

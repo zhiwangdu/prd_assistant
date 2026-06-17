@@ -2,6 +2,30 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Automatic Tool Runner Phase
+
+- V2 analysis now runs matching input-based configured subprocess tools after
+  initial manifest/grep evidence and before the first Agent provider request,
+  matching the Rust/V1 rule-based `RUN_TOOL` phase.
+- Auto-run Tool Runner results are persisted as `tool_result` evidence and
+  injected into `analysis_package.json`, `agent_request.json`, and the prompt
+  as `preRunToolResults` with finding-level `finalEvidenceRefs`.
+- Task MCP `logagent.run_domain_tool` now reuses an existing result for the
+  same `toolId + actionId` within one run, avoiding duplicate artifacts when
+  Agent retries or users inspect a tool result after automatic execution.
+- Manual-only and built-in tools such as `pprof_analyzer`, Fetch, preprocess,
+  metadata, and Huawei sync remain explicit and are not triggered by the
+  automatic phase.
+- Configured tools that need runtime `{params.name}` values or required params
+  are skipped by the automatic phase and remain available through explicit
+  Agent/user tool calls.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: focused Tool Runner/Agent regressions,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  `PYTHONPATH=. UV_PROJECT_ENVIRONMENT=<tmp> uv run --extra dev pytest`
+  (`116 passed`, with the existing Starlette/httpx deprecation warning), and
+  `git diff --check`.
+
 ## 2026-06-18 WebUI V2 Dev Proxy
 
 - WebUI Vite development proxy now defaults `/api` and `/health` to the Python

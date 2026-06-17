@@ -566,6 +566,7 @@ def run_configured_tool(
     tool_id: str,
     params: JsonObject | None = None,
     upload_ids: list[str] | None = None,
+    reuse_existing: bool = False,
 ) -> JsonObject:
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
@@ -586,7 +587,14 @@ def run_configured_tool(
     if input_entries:
         runs = [
             run_single_configured_tool(
-                settings, store, workspace_id, run_id, tool, entry, normalized_params
+                settings,
+                store,
+                workspace_id,
+                run_id,
+                tool,
+                entry,
+                normalized_params,
+                reuse_existing=reuse_existing,
             )
             for entry in input_entries[: tool.max_input_files]
         ]
@@ -600,8 +608,56 @@ def run_configured_tool(
             "evidenceItems": [item["evidence"] for item in runs],
         }
     return run_single_configured_tool(
-        settings, store, workspace_id, run_id, tool, None, normalized_params
+        settings,
+        store,
+        workspace_id,
+        run_id,
+        tool,
+        None,
+        normalized_params,
+        reuse_existing=reuse_existing,
     )
+
+
+def run_matching_configured_tools(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+) -> list[JsonObject]:
+    """Run configured input-based tools that match the current task evidence."""
+
+    results: list[JsonObject] = []
+    for tool in settings.tools:
+        if not tool.enabled or not tool_requires_input(tool):
+            continue
+        auto_params = automatic_tool_params(tool)
+        if auto_params is None:
+            continue
+        input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool, [])
+        for entry in input_entries[: tool.max_input_files]:
+            results.append(
+                run_single_configured_tool(
+                    settings,
+                    store,
+                    workspace_id,
+                    run_id,
+                    tool,
+                    entry,
+                    auto_params,
+                    reuse_existing=True,
+                )
+            )
+    return results
+
+
+def automatic_tool_params(tool: ToolDefinition) -> JsonObject | None:
+    if any(PARAM_PLACEHOLDER_RE.search(arg) for arg in tool.args):
+        return None
+    try:
+        return validate_tool_params(tool, {})
+    except ValueError:
+        return None
 
 
 def run_single_configured_tool(
@@ -612,12 +668,19 @@ def run_single_configured_tool(
     tool: ToolDefinition,
     input_entry: JsonObject | None,
     params: JsonObject,
+    reuse_existing: bool = False,
 ) -> JsonObject:
     command = Path(tool.command)
     if not command.is_absolute():
         raise ValueError(f"tool {tool.id} command must be an absolute path")
     input_file = resolve_tool_input_path(settings, store, input_entry) if input_entry else None
     action_id = tool_action_id(tool, input_entry, params)
+    if reuse_existing:
+        existing = existing_configured_tool_result(
+            settings, store, run_id, tool.id, action_id
+        )
+        if existing is not None:
+            return existing
     tool_workspace = prepare_tool_workspace(
         settings, store, workspace_id, run_id, action_id
     )
@@ -723,6 +786,67 @@ def run_single_configured_tool(
         },
     )
     return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def existing_configured_tool_result(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    tool_id: str,
+    action_id: str,
+) -> JsonObject | None:
+    for evidence in reversed(store.list_evidence(run_id)):
+        if evidence.get("kind") != "tool_result":
+            continue
+        payload = evidence.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("toolId") != tool_id or payload.get("actionId") != action_id:
+            continue
+        artifact_id = evidence.get("artifact_id")
+        if not isinstance(artifact_id, str) or not artifact_id:
+            continue
+        artifact = store.get_artifact(artifact_id)
+        result_path = resolve_artifact_path(settings, artifact["relative_path"])
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(result, dict):
+            return {"result": result, "artifact": artifact, "evidence": evidence}
+    return None
+
+
+def configured_tool_results_outline(results: list[JsonObject]) -> list[JsonObject]:
+    return [configured_tool_result_outline(item) for item in results]
+
+
+def configured_tool_result_outline(item: JsonObject) -> JsonObject:
+    result = item.get("result") if isinstance(item.get("result"), dict) else {}
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    payload = evidence.get("payload") if isinstance(evidence.get("payload"), dict) else {}
+    prefix = payload.get("evidenceRefPrefix")
+    findings = result.get("findings")
+    final_refs: list[str] = []
+    finding_preview: list[JsonObject] = []
+    if isinstance(prefix, str) and prefix.endswith("#findings/") and isinstance(findings, list):
+        for index, finding in enumerate(findings[:20]):
+            ref = f"{prefix}{index}"
+            final_refs.append(ref)
+            if isinstance(finding, dict):
+                finding_preview.append({"ref": ref, **finding})
+            else:
+                finding_preview.append({"ref": ref, "value": finding})
+    return {
+        "toolId": result.get("toolId") or payload.get("toolId"),
+        "actionId": result.get("actionId") or payload.get("actionId"),
+        "status": result.get("status"),
+        "inputFile": result.get("inputFile"),
+        "inputKind": result.get("inputKind"),
+        "summary": result.get("summary") or evidence.get("summary"),
+        "finalEvidenceRefs": final_refs,
+        "findings": finding_preview,
+    }
 
 
 def select_tool_inputs(

@@ -29,6 +29,7 @@ from .metadata import persist_metadata_context
 from .results import persist_run_result
 from .skills import persist_system_context
 from .store import JsonObject, Store
+from .tools import configured_tool_results_outline, run_matching_configured_tools
 
 MAX_TOOL_CALLS_PER_ROUND = 4
 
@@ -124,6 +125,15 @@ class AgentRuntime:
             workspace_id,
             run_id,
         )
+        self.store.update_run_status(run_id, "running", "run_tool")
+        auto_tool_results = run_matching_configured_tools(
+            self.settings,
+            self.store,
+            workspace_id,
+            run_id,
+        )
+        evidence_bundle["toolResults"] = configured_tool_results_outline(auto_tool_results)
+        self.store.update_run_status(run_id, "running", "collect_initial_evidence")
         analysis_package = persist_analysis_package(
             self.settings,
             self.store,

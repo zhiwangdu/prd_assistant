@@ -61,7 +61,11 @@ slice provides the durable foundation for the V2 product model:
   `summary/findings`. Task MCP responses preserve the V2 nested
   `result/artifact/evidence` payload and also expose Rust/V1-compatible
   top-level `artifactPath`, `summary`, and `evidenceRefs` fields, plus
-  finding-level `finalEvidenceRefs` when the tool produced findings.
+  finding-level `finalEvidenceRefs` when the tool produced findings. During
+  analysis, V2 now runs matching input-based configured subprocess tools after
+  initial manifest/grep evidence and before the first Agent provider request;
+  these pre-run tool summaries are included in `analysis_package.json`,
+  `agent_request.json`, and the prompt as `preRunToolResults`.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`; metadata field filters use
@@ -131,6 +135,9 @@ slice provides the durable foundation for the V2 product model:
   bounded OpenAI-compatible / local binary provider-tool loop for
   evidence-validated JSON final answers, provider-requested waiting/approval
   pauses, and per-round request/response/state plus MCP-call audit artifacts.
+  The initial evidence node includes a V1-style automatic `run_tool` phase for
+  matching configured tools; repeated task MCP calls for the same tool action
+  reuse the existing result evidence instead of duplicating artifacts.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
@@ -786,6 +793,17 @@ as run-local tool input artifacts, exposed to the tool as virtual
 `extracted/<manifest path>` inputs, and bounded by `maxInputFiles`. Multi-input
 MCP calls keep `result/evidence` as the primary run and additionally return
 `results[]` and `evidenceItems[]`.
+
+The same selection path runs automatically during analysis after
+`manifest.json` and `grep_results.json` are created. Only enabled configured
+tools whose argv requires `{input_file}` and no runtime `{params.name}` values
+are auto-run; manual-only built-ins such as `pprof_analyzer`, Fetch,
+preprocess, metadata, and Huawei sync remain explicit tools. Auto results are
+stored as `tool_result` evidence, added to
+`analysis_package.allowedEvidenceRefs`, and shown to the first provider prompt
+as `preRunToolResults`. Task MCP `logagent.run_domain_tool` reuses an existing
+`toolId + actionId` result when present, so provider retries and user follow-up
+calls do not duplicate the same result inside one run.
 
 Configured subprocess `result.json` uses the Rust/V1 `ToolRunRecord` shape:
 `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`, `durationMs`,

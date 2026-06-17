@@ -439,6 +439,7 @@ def build_agent_prompt(
         "allowedEvidenceRefs": allowed_evidence_refs(evidence_bundle, tool_observations),
         "evidencePreview": evidence_preview,
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
+        "preRunToolResults": evidence_bundle.get("toolResults", []),
         "toolObservations": tool_observations or [],
         "interactionContext": interaction_context or {},
         "availableTools": agent_available_tools(settings, interaction_context),
@@ -637,7 +638,11 @@ def allowed_evidence_refs(
             ],
         ]
     refs: list[str] = []
-    for ref in [*initial_refs, *tool_observation_evidence_refs(tool_observations or [])]:
+    for ref in [
+        *initial_refs,
+        *collect_tool_evidence_refs(evidence_bundle.get("toolResults") or []),
+        *tool_observation_evidence_refs(tool_observations or []),
+    ]:
         if ref not in refs:
             refs.append(ref)
     return refs
