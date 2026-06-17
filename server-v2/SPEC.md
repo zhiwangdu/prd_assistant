@@ -1330,16 +1330,17 @@ prompt delivery, and linked `agent_response` artifact id.
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
 Skill references, Fetch catalog, configured domain tools when present, and
-Fetch execution when Fetch is enabled. `logagent.get_log_slice` must advertise
-the same center-line or V1-compatible `startLine`/`endLine` range schema as
-task MCP. Configured domain tools must use the same `toolId` or V1-compatible
-`tool + inputFile` schema exposed by task MCP `tools/list`, and manual-only
-tools are not advertised to the provider. Waiting/approval tools are advertised
-unless the run is resuming with `resumeMode=finalize`. V2 validates the tool
-name and arguments as JSON objects, executes the Server-owned task MCP tool,
-records the resulting evidence/artifacts through the existing tool
-implementation, records the call in `mcp_calls.jsonl`, and feeds ordinary
-structured observations into the next provider round. If a provider calls
+Fetch execution when Fetch is enabled. `logagent.search_logs` must advertise
+the V1-compatible optional `maxMatches` cap, and `logagent.get_log_slice` must
+advertise the same center-line or V1-compatible `startLine`/`endLine` range
+schema as task MCP. Configured domain tools must use the same `toolId` or
+V1-compatible `tool + inputFile` schema exposed by task MCP `tools/list`, and
+manual-only tools are not advertised to the provider. Waiting/approval tools
+are advertised unless the run is resuming with `resumeMode=finalize`. V2
+validates the tool name and arguments as JSON objects, executes the
+Server-owned task MCP tool, records the resulting evidence/artifacts through
+the existing tool implementation, records the call in `mcp_calls.jsonl`, and
+feeds ordinary structured observations into the next provider round. If a provider calls
 `logagent.request_user_input` or
 `logagent.request_approval`, the tool creates the pending action, writes the
 V1-compatible waiting marker, moves the run to `waiting_for_user` or

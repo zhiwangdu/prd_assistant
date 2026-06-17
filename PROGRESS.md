@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Search Logs Schema
+
+- V2 OpenAI-compatible and binary Agent provider prompts now advertise
+  `logagent.search_logs.maxMatches` with the same 1..200 bounds as task MCP,
+  matching the Rust/V1-compatible execution contract.
+- Added regression coverage for provider `availableTools` exposing
+  `maxMatches` alongside the existing task MCP search test.
+- Updated V2 Server and Analysis Agent README/SPEC docs.
+- Verification passed: focused search/provider regression,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Agent Log Slice Schema
 
 - V2 OpenAI-compatible and binary Agent provider prompts now advertise

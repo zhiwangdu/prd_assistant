@@ -1133,7 +1133,8 @@ def search_logs_tool_descriptor() -> JsonObject:
                     "items": {"type": "string", "minLength": 1},
                     "minItems": 1,
                     "maxItems": 16,
-                }
+                },
+                "maxMatches": {"type": "integer", "minimum": 1, "maximum": 200},
             },
             "required": ["keywords"],
             "additionalProperties": False,

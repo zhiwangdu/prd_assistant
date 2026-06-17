@@ -631,6 +631,8 @@ Provider-visible `logagent.get_log_slice` uses the same center-line or
 V1-compatible `startLine`/`endLine` range schema as task MCP, and
 provider-visible `logagent.run_domain_tool` uses the same `toolId` or
 V1-compatible `tool + inputFile` schema while excluding manual-only tools.
+Provider-visible `logagent.search_logs` also exposes the V1-compatible
+`maxMatches` cap.
 
 Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` and
 implemented as explicit graph transitions: provider tool-call responses route

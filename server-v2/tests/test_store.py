@@ -2482,6 +2482,17 @@ class StoreTests(unittest.TestCase):
             manifest_body = json.loads(manifest["result"]["contents"][0]["text"])
             self.assertEqual(manifest_body["fileCount"], 1)
 
+            provider_search_tool = next(
+                item
+                for item in agent_available_tools(settings)
+                if item["name"] == "logagent.search_logs"
+            )
+            max_matches_schema = provider_search_tool["inputSchema"]["properties"][
+                "maxMatches"
+            ]
+            self.assertEqual(max_matches_schema["minimum"], 1)
+            self.assertEqual(max_matches_schema["maximum"], 200)
+
             search = task_mcp_response(
                 settings,
                 store,
