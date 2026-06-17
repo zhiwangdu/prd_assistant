@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 InfluxQL Report Detection Parity
+
+- V2 Tool Runner stdout parsing now recognizes InfluxQL analyzer Report JSON
+  with the Rust/V1 key-presence rule: `total_records`, `total_statements`, and
+  `fingerprints` keys are sufficient to enter the specialized parser.
+- Non-array `fingerprints` values still skip fingerprint findings, but no
+  longer cause the report to fall back to generic JSON summary parsing.
+- Added regression coverage for `fingerprints: null` report payloads.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused InfluxQL stdout parser regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (99 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Pprof Tool Params Parity
 
 - V2 `pprof_analyzer` descriptor now exposes Rust/V1 top-level

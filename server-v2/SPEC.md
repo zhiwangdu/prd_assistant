@@ -651,10 +651,12 @@ finding fields `severity` / `level` / `status`, `file` / `path` / `filename`,
 InfluxQL analyzer report stdout is specially adapted. Summary includes
 `total_records`, `records_in_window`, `total_statements`, `parse_error_count`,
 and `special_rules`. Findings include special rule hits, parse errors,
-realtime classification, and notable fingerprints. InfluxQL compare report
-stdout is also adapted: `statement_delta`, `qps_delta`, `batch_a`, and
-`batch_b` go into summary, while new/removed/changed fingerprints and
-`rule_deltas` become findings.
+realtime classification, and notable fingerprints. Report detection follows
+Rust/V1 key presence semantics: `total_records`, `total_statements`, and
+`fingerprints` keys are enough to enter the specialized parser, even when
+`fingerprints` is not an array. InfluxQL compare report stdout is also adapted:
+`statement_delta`, `qps_delta`, `batch_a`, and `batch_b` go into summary, while
+new/removed/changed fingerprints and `rule_deltas` become findings.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
 from `LOGAGENT_V2_TOOLS_JSON` and the enabled `pprof_analyzer` Go executable.

@@ -111,7 +111,7 @@ tools:
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。
 - 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
 - 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置；该配置通过 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向构建产物。
-- 已适配真实 `influxql-analyzer` Report stdout：`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`。
+- 已适配真实 `influxql-analyzer` Report stdout：包含 `total_records`、`total_statements` 和 `fingerprints` key 时即按 Rust/V1 进入专门 parser；`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`，其中非数组 `fingerprints` 只跳过 fingerprint findings。
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - 当前 `influxql-analyzer` 源码通过 `third_party/influxql` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支；CLI 入口为 `cmd/influxql-analyze`，LogAgent 构建产物名固定为 `influxql-analyzer`。
 - 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取，并通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。

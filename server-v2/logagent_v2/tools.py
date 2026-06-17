@@ -1857,7 +1857,7 @@ def is_influxql_report(value: JsonObject) -> bool:
     return (
         "total_records" in value
         and "total_statements" in value
-        and isinstance(value.get("fingerprints"), list)
+        and "fingerprints" in value
     )
 
 

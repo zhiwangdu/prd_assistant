@@ -656,7 +656,9 @@ evidence. Generic JSON output can use
 `summary`, `message`, or `title`, plus `findings`, `issues`, or `diagnostics`.
 InfluxQL analyzer report JSON is adapted into a compact summary and findings
 for special rules, parse errors, realtime classification, fingerprints, compare
-fingerprint deltas, and rule deltas.
+fingerprint deltas, and rule deltas. V2 uses the Rust/V1 report detection
+rule: `total_records`, `total_statements`, and `fingerprints` keys are enough
+to enter the specialized parser, even if `fingerprints` is not an array.
 
 Configured tools may declare `paramsSchema`. Task MCP `logagent.run_domain_tool`
 then accepts `params`, validates a conservative object-schema subset

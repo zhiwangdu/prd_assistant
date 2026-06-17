@@ -3696,6 +3696,26 @@ fi
             any("fingerprint SELECT occurred 1 time" in finding["message"] for finding in findings)
         )
 
+    def test_tool_stdout_detects_influxql_report_with_null_fingerprints(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "total_records": 2,
+  "records_in_window": 1,
+  "total_statements": 2,
+  "parse_error_count": 0,
+  "fingerprints": null
+}"""
+        )
+
+        self.assertEqual(
+            summary_from_stdout(parsed, b"", False),
+            (
+                "influxql report: records=2, recordsInWindow=1, "
+                "statements=2, parseErrors=0"
+            ),
+        )
+        self.assertEqual(findings_from_stdout(parsed), [])
+
     def test_tool_stdout_parses_influxql_compare_report(self) -> None:
         parsed = parse_json(
             b"""{

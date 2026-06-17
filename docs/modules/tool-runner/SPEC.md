@@ -102,6 +102,9 @@ tool_results/
 
 真实 `influxql-analyzer` 的 Report stdout 会被专门适配：
 
+- Report 识别与 Rust/V1 一致：stdout JSON 同时包含 `total_records`、
+  `total_statements` 和 `fingerprints` key 即进入专门 parser；`fingerprints`
+  不是数组时只跳过 fingerprint findings，不退回通用 parser。
 - `total_records`、`records_in_window`、`total_statements`、`parse_error_count` 进入 summary。
 - `special_rules` 进入 findings，例如 `large_limit`、`no_time_filter`、`group_by_high_cardinality_risk`、`meta_query`。
 - `parse_errors` 进入 high severity findings。
