@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Binary Agent Provider
+
+- Added V2 `LOGAGENT_V2_AGENT_PROVIDER=binary` support for the Agent runtime,
+  using fixed argv `<binary_path> run <prompt>` without shell expansion.
+- Added `LOGAGENT_V2_AGENT_BINARY_PATH` and
+  `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` settings, with runtime and
+  Settings dry-run validation for absolute, regular, executable provider
+  paths.
+- Extended Settings diagnostics so model listing, chat smoke tests, backend
+  summaries, and backend dry-run checks work for the local binary provider
+  without returning the configured binary path or secrets.
+- Persisted binary provider request/response audit artifacts with bounded
+  stdout/stderr previews, final-answer parsing, and validation status.
+- Added regression coverage for binary provider analysis execution and Settings
+  diagnostics using mock executable providers.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Remote Environment Evidence
 
 - Extended V2 `collect_environment` approval handling to use Remote Executor

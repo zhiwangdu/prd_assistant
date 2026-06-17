@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from .case_memory import case_tool_descriptors
@@ -126,6 +130,19 @@ def build_agent_provider_request(
             },
             "allowedEvidenceRefs": allowed_refs,
         }
+    if provider == "binary":
+        return {
+            "provider": "binary",
+            "model": settings.agent_model or "binary-reserved",
+            "transport": {
+                "type": "local_binary",
+                "binaryPathConfigured": settings.agent_binary_path is not None,
+                "timeoutSeconds": settings.agent_timeout_seconds,
+                "maxOutputBytes": settings.agent_binary_max_output_bytes,
+            },
+            "payload": {"prompt": prompt},
+            "allowedEvidenceRefs": allowed_refs,
+        }
     return {
         "provider": provider,
         "model": settings.agent_model,
@@ -146,6 +163,8 @@ def execute_agent_provider_request(settings: Settings, request_payload: JsonObje
         }
     if provider == "openai_compatible":
         return call_openai_compatible(settings, request_payload)
+    if provider == "binary":
+        return call_binary_provider(settings, request_payload)
     return failed_provider_result(
         provider=provider,
         model=request_payload.get("model"),
@@ -250,6 +269,142 @@ def call_openai_compatible(
         "response": response_payload,
         "finalAnswer": final_answer,
     }
+
+
+def call_binary_provider(
+    settings: Settings,
+    request_payload: JsonObject,
+) -> JsonObject:
+    binary_path = settings.agent_binary_path
+    model = request_payload.get("model") or settings.agent_model or "binary-reserved"
+    if binary_path is None:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message="LOGAGENT_V2_AGENT_BINARY_PATH is required",
+        )
+    validation_error = validate_binary_path(binary_path)
+    if validation_error is not None:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message=validation_error,
+        )
+    payload = request_payload.get("payload")
+    prompt = payload.get("prompt") if isinstance(payload, dict) else None
+    if not isinstance(prompt, str) or not prompt.strip():
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="configuration",
+            error_type="ValueError",
+            message="binary provider prompt is required",
+        )
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            [binary_path.as_posix(), "run", prompt],
+            capture_output=True,
+            timeout=settings.agent_timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="timeout",
+            error_type="TimeoutExpired",
+            message=f"binary provider timed out after {settings.agent_timeout_seconds}s",
+            response={"timeoutSeconds": settings.agent_timeout_seconds, "cmd": binary_argv_preview(binary_path)},
+        )
+    except OSError as error:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="transport",
+            error_type=error.__class__.__name__,
+            message=f"failed to start binary provider: {error}",
+            response={"cmd": binary_argv_preview(binary_path)},
+        )
+    duration_ms = int((time.monotonic() - started) * 1000)
+    stdout = completed.stdout
+    stderr = completed.stderr
+    response_payload: JsonObject = {
+        "exitCode": completed.returncode,
+        "durationMs": duration_ms,
+        "cmd": binary_argv_preview(binary_path),
+        "stderrPreview": stderr[:MAX_PROVIDER_PREVIEW_CHARS].decode("utf-8", errors="replace"),
+    }
+    if completed.returncode != 0:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="process",
+            error_type="NonZeroExit",
+            message=f"binary provider exited with code {completed.returncode}",
+            response=response_payload,
+        )
+    if len(stdout) > settings.agent_binary_max_output_bytes:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="output",
+            error_type="OutputTooLarge",
+            message=(
+                "binary provider stdout exceeded "
+                f"{settings.agent_binary_max_output_bytes} bytes"
+            ),
+            response=response_payload,
+        )
+    try:
+        raw_text = stdout.decode("utf-8")
+    except UnicodeDecodeError as error:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="decode",
+            error_type=error.__class__.__name__,
+            message=str(error),
+            response=response_payload,
+        )
+    response_payload["stdoutPreview"] = raw_text[:MAX_PROVIDER_PREVIEW_CHARS]
+    try:
+        log_provider_response_content(raw_text)
+        final_answer = parse_final_answer_content(raw_text)
+    except Exception as error:
+        return failed_provider_result(
+            provider="binary",
+            model=model,
+            stage="parse",
+            error_type=error.__class__.__name__,
+            message=str(error),
+            response=response_payload,
+        )
+    return {
+        "provider": "binary",
+        "model": model,
+        "status": "completed",
+        "response": response_payload,
+        "finalAnswer": final_answer,
+    }
+
+
+def validate_binary_path(binary_path: Path) -> str | None:
+    if not binary_path.is_absolute():
+        return "LOGAGENT_V2_AGENT_BINARY_PATH must be an absolute path"
+    if not binary_path.is_file():
+        return "LOGAGENT_V2_AGENT_BINARY_PATH is not a regular file"
+    if not os.access(binary_path, os.X_OK):
+        return "LOGAGENT_V2_AGENT_BINARY_PATH is not executable"
+    return None
+
+
+def binary_argv_preview(_binary_path: Path) -> list[str]:
+    return ["<binary_path>", "run", "<prompt>"]
 
 
 def build_agent_prompt(

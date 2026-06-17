@@ -131,6 +131,8 @@ class Settings:
     agent_model: str | None = None
     agent_base_url: str | None = None
     agent_api_key: str | None = None
+    agent_binary_path: Path | None = None
+    agent_binary_max_output_bytes: int = 1024 * 1024
     agent_timeout_seconds: int = 60
     agent_max_rounds: int = 3
     agent_max_output_tokens: int = 2048
@@ -222,6 +224,16 @@ class Settings:
         agent_model = os.environ.get("LOGAGENT_V2_AGENT_MODEL")
         agent_base_url = os.environ.get("LOGAGENT_V2_AGENT_BASE_URL")
         agent_api_key = os.environ.get("LOGAGENT_V2_AGENT_API_KEY")
+        raw_agent_binary_path = os.environ.get("LOGAGENT_V2_AGENT_BINARY_PATH")
+        agent_binary_path = (
+            Path(raw_agent_binary_path).expanduser() if raw_agent_binary_path else None
+        )
+        agent_binary_max_output_bytes = int(
+            os.environ.get(
+                "LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES",
+                str(1024 * 1024),
+            )
+        )
         agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
         agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "3"))
         agent_max_output_tokens = int(
@@ -272,6 +284,8 @@ class Settings:
             agent_model=agent_model,
             agent_base_url=agent_base_url,
             agent_api_key=agent_api_key,
+            agent_binary_path=agent_binary_path,
+            agent_binary_max_output_bytes=max(1024, agent_binary_max_output_bytes),
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
             agent_max_output_tokens=max(1, agent_max_output_tokens),

@@ -65,8 +65,8 @@ Implemented in this slice:
 - `manifest.json` and `grep_results.json` artifact generation.
 - Agent runtime that records initial question evidence, consumes the initial
   evidence pipeline, and either returns a deterministic stub summary or calls a
-  bounded OpenAI-compatible provider loop for advertised Server-owned tools and
-  an evidence-validated JSON final answer. Each round persists
+  bounded OpenAI-compatible or local binary provider loop for advertised
+  Server-owned tools and an evidence-validated JSON final answer. Each round persists
   `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
   artifacts before the run reaches a terminal state. Successful analysis runs
   persist a deterministic fallback alias derived from the final summary or
@@ -399,7 +399,7 @@ Workspace uploads
   -> manifest and log_search evidence
   -> analysis_package.json bounded Agent context
   -> agent_request.json / agent_response.json / analysis_state.json audit
-  -> stub or OpenAI-compatible JSON final answer
+  -> stub, OpenAI-compatible, or binary JSON final answer
   -> result.json and result.md artifacts
 ```
 
@@ -840,15 +840,18 @@ rather than compatibility routes for the Rust Server:
   model, timeout, input/output limits, and boolean configuration flags. It must
   not return API keys.
 - `GET /api/v2/settings/llm/models` tests model listing. `stub` returns the
-  local stub model; `openai_compatible` calls the configured `/models`
-  endpoint.
+  local stub model; `binary` returns the configured or reserved local model;
+  `openai_compatible` calls the configured `/models` endpoint.
 - `POST /api/v2/settings/llm/chat` sends one bounded test message. `stub`
-  returns a deterministic acknowledgment; `openai_compatible` calls the
+  returns a deterministic acknowledgment; `binary` invokes the configured local
+  executable and parses stdout as a final answer; `openai_compatible` calls the
   configured `/chat/completions` endpoint with the V2 max output token limit.
 - `GET /api/v2/settings/agent-backends` summarizes the in-process V2 Agent
   runtime as `logagent_v2_agent`.
 - `POST /api/v2/settings/agent-backends/:backend_id/test` performs a dry-run
-  configuration diagnostic only. It must not execute shell commands.
+  configuration diagnostic only. It must not execute shell commands. For
+  `binary`, it validates that the configured path is absolute, regular, and
+  executable.
 - `GET /api/v2/settings/domain-adapters` returns the built-in adapter registry:
   `opengemini_influxdb` is active, while `cassandra` and `rocksdb` are
   skeleton adapters.
@@ -920,6 +923,20 @@ behavior. `openai_compatible` posts a compact Chat Completions request to
 question/mode/language, manifest counts, a bounded initial grep preview,
 allowed current-run evidence refs, recent user messages/action results from
 resumed runs, available read-only tools, and prior tool observations.
+
+`binary` invokes the absolute executable configured by
+`LOGAGENT_V2_AGENT_BINARY_PATH` without a shell, using fixed argv:
+
+```text
+<binary_path> run <prompt>
+```
+
+The same compact prompt is passed as one argv item. stdout must be UTF-8 JSON
+containing either a tool-call request object or the final-answer object.
+`LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` bounds stdout. Missing,
+non-absolute, non-regular, or non-executable paths, start failures, timeout,
+non-zero exit, oversized stdout, invalid UTF-8, invalid JSON, and schema or
+evidence-ref failures are recorded as provider failures.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,

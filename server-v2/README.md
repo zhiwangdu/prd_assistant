@@ -75,8 +75,8 @@ slice provides the durable foundation for the V2 product model:
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
 - Agent runtime with default stub final answer plus optional bounded
-  OpenAI-compatible provider/tool loop for evidence-validated JSON final
-  answers and per-round request/response/state audit artifacts.
+  OpenAI-compatible or local binary provider/tool loop for evidence-validated
+  JSON final answers and per-round request/response/state audit artifacts.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
@@ -172,10 +172,12 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key for encrypted Fetch credential sets |
-| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub` or `openai_compatible` final-answer provider |
+| `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary` final-answer provider |
 | `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, e.g. `https://api.openai.com/v1` |
 | `LOGAGENT_V2_AGENT_MODEL` | unset | Model name for the OpenAI-compatible provider |
 | `LOGAGENT_V2_AGENT_API_KEY` | unset | Bearer token for the OpenAI-compatible provider |
+| `LOGAGENT_V2_AGENT_BINARY_PATH` | unset | Absolute executable path for the local binary Agent provider |
+| `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` | `1048576` | Maximum stdout bytes accepted from the binary Agent provider |
 | `LOGAGENT_V2_AGENT_TIMEOUT_SECONDS` | `60` | Provider request timeout |
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `3` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
@@ -346,13 +348,16 @@ those resources into Skills. Metadata instances appear as read-only
 ## Settings And Diagnostics
 
 V2 exposes Settings diagnostics under `/api/v2/settings/*`. The LLM section is
-mapped to the V2 Agent provider configuration: `stub` is local, while
+mapped to the V2 Agent provider configuration: `stub` is local,
 `openai_compatible` calls the configured OpenAI-compatible `/models` and
-`/chat/completions` endpoints. Responses never include API keys.
+`/chat/completions` endpoints, and `binary` validates the configured executable
+then runs the same final-answer parse path through a local process. Responses
+never include API keys or the configured binary path.
 
 `/api/v2/settings/agent-backends` describes the in-process V2 Agent runtime
 instead of the Rust Server's Claude Code CLI backend. The diagnostic endpoint is
-a dry-run configuration check and does not execute shell commands. The Domain
+a dry-run configuration check; for `binary` it checks that
+`LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable. The Domain
 Adapter endpoint returns the built-in `opengemini_influxdb` active adapter plus
 `cassandra` and `rocksdb` skeleton adapters. The same adapter summaries are also
 available through readonly MCP `logagent-v2://domain-adapters` and
@@ -423,15 +428,27 @@ deterministic low-confidence evidence summary used by the foundation tests.
 Workspace question, manifest counts, initial grep preview, allowed evidence
 refs, recent user messages/action results from resumed runs, available
 Server-owned tools, and prior tool observations to
-`<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. The provider may return a
-`tool_calls` object for tools advertised in the prompt: log search/slice,
-Metadata, Case Memory, Skill references, Fetch catalog, configured domain tools,
-and Fetch execution when Fetch is enabled. V2 validates the requested tool name
-against the advertised set, executes through the existing task MCP call path,
-feeds the observations into the next round, and stops after
-`LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must eventually return one JSON
-final-answer object; V2 normalizes it and rejects unsupported or non-current
-evidence refs before marking the run `succeeded`.
+`<LOGAGENT_V2_AGENT_BASE_URL>/chat/completions`. `LOGAGENT_V2_AGENT_PROVIDER=binary`
+uses `LOGAGENT_V2_AGENT_BINARY_PATH` and invokes the executable without a shell
+as fixed argv:
+
+```text
+<binary_path> run <prompt>
+```
+
+The binary provider stdout must be UTF-8 JSON containing the same final-answer
+object accepted from OpenAI-compatible content. Non-zero exit, timeout,
+oversized stdout, invalid UTF-8, and parse/schema failures are persisted in
+`agent_response.json`.
+
+The provider may return a `tool_calls` object for tools advertised in the
+prompt: log search/slice, Metadata, Case Memory, Skill references, Fetch
+catalog, configured domain tools, and Fetch execution when Fetch is enabled. V2
+validates the requested tool name against the advertised set, executes through
+the existing task MCP call path, feeds the observations into the next round, and
+stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. The provider must eventually return
+one JSON final-answer object; V2 normalizes it and rejects unsupported or
+non-current evidence refs before marking the run `succeeded`.
 
 This is a bounded provider-directed tool loop. Waiting/approval tools are not
 advertised to the provider. Full LangGraph planning remains future work, but

@@ -11,6 +11,11 @@
 - `stub` Provider。
 - OpenAI-compatible `/chat/completions` Provider。
 - `binary` Provider 预留分支，使用参数数组调用 `<binary_path> run <prompt>` 并解析 stdout JSON。
+- V2 clean-room Agent runtime 已实现同等 binary provider：通过
+  `LOGAGENT_V2_AGENT_PROVIDER=binary`、
+  `LOGAGENT_V2_AGENT_BINARY_PATH` 和
+  `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` 配置，固定 argv 调用本地
+  executable，并把 request/response/state 写入 V2 Agent audit artifacts。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - System Context 背景资源 Prompt 和字符数裁剪。
@@ -25,6 +30,10 @@
 - `result.json` / `result.md` 持久化。
 - Task Executor 在 `PLAN_ANALYSIS` 阶段已改为调用 Claude Code session runner，并复用本模块的最终结果 evidence ref 校验。
 - Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
+- V2 Settings 诊断接口：`/api/v2/settings/llm`、
+  `/api/v2/settings/llm/models`、`/api/v2/settings/llm/chat`、
+  `/api/v2/settings/agent-backends`，其中 binary dry-run 校验路径绝对、
+  常规文件和可执行权限，chat smoke 会调用二进制并解析 summary。
 - Claude Code 诊断接口已由 session runner registry 提供，LLM Gateway 不负责 Claude Code runtime。
 - session 输入/响应文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`。
 
@@ -92,6 +101,7 @@ Gateway 可接受并规范化以下 grep 可追踪别名：
 binary provider 错误包括：
 
 - `llm.binary_path` 或 `llm.binary_path_env` 缺失、为空或不是绝对路径。
+- V2 `LOGAGENT_V2_AGENT_BINARY_PATH` 缺失、为空、不是绝对路径、不是常规文件或不可执行。
 - 二进制启动失败。
 - `<binary_path> run <prompt>` 超时。
 - 进程非零退出。
@@ -105,6 +115,9 @@ binary provider 错误包括：
 - 不接收密钥、SSH key、Cookie 或完整敏感配置。
 - 不保存模型隐藏思维链。
 - binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell，不接受用户输入覆盖可执行路径或 argv。
+- V2 `agent_request.json` 不记录实际 binary path；Settings 和
+  `agent_response.json` 可以返回配置状态、退出码、耗时和 bounded
+  stdout/stderr 预览，但不得返回 API Key。
 - Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
 - runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
 - 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
@@ -114,6 +127,9 @@ binary provider 错误包括：
 
 - stub Provider 能返回最终结果。
 - binary Provider 能通过 mock binary 验证 `<binary_path> run <prompt>` 调用路径，stdout JSON 可用于最终结果生成和 action decision。
+- V2 binary Agent provider 能通过 mock binary 验证运行时分析、Settings
+  model list、Settings chat smoke、Agent backend dry-run 和 request/response
+  audit artifacts。
 - FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 最终结果 schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。

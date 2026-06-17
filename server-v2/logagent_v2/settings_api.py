@@ -9,8 +9,10 @@ from typing import Any
 from .config import Settings
 from .llm import (
     MAX_PROVIDER_RESPONSE_BYTES,
+    call_binary_provider,
     extract_chat_content,
     log_provider_response_content,
+    validate_binary_path,
 )
 from .store import JsonObject
 
@@ -26,7 +28,8 @@ def llm_settings_summary(settings: Settings) -> JsonObject:
         "requestTimeoutSeconds": settings.agent_timeout_seconds,
         "baseUrlConfigured": bool(settings.agent_base_url),
         "apiKeyConfigured": bool(settings.agent_api_key),
-        "binaryPathConfigured": False,
+        "binaryPathConfigured": bool(settings.agent_binary_path),
+        "binaryMaxOutputBytes": settings.agent_binary_max_output_bytes,
     }
 
 
@@ -52,6 +55,13 @@ def list_agent_models(settings: Settings) -> JsonObject:
             "configuredModel": model,
             "models": extract_model_ids(decoded),
             "raw": decoded,
+        }
+    if provider == "binary":
+        return {
+            "provider": "binary",
+            "configuredModel": model,
+            "models": [model],
+            "raw": {"data": [{"id": model, "object": "model"}]},
         }
     raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
 
@@ -93,6 +103,38 @@ def test_agent_chat(settings: Settings, message: str) -> JsonObject:
         content = extract_chat_content(decoded)
         log_provider_response_content(content)
         return {"provider": provider, "model": settings.agent_model, "response": content}
+    if provider == "binary":
+        prompt = json.dumps(
+            {
+                "task": "settings_connectivity_test",
+                "message": message,
+                "requiredResponse": {
+                    "summary": "string",
+                    "symptoms": ["string"],
+                    "likelyRootCauses": [],
+                    "nextChecks": ["string"],
+                    "fixSuggestions": ["string"],
+                    "missingInformation": ["string"],
+                    "confidence": "low|medium|high",
+                    "evidenceRefs": [],
+                },
+            },
+            ensure_ascii=True,
+        )
+        result = call_binary_provider(
+            settings,
+            {
+                "provider": "binary",
+                "model": model,
+                "payload": {"prompt": prompt},
+            },
+        )
+        if result.get("status") != "completed":
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            raise ValueError(error.get("message") or "binary provider failed")
+        final_answer = result.get("finalAnswer")
+        response = final_answer.get("summary") if isinstance(final_answer, dict) else ""
+        return {"provider": provider, "model": model, "response": response, "raw": result}
     raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
 
 
@@ -143,6 +185,17 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
             details.append("API key is configured through environment and is not returned.")
         else:
             details.append("API key is not configured; this is only valid for unauthenticated endpoints.")
+        status = "configured"
+    elif provider == "binary":
+        if settings.agent_binary_path is None:
+            raise ValueError("missing required Agent provider setting(s): LOGAGENT_V2_AGENT_BINARY_PATH")
+        validation_error = validate_binary_path(settings.agent_binary_path)
+        if validation_error is not None:
+            raise ValueError(validation_error)
+        details.append("Binary provider path is valid and invoked without a shell.")
+        details.append(
+            f"Binary max output bytes={settings.agent_binary_max_output_bytes}."
+        )
         status = "configured"
     else:
         raise ValueError(f"unsupported LOGAGENT_V2_AGENT_PROVIDER {settings.agent_provider}")
@@ -236,6 +289,8 @@ def configured_model(settings: Settings) -> str:
         return settings.agent_model
     if normalized_provider(settings) == "stub":
         return "stub"
+    if normalized_provider(settings) == "binary":
+        return "binary-reserved"
     return ""
 
 
@@ -245,6 +300,11 @@ def agent_backend_configured(settings: Settings) -> bool:
         return True
     if provider == "openai_compatible":
         return bool(settings.agent_base_url and settings.agent_model)
+    if provider == "binary":
+        return bool(
+            settings.agent_binary_path
+            and validate_binary_path(settings.agent_binary_path) is None
+        )
     return False
 
 

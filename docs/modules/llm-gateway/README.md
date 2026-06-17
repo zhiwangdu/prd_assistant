@@ -44,6 +44,14 @@ question + session_text_input.json + system_context.json + manifest.json + grep_
 
 该分支不拼接 shell，不允许用户覆盖 binary path 或 argv。当前环境不要求接入真实二进制，已通过单元测试中的 mock binary 验证最终结果生成可解析 stdout JSON。
 
+V2 clean-room Server 已实现同等的 Agent binary provider 能力，但配置使用
+V2 环境变量：`LOGAGENT_V2_AGENT_PROVIDER=binary`、
+`LOGAGENT_V2_AGENT_BINARY_PATH` 和
+`LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES`。V2 会在
+`agent_request.json` 中只记录 binary 是否配置和输出上限，不记录实际路径；
+`agent_response.json` 记录退出码、耗时、stdout/stderr 预览、解析结果和
+validation 状态。Settings 诊断会提前校验路径是绝对、常规且可执行文件。
+
 Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 Claude Code session runner。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 由 Analysis Orchestrator 与 Claude Code Session Runner 管理。LLM Gateway 不读取或执行这些 session 输入/响应文件。
@@ -56,12 +64,12 @@ Server 提供进程内 runtime debug 开关，WebUI 顶部的 `LLM debug` 可调
 
 Server 还提供受保护的 Settings 诊断接口，供 WebUI Settings 页面验证当前 LLM 服务和 Claude Code 配置：
 
-- `GET /api/settings/llm`：返回 provider、模型、超时和输入/输出限制等摘要，不返回密钥。
-- `GET /api/settings/llm/models`：测试模型列表接口；OpenAI-compatible 调用 `/models`，stub/binary 返回配置模型。
-- `POST /api/settings/llm/chat`：发送一条简单 user message，返回模型响应。
-- `GET /api/settings/agent-backends`：返回 Claude Code session runner 配置摘要。
-- `POST /api/settings/agent-backends/:backend_id/test`：执行 Claude Code dry-run 诊断。
-- `GET /api/settings/domain-adapters`：返回领域 adapter 摘要。
+- `GET /api/settings/llm`：返回 provider、模型、超时和输入/输出限制等摘要，不返回密钥。V2 对应 `/api/v2/settings/llm`。
+- `GET /api/settings/llm/models`：测试模型列表接口；OpenAI-compatible 调用 `/models`，stub/binary 返回配置模型。V2 对应 `/api/v2/settings/llm/models`。
+- `POST /api/settings/llm/chat`：发送一条简单 user message，返回模型响应。V2 binary 分支会调用配置二进制并解析最终答案 summary。V2 对应 `/api/v2/settings/llm/chat`。
+- `GET /api/settings/agent-backends`：返回 Claude Code session runner 配置摘要；V2 返回 in-process Agent runtime 摘要和 binary 可执行性状态。V2 对应 `/api/v2/settings/agent-backends`。
+- `POST /api/settings/agent-backends/:backend_id/test`：执行 Claude Code dry-run 诊断；V2 执行 provider 配置 dry-run，不执行 shell。V2 对应 `/api/v2/settings/agent-backends/:backend_id/test`。
+- `GET /api/settings/domain-adapters`：返回领域 adapter 摘要。V2 对应 `/api/v2/settings/domain-adapters`。
 
 诊断接口使用 `{ok,result,error}` 响应；Provider HTTP、鉴权、限流、网络、超时、JSON decode 等异常会写入 `error`，便于页面直接展示。
 
@@ -112,6 +120,14 @@ llm:
 ```
 
 `binary_path` 或 `binary_path_env` 解析后的路径必须是绝对路径。stdout 必须返回与 OpenAI-compatible content 相同的结构化 JSON；非零退出、超时、非 UTF-8 stdout、超出 `binary_max_output_bytes` 或 schema 不合法都会使对应 LLM 调用失败。
+
+V2 的等价环境配置是：
+
+```bash
+export LOGAGENT_V2_AGENT_PROVIDER=binary
+export LOGAGENT_V2_AGENT_BINARY_PATH=/absolute/path/to/agent-provider
+export LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES=1048576
+```
 
 ## 输入
 

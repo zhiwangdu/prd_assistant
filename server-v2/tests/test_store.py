@@ -640,6 +640,98 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_agent_runtime_uses_binary_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_capture = root / "binary_prompt.txt"
+            binary = root / "fake-agent-provider"
+            answer = {
+                "summary": "binary summary",
+                "symptoms": ["timeout line"],
+                "likelyRootCauses": [
+                    {
+                        "cause": "binary cause",
+                        "evidenceRefs": ["grep_results.json#matches/0"],
+                    }
+                ],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": ["grep_results.json#matches/0"],
+            }
+            binary.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, pathlib, sys\n"
+                "if len(sys.argv) != 3 or sys.argv[1] != 'run':\n"
+                "    raise SystemExit(2)\n"
+                f"pathlib.Path({json.dumps(prompt_capture.as_posix())}).write_text(sys.argv[2])\n"
+                f"print(json.dumps({json.dumps(answer)}))\n",
+                encoding="utf-8",
+            )
+            binary.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="binary",
+                agent_model="mock-binary",
+                agent_binary_path=binary,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("why timeout?", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"query timeout on shard 1\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            final_answer = AgentRuntime(settings, store).run_analysis(
+                workspace["id"], run["id"]
+            )
+
+            self.assertEqual(final_answer["summary"], "binary summary")
+            self.assertIn("grep_results.json#matches/0", prompt_capture.read_text())
+            agent_request = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                },
+            )
+            request_doc = json.loads(agent_request["result"]["contents"][0]["text"])
+            self.assertEqual(request_doc["provider"], "binary")
+            self.assertEqual(request_doc["transport"]["type"], "local_binary")
+            self.assertTrue(request_doc["transport"]["binaryPathConfigured"])
+            self.assertNotIn(binary.as_posix(), json.dumps(request_doc))
+            agent_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                },
+            )
+            response_doc = json.loads(agent_response["result"]["contents"][0]["text"])
+            self.assertEqual(response_doc["provider"], "binary")
+            self.assertEqual(response_doc["status"], "completed")
+            self.assertEqual(response_doc["response"]["exitCode"], 0)
+            self.assertNotIn(binary.as_posix(), json.dumps(response_doc))
+            self.assertEqual(response_doc["validation"]["status"], "passed")
+
     def test_agent_provider_validation_failure_keeps_audit_artifacts(self) -> None:
         class InvalidRefProviderHandler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
@@ -3696,6 +3788,49 @@ grep_results.json#matches/0
             response = test_response(lambda: agent_backend_diagnostic(settings, "logagent_v2_agent"))
             self.assertFalse(response["ok"])
             self.assertIn("LOGAGENT_V2_AGENT_MODEL", response["error"])
+
+    def test_v2_settings_binary_provider_diagnostics_and_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / "settings-binary-provider"
+            answer = {
+                "summary": "binary settings ok",
+                "symptoms": [],
+                "likelyRootCauses": [],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "low",
+                "evidenceRefs": [],
+            }
+            binary.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] != 'run':\n"
+                "    raise SystemExit(2)\n"
+                f"print(json.dumps({json.dumps(answer)}))\n",
+                encoding="utf-8",
+            )
+            binary.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="binary",
+                agent_model=None,
+                agent_binary_path=binary,
+            )
+
+            summary = llm_settings_summary(settings)
+            self.assertEqual(summary["provider"], "binary")
+            self.assertEqual(summary["configuredModel"], "binary-reserved")
+            self.assertTrue(summary["binaryPathConfigured"])
+            self.assertEqual(list_agent_models(settings)["models"], ["binary-reserved"])
+            diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
+            self.assertEqual(diagnostic["status"], "configured")
+            self.assertTrue(agent_backends_summary(settings)["backends"][0]["commandConfigured"])
+            chat = test_agent_chat(settings, "hello")
+            self.assertEqual(chat["provider"], "binary")
+            self.assertEqual(chat["response"], "binary settings ok")
 
     def test_v2_domain_adapters_are_exposed_in_readonly_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
