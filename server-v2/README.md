@@ -20,8 +20,9 @@ slice provides the durable foundation for the V2 product model:
 - V1-style node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
 - Materialized `tool_inputs/index.json` generation for node-package tsdb
-  InfluxQL query lines plus generic file-level InfluxQL and Flux query lines,
-  with analyzer JSONL input artifacts.
+  InfluxQL query lines, generic file-level InfluxQL/Flux query lines, and
+  enabled storage analyzer file inputs such as `.tssp`, `.tssp.init`, `.tsm`,
+  `.tsi`, and `_series` files from direct uploads or supported archives.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP endpoint with V1-shaped tool catalog, Metadata, Case Memory,
   Skill registry, and Domain Adapter resources/tools.
@@ -34,8 +35,9 @@ slice provides the durable foundation for the V2 product model:
   `inputFile`/`inputFiles` workspace paths, otherwise consume matching
   materialized `tool_inputs` before execution, then fall back to manifest file
   patterns, initial grep keyword matches, or raw upload artifacts for storage
-  analyzers. Generic JSON stdout and InfluxQL analyzer report/compare stdout
-  are normalized into `summary/findings`.
+  analyzers. Enabled storage analyzer materialized inputs point to safe artifact
+  files extracted from uploads and archives. Generic JSON stdout and InfluxQL
+  analyzer report/compare stdout are normalized into `summary/findings`.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.

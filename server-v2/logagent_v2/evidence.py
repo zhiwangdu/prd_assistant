@@ -119,7 +119,13 @@ def build_initial_evidence(
     uploads = store.list_uploads(workspace_id)
     text_files = collect_text_files(settings, uploads)
     keywords = search_keywords(workspace["question"])
-    tool_input_bundle = materialize_tool_inputs(settings, store, workspace_id, text_files)
+    tool_input_bundle = materialize_tool_inputs(
+        settings,
+        store,
+        workspace_id,
+        uploads,
+        text_files,
+    )
     manifest = build_manifest(
         workspace_id,
         run_id,
@@ -553,11 +559,13 @@ def materialize_tool_inputs(
     settings: Settings,
     store: Store,
     workspace_id: str,
+    uploads: list[JsonObject],
     text_files: list[TextFile],
 ) -> JsonObject:
     inputs = [
         *materialize_influxql_inputs(settings, store, workspace_id, text_files),
         *materialize_flux_inputs(settings, store, workspace_id, text_files),
+        *materialize_storage_inputs(settings, store, workspace_id, uploads),
     ]
     if not inputs:
         return {"path": None, "inputs": []}
@@ -682,6 +690,247 @@ def materialize_node_package_influxql_inputs(
         }
         results.append(MaterializedToolInput(entry=entry, artifact=artifact))
     return results
+
+
+def materialize_storage_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    uploads: list[JsonObject],
+) -> list[MaterializedToolInput]:
+    active_tool_ids = enabled_storage_tool_ids(settings)
+    if not active_tool_ids:
+        return []
+    results: list[MaterializedToolInput] = []
+    for upload in uploads:
+        filename = upload["filename"]
+        artifact_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
+        if is_archive(filename):
+            raw = artifact_path.read_bytes()
+            results.extend(
+                materialize_archive_storage_inputs(
+                    settings,
+                    store,
+                    workspace_id,
+                    upload,
+                    raw,
+                    active_tool_ids,
+                )
+            )
+            continue
+        tool_ids = matching_storage_tool_ids(filename, active_tool_ids)
+        if not tool_ids:
+            continue
+        results.append(storage_input_from_upload(upload, tool_ids))
+    return results
+
+
+def materialize_archive_storage_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    upload: JsonObject,
+    raw: bytes,
+    active_tool_ids: set[str],
+) -> list[MaterializedToolInput]:
+    filename = upload["filename"].lower()
+    if filename.endswith(".zip"):
+        return materialize_zip_storage_inputs(
+            settings,
+            store,
+            workspace_id,
+            upload,
+            raw,
+            active_tool_ids,
+        )
+    if filename.endswith((".tar", ".tar.gz", ".tgz")):
+        return materialize_tar_storage_inputs(
+            settings,
+            store,
+            workspace_id,
+            upload,
+            raw,
+            active_tool_ids,
+        )
+    return []
+
+
+def materialize_zip_storage_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    upload: JsonObject,
+    raw: bytes,
+    active_tool_ids: set[str],
+) -> list[MaterializedToolInput]:
+    results: list[MaterializedToolInput] = []
+    total_bytes = 0
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        for index, info in enumerate(archive.infolist()):
+            if index >= settings.max_archive_files:
+                raise ValueError("archive file count exceeds LOGAGENT_V2_MAX_ARCHIVE_FILES")
+            if info.is_dir():
+                continue
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode and stat.S_ISLNK(mode):
+                continue
+            path = safe_archive_path(info.filename)
+            tool_ids = matching_storage_tool_ids(path, active_tool_ids)
+            if not tool_ids:
+                continue
+            if total_bytes + info.file_size > settings.max_archive_bytes:
+                raise ValueError("storage tool input extraction exceeds LOGAGENT_V2_MAX_ARCHIVE_BYTES")
+            data = archive.read(info, pwd=None)
+            total_bytes += len(data)
+            results.append(
+                materialize_archive_storage_input(
+                    settings, store, workspace_id, upload, path, data, tool_ids
+                )
+            )
+    return results
+
+
+def materialize_tar_storage_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    upload: JsonObject,
+    raw: bytes,
+    active_tool_ids: set[str],
+) -> list[MaterializedToolInput]:
+    results: list[MaterializedToolInput] = []
+    total_bytes = 0
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as archive:
+        for index, member in enumerate(archive):
+            if index >= settings.max_archive_files:
+                raise ValueError("archive file count exceeds LOGAGENT_V2_MAX_ARCHIVE_FILES")
+            if not member.isfile():
+                continue
+            path = safe_archive_path(member.name)
+            tool_ids = matching_storage_tool_ids(path, active_tool_ids)
+            if not tool_ids:
+                continue
+            if total_bytes + member.size > settings.max_archive_bytes:
+                raise ValueError("storage tool input extraction exceeds LOGAGENT_V2_MAX_ARCHIVE_BYTES")
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                continue
+            data = extracted.read(member.size + 1)
+            if len(data) > member.size:
+                raise ValueError(f"storage archive member changed size while reading: {path}")
+            total_bytes += len(data)
+            results.append(
+                materialize_archive_storage_input(
+                    settings, store, workspace_id, upload, path, data, tool_ids
+                )
+            )
+    return results
+
+
+def storage_input_from_upload(
+    upload: JsonObject,
+    tool_ids: list[str],
+) -> MaterializedToolInput:
+    virtual_path = storage_virtual_path(upload["id"], upload["filename"])
+    entry = {
+        "path": virtual_path,
+        "inputKind": storage_input_kind(tool_ids),
+        "scope": "upload",
+        "toolIds": tool_ids,
+        "sourceFiles": [upload["filename"]],
+        "sourceUploadId": upload["id"],
+        "sourceFilename": upload["filename"],
+        "artifactId": upload["artifact_id"],
+        "artifactRelativePath": upload["artifact_relative_path"],
+    }
+    return MaterializedToolInput(entry=entry, artifact={})
+
+
+def materialize_archive_storage_input(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    upload: JsonObject,
+    member_path: str,
+    data: bytes,
+    tool_ids: list[str],
+) -> MaterializedToolInput:
+    digest = sha256(f"{upload['id']}:{member_path}".encode("utf-8")).hexdigest()[:16]
+    virtual_path = storage_virtual_path(digest, member_path)
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"storage_{digest}_{PurePosixPath(member_path).name}",
+        data=data,
+        content_type="application/octet-stream",
+        schema_name="logagent.v2.tool_input.storage_file.v1",
+        preview={
+            "path": virtual_path,
+            "toolIds": tool_ids,
+            "sourceUploadId": upload["id"],
+            "sourcePath": member_path,
+            "sizeBytes": len(data),
+        },
+    )
+    entry = {
+        "path": virtual_path,
+        "inputKind": storage_input_kind(tool_ids),
+        "scope": "archive",
+        "toolIds": tool_ids,
+        "sourceFiles": [member_path],
+        "sourceUploadId": upload["id"],
+        "sourceFilename": upload["filename"],
+        "sourceArchivePath": member_path,
+        "sizeBytes": len(data),
+        "artifactId": artifact["id"],
+        "artifactRelativePath": artifact["relative_path"],
+    }
+    return MaterializedToolInput(entry=entry, artifact=artifact)
+
+
+def storage_tool_ids_for_path(path: str) -> list[str]:
+    lowered = path.lower()
+    name = PurePosixPath(lowered).name
+    parts = PurePosixPath(lowered).parts
+    tool_ids = []
+    if (
+        name.endswith(".tssp")
+        or name.endswith(".tssp.init")
+        or "tsi" in name
+        or "mergeset" in lowered
+    ):
+        tool_ids.append("opengemini_storage_analyzer")
+    if name.endswith(".tsm") or name.endswith(".tsi") or "_series" in parts or "_series" in lowered:
+        tool_ids.append("influxdb_storage_analyzer")
+    return tool_ids
+
+
+def matching_storage_tool_ids(path: str, active_tool_ids: set[str]) -> list[str]:
+    return [tool_id for tool_id in storage_tool_ids_for_path(path) if tool_id in active_tool_ids]
+
+
+def enabled_storage_tool_ids(settings: Settings) -> set[str]:
+    return {
+        tool.id
+        for tool in settings.tools
+        if tool.enabled
+        and tool.id in {"opengemini_storage_analyzer", "influxdb_storage_analyzer"}
+    }
+
+
+def storage_input_kind(tool_ids: list[str]) -> str:
+    if tool_ids == ["opengemini_storage_analyzer"]:
+        return "opengemini_storage_file"
+    if tool_ids == ["influxdb_storage_analyzer"]:
+        return "influxdb_storage_file"
+    return "storage_file"
+
+
+def storage_virtual_path(prefix: str, source_path: str) -> str:
+    digest = sha256(f"{prefix}:{source_path}".encode("utf-8")).hexdigest()[:16]
+    suffix = safe_segment(PurePosixPath(source_path).name)
+    return f"tool_inputs/storage/{digest}/{suffix}"
 
 
 def materialize_flux_inputs(

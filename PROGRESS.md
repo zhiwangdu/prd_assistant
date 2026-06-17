@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Storage Analyzer Materialized Inputs
+
+- Extended V2 `tool_inputs/index.json` generation beyond InfluxQL/Flux text
+  query inputs to include file-level storage analyzer inputs.
+- Direct uploads and supported archives now produce safe
+  `tool_inputs/storage/...` entries for `.tssp`, `.tssp.init`, `.tsm`, `.tsi`,
+  and `_series` files when the matching storage analyzer is enabled, with
+  archive members persisted as bounded artifacts.
+- `logagent.run_domain_tool` and manual configured tools now automatically
+  prefer these storage materialized inputs before falling back to raw upload
+  artifact matching.
+- Updated Tool Runner and `server-v2` README/SPEC docs to describe storage
+  analyzer input materialization and the remaining directory-bundle gap.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Context Final Evidence Refs
 
 - Added V2 final-answer validation support for

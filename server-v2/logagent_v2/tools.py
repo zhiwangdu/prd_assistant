@@ -1060,7 +1060,13 @@ def run_preprocess_tool(
         raise ValueError("preprocess tool does not accept params")
     uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
     text_files = collect_text_files(settings, uploads)
-    tool_input_bundle = materialize_tool_inputs(settings, store, run["workspace_id"], text_files)
+    tool_input_bundle = materialize_tool_inputs(
+        settings,
+        store,
+        run["workspace_id"],
+        uploads,
+        text_files,
+    )
     manifest = build_manifest(
         run["workspace_id"],
         run["id"],

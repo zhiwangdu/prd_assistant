@@ -1947,6 +1947,88 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(flux_payload["result"]["summary"], "flux rows=1")
             self.assertIn("from(bucket:", flux_payload["result"]["findings"][0]["message"])
 
+    def test_archive_storage_tool_inputs_feed_storage_analyzer(self) -> None:
+        def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "print(json.dumps({'summary':'bytes='+str(p.stat().st_size),"
+                "'findings':[{'message':p.name}]}))"
+            )
+            tool = ToolDefinition(
+                id="opengemini_storage_analyzer",
+                display_name="openGemini Storage Analyzer",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                max_input_files=3,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("storage file issue", "diagnose", "en-US")
+
+            tar_path = Path(tmp) / "storage.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as archive:
+                add_file(archive, "data/shard/0001.tssp", b"TSSP\x00payload")
+                add_file(archive, "logs/app.log", b"INFO boot\n")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                tar_path.name,
+                tar_path.read_bytes(),
+                "application/gzip",
+            )
+            store.create_upload(workspace["id"], tar_path.name, artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            index_evidence = next(
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "tool_input_index"
+            )
+            index_path = resolve_artifact_path(
+                settings,
+                store.get_artifact(index_evidence["artifact_id"])["relative_path"],
+            )
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            storage_entry = next(
+                item
+                for item in index["inputs"]
+                if item["toolIds"] == ["opengemini_storage_analyzer"]
+            )
+            self.assertEqual(storage_entry["inputKind"], "opengemini_storage_file")
+            self.assertEqual(storage_entry["scope"], "archive")
+            self.assertEqual(storage_entry["sourceArchivePath"], "data/shard/0001.tssp")
+            self.assertTrue(storage_entry["path"].startswith("tool_inputs/storage/"))
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 37,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "opengemini_storage_analyzer"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "bytes=12")
+            self.assertEqual(payload["result"]["inputFile"], storage_entry["path"])
+            self.assertIn("storage_", payload["result"]["findings"][0]["message"])
+
     def test_tool_runner_falls_back_to_manifest_and_grep_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (

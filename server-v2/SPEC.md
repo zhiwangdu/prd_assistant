@@ -59,9 +59,11 @@ Implemented in this slice:
   directories are classified into stable `extracted/<node>/<timestamp>/<group>`
   paths, and gzip-rotated files are decoded by magic bytes.
 - Materialized `tool_inputs/index.json` generation for node package tsdb
-  InfluxQL query lines, generic file-level InfluxQL query lines, and Flux query
-  lines. Generated entries are compatible with the V1 `ToolInputEntry` shape
-  and include V2 artifact ids for local execution.
+  InfluxQL query lines, generic file-level InfluxQL query lines, Flux query
+  lines, and enabled storage analyzer file inputs such as `.tssp`, `.tssp.init`,
+  `.tsm`, `.tsi`, and `_series` files from direct uploads or supported
+  archives. Generated entries are compatible with the V1 `ToolInputEntry`
+  shape and include V2 artifact ids for local execution.
 - `manifest.json` and `grep_results.json` artifact generation.
 - Agent runtime that records initial question evidence as
   `session_text_input.json`, consumes the initial evidence pipeline, and either
@@ -99,8 +101,10 @@ Implemented in this slice:
   can use explicit `inputFile`/`inputFiles` workspace selectors, otherwise
   consume matching materialized tool inputs before execution, then fall back to
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
-  for storage analyzers. Generic JSON stdout and InfluxQL analyzer
-  report/compare stdout are normalized into `summary/findings`.
+  for storage analyzers. Enabled storage analyzer materialized inputs are safe
+  artifact files extracted from direct uploads and archives. Generic JSON stdout
+  and InfluxQL analyzer report/compare stdout are normalized into
+  `summary/findings`.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.
@@ -162,7 +166,8 @@ Not yet implemented:
 
 - Full LangGraph multi-round planning and product-grade resume policies beyond
   the current bounded `interactionContext` handoff.
-- Additional analyzer materialized `tool_inputs/index.json` generation beyond
+- Directory-level storage analyzer input bundles for TSI/_series trees beyond
+  the current file-level materialized inputs.
 - Full WebUI V2 cutover that replaces the legacy Rust-compatible panels instead
   of running V2 bridge panels alongside them.
 
