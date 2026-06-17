@@ -351,6 +351,7 @@ GET  /api/v2/executor-runs
 POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id
 GET  /api/v2/executor-runs/:run_id/result
+GET  /api/v2/executor-runs/:run_id/files/:file_name
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -1223,6 +1224,10 @@ remote command smoke runner. They are not a full Environment Collector.
   loading instead of falling back to a default.
 - stdout and stderr are capped by `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`, stored
   as files, and previewed in `result.json`.
+- `GET /api/v2/executor-runs/:run_id/files/:file_name` must require the same
+  API key as other V2 APIs, accept only `result`, `stdout`, or `stderr`, resolve
+  the stored relative path from the run result, and reject missing files or
+  paths escaping `LOGAGENT_V2_DATA_DIR`.
 - Non-zero exit code, timeout, and SSH start failure are recorded in
   `result.status` as `FAILED` or `TIMED_OUT`. The remote run reaches
   `SUCCEEDED` when controlled execution completed and result files were

@@ -1,10 +1,11 @@
-import { Play, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
+import { Download, Play, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import {
   createV2Executor,
   createV2ExecutorRun,
   disableV2Executor,
+  downloadV2ExecutorRunFile,
   getV2ExecutorRun,
   getV2ExecutorRunResult,
   listV2ExecutorCommandTemplates,
@@ -205,6 +206,16 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function downloadRunFile(fileName: "result" | "stdout" | "stderr") {
+    if (!selectedRun) return;
+    try {
+      await downloadV2ExecutorRunFile(apiKey, selectedRun.taskId, fileName);
+      setStatus(`Downloaded V2 remote run ${fileName}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -340,7 +351,7 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
                   </div>
                   {selectedRun.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedRun.error?.phase ? `${selectedRun.error.phase}: ` : ""}{selectedRun.error?.message ?? "Remote run failed"}</div> : null}
                   {selectedRun.status === "SUCCEEDED" && !result ? <Button onClick={() => void selectRun(selectedRun.taskId)}>Load V2 result</Button> : null}
-                  {result ? <RemoteResultView result={result} /> : null}
+                  {result ? <RemoteResultView result={result} onDownload={(fileName) => void downloadRunFile(fileName)} /> : null}
                 </div>
               ) : <EmptyState>Select or create a V2 remote run.</EmptyState>}
             </div>
@@ -351,7 +362,7 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
   );
 }
 
-function RemoteResultView({ result }: { result: V2RemoteRunResult }) {
+function RemoteResultView({ result, onDownload }: { result: V2RemoteRunResult; onDownload: (fileName: "result" | "stdout" | "stderr") => void }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
@@ -372,9 +383,9 @@ function RemoteResultView({ result }: { result: V2RemoteRunResult }) {
         <OutputPreview title="stderr" value={result.result.stderrPreview} />
       </div>
       <div className="grid gap-2 md:grid-cols-3">
-        <ArtifactPath label="Result" value={result.resultPath} />
-        <ArtifactPath label="Stdout" value={result.result.stdoutPath} />
-        <ArtifactPath label="Stderr" value={result.result.stderrPath} />
+        <ArtifactPath label="Result" value={result.resultPath} onDownload={() => onDownload("result")} />
+        <ArtifactPath label="Stdout" value={result.result.stdoutPath} onDownload={() => onDownload("stdout")} />
+        <ArtifactPath label="Stderr" value={result.result.stderrPath} onDownload={() => onDownload("stderr")} />
       </div>
     </div>
   );
@@ -393,8 +404,20 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm font-medium">{value}</p></div>;
 }
 
-function ArtifactPath({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-2 text-xs text-muted-foreground"><Server className="h-4 w-4" />{label}</div><p className="mt-1 break-all font-mono text-xs">{value}</p></div>;
+function ArtifactPath({ label, value, onDownload }: { label: string; value: string; onDownload: () => void }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Server className="h-4 w-4" />{label}</div>
+          <p className="mt-1 break-all font-mono text-xs">{value}</p>
+        </div>
+        <Button className="h-8 w-8 shrink-0 px-0" variant="outline" title={`Download ${label}`} aria-label={`Download ${label}`} onClick={onDownload}>
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function LastCheckBadge({ executor }: { executor: V2RemoteExecutorRecord }) {

@@ -386,6 +386,7 @@ GET  /api/v2/executor-runs
 POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id
 GET  /api/v2/executor-runs/:run_id/result
+GET  /api/v2/executor-runs/:run_id/files/:file_name
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -528,7 +529,11 @@ data_dir/
 Non-zero exit, timeout, and start failures are recorded in `result.json`; the
 remote run itself reaches `SUCCEEDED` when the controlled execution completed
 and result files were persisted. System errors before result persistence mark
-the run `FAILED`.
+the run `FAILED`. The protected
+`GET /api/v2/executor-runs/:run_id/files/:file_name` endpoint downloads only
+the persisted `result`, `stdout`, or `stderr` file names. The server resolves
+those logical names from the stored run result and rejects paths outside
+`LOGAGENT_V2_DATA_DIR`.
 
 ## Verification
 

@@ -1423,6 +1423,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="remote run result is not available")
         return run["result"]
 
+    @app.get("/api/v2/executor-runs/{run_id}/files/{file_name}")
+    async def get_executor_run_file(_: Auth, run_id: str, file_name: str):
+        try:
+            run = store.get_remote_run(run_id)
+            path, media_type = remote_run_file(settings, run, file_name)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="remote run file is missing")
+        return FileResponse(path, media_type=media_type, filename=path.name)
+
     @app.get("/api/v2/exports/skills.zip")
     async def export_skills(_: Auth) -> Response:
         try:
@@ -2201,6 +2214,33 @@ def remote_run_detail(run: dict) -> dict:
         }
     )
     return result
+
+
+def remote_run_file(settings: Settings, run: dict, file_name: str) -> tuple[Path, str]:
+    result = run.get("result")
+    if not isinstance(result, dict):
+        raise ValueError("remote run result is not available")
+    payload = result.get("result")
+    if not isinstance(payload, dict):
+        raise ValueError("remote run result payload is not available")
+    if file_name == "result":
+        relative = result.get("resultPath")
+        media_type = "application/json"
+    elif file_name == "stdout":
+        relative = payload.get("stdoutPath")
+        media_type = "text/plain"
+    elif file_name == "stderr":
+        relative = payload.get("stderrPath")
+        media_type = "text/plain"
+    else:
+        raise ValueError("remote run file must be one of result, stdout, stderr")
+    if not isinstance(relative, str) or not relative:
+        raise ValueError(f"remote run {file_name} file is not available")
+    data_dir = settings.data_dir.resolve()
+    path = (settings.data_dir / relative).resolve()
+    if data_dir != path and data_dir not in path.parents:
+        raise ValueError("remote run file path escapes data_dir")
+    return path, media_type
 
 
 def json_load_file(path: Path) -> dict:

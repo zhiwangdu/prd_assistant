@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Remote Executor File Downloads
+
+- Added protected `GET /api/v2/executor-runs/:run_id/files/:file_name` for V2
+  Remote Executor result file downloads. The endpoint only accepts `result`,
+  `stdout`, or `stderr`, resolves the path from persisted run output, and
+  rejects missing files or paths outside `LOGAGENT_V2_DATA_DIR`.
+- V2 Executors Workbench now exposes download buttons for remote run
+  `result.json`, `stdout.txt`, and `stderr.txt` while keeping the existing
+  preview/path display.
+- Added regression coverage for successful result/stdout/stderr downloads and
+  invalid file names.
+- Updated server-v2, WebUI, and Environment Collector README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Remote Executor file download pytest, full
+  `PYTHONPATH=. uv run --extra dev pytest`, `npm run lint`,
+  `npm run typecheck`, and `npm run build`.
+
 ## 2026-06-18 WebUI V2 Fetch Standalone Runs
 
 - V2 Fetch Workbench now supports standalone Fetch `tool_run` creation through

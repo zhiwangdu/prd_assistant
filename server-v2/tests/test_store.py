@@ -9087,6 +9087,34 @@ grep_results.json#matches/0
             self.assertIn("ls", stdout_preview)
             result_path = settings.data_dir / finished["result"]["resultPath"]
             self.assertTrue(result_path.exists())
+            from fastapi.testclient import TestClient
+            from logagent_v2.api import create_app
+
+            headers = {"Authorization": "Bearer test"}
+            with TestClient(create_app(settings)) as client:
+                result_response = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/files/result",
+                    headers=headers,
+                )
+                self.assertEqual(result_response.status_code, 200)
+                self.assertEqual(result_response.json()["commandId"], "smoke_ls_root")
+                stdout_response = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/files/stdout",
+                    headers=headers,
+                )
+                self.assertEqual(stdout_response.status_code, 200)
+                self.assertIn("root@127.0.0.1", stdout_response.text)
+                stderr_response = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/files/stderr",
+                    headers=headers,
+                )
+                self.assertEqual(stderr_response.status_code, 200)
+                self.assertEqual(stderr_response.text, "")
+                bad_response = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/files/secret",
+                    headers=headers,
+                )
+                self.assertEqual(bad_response.status_code, 404)
 
     def test_remote_command_template_descriptors_include_global_enabled_and_timeout(self) -> None:
         settings = Settings(

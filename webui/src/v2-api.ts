@@ -1006,6 +1006,10 @@ export async function getV2ExecutorRunResult(apiKey: string, runId: string) {
   return fetchJson<V2RemoteRunResult>(`/api/v2/executor-runs/${encodeURIComponent(runId)}/result`, { headers: authHeaders(apiKey) });
 }
 
+export async function downloadV2ExecutorRunFile(apiKey: string, runId: string, fileName: "result" | "stdout" | "stderr") {
+  await downloadV2File(apiKey, `/api/v2/executor-runs/${encodeURIComponent(runId)}/files/${fileName}`, fileName === "result" ? "result.json" : `${fileName}.txt`);
+}
+
 async function downloadV2File(apiKey: string, path: string, filename: string) {
   const response = await fetch(path, { headers: authHeaders(apiKey) });
   if (!response.ok) {
