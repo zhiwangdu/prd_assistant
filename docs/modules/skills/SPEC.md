@@ -129,7 +129,7 @@ resources: logagent://skills, logagent://skills/{skill_id}
 tools: logagent.list_skills, logagent.get_skill, logagent.get_skill_reference
 ```
 
-该入口不依赖 task snapshot，不写入 `skill_references/` artifact，只读取当前 registry 中已声明的 reference，并返回 `finalEvidenceAllowed=false`。
+`logagent.get_skill` 响应保留 V2 顶层 skill 字段并补齐 Rust/V1 `skill` 包装。该入口不依赖 task snapshot，不写入 `skill_references/` artifact，只读取当前 registry 中已声明的 reference，并返回 `finalEvidenceAllowed=false`。
 
 `skills.zip` 必须打包当前 registry 中所有 Skill 目录的普通文件，保留相对目录结构，并在根目录写入 `manifest.json`。导出不得跟随 symlink，不得包含 Skill 目录外文件。
 

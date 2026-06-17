@@ -1045,7 +1045,8 @@ def call_readonly_skill_tool(
     if name == "logagent.list_skills":
         return {"skills": list_skills(settings)}
     if name == "logagent.get_skill":
-        return get_skill(settings, require_arg_string(arguments, "skillId"))
+        skill = get_skill(settings, require_arg_string(arguments, "skillId"))
+        return {**skill, "skill": skill}
     if name == "logagent.get_skill_reference":
         return read_readonly_skill_reference(
             settings=settings,

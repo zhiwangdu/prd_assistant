@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly MCP Skill Envelope
+
+- Aligned V2 readonly MCP `logagent.get_skill` with the Rust/V1 response
+  envelope by returning the indexed skill both at the top level and inside a
+  `skill` wrapper.
+- Updated Interfaces and Skills README/SPEC docs.
+- Added regression coverage for the wrapped and preserved top-level fields.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Resource URI Aliases
 
 - Added V1-compatible task MCP resource URI support for

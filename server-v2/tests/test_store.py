@@ -4546,6 +4546,23 @@ grep_results.json#matches/0
             )
             self.assertEqual(list_skills(settings)[0]["skillId"], "opengemini-diagnosis")
 
+            readonly_skill = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 17,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_skill",
+                        "arguments": {"skillId": "opengemini-diagnosis"},
+                    },
+                },
+            )
+            readonly_skill_body = json.loads(readonly_skill["result"]["content"][0]["text"])
+            self.assertEqual(readonly_skill_body["skill"]["skillId"], "opengemini-diagnosis")
+            self.assertEqual(readonly_skill_body["skillId"], "opengemini-diagnosis")
+
             workspace = store.create_workspace(
                 "explain shard ownership",
                 "diagnose",

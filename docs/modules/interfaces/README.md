@@ -177,6 +177,7 @@ logagent.list_domain_adapters
 ```
 
 `logagent.preview_system_context` 接受 `skillIds`、`product`、`version`、`environment` 和 `instanceId`，返回合并后的 `resources`、拆分的 `skillResources` / `systemResources` 以及 prompt preview，不写 task artifact。
+`logagent.get_skill` 响应保留 V2 顶层 skill 字段并补齐 Rust/V1 `skill` 包装。
 
 只读 HTTP MCP tools 不能写 workspace artifact，不能创建或恢复 Session，不能上传、审批、运行 Tool Runner、执行 Fetch endpoint 或执行 Huawei package sync。
 
