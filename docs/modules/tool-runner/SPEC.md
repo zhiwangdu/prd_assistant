@@ -45,7 +45,7 @@ Server 还提供只读工具目录和工具包导出：
 - `influxql_analyzer`，真实 CLI 已验证，源码来自 `third_party/influxql` 的 `cmd/influxql-analyze`，LogAgent 构建产物名为 `influxql-analyzer`，参数为 `-input <file> -output json -detail-limit 5`
 - `opengemini_storage_analyzer`，源码来自 `third_party/openGemini` 的 `app/opengemini-storage-analyzer`，参数为 `--input <file> --format json`
 - `influxdb_storage_analyzer`，源码来自 `third_party/influxdb` 的 `cmd/influxdb_storage_analyzer`，参数为 `-input <file> -kind auto -max-samples 10`
-- `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 或 `LOGAGENT_V2_PPROF_GO_COMMAND` 指向 Go 可执行文件；V2 默认关闭，启用时 command 必须解析为绝对路径。catalog 按 Rust/V1 `source=configured` / `backend=command` 暴露，Server 固定调用 `go tool pprof -top/-tree/-raw`，默认 `nodeCount=50`
+- `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 或 `LOGAGENT_V2_PPROF_GO_COMMAND` 指向 Go 可执行文件；V2 默认关闭，启用时 command 必须解析为绝对路径。catalog 按 Rust/V1 `source=configured` / `backend=command` 暴露，`paramsSchema` 同时包含 V1 顶层 `sampleIndex` / `nodeCount` / `generateSvg` 和 V2 `properties` 镜像；Server 固定调用 `go tool pprof -top/-tree/-raw`，默认 `nodeCount=50`，`sampleIndex` 只允许字母、数字、`_` 和 `-`
 - `logagent.huawei_cloud_package_sync`，受 `huawei_cloud.package_sync` 控制，上传一个已入库包到 Huawei OBS，执行 GaussDB update/query SQL，并写入 JSON result
 
 ## 输入

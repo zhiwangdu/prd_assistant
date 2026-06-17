@@ -2445,6 +2445,29 @@ class StoreTests(unittest.TestCase):
                 descriptors["pprof_analyzer"]["paramsTemplate"]["nodeCount"],
                 50,
             )
+            pprof_schema = descriptors["pprof_analyzer"]["paramsSchema"]
+            self.assertEqual(pprof_schema["sampleIndex"]["default"], "samples")
+            self.assertEqual(pprof_schema["nodeCount"]["maximum"], 200)
+            self.assertEqual(
+                pprof_schema["properties"]["generateSvg"],
+                pprof_schema["generateSvg"],
+            )
+            self.assertEqual(
+                validate_tool_run_params(
+                    settings,
+                    "pprof_analyzer",
+                    {"sampleIndex": " alloc_space ", "nodeCount": 999},
+                )["nodeCount"],
+                200,
+            )
+            with self.assertRaisesRegex(ValueError, "sampleIndex"):
+                validate_tool_run_params(settings, "pprof_analyzer", {"sampleIndex": ""})
+            with self.assertRaisesRegex(ValueError, "sampleIndex"):
+                validate_tool_run_params(
+                    settings,
+                    "pprof_analyzer",
+                    {"sampleIndex": "bad/value"},
+                )
             self.assertEqual(
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
                 ["*"],
@@ -2691,6 +2714,10 @@ fi
             self.assertEqual(descriptors["pprof_analyzer"]["exportable"], True)
             self.assertEqual(descriptors["pprof_analyzer"]["runnable"], True)
             self.assertEqual(descriptors["pprof_analyzer"]["paramsTemplate"]["nodeCount"], 50)
+            self.assertEqual(
+                descriptors["pprof_analyzer"]["paramsSchema"]["nodeCount"]["default"],
+                50,
+            )
             workspace = store.create_workspace("pprof run", "tool_run", "en-US")
             profile_artifact = write_artifact_bytes(
                 settings,

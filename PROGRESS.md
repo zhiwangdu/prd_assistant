@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Pprof Tool Params Parity
+
+- V2 `pprof_analyzer` descriptor now exposes Rust/V1 top-level
+  `paramsSchema.sampleIndex`, `paramsSchema.nodeCount`, and
+  `paramsSchema.generateSvg` entries while preserving the V2
+  `paramsSchema.properties` mirror.
+- Pprof parameter normalization now matches Rust/V1: `sampleIndex` is trimmed,
+  rejects empty values and characters outside letters, digits, `_`, and `-`,
+  and `nodeCount` still clamps to 1..200.
+- Direct pprof tool-run execution reuses the same normalization so DB-backed
+  runs cannot bypass the API validation path.
+- Added regression coverage for descriptor shape and invalid sample indexes.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused pprof descriptor/result regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Configured Tool Descriptor Parity
 
 - V2 configured subprocess tool descriptors now expose Rust/V1 read-only

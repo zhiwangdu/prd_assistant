@@ -660,7 +660,10 @@ stdout is also adapted: `statement_delta`, `qps_delta`, `batch_a`, and
 from `LOGAGENT_V2_TOOLS_JSON` and the enabled `pprof_analyzer` Go executable.
 The pprof adapter is disabled by default unless `LOGAGENT_V2_PPROF_GO_COMMAND`
 or `LOGAGENT_TOOL_PPROF_GO` is configured, or `LOGAGENT_V2_PPROF_ENABLED=1` is
-used with an absolute Go command path.
+used with an absolute Go command path. Its descriptor must expose V1 top-level
+`sampleIndex`, `nodeCount`, and `generateSvg` params schema entries plus the V2
+`properties` mirror. `sampleIndex` is trimmed and must contain only letters,
+digits, `_`, or `-`; `nodeCount` is clamped to 1..200.
 Built-in tools are not packaged. The
 archive contains:
 

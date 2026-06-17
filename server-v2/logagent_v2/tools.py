@@ -192,17 +192,23 @@ def pprof_descriptor(settings: Settings) -> JsonObject:
         "maxFiles": 1,
         "maxInputFiles": 1,
         "acceptedSuffixes": [".pprof", ".prof", ".profile", ".pb.gz"],
-        "paramsSchema": {
-            "type": "object",
-            "properties": {
-                "sampleIndex": {"type": "string", "default": "samples"},
-                "nodeCount": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
-                "generateSvg": {"type": "boolean", "default": False},
-            },
-            "additionalProperties": False,
-        },
+        "paramsSchema": pprof_params_schema(),
         "paramsTemplate": {"sampleIndex": "samples", "nodeCount": 50, "generateSvg": False},
         "outputViews": ["summary", "top_table", "tree_text", "raw_text", "svg"],
+    }
+
+
+def pprof_params_schema() -> JsonObject:
+    fields: JsonObject = {
+        "sampleIndex": {"type": "string", "default": "samples"},
+        "nodeCount": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
+        "generateSvg": {"type": "boolean", "default": False},
+    }
+    return {
+        **fields,
+        "type": "object",
+        "properties": dict(fields),
+        "additionalProperties": False,
     }
 
 
@@ -452,11 +458,12 @@ def validate_tool_run_params(
         return result
     if tool_id == PPROF_ANALYZER_ID:
         reject_unknown_params(tool_id, params, {"sampleIndex", "nodeCount", "generateSvg"})
+        sample_index = normalize_pprof_sample_index(params.get("sampleIndex", "samples"))
         node_count = params.get("nodeCount", 50)
         if isinstance(node_count, bool) or not isinstance(node_count, int):
             raise ValueError("nodeCount must be an integer")
         return {
-            "sampleIndex": str(params.get("sampleIndex") or "samples"),
+            "sampleIndex": sample_index,
             "nodeCount": max(1, min(node_count, 200)),
             "generateSvg": bool(params.get("generateSvg", False)),
         }
@@ -476,6 +483,13 @@ def validate_tool_run_params(
         return normalize_fetch_run_params(params)
     tool = get_tool(settings, tool_id)
     return validate_configured_tool_params(tool, params)
+
+
+def normalize_pprof_sample_index(value: object) -> str:
+    sample_index = str(value).strip()
+    if not sample_index or not re.fullmatch(r"[A-Za-z0-9_-]+", sample_index):
+        raise ValueError("sampleIndex must contain only letters, digits, '_' or '-'")
+    return sample_index
 
 
 def execute_tool_run(settings: Settings, store: Store, run_id: str) -> JsonObject:
@@ -1331,6 +1345,7 @@ def run_pprof_tool(
     run: JsonObject,
     params: JsonObject,
 ) -> JsonObject:
+    params = validate_tool_run_params(settings, PPROF_ANALYZER_ID, params)
     go_command = resolve_pprof_go_command(settings)
     if not go_command:
         raise ValueError("pprof analyzer is not configured")
@@ -1342,8 +1357,8 @@ def run_pprof_tool(
     if not profile_path.is_file():
         raise ValueError("uploaded pprof profile is missing")
     action_id = f"act_tool_pprof_{run['id']}"
-    node_count = int(params.get("nodeCount", 50))
-    sample_index = str(params.get("sampleIndex") or "samples")
+    node_count = int(params["nodeCount"])
+    sample_index = str(params["sampleIndex"])
     commands = {
         "top": [
             go_command,
