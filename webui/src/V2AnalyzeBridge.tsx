@@ -11,6 +11,8 @@ import {
   downloadV2Artifact,
   getV2Workspace,
   getV2RunAnalysis,
+  listV2ExecutorCommandTemplates,
+  listV2Executors,
   listV2WorkspaceRuns,
   listV2Workspaces,
   listV2WorkspaceUploads,
@@ -23,6 +25,8 @@ import {
   type V2EvidenceArtifact,
   type V2FinalAnswer,
   type V2Mode,
+  type V2RemoteCommandTemplate,
+  type V2RemoteExecutorRecord,
   type V2Run,
   type V2RunAnalysis,
   type V2RunStatus,
@@ -121,6 +125,11 @@ const copyByLanguage = {
     approvalRequest: "审批请求",
     approve: "批准",
     reject: "拒绝",
+    environmentTarget: "环境采集目标",
+    remoteExecutor: "执行机",
+    remoteCommand: "命令模板",
+    mockEnvironmentTarget: "不指定远程目标（使用 MOCK）",
+    noRemoteCommand: "不指定命令模板",
     reasonPlaceholder: "可选：审批原因",
     noPendingAction: "Run 处于等待状态，但没有 pending action。",
     latestEvents: "最近事件",
@@ -218,6 +227,11 @@ const copyByLanguage = {
     approvalRequest: "Approval request",
     approve: "Approve",
     reject: "Reject",
+    environmentTarget: "Environment target",
+    remoteExecutor: "Executor",
+    remoteCommand: "Command template",
+    mockEnvironmentTarget: "No remote target (use MOCK)",
+    noRemoteCommand: "No command template",
     reasonPlaceholder: "Optional approval reason",
     noPendingAction: "The run is waiting, but no pending action is available.",
     latestEvents: "Latest events",
@@ -249,6 +263,10 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const [analysis, setAnalysis] = useState<V2RunAnalysis | null>(null);
   const [waitingMessage, setWaitingMessage] = useState("");
   const [decisionReason, setDecisionReason] = useState("");
+  const [environmentExecutors, setEnvironmentExecutors] = useState<V2RemoteExecutorRecord[]>([]);
+  const [environmentCommands, setEnvironmentCommands] = useState<V2RemoteCommandTemplate[]>([]);
+  const [environmentExecutorId, setEnvironmentExecutorId] = useState("");
+  const [environmentCommandId, setEnvironmentCommandId] = useState("");
   const [caseDraft, setCaseDraft] = useState<RunCaseDraft>(emptyRunCaseDraft());
   const [caseDraftRunId, setCaseDraftRunId] = useState("");
   const [savedCase, setSavedCase] = useState<V2CaseRecord | null>(null);
@@ -267,13 +285,53 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     }
   }, [copy.defaultQuestion, language, question]);
 
+  const loadEnvironmentApprovalOptions = useCallback(async (actions: V2Action[]) => {
+    const action = actions.find(isCollectEnvironmentAction);
+    if (!action || !apiKey.trim()) {
+      setEnvironmentExecutors([]);
+      setEnvironmentCommands([]);
+      setEnvironmentExecutorId("");
+      setEnvironmentCommandId("");
+      return;
+    }
+    const currentInput = actionInputRecord(action);
+    const currentExecutorId = stringRecordValue(currentInput, "executorId") || stringRecordValue(currentInput, "remoteExecutorId");
+    const currentCommandId = stringRecordValue(currentInput, "commandId") || stringRecordValue(currentInput, "remoteCommandId");
+    try {
+      const [executorResponse, commandResponse] = await Promise.all([
+        listV2Executors(apiKey),
+        listV2ExecutorCommandTemplates(apiKey)
+      ]);
+      const enabledExecutors = executorResponse.executors.filter((executor) => executor.enabled);
+      const enabledCommands = commandResponse.enabled
+        ? commandResponse.commands.filter((command) => command.enabled)
+        : [];
+      const selectedExecutorId = currentExecutorId && enabledExecutors.some((executor) => executor.executorId === currentExecutorId)
+        ? currentExecutorId
+        : enabledExecutors[0]?.executorId || "";
+      const selectedCommandId = selectedExecutorId && currentCommandId && enabledCommands.some((command) => command.commandId === currentCommandId)
+        ? currentCommandId
+        : selectedExecutorId ? enabledCommands[0]?.commandId || "" : "";
+      setEnvironmentExecutors(enabledExecutors);
+      setEnvironmentCommands(enabledCommands);
+      setEnvironmentExecutorId(selectedExecutorId);
+      setEnvironmentCommandId(selectedCommandId);
+    } catch {
+      setEnvironmentExecutors([]);
+      setEnvironmentCommands([]);
+      setEnvironmentExecutorId(currentExecutorId);
+      setEnvironmentCommandId(currentCommandId);
+    }
+  }, [apiKey]);
+
   const loadRun = useCallback(async (runId: string, quiet = false) => {
     if (!apiKey.trim()) return;
     const nextAnalysis = await getV2RunAnalysis(apiKey, runId);
     setAnalysis(nextAnalysis);
     setSelectedRunId(nextAnalysis.run.id);
+    await loadEnvironmentApprovalOptions(nextAnalysis.pendingActions);
     if (!quiet) setStatus(copy.loadedRun(nextAnalysis.run.id));
-  }, [apiKey, copy]);
+  }, [apiKey, copy, loadEnvironmentApprovalOptions]);
 
   const loadWorkspace = useCallback(async (workspaceId: string, preferredRunId?: string) => {
     if (!apiKey.trim()) return;
@@ -462,10 +520,20 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     setLoading(true);
     try {
       const reason = decisionReason.trim() || null;
+      const approvalInput = decision === "approved" && isCollectEnvironmentAction(action)
+        ? buildEnvironmentApprovalInput(action, environmentExecutorId, environmentCommandId)
+        : undefined;
       await decideV2Action(apiKey, action.id, {
         decision,
         reason,
-        idempotencyKey: v2IdempotencyKey("decision", selectedRunId || action.run_id, action.id, decision, reason ?? "")
+        input: approvalInput,
+        idempotencyKey: v2IdempotencyKey(
+          "decision",
+          selectedRunId || action.run_id,
+          action.id,
+          decision,
+          JSON.stringify({ reason: reason ?? "", input: approvalInput ?? null })
+        )
       });
       setDecisionReason("");
       setStatus(copy.refreshed);
@@ -490,6 +558,17 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const finalAnswer = analysis?.result?.finalAnswer ?? analysis?.run.finalAnswer ?? null;
   const selectedRunStatus = selectedRun?.status;
   const selectedRunCaseId = selectedRun?.id ?? "";
+
+  function updateEnvironmentExecutor(value: string) {
+    setEnvironmentExecutorId(value);
+    if (!value) {
+      setEnvironmentCommandId("");
+      return;
+    }
+    if (!environmentCommandId && environmentCommands[0]) {
+      setEnvironmentCommandId(environmentCommands[0].commandId);
+    }
+  }
 
   useEffect(() => {
     if (selectedRunStatus === "succeeded" && finalAnswer && caseDraftRunId !== selectedRunCaseId) {
@@ -604,9 +683,15 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           actions={analysis?.pendingActions ?? []}
           message={waitingMessage}
           reason={decisionReason}
+          environmentExecutors={environmentExecutors}
+          environmentCommands={environmentCommands}
+          environmentExecutorId={environmentExecutorId}
+          environmentCommandId={environmentCommandId}
           loading={loading}
           onMessageChange={setWaitingMessage}
           onReasonChange={setDecisionReason}
+          onEnvironmentExecutorChange={updateEnvironmentExecutor}
+          onEnvironmentCommandChange={setEnvironmentCommandId}
           onSend={(action, resumeMode) => void sendWaitingMessage(action, resumeMode)}
           onDecision={(action, decision) => void decideWaitingAction(action, decision)}
         />
@@ -758,9 +843,15 @@ function WaitingActionsPanel({
   actions,
   message,
   reason,
+  environmentExecutors,
+  environmentCommands,
+  environmentExecutorId,
+  environmentCommandId,
   loading,
   onMessageChange,
   onReasonChange,
+  onEnvironmentExecutorChange,
+  onEnvironmentCommandChange,
   onSend,
   onDecision
 }: {
@@ -769,9 +860,15 @@ function WaitingActionsPanel({
   actions: V2Action[];
   message: string;
   reason: string;
+  environmentExecutors: V2RemoteExecutorRecord[];
+  environmentCommands: V2RemoteCommandTemplate[];
+  environmentExecutorId: string;
+  environmentCommandId: string;
   loading: boolean;
   onMessageChange: (value: string) => void;
   onReasonChange: (value: string) => void;
+  onEnvironmentExecutorChange: (value: string) => void;
+  onEnvironmentCommandChange: (value: string) => void;
   onSend: (action: V2Action, resumeMode: "continue" | "finalize") => void;
   onDecision: (action: V2Action, decision: "approved" | "rejected") => void;
 }) {
@@ -785,6 +882,7 @@ function WaitingActionsPanel({
       </div>
     );
   }
+  const isEnvironmentApproval = isCollectEnvironmentAction(action);
   if (run.status === "waiting_for_approval" || action.kind === "approval") {
     return (
       <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -798,6 +896,44 @@ function WaitingActionsPanel({
           <Metric label="Action ID" value={action.id} />
         </div>
         <pre className="max-h-48 overflow-auto rounded-md border border-amber-200 bg-white/70 p-3 text-xs">{JSON.stringify(action.payload.input ?? action.payload, null, 2)}</pre>
+        {isEnvironmentApproval ? (
+          <div className="rounded-md border border-amber-200 bg-white/60 p-3">
+            <div className="mb-2 text-xs font-semibold text-amber-900">{copy.environmentTarget}</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 text-xs text-muted-foreground">
+                {copy.remoteExecutor}
+                <select
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-amber-500/20"
+                  value={environmentExecutorId}
+                  onChange={(event) => onEnvironmentExecutorChange(event.target.value)}
+                >
+                  <option value="">{copy.mockEnvironmentTarget}</option>
+                  {environmentExecutors.map((executor) => (
+                    <option key={executor.executorId} value={executor.executorId}>
+                      {executor.name} · {executor.user}@{executor.host}:{executor.port}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                {copy.remoteCommand}
+                <select
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-amber-500/20 disabled:opacity-60"
+                  value={environmentCommandId}
+                  onChange={(event) => onEnvironmentCommandChange(event.target.value)}
+                  disabled={!environmentExecutorId}
+                >
+                  <option value="">{copy.noRemoteCommand}</option>
+                  {environmentCommands.map((command) => (
+                    <option key={command.commandId} value={command.commandId}>
+                      {command.displayName} · {command.commandId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        ) : null}
         <textarea
           className="min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
           value={reason}
@@ -1212,6 +1348,47 @@ function compactDetails(values: Array<string | null>) {
 function truncate(value: string | null, maxLength: number) {
   if (!value || value.length <= maxLength) return value;
   return `${value.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+function isCollectEnvironmentAction(action: V2Action) {
+  return action.kind === "approval" && stringPayload(action.payload, "actionType") === "collect_environment";
+}
+
+function actionInputRecord(action: V2Action) {
+  return recordPayload(action.payload, "input");
+}
+
+function recordPayload(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return isPlainRecord(value) ? value : {};
+}
+
+function stringRecordValue(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" ? value : "";
+}
+
+function buildEnvironmentApprovalInput(action: V2Action, executorId: string, commandId: string) {
+  const input: Record<string, unknown> = { ...actionInputRecord(action) };
+  const nextExecutorId = executorId.trim();
+  const nextCommandId = commandId.trim();
+  delete input.remoteExecutorId;
+  delete input.remoteCommandId;
+  if (nextExecutorId) {
+    input.executorId = nextExecutorId;
+  } else {
+    delete input.executorId;
+  }
+  if (nextCommandId && nextExecutorId) {
+    input.commandId = nextCommandId;
+  } else {
+    delete input.commandId;
+  }
+  return input;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function summarizePayload(payload: Record<string, unknown>) {

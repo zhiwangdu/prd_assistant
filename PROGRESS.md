@@ -2,6 +2,27 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Approval Remote Target Selection
+
+- `POST /api/v2/actions/:action_id/decisions` now accepts an optional
+  approved decision `input` object. For approvals, V2 persists that input back
+  into the action payload, records it in the decision result/timeline event, and
+  then runs approval side effects from the approved payload.
+- `collect_environment` approvals can now be completed from WebUI even when the
+  Agent did not pre-fill a remote target: the V2 Analyze approval panel loads
+  enabled Remote Executors and whitelisted command templates, submits the chosen
+  `executorId` / `commandId` as decision input, and still allows no-target
+  approval for the compatible MOCK evidence path.
+- Added API regression coverage that verifies decision-time
+  `collect_environment` input is persisted, queues exactly one Remote Executor
+  job, keeps the analysis run waiting for environment collection, and remains
+  idempotent on repeated submissions.
+- Updated server-v2, WebUI, and Environment Collector README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused approval/environment pytest, full
+  `PYTHONPATH=. uv run --extra dev pytest`, `npm run lint`,
+  `npm run typecheck`, `npm run build`, and `git diff --check`.
+
 ## 2026-06-18 WebUI V2 System Context Version Editing
 
 - Added WebUI coverage for V2's V1-compatible

@@ -1070,6 +1070,125 @@ class StoreTests(unittest.TestCase):
                     "approval-1",
                 )
 
+    def test_action_decision_api_can_override_collect_environment_input(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps({'argv': sys.argv[1:]}))\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                inline_worker=False,
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need environment", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(
+                run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            executor = store.create_remote_executor(
+                {
+                    "name": "fake executor",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote node status",
+                    "input": {},
+                },
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                first = client.post(
+                    f"/api/v2/actions/{action['id']}/decisions",
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "collect now",
+                        "input": {
+                            "executorId": executor["executorId"],
+                            "commandId": "env_snapshot",
+                            "scope": "node_status",
+                        },
+                        "idempotencyKey": "env-approval-1",
+                    },
+                )
+                self.assertEqual(first.status_code, 200, first.text)
+                first_body = first.json()
+                self.assertFalse(first_body["duplicate"])
+                self.assertIsNone(first_body["job"])
+                self.assertEqual(first_body["action"]["status"], "approved")
+                self.assertEqual(
+                    first_body["action"]["payload"]["input"]["executorId"],
+                    executor["executorId"],
+                )
+                self.assertEqual(
+                    first_body["action"]["result"]["input"]["commandId"],
+                    "env_snapshot",
+                )
+                self.assertEqual(
+                    first_body["environmentEvidence"]["payload"]["status"],
+                    "QUEUED",
+                )
+                self.assertEqual(
+                    store.get_run(run["id"])["phase"],
+                    "collect_environment",
+                )
+                remote_runs = store.list_remote_runs(limit=10)
+                self.assertEqual(len(remote_runs), 1)
+                self.assertEqual(remote_runs[0]["remoteCommandId"], "env_snapshot")
+
+                duplicate = client.post(
+                    f"/api/v2/actions/{action['id']}/decisions",
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "collect now",
+                        "input": {
+                            "executorId": executor["executorId"],
+                            "commandId": "env_snapshot",
+                            "scope": "node_status",
+                        },
+                        "idempotencyKey": "env-approval-1",
+                    },
+                )
+                self.assertEqual(duplicate.status_code, 200, duplicate.text)
+                duplicate_body = duplicate.json()
+                self.assertTrue(duplicate_body["duplicate"])
+                self.assertEqual(len(store.list_remote_runs(limit=10)), 1)
+
     def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

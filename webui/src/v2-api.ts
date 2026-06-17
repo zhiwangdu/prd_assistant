@@ -705,8 +705,8 @@ export async function postV2RunMessage(apiKey: string, runId: string, input: { m
   });
 }
 
-export async function decideV2Action(apiKey: string, actionId: string, input: { decision: "approved" | "rejected"; reason?: string | null; idempotencyKey?: string }) {
-  return fetchJson<{ action: V2Action; job?: Record<string, unknown> | null }>(`/api/v2/actions/${encodeURIComponent(actionId)}/decisions`, {
+export async function decideV2Action(apiKey: string, actionId: string, input: { decision: "approved" | "rejected"; reason?: string | null; input?: Record<string, unknown> | null; idempotencyKey?: string }) {
+  return fetchJson<{ action: V2Action; environmentEvidence?: V2Evidence | null; job?: Record<string, unknown> | null; event?: V2TimelineEvent; duplicate?: boolean }>(`/api/v2/actions/${encodeURIComponent(actionId)}/decisions`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify(input)

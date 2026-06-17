@@ -84,7 +84,8 @@ slice provides the durable foundation for the V2 product model:
   User message submission requires `waiting_for_user`, supports optional
   `questionId` validation, and de-duplicates retries with `idempotencyKey`.
   Approval decisions require `waiting_for_approval`, target a pending approval
-  action, and also de-duplicate retries with `idempotencyKey`.
+  action, may carry an approved `input` override, and also de-duplicate retries
+  with `idempotencyKey`.
   Calls also persist a V1-compatible `mcp_waiting_request.json` background
   artifact and return `artifactPath`, `runtimeStatus`, and `evidenceRefs`;
   `request_approval` accepts the V1 shape with only `reason` and defaults
@@ -1041,13 +1042,15 @@ another decision or enqueueing another job. The next Agent request
 carries recent user messages, action results, and remaining pending actions in
 `interactionContext`. The OpenAI-compatible and binary Agent provider loop also
 advertises these waiting tools during normal analysis; when a provider requests
-one, the current provider response is recorded as `paused`, `analysis_state`
-records the waiting status, the run keeps its waiting state, and no final
-result is written until the user resumes it. If the user resumes with
-`resumeMode=finalize`, the next provider prompt carries
-`resumePolicy.finalizeWithCurrentEvidence=true` and no longer advertises
-waiting/approval tools. When an approved action payload has
-`actionType=collect_environment`, V2 checks `input.executorId` and
+  one, the current provider response is recorded as `paused`, `analysis_state`
+  records the waiting status, the run keeps its waiting state, and no final
+  result is written until the user resumes it. If the user resumes with
+  `resumeMode=finalize`, the next provider prompt carries
+  `resumePolicy.finalizeWithCurrentEvidence=true` and no longer advertises
+  waiting/approval tools. The approval decision body may include an `input`
+  object; for approved actions V2 writes it back to the action payload before
+  executing approval side effects. When an approved action payload has
+  `actionType=collect_environment`, V2 checks `input.executorId` and
 `input.commandId`. If both target an enabled Remote Executor and whitelisted
 command template, V2 queues a `remote_command_run`, keeps the analysis run
 waiting while collection runs, then writes

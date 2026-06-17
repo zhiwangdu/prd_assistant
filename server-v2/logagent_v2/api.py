@@ -143,6 +143,7 @@ class MessageCreate(BaseModel):
 class DecisionCreate(BaseModel):
     decision: Literal["approved", "rejected"]
     reason: str | None = Field(default=None, max_length=2000)
+    input: dict[str, Any] | None = None
     idempotencyKey: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -1149,6 +1150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 payload.decision,
                 payload.reason,
                 idempotency_key=idempotency_key,
+                input_override=payload.input if payload.decision == "approved" else None,
             )
             environment_evidence = persist_approved_environment_evidence(
                 settings, store, action

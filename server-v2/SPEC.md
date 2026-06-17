@@ -222,7 +222,9 @@ Implemented in this slice:
   requires `waiting_for_user`, validates optional `questionId`, and de-duplicates
   retry requests by `idempotencyKey`. Approval decisions require
   `waiting_for_approval`, target a pending approval action, and also
-  de-duplicate retries by `idempotencyKey`. Calls also persist a
+  de-duplicate retries by `idempotencyKey`; approved decisions may carry an
+  `input` override that is persisted into the action payload before approval
+  side effects run. Calls also persist a
   V1-compatible `mcp_waiting_request.json` background artifact and return
   `artifactPath`, `runtimeStatus`, and `evidenceRefs`; `request_approval`
   accepts the V1 shape with only `reason` and defaults missing `actionType` to
@@ -1464,7 +1466,9 @@ event without re-answering actions or creating another job.
 `POST /api/v2/actions/:action_id/decisions` accepts only
 `waiting_for_approval` runs with a pending approval action. Repeated approval
 submissions with the same `idempotencyKey` return the original decision event
-without updating the action or creating another job.
+without updating the action or creating another job. Approved submissions may
+include an `input` object, which replaces the action payload input and is
+recorded in the decision result/timeline event.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
 SQLite job queue. User messages also mark pending matching `user_input`
@@ -1473,8 +1477,9 @@ actions as `answered`. The next Agent request includes a bounded
 containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has
-`actionType=collect_environment`, V2 checks the approved input for
-`executorId` and `commandId`. If present and valid, it queues a
+`actionType=collect_environment`, V2 checks the approved action input, including
+any decision-time override, for `executorId` and `commandId`. If present and
+valid, it queues a
 `remote_command_run` with idempotency key `environment:<action_id>`, keeps the
 analysis run waiting during collection, and writes
 `environment_evidence/<action_id>/result.json` with `status=COLLECTED` or

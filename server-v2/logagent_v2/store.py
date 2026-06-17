@@ -2006,35 +2006,52 @@ class Store:
         decision: str,
         reason: str | None,
         idempotency_key: str | None = None,
+        input_override: JsonObject | None = None,
     ) -> JsonObject:
         action = self.get_action(action_id)
         run = self.get_run(action["run_id"])
         ts = now_iso()
+        payload = dict(action.get("payload") or {})
         result = {
             "decision": decision,
             "reason": reason,
             "idempotencyKey": idempotency_key,
         }
+        event_payload = {
+            "actionId": action_id,
+            "decision": decision,
+            "reason": reason,
+            "idempotencyKey": idempotency_key,
+        }
+        if input_override is not None:
+            payload["input"] = input_override
+            result["input"] = input_override
+            event_payload["input"] = input_override
         with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE actions
-                SET status = ?, result_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (decision, encode_json(result), ts, action_id),
-            )
+            if input_override is not None:
+                conn.execute(
+                    """
+                    UPDATE actions
+                    SET status = ?, payload_json = ?, result_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (decision, encode_json(payload), encode_json(result), ts, action_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE actions
+                    SET status = ?, result_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (decision, encode_json(result), ts, action_id),
+                )
             self._append_event_tx(
                 conn,
                 run["workspace_id"],
                 run["id"],
                 f"action.{decision}",
-                {
-                    "actionId": action_id,
-                    "decision": decision,
-                    "reason": reason,
-                    "idempotencyKey": idempotency_key,
-                },
+                event_payload,
                 ts,
             )
         return self.get_action(action_id)

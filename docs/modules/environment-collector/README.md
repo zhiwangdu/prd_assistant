@@ -35,6 +35,9 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   状态为 `COLLECTED` 或 `REMOTE_FAILED`，并重新排队同一个 analysis run；
   远程目标无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留
   与 Rust Server 兼容的 `MOCK` evidence。
+- V2 Analyze 审批卡片会在 `collect_environment` action 上加载已启用的
+  Remote Executor 和白名单命令模板；用户批准时可把选择作为 decision
+  `input` 提交，Server 会先写回 action payload 再调度采集。
 - 当前不支持 SCP 文件采集、不支持多节点批量采集，也不支持由 Agent 自动选择
   executor/command；这些仍属于完整 Environment Collector 后续工作。
 
@@ -86,7 +89,7 @@ environments:
 ## 流程
 
 1. 用户选择测试环境和目标节点范围，或 Agent 请求 `collect_environment`
-   审批并携带已配置的 `executorId` / `commandId`。
+   审批；审批时可由 WebUI 补齐已配置的 `executorId` / `commandId`。
 2. 服务端根据配置建立 SSH 连接。
 3. SCP 拉取白名单路径下的日志和配置。
 4. 执行白名单诊断命令；V2 当前已支持单个 Remote Executor command 模板。
@@ -139,6 +142,8 @@ collected/
 - Remote command template argv 加载时会 trim 并丢弃空字符串，避免空白配置进入最终 SSH argv。
 - V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command id，
   不接受自由命令或由用户消息临时扩展白名单。
+- WebUI 审批只能选择已启用 executor 和配置模板；不选择远程目标时 Server
+  仍会保留兼容 MOCK evidence 路径。
 - SSH key 不进入 LLM Prompt。
 - 不做通用远程运维平台。
 - MCP 请求和用户消息不能增加配置外节点、路径或命令。
