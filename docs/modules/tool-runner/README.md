@@ -92,7 +92,7 @@ tools:
   `exportable=enabled`、`minFiles=1`，并将 `acceptedSuffixes` 原样设置为
   `match.filePatterns`。
 - `logagent.fetch` 使用 `source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。
-- `logagent.huawei_cloud_package_sync` 使用 `source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`；只有 `huawei_cloud.package_sync.enabled=true` 且 OBS/GaussDB 凭据环境变量解析成功时才可运行。它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
+- `logagent.huawei_cloud_package_sync` 使用 `source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`；只有 `huawei_cloud.package_sync.enabled=true` / `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED=1` 且 OBS/GaussDB 配置通过启动校验时才可运行。V2 会校验 OBS endpoint、bucket、object prefix、必填 OBS keys 和 GaussDB DSN；它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
 
 ## 当前实现状态
 

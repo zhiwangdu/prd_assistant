@@ -219,12 +219,13 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-` |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
-| `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint |
-| `LOGAGENT_V2_HUAWEI_OBS_BUCKET` | unset | Huawei OBS bucket |
-| `LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX` | unset | Default object key prefix |
-| `LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY` | unset | Huawei OBS access key |
-| `LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY` | unset | Huawei OBS secret key |
-| `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync |
+| `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint; when enabled must be `http/https` with no path/query/fragment |
+| `LOGAGENT_V2_HUAWEI_OBS_BUCKET` | unset | Huawei OBS bucket; when enabled allows letters, digits, `.`, and `-` |
+| `LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX` | unset | Default safe relative object key prefix |
+| `LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY` | unset | Huawei OBS access key; required and trimmed when enabled |
+| `LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY` | unset | Huawei OBS secret key; required and trimmed when enabled |
+| `LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN` | unset | Optional Huawei OBS security token; trimmed when present |
+| `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync; required and trimmed when enabled |
 
 Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
 source-built analyzer as a configured subprocess tool using the same args,

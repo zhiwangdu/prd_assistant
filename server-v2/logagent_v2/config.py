@@ -204,7 +204,7 @@ class Settings:
             "LOGAGENT_V2_PPROF_ENABLED",
             default=bool(pprof_go_command),
         )
-        huawei_package_sync = HuaweiPackageSyncSettings(
+        huawei_package_sync = parse_huawei_package_sync_env(
             enabled=env_bool("LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED", default=False),
             obs_endpoint=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT"),
             obs_bucket=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_BUCKET"),
@@ -213,9 +213,7 @@ class Settings:
             obs_secret_key=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY"),
             obs_security_token=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN"),
             gaussdb_dsn=os.environ.get("LOGAGENT_V2_HUAWEI_GAUSSDB_DSN"),
-            timeout_seconds=max(
-                1, int(os.environ.get("LOGAGENT_V2_HUAWEI_TIMEOUT_SECONDS", "30"))
-            ),
+            timeout_seconds=int(os.environ.get("LOGAGENT_V2_HUAWEI_TIMEOUT_SECONDS", "30")),
         )
         fetch_enabled = os.environ.get("LOGAGENT_V2_FETCH_ENABLED", "0") == "1"
         fetch_allowed_hosts = parse_fetch_allowed_hosts_env(
@@ -511,6 +509,109 @@ def env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_huawei_package_sync_env(
+    *,
+    enabled: bool,
+    obs_endpoint: str | None,
+    obs_bucket: str | None,
+    obs_object_prefix: str | None,
+    obs_access_key: str | None,
+    obs_secret_key: str | None,
+    obs_security_token: str | None,
+    gaussdb_dsn: str | None,
+    timeout_seconds: int,
+) -> HuaweiPackageSyncSettings:
+    normalized_endpoint = (obs_endpoint or "").strip().rstrip("/")
+    normalized_bucket = (obs_bucket or "").strip()
+    normalized_prefix = normalize_huawei_object_prefix(obs_object_prefix or "")
+    normalized_access_key = non_empty_string(obs_access_key)
+    normalized_secret_key = non_empty_string(obs_secret_key)
+    normalized_security_token = non_empty_string(obs_security_token)
+    normalized_dsn = non_empty_string(gaussdb_dsn)
+
+    if enabled:
+        validate_huawei_obs_endpoint(normalized_endpoint)
+        if not normalized_bucket:
+            raise ValueError("LOGAGENT_V2_HUAWEI_OBS_BUCKET is required when enabled")
+        if not is_valid_huawei_bucket_name(normalized_bucket):
+            raise ValueError("LOGAGENT_V2_HUAWEI_OBS_BUCKET contains unsupported characters")
+        if not normalized_access_key:
+            raise ValueError("LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY is required when enabled")
+        if not normalized_secret_key:
+            raise ValueError("LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY is required when enabled")
+        if not normalized_dsn:
+            raise ValueError("LOGAGENT_V2_HUAWEI_GAUSSDB_DSN is required when enabled")
+
+    return HuaweiPackageSyncSettings(
+        enabled=enabled,
+        obs_endpoint=normalized_endpoint or None,
+        obs_bucket=normalized_bucket or None,
+        obs_object_prefix=normalized_prefix,
+        obs_access_key=normalized_access_key,
+        obs_secret_key=normalized_secret_key,
+        obs_security_token=normalized_security_token,
+        gaussdb_dsn=normalized_dsn,
+        timeout_seconds=max(1, timeout_seconds),
+    )
+
+
+def non_empty_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def validate_huawei_obs_endpoint(endpoint: str) -> None:
+    if not endpoint:
+        raise ValueError("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT is required when enabled")
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT must use http or https")
+    if not parsed.hostname:
+        raise ValueError("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT must include host")
+    if parsed.path not in {"", "/"}:
+        raise ValueError("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT must not include a path")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError(
+            "LOGAGENT_V2_HUAWEI_OBS_ENDPOINT must not include credentials, query, or fragment"
+        )
+
+
+def normalize_huawei_object_prefix(raw: str) -> str:
+    trimmed = raw.strip().strip("/")
+    if not trimmed:
+        return ""
+    validate_huawei_object_key(trimmed)
+    return trimmed
+
+
+def validate_huawei_object_key(value: str) -> None:
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError("Huawei OBS object key must not be empty")
+    if len(trimmed) > 1024:
+        raise ValueError("Huawei OBS object key must be at most 1024 bytes")
+    if (
+        trimmed.startswith("/")
+        or "\\" in trimmed
+        or "?" in trimmed
+        or "#" in trimmed
+    ):
+        raise ValueError("Huawei OBS object key must be relative")
+    if any(part in {"", ".", ".."} for part in trimmed.split("/")):
+        raise ValueError("Huawei OBS object key must not contain unsafe path segments")
+    if any(ord(char) < 32 for char in trimmed):
+        raise ValueError("Huawei OBS object key must not contain control characters")
+
+
+def is_valid_huawei_bucket_name(value: str) -> bool:
+    return bool(value) and len(value) <= 255 and all(
+        char.isascii() and (char.isalnum() or char in {".", "-"})
+        for char in value
+    )
 
 
 def parse_fetch_allowed_hosts_env(raw: str | None, *, enabled: bool) -> tuple[str, ...]:

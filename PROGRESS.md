@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Huawei Package Sync Config Validation
+
+- V2 now parses Huawei package sync settings through a validation layer instead
+  of passing raw environment variables directly into the built-in tool
+  descriptor.
+- When `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED=1`, settings loading validates
+  OBS endpoint scheme and shape, OBS bucket characters, safe object prefix,
+  required trimmed OBS access/secret keys, optional trimmed security token, and
+  required trimmed `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`.
+- The built-in `logagent.huawei_cloud_package_sync` descriptor only becomes
+  runnable after that startup validation has succeeded.
+- Added regression coverage for missing endpoint, endpoint path rejection,
+  bucket character rejection, trimming/normalization, timeout clamping, and
+  runnable descriptor state.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused Huawei package sync config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (94 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Secret Key Startup Validation
 
 - V2 now validates `LOGAGENT_V2_FETCH_SECRET_KEY` during settings loading when

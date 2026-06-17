@@ -1994,6 +1994,67 @@ class StoreTests(unittest.TestCase):
 
         self.assertEqual(settings.fetch_secret_key, valid_key)
 
+    def test_settings_validates_huawei_package_sync_when_enabled(self) -> None:
+        env_names = {
+            "LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED",
+            "LOGAGENT_V2_HUAWEI_OBS_ENDPOINT",
+            "LOGAGENT_V2_HUAWEI_OBS_BUCKET",
+            "LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX",
+            "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY",
+            "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY",
+            "LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN",
+            "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
+            "LOGAGENT_V2_HUAWEI_TIMEOUT_SECONDS",
+        }
+        previous = {key: os.environ.get(key) for key in env_names}
+        base = {
+            "LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED": "1",
+            "LOGAGENT_V2_HUAWEI_OBS_ENDPOINT": "https://obs.example.com/",
+            "LOGAGENT_V2_HUAWEI_OBS_BUCKET": "valid-bucket.1",
+            "LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX": "/packages/demo/",
+            "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY": " access ",
+            "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY": " secret ",
+            "LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN": " token ",
+            "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN": " postgresql://example/db ",
+            "LOGAGENT_V2_HUAWEI_TIMEOUT_SECONDS": "0",
+        }
+        try:
+            os.environ.update(base)
+            os.environ["LOGAGENT_V2_HUAWEI_OBS_ENDPOINT"] = ""
+            with self.assertRaisesRegex(ValueError, "HUAWEI_OBS_ENDPOINT.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_HUAWEI_OBS_ENDPOINT"] = "https://obs.example.com/path"
+            with self.assertRaisesRegex(ValueError, "HUAWEI_OBS_ENDPOINT.*path"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_HUAWEI_OBS_ENDPOINT"] = "https://obs.example.com/"
+            os.environ["LOGAGENT_V2_HUAWEI_OBS_BUCKET"] = "bad_bucket"
+            with self.assertRaisesRegex(ValueError, "HUAWEI_OBS_BUCKET.*unsupported"):
+                Settings.from_env()
+
+            os.environ.update(base)
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        huawei = settings.huawei_package_sync
+        self.assertTrue(huawei.enabled)
+        self.assertEqual(huawei.obs_endpoint, "https://obs.example.com")
+        self.assertEqual(huawei.obs_bucket, "valid-bucket.1")
+        self.assertEqual(huawei.obs_object_prefix, "packages/demo")
+        self.assertEqual(huawei.obs_access_key, "access")
+        self.assertEqual(huawei.obs_secret_key, "secret")
+        self.assertEqual(huawei.obs_security_token, "token")
+        self.assertEqual(huawei.gaussdb_dsn, "postgresql://example/db")
+        self.assertEqual(huawei.timeout_seconds, 1)
+        descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
+        self.assertTrue(descriptors["logagent.huawei_cloud_package_sync"]["runnable"])
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",

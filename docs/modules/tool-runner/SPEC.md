@@ -170,7 +170,7 @@ Huawei package sync 的 `result.json` 至少包含：
   `$` shell prompt, matching the Rust/V1 import tolerance, while still rejecting
   unsupported flags instead of broadening the network or filesystem boundary.
   `--location` maps to endpoint `followRedirects=true`.
-- Huawei package sync 默认关闭；启用后 OBS access key、secret key、可选 security token 和 GaussDB password 必须来自环境变量。用户只能引用 Server 已完成 upload，不能传本地路径或 URL；OBS `objectKey` 必须是相对 key，不能包含 `..`、空 path segment、反斜杠、`?`、`#` 或控制字符。该工具会执行受保护 API 使用者提交的 SQL，首版不对 SQL 做表名或语句类型白名单。
+- Huawei package sync 默认关闭；启用后 OBS endpoint 必须是 `http/https` 且不含 path/query/fragment，bucket 只允许字母、数字、`.` 和 `-`，OBS access key、secret key、可选 security token 和 V2 GaussDB DSN 必须来自环境变量并在启动时校验。用户只能引用 Server 已完成 upload，不能传本地路径或 URL；OBS `objectKey` 和默认 `object_prefix` 必须是相对 key，不能包含 `..`、空 path segment、反斜杠、`?`、`#` 或控制字符。该工具会执行受保护 API 使用者提交的 SQL，首版不对 SQL 做表名或语句类型白名单。
 
 ## 验收标准
 
