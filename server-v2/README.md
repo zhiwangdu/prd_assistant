@@ -314,11 +314,14 @@ GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
 POST /api/v2/metadata/instances/:instance_id/refresh
 DELETE /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/clusters/:cluster_id
+GET  /api/v2/metadata/clusters/:cluster_id/nodes
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
+POST /api/v2/metadata/snapshots/fetch
 POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
@@ -798,6 +801,10 @@ upserts the normalized snapshot and marks the draft `confirmed`.
 snapshot from the raw JSON already saved with the instance and upserts the
 instance row again. It is useful after normalizer changes and does not perform
 network fetches.
+`GET /api/v2/metadata/clusters/<cluster_id>` and `/nodes` derive cluster detail
+and node lists from persisted snapshots. `POST /api/v2/metadata/snapshots/fetch`
+fetches and normalizes a remote snapshot without creating an import draft or
+persisting an instance.
 
 URL fetch uses the same default-off Fetch boundary:
 `LOGAGENT_V2_FETCH_ENABLED=1`, exact host/host:port

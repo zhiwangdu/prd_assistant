@@ -3574,6 +3574,54 @@ fi
             self.assertEqual(instances[0]["instanceId"], "inst-preview")
             self.assertEqual(instances[0]["nodeCount"], 1)
 
+    def test_metadata_cluster_routes_derive_from_snapshots(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            import_metadata(
+                store,
+                instance_id="inst-cluster",
+                template_type="json",
+                content=json.dumps(
+                    {
+                        "cluster": {
+                            "clusterId": "cluster-route",
+                            "nodes": [{"nodeId": "n1", "host": "127.0.0.1"}],
+                            "databases": [{"name": "db0"}],
+                        }
+                    }
+                ),
+                remark="cluster route",
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                cluster_response = client.get(
+                    "/api/v2/metadata/clusters/cluster-route",
+                    headers=headers,
+                )
+                self.assertEqual(cluster_response.status_code, 200)
+                self.assertEqual(
+                    cluster_response.json()["cluster"]["clusterId"],
+                    "cluster-route",
+                )
+                nodes_response = client.get(
+                    "/api/v2/metadata/clusters/cluster-route/nodes",
+                    headers=headers,
+                )
+                self.assertEqual(nodes_response.status_code, 200)
+                self.assertEqual(nodes_response.json()["nodes"][0]["nodeId"], "n1")
+                missing = client.get(
+                    "/api/v2/metadata/clusters/missing",
+                    headers=headers,
+                )
+                self.assertEqual(missing.status_code, 404)
+
     def test_metadata_refresh_rebuilds_snapshot_from_stored_raw(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
@@ -3670,6 +3718,34 @@ fi
                     url=url,
                 )
                 self.assertEqual(direct["instance"]["instanceId"], "inst-url-direct")
+                instance_count = len(store.list_metadata_instances())
+
+                from fastapi.testclient import TestClient
+                from logagent_v2.api import create_app
+
+                with TestClient(create_app(settings)) as client:
+                    fetched_snapshot = client.post(
+                        "/api/v2/metadata/snapshots/fetch",
+                        headers={"Authorization": "Bearer test"},
+                        json={
+                            "instanceId": "inst-url-snapshot",
+                            "templateType": "opengemini",
+                            "url": url,
+                            "remark": "snapshot only",
+                        },
+                    )
+                self.assertEqual(fetched_snapshot.status_code, 200)
+                fetched_body = fetched_snapshot.json()
+                self.assertEqual(
+                    fetched_body["instance"]["instanceId"],
+                    "inst-url-snapshot",
+                )
+                self.assertEqual(fetched_body["fetch"]["statusCode"], 200)
+                self.assertIn("token=__REDACTED__", fetched_body["fetch"]["url"])
+                self.assertEqual(
+                    len(store.list_metadata_instances()),
+                    instance_count,
+                )
 
                 blocked_settings = Settings(
                     data_dir=Path(tmp),

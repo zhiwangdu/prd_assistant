@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Cluster and Snapshot Fetch APIs
+
+- Added V2 Metadata cluster detail and cluster node routes derived from
+  persisted instance snapshots: `/api/v2/metadata/clusters/:cluster_id` and
+  `/api/v2/metadata/clusters/:cluster_id/nodes`.
+- Added `/api/v2/metadata/snapshots/fetch` for direct remote snapshot fetch and
+  normalization without creating an import draft or persisting an instance.
+- Reused the existing V2 Fetch allowlist/redaction boundary for snapshot URL
+  reads and kept snapshot normalization shared with import preview/confirm.
+- Updated V2 Server and Metadata docs/specs.
+- Verification passed: focused Metadata cluster/snapshot-fetch API regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (73 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 pprof Catalog and Export Compatibility
 
 - Aligned V2 `pprof_analyzer` catalog metadata with the Rust/V1 configured

@@ -21,6 +21,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - Instance 支持可选 `remark` 备注名，openGemini 实时加载和导入预览可随 `instanceId` 一起提交。
 - 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看；重复导入同一个 `instanceId` 会按新快照覆盖，并清理旧 cluster/node 残留。
 - 已导入 openGemini Instance 可用保存的 `rawSnapshot` 手动刷新归一化快照，也可删除单条 Instance 及其对应 cluster/node 记录。
+- Python V2 已补齐从持久化 snapshot 派生的 cluster detail / cluster nodes 查询，以及不落库的远端 snapshot fetch。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
@@ -170,10 +171,17 @@ Python V2 clean-room Server 已提供等价刷新能力：
 
 ```http
 POST /api/v2/metadata/instances/:instance_id/refresh
+GET /api/v2/metadata/clusters/:cluster_id
+GET /api/v2/metadata/clusters/:cluster_id/nodes
+POST /api/v2/metadata/snapshots/fetch
 ```
 
 V2 刷新从 SQLite 中已保存的 `raw_json` 重新运行当前 normalizer 并覆盖
 `metadata_instances.snapshot_json`，不会重新请求原始 URL。
+V2 cluster 查询从已导入 instance snapshot 派生，不新增独立 cluster 表。
+`snapshots/fetch` 使用同一 Fetch allowlist 边界拉取 URL，解析并归一化后直接
+返回 `instance`、`cluster`、`nodes` 和 `snapshot`，不创建 import draft 或
+持久化 instance。
 
 Python V2 task MCP 也提供 Rust V1 兼容的
 `logagent.get_metadata_topology` 和 `logagent.query_metadata`。前者返回当前

@@ -142,6 +142,49 @@ def import_metadata_from_url(
     return confirmed
 
 
+def fetch_metadata_snapshot_from_url(
+    settings: Settings,
+    instance_id: str,
+    template_type: str,
+    url: str,
+    remark: str | None = None,
+) -> JsonObject:
+    template_type = template_type.lower()
+    fetched = fetch_text(settings, url)
+    raw = parse_metadata_content(template_type, fetched["content"])
+    snapshot = normalize_metadata_snapshot(instance_id, template_type, raw, remark)
+    cluster = snapshot.get("cluster")
+    if not isinstance(cluster, dict):
+        raise ValueError("metadata snapshot has no cluster")
+    nodes = cluster.get("nodes") if isinstance(cluster.get("nodes"), list) else []
+    return {
+        "instance": snapshot.get("instance"),
+        "cluster": cluster,
+        "nodes": nodes,
+        "snapshot": snapshot,
+        "fetch": {
+            "url": fetched["url"],
+            "statusCode": fetched["statusCode"],
+            "sizeBytes": fetched["sizeBytes"],
+        },
+    }
+
+
+def get_metadata_cluster(store: Store, cluster_id: str) -> JsonObject:
+    for instance in store.list_metadata_instances():
+        snapshot = store.get_metadata_snapshot(instance["instanceId"])
+        cluster = snapshot.get("cluster")
+        if isinstance(cluster, dict) and cluster.get("clusterId") == cluster_id:
+            return cluster
+    raise KeyError(f"unknown metadata cluster {cluster_id}")
+
+
+def list_metadata_cluster_nodes(store: Store, cluster_id: str) -> list[JsonObject]:
+    cluster = get_metadata_cluster(store, cluster_id)
+    nodes = cluster.get("nodes")
+    return [node for node in ensure_list(nodes) if isinstance(node, dict)]
+
+
 def refresh_metadata_instance(store: Store, instance_id: str) -> JsonObject:
     current = store.get_metadata_instance(instance_id)
     raw = current.get("raw")

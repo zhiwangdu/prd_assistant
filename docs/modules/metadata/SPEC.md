@@ -20,6 +20,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - openGemini 导入要求用户手工提供 `instanceId`，并以该值作为唯一业务键；原始 `ClusterID` 只作为 `sourceClusterId` 标签保留。
 - Instance 支持可选 `remark` 备注名；openGemini 拉取和导入请求可携带，空值不保存，服务端限制最长 120 个字符。
 - 已导入 Instance 列表、按 InstanceID 读取拓扑快照、按保存的 Raw JSON 手动刷新快照、删除单条 Instance。
+- Python V2 已补齐从持久化 snapshot 派生的 cluster detail / cluster nodes 查询，以及不落库的远端 snapshot fetch。
 - 重复确认导入同一个 `instanceId` 时必须按新快照覆盖，并清理该实例旧 cluster/node 记录，避免 UI 和 task context 读到残留拓扑。
 - WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
@@ -199,15 +200,22 @@ POST /api/mcp/readonly
 ```
 
 Python V2 clean-room Server 在 `/api/v2/metadata/*` 下提供同等 raw snapshot
-刷新入口：
+刷新、cluster 查询和不落库 snapshot fetch：
 
 ```http
 POST /api/v2/metadata/instances/:instance_id/refresh
+GET /api/v2/metadata/clusters/:cluster_id
+GET /api/v2/metadata/clusters/:cluster_id/nodes
+POST /api/v2/metadata/snapshots/fetch
 ```
 
 该接口读取 SQLite `metadata_instances.raw_json`，按当前 `templateType` 和
 `remark` 重新生成 `snapshot_json`。它不执行网络请求；需要重新拉取 URL 时应走
 fetch import preview/confirm 或 direct fetch import。
+V2 cluster 查询从已导入 instance snapshot 派生，不新增独立 cluster/node 表；
+`snapshots/fetch` 使用同一 Fetch allowlist 边界拉取 URL，返回归一化
+`instance`、`cluster`、`nodes` 和完整 `snapshot`，但不创建 import draft 或
+持久化 instance。
 
 导入请求建议：
 

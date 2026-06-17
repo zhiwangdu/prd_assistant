@@ -273,11 +273,14 @@ GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
 POST /api/v2/metadata/instances/:instance_id/refresh
 DELETE /api/v2/metadata/instances/:instance_id
+GET  /api/v2/metadata/clusters/:cluster_id
+GET  /api/v2/metadata/clusters/:cluster_id/nodes
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
+POST /api/v2/metadata/snapshots/fetch
 POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
@@ -775,6 +778,11 @@ the draft snapshot into `metadata_instances` and marks the draft `confirmed`.
 stored raw JSON from SQLite, reruns the current normalizer with the same
 template type and remark, and overwrites the normalized snapshot. It does not
 fetch the original URL again; URL refresh remains an explicit fetch import.
+`GET /api/v2/metadata/clusters/:cluster_id` and `/nodes` derive V1-style
+cluster detail and node-list views from persisted V2 snapshots.
+`POST /api/v2/metadata/snapshots/fetch` fetches, parses, and normalizes a
+remote snapshot without creating an import draft or mutating
+`metadata_instances`.
 
 URL fetch import uses the same default-off Fetch boundary. It requires
 `LOGAGENT_V2_FETCH_ENABLED=1`, an exact host or host:port match in

@@ -45,8 +45,11 @@ from .exports import build_skills_zip, build_tools_zip
 from .ids import new_id
 from .metadata import (
     confirm_metadata_import,
+    fetch_metadata_snapshot_from_url,
+    get_metadata_cluster,
     import_metadata_from_url,
     import_metadata,
+    list_metadata_cluster_nodes,
     metadata_import_preview,
     preview_metadata_import,
     preview_metadata_import_from_url,
@@ -1278,6 +1281,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/metadata/clusters/{cluster_id}")
+    async def get_metadata_cluster_api(_: Auth, cluster_id: str) -> dict:
+        try:
+            return {"cluster": get_metadata_cluster(store, cluster_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/metadata/clusters/{cluster_id}/nodes")
+    async def list_metadata_cluster_nodes_api(_: Auth, cluster_id: str) -> dict:
+        try:
+            return {
+                "clusterId": cluster_id,
+                "nodes": list_metadata_cluster_nodes(store, cluster_id),
+            }
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/v2/metadata/imports")
     async def list_metadata_imports(
         _: Auth,
@@ -1341,6 +1361,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return import_metadata_from_url(
                 settings=settings,
                 store=store,
+                instance_id=payload.instanceId,
+                template_type=payload.templateType,
+                url=payload.url,
+                remark=payload.remark,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/metadata/snapshots/fetch")
+    async def fetch_metadata_snapshot_api(
+        _: Auth, payload: MetadataImportFetchCreate
+    ) -> dict:
+        try:
+            return fetch_metadata_snapshot_from_url(
+                settings=settings,
                 instance_id=payload.instanceId,
                 template_type=payload.templateType,
                 url=payload.url,
