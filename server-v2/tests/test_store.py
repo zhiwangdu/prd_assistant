@@ -205,6 +205,7 @@ class StoreTests(unittest.TestCase):
                         "sourceUrl": "webui-smoke",
                         "instanceId": "inst-a",
                         "nodeId": "node-a",
+                        "analysisMode": "code_investigation",
                         "analysisLanguage": "en-US",
                         "systemContextIds": ["ctx-a"],
                         "skillIds": ["skill-a"],
@@ -220,9 +221,11 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(session["sourceUrl"], "webui-smoke")
                 self.assertEqual(session["instanceId"], "inst-a")
                 self.assertEqual(session["nodeId"], "node-a")
+                self.assertEqual(session["analysisMode"], "code_investigation")
                 self.assertEqual(session["analysisLanguage"], "en-US")
                 self.assertEqual(session["systemContextIds"], ["ctx-a"])
                 self.assertEqual(session["skillIds"], ["skill-a"])
+                self.assertEqual(session["workspace"]["mode"], "code_investigation")
                 self.assertEqual(session["status"], "draft")
 
                 patched = client.patch(
@@ -234,6 +237,7 @@ class StoreTests(unittest.TestCase):
                         "sourceUrl": None,
                         "instanceId": "inst-b",
                         "nodeId": None,
+                        "analysisMode": "fix",
                         "analysisLanguage": "zh-CN",
                         "systemContextIds": ["ctx-b"],
                         "status": "ready",
@@ -246,8 +250,10 @@ class StoreTests(unittest.TestCase):
                 self.assertIsNone(patched_body["sourceUrl"])
                 self.assertEqual(patched_body["instanceId"], "inst-b")
                 self.assertIsNone(patched_body["nodeId"])
+                self.assertEqual(patched_body["analysisMode"], "fix")
                 self.assertEqual(patched_body["analysisLanguage"], "zh-CN")
                 self.assertEqual(patched_body["systemContextIds"], ["ctx-b"])
+                self.assertEqual(patched_body["workspace"]["mode"], "fix")
                 self.assertEqual(patched_body["status"], "ready")
 
                 fetched = client.get(
@@ -258,6 +264,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(fetched.json()["title"], "Updated title")
                 self.assertEqual(fetched.json()["instanceId"], "inst-b")
                 self.assertIsNone(fetched.json()["sourceUrl"])
+                self.assertEqual(fetched.json()["analysisMode"], "fix")
 
                 uploaded = client.post(
                     f"/api/v2/sessions/{session_id}/uploads",
@@ -315,6 +322,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(task_body["sessionId"], session_id)
                 self.assertEqual(task_body["task"]["taskId"], task_body["taskId"])
                 self.assertEqual(task_body["taskKind"], "log_analysis")
+                self.assertEqual(task_body["analysisMode"], "fix")
                 self.assertEqual(task_body["status"], "QUEUED")
                 after_task = client.get(
                     f"/api/v2/sessions/{session_id}",
@@ -339,6 +347,7 @@ class StoreTests(unittest.TestCase):
                     [task_body["taskId"]],
                 )
                 self.assertEqual(tasks.json()["tasks"][0]["status"], "QUEUED")
+                self.assertEqual(tasks.json()["tasks"][0]["analysisMode"], "fix")
                 self.assertEqual(tasks.json()["runs"][0]["id"], task_body["taskId"])
 
                 timeline = client.get(

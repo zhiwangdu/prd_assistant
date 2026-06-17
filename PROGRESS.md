@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Session Analysis Mode
+
+- V2 Session alias APIs now persist and return `analysisMode` on create, read,
+  list, and PATCH instead of forcing Session-created Workspaces to `diagnose`.
+- Session task creation/listing now inherits the current Session
+  `analysisMode`, so Claude Code permission profile selection stays aligned
+  for `diagnose`, `code_investigation`, and `fix` runs.
+- Added regression coverage for creating a Session in `code_investigation`,
+  PATCHing it to `fix`, and verifying the resulting TaskSummary mode.
+- Updated V2 Server and Interfaces README/SPEC docs.
+- Verification passed: focused Session alias regression,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Claude Permission Profiles
 
 - V2 Claude Code provider now selects Rust/V1-style permission profiles from

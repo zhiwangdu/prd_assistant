@@ -36,7 +36,7 @@ domain_context.json
 
 公共 JSON 必须包含 `schemaVersion`。证据引用使用 workspace 相对路径和稳定 selector，禁止把绝对敏感路径暴露给模型或 WebUI。
 
-Log Analysis 公开历史入口是 Session。Session 保存草稿、upload 引用、task run 列表、active task 和 timeline；task workspace 仍是每次执行的不可变快照。
+Log Analysis 公开历史入口是 Session。Session 保存草稿、`analysisMode`、语言、upload 引用、task run 列表、active task 和 timeline；task workspace 仍是每次执行的不可变快照。
 
 Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 

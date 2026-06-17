@@ -110,6 +110,7 @@ class SessionCreate(BaseModel):
     sourceUrl: str | None = Field(default=None, max_length=2000)
     instanceId: str | None = Field(default=None, max_length=200)
     nodeId: str | None = Field(default=None, max_length=200)
+    analysisMode: Literal["diagnose", "code_investigation", "fix"] = "diagnose"
     analysisLanguage: Literal["zh-CN", "en-US"] = "zh-CN"
     systemContextIds: list[str] = Field(default_factory=list, max_length=20)
     skillIds: list[str] = Field(default_factory=list, max_length=20)
@@ -121,6 +122,7 @@ class SessionUpdate(BaseModel):
     sourceUrl: str | None = Field(default=None, max_length=2000)
     instanceId: str | None = Field(default=None, max_length=200)
     nodeId: str | None = Field(default=None, max_length=200)
+    analysisMode: Literal["diagnose", "code_investigation", "fix"] | None = None
     analysisLanguage: Literal["zh-CN", "en-US"] | None = None
     systemContextIds: list[str] | None = Field(default=None, max_length=20)
     skillIds: list[str] | None = Field(default=None, max_length=20)
@@ -451,6 +453,7 @@ def _session_record(store: Store, workspace: dict) -> dict:
         "sourceUrl": workspace.get("sourceUrl"),
         "instanceId": workspace.get("instanceId"),
         "nodeId": workspace.get("nodeId"),
+        "analysisMode": workspace.get("mode"),
         "analysisLanguage": workspace.get("language"),
         "systemContextIds": workspace.get("systemContextIds", []),
         "skillIds": workspace.get("skillIds", []),
@@ -604,7 +607,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         question = _session_create_question(payload.question)
         workspace = store.create_workspace(
             question,
-            "diagnose",
+            payload.analysisMode,
             payload.analysisLanguage,
             skill_ids=payload.skillIds,
             title=_session_create_title(payload.title, question),
@@ -654,6 +657,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 node_id=(
                     _clean_optional(payload.nodeId) if "nodeId" in fields_set else UNSET
                 ),
+                mode=payload.analysisMode,
                 language=payload.analysisLanguage,
                 system_context_ids=payload.systemContextIds,
                 skill_ids=payload.skillIds,

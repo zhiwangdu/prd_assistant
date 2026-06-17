@@ -17,12 +17,13 @@ slice provides the durable foundation for the V2 product model:
 - Session-first HTTP aliases under `/api/v2/sessions`: V2 maps `sessionId`
   to the Workspace id, maps `taskIds` to Run ids, persists Rust-style Session
   fields (`title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
-  `skillIds`, and language), exposes Session uploads, restartable upload
-  sessions, JSON upload attachment, pre-run upload detach, task
-  creation/listing, and workspace-level timeline events, maps queued tasks to
-  Session `ready`, and rejects Session deletion while any task is unfinished.
-  Session task APIs return Rust-style TaskSummary fields while retaining raw
-  V2 Run records under `runs` for diagnostics.
+  `skillIds`, `analysisMode`, and language), exposes Session uploads,
+  restartable upload sessions, JSON upload attachment, pre-run upload detach,
+  task creation/listing, and workspace-level timeline events, maps queued tasks
+  to Session `ready`, and rejects Session deletion while any task is
+  unfinished. Session task APIs return Rust-style TaskSummary fields including
+  the persisted `analysisMode` while retaining raw V2 Run records under `runs`
+  for diagnostics.
 - Native Agent import compatibility through `native_agent.server_api: "v2"`:
   Chrome Extension still calls local `/imports`; Native Agent creates or reuses
   a V2 `ws_...` Session and uploads through Session-scoped V2 APIs.

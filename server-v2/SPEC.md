@@ -51,15 +51,16 @@ Implemented in this slice:
 - Session-first API aliases for create/list/read/update/delete, uploads,
   restartable upload sessions, task creation/listing, and full Session
   timeline. `title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
-  `skillIds`, and language are persisted. `taskId` equals the underlying Run
-  id, `activeTaskId` is the newest Run, queued Runs map to Session `ready`, and
-  Session deletion is rejected while any Run is not `succeeded` or `failed`.
+  `skillIds`, `analysisMode`, and language are persisted. `taskId` equals the
+  underlying Run id, `activeTaskId` is the newest Run, queued Runs map to
+  Session `ready`, and Session deletion is rejected while any Run is not
+  `succeeded` or `failed`.
   Session uploadIds are stored as an attachment set: direct uploads auto-attach,
   JSON attach can reattach existing Workspace uploads, and detach is allowed
   only before any task run exists. Session task create/list responses return
   Rust-style TaskSummary objects with `taskId`, `taskKind`, `sessionId`,
-  `analysisLanguage`, `status`, `phase`, and `url`, while retaining raw Run
-  records under `runs`.
+  `analysisMode`, `analysisLanguage`, `status`, `phase`, and `url`, while
+  retaining raw Run records under `runs`.
 - Native Agent V2 target support: browser imports still enter the local Native
   Agent `/imports` endpoint, and `native_agent.server_api=v2` maps them to
   `POST /api/v2/sessions` plus Session-scoped upload APIs.
