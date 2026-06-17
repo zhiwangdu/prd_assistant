@@ -30,7 +30,8 @@ slice provides the durable foundation for the V2 product model:
   `logagent.get_log_slice`.
 - Tool Plugin registry exposed through `/api/v2/tools`, readonly MCP tool
   catalog, manual tool-run APIs, and task MCP `logagent.run_domain_tool`.
-  Configured subprocess tools with `{input_file}` consume matching
+  Configured subprocess tools with `{input_file}` accept explicit
+  `inputFile`/`inputFiles` workspace paths, otherwise consume matching
   materialized `tool_inputs` before execution, then fall back to manifest file
   patterns, initial grep keyword matches, or raw upload artifacts for storage
   analyzers. Generic JSON stdout and InfluxQL analyzer report/compare stdout
@@ -565,12 +566,13 @@ Log slices write a `log_slice` evidence row and return:
 log_slices/<slice_id>.json#lines
 ```
 
-Configured tools can only be invoked by `toolId`; the model cannot provide an
-executable path, shell command, or argv. Task MCP `logagent.run_domain_tool`
-only exposes configured subprocess tools. Built-ins are available through their
-dedicated task MCP tools or the protected manual Tools API according to each
-descriptor's `runnable` policy. Tool stdout is parsed as JSON when possible and
-persisted as `tool_result` evidence. Generic JSON output can use
+Configured tools can be invoked by V2 `toolId` or by the V1-compatible
+`tool` field; the model cannot provide an executable path, shell command, or
+argv. Task MCP `logagent.run_domain_tool` only exposes configured subprocess
+tools. Built-ins are available through their dedicated task MCP tools or the
+protected manual Tools API according to each descriptor's `runnable` policy.
+Tool stdout is parsed as JSON when possible and persisted as `tool_result`
+evidence. Generic JSON output can use
 `summary`, `message`, or `title`, plus `findings`, `issues`, or `diagnostics`.
 InfluxQL analyzer report JSON is adapted into a compact summary and findings
 for special rules, parse errors, realtime classification, fingerprints, compare
@@ -580,13 +582,18 @@ Configured tools may declare `paramsSchema`. Task MCP `logagent.run_domain_tool`
 then accepts `params`, validates a conservative object-schema subset
 (`required`, `additionalProperties`, primitive `type`, and `enum`), and replaces
 `{params.name}` placeholders in configured argv. Commands and argv templates
-still come only from Server configuration.
+still come only from Server configuration. For tools with `{input_file}`, V2
+adds a reserved `params.inputFiles` array to the descriptor; task MCP also
+accepts V1-style top-level `inputFile` and maps it to that same selector.
 
-If a configured tool argument contains `{input_file}`, V2 reads the current
-run's latest `tool_input_index` evidence and selects entries whose `toolIds`
-include the requested tool. The placeholder is replaced with the local artifact
-path for that input. Each selected input gets a stable action id derived from
-the tool id and virtual input path, so final refs use:
+If a configured tool argument contains `{input_file}`, explicit selectors are
+resolved first. They can reference current Workspace text paths, their
+`extracted/...` virtual paths, or `tool_inputs/...` entries from the current
+run's latest `tool_input_index`. Without explicit selectors, V2 reads that
+latest `tool_input_index` evidence and selects entries whose `toolIds` include
+the requested tool. The placeholder is replaced with the local artifact path
+for that input. Each selected input gets a stable action id derived from the
+tool id and virtual input path, so final refs use:
 
 ```text
 tool_results/<tool_id>_<input_hash>/result.json#findings/<index>

@@ -86,6 +86,7 @@ from logagent_v2.tools import (
     parse_json,
     summary_from_stdout,
     tool_descriptors,
+    validate_manual_tool_run,
 )
 from logagent_v2.webui_static import WebuiStaticNotFound, resolve_webui_asset
 from logagent_v2.worker import JobRunner
@@ -1842,6 +1843,115 @@ class StoreTests(unittest.TestCase):
             self.assertNotEqual(
                 evidence[0]["payload"]["actionId"], evidence[1]["payload"]["actionId"]
             )
+
+    def test_task_mcp_run_domain_tool_accepts_legacy_tool_input_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "print(json.dumps({'summary':p.read_text().splitlines()[0],"
+                "'findings':[{'message':p.name}]}))"
+            )
+            tool = ToolDefinition(
+                id="explicit_tool",
+                display_name="Explicit Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("explicit input", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "query.log",
+                b"explicit line\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "query.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 36,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"tool": "explicit_tool", "inputFile": "query.log"},
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["result"]["summary"], "explicit line")
+            self.assertEqual(payload["result"]["inputFile"], "extracted/query.log")
+            self.assertIn("explicit_tool_", payload["result"]["findings"][0]["message"])
+
+    def test_manual_configured_tool_run_uses_explicit_input_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "print(json.dumps({'summary':p.read_text().splitlines()[0],"
+                "'findings':[{'message':p.name}]}))"
+            )
+            tool = ToolDefinition(
+                id="manual_explicit_tool",
+                display_name="Manual Explicit Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual explicit input", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "manual.log",
+                b"manual line\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "manual.log", artifact["id"])
+            descriptor = tool_descriptors(settings)[0]
+            self.assertEqual(descriptor["paramsTemplate"], {"inputFiles": []})
+            self.assertIn("inputFiles", descriptor["paramsSchema"]["properties"])
+
+            params = validate_manual_tool_run(
+                settings,
+                "manual_explicit_tool",
+                upload_count=0,
+                params={"inputFiles": ["manual.log"]},
+            )
+            with self.assertRaises(ValueError):
+                validate_manual_tool_run(
+                    settings,
+                    "manual_explicit_tool",
+                    upload_count=0,
+                    params={"inputFiles": ["../manual.log"]},
+                )
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="manual_explicit_tool",
+                params=params,
+            )
+            executed = execute_tool_run(settings, store, tool_run["id"])
+
+            self.assertEqual(executed["result"]["summary"], "manual line")
+            self.assertEqual(executed["result"]["inputFile"], "extracted/manual.log")
+            finished = store.get_run(tool_run["id"])
+            self.assertEqual(finished["status"], "succeeded")
 
     def test_tool_stdout_parses_influxql_report(self) -> None:
         parsed = parse_json(

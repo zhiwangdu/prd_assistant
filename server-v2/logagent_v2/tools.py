@@ -69,9 +69,8 @@ def tool_descriptors(settings: Settings) -> list[JsonObject]:
                 "keywords": list(tool.match_keywords),
             },
             "acceptedSuffixes": accepted_suffixes_from_patterns(tool.match_file_patterns),
-            "paramsSchema": tool.params_schema
-            or {"type": "object", "properties": {}, "additionalProperties": False},
-            "paramsTemplate": {},
+            "paramsSchema": configured_tool_params_schema(tool),
+            "paramsTemplate": configured_tool_params_template(tool),
             "outputViews": ["summary", "findings", "stdout", "stderr"],
         }
         for tool in settings.tools
@@ -96,6 +95,31 @@ def accepted_suffixes_from_patterns(patterns: tuple[str, ...]) -> list[str]:
         if pattern.startswith("*.") and "/" not in pattern:
             suffixes.append(pattern[1:])
     return suffixes
+
+
+def configured_tool_params_schema(tool: ToolDefinition) -> JsonObject:
+    base = tool.params_schema or {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
+    schema = dict(base)
+    properties = schema.get("properties")
+    properties = dict(properties) if isinstance(properties, dict) else {}
+    if tool_requires_input(tool):
+        properties["inputFiles"] = {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Current Workspace paths under extracted/... or tool_inputs/...",
+        }
+    schema["properties"] = properties
+    return schema
+
+
+def configured_tool_params_template(tool: ToolDefinition) -> JsonObject:
+    if tool_requires_input(tool):
+        return {"inputFiles": []}
+    return {}
 
 
 def preprocess_descriptor() -> JsonObject:
@@ -297,7 +321,9 @@ def validate_manual_tool_run(
         raise ValueError(f"tool {tool_id} is not runnable")
     min_files = int(descriptor.get("minFiles", 0))
     max_files = int(descriptor.get("maxFiles", 0))
-    if upload_count < min_files or upload_count > max_files:
+    input_file_count = configured_input_file_count(settings, tool_id, params or {})
+    effective_file_count = input_file_count or upload_count
+    if effective_file_count < min_files or effective_file_count > max_files:
         raise ValueError(f"tool {tool_id} expects {min_files}..{max_files} upload(s)")
     return validate_tool_run_params(settings, tool_id, params or {})
 
@@ -365,7 +391,7 @@ def validate_tool_run_params(
             raise ValueError("logagent.fetch requires endpointId")
         return {"endpointId": endpoint_id.strip()}
     tool = get_tool(settings, tool_id)
-    return validate_tool_params(tool, params)
+    return validate_configured_tool_params(tool, params)
 
 
 def execute_tool_run(settings: Settings, store: Store, run_id: str) -> JsonObject:
@@ -439,8 +465,17 @@ def run_configured_tool(
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
         raise ValueError(f"tool {tool_id} is disabled")
-    normalized_params = validate_tool_params(tool, params or {})
-    input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool, upload_ids or [])
+    tool_params, explicit_input_files = split_configured_tool_params(tool, params or {})
+    normalized_params = validate_tool_params(tool, tool_params)
+    input_entries = select_tool_inputs(
+        settings,
+        store,
+        workspace_id,
+        run_id,
+        tool,
+        upload_ids or [],
+        explicit_input_files=explicit_input_files,
+    )
     if tool_requires_input(tool) and not input_entries:
         raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
     if input_entries:
@@ -555,9 +590,20 @@ def select_tool_inputs(
     run_id: str,
     tool: ToolDefinition,
     upload_ids: list[str] | None = None,
+    explicit_input_files: list[str] | None = None,
 ) -> list[JsonObject]:
     if not tool_requires_input(tool):
         return []
+    if explicit_input_files:
+        return select_explicit_tool_inputs(
+            settings,
+            store,
+            workspace_id,
+            run_id,
+            tool,
+            explicit_input_files,
+            upload_ids or [],
+        )
     index = latest_tool_input_index(settings, store, run_id)
     inputs = index.get("inputs") if isinstance(index, dict) else None
     selected = []
@@ -576,6 +622,60 @@ def select_tool_inputs(
     if selected:
         return selected
     return select_fallback_tool_inputs(settings, store, workspace_id, run_id, tool, upload_ids or [])
+
+
+def select_explicit_tool_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    run_id: str,
+    tool: ToolDefinition,
+    input_files: list[str],
+    upload_ids: list[str] | None = None,
+) -> list[JsonObject]:
+    if len(input_files) > tool.max_input_files:
+        raise ValueError(
+            f"tool {tool.id} accepts at most {tool.max_input_files} input file(s)"
+    )
+    index = latest_tool_input_index(settings, store, run_id)
+    indexed_inputs = index.get("inputs") if isinstance(index, dict) else []
+    if not isinstance(indexed_inputs, list):
+        indexed_inputs = []
+    tool_inputs_by_path = {
+        entry["path"]: entry
+        for entry in indexed_inputs
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+    }
+    uploads = store.list_uploads_by_ids(workspace_id, upload_ids or [])
+    text_files = collect_text_files(settings, uploads)
+    text_files_by_path: dict[str, TextFile] = {}
+    for text_file in text_files:
+        text_files_by_path[text_file.path] = text_file
+        text_files_by_path[fallback_virtual_path(text_file.path)] = text_file
+    upload_inputs_by_path = {
+        item["path"]: item for item in select_upload_artifact_inputs(uploads, tool)
+    }
+    selected = []
+    for input_file in input_files:
+        if input_file in tool_inputs_by_path:
+            entry = tool_inputs_by_path[input_file]
+            tool_ids = entry.get("toolIds")
+            if isinstance(tool_ids, list) and tool.id not in tool_ids:
+                raise ValueError(f"tool input {input_file} is not declared for {tool.id}")
+            selected.append(entry)
+            continue
+        if input_file in text_files_by_path:
+            selected.append(
+                materialize_fallback_tool_input(
+                    settings, store, workspace_id, tool, text_files_by_path[input_file]
+                )
+            )
+            continue
+        if input_file in upload_inputs_by_path:
+            selected.append(upload_inputs_by_path[input_file])
+            continue
+        raise ValueError(f"tool input file is not available in this workspace: {input_file}")
+    return selected
 
 
 def select_fallback_tool_inputs(
@@ -787,6 +887,81 @@ def format_tool_args(
         )
         result.append(formatted)
     return result
+
+
+def configured_input_file_count(
+    settings: Settings,
+    tool_id: str,
+    params: JsonObject,
+) -> int:
+    if tool_id not in {tool.id for tool in settings.tools}:
+        return 0
+    return len(normalize_explicit_input_files(params.get("inputFiles")))
+
+
+def validate_configured_tool_params(
+    tool: ToolDefinition,
+    params: JsonObject,
+) -> JsonObject:
+    if not isinstance(params, dict):
+        raise ValueError("tool params must be an object")
+    input_files = normalize_explicit_input_files(params.get("inputFiles"))
+    if input_files and not tool_requires_input(tool):
+        raise ValueError(f"tool {tool.id} does not accept inputFiles")
+    tool_params = {key: value for key, value in params.items() if key != "inputFiles"}
+    normalized = validate_tool_params(tool, tool_params)
+    if input_files:
+        normalized["inputFiles"] = input_files
+    return normalized
+
+
+def split_configured_tool_params(
+    tool: ToolDefinition,
+    params: JsonObject | None,
+) -> tuple[JsonObject, list[str]]:
+    params = params or {}
+    if not isinstance(params, dict):
+        raise ValueError("tool params must be an object")
+    input_files = normalize_explicit_input_files(params.get("inputFiles"))
+    if input_files and not tool_requires_input(tool):
+        raise ValueError(f"tool {tool.id} does not accept inputFiles")
+    tool_params = {key: value for key, value in params.items() if key != "inputFiles"}
+    return tool_params, input_files
+
+
+def normalize_explicit_input_files(value: object) -> list[str]:
+    if value is None:
+        return []
+    raw_items: list[object]
+    if isinstance(value, str):
+        raw_items = [value]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raise ValueError("inputFiles must be a string or string array")
+    result = []
+    for item in raw_items:
+        if not isinstance(item, str):
+            raise ValueError("inputFiles must contain only strings")
+        normalized = normalize_workspace_input_path(item)
+        if normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def normalize_workspace_input_path(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    if not normalized:
+        raise ValueError("inputFiles must not contain empty paths")
+    path = Path(normalized)
+    if path.is_absolute():
+        raise ValueError("inputFiles must be workspace-relative paths")
+    parts = [part for part in normalized.split("/") if part]
+    if not parts or any(part in {".", ".."} for part in parts):
+        raise ValueError("inputFiles must not contain . or .. path segments")
+    if len(normalized) > 1000:
+        raise ValueError("inputFiles path is too long")
+    return "/".join(parts)
 
 
 def validate_tool_params(tool: ToolDefinition, params: JsonObject) -> JsonObject:

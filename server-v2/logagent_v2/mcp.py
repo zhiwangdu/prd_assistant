@@ -539,42 +539,59 @@ def call_request_approval(store: Store, run: dict, arguments: dict) -> dict:
 
 
 def run_domain_tool_descriptor(settings: Settings) -> dict:
+    configured_tool_ids = [
+        tool["toolId"]
+        for tool in tool_descriptors(settings)
+        if tool["enabled"] and tool.get("source") == "configured"
+    ]
     return {
         "name": "logagent.run_domain_tool",
-        "description": "Run a configured read-only diagnostic tool by toolId.",
+        "description": "Run a configured read-only diagnostic tool by toolId or legacy tool/inputFile.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "toolId": {
                     "type": "string",
-                    "enum": [
-                        tool["toolId"]
-                        for tool in tool_descriptors(settings)
-                        if tool["enabled"] and tool.get("source") == "configured"
-                    ],
+                    "enum": configured_tool_ids,
                 },
+                "tool": {
+                    "type": "string",
+                    "enum": configured_tool_ids,
+                },
+                "inputFile": {"type": "string"},
                 "params": {"type": "object"},
             },
-            "required": ["toolId"],
             "additionalProperties": False,
         },
     }
 
 
 def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments: dict) -> dict:
-    tool_id = arguments.get("toolId")
+    tool_id = arguments.get("toolId") or arguments.get("tool")
     if not isinstance(tool_id, str) or not tool_id:
         raise ValueError("logagent.run_domain_tool requires toolId")
     params = arguments.get("params")
     if params is not None and not isinstance(params, dict):
         raise ValueError("logagent.run_domain_tool params must be an object")
+    run_params = dict(params or {})
+    input_file = arguments.get("inputFile")
+    if input_file is not None:
+        if not isinstance(input_file, str):
+            raise ValueError("logagent.run_domain_tool inputFile must be a string")
+        existing = run_params.get("inputFiles")
+        if existing is None:
+            run_params["inputFiles"] = [input_file]
+        elif isinstance(existing, list):
+            run_params["inputFiles"] = [input_file, *existing]
+        else:
+            run_params["inputFiles"] = [input_file, existing]
     result = run_configured_tool(
         settings,
         store,
         run["workspace_id"],
         run["id"],
         tool_id,
-        params=params or {},
+        params=run_params,
     )
     payload = {
         "result": result["result"],

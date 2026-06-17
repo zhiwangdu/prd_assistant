@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Explicit Tool Inputs
+
+- Added V2 configured Tool Runner support for explicit current-Workspace input
+  selection through `params.inputFiles`.
+- Task MCP `logagent.run_domain_tool` now accepts both V2 `toolId` and
+  V1-compatible `tool` plus top-level `inputFile`, mapping legacy calls into
+  the same safe `inputFiles` selector.
+- Explicit tool inputs are workspace-relative only and resolve to known
+  manifest text paths, `extracted/...` virtual paths, `tool_inputs/...` entries,
+  or storage-upload artifacts where applicable; arbitrary local paths remain
+  rejected.
+- Configured tool descriptors now expose reserved `inputFiles` in
+  `paramsSchema`/`paramsTemplate` when the tool args contain `{input_file}`.
+- Added regression coverage for legacy task MCP `tool/inputFile` calls and
+  manual tool runs using `params.inputFiles` without re-uploading.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Binary Agent Provider
 
 - Added V2 `LOGAGENT_V2_AGENT_PROVIDER=binary` support for the Agent runtime,

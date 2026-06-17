@@ -95,6 +95,7 @@ Implemented in this slice:
   `LOGAGENT_V2_TOOLS_JSON` or the V2 analyzer executable environment variables,
   listed through `/api/v2/tools`, runnable through manual tool-run APIs, and
   exposed to task MCP `logagent.run_domain_tool`. Tools with `{input_file}`
+  can use explicit `inputFile`/`inputFiles` workspace selectors, otherwise
   consume matching materialized tool inputs before execution, then fall back to
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
   for storage analyzers. Generic JSON stdout and InfluxQL analyzer
@@ -497,9 +498,9 @@ Configured Tool Runner execution:
 LOGAGENT_V2_TOOLS_JSON
   -> /api/v2/tools descriptor
   -> optional manual POST /api/v2/tools/:tool_id/runs
-  -> MCP logagent.run_domain_tool { toolId, params? }
+  -> MCP logagent.run_domain_tool { toolId|tool, inputFile?, params? }
   -> optional paramsSchema validation
-  -> optional materialized tool input selection
+  -> optional explicit or materialized tool input selection
   -> fixed absolute command + fixed args with {input_file}/{params.name} substitution
   -> tool_result artifact/evidence
 ```
@@ -523,14 +524,18 @@ available, or the protected manual Tools API. The migrated built-ins are:
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
 validated `params`; results are stored as V2 artifacts/evidence and exposed
-through `/api/v2/tools/runs/:run_id/result`.
+through `/api/v2/tools/runs/:run_id/result`. Configured tools with
+`{input_file}` may pass reserved `params.inputFiles` to select existing
+Workspace inputs without re-uploading files.
 
 Configured tools may declare `paramsSchema`. V2 validates a conservative object
 schema subset: required fields, `additionalProperties=false`, primitive
 `type`, arrays, and `enum`. Validated params are recorded in `tool_result`
 artifacts/evidence and can be substituted into configured argv with
-`{params.<name>}` placeholders. Params affect the stable action id so different
-parameter sets do not reuse one result path.
+`{params.<name>}` placeholders. For `{input_file}` tools, V2 augments the
+descriptor with reserved `inputFiles` but never substitutes it into argv unless
+the configured args explicitly contain `{input_file}`. Params affect the stable
+action id so different parameter sets do not reuse one result path.
 
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and
@@ -564,17 +569,23 @@ packaged. Tools that cannot be packaged remain in `tools-manifest.json` with
 not include API keys, Fetch endpoint secrets, environment values, uploads,
 artifacts, or workspace data.
 
-When a tool arg contains `{input_file}`, V2 selects entries from the current
-run's latest `tool_input_index` evidence whose `toolIds` contain the requested
-tool id. The placeholder is replaced with the resolved artifact path. Each input
-creates a stable action id derived from tool id plus virtual input path, and the
-evidence ref prefix becomes:
+When a tool arg contains `{input_file}`, V2 first honors explicit selectors
+from task MCP top-level `inputFile`, `params.inputFiles`, or manual tool-run
+`params.inputFiles`. Selectors are workspace-relative only and resolve to
+current Workspace text paths, their `extracted/...` virtual paths, or
+`tool_inputs/...` entries from the current run's latest `tool_input_index`.
+Without explicit selectors, V2 selects entries from that latest
+`tool_input_index` evidence whose `toolIds` contain the requested tool id. The
+placeholder is replaced with the resolved artifact path. Each input creates a
+stable action id derived from tool id plus virtual input path, and the evidence
+ref prefix becomes:
 
 ```text
 tool_results/<tool_id>_<input_hash>/result.json#findings/
 ```
 
-If no materialized input matches, V2 falls back to current-run text files.
+If no explicit selector is provided and no materialized input matches, V2 falls
+back to current-run text files.
 Manifest paths matching `match.filePatterns` are selected first. If capacity
 remains, initial `grep_results.json` matches whose line text contains one of
 `match.keywords` select additional files. Fallback files are materialized as
