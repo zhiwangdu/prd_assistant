@@ -662,6 +662,9 @@ artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
 currently includes manual built-ins for metadata tools,
 `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
 default-off `logagent.huawei_cloud_package_sync`.
+`pprof_analyzer` result JSON includes parsed `profileType`, `total`, top rows,
+V2 artifact id mappings, and Rust/V1-style `artifactPaths` for
+`tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.
 
 Readonly MCP exposes the same tool registry as `logagent://tools/catalog`,
 the retained `logagent-v2://tools/catalog` alias, and `logagent.list_tools`.

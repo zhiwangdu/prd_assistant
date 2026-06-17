@@ -126,6 +126,9 @@ Implemented in this slice:
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.
+- `pprof_analyzer` tool-run results preserve V2 artifact ids and include
+  Rust/V1-style `artifactPaths` for top/tree/raw/stderr/SVG outputs, plus
+  parsed `profileType`, `total`, and top table rows.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP

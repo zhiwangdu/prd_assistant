@@ -1748,6 +1748,93 @@ class StoreTests(unittest.TestCase):
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
 
+    def test_pprof_tool_result_includes_v1_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_go = tmp_path / "fake-go"
+            fake_go.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+args=" $* "
+if [[ "$args" == *" -top "* ]]; then
+  cat <<'OUT'
+Type: samples
+Showing nodes accounting for 10ms, 10% of 100ms total
+10ms 10% 10% 20ms 20% github.com/acme/foo
+OUT
+elif [[ "$args" == *" -tree "* ]]; then
+  echo "tree output"
+elif [[ "$args" == *" -raw "* ]]; then
+  echo "raw output"
+elif [[ "$args" == *" -svg "* ]]; then
+  echo "<svg></svg>"
+else
+  echo "unexpected pprof args: $*" >&2
+  exit 2
+fi
+""",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o755)
+            settings = Settings(
+                data_dir=tmp_path / "data",
+                api_key="test",
+                pprof_enabled=True,
+                pprof_go_command=str(fake_go),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("pprof run", "tool_run", "en-US")
+            profile_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "sample.pb.gz",
+                b"profile",
+                "application/octet-stream",
+            )
+            upload = store.create_upload(
+                workspace["id"], "sample.pb.gz", profile_artifact["id"]
+            )
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="pprof_analyzer",
+                params={"sampleIndex": "samples", "nodeCount": 20, "generateSvg": True},
+                upload_ids=[upload["id"]],
+            )
+
+            executed = execute_tool_run(settings, store, tool_run["id"])
+            result = executed["result"]
+            action_id = result["actionId"]
+
+            self.assertEqual(result["profileType"], "samples")
+            self.assertEqual(result["total"], "100ms")
+            self.assertEqual(result["top"][0]["function"], "github.com/acme/foo")
+            self.assertEqual(
+                result["artifactPaths"]["topTextPath"],
+                f"tool_results/{action_id}/top.txt",
+            )
+            self.assertEqual(
+                result["artifactPaths"]["treeTextPath"],
+                f"tool_results/{action_id}/tree.txt",
+            )
+            self.assertEqual(
+                result["artifactPaths"]["rawTextPath"],
+                f"tool_results/{action_id}/raw.txt",
+            )
+            self.assertEqual(
+                result["artifactPaths"]["svgPath"],
+                f"tool_results/{action_id}/graph.svg",
+            )
+            self.assertEqual(
+                result["artifactPaths"]["stderrPath"],
+                f"tool_results/{action_id}/stderr.txt",
+            )
+            self.assertEqual(result["artifacts"], result["artifactIds"])
+            self.assertIn("top", result["artifactIds"])
+            self.assertIn("stderr", result["artifactIds"])
+
     def test_readonly_mcp_tools_catalog_matches_v1_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(

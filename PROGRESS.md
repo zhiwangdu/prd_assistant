@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 pprof Tool Result Paths
+
+- Aligned V2 built-in `pprof_analyzer` manual tool results with the Rust/V1
+  artifact path contract while preserving V2 artifact id mappings.
+- pprof result JSON now includes parsed `profileType`, `total`, top table
+  rows, `artifactIds`, and `artifactPaths` for logical
+  `tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.
+- pprof status now matches the Rust/V1 behavior: top/tree/raw must all succeed
+  for the run result to be `OK`; SVG remains optional.
+- Added regression coverage with a fake `go tool pprof` executable so the
+  contract does not depend on a local real profile.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused pprof tool-run regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (71 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Deploy Health Wait
 
 - Aligned V2 deploy service control with the Rust server's quick start/stop

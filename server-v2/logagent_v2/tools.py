@@ -1234,8 +1234,28 @@ def run_pprof_tool(
         outputs[name] = run_pprof_command(settings, store, run["workspace_id"], action_id, name, argv)
         if outputs[name].get("timedOut") or outputs[name].get("exitCode") not in {0, None}:
             warnings.append(f"{name} command did not complete successfully")
-    top_entries = parse_pprof_top(outputs.get("top", {}).get("text", ""))
-    status = "OK" if outputs.get("top", {}).get("exitCode") == 0 else "FAILED"
+    top_text = outputs.get("top", {}).get("text", "")
+    top_entries = parse_pprof_top(top_text)
+    profile_type, total = parse_pprof_profile_summary(top_text)
+    status = (
+        "OK"
+        if all(outputs.get(name, {}).get("exitCode") == 0 for name in ("top", "tree", "raw"))
+        else "FAILED"
+    )
+    stderr_artifact = write_pprof_stderr_artifact(
+        settings, store, run["workspace_id"], action_id, outputs
+    )
+    artifact_paths = {
+        "topTextPath": outputs.get("top", {}).get("path"),
+        "treeTextPath": outputs.get("tree", {}).get("path"),
+        "rawTextPath": outputs.get("raw", {}).get("path"),
+        "svgPath": outputs.get("svg", {}).get("path")
+        if outputs.get("svg", {}).get("exitCode") == 0
+        else None,
+        "stderrPath": f"tool_results/{action_id}/stderr.txt",
+    }
+    artifact_ids = {key: value.get("artifactId") for key, value in outputs.items()}
+    artifact_ids["stderr"] = stderr_artifact["id"]
     result = {
         "schemaVersion": 1,
         "toolId": PPROF_ANALYZER_ID,
@@ -1243,9 +1263,13 @@ def run_pprof_tool(
         "status": status,
         "summary": f"pprof top produced {len(top_entries)} row(s).",
         "profile": {"uploadId": upload["id"], "filename": upload["filename"]},
+        "profileType": profile_type,
         "sampleIndex": sample_index,
+        "total": total,
         "top": top_entries,
-        "artifacts": {key: value.get("artifactId") for key, value in outputs.items()},
+        "artifacts": artifact_ids,
+        "artifactIds": artifact_ids,
+        "artifactPaths": artifact_paths,
         "warnings": warnings,
     }
     artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
@@ -1379,6 +1403,7 @@ def run_pprof_command(
     argv: list[str],
 ) -> JsonObject:
     started = time.monotonic()
+    logical_path = pprof_logical_output_path(action_id, name)
     try:
         completed = subprocess.run(
             argv,
@@ -1397,6 +1422,7 @@ def run_pprof_command(
         exit_code = None
         timed_out = True
     text = stdout.decode("utf-8", errors="replace")
+    stderr_text = stderr.decode("utf-8", errors="replace")
     artifact = write_artifact_bytes(
         settings=settings,
         store=store,
@@ -1405,7 +1431,13 @@ def run_pprof_command(
         data=stdout,
         content_type="image/svg+xml" if name == "svg" else "text/plain",
         schema_name=f"logagent.v2.pprof.{name}.v1",
-        preview={"actionId": action_id, "kind": name, "exitCode": exit_code, "timedOut": timed_out},
+        preview={
+            "actionId": action_id,
+            "kind": name,
+            "path": logical_path,
+            "exitCode": exit_code,
+            "timedOut": timed_out,
+        },
     )
     if stderr:
         write_artifact_bytes(
@@ -1420,11 +1452,61 @@ def run_pprof_command(
         )
     return {
         "artifactId": artifact["id"],
+        "path": logical_path,
         "exitCode": exit_code,
         "timedOut": timed_out,
         "durationMs": int((time.monotonic() - started) * 1000),
         "text": text,
+        "stderrText": stderr_text,
     }
+
+
+def write_pprof_stderr_artifact(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    action_id: str,
+    outputs: dict[str, JsonObject],
+) -> JsonObject:
+    chunks = []
+    for name in ("top", "tree", "raw", "svg"):
+        stderr_text = outputs.get(name, {}).get("stderrText")
+        if isinstance(stderr_text, str) and stderr_text:
+            chunks.append(f"== {name} ==\n{stderr_text.rstrip()}\n")
+    data = ("\n".join(chunks)).encode("utf-8")
+    return write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_stderr.txt",
+        data=data,
+        content_type="text/plain",
+        schema_name="logagent.v2.pprof.stderr.v1",
+        preview={
+            "actionId": action_id,
+            "kind": "stderr",
+            "path": f"tool_results/{action_id}/stderr.txt",
+            "sizeBytes": len(data),
+        },
+    )
+
+
+def pprof_logical_output_path(action_id: str, name: str) -> str:
+    if name == "svg":
+        return f"tool_results/{action_id}/graph.svg"
+    return f"tool_results/{action_id}/{name}.txt"
+
+
+def parse_pprof_profile_summary(text: str) -> tuple[str | None, str | None]:
+    profile_type = None
+    total = None
+    for line in text.splitlines():
+        if line.startswith("Type:"):
+            profile_type = line.split(":", 1)[1].strip() or None
+        match = re.search(r"\bof\s+(.+?)\s+total\b", line)
+        if match:
+            total = match.group(1).strip()
+    return profile_type, total
 
 
 def parse_pprof_top(text: str) -> list[JsonObject]:
