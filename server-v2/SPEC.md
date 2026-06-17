@@ -1060,6 +1060,8 @@ remote command smoke runner. They are not a full Environment Collector.
   timeout.
 - Command template IDs must match the Rust/V1 safe pattern: non-empty ASCII
   letters, digits, `_`, and `-` only.
+- Command template argv is normalized like Rust/V1: every item is trimmed,
+  empty items are dropped, and the final argv must still be non-empty.
 - Creating a run validates that remote execution is enabled, the executor is
   enabled, and the command template exists and is enabled.
 - The worker constructs a fixed SSH argv using the configured SSH executable,

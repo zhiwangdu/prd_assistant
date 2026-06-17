@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Command Argv Normalization
+
+- V2 Remote Executor command templates now normalize `argv` while loading
+  `LOGAGENT_V2_REMOTE_COMMANDS_JSON`, matching Rust/V1
+  `remote_execution.commands.<command_id>.argv`.
+- Each argv entry is trimmed, empty entries are dropped, and the normalized
+  argv must still contain at least one item before it can enter API
+  descriptors, queued jobs, or SSH execution.
+- Added regression coverage for trimmed argv preservation and all-empty argv
+  rejection.
+- Updated V2 Server, Environment Collector, and Configuration docs/specs.
+- Verification passed: focused remote command argv normalization regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Numeric Settings Clamp Parity
 
 - V2 now clamps non-positive `LOGAGENT_V2_MAX_CONCURRENT_JOBS` to 1, matching

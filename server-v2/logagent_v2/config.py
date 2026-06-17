@@ -64,7 +64,9 @@ class RemoteCommandTemplate:
     def from_json(cls, value: dict) -> "RemoteCommandTemplate":
         command_id = str(value.get("commandId") or value.get("command_id") or value["id"])
         validate_remote_command_id(command_id)
-        argv = tuple(str(arg) for arg in value.get("argv", []))
+        argv = tuple(
+            arg for arg in (str(item).strip() for item in value.get("argv", [])) if arg
+        )
         if not argv:
             raise ValueError("remote command template argv must not be empty")
         return cls(

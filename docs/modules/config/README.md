@@ -268,4 +268,5 @@ metadata:
 - `remote_execution.host_key_policy` 仅支持 `accept-new`、`strict` 和 `no`，分别映射到 OpenSSH `StrictHostKeyChecking`。
 - `remote_execution.commands.<id>` 的 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`。
 - `remote_execution.commands.<id>.argv` 是 WebUI 可选择的唯一远程命令来源；用户不能输入自由 shell 命令或扩展 argv。
+- `remote_execution.commands.<id>.argv` 加载时会逐项 trim 并丢弃空字符串，归一化后仍必须至少保留一个 argv 项。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。

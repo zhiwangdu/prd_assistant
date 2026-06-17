@@ -2274,6 +2274,22 @@ class StoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid remote command id"):
                     parse_remote_commands_env(raw)
 
+    def test_parse_remote_commands_env_normalizes_argv(self) -> None:
+        templates = parse_remote_commands_env(
+            json.dumps(
+                [
+                    {
+                        "id": "smoke_ls_root",
+                        "argv": ["  ls ", "", " -la", "  /root  "],
+                    }
+                ]
+            )
+        )
+        self.assertEqual(templates[0].argv, ("ls", "-la", "/root"))
+
+        with self.assertRaisesRegex(ValueError, "argv must not be empty"):
+            parse_remote_commands_env(json.dumps([{"id": "empty", "argv": [" ", ""]}]))
+
     def test_strict_host_key_checking_rejects_unknown_policy(self) -> None:
         self.assertEqual(strict_host_key_checking_value("strict"), "yes")
         self.assertEqual(strict_host_key_checking_value("no"), "no")

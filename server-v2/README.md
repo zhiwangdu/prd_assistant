@@ -216,7 +216,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS` | `30` | Default remote command timeout |
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `no` host-key behavior |
-| `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-` |
+| `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-`; argv entries are trimmed, empty entries are dropped, and the final argv must be non-empty |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
 | `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint; when enabled must be `http/https` with no path/query/fragment |
@@ -430,8 +430,9 @@ V2 exposes the low-risk `smoke_ls_root` template. Template descriptors match
 the Rust/V1 behavior: `enabled` also reflects global remote execution state,
 and `timeoutSeconds` is always filled with the template override or default
 remote command timeout. Template IDs are validated with the Rust/V1 safe
-pattern: non-empty ASCII letters, digits, `_`, and `-` only. Runs are DB-backed
-jobs. The worker invokes the
+pattern: non-empty ASCII letters, digits, `_`, and `-` only. Template argv is
+normalized like Rust/V1 by trimming entries, dropping empty entries, and
+requiring at least one remaining argv item. Runs are DB-backed jobs. The worker invokes the
 configured SSH executable with fixed argv. `LOGAGENT_V2_REMOTE_SSH_COMMAND`
 expands environment variables and `~`; when remote execution is enabled it must
 resolve to an absolute path, matching the Rust/V1 `remote_execution.ssh_binary`
