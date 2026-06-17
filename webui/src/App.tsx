@@ -1,13 +1,16 @@
-import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, Settings, Wrench } from "lucide-react";
+import { Activity, BookOpenCheck, BrainCircuit, FileSearch, Globe2, KeyRound, Layers3, Server, Settings, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Badge, Card, CardContent, Input } from "./components/ui";
+import { Badge, Button, Card, CardContent, Input } from "./components/ui";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
-import { CasesView } from "./CasesView";
-import { OperationsView } from "./OperationsView";
-import { ToolsView } from "./ToolsView";
-import { SystemContextView } from "./SystemContextView";
-import { SettingsView } from "./SettingsView";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
+import { V2AnalyzeBridge } from "./V2AnalyzeBridge";
+import { V2ExecutorsBridge } from "./V2ExecutorsBridge";
+import { V2FetchBridge } from "./V2FetchBridge";
+import { V2MemoryBridge } from "./V2MemoryBridge";
+import { V2MetadataBridge } from "./V2MetadataBridge";
+import { V2SettingsBridge } from "./V2SettingsBridge";
+import { V2SystemContextBridge } from "./V2SystemContextBridge";
+import { V2ToolsBridge } from "./V2ToolsBridge";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
@@ -40,7 +43,7 @@ export function App() {
       setLlmDebugStatus(copy.apiKeyRequired);
       return;
     }
-    void fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", { headers: authHeaders(apiKey) })
+    void fetchJson<{ llmOutputLogging: boolean }>("/api/v2/debug/llm", { headers: authHeaders(apiKey) })
       .then((response) => {
         setLlmDebugEnabled(response.llmOutputLogging);
         setLlmDebugStatus(response.llmOutputLogging ? copy.llmLogsOn : copy.llmLogsOff);
@@ -56,7 +59,7 @@ export function App() {
     setLlmDebugEnabled(enabled);
     setLlmDebugStatus(enabled ? copy.enablingLlmLogs : copy.disablingLlmLogs);
     try {
-      const response = await fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", {
+      const response = await fetchJson<{ llmOutputLogging: boolean }>("/api/v2/debug/llm", {
         method: "PUT",
         headers: jsonHeaders(apiKey),
         body: JSON.stringify({ llmOutputLogging: enabled })
@@ -107,8 +110,31 @@ export function App() {
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />{copy.navTools}</button>
           <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "settings" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("settings")}><Settings className="mr-2 inline h-4 w-4" />{copy.navSettings}</button>
         </nav>
-        {view === "operations" ? <OperationsView apiKey={apiKey} language={language} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <SettingsView apiKey={apiKey} />}
+        {view === "operations" ? <V2AnalyzeBridge apiKey={apiKey} language={language} /> : view === "cases" ? <V2MemoryBridge apiKey={apiKey} /> : view === "system-context" ? <V2SystemContextWorkbench apiKey={apiKey} /> : view === "tools" ? <V2ToolsWorkbench apiKey={apiKey} /> : <V2SettingsBridge apiKey={apiKey} />}
       </main>
+    </div>
+  );
+}
+
+function V2SystemContextWorkbench({ apiKey }: { apiKey: string }) {
+  return (
+    <div className="space-y-5">
+      <V2SystemContextBridge apiKey={apiKey} />
+      <V2MetadataBridge apiKey={apiKey} />
+    </div>
+  );
+}
+
+function V2ToolsWorkbench({ apiKey }: { apiKey: string }) {
+  const [section, setSection] = useState<"tools" | "fetch" | "executors">("tools");
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <Button variant={section === "tools" ? "default" : "outline"} onClick={() => setSection("tools")}><Wrench className="mr-2 h-4 w-4" />Tool plugins</Button>
+        <Button variant={section === "fetch" ? "default" : "outline"} onClick={() => setSection("fetch")}><Globe2 className="mr-2 h-4 w-4" />Fetch</Button>
+        <Button variant={section === "executors" ? "default" : "outline"} onClick={() => setSection("executors")}><Server className="mr-2 h-4 w-4" />Executors</Button>
+      </div>
+      {section === "tools" ? <V2ToolsBridge apiKey={apiKey} /> : section === "fetch" ? <V2FetchBridge apiKey={apiKey} /> : <V2ExecutorsBridge apiKey={apiKey} />}
     </div>
   );
 }

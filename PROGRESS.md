@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Default Cutover
+
+- The React App default routes now render V2 Analyze, Memory, System Context,
+  Metadata, Tools, Fetch, Executors, and Settings surfaces directly instead of
+  rendering legacy Rust-compatible panels below V2 bridge panels.
+- The global LLM debug toggle now reads and writes `/api/v2/debug/llm`, keeping
+  the default WebUI on V2 APIs.
+- Updated root, WebUI, and V2 Server docs/specs to mark the default WebUI V2
+  cutover as implemented and move remaining V2 work to product polish and
+  real-domain fixtures.
+
 ## 2026-06-18 WebUI V2 Runtime Detail Parity
 
 - V2 Executors bridge now surfaces executor last-check status/message,

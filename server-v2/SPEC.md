@@ -253,11 +253,10 @@ Implemented in this slice:
   environment-configured whitelisted SSH command templates, DB-backed
   `remote_command_run` jobs, controlled SSH argv construction, bounded
   stdout/stderr capture, and result files under `remote_runs/<run_id>/`.
-
-Not yet implemented:
-
-- Full WebUI V2 cutover that replaces the legacy Rust-compatible panels instead
-  of running V2 bridge panels alongside them.
+- WebUI V2 cutover: the default React routes render V2 Analyze, Memory,
+  System Context, Metadata, Tools, Fetch, Executors, and Settings surfaces
+  directly against `/api/v2/*` instead of rendering the legacy Rust-compatible
+  panels alongside V2 bridge panels.
 
 ## API
 

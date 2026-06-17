@@ -8,22 +8,16 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 
 - 顶部栏使用 `LogAgent Analysis Workbench` 作为全局产品名，覆盖证据、Memory、Skill-backed System Context、Metadata 和工具工作流，不再只强调 Metadata。
 
-- 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，仍在 System Context 的 Metadata tab 中可用。
-- `Analyze`：Session-first 工作流。用户先创建或选择 Session，草稿自动保存，可以只填写问题直接分析，也可以多文件/分片上传完成后附加到 Session，再显式创建一次分析 run；如果用户选择文件后直接点击启动分析，WebUI 会先上传并附加这些待处理文件，再创建本次 run。同一 Session 可保留多次 run。该入口继续调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
-- `Analyze` 顶部新增 V2 分析桥接面板，直接调用 Python V2 `/api/v2/*`：可新建 Workspace、选择历史 Workspace、回填并保存 Workspace 问题/模式、软删除历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、pending actions、resources、最终结果和 artifacts；运行资源区会展开 `analysis_state.json` 中的 LangGraph runtime、Agent request/response 审计、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 摘要；当 V2 run 等待用户或审批时，可提交补充、请求基于当前证据收尾、批准或拒绝 action，补充消息会带上 pending action 的 `questionId`，补充和审批都会生成稳定 `idempotencyKey`，返回的 `answeredActions` 会被后续轮询反映到 pending actions；成功 run 可编辑并保存为 V2 task Case，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Session-first Analyze 流仍保留，作为 V2 WebUI 全量切换前的兼容入口。
+- 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，作为 System Context 页面内的 V2 Metadata 工作台区块提供。
+- `Analyze`：已切换为 Python V2 原生入口，直接调用 `/api/v2/*`。可新建 Workspace、选择历史 Workspace、回填并保存 Workspace 问题/模式、软删除历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、pending actions、resources、最终结果和 artifacts；运行资源区会展开 `analysis_state.json` 中的 LangGraph runtime、Agent request/response 审计、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 摘要；当 V2 run 等待用户或审批时，可提交补充、请求基于当前证据收尾、批准或拒绝 action，补充消息会带上 pending action 的 `questionId`，补充和审批都会生成稳定 `idempotencyKey`，返回的 `answeredActions` 会被后续轮询反映到 pending actions；成功 run 可编辑并保存为 V2 task Case，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Rust Session-first Analyze 页面不再默认渲染。
 - V2 Analyze timeline 使用 Python V2 timeline event 的 `kind` 字段作为事件标签，并兼容旧 `event_type` 字段。
 - `Analyze` 固定 UI 文案、状态、阶段、置信度和常见 timeline event 默认优先使用简体中文展示，保留 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref` 等无法准确替代的专业名词。顶部语言选择支持 `简体中文` / `English` 切换；该选择会写入浏览器本地配置，并同步到当前 Session 的 `analysisLanguage`，新创建的 run 会要求 Claude Code 按该语言输出自然语言字段。
-- `Memory`：Case 兼容管理页，支持文本/文本文件导入、LLM 结构化整理、缺失信息追问、确认保存、搜索、详情编辑、证据引用维护和启用/禁用。
-- `Memory` 顶部新增 V2 Memory bridge，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Memory 页面仍保留。
-- `System Context`：展示 Server 索引到的 Diagnostic Skills、Skill 注入片段、reference 摘要和 Metadata adapter；Skills tab 支持从 `.md/.markdown` 文件或手动粘贴 Markdown 导入新的 explicit-only Diagnostic Skill，其中 Metadata tab 复用现有 openGemini 拓扑页面。
-- `System Context` 顶部新增 V2 System Context bridge，直接调用 Python V2 `/api/v2/skills*` 和 `/api/v2/metadata/instances`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载和 V2 Metadata instance 摘要。旧 Skills/Metadata 页面仍保留。
-- `System Context` 顶部同时新增 V2 Metadata bridge，调用 Python V2 `/api/v2/metadata/*`：支持 JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、用已保存 raw JSON 刷新实例、实例删除和 snapshot JSON 查看。旧 Metadata Dashboard 仍保留在 Metadata tab。
-- `Tools`：包含 `Tool plugins`、`Fetch` 和 `Executors` 三个子页。Tool plugins 支持统一工具目录、configured / built-in tag 展示、手动工具运行、执行状态轮询和结果展示；其中内置 `logagent.preprocess_log_package` 可批量上传节点日志包并查看节点、日志组、轮转 gzip 和 materialized tool input 摘要，内置 `logagent.huawei_cloud_package_sync` 启用后也在该页按 JSON 参数模板运行，要求上传一个包并填写 `updateSql` / `querySql`。Fetch 支持粘贴 DevTools bash cURL、脱敏预览、保存 endpoint、启停/删除、手动运行和查看响应 artifact；Executors 支持 ECS 执行机新增/编辑/禁用、白名单命令模板选择、SSH run 创建、状态轮询和 stdout/stderr/result artifact 展示。
-- `Tools / Tool plugins` 顶部新增 V2 Tools bridge，调用 Python V2 `/api/v2/tools` 展示工具目录，展示 `source`、`tags`、`readOnly`、`editable`、`exportable`、`manualOnly`、文件数量约束、`acceptedSuffixes`、`outputViews`、`match`、`paramsTemplate` 和 `paramsSchema`，支持下载 `/api/v2/exports/tools.zip`，并允许输入 V2 `run_id` 后按选中工具的 `paramsTemplate` 预填 params，通过 `/api/v2/mcp/task/:run_id` 调用 task MCP。配置工具会执行 `logagent.run_domain_tool`，`logagent.fetch` 会执行 fetch task tool；结果直接展示 MCP JSON 响应。旧 Rust Tool plugins 页面仍保留，继续提供独立上传和 tool_run 兼容入口。
-- `Tools / Fetch` 顶部新增 V2 Fetch bridge，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 和 run override JSON（`variables`、`headers`、`body`）后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact。旧 Rust Fetch 页面仍保留。
-- `Tools / Executors` 顶部新增 V2 Executors bridge，调用 Python V2 `/api/v2/executors*` 和 `/api/v2/executor-runs*`：支持 V2 executor 新增/编辑/禁用、白名单命令模板选择、DB-backed remote command run 创建/轮询、stdout/stderr/result 路径和预览展示，并显示 executor last check、模板 description/timeout、run attempts、executor/command IDs、created/updated timestamps、SSH argv preview 和 started/completed timestamps。旧 Rust Executors 页面仍保留。
-- `Settings`：设置与诊断入口；当前提供 LLM 服务接口测试、Claude Code session runner 配置/dry-run 诊断、Domain Adapter 摘要和 Personal Claude Code 只读入口，可读取当前 LLM 配置摘要、测试模型列表获取、发送简单 user message，并在失败时展示完整异常文本。
-- `Settings` 顶部新增 V2 Settings bridge，调用 Python V2 `/api/v2/settings/*` 和 `/api/v2/debug/llm`：支持 V2 Agent provider 摘要、模型列表和消息测试、Agent backend dry-run、LangGraph runtime 节点展示、Domain Adapter 摘要、response-content debug 开关、V2 只读 MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载。旧 Rust Settings 页面仍保留。
+- `Memory`：已切换为 V2 Memory 工作台，直接调用 Python V2 `/api/v2/cases*`：支持 V2 Case 搜索、include disabled、文本/文件读取后 import preview、缺失字段补充消息、编辑结构化 draft、confirm 写入、Case 详情编辑和启用/禁用；搜索结果和详情会展示 `searchBackend`、总分、FTS 分数和 vector 分数，便于验证本地 FTS5 / keyword / vector / hybrid 召回路径。旧 Rust Memory 页面不再默认渲染。
+- `System Context`：已切换为 V2 System Context + V2 Metadata 工作台，直接调用 Python V2 `/api/v2/skills*`、`/api/v2/metadata/instances` 和 `/api/v2/metadata/*`：支持 V2 Skill 列表/详情、Markdown Skill import、显式 Skill selection preview、`skills.zip` 下载、JSON/YAML/openGemini 内容或 URL 的导入预览、确认、直接导入、导入历史、实例列表、用已保存 raw JSON 刷新实例、实例删除和 snapshot JSON 查看。旧 Rust Skills/Metadata 页面不再默认渲染。
+- `Tools / Tool plugins`：已切换为 V2 Tools 工作台，调用 Python V2 `/api/v2/tools` 展示工具目录，展示 `source`、`tags`、`readOnly`、`editable`、`exportable`、`manualOnly`、文件数量约束、`acceptedSuffixes`、`outputViews`、`match`、`paramsTemplate` 和 `paramsSchema`，支持下载 `/api/v2/exports/tools.zip`，并允许输入 V2 `run_id` 后按选中工具的 `paramsTemplate` 预填 params，通过 `/api/v2/mcp/task/:run_id` 调用 task MCP。配置工具会执行 `logagent.run_domain_tool`，`logagent.fetch` 会执行 fetch task tool；结果直接展示 MCP JSON 响应。旧 Rust 独立上传型 Tool Runner 页面不再默认渲染。
+- `Tools / Fetch`：已切换为 V2 Fetch 工作台，调用 Python V2 `/api/v2/fetch/*`：支持 cURL preview/import、endpoint 列表、启停/删除、敏感字段脱敏提示，并允许输入 V2 `run_id` 和 run override JSON（`variables`、`headers`、`body`）后调用 `/api/v2/runs/:run_id/fetch/:endpoint_id` 将 Fetch 结果写入对应 run 的 evidence/artifact。旧 Rust Fetch 页面不再默认渲染。
+- `Tools / Executors`：已切换为 V2 Executors 工作台，调用 Python V2 `/api/v2/executors*` 和 `/api/v2/executor-runs*`：支持 V2 executor 新增/编辑/禁用、白名单命令模板选择、DB-backed remote command run 创建/轮询、stdout/stderr/result 路径和预览展示，并显示 executor last check、模板 description/timeout、run attempts、executor/command IDs、created/updated timestamps、SSH argv preview 和 started/completed timestamps。旧 Rust Executors 页面不再默认渲染。
+- `Settings`：已切换为 V2 Settings 工作台，调用 Python V2 `/api/v2/settings/*` 和 `/api/v2/debug/llm`：支持 V2 Agent provider 摘要、模型列表和消息测试、Agent backend dry-run、LangGraph runtime 节点展示、Domain Adapter 摘要、response-content debug 开关、V2 只读 MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载。旧 Rust Settings 页面不再默认渲染。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，支持新建和删除非运行中 Session；选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。删除 Session 前会二次确认，删除后只清理 Session 历史项，关联上传、任务和结果产物由 Server 保留。
 - `Analyze` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
@@ -39,7 +33,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 成功任务支持编辑标题、现象、根因和解决方案后人工确认保存为 Case；同页可搜索相似 Case 并禁用不再召回的 Case。
 - 成功任务展示任务创建时固化的 `caseContext`，区分历史 Case 参考和实时 Case 搜索结果；Case 列表已适配 schema v2 并展示 `task` / `manual` 来源。
 - 顶部 `Memory` 页面通过 Case import 草稿创建 `manual` Case：用户粘贴大段文字或上传 UTF-8 文本类文件，LLM 整理为结构化草稿，缺少标题、现象、根因或解决方案时以对话方式补充；确认前仍可编辑产品、版本、环境、InstanceID、NodeID、标题、现象、根因、解决方案和 evidence refs。
-- 页面顶部提供 `LLM debug` 开关，调用 Server runtime debug API 控制 LLM response content 是否打印到 Server 日志。
+- 页面顶部提供 `LLM debug` 开关，调用 V2 `/api/v2/debug/llm` 控制 LLM response content 是否打印到 Server 日志。
 - 创建任务时可填写 `instanceId` / `nodeId`，任务详情展示 Server 解析后的关联 ID；`clusterId` 不再作为用户输入。
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。
 - 成功任务展示 Claude Code session 面板，包括 `analysis_package.json`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`、`agent_response.json` 路径、analysis mode、permission profile、session id、runtime status、usage/cost、耗时、MCP calls 和错误。
@@ -85,7 +79,7 @@ System Context 能力：
 - 查看 Skill displayName、description、revision、匹配字段、reference 摘要和 SKILL.md 注入片段。
 - Refresh 旁的 Import 表单可填写 `skillId`、`name`、`description`，选择 `.md/.markdown` 文件或直接粘贴 Markdown；文件存在 Codex frontmatter 时会预填 name/description 并把正文写入编辑框。
 - 导入成功后自动刷新 Skills 列表、选中新 Skill，并可在 Analyze Session draft 中显式选择。
-- Metadata tab 继续提供 openGemini Metadata 导入、拓扑、诊断和 Raw JSON。
+- System Context 页面内的 V2 Metadata 工作台继续提供 Metadata 导入、实例管理、snapshot 查看和 raw JSON 刷新能力。
 - 旧 `/api/system-context/resources` 默认只作为 Metadata adapter 列表入口；旧非 Metadata resource 编辑入口不再展示。
 
 重要语义：
@@ -226,13 +220,11 @@ System Context：
 - `GET /api/tasks/:task_id/artifacts`
 - `GET /api/tasks/:task_id/result`
 - `GET /api/tasks/:task_id/analysis`
-- `GET /api/debug/llm`
-- `PUT /api/debug/llm`
 - `POST /api/tasks/:task_id/messages`
 - `POST /api/tasks/:task_id/actions/:action_id/decision`
 - `POST /api/tasks/:task_id/case`
 
-V2 bridge APIs：
+V2 APIs：
 
 - `POST /api/v2/workspaces`
 - `GET /api/v2/workspaces`
@@ -250,6 +242,8 @@ V2 bridge APIs：
 - `POST /api/v2/runs/:run_id/messages`
 - `POST /api/v2/actions/:action_id/decisions`
 - `GET /api/v2/artifacts/:artifact_id`
+- `GET /api/v2/debug/llm`
+- `PUT /api/v2/debug/llm`
 - `GET /api/v2/tools`
 - `GET /api/v2/exports/tools.zip`
 - `POST /api/v2/mcp/task/:run_id`
