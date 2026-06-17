@@ -163,6 +163,7 @@ Huawei package sync 的 `result.json` 至少包含：
 - `pprof_analyzer` 手动运行必须创建 `tool_run` task，成功后 `/api/tools/runs/:task_id/result` 返回 profile type、top 表格和 artifact 路径。
 - 内置 metadata 工具必须出现在工具目录中并标记 `source=built_in` / `readOnly=true` / `editable=false` / `exportable=false` / `runnable=true`，并支持无上传手动运行；`logagent.get_metadata_tag_fields` 的 `minFiles=maxFiles=0`，`paramsTemplate` 不包含 `field`，结果只包含 Tag 字段。
 - `logagent.fetch` 必须出现在工具目录中并标记 `source=built_in` / `backend=fetch` / `exportable=false` / `editable=false` / `minFiles=maxFiles=0`；fetch 关闭时 `runnable=false`，开启时 WebUI Fetch 子页和任务 MCP 可运行。参数必须兼容 `endpointId` 和 V1 `fetchId`，并支持可选 string map `variables`、临时 string map `headers` 和 string `body` override；URL `{name}` 变量替换后必须重新执行 allowlist 校验，临时 headers 必须拒绝受控头。
+- `logagent.list_fetch_endpoints` 在 Fetch 关闭时必须返回错误；开启时必须返回 Rust/V1 `schemaVersion=1`、enabled endpoint summaries、`fetchId`、`urlTemplate`、`credentialVersion` 和 `finalEvidenceAllowed=false`。
 - `logagent.preprocess_log_package` 必须出现在工具目录中并标记 `source=built_in` / `backend=builtin` / `readOnly=true` / `exportable=false` / `editable=false` / `runnable=true`，支持 1..100 个 `.tar.gz` 上传。
 - Fetch result 必须包含 redacted request、status code、duration、redacted response headers、body preview、body artifact path、truncated 标记、credential version 和 `httpOk`；HTTP 4xx/5xx 不导致 task failed。
 - `logagent.huawei_cloud_package_sync` 必须出现在工具目录中并标记 `source=built_in` / `backend=huawei_cloud_package_sync` / `exportable=false` / `editable=false` / `minFiles=maxFiles=1`；配置关闭时 `runnable=false`，开启时 WebUI Tool plugins 可手动运行。

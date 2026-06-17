@@ -702,6 +702,12 @@ logagent.list_fetch_endpoints
 logagent.fetch { endpointId | fetchId, variables?, headers?, body? }
 ```
 
+`logagent.list_fetch_endpoints` must fail with
+`fetch is disabled by configuration` when Fetch execution is disabled. When
+enabled, it returns the Rust/V1-compatible envelope with `schemaVersion=1`,
+enabled endpoint summaries, `fetchId`, `urlTemplate`, `credentialVersion`, and
+`finalEvidenceAllowed=false`.
+
 `logagent.fetch` writes a `fetch_result` artifact/evidence item. Network errors
 produce a failed Fetch result rather than crashing the run. HTTP 4xx/5xx
 responses are stored as responses.

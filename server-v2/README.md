@@ -686,6 +686,10 @@ optional string `variables` that replace `{name}` placeholders in the endpoint
 URL before allowlist validation, optional temporary string `headers`, and an
 optional string `body` override. Controlled headers such as `Host` and
 `Content-Length` are rejected for both saved endpoints and runtime overrides.
+Task MCP `logagent.list_fetch_endpoints` matches the Rust/V1 envelope with
+`schemaVersion=1`, enabled endpoint summaries, and
+`finalEvidenceAllowed=false`; when Fetch execution is disabled it returns a
+JSON-RPC error instead of listing endpoints.
 Saved endpoint bodies and runtime body overrides are rejected before the HTTP
 request when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.

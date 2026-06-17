@@ -327,6 +327,24 @@ def public_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
     return result
 
 
+def mcp_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
+    public = public_fetch_endpoint(endpoint)
+    credential_set = public.get("credentialSet")
+    credential_version = (
+        credential_set.get("updatedAt") if isinstance(credential_set, dict) else None
+    )
+    public.update(
+        {
+            "fetchId": endpoint["id"],
+            "description": endpoint.get("description", ""),
+            "tags": endpoint.get("tags", []),
+            "urlTemplate": public["url"],
+            "credentialVersion": credential_version,
+        }
+    )
+    return public
+
+
 def endpoint_with_credential_summary(store: Store, endpoint: JsonObject) -> JsonObject:
     result = dict(endpoint)
     credential = store.get_fetch_credential_set(endpoint["id"])
@@ -506,13 +524,17 @@ def call_fetch_tool(
     arguments: JsonObject,
 ) -> JsonObject:
     if name == "logagent.list_fetch_endpoints":
+        if not settings.fetch_enabled:
+            raise ValueError("fetch is disabled by configuration")
         return {
+            "schemaVersion": 1,
             "enabled": settings.fetch_enabled,
             "endpoints": [
-                public_fetch_endpoint(endpoint_with_credential_summary(store, endpoint))
+                mcp_fetch_endpoint(endpoint_with_credential_summary(store, endpoint))
                 for endpoint in store.list_fetch_endpoints()
                 if endpoint["enabled"]
             ],
+            "finalEvidenceAllowed": False,
         }
     if name == "logagent.fetch":
         run_params = normalize_fetch_run_params(arguments)

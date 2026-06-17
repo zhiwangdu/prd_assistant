@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Endpoint MCP Envelope
+
+- Aligned V2 task MCP `logagent.list_fetch_endpoints` with the Rust/V1 Fetch
+  contract. When Fetch execution is disabled it now returns a JSON-RPC error
+  with `fetch is disabled by configuration`.
+- When Fetch is enabled, the endpoint listing now includes `schemaVersion=1`,
+  V1-compatible endpoint fields (`fetchId`, `urlTemplate`,
+  `credentialVersion`) and `finalEvidenceAllowed=false` while keeping V2
+  redacted endpoint preview fields.
+- Updated V2 Server, Tool Runner, and Interfaces docs/specs.
+- Verification passed: focused Fetch MCP regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Protocol Methods
 
 - Added V1-compatible task MCP `ping` and `prompts/list` methods.

@@ -2870,6 +2870,17 @@ class StoreTests(unittest.TestCase):
                     },
                 )
                 listed = json.loads(list_response["result"]["content"][0]["text"])
+                self.assertEqual(listed["schemaVersion"], 1)
+                self.assertTrue(listed["enabled"])
+                self.assertFalse(listed["finalEvidenceAllowed"])
+                self.assertEqual(listed["endpoints"][0]["fetchId"], endpoint["id"])
+                self.assertEqual(listed["endpoints"][0]["method"], "GET")
+                self.assertEqual(listed["endpoints"][0]["description"], "")
+                self.assertEqual(listed["endpoints"][0]["tags"], [])
+                self.assertIn(
+                    "api_key=__REDACTED__", listed["endpoints"][0]["urlTemplate"]
+                )
+                self.assertIsNone(listed["endpoints"][0]["credentialVersion"])
                 self.assertEqual(
                     listed["endpoints"][0]["headers"]["Authorization"], "__REDACTED__"
                 )
@@ -2877,6 +2888,21 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(
                     listed["endpoints"][0]["bodyPreview"],
                     "password=__REDACTED__&keep=value",
+                )
+                disabled_list_response = task_mcp_response(
+                    Settings(data_dir=Path(tmp), api_key="test", fetch_enabled=False),
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 200,
+                        "method": "tools/call",
+                        "params": {"name": "logagent.list_fetch_endpoints", "arguments": {}},
+                    },
+                )
+                self.assertIn(
+                    "fetch is disabled by configuration",
+                    disabled_list_response["error"]["message"],
                 )
 
                 fetch_response = task_mcp_response(
