@@ -1613,6 +1613,95 @@ class StoreTests(unittest.TestCase):
             self.assertNotIn(binary.as_posix(), json.dumps(response_doc))
             self.assertEqual(response_doc["validation"]["status"], "passed")
 
+    def test_local_agent_providers_classify_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing_binary = execute_agent_provider_request(
+                Settings(data_dir=root / "missing-binary", api_key="test"),
+                {
+                    "provider": "binary",
+                    "model": "binary-reserved",
+                    "payload": {"prompt": "hello"},
+                },
+            )
+            self.assertEqual(missing_binary["status"], "failed")
+            self.assertEqual(
+                missing_binary["error"]["classification"],
+                "configuration_error",
+            )
+            self.assertFalse(missing_binary["error"]["retryable"])
+
+            binary = root / "failing-agent-provider"
+            binary.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "print('provider failed', file=sys.stderr)\n"
+                "raise SystemExit(7)\n",
+                encoding="utf-8",
+            )
+            binary.chmod(0o755)
+            binary_failure = execute_agent_provider_request(
+                Settings(
+                    data_dir=root / "binary-data",
+                    api_key="test",
+                    agent_provider="binary",
+                    agent_binary_path=binary,
+                ),
+                {
+                    "provider": "binary",
+                    "model": "binary-reserved",
+                    "payload": {"prompt": "hello"},
+                },
+            )
+            self.assertEqual(binary_failure["status"], "failed")
+            self.assertEqual(binary_failure["error"]["type"], "NonZeroExit")
+            self.assertEqual(
+                binary_failure["error"]["classification"],
+                "provider_process_error",
+            )
+            self.assertFalse(binary_failure["error"]["retryable"])
+            self.assertEqual(binary_failure["response"]["exitCode"], 7)
+
+            claude = root / "failing-claude"
+            claude.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "print('claude failed', file=sys.stderr)\n"
+                "raise SystemExit(4)\n",
+                encoding="utf-8",
+            )
+            claude.chmod(0o755)
+            claude_failure = execute_agent_provider_request(
+                Settings(
+                    data_dir=root / "claude-data",
+                    api_key="test",
+                    agent_provider="claude_code",
+                    claude_code_path=claude,
+                ),
+                {
+                    "provider": "claude_code",
+                    "model": "claude-code-cli",
+                    "payload": {
+                        "runId": "run_failure",
+                        "prompt": "Read analysis_package and return JSON.",
+                        "analysisMode": "diagnose",
+                    },
+                },
+            )
+            self.assertEqual(claude_failure["status"], "failed")
+            self.assertEqual(claude_failure["error"]["type"], "NonZeroExit")
+            self.assertEqual(
+                claude_failure["error"]["classification"],
+                "provider_process_error",
+            )
+            self.assertFalse(claude_failure["error"]["retryable"])
+            self.assertEqual(claude_failure["response"]["exitCode"], 4)
+            self.assertEqual(
+                claude_failure["response"]["workDir"],
+                "<claude_session_dir>",
+            )
+            self.assertNotIn(claude.as_posix(), json.dumps(claude_failure))
+
     def test_agent_runtime_uses_claude_code_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

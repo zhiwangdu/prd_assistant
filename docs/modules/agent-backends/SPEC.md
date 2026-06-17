@@ -33,6 +33,9 @@
   `error.type=HTTPError`，同时写入 `error.classification`、
   `error.retryable` 和 `error.httpStatus`，用于区分鉴权、限流、输入过大、
   Provider timeout、5xx 和其他 4xx。
+- Python V2 binary 和 Claude Code Agent provider 失败必须写入稳定
+  `error.classification` 和 `error.retryable`，覆盖 configuration、timeout、
+  transport、process、output-size、decode 和 parse 阶段。
 - Python V2 必须按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
   `diagnose` 为只读 MCP-only profile，`code_investigation` 允许 Read/Grep/Bash，
   `fix` 允许 Read/Grep/Bash/Edit/Write。所有 profile 必须自动包含
@@ -100,6 +103,8 @@ agent_response.json
   `response.providerRequestHeaders`
 - OpenAI-compatible provider HTTP failure 的 `error.classification`、
   `error.retryable` 和 `error.httpStatus`
+- binary / Claude Code provider failure 的 `error.classification` 和
+  `error.retryable`
 
 ## Structured Output
 

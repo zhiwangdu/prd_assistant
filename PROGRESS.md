@@ -2,20 +2,24 @@
 
 Last updated: 2026-06-18
 
-## 2026-06-18 V2 Agent Provider HTTP Error Classification
+## 2026-06-18 V2 Agent Provider Error Classification
 
-- V2 OpenAI-compatible Agent provider failures now keep compatible
-  `error.type=HTTPError` while adding stable `error.classification`,
-  `error.retryable`, and `error.httpStatus`.
-- Classification now distinguishes authentication failures, rate limits,
-  input-too-large responses, Provider timeouts, server errors, and generic
-  client errors; allowlisted provider request headers remain preserved for
-  failure correlation.
+- V2 Agent provider failures now include stable `error.classification` and
+  `error.retryable` fields while keeping existing `stage`, `type`, and
+  `message` fields compatible.
+- OpenAI-compatible HTTP failures also expose `error.httpStatus` and
+  distinguish authentication failures, rate limits, input-too-large responses,
+  Provider timeouts, server errors, and generic client errors; allowlisted
+  provider request headers remain preserved for failure correlation.
+- Binary and Claude Code local provider failures now classify configuration,
+  timeout, transport, process, output-size, decode, and parse stages.
 - Added fake-provider regression coverage for 401, 429, 413, 500, and 400
-  responses.
+  responses, plus binary configuration/non-zero-exit and Claude Code non-zero
+  exit paths.
 - Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
-  tests`, focused OpenAI-compatible HTTP error classification pytest, related
-  provider pytest selection, and `git diff --check`.
+  tests`, focused OpenAI-compatible HTTP error classification and local
+  provider failure pytest selection, related provider pytest selection, and
+  `git diff --check`.
 
 ## 2026-06-18 V2 Tools Catalog Envelope Parity
 

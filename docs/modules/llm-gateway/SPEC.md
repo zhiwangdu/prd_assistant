@@ -25,6 +25,9 @@
   `error.type=HTTPError`，并写入 `error.classification`、`error.retryable`
   和 `error.httpStatus`，区分鉴权失败、限流、输入超限、Provider timeout、
   5xx server error 和其他 4xx client error。
+- V2 binary 和 Claude Code Agent provider 失败会在 `error.classification`
+  和 `error.retryable` 中区分 configuration、timeout、transport、process、
+  output-size、decode 和 parse 阶段。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - System Context 背景资源 Prompt 和字符数裁剪。
@@ -145,6 +148,8 @@ binary provider 错误包括：
   `agent_response.json`。
 - V2 OpenAI-compatible Agent provider 对 401/403、429、413、408/504、5xx 和
   其他 4xx HTTP 失败必须写入稳定 `error.classification` 和 `retryable`。
+- V2 binary 和 Claude Code Agent provider 的配置错误与非零退出必须写入稳定
+  `error.classification` 和 `retryable`，并保留安全的 argv/path preview。
 - FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 最终结果 schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。

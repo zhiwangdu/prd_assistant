@@ -185,7 +185,8 @@ flowchart TD
 - V2 OpenAI-compatible Agent provider 的 `agent_response.json` 已保存稳定
   provider 审计字段，包括 request id、response id、response model、finish
   reason、usage、system fingerprint 和 allowlist response headers；HTTP 失败会
-  额外写入稳定 `error.classification`、`error.retryable` 和 `httpStatus`。
+  额外写入稳定 `error.classification`、`error.retryable` 和 `httpStatus`；
+  binary / Claude Code 本地 provider 失败也会写入同一分类字段。
 - WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、新建/删除非运行中 Session、草稿自动保存、Diagnostic Skill 选择和 Markdown 导入、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Metadata Raw JSON 手动刷新和单条删除、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力

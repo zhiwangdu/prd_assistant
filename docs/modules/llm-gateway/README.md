@@ -62,7 +62,9 @@ artifact。HTTP 失败保留兼容的 `error.type=HTTPError`，并新增
 `error.classification`、`error.retryable` 和 `error.httpStatus`：401/403 归类为
 `authentication_failed`，429 为 `rate_limited`，413 为 `input_too_large`，
 408/504 为 `provider_timeout`，5xx 为 `provider_server_error`，其他 4xx 为
-`provider_client_error`。
+`provider_client_error`。Binary 和 Claude Code 本地 provider 失败也使用同一
+分类字段：configuration、timeout、transport、process、output-size、decode 和
+parse 阶段分别写入稳定分类和 retryable 标记。
 
 Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 Claude Code session runner。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 

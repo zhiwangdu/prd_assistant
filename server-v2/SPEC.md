@@ -115,7 +115,10 @@ Implemented in this slice:
   Provider HTTP failures preserve `error.type=HTTPError` and also expose
   `error.classification`, `error.retryable`, and `error.httpStatus` for
   authentication failures, rate limits, input-too-large responses, provider
-  server errors, provider timeouts, and generic client errors.
+  server errors, provider timeouts, and generic client errors. Binary and
+  Claude Code local provider failures expose the same classification shape for
+  configuration, timeout, transport, process, output-size, decode, and parse
+  errors.
   Follow-up evidence refs
   returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. After successful final-answer validation, non-stub

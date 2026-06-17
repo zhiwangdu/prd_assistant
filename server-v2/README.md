@@ -159,7 +159,10 @@ slice provides the durable foundation for the V2 product model:
   HTTP failures keep `type=HTTPError` for compatibility and add stable
   `error.classification`, `error.retryable`, and `error.httpStatus` fields for
   authentication failures, rate limits, input-too-large responses, server
-  errors, provider timeouts, and generic client errors.
+  errors, provider timeouts, and generic client errors. Binary and Claude Code
+  local provider failures use the same `error.classification` /
+  `error.retryable` shape for configuration, timeout, transport, process,
+  output-size, decode, and parse errors.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.

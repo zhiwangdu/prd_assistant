@@ -1313,6 +1313,11 @@ def failed_provider_result(
     retryable: bool | None = None,
     http_status: int | None = None,
 ) -> JsonObject:
+    default_metadata = provider_failure_classification(stage, error_type)
+    if classification is None:
+        classification = default_metadata.get("classification")
+    if retryable is None:
+        retryable = default_metadata.get("retryable")
     error_payload: JsonObject = {
         "stage": stage,
         "type": error_type,
@@ -1333,6 +1338,28 @@ def failed_provider_result(
     if response is not None:
         result["response"] = response
     return result
+
+
+def provider_failure_classification(stage: str, error_type: str) -> JsonObject:
+    if stage == "configuration":
+        return {"classification": "configuration_error", "retryable": False}
+    if stage == "timeout":
+        return {"classification": "provider_timeout", "retryable": True}
+    if stage == "transport":
+        return {"classification": "transport_error", "retryable": True}
+    if stage == "process":
+        return {"classification": "provider_process_error", "retryable": False}
+    if stage == "output":
+        if error_type == "OutputTooLarge":
+            return {"classification": "output_too_large", "retryable": False}
+        return {"classification": "provider_output_error", "retryable": False}
+    if stage == "decode":
+        return {"classification": "output_decode_error", "retryable": False}
+    if stage == "parse":
+        return {"classification": "output_parse_error", "retryable": False}
+    if stage == "http":
+        return {"classification": "provider_http_error", "retryable": False}
+    return {"classification": "provider_error", "retryable": False}
 
 
 def provider_http_error_classification(status_code: int) -> JsonObject:
