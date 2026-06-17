@@ -180,6 +180,7 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
+| `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` | `1048576` | Maximum Fetch request body bytes |
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key for encrypted Fetch credential sets |
@@ -665,6 +666,9 @@ optional string `variables` that replace `{name}` placeholders in the endpoint
 URL before allowlist validation, optional temporary string `headers`, and an
 optional string `body` override. Controlled headers such as `Host` and
 `Content-Length` are rejected for both saved endpoints and runtime overrides.
+Saved endpoint bodies and runtime body overrides are rejected before the HTTP
+request when their UTF-8 byte size exceeds
+`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.
 Request URLs, sensitive headers, and sensitive JSON/form-style body preview
 fields are redacted in API, MCP, and artifact previews. Redirects are followed
 manually up to

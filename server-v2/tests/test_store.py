@@ -2865,6 +2865,50 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_fetch_rejects_request_body_above_configured_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                fetch_enabled=True,
+                fetch_allowed_hosts=("127.0.0.1",),
+                fetch_max_request_bytes=8,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            endpoint = store.create_fetch_endpoint(
+                name="body limit",
+                method="POST",
+                url="http://127.0.0.1:9/metadata",
+                headers={},
+                body="default",
+                enabled=True,
+            )
+            workspace = store.create_workspace("fetch body limit", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            fetch_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 25,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.fetch",
+                        "arguments": {
+                            "endpointId": endpoint["id"],
+                            "body": "123456789",
+                        },
+                    },
+                },
+            )
+
+            self.assertIn("LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES", fetch_response["error"]["message"])
+            self.assertEqual(store.list_evidence(run["id"]), [])
+
     def test_fetch_sensitive_credentials_are_encrypted_and_hydrated(self) -> None:
         captured: dict[str, str] = {}
 

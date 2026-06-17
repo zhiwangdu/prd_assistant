@@ -653,6 +653,7 @@ Fetch execution is disabled by default. To execute endpoints, set:
 ```text
 LOGAGENT_V2_FETCH_ENABLED=1
 LOGAGENT_V2_FETCH_ALLOWED_HOSTS=127.0.0.1,example.internal:8080
+LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES=1048576
 LOGAGENT_V2_FETCH_MAX_REDIRECTS=5
 LOGAGENT_V2_FETCH_SECRET_KEY=<fernet-32-byte-base64-key>
 ```
@@ -686,7 +687,10 @@ Runtime `variables` must be a string map whose keys are ASCII
 allowlist validation, and unresolved `{...}` placeholders fail the run.
 Runtime `headers` must be a string map and are merged over saved endpoint
 headers for that single request; controlled headers are rejected. Runtime
-`body`, when present, overrides the saved endpoint body for that request.
+`body`, when present, overrides the saved endpoint body for that request. Saved
+endpoint bodies and runtime body overrides must be rejected before HTTP
+execution when their UTF-8 byte size exceeds
+`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.
 Result artifacts include redacted request metadata, top-level `httpOk`,
 `statusCode`, `redirectCount`, `finalUrl`, `truncated`, `credentialVersion`,
 and a separate bounded response body artifact referenced by both logical
@@ -732,10 +736,11 @@ fetch the original URL again; URL refresh remains an explicit fetch import.
 
 URL fetch import uses the same default-off Fetch boundary. It requires
 `LOGAGENT_V2_FETCH_ENABLED=1`, an exact host or host:port match in
-`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, and the shared Fetch timeout/response-size
+`LOGAGENT_V2_FETCH_ALLOWED_HOSTS`, and the shared Fetch timeout and response-size
 limits. V2 uses GET only, rejects redirects, redacts sensitive query parameters
 in draft `sourceUrl`, and then runs the fetched content through the same
-normalization and preview/confirm path.
+normalization and preview/confirm path. The Fetch request-size limit primarily
+applies to configured endpoint execution because metadata URL fetch uses GET.
 
 Current direct import request:
 

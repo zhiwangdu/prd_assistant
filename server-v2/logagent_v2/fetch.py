@@ -302,6 +302,14 @@ def prepare_fetch_endpoint(endpoint: JsonObject, run_params: JsonObject) -> Json
     return prepared
 
 
+def validate_fetch_request_size(settings: Settings, endpoint: JsonObject) -> None:
+    body = endpoint.get("body")
+    if not isinstance(body, str):
+        return
+    if len(body.encode("utf-8")) > settings.fetch_max_request_bytes:
+        raise ValueError("fetch request body exceeds LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES")
+
+
 def redact_variables(variables: JsonObject) -> JsonObject:
     return {
         str(key): REDACTED if is_sensitive_name(str(key)) else str(value)
@@ -539,6 +547,7 @@ def execute_fetch_endpoint(
     credential = store.get_fetch_credential_set(endpoint_id)
     endpoint = prepare_fetch_endpoint(endpoint, run_params)
     validate_url_allowed(settings, endpoint["url"])
+    validate_fetch_request_size(settings, endpoint)
     action_id = new_id("fetchact")
     started = time.monotonic()
     status = "OK"

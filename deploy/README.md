@@ -92,6 +92,11 @@ Optional variables:
 - `LOGAGENT_V2_VENV_DIR`: V2 virtualenv directory, defaults to `$LOGAGENT_APP_DIR/server-v2/.venv`.
 - `LOGAGENT_V2_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.pid`.
 - `LOGAGENT_V2_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.log`.
+- `LOGAGENT_V2_FETCH_ENABLED`: optional V2 Fetch endpoint execution switch, disabled by default.
+- `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`: comma-separated exact host or host:port allowlist for V2 Fetch execution.
+- `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`: defaults to `1048576`, limiting saved endpoint bodies and runtime body overrides.
+- `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES`: defaults to `1048576`, limiting stored Fetch response bodies/previews.
+- `LOGAGENT_V2_FETCH_SECRET_KEY`: optional Fernet-compatible 32-byte urlsafe base64 key required when saving sensitive Fetch credentials.
 - `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER`,
   `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER`,
   `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and

@@ -124,6 +124,7 @@ class Settings:
     fetch_enabled: bool = False
     fetch_allowed_hosts: tuple[str, ...] = ()
     fetch_timeout_seconds: int = 20
+    fetch_max_request_bytes: int = 1024 * 1024
     fetch_max_response_bytes: int = 1024 * 1024
     fetch_max_redirects: int = 5
     fetch_secret_key: str | None = None
@@ -215,6 +216,9 @@ class Settings:
             if item.strip()
         )
         fetch_timeout_seconds = int(os.environ.get("LOGAGENT_V2_FETCH_TIMEOUT_SECONDS", "20"))
+        fetch_max_request_bytes = int(
+            os.environ.get("LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES", str(1024 * 1024))
+        )
         fetch_max_response_bytes = int(
             os.environ.get("LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES", str(1024 * 1024))
         )
@@ -277,6 +281,7 @@ class Settings:
             fetch_enabled=fetch_enabled,
             fetch_allowed_hosts=fetch_allowed_hosts,
             fetch_timeout_seconds=fetch_timeout_seconds,
+            fetch_max_request_bytes=max(1, fetch_max_request_bytes),
             fetch_max_response_bytes=fetch_max_response_bytes,
             fetch_max_redirects=max(0, fetch_max_redirects),
             fetch_secret_key=fetch_secret_key,

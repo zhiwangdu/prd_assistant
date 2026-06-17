@@ -198,6 +198,7 @@ tools:
 - `fetch.enabled` 默认 false；启用时必须配置非空 `fetch.allowed_hosts` 和可解码为 32-byte 原始 key 的 `fetch.secret_key_env` 环境变量。
 - `fetch.allowed_hosts` 支持 `host`、`host:port` 和 `http(s)://host[:port]`。Fetch 执行、redirect hop 和运行时 URL template 解析结果都必须命中 allowlist。
 - `fetch.request_timeout_seconds`、`fetch.max_request_bytes`、`fetch.max_response_bytes` 和 `fetch.max_redirects` 必须有有限默认值；非正或缺省值按安全默认裁剪。
+- Python V2 必须提供等价请求体边界：`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` 默认 1048576，保存的 endpoint body 和运行时 body override 超过该 UTF-8 字节数时必须在发出 HTTP 请求前拒绝。
 - `huawei_cloud.package_sync.enabled` 默认 false；禁用时不读取 OBS/GaussDB 密钥环境变量。
 - 启用 Huawei package sync 时，OBS endpoint 必须是 `http/https` 且无 path，bucket 必须非空且只含字母、数字、`.` 或 `-`，access/secret key 环境变量必须存在且非空。
 - 启用 Huawei package sync 时，GaussDB host/database/user/password_env 必须非空，password 环境变量必须存在且非空；`sslmode` 首版只允许 `disable`。

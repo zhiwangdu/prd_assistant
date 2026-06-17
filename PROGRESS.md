@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Request Size Limit
+
+- Added `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` with a 1MiB default to match the
+  Rust Fetch `max_request_bytes` safety boundary.
+- V2 Fetch now rejects saved endpoint bodies and runtime body overrides before
+  HTTP execution when their UTF-8 byte length exceeds the configured limit.
+- Updated V2 server, Config, Deployment, deploy README/SPEC docs, and
+  `deploy/.env.example` with the request-size boundary.
+- Added regression coverage that verifies an oversized runtime body override
+  returns a task MCP error and does not create Fetch evidence.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Runtime Overrides
 
 - Added V1-compatible runtime params to V2 `logagent.fetch`: `endpointId` or
