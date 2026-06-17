@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Dev Proxy
+
+- WebUI Vite development proxy now defaults `/api` and `/health` to the Python
+  V2 server at `http://127.0.0.1:50993`, matching the default V2 route cutover.
+- Added `VITE_LOGAGENT_API_TARGET` as an override for Rust V1 or alternate
+  backend ports during local development.
+- Updated WebUI README/SPEC for the default V2 dev backend and override
+  behavior.
+- Verification passed: `npm run lint`, `npm run typecheck`,
+  `npm run build`, and `git diff --check`.
+
 ## 2026-06-18 Native Agent V2 Target
 
 - Native Agent added `native_agent.server_api` with default `v1` and V2 mode

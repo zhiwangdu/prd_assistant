@@ -127,28 +127,48 @@ webui/
 
 ## 本地运行
 
+先启动默认 V2 后端：
+
+```bash
+cd server-v2
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e ".[dev]"
+export LOGAGENT_V2_API_KEY=dev-token
+python -m logagent_v2 init-db
+python -m logagent_v2 server
+```
+
+再启动 WebUI 开发服务：
+
 ```bash
 cd webui
 npm install
 npm run dev
 ```
 
-Vite 开发服务会把 `/api` 和 `/health` 代理到 `http://127.0.0.1:50992`。
+Vite 开发服务默认把 `/api` 和 `/health` 代理到 V2
+`http://127.0.0.1:50993`。如需临时连接 Rust V1 或其它后端，可设置：
 
-生产构建和 Server 托管：
+```bash
+VITE_LOGAGENT_API_TARGET=http://127.0.0.1:50992 npm run dev
+```
+
+生产构建和 V2 Server 托管：
 
 ```bash
 cd webui
 npm run build
-cd ..
-export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-server -- --config examples/server-test.yaml
+cd ../server-v2
+export LOGAGENT_V2_API_KEY=dev-token
+python -m logagent_v2 init-db
+python -m logagent_v2 server
 ```
 
 访问：
 
 ```text
-http://127.0.0.1:50992/
+http://127.0.0.1:50993/
 API Key: dev-token
 ```
 
