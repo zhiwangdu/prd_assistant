@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Provider Audit Metadata
+
+- V2 OpenAI-compatible Agent provider now promotes stable audit metadata into
+  `agent_response.json`: provider request id from allowlisted response headers,
+  provider response id, response model, finish reason, usage, system
+  fingerprint, and allowlisted response-header metadata.
+- HTTP error responses also preserve allowlisted provider request headers so
+  provider-side failures can be correlated without storing request headers or
+  API keys.
+- Updated server-v2, LLM Gateway, Agent Backend, and root docs; also corrected
+  the root README's stale note about approved remote environment collection,
+  which can now use Remote Executor evidence.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused OpenAI-compatible Agent provider pytest, provider runtime
+  pytest selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Analysis Package Artifact Index
 
 - `analysis_package.json` now includes a bounded `artifactIndex` outline with

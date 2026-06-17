@@ -182,6 +182,9 @@ flowchart TD
 - 最终结果 evidence refs 支持历史 Case canonical 引用 `case_context.json#cases/<index>`；真实模型输出 `case_<id>` 或“历史案例 case_<id>”时会按当前 task 的 `case_context.json` 规范化。
 - Log Analyzer 支持 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；当前保留给 Case import、alias 生成和非 Agent Loop 的辅助结构化任务。Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口。
+- V2 OpenAI-compatible Agent provider 的 `agent_response.json` 已保存稳定
+  provider 审计字段，包括 request id、response id、response model、finish
+  reason、usage、system fingerprint 和 allowlist response headers。
 - WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、新建/删除非运行中 Session、草稿自动保存、Diagnostic Skill 选择和 Markdown 导入、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Metadata Raw JSON 手动刷新和单条删除、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力
@@ -194,7 +197,8 @@ flowchart TD
 - 基于真实 TSSP/TSI/TSM/series fixture 扩展 openGemini 和 InfluxDB storage analyzers 的解析深度和 finding 规则。
 - Fetch 后续补齐 token refresh policy、更多 curl 方言和 endpoint schema 版本迁移；v1 只支持 bash 风格 cURL 和手动 credential set。
 - Analysis Orchestrator 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。
-- LLM Gateway 补齐用量审计、Provider request id 和稳定结构化协议。
+- LLM Gateway 继续收敛 Rust V1 辅助路径和 alias/Case import 的用量审计、
+  Provider request id 与稳定结构化协议；V2 Agent provider 审计字段已先行落地。
 - Memory embedding/vector 召回和自动注入 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - 根据用户输入的软件版本切换代码仓分支并收集证据。

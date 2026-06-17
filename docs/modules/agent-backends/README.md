@@ -42,6 +42,11 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
   `diagnose` profile 的兼容覆盖；多模式覆盖使用
   `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON`。
 - Python V2 的 settings diagnostics 不启动真实 Claude session，只校验 `LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH` 是否 absolute、regular、executable；真实调用结果仍由 `agent_request.json` / `agent_response.json` 审计。
+- Python V2 的 OpenAI-compatible Agent provider 会在 `agent_response.json`
+  的 `response` 字段保存稳定审计元数据，包括 allowlist header
+  `providerRequestId`、响应体 `providerResponseId`、response model、finish
+  reason、usage 和 system fingerprint；请求 headers 和 API Key 不写入
+  artifact。
 
 ## CLI 与 Agent SDK 取舍
 

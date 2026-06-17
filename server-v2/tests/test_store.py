@@ -1299,10 +1299,27 @@ class StoreTests(unittest.TestCase):
                     "evidenceRefs": ["grep_results.json#matches/0"],
                 }
                 body = json.dumps(
-                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    {
+                        "id": "chatcmpl-v2-agent-1",
+                        "model": "mock-model-response",
+                        "usage": {
+                            "prompt_tokens": 19,
+                            "completion_tokens": 11,
+                            "total_tokens": 30,
+                        },
+                        "system_fingerprint": "fp-v2",
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "message": {"content": json.dumps(answer)},
+                            }
+                        ],
+                    }
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
+                self.send_header("x-request-id", "req-v2-agent-1")
+                self.send_header("openai-processing-ms", "42")
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -1382,6 +1399,34 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(response_doc["status"], "completed")
                 self.assertEqual(response_doc["validation"]["status"], "passed")
                 self.assertEqual(response_doc["response"]["httpStatus"], 200)
+                self.assertEqual(
+                    response_doc["response"]["providerRequestId"],
+                    "req-v2-agent-1",
+                )
+                self.assertEqual(
+                    response_doc["response"]["providerResponseId"],
+                    "chatcmpl-v2-agent-1",
+                )
+                self.assertEqual(
+                    response_doc["response"]["providerRequestHeaders"]["xRequestId"],
+                    "req-v2-agent-1",
+                )
+                self.assertEqual(
+                    response_doc["response"]["providerRequestHeaders"][
+                        "openaiProcessingMs"
+                    ],
+                    "42",
+                )
+                self.assertEqual(
+                    response_doc["response"]["usage"]["total_tokens"],
+                    30,
+                )
+                self.assertEqual(
+                    response_doc["response"]["responseModel"],
+                    "mock-model-response",
+                )
+                self.assertEqual(response_doc["response"]["finishReason"], "stop")
+                self.assertEqual(response_doc["response"]["systemFingerprint"], "fp-v2")
         finally:
             server.shutdown()
             server.server_close()

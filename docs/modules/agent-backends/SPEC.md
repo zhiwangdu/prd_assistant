@@ -24,6 +24,11 @@
 - Python V2 在等待态恢复后必须从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并把它作为下一轮 Claude Code CLI 的 `--resume <session_id>` 参数。
 - Python V2 必须保留 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd`，并写入 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
 - Python V2 必须在 Claude Code 响应后写入新的 `claude_session.json` runtime artifact，记录 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery 和对应 `agent_response` artifact id。
+- Python V2 OpenAI-compatible Agent provider 必须在 `agent_response.json`
+  的 `response` 字段保存稳定审计元数据：allowlist header
+  `providerRequestId`、响应体 `providerResponseId`、response model、finish
+  reason、usage 和 system fingerprint；请求 headers 和 API Key 不能进入
+  artifact。
 - Python V2 必须按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
   `diagnose` 为只读 MCP-only profile，`code_investigation` 允许 Read/Grep/Bash，
   `fix` 允许 Read/Grep/Bash/Edit/Write。所有 profile 必须自动包含
@@ -85,6 +90,10 @@ agent_response.json
 - `durationMs`
 - `error`
 - `rawStdoutPreview`
+- OpenAI-compatible provider 的 `response.providerRequestId`、
+  `response.providerResponseId`、`response.responseModel`、
+  `response.finishReason`、`response.usage` 和
+  `response.providerRequestHeaders`
 
 ## Structured Output
 

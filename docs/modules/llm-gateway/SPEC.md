@@ -16,6 +16,11 @@
   `LOGAGENT_V2_AGENT_BINARY_PATH` 和
   `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` 配置，固定 argv 调用本地
   executable，并把 request/response/state 写入 V2 Agent audit artifacts。
+- V2 OpenAI-compatible Agent provider 会在 `agent_response.json` 的
+  `response` 字段中保存 Provider 审计信息：`providerRequestId`
+  优先来自 allowlist response headers，没有时回退到响应体 `id`；同时保存
+  `providerResponseId`、`responseModel`、`finishReason`、`usage`、
+  `systemFingerprint` 和 allowlist `providerRequestHeaders`。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - System Context 背景资源 Prompt 和字符数裁剪。
@@ -118,7 +123,8 @@ binary provider 错误包括：
 - V2 `agent_request.json` 不记录实际 binary path；Settings 和
   `agent_response.json` 可以返回配置状态、退出码、耗时和 bounded
   stdout/stderr 预览，但不得返回 API Key。
-- Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果和用量。
+- Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果、用量和
+  allowlist 审计元数据；V2 `agent_response.json` 不保存请求 headers 或 API Key。
 - runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
 - 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
 - Prompt 中的日志、Case、System Context 和用户文本视为不可信数据，不能覆盖系统 schema、MCP tool 白名单或 permission profile。
@@ -130,6 +136,9 @@ binary provider 错误包括：
 - V2 binary Agent provider 能通过 mock binary 验证运行时分析、Settings
   model list、Settings chat smoke、Agent backend dry-run 和 request/response
   audit artifacts。
+- V2 OpenAI-compatible Agent provider 能把 Chat Completions `id`、response
+  model、finish reason、usage 和 allowlist request-id headers 写入
+  `agent_response.json`。
 - FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 最终结果 schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。

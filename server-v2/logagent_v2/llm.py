@@ -29,6 +29,25 @@ from .tools import tool_descriptors
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
+PROVIDER_AUDIT_RESPONSE_HEADERS = {
+    "x-request-id": "xRequestId",
+    "request-id": "requestId",
+    "openai-request-id": "openaiRequestId",
+    "anthropic-request-id": "anthropicRequestId",
+    "x-correlation-id": "xCorrelationId",
+    "x-amzn-requestid": "xAmznRequestId",
+    "cf-ray": "cfRay",
+    "openai-processing-ms": "openaiProcessingMs",
+}
+PROVIDER_REQUEST_ID_HEADER_KEYS = (
+    "xRequestId",
+    "requestId",
+    "openaiRequestId",
+    "anthropicRequestId",
+    "xCorrelationId",
+    "xAmznRequestId",
+    "cfRay",
+)
 _DEBUG_LOCK = threading.Lock()
 _DEBUG_LOG_RESPONSES = False
 
@@ -273,17 +292,23 @@ def call_openai_compatible(
         with urllib.request.urlopen(
             request, timeout=settings.agent_timeout_seconds
         ) as response:
+            response_headers = provider_response_headers(response.headers)
             raw = response.read(MAX_PROVIDER_RESPONSE_BYTES)
             http_status = response.status
     except urllib.error.HTTPError as error:
         body = error.read(4096).decode("utf-8", errors="replace")
+        response_payload: JsonObject = {"httpStatus": error.code, "bodyPreview": body}
+        add_provider_header_audit(
+            response_payload,
+            provider_response_headers(error.headers),
+        )
         return failed_provider_result(
             provider="openai_compatible",
             model=settings.agent_model,
             stage="http",
             error_type="HTTPError",
             message=f"agent provider returned HTTP {error.code}: {body}",
-            response={"httpStatus": error.code, "bodyPreview": body},
+            response=response_payload,
         )
     except urllib.error.URLError as error:
         return failed_provider_result(
@@ -307,10 +332,12 @@ def call_openai_compatible(
         "httpStatus": http_status,
         "bodyPreview": raw_text[:MAX_PROVIDER_PREVIEW_CHARS],
     }
+    add_provider_header_audit(response_payload, response_headers)
     try:
         decoded = json.loads(raw_text)
         if isinstance(decoded, dict):
             response_payload["json"] = decoded
+            add_openai_response_audit(response_payload, decoded)
         content = extract_chat_content(decoded)
         log_provider_response_content(content)
         response_payload["contentPreview"] = content[:MAX_PROVIDER_PREVIEW_CHARS]
@@ -1288,6 +1315,62 @@ def failed_provider_result(
     if response is not None:
         result["response"] = response
     return result
+
+
+def provider_response_headers(headers: Any) -> JsonObject:
+    result: JsonObject = {}
+    if headers is None:
+        return result
+    for source_name, output_name in PROVIDER_AUDIT_RESPONSE_HEADERS.items():
+        value = headers.get(source_name) if hasattr(headers, "get") else None
+        if isinstance(value, str) and value.strip():
+            result[output_name] = value.strip()[:200]
+    return result
+
+
+def add_provider_header_audit(response_payload: JsonObject, headers: JsonObject) -> None:
+    if not headers:
+        return
+    response_payload["providerRequestHeaders"] = headers
+    if response_payload.get("providerRequestId"):
+        return
+    for key in PROVIDER_REQUEST_ID_HEADER_KEYS:
+        value = headers.get(key)
+        if isinstance(value, str) and value:
+            response_payload["providerRequestId"] = value
+            return
+
+
+def add_openai_response_audit(response_payload: JsonObject, decoded: JsonObject) -> None:
+    response_id = decoded.get("id")
+    if isinstance(response_id, str) and response_id.strip():
+        response_payload["providerResponseId"] = response_id.strip()
+        response_payload.setdefault("providerRequestId", response_id.strip())
+    response_model = decoded.get("model")
+    if isinstance(response_model, str) and response_model.strip():
+        response_payload["responseModel"] = response_model.strip()
+    system_fingerprint = decoded.get("system_fingerprint")
+    if isinstance(system_fingerprint, str) and system_fingerprint.strip():
+        response_payload["systemFingerprint"] = system_fingerprint.strip()
+    usage = decoded.get("usage")
+    if isinstance(usage, dict):
+        response_payload["usage"] = usage
+    finish_reason = first_choice_finish_reason(decoded)
+    if finish_reason is not None:
+        response_payload["finishReason"] = finish_reason
+
+
+def first_choice_finish_reason(decoded: JsonObject) -> str | None:
+    choices = decoded.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    finish_reason = first.get("finish_reason")
+    if isinstance(finish_reason, str):
+        return finish_reason
+    return None
 
 
 def extract_chat_content(response: Any) -> str:

@@ -147,6 +147,10 @@ slice provides the durable foundation for the V2 product model:
   The initial evidence node includes a V1-style automatic `run_tool` phase for
   matching configured tools; repeated task MCP calls for the same tool action
   reuse the existing result evidence instead of duplicating artifacts.
+  OpenAI-compatible provider responses now promote provider request id,
+  response id, response model, finish reason, selected audit headers, usage,
+  and system fingerprint into stable `agent_response.json` `response` fields,
+  while keeping the bounded raw body preview for troubleshooting.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
@@ -624,9 +628,13 @@ When a waiting run resumes and the previous Claude response recorded
 `response.sessionId`, V2 adds `--resume <session_id>` to the next Claude Code
 CLI invocation and records `response.resumedSessionId` in `agent_response.json`.
 Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` are preserved as
-`response.usage` and `response.cost.usd`. After each Claude Code provider
-response with session metadata, V2 also writes a fresh `claude_session.json`
-runtime artifact with `claudeSessionId`, `resumedSessionId`, usage/cost, prompt
+`response.usage` and `response.cost.usd`. OpenAI-compatible Chat Completions
+responses preserve `response.providerRequestId`,
+`response.providerResponseId`, `response.responseModel`,
+`response.finishReason`, `response.usage`, and an allowlisted
+`response.providerRequestHeaders` map. After each Claude Code provider response
+with session metadata, V2 also writes a fresh `claude_session.json` runtime
+artifact with `claudeSessionId`, `resumedSessionId`, usage/cost, prompt
 delivery, and the linked `agent_response` artifact id.
 
 The CLI permission policy is selected from the Workspace `mode` using the V1

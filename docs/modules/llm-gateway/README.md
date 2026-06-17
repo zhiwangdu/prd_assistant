@@ -52,6 +52,14 @@ V2 环境变量：`LOGAGENT_V2_AGENT_PROVIDER=binary`、
 `agent_response.json` 记录退出码、耗时、stdout/stderr 预览、解析结果和
 validation 状态。Settings 诊断会提前校验路径是绝对、常规且可执行文件。
 
+V2 OpenAI-compatible Agent provider 会把 Chat Completions 响应中的审计信息
+提升到 `agent_response.json` 的稳定 `response` 字段：优先使用 allowlist
+响应头中的 `providerRequestId`，没有响应头时回退到响应体 `id`；同时保存
+`providerResponseId`、`responseModel`、`finishReason`、`usage`、
+`systemFingerprint` 和脱敏 allowlist `providerRequestHeaders`。原始响应体仍只以
+bounded `bodyPreview` 和解析后的 JSON 形式保存，API Key 和请求 headers 不进入
+artifact。
+
 Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口，而是调用 Claude Code session runner。当前会对最终结果、Case import 和 alias 的解析/schema 错误做受控修正重试，HTTP、鉴权、限流和超时错误不重试。
 
 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 由 Analysis Orchestrator 与 Claude Code Session Runner 管理。LLM Gateway 不读取或执行这些 session 输入/响应文件。

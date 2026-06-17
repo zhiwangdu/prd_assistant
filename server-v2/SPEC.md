@@ -109,6 +109,9 @@ Implemented in this slice:
   `analysis_state.json`, and provider tool-call `mcp_calls.jsonl` audit
   artifacts before the run reaches a terminal state. `analysis_state.json`
   includes `graphRuntime.engine=langgraph`, the graph name, and node list.
+  OpenAI-compatible provider responses promote provider request id, provider
+  response id, response model, finish reason, allowlisted audit headers, usage,
+  and system fingerprint into stable `agent_response.json` `response` fields.
   Follow-up evidence refs
   returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. After successful final-answer validation, non-stub
@@ -1344,10 +1347,16 @@ If the previous Claude response stored `response.sessionId`, resumed runs pass
 that value as `--resume <session_id>` on the next Claude Code CLI invocation and
 record `response.resumedSessionId` in the next `agent_response` audit artifact.
 Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` must be preserved
-under `response.usage` and `response.cost.usd`. When the response contains
-session metadata, V2 must write a fresh `claude_session.json` runtime artifact
-with the latest `claudeSessionId`, optional `resumedSessionId`, usage/cost,
-prompt delivery, and linked `agent_response` artifact id.
+under `response.usage` and `response.cost.usd`. OpenAI-compatible Chat
+Completions responses must preserve `response.providerRequestId` from
+allowlisted response headers when present, fall back to the response body `id`
+when no request header is available, and also expose
+`response.providerResponseId`, `response.responseModel`,
+`response.finishReason`, `response.usage`, and
+`response.providerRequestHeaders`. When the response contains session metadata,
+V2 must write a fresh `claude_session.json` runtime artifact with the latest
+`claudeSessionId`, optional `resumedSessionId`, usage/cost, prompt delivery,
+and linked `agent_response` artifact id.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,

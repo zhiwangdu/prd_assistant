@@ -224,7 +224,7 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 
 V2 重构分支当前已迁移核心 Server 能力到小团队单机栈：FastAPI、SQLite WAL、本地 artifact、DB-backed jobs、日志解压/搜索、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、只读/任务 MCP、Claude runtime contract artifacts，以及拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime。默认 WebUI 路由也已切到 V2 Analyze、Memory、System Context、Metadata、Tools、Fetch、Executors 和 Settings，不再默认渲染旧 Rust 兼容面板。Native Agent 可通过 `server_api=v2` 对接 V2 Session-scoped 上传接口。本地开发可用 `scripts/v2-local.sh build|start|stop|restart|status|logs` 快速管理 V2，runtime 部署继续使用 `deploy/rebuild-v2-install.sh` 和 `deploy/logagent-v2ctl.sh`。该分支仍不追求 Rust V1 API 兼容；后续重点是更多真实领域 fixture 和产品化验证。
 
-Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的远程采集仍通过 LogAgent approval gate 进入等待态并使用 mock evidence。
+Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的 `collect_environment` 已可选择 Remote Executor 白名单命令并把远程 result/stdout/stderr 注册为环境背景证据；没有远程目标时仍保留兼容 mock evidence 路径。
 
 ## 开发约定
 
