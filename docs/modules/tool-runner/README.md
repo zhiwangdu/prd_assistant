@@ -109,7 +109,15 @@ tools:
 - Python V2 的 `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` 和 `keywords` 在配置加载阶段统一转小写，HTTP/MCP 工具目录输出与 Rust/V1 保持一致。
 - 已支持 `max_input_files` 控制单个工具在同一任务中最多处理的匹配输入文件数量，默认 1。
 - 规则版 action 和 V2 task MCP 先使用显式 `inputFile` / `inputFiles`，再读取 `tool_inputs/index.json` 中声明给当前 toolId 的 materialized input；只要存在匹配项，就只使用这些 tool-ready 输入并受 `max_input_files` 限制，不再补充原始日志候选。V2 的 materialized input 覆盖 InfluxQL/Flux JSONL 和启用 analyzer 的 storage 文件/目录输入；后者从直接上传或 archive 内的 `.tssp`、`.tssp.init`、`.tsm`、`.tsi`、TSI/mergeset 目录和 `_series` 目录生成 artifact。没有显式输入且没有匹配 materialized input 时才按 manifest 文件模式匹配，并用 grep keyword 补充候选；每个 action id 包含工具名和输入文件稳定哈希，避免批量任务结果目录冲突。
-- 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、`stderr.txt`。
+- Rust/V1 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、
+  `stderr.txt`；Python V2 configured subprocess 目前持久化 result JSON，并在
+  记录中保留 `stdoutPath` / `stderrPath` 逻辑路径和 bounded preview。
+- Python V2 configured subprocess `result.json` 已补齐 Rust/V1
+  `ToolRunRecord` 形态：`schemaVersion=2`、`tool`、`status`、`durationMs`、
+  `command`、`stdoutPath`、`stderrPath` 和 `error`；同时保留 V2
+  `toolId`、`argv`、`stdoutPreview`、`stderrPreview` 和 `parsedStdout`。
+  非 0 退出、timeout 和 subprocess 启动失败会写成 `FAILED` / `TIMED_OUT`
+  tool result，而不是在 MCP 调用层丢失结果。
 - 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。

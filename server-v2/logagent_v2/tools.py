@@ -623,6 +623,8 @@ def run_single_configured_tool(
         str(command),
         *format_tool_args(tool.args, input_file, action_id, params, tool_workspace),
     ]
+    started = time.monotonic()
+    spawn_error: str | None = None
     try:
         completed = subprocess.run(
             argv,
@@ -635,26 +637,54 @@ def run_single_configured_tool(
     except subprocess.TimeoutExpired as error:
         completed = error
         timed_out = True
+    except OSError as error:
+        completed = None
+        timed_out = False
+        spawn_error = str(error)
 
-    stdout = (completed.stdout or b"")[: tool.max_output_bytes]
-    stderr = (completed.stderr or b"")[: tool.max_output_bytes]
+    duration_ms = int((time.monotonic() - started) * 1000)
+    stdout = captured_output_bytes(completed.stdout if completed is not None else None)
+    if spawn_error is not None:
+        stderr = spawn_error.encode("utf-8")
+    else:
+        stderr = captured_output_bytes(completed.stderr if completed is not None else None)
+    if timed_out and not stderr:
+        stderr = b"tool timed out"
+    stdout = stdout[: tool.max_output_bytes]
+    stderr = stderr[: tool.max_output_bytes]
+    exit_code = None if timed_out or completed is None else int(completed.returncode)
     parsed_stdout = parse_json(stdout)
+    status = configured_tool_status(timed_out, spawn_error, exit_code)
+    error_message = configured_tool_error(status, spawn_error)
     result = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "tool": tool.id,
         "toolId": tool.id,
         "displayName": tool.display_name,
         "actionId": action_id,
+        "status": status,
         "inputFile": input_entry.get("path") if input_entry else None,
         "inputKind": input_entry.get("inputKind") if input_entry else None,
         "params": params,
+        "command": argv,
         "argv": argv,
         "timedOut": timed_out,
-        "exitCode": None if timed_out else int(completed.returncode),
+        "exitCode": exit_code,
+        "durationMs": duration_ms,
+        "stdoutPath": f"tool_results/{action_id}/stdout.txt",
+        "stderrPath": f"tool_results/{action_id}/stderr.txt",
         "stdoutPreview": stdout.decode("utf-8", errors="replace"),
         "stderrPreview": stderr.decode("utf-8", errors="replace"),
         "parsedStdout": parsed_stdout,
-        "summary": summary_from_stdout(parsed_stdout, stdout, timed_out),
+        "summary": configured_tool_summary(
+            tool.id,
+            parsed_stdout,
+            status,
+            tool.timeout_seconds,
+            spawn_error,
+        ),
         "findings": findings_from_stdout(parsed_stdout),
+        "error": error_message,
     }
     artifact = write_artifact_bytes(
         settings=settings,
@@ -1925,19 +1955,71 @@ def parse_json(data: bytes) -> object | None:
     return value
 
 
-def summary_from_stdout(parsed: object | None, stdout: bytes, timed_out: bool) -> str:
+def captured_output_bytes(value: bytes | str | None) -> bytes:
+    if value is None:
+        return b""
+    if isinstance(value, bytes):
+        return value
+    return value.encode("utf-8")
+
+
+def configured_tool_status(
+    timed_out: bool,
+    spawn_error: str | None,
+    exit_code: int | None,
+) -> str:
     if timed_out:
-        return "Tool timed out."
+        return "TIMED_OUT"
+    if spawn_error is not None:
+        return "FAILED"
+    return "OK" if exit_code == 0 else "FAILED"
+
+
+def configured_tool_error(status: str, spawn_error: str | None) -> str | None:
+    if spawn_error is not None:
+        return spawn_error
+    if status == "TIMED_OUT":
+        return "tool timed out"
+    return None
+
+
+def configured_tool_summary(
+    tool_id: str,
+    parsed: object | None,
+    status: str,
+    timeout_seconds: int,
+    spawn_error: str | None,
+) -> str:
+    parsed_summary = parsed_stdout_summary(parsed)
+    if parsed_summary:
+        return parsed_summary
+    if status == "OK":
+        return f"tool {tool_id} completed successfully"
+    if status == "TIMED_OUT":
+        return f"tool {tool_id} timed out after {timeout_seconds} seconds"
+    if spawn_error is not None:
+        return f"tool {tool_id} could not be started"
+    return f"tool {tool_id} exited with non-zero status"
+
+
+def parsed_stdout_summary(parsed: object | None) -> str | None:
     if isinstance(parsed, dict):
         if is_influxql_report(parsed):
             return influxql_report_summary(parsed)
         if is_influxql_compare_report(parsed):
             return influxql_compare_summary(parsed)
-        summary = string_field(parsed, ("summary", "message", "title"))
-        if summary:
-            return summary
+        return string_field(parsed, ("summary", "message", "title"))
     if isinstance(parsed, str) and parsed.strip():
         return parsed.strip()[:500]
+    return None
+
+
+def summary_from_stdout(parsed: object | None, stdout: bytes, timed_out: bool) -> str:
+    if timed_out:
+        return "Tool timed out."
+    parsed_summary = parsed_stdout_summary(parsed)
+    if parsed_summary:
+        return parsed_summary
     preview = stdout.decode("utf-8", errors="replace").strip()
     return preview[:500] if preview else "Tool produced no stdout."
 

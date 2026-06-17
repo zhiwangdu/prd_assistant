@@ -651,6 +651,15 @@ tool descriptors must retain the Rust/V1 catalog semantics:
 under `properties` so schema-oriented clients can render them alongside
 reserved `inputFiles` and any configured custom params.
 
+Configured subprocess `result.json` must retain the Rust/V1 `ToolRunRecord`
+record shape: `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`,
+`durationMs`, `command`, `inputFile`, `stdoutPath`, `stderrPath`, `summary`,
+`findings`, and `error`. V2 may include additive fields such as `toolId`,
+`displayName`, `params`, `argv`, `stdoutPreview`, `stderrPreview`, and
+`parsedStdout`. Non-zero exits, timeout, and subprocess spawn failures must be
+persisted as `FAILED` / `TIMED_OUT` tool results rather than surfacing as a
+missing-result MCP failure.
+
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and
 finding fields `severity` / `level` / `status`, `file` / `path` / `filename`,

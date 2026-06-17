@@ -96,6 +96,12 @@ tool_results/
 - `summary`
 - `findings`
 
+Python V2 configured subprocess result 还保留 additive 字段：
+`toolId`、`displayName`、`params`、`argv`、`stdoutPreview`、`stderrPreview` 和
+`parsedStdout`。当前 V2 的 `stdout_path` / `stderr_path` 对应逻辑路径和
+preview，不单独暴露 stdout/stderr evidence artifact；非 0 退出、timeout 和
+subprocess 启动失败必须写成 `FAILED` / `TIMED_OUT` result。
+
 当 stdout 是 JSON 时，Tool Runner 会尽量提取：
 
 - `summary` / `message` / `title`

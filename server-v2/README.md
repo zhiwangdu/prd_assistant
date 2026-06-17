@@ -697,6 +697,15 @@ as run-local tool input artifacts, exposed to the tool as virtual
 MCP calls keep `result/evidence` as the primary run and additionally return
 `results[]` and `evidenceItems[]`.
 
+Configured subprocess `result.json` uses the Rust/V1 `ToolRunRecord` shape:
+`schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`, `durationMs`,
+`command`, `inputFile`, `stdoutPath`, `stderrPath`, `summary`, `findings`, and
+`error`. V2 also keeps `toolId`, `displayName`, `params`, `argv`,
+`stdoutPreview`, `stderrPreview`, and `parsedStdout` for existing clients.
+Non-zero exits, timeouts, and spawn failures are recorded as `FAILED` or
+`TIMED_OUT` tool results instead of failing the MCP call before an artifact is
+written.
+
 Manual tool runs use:
 
 ```http

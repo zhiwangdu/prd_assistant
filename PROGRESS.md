@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Configured Tool Result Parity
+
+- V2 configured subprocess `result.json` now uses the Rust/V1
+  `ToolRunRecord` shape with `schemaVersion=2`, `tool`, `status`,
+  `durationMs`, `command`, `stdoutPath`, `stderrPath`, and `error`, while
+  preserving additive V2 fields such as `toolId`, `argv`, `stdoutPreview`,
+  `stderrPreview`, and `parsedStdout`.
+- Non-zero exits now fall back to `tool <id> exited with non-zero status`,
+  spawn failures return a persisted `FAILED` tool result, and timeout records
+  use the V1-style `TIMED_OUT` status and summary.
+- Added regression coverage for non-zero result shape, subprocess spawn
+  failure records, and timeout records.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused configured-tool result regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (104 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Configured Tool Workspace Parity
 
 - V2 configured subprocess tools now run with `cwd` set to a per-action

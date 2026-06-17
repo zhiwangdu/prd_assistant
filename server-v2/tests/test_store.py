@@ -3120,6 +3120,138 @@ fi
                 response["error"]["message"],
             )
 
+    def test_configured_tool_result_uses_v1_record_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="failing_tool",
+                display_name="Failing Tool",
+                command=sys.executable,
+                args=("-c", "import sys; sys.exit(2)"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("failing tool", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 38,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "failing_tool"},
+                    },
+                },
+            )
+
+            payload = json.loads(response["result"]["content"][0]["text"])
+            result = payload["result"]
+            self.assertEqual(result["schemaVersion"], 2)
+            self.assertEqual(result["tool"], "failing_tool")
+            self.assertEqual(result["toolId"], "failing_tool")
+            self.assertEqual(result["status"], "FAILED")
+            self.assertEqual(result["exitCode"], 2)
+            self.assertIsInstance(result["durationMs"], int)
+            self.assertEqual(result["command"], result["argv"])
+            self.assertEqual(result["stdoutPath"], "tool_results/failing_tool/stdout.txt")
+            self.assertEqual(result["stderrPath"], "tool_results/failing_tool/stderr.txt")
+            self.assertEqual(
+                result["summary"],
+                "tool failing_tool exited with non-zero status",
+            )
+            self.assertIsNone(result["error"])
+
+    def test_configured_tool_spawn_error_returns_failed_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="missing_binary_tool",
+                display_name="Missing Binary Tool",
+                command=str(Path(tmp) / "missing-tool"),
+                args=(),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("missing tool", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 39,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "missing_binary_tool"},
+                    },
+                },
+            )
+
+            payload = json.loads(response["result"]["content"][0]["text"])
+            result = payload["result"]
+            self.assertEqual(result["schemaVersion"], 2)
+            self.assertEqual(result["status"], "FAILED")
+            self.assertIsNone(result["exitCode"])
+            self.assertEqual(
+                result["summary"],
+                "tool missing_binary_tool could not be started",
+            )
+            self.assertIn("missing-tool", result["error"])
+            self.assertIn("missing-tool", result["stderrPreview"])
+
+    def test_configured_tool_timeout_returns_timed_out_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="slow_tool",
+                display_name="Slow Tool",
+                command=sys.executable,
+                args=("-c", "import time; time.sleep(2)"),
+                timeout_seconds=1,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("slow tool", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 40,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"toolId": "slow_tool"},
+                    },
+                },
+            )
+
+            payload = json.loads(response["result"]["content"][0]["text"])
+            result = payload["result"]
+            self.assertEqual(result["schemaVersion"], 2)
+            self.assertEqual(result["status"], "TIMED_OUT")
+            self.assertTrue(result["timedOut"])
+            self.assertIsNone(result["exitCode"])
+            self.assertEqual(result["summary"], "tool slow_tool timed out after 1 seconds")
+            self.assertEqual(result["error"], "tool timed out")
+            self.assertIn("tool timed out", result["stderrPreview"])
+
     def test_materialized_tool_inputs_feed_configured_tool(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)
