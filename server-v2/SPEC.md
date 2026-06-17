@@ -732,8 +732,11 @@ LOGAGENT_V2_FETCH_MAX_REDIRECTS=5
 LOGAGENT_V2_FETCH_SECRET_KEY=<fernet-32-byte-base64-key>
 ```
 
-Only `http` and `https` URLs are supported. The requested host or host:port must
-exactly match the allowlist. Controlled headers such as `Host`,
+Only `http` and `https` URLs are supported. `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`
+must be non-empty when Fetch is enabled. Allowlist entries support exact
+`host`, `host:port`, or scheme-specific `http(s)://host[:port]` forms.
+URL-form entries pin both scheme and port, using the default port when omitted.
+Controlled headers such as `Host`,
 `Content-Length`, `Transfer-Encoding`, and `Connection` are rejected when
 endpoints are saved. Sensitive headers, query parameters, and JSON/form body fields
 containing token/secret/password/api key style names are redacted from API, MCP,

@@ -195,7 +195,7 @@ Environment variables:
 | `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
-| `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
+| `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact `host`, `host:port`, or `http(s)://host[:port]` allowlist; required when Fetch is enabled |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
 | `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` | `1048576` | Maximum Fetch request body bytes |
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
@@ -732,7 +732,10 @@ DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
 method, headers, body, cookies, compression, HEAD, and location; commands may
 include a leading `$` shell prompt from terminal copy/paste. Execution is
 disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
-URLs whose host or host:port exactly matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`.
+URLs whose host, host:port, or scheme-specific `http(s)://host[:port]` entry
+matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. When Fetch is enabled the allowlist
+must be non-empty; URL-form allowlist entries pin both scheme and port, using
+the default port when omitted.
 Fetch does not follow redirects by default; imported cURL commands with
 `--location` or endpoints created with `followRedirects=true` opt into bounded
 manual redirects.

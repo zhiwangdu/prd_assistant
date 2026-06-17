@@ -198,7 +198,7 @@ tools:
 - `claude_code.max_session_seconds` 默认 600 秒，控制单次 Claude Code session 的超时边界；显式配置非正值按 1 秒下限裁剪。
 - `mcp.transport` 当前只支持 `stdio`。
 - `fetch.enabled` 默认 false；启用时必须配置非空 `fetch.allowed_hosts` 和可解码为 32-byte 原始 key 的 `fetch.secret_key_env` 环境变量。
-- `fetch.allowed_hosts` 支持 `host`、`host:port` 和 `http(s)://host[:port]`。Fetch 执行、redirect hop 和运行时 URL template 解析结果都必须命中 allowlist。
+- `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 支持 `host`、`host:port` 和 `http(s)://host[:port]`；URL 形式会固定 scheme 和端口，省略端口时使用默认端口。Fetch 执行、redirect hop 和运行时 URL template 解析结果都必须命中 allowlist。
 - `fetch.request_timeout_seconds`、`fetch.max_request_bytes`、`fetch.max_response_bytes` 和 `fetch.max_redirects` 必须有有限默认值；非正或缺省值按安全默认裁剪。
 - Python V2 必须提供等价请求体边界：`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` 默认 1048576，保存的 endpoint body 和运行时 body override 超过该 UTF-8 字节数时必须在发出 HTTP 请求前拒绝。
 - `huawei_cloud.package_sync.enabled` 默认 false；禁用时不读取 OBS/GaussDB 密钥环境变量。

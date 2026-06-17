@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Allowlist Config Parity
+
+- V2 now validates `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` during settings loading:
+  when Fetch is enabled the allowlist must be non-empty.
+- Fetch allowlist entries now match Rust/V1 forms: exact `host`,
+  `host:port`, or scheme-specific `http(s)://host[:port]`. URL-form entries
+  pin both scheme and port, using the default port when omitted.
+- Runtime allowlist checks now understand the normalized scheme-specific form
+  while preserving existing exact host and host:port matching for direct
+  `Settings(...)` construction.
+- Added regression coverage for empty enabled allowlists and scheme-specific
+  allowlist matching.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused Fetch allowlist config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (92 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Match Normalization
 
 - V2 now normalizes `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` and

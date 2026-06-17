@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -215,10 +216,9 @@ class Settings:
             ),
         )
         fetch_enabled = os.environ.get("LOGAGENT_V2_FETCH_ENABLED", "0") == "1"
-        fetch_allowed_hosts = tuple(
-            item.strip().lower()
-            for item in os.environ.get("LOGAGENT_V2_FETCH_ALLOWED_HOSTS", "").split(",")
-            if item.strip()
+        fetch_allowed_hosts = parse_fetch_allowed_hosts_env(
+            os.environ.get("LOGAGENT_V2_FETCH_ALLOWED_HOSTS"),
+            enabled=fetch_enabled,
         )
         fetch_timeout_seconds = int(os.environ.get("LOGAGENT_V2_FETCH_TIMEOUT_SECONDS", "20"))
         fetch_max_request_bytes = int(
@@ -506,6 +506,69 @@ def env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_fetch_allowed_hosts_env(raw: str | None, *, enabled: bool) -> tuple[str, ...]:
+    entries = [
+        parse_fetch_allowed_host(item)
+        for item in (raw or "").split(",")
+        if item.strip()
+    ]
+    if enabled and not entries:
+        raise ValueError("LOGAGENT_V2_FETCH_ALLOWED_HOSTS must not be empty when Fetch is enabled")
+    return tuple(entries)
+
+
+def parse_fetch_allowed_host(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        raise ValueError("fetch allowed host entries must not be empty")
+    if "://" in value:
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("fetch allowed host scheme must be http or https")
+        host = parsed.hostname
+        if not host:
+            raise ValueError("fetch allowed host URL must include host")
+        host = host.lower()
+        if host == "*":
+            raise ValueError("fetch allowed host must be an explicit host")
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError(f"invalid fetch allowed host port in {raw}") from error
+        if port is None:
+            port = 443 if parsed.scheme == "https" else 80
+        return f"{parsed.scheme}://{format_fetch_host(host)}:{port}"
+
+    host, port = split_fetch_host_port(value)
+    host = host.strip().lower()
+    if not host or host == "*":
+        raise ValueError("fetch allowed host must be an explicit host")
+    if port is None:
+        return host
+    return f"{host}:{port}"
+
+
+def split_fetch_host_port(value: str) -> tuple[str, int | None]:
+    if ":" not in value:
+        return value, None
+    host, port_text = value.rsplit(":", 1)
+    if ":" in host:
+        return value, None
+    try:
+        port = int(port_text)
+    except ValueError as error:
+        raise ValueError(f"invalid fetch allowed host port in {value}") from error
+    if port < 0 or port > 65535:
+        raise ValueError(f"invalid fetch allowed host port in {value}")
+    return host, port
+
+
+def format_fetch_host(host: str) -> str:
+    if ":" in host and not (host.startswith("[") and host.endswith("]")):
+        return f"[{host}]"
+    return host
 
 
 def parse_remote_commands_env(raw: str | None) -> tuple[RemoteCommandTemplate, ...]:

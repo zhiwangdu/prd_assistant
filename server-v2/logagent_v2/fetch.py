@@ -10,7 +10,7 @@ import urllib.request
 from typing import Any
 
 from .artifacts import write_artifact_bytes
-from .config import Settings
+from .config import Settings, format_fetch_host
 from .ids import new_id
 from .store import JsonObject, Store
 
@@ -835,8 +835,15 @@ def validate_url_allowed(settings: Settings, url: str) -> None:
         raise ValueError("fetch URL must include host")
     host = parsed.hostname.lower()
     netloc = parsed.netloc.lower()
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError(f"invalid fetch URL port in {url}") from error
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+    scheme_host_port = f"{parsed.scheme}://{format_fetch_host(host)}:{port}"
     allowed = {item.lower() for item in settings.fetch_allowed_hosts}
-    if host not in allowed and netloc not in allowed:
+    if host not in allowed and netloc not in allowed and scheme_host_port not in allowed:
         raise ValueError(f"fetch host {parsed.netloc} is not in allowlist")
 
 

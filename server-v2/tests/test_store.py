@@ -52,6 +52,7 @@ from logagent_v2.fetch import (
     preview_curl_import,
     public_fetch_endpoint,
     validate_fetch_credentials_available,
+    validate_url_allowed,
 )
 from logagent_v2.final_answer import (
     FinalAnswerValidationError,
@@ -1910,6 +1911,50 @@ class StoreTests(unittest.TestCase):
         tools = {tool.id: tool for tool in parse_tools_env(raw)}
         self.assertEqual(tools["match_tool"].match_file_patterns, ("*.log", "*timeout*"))
         self.assertEqual(tools["match_tool"].match_keywords, ("error", "slow query"))
+
+    def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_FETCH_ENABLED": "1",
+            "LOGAGENT_V2_FETCH_ALLOWED_HOSTS": "",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            with self.assertRaisesRegex(ValueError, "FETCH_ALLOWED_HOSTS.*not be empty"):
+                Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_settings_normalizes_scheme_specific_fetch_allowed_hosts(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_FETCH_ENABLED": "1",
+            "LOGAGENT_V2_FETCH_ALLOWED_HOSTS": "HTTP://127.0.0.1:50992,https://example.com",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(
+            settings.fetch_allowed_hosts,
+            ("http://127.0.0.1:50992", "https://example.com:443"),
+        )
+        validate_url_allowed(settings, "http://127.0.0.1:50992/getdata")
+        validate_url_allowed(settings, "https://example.com/getdata")
+        with self.assertRaisesRegex(ValueError, "not in allowlist"):
+            validate_url_allowed(settings, "https://127.0.0.1:50992/getdata")
+        with self.assertRaisesRegex(ValueError, "not in allowlist"):
+            validate_url_allowed(settings, "http://example.com/getdata")
 
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
