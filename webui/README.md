@@ -37,7 +37,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 用户可填写分析问题；任务成功后展示单次 LLM 生成的摘要、症状、可能根因、检查项、修复建议、缺失信息和置信度。
 - 成功任务支持编辑标题、现象、根因和解决方案后人工确认保存为 Case；同页可搜索相似 Case 并禁用不再召回的 Case。
 - 成功任务展示任务创建时固化的 `caseContext`，区分历史 Case 参考和实时 Case 搜索结果；Case 列表已适配 schema v2 并展示 `task` / `manual` 来源。
-- 顶部 `Memory` 页面通过 Case import 草稿创建 `manual` Case：用户粘贴大段文字或上传 UTF-8 文本类文件，LLM 整理为结构化草稿，缺少标题、现象、根因或解决方案时以对话方式补充；页面会展示最近 V2 import history，可点击恢复未确认或已确认 draft、validation errors 和补充消息；确认前仍可编辑并保存产品、版本、环境、InstanceID、NodeID、标题、现象、根因、解决方案和 evidence refs。
+- 顶部 `Memory` 页面通过 Case import 草稿创建 `manual` Case：用户粘贴大段文字或上传 UTF-8 文本类文件，LLM 整理为结构化草稿，缺少标题、现象、根因或解决方案时以对话方式补充；页面会展示最近 V2 import history，点击历史项会通过 `GET /api/v2/cases/imports/:import_id` 读取详情后恢复未确认或已确认 draft、validation errors 和补充消息；确认前仍可编辑并保存产品、版本、环境、InstanceID、NodeID、标题、现象、根因、解决方案和 evidence refs。
 - 页面顶部提供 `LLM debug` 开关，调用 V2 `/api/v2/debug/llm` 控制 LLM response content 是否打印到 Server 日志。
 - 创建任务时可填写 `instanceId` / `nodeId`，任务详情展示 Server 解析后的关联 ID；`clusterId` 不再作为用户输入。
 - 成功任务展示创建时固化的 Metadata 产品、版本、环境、节点状态、节点/数据库/PT 摘要。

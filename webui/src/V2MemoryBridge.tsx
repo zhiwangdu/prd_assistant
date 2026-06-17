@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import {
   appendV2CaseImportMessage,
   confirmV2CaseImport,
+  getV2CaseImport,
   listV2CaseImports,
   patchV2CaseImport,
   previewV2CaseImport,
@@ -181,11 +182,20 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     setEditDraft(toDraft(record));
   }
 
-  function selectImport(record: V2CaseImport) {
-    setCaseImport(record);
-    setImportDraft(fromV2Draft(record.draft));
-    setImportMessage("");
-    setStatus(`Loaded V2 import ${record.importId}`);
+  async function selectImport(record: V2CaseImport) {
+    setLoading(true);
+    try {
+      const response = await getV2CaseImport(apiKey, record.importId);
+      setCaseImport(response.import);
+      upsertCaseImport(response.import);
+      setImportDraft(fromV2Draft(response.import.draft));
+      setImportMessage("");
+      setStatus(`Loaded V2 import ${response.import.importId}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function upsertCaseImport(record: V2CaseImport) {
@@ -300,7 +310,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
         <CaseImportHistory
           imports={caseImports}
           selectedImportId={caseImport?.importId ?? ""}
-          onSelect={selectImport}
+          onSelect={(record) => void selectImport(record)}
         />
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,520px)]">

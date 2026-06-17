@@ -789,6 +789,10 @@ export async function listV2CaseImports(apiKey: string, limit = 20) {
   return fetchJson<{ imports: V2CaseImport[] }>(`/api/v2/cases/imports?${params.toString()}`, { headers: authHeaders(apiKey) });
 }
 
+export async function getV2CaseImport(apiKey: string, importId: string) {
+  return fetchJson<{ import: V2CaseImport }>(`/api/v2/cases/imports/${encodeURIComponent(importId)}`, { headers: authHeaders(apiKey) });
+}
+
 export async function previewV2CaseImport(apiKey: string, input: { content: string; filename?: string | null }) {
   return fetchJson<{ import: V2CaseImport }>("/api/v2/cases/imports/preview", {
     method: "POST",

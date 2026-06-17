@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Case Import Detail Restore
+
+- V2 Memory import history selection now calls
+  `GET /api/v2/cases/imports/:import_id` before restoring a draft, so edits and
+  confirmation start from the authoritative current import record rather than a
+  possibly stale list snapshot.
+- Restored import details are upserted back into the recent import history,
+  keeping status, validation errors, and messages aligned after selection.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Case Import Draft Save
 
 - V2 Memory Workbench now exposes the V2 Case import patch route through a

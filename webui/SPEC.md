@@ -120,7 +120,7 @@ Database
 - WebUI 通过 `GET /api/cases` 展示相似 Case，支持关键词搜索和禁用 Case，并展示 schema v2 的 `sourceType` 来源。
 - Memory 页面是 V2 Memory 原生入口，默认直接调用 `/api/v2/cases*`，不再默认渲染旧 Rust `/api/cases*` 面板。
 - V2 Memory 页面必须调用 `/api/v2/cases` 搜索和展示 Case，支持 `includeDisabled`，展示 score/search backend，并在后端返回时展示 FTS score 和 vector score 分量，便于验证本地 FTS5、keyword、vector 或 hybrid 召回路径；可调用 `PATCH /api/v2/cases/:case_id` 编辑 Case 字段和启用/禁用。
-- V2 Memory 页面必须读取文本文件内容后调用 `/api/v2/cases/imports/preview`，展示 draft 和 validation errors；缺少必填字段时调用 `/api/v2/cases/imports/:import_id/messages` 提交补充信息，展示消息历史并刷新结构化 draft；用户编辑结构化 draft 后可调用 `PATCH /api/v2/cases/imports/:import_id` 保存未确认草稿；确认时调用 `/api/v2/cases/imports/:import_id/confirm` 并允许用前端编辑后的字段覆盖 draft；刷新时必须调用 `/api/v2/cases/imports` 展示最近导入历史，允许用户选择历史 import 恢复 draft、validation errors 和消息上下文。
+- V2 Memory 页面必须读取文本文件内容后调用 `/api/v2/cases/imports/preview`，展示 draft 和 validation errors；缺少必填字段时调用 `/api/v2/cases/imports/:import_id/messages` 提交补充信息，展示消息历史并刷新结构化 draft；用户编辑结构化 draft 后可调用 `PATCH /api/v2/cases/imports/:import_id` 保存未确认草稿；确认时调用 `/api/v2/cases/imports/:import_id/confirm` 并允许用前端编辑后的字段覆盖 draft；刷新时必须调用 `/api/v2/cases/imports` 展示最近导入历史，用户选择历史 import 时必须调用 `GET /api/v2/cases/imports/:import_id` 读取详情，再恢复 draft、validation errors 和消息上下文。
 - 成功任务 artifacts 中存在 `caseContext` 时，WebUI 必须展示任务创建时召回的历史 Case，并说明其仅作分析参考。
 - 成功任务 artifacts 中存在 `textInput` 时，WebUI 必须展示任务创建时固化的对话框输入，并支持 `session_text_input.json#question` evidence ref 跳转。
 - 成功任务 artifacts 中存在 `analysisPackage`、`claudeMcpConfig`、`claudeSession`、`mcpCalls` 或 `agentResponse` 时，WebUI 必须展示 Claude Code session 面板，包含 analysis mode、permission profile、session id、runtime status、耗时、错误、structured output、MCP calls 和 artifact 路径。
