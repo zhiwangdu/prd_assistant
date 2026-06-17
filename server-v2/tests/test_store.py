@@ -4758,6 +4758,80 @@ grep_results.json#matches/0
             self.assertEqual(metadata_preview["resources"][0]["kind"], "metadata_instance")
             self.assertIn("Metadata adapter", metadata_preview["prompt"])
 
+    def test_readonly_mcp_preview_system_context_accepts_metadata_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            resource = create_system_context_resource(
+                store,
+                {
+                    "kind": "runbook",
+                    "title": "openGemini compaction",
+                    "description": "Compaction guidance.",
+                    "scope": "log_analysis",
+                    "enabled": True,
+                    "product": "openGemini",
+                    "contentType": "markdown",
+                    "content": "Check compaction backlog.",
+                    "summary": "Compaction",
+                },
+            )
+            import_metadata(
+                store,
+                "prod-og",
+                "json",
+                json.dumps(
+                    {
+                        "instance": {
+                            "product": "openGemini",
+                            "version": "1.4",
+                            "environment": "prod",
+                        },
+                        "cluster": {
+                            "nodes": [{"nodeId": "n1"}],
+                            "databases": [{"name": "db0"}],
+                        },
+                    }
+                ),
+                remark="production",
+            )
+
+            tools = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 21, "method": "tools/list"},
+            )
+            preview_tool = next(
+                item
+                for item in tools["result"]["tools"]
+                if item["name"] == "logagent.preview_system_context"
+            )
+            self.assertIn("instanceId", preview_tool["inputSchema"]["properties"])
+            response = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 22,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.preview_system_context",
+                        "arguments": {
+                            "product": "openGemini",
+                            "instanceId": "prod-og",
+                        },
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            context_ids = {item["contextId"] for item in payload["systemResources"]}
+            self.assertIn(resource["contextId"], context_ids)
+            self.assertIn("meta_prod-og", context_ids)
+            self.assertIn("Check compaction backlog", payload["prompt"])
+            self.assertIn("Metadata adapter", payload["prompt"])
+
     def test_legacy_system_context_resource_api_smoke(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

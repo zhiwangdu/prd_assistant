@@ -176,6 +176,8 @@ logagent.list_tools
 logagent.list_domain_adapters
 ```
 
+`logagent.preview_system_context` 接受 `skillIds`、`product`、`version`、`environment` 和 `instanceId`，返回合并后的 `resources`、拆分的 `skillResources` / `systemResources` 以及 prompt preview，不写 task artifact。
+
 只读 HTTP MCP tools 不能写 workspace artifact，不能创建或恢复 Session，不能上传、审批、运行 Tool Runner、执行 Fetch endpoint 或执行 Huawei package sync。
 
 当前 Executor 已按持久化 phase 循环分派 handler，并在推进阶段时校验 expected phase。重启恢复保留中断 phase，为后续 `RUN_TOOL` 和 `PLAN_ANALYSIS` 分支提供基础。

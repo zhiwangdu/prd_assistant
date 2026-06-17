@@ -894,7 +894,10 @@ the Workspace question or mode. Each resource records `selectionReason` as
 
 Readonly MCP exposes `logagent.list_skills`, `logagent.get_skill`,
 `logagent.get_skill_reference`, and `logagent.preview_system_context` against
-the current registry. Task MCP exposes the same tools, but
+the current registry. Readonly `preview_system_context` accepts `skillIds`,
+`product`, `version`, `environment`, and `instanceId`, returning combined
+`resources`, separated `skillResources` / `systemResources`, and a `prompt`
+preview without writing a run. Task MCP exposes the same tools, but
 `logagent.get_skill_reference` is constrained to Skills and references captured
 in the current run's `system_context` snapshot and persists `skill_reference`
 evidence with `final_allowed=false`.

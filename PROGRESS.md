@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly MCP System Context Preview
+
+- Aligned V2 readonly MCP `logagent.preview_system_context` with the Rust/V1
+  argument surface by accepting `skillIds`, `product`, `version`,
+  `environment`, and `instanceId`.
+- The readonly preview now combines legacy Skill preview resources with V2
+  System Context and Metadata adapter resources, returning combined
+  `resources`, split `skillResources` / `systemResources`, and a `prompt`
+  preview without writing a task artifact.
+- Updated V2 server, Interfaces, and System Context README/SPEC docs.
+- Added regression coverage for readonly MCP schema exposure and
+  product/instance-driven System Context + Metadata adapter preview.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Readonly MCP Resource URI Aliases
 
 - Added V1-compatible readonly MCP resource URI support for `logagent://...`

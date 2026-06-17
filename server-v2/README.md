@@ -916,6 +916,11 @@ logagent.get_skill_reference
 logagent.preview_system_context
 ```
 
+Readonly `logagent.preview_system_context` accepts `skillIds`, `product`,
+`version`, `environment`, and `instanceId`. It returns the combined `resources`
+plus separated `skillResources`, `systemResources`, and a `prompt` preview; it
+does not create a run or write `system_context.json`.
+
 Task MCP `logagent.get_skill_reference` only reads references declared in the
 run's `system_context` snapshot and persists a `skill_reference` background
 artifact with `final_allowed=false`. Readonly MCP reads the current registry and

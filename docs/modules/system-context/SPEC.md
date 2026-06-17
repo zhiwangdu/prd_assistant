@@ -97,7 +97,7 @@ knowledge_note
 - Session timeline 包含 `system_context_recorded`，并记录 Skill count / resource count。
 - Claude Code 输入包含 Diagnostic Skills 摘要和 Metadata adapter 摘要。
 - MCP `resources/read system_context` 可读取快照。
-- 只读 HTTP MCP `logagent.preview_system_context` 可预览 Skill-backed System Context，且不产生持久化副作用。
+- 只读 HTTP MCP `logagent.preview_system_context` 可按 `skillIds`、`product`、`version`、`environment` 和 `instanceId` 预览 Skill-backed System Context，返回合并 `resources`、拆分 `skillResources` / `systemResources` 和 prompt preview，且不产生持久化副作用。
 - V2 `/api/v2/system-context/*` 可创建资源、创建 draft 版本、激活版本，并
   在 preview 中显式包含资源或 `meta_<instanceId>` Metadata adapter。
 - Metadata 原有 API 和 WebUI 拓扑展示保持可用。

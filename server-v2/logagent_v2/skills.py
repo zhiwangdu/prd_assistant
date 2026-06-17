@@ -509,6 +509,10 @@ def skill_tool_descriptors() -> list[JsonObject]:
                 "type": "object",
                 "properties": {
                     "skillIds": {"type": "array", "items": {"type": "string"}},
+                    "product": {"type": "string"},
+                    "version": {"type": "string"},
+                    "environment": {"type": "string"},
+                    "instanceId": {"type": "string"},
                 },
                 "additionalProperties": False,
             },

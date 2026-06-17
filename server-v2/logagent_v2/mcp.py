@@ -25,6 +25,7 @@ from .skills import (
     skill_tool_descriptors,
 )
 from .store import JsonObject, Store
+from .system_context import preview_system_context_resources
 from .tools import run_configured_tool, tool_descriptors
 
 
@@ -181,7 +182,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                     ]
                 }
             elif name in SKILL_TOOL_NAMES:
-                value = call_readonly_skill_tool(settings, name, arguments)
+                value = call_readonly_skill_tool(settings, store, name, arguments)
                 result = {
                     "content": [
                         {
@@ -1017,7 +1018,9 @@ def call_get_log_slice(settings: Settings, store: Store, run: dict, arguments: d
     return {"content": [{"type": "text", "text": text}]}
 
 
-def call_readonly_skill_tool(settings: Settings, name: str, arguments: dict) -> dict:
+def call_readonly_skill_tool(
+    settings: Settings, store: Store, name: str, arguments: dict
+) -> dict:
     if name == "logagent.list_skills":
         return {"skills": list_skills(settings)}
     if name == "logagent.get_skill":
@@ -1030,10 +1033,27 @@ def call_readonly_skill_tool(settings: Settings, name: str, arguments: dict) -> 
             path=optional_arg_string(arguments, "path"),
         )
     if name == "logagent.preview_system_context":
-        skill_ids = arguments.get("skillIds")
-        if skill_ids is not None and not isinstance(skill_ids, list):
-            raise ValueError("skillIds must be an array")
-        return preview_system_context(settings, skill_ids)
+        skill_ids = optional_arg_string_list(arguments, "skillIds")
+        skill_preview = preview_system_context(settings, skill_ids)
+        system_preview = preview_system_context_resources(
+            store=store,
+            product=optional_arg_string(arguments, "product"),
+            version=optional_arg_string(arguments, "version"),
+            environment=optional_arg_string(arguments, "environment"),
+            instance_id=optional_arg_string(arguments, "instanceId"),
+        )
+        return {
+            "schemaVersion": 2,
+            "workspaceId": None,
+            "runId": None,
+            "resources": [
+                *skill_preview.get("resources", []),
+                *system_preview.get("resources", []),
+            ],
+            "skillResources": skill_preview.get("resources", []),
+            "systemResources": system_preview.get("resources", []),
+            "prompt": system_preview.get("prompt", ""),
+        }
     raise ValueError(f"unsupported skill tool {name}")
 
 
@@ -1070,3 +1090,12 @@ def optional_arg_string(arguments: dict, name: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     return value.strip()
+
+
+def optional_arg_string_list(arguments: dict, name: str) -> list[str] | None:
+    value = arguments.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be an array")
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]

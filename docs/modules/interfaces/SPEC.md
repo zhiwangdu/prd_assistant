@@ -106,6 +106,11 @@ Python V2 同时保留 `logagent-v2://...` URI alias；resource 内容中的
 - `logagent.list_tools`
 - `logagent.list_domain_adapters`
 
+Readonly `logagent.preview_system_context` accepts `skillIds`, `product`,
+`version`, `environment`, and `instanceId`, and returns combined `resources`,
+split `skillResources` / `systemResources`, plus a prompt preview without
+writing task artifacts.
+
 只读 HTTP MCP 的工具目录资源和 `logagent.list_tools` 可以展示 `logagent.fetch` descriptor，便于个人 Claude Code 理解团队 Server 有哪些受控能力；`tools/call logagent.fetch` 必须返回不支持，不能执行 HTTP 请求。
 
 第一版 Rust/JSON/MCP 契约要求：
