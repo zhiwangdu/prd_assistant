@@ -2371,6 +2371,32 @@ class StoreTests(unittest.TestCase):
             self.assertIn("logagent.fetch", descriptors)
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+            self.assertEqual(
+                descriptors["logagent.list_metadata_instances"]["displayName"],
+                "Metadata instances",
+            )
+            self.assertEqual(descriptors["logagent.list_metadata_instances"]["backend"], "builtin")
+            self.assertIn("read-only", descriptors["logagent.list_metadata_instances"]["tags"])
+            self.assertIn("manual-run", descriptors["logagent.list_metadata_instances"]["tags"])
+            self.assertEqual(
+                descriptors["logagent.get_metadata_field_types"]["paramsTemplate"],
+                {
+                    "instanceId": "",
+                    "database": "",
+                    "measurement": "",
+                    "retentionPolicy": "",
+                    "field": [],
+                },
+            )
+            self.assertEqual(
+                descriptors["logagent.get_metadata_tag_fields"]["paramsTemplate"],
+                {
+                    "instanceId": "",
+                    "database": "",
+                    "measurement": "",
+                    "retentionPolicy": "",
+                },
+            )
             self.assertIn(
                 "normalize rotated logs",
                 descriptors["logagent.preprocess_log_package"]["description"],

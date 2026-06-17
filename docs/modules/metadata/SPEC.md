@@ -29,6 +29,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_field_types`，从指定 `instanceId/database/measurement` 查询 field 类型；RP 可省略并回退到 DB 默认 RP，field 可省略以返回全部字段。
 - 任务 stdio MCP 和只读 HTTP MCP 提供 `logagent.get_metadata_tag_fields`，从指定 `instanceId/database/measurement` 返回全部 Tag 类型字段；RP 可省略并回退到 DB 默认 RP，不支持 `field` 参数。
 - Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array；字符串会 trim，空字符串等同省略，数组项必须是 trim 后非空字符串。
+- Python V2 的 Tools catalog metadata built-ins 必须使用 Rust/V1 descriptor 形状：`backend=builtin`，tag 包含 `read-only` / `manual-run`，field types 模板包含 `retentionPolicy` 和 `field=[]`，tag fields 模板包含 `retentionPolicy` 且不包含 `field`。
 - 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store；resource 支持 V1 `logagent://metadata/...` URI，并保留 `logagent-v2://metadata/...` alias；`logagent.get_metadata_snapshot` 响应保留 V2 顶层 snapshot 字段并补齐 Rust/V1 `snapshot` 包装。
 
 仍待实现：

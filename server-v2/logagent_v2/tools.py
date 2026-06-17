@@ -179,9 +179,9 @@ def pprof_descriptor(settings: Settings) -> JsonObject:
 def metadata_catalog_descriptors() -> list[JsonObject]:
     base = {
         "source": "built_in",
-        "tags": ["built-in", "metadata"],
+        "tags": ["built-in", "metadata", "read-only", "manual-run"],
         "enabled": True,
-        "backend": "metadata",
+        "backend": "builtin",
         "readOnly": True,
         "editable": False,
         "exportable": False,
@@ -218,16 +218,16 @@ def metadata_catalog_descriptors() -> list[JsonObject]:
         {
             **base,
             "toolId": METADATA_LIST_INSTANCES_ID,
-            "displayName": "List Metadata Instances",
-            "description": "List imported metadata instances.",
+            "displayName": "Metadata instances",
+            "description": "List imported metadata instance summaries.",
             "paramsSchema": {"type": "object", "properties": {}, "additionalProperties": False},
             "paramsTemplate": {},
         },
         {
             **base,
             "toolId": METADATA_GET_SNAPSHOT_ID,
-            "displayName": "Get Metadata Snapshot",
-            "description": "Read one imported metadata snapshot by instanceId.",
+            "displayName": "Metadata snapshot",
+            "description": "Read one imported metadata snapshot by instance id.",
             "paramsSchema": {
                 "type": "object",
                 "properties": {"instanceId": {"type": "string"}},
@@ -239,18 +239,34 @@ def metadata_catalog_descriptors() -> list[JsonObject]:
         {
             **base,
             "toolId": METADATA_GET_FIELD_TYPES_ID,
-            "displayName": "Get Metadata Field Types",
-            "description": "Query field types for one measurement.",
+            "displayName": "Metadata field types",
+            "description": (
+                "Look up field type metadata for one imported instance, "
+                "database and measurement."
+            ),
             "paramsSchema": field_schema,
-            "paramsTemplate": {"instanceId": "", "database": "", "measurement": ""},
+            "paramsTemplate": {
+                "instanceId": "",
+                "database": "",
+                "measurement": "",
+                "retentionPolicy": "",
+                "field": [],
+            },
         },
         {
             **base,
             "toolId": METADATA_GET_TAG_FIELDS_ID,
-            "displayName": "Get Metadata Tag Fields",
-            "description": "Query tag fields for one measurement.",
+            "displayName": "Metadata tag fields",
+            "description": (
+                "List Tag type fields for one imported instance, database and measurement."
+            ),
             "paramsSchema": tag_schema,
-            "paramsTemplate": {"instanceId": "", "database": "", "measurement": ""},
+            "paramsTemplate": {
+                "instanceId": "",
+                "database": "",
+                "measurement": "",
+                "retentionPolicy": "",
+            },
         },
     ]
 

@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Descriptor Catalog Parity
+
+- V2 Tools catalog metadata built-ins now match the Rust/V1 descriptor shape:
+  `backend=builtin`, tags include `read-only` and `manual-run`, and display
+  names/descriptions use the V1 wording.
+- `logagent.get_metadata_field_types` now advertises the V1 params template
+  with `retentionPolicy` and `field=[]`; `logagent.get_metadata_tag_fields`
+  advertises `retentionPolicy` without `field`.
+- Execution behavior is unchanged; this aligns the catalog surface consumed by
+  WebUI, readonly MCP, and tool listing clients.
+- Added regression coverage for metadata descriptor fields and templates.
+- Updated V2 Server, Metadata, and Tool Runner docs/specs.
+- Verification passed: focused tool registry regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Preprocess Result Parity
 
 - V2 `logagent.preprocess_log_package` now exposes Rust/V1-style preprocess

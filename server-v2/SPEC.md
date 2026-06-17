@@ -586,7 +586,9 @@ advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
 call shape with `anyOf`. Built-ins use dedicated task MCP tools where
 available, or the protected manual Tools API. The migrated built-ins are:
 
-- metadata catalog tools: instance list, snapshot, field types, tag fields;
+- metadata catalog tools: instance list, snapshot, field types, tag fields,
+  using Rust/V1 `backend=builtin`, `read-only` / `manual-run` tags, and
+  params templates with `retentionPolicy` where supported;
 - `logagent.preprocess_log_package`, whose descriptor advertises rotated log
   normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
   results include V1-style `nodes` aggregation plus the V2 `nodePackages`
