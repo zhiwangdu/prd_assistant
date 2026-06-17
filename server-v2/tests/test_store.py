@@ -1515,6 +1515,95 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(payload["search"]["truncated"])
             self.assertEqual(len(payload["search"]["matches"]), 1)
 
+    def test_task_mcp_get_log_slice_accepts_start_end_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("line range", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "range.log",
+                b"one\ntwo\nthree\nfour\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "range.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "range.log",
+                            "startLine": 2,
+                            "endLine": 3,
+                        },
+                    },
+                },
+            )
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertEqual(payload["slice"]["startLine"], 2)
+            self.assertEqual(payload["slice"]["endLine"], 3)
+            self.assertEqual(
+                [item["text"] for item in payload["slice"]["lines"]],
+                ["two", "three"],
+            )
+            self.assertTrue(payload["slice"]["ref"].startswith("log_slices/"))
+
+            mixed = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "range.log",
+                            "lineNumber": 2,
+                            "startLine": 2,
+                            "endLine": 3,
+                        },
+                    },
+                },
+            )
+            self.assertIn("cannot mix", mixed["error"]["message"])
+
+            eof = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 34,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "range.log",
+                            "startLine": 10,
+                            "endLine": 12,
+                        },
+                    },
+                },
+            )
+            eof_payload = json.loads(eof["result"]["content"][0]["text"])
+            self.assertEqual(eof_payload["slice"]["startLine"], 10)
+            self.assertEqual(eof_payload["slice"]["endLine"], 4)
+            self.assertEqual(eof_payload["slice"]["lines"], [])
+
     def test_task_mcp_runs_configured_tool_by_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(

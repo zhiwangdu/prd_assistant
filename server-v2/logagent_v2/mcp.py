@@ -5,7 +5,7 @@ import json
 from .artifacts import resolve_artifact_path
 from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
 from .config import Settings
-from .evidence import get_log_slice, run_log_search
+from .evidence import get_log_line_range, get_log_slice, run_log_search
 from .fetch import call_fetch_tool, fetch_tool_descriptors
 from .metadata import (
     call_metadata_tool,
@@ -871,7 +871,7 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
 def get_log_slice_descriptor() -> dict:
     return {
         "name": "logagent.get_log_slice",
-        "description": "Read bounded context lines around a current Workspace log path.",
+        "description": "Read bounded context lines from a current Workspace log path.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -879,8 +879,14 @@ def get_log_slice_descriptor() -> dict:
                 "lineNumber": {"type": "integer", "minimum": 1},
                 "before": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
                 "after": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+                "startLine": {"type": "integer", "minimum": 1},
+                "endLine": {"type": "integer", "minimum": 1},
             },
-            "required": ["path", "lineNumber"],
+            "required": ["path"],
+            "anyOf": [
+                {"required": ["lineNumber"]},
+                {"required": ["startLine", "endLine"]},
+            ],
             "additionalProperties": False,
         },
     }
@@ -888,21 +894,54 @@ def get_log_slice_descriptor() -> dict:
 
 def call_get_log_slice(settings: Settings, store: Store, run: dict, arguments: dict) -> dict:
     path = arguments.get("path")
-    line_number = arguments.get("lineNumber")
     if not isinstance(path, str) or not path:
         raise ValueError("logagent.get_log_slice requires path")
-    if not isinstance(line_number, int):
-        raise ValueError("logagent.get_log_slice requires integer lineNumber")
-    result = get_log_slice(
-        settings=settings,
-        store=store,
-        workspace_id=run["workspace_id"],
-        run_id=run["id"],
-        path=path,
-        line_number=line_number,
-        before=int(arguments.get("before", 5)),
-        after=int(arguments.get("after", 5)),
-    )
+    has_center = "lineNumber" in arguments
+    has_range = "startLine" in arguments or "endLine" in arguments
+    if has_center and has_range:
+        raise ValueError("logagent.get_log_slice cannot mix lineNumber with startLine/endLine")
+    if has_range:
+        start_line = arguments.get("startLine")
+        end_line = arguments.get("endLine")
+        if (
+            isinstance(start_line, bool)
+            or not isinstance(start_line, int)
+            or isinstance(end_line, bool)
+            or not isinstance(end_line, int)
+        ):
+            raise ValueError("logagent.get_log_slice requires integer startLine and endLine")
+        result = get_log_line_range(
+            settings=settings,
+            store=store,
+            workspace_id=run["workspace_id"],
+            run_id=run["id"],
+            path=path,
+            start_line=start_line,
+            end_line=end_line,
+        )
+    else:
+        line_number = arguments.get("lineNumber")
+        if isinstance(line_number, bool) or not isinstance(line_number, int):
+            raise ValueError("logagent.get_log_slice requires integer lineNumber")
+        before = arguments.get("before", 5)
+        after = arguments.get("after", 5)
+        if (
+            isinstance(before, bool)
+            or not isinstance(before, int)
+            or isinstance(after, bool)
+            or not isinstance(after, int)
+        ):
+            raise ValueError("logagent.get_log_slice before/after must be integers")
+        result = get_log_slice(
+            settings=settings,
+            store=store,
+            workspace_id=run["workspace_id"],
+            run_id=run["id"],
+            path=path,
+            line_number=line_number,
+            before=before,
+            after=after,
+        )
     text = json.dumps(
         {
             "slice": result["slice"],

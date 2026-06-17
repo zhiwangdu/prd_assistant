@@ -568,7 +568,8 @@ It currently supports:
 - `tools/list`
 - `tools/call logagent.search_logs` with V1-compatible optional `maxMatches`
   clamped to 1..200
-- `tools/call logagent.get_log_slice`
+- `tools/call logagent.get_log_slice` with either `lineNumber` plus
+  `before`/`after`, or V1-compatible `startLine`/`endLine`
 - `tools/call logagent.run_domain_tool`
 - `tools/call logagent.list_fetch_endpoints`
 - `tools/call logagent.fetch`

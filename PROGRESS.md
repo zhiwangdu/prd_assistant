@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Log Slice Range Params
+
+- Added V1-compatible `startLine` / `endLine` input support to V2 task MCP
+  `logagent.get_log_slice` while preserving the existing `lineNumber` plus
+  `before` / `after` center-line form.
+- `logagent.get_log_slice` now rejects mixed center-line and range parameters,
+  requires ordered ranges, and enforces the Rust-compatible
+  `endLine - startLine <= 500` span limit.
+- Range slices preserve Rust-like EOF behavior: out-of-file ranges return an
+  empty `lines` array instead of clamping to the last line.
+- Updated V2 server, Analysis Agent, and Interfaces README/SPEC docs.
+- Added regression coverage for successful `startLine` / `endLine` slicing and
+  mixed-parameter rejection.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Search Max Matches
 
 - Added V1-compatible optional `maxMatches` to V2 task MCP

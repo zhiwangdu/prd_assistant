@@ -113,6 +113,7 @@ LogAgent MCP tools：
 
 Server 必须在执行前验证 MCP tool 名称、输入 schema、白名单、预算和审批策略。LLM Gateway 和 Claude Code 不得绕过 Server 调用能力模块。
 `logagent.search_logs` 后续检索支持 V1 兼容的可选 `maxMatches`，按 1..200 裁剪；每次调用必须写入独立 `log_searches/logsearch_*.json`，返回 `matches[].text`、`keywordCounts`、`unmatchedKeywords` 和稳定 `log_searches/...#matches/<index>` refs，不得覆盖初始 `grep_results.json`。Claude Code prompt 必须要求模型基于命中行正文判断异常，不能只把 `totalMatches` 当作具体异常类型、技术栈或根因证据。
+`logagent.get_log_slice` 必须支持两种输入形态：V2 中心行形态 `path` + `lineNumber` + 可选 `before/after`，以及 V1 兼容 range 形态 `path` + `startLine/endLine`。两种形态不能在同一调用中混用，range 形态要求 `endLine >= startLine` 且 `endLine - startLine <= 500`。
 `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只提供 Metadata outline；完整 `metadata_context.json` 保留在 workspace，必须通过 `logagent.query_metadata` 读取 bounded slice，slice 写入 `metadata_slices/<stable_id>.json` 并作为背景上下文处理。
 Claude Code startup prompt 必须依据 task `analysisLanguage` 约束自然语言字段：`zh-CN` 优先简体中文，`en-US` 使用英文；协议名、JSON key、路径、工具名、产品名和 evidence refs 不翻译。
 

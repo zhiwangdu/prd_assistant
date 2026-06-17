@@ -95,7 +95,10 @@ Implemented in this slice:
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
   returns stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
-  Workspace text path and persists `log_slice` evidence.
+  Workspace text path and persists `log_slice` evidence. It accepts the V2
+  center-line form `lineNumber` plus optional `before`/`after`, and the
+  V1-compatible range form `startLine`/`endLine`; the two forms must not be
+  mixed in one call.
 - Tool Plugin registry. Configured subprocess tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON` or the V2 analyzer executable environment variables,
   listed through `/api/v2/tools`, runnable through manual tool-run APIs, and
