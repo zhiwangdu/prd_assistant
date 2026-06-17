@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Built-in Tool Surface Coverage
+
+- Added regression coverage that locks V1 built-in tool names across V2 task
+  MCP, readonly MCP, and the manual Tools catalog.
+- The coverage includes task tools for log search/slice, domain tool execution,
+  user input, approval, metadata topology/query/catalog, case recall, skills,
+  system context preview, and Fetch; readonly tools for tool/domain/metadata/
+  case/skill catalogs; and manual catalog tools for preprocess, pprof,
+  metadata, Fetch, and Huawei package sync.
+- Updated V2 Server docs/spec.
+- Verification passed: focused built-in tool surface coverage,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (107 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Config V1 Compatibility
 
 - `LOGAGENT_V2_TOOLS_JSON` now accepts both descriptor arrays and Rust/V1-style

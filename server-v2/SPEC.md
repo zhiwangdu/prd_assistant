@@ -611,6 +611,9 @@ available, or the protected manual Tools API. The migrated built-ins are:
   `outputViews=["summary","obs","gaussdb","json"]`. V2 validates OBS endpoint
   scheme/shape, bucket characters, safe object prefix, required OBS keys, and
   required GaussDB DSN when package sync is enabled.
+Regression coverage must lock the V1 built-in tool names across task MCP,
+readonly MCP, and the manual Tools catalog, so future refactors cannot drop a
+migrated built-in from one surface accidentally.
 
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and

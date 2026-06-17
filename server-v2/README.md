@@ -475,8 +475,9 @@ PYTHONPATH=. python3 -m unittest discover tests
 
 This V2 slice migrates V1 configured analyzer execution, metadata/preprocess/
 fetch/pprof/Huawei built-ins, storage analyzer materialized inputs, and raw
-upload fallback. Full LangGraph planning and full WebUI cutover remain separate
-product steps.
+upload fallback. Regression coverage now locks the V1 built-in tool names
+across task MCP, readonly MCP, and the manual Tools catalog. Full LangGraph
+planning and full WebUI cutover remain separate product steps.
 
 ## Job Recovery
 

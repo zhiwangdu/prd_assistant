@@ -412,6 +412,84 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(succeeded_events)
             self.assertEqual(succeeded_events[-1]["payload"]["alias"], finished["alias"])
 
+    def test_mcp_tool_lists_cover_v1_builtin_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("tool coverage", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            task_list = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 41, "method": "tools/list"},
+            )
+            task_tool_names = {item["name"] for item in task_list["result"]["tools"]}
+            self.assertTrue(
+                {
+                    "logagent.search_logs",
+                    "logagent.get_log_slice",
+                    "logagent.run_domain_tool",
+                    "logagent.request_user_input",
+                    "logagent.request_approval",
+                    "logagent.get_metadata_topology",
+                    "logagent.query_metadata",
+                    "logagent.list_metadata_instances",
+                    "logagent.get_metadata_snapshot",
+                    "logagent.get_metadata_field_types",
+                    "logagent.get_metadata_tag_fields",
+                    "logagent.recall_cases",
+                    "logagent.list_skills",
+                    "logagent.get_skill",
+                    "logagent.get_skill_reference",
+                    "logagent.preview_system_context",
+                    "logagent.list_fetch_endpoints",
+                    "logagent.fetch",
+                }.issubset(task_tool_names)
+            )
+
+            readonly_list = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 42, "method": "tools/list"},
+            )
+            readonly_tool_names = {
+                item["name"] for item in readonly_list["result"]["tools"]
+            }
+            self.assertTrue(
+                {
+                    "logagent.list_tools",
+                    "logagent.list_domain_adapters",
+                    "logagent.list_metadata_instances",
+                    "logagent.get_metadata_snapshot",
+                    "logagent.get_metadata_field_types",
+                    "logagent.get_metadata_tag_fields",
+                    "logagent.search_cases",
+                    "logagent.get_case",
+                    "logagent.list_skills",
+                    "logagent.get_skill",
+                    "logagent.get_skill_reference",
+                    "logagent.preview_system_context",
+                }.issubset(readonly_tool_names)
+            )
+
+            catalog_tool_ids = {item["toolId"] for item in tool_descriptors(settings)}
+            self.assertTrue(
+                {
+                    "logagent.preprocess_log_package",
+                    "pprof_analyzer",
+                    "logagent.list_metadata_instances",
+                    "logagent.get_metadata_snapshot",
+                    "logagent.get_metadata_field_types",
+                    "logagent.get_metadata_tag_fields",
+                    "logagent.fetch",
+                    "logagent.huawei_cloud_package_sync",
+                }.issubset(catalog_tool_ids)
+            )
+
     def test_run_analysis_includes_pending_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
