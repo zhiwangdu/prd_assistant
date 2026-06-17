@@ -731,11 +731,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def create_tool_run(_: Auth, tool_id: str, payload: ToolRunCreate) -> dict:
         try:
             store.get_workspace(payload.workspaceId)
+            uploads = (
+                store.list_uploads_by_ids(payload.workspaceId, payload.uploadIds)
+                if payload.uploadIds
+                else []
+            )
             params = validate_manual_tool_run(
                 settings,
                 tool_id,
                 len(payload.uploadIds),
                 payload.params,
+                upload_filenames=[upload["filename"] for upload in uploads],
             )
             return store.create_tool_run(
                 workspace_id=payload.workspaceId,

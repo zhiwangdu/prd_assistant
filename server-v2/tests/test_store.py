@@ -1808,6 +1808,24 @@ class StoreTests(unittest.TestCase):
                 validate_manual_tool_run(settings, "mock_tool", upload_count=1, params={}),
                 {},
             )
+            with self.assertRaisesRegex(ValueError, "does not accept upload"):
+                validate_manual_tool_run(
+                    settings,
+                    "mock_tool",
+                    upload_count=1,
+                    params={},
+                    upload_filenames=["query.txt"],
+                )
+            self.assertEqual(
+                validate_manual_tool_run(
+                    settings,
+                    "mock_tool",
+                    upload_count=1,
+                    params={},
+                    upload_filenames=["query.log"],
+                ),
+                {},
+            )
             self.assertIn("logagent.preprocess_log_package", descriptors)
             self.assertIn("logagent.list_metadata_instances", descriptors)
             self.assertIn("logagent.get_metadata_snapshot", descriptors)
@@ -1841,6 +1859,131 @@ class StoreTests(unittest.TestCase):
                 "inputSchema"
             ]["properties"]["field"]
             self.assertEqual(mcp_field_schema, field_schema)
+            with self.assertRaisesRegex(ValueError, "does not accept upload"):
+                validate_manual_tool_run(
+                    settings,
+                    "logagent.preprocess_log_package",
+                    upload_count=1,
+                    params={},
+                    upload_filenames=["logs.zip"],
+                )
+            self.assertEqual(
+                validate_manual_tool_run(
+                    settings,
+                    "logagent.preprocess_log_package",
+                    upload_count=1,
+                    params={},
+                    upload_filenames=["Pkg_Inst_Node_20260617120000_logs.tar.gz"],
+                ),
+                {},
+            )
+
+    def test_tool_run_route_rejects_upload_suffix_mismatch(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual preprocess", "tool_run", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "logs.zip",
+                b"not a tar.gz",
+                "application/zip",
+            )
+            upload = store.create_upload(workspace["id"], "logs.zip", artifact["id"])
+
+            with TestClient(create_app(settings)) as client:
+                response = client.post(
+                    "/api/v2/tools/logagent.preprocess_log_package/runs",
+                    headers={"Authorization": "Bearer test"},
+                    json={
+                        "workspaceId": workspace["id"],
+                        "uploadIds": [upload["id"]],
+                        "params": {},
+                    },
+                )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("does not accept upload", response.json()["detail"])
+
+    def test_preprocess_tool_run_materializes_node_package_inputs(self) -> None:
+        def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual preprocess", "tool_run", "en-US")
+            tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617120000_logs.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as archive:
+                add_file(
+                    archive,
+                    "wrapper/var/chroot/gemini/log/tsdb/query.log",
+                    b"select * from cpu\n",
+                )
+                add_file(
+                    archive,
+                    "wrapper/var/chroot/gemini/log/stream/stream.log",
+                    b"stream timeout warning\n",
+                )
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                tar_path.name,
+                tar_path.read_bytes(),
+                "application/gzip",
+            )
+            upload = store.create_upload(workspace["id"], tar_path.name, artifact["id"])
+            params = validate_manual_tool_run(
+                settings,
+                "logagent.preprocess_log_package",
+                upload_count=1,
+                params={},
+                upload_filenames=[tar_path.name],
+            )
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="logagent.preprocess_log_package",
+                params=params,
+                upload_ids=[upload["id"]],
+            )
+
+            executed = execute_tool_run(settings, store, tool_run["id"])
+            result = executed["result"]
+
+            self.assertEqual(result["toolId"], "logagent.preprocess_log_package")
+            self.assertEqual(result["uploadCount"], 1)
+            self.assertEqual(result["fileCount"], 2)
+            self.assertEqual(result["logGroups"], {"tsdb": 1, "stream": 1})
+            self.assertEqual(result["nodePackages"][0]["nodeId"], "NodeA")
+            self.assertTrue(
+                any(
+                    item["path"] == "tool_inputs/influxql_analyzer/NodeA/20260617120000.jsonl"
+                    and item["toolIds"] == ["influxql_analyzer"]
+                    for item in result["toolInputIndex"]
+                )
+            )
+            finished = store.get_run(tool_run["id"])
+            self.assertEqual(finished["status"], "succeeded")
+            evidence = store.list_evidence(tool_run["id"])
+            preprocess_evidence = next(
+                item
+                for item in evidence
+                if item["payload"].get("toolId") == "logagent.preprocess_log_package"
+            )
+            self.assertFalse(preprocess_evidence["final_allowed"])
+            self.assertEqual(preprocess_evidence["payload"]["toolInputCount"], 1)
 
     def test_pprof_tool_result_includes_v1_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

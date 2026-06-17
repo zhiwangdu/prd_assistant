@@ -308,6 +308,7 @@ def validate_manual_tool_run(
     tool_id: str,
     upload_count: int,
     params: JsonObject | None,
+    upload_filenames: list[str] | None = None,
 ) -> JsonObject:
     descriptor = get_tool_descriptor(settings, tool_id)
     if not descriptor.get("enabled"):
@@ -320,7 +321,46 @@ def validate_manual_tool_run(
     effective_file_count = input_file_count or upload_count
     if effective_file_count < min_files or effective_file_count > max_files:
         raise ValueError(f"tool {tool_id} expects {min_files}..{max_files} upload(s)")
+    if upload_filenames is not None:
+        validate_tool_upload_filenames(tool_id, descriptor, upload_filenames)
     return validate_tool_run_params(settings, tool_id, params or {})
+
+
+def validate_tool_upload_filenames(
+    tool_id: str,
+    descriptor: JsonObject,
+    filenames: list[str],
+) -> None:
+    if not filenames:
+        return
+    accepted = [
+        str(item).strip()
+        for item in descriptor.get("acceptedSuffixes", [])
+        if str(item).strip()
+    ]
+    if not accepted or "*" in accepted:
+        return
+    invalid = [
+        filename
+        for filename in filenames
+        if not any(upload_filename_matches(filename, pattern) for pattern in accepted)
+    ]
+    if invalid:
+        raise ValueError(
+            f"tool {tool_id} does not accept upload(s): {', '.join(invalid)} "
+            f"(acceptedSuffixes: {', '.join(accepted)})"
+        )
+
+
+def upload_filename_matches(filename: str, pattern: str) -> bool:
+    normalized = filename.replace("\\", "/").lower()
+    basename = Path(normalized).name
+    lowered_pattern = pattern.lower()
+    if lowered_pattern == "*":
+        return True
+    if lowered_pattern.startswith(".") and basename.endswith(lowered_pattern):
+        return True
+    return fnmatchcase(normalized, lowered_pattern) or fnmatchcase(basename, lowered_pattern)
 
 
 def validate_tool_run_params(

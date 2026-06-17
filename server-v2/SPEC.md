@@ -575,6 +575,10 @@ validated `params`; results are stored as V2 artifacts/evidence and exposed
 through `/api/v2/tools/runs/:run_id/result`. Configured tools with
 `{input_file}` may pass reserved `params.inputFiles` to select existing
 Workspace inputs without re-uploading files.
+When uploads are attached, V2 validates both the upload count and each uploaded
+filename against the selected tool descriptor's `acceptedSuffixes`. Descriptor
+values may be suffixes such as `.tar.gz`, glob-style patterns such as `*.log`,
+or `*` for unrestricted single-upload built-ins.
 
 Readonly MCP `logagent://tools/catalog`, retained `logagent-v2://tools/catalog`,
 and `logagent.list_tools` expose the same catalog payload shape used by the

@@ -678,6 +678,9 @@ configured subprocess descriptors use the Rust/V1 command shape:
 `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
 `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
 adapter `pprof_analyzer`.
+Manual tool run creation validates both upload count and uploaded filenames
+against the selected descriptor's `acceptedSuffixes`; `params.inputFiles` can
+still select existing workspace inputs without attaching uploads.
 Huawei package sync matches the Rust/V1 catalog behavior by accepting any
 single completed upload (`acceptedSuffixes=["*"]`) and validating only the
 single-upload count plus structured SQL/object-key params.
