@@ -462,10 +462,13 @@ def validate_tool_run_params(
         node_count = params.get("nodeCount", 50)
         if isinstance(node_count, bool) or not isinstance(node_count, int):
             raise ValueError("nodeCount must be an integer")
+        generate_svg = params.get("generateSvg", False)
+        if not isinstance(generate_svg, bool):
+            raise ValueError("generateSvg must be a boolean")
         return {
             "sampleIndex": sample_index,
             "nodeCount": max(1, min(node_count, 200)),
-            "generateSvg": bool(params.get("generateSvg", False)),
+            "generateSvg": generate_svg,
         }
     if tool_id == HUAWEI_PACKAGE_SYNC_TOOL_ID:
         reject_unknown_params(tool_id, params, {"objectKey", "updateSql", "querySql"})
@@ -486,6 +489,8 @@ def validate_tool_run_params(
 
 
 def normalize_pprof_sample_index(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("sampleIndex must be a string")
     sample_index = str(value).strip()
     if not sample_index or not re.fullmatch(r"[A-Za-z0-9_-]+", sample_index):
         raise ValueError("sampleIndex must contain only letters, digits, '_' or '-'")

@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Pprof Param Type Parity
+
+- V2 pprof parameter validation now matches Rust/V1 serde semantics more
+  closely: `sampleIndex` must be a string, `null` is rejected, and
+  `generateSvg` must be a JSON boolean instead of any truthy value.
+- This prevents `"false"` from enabling SVG generation and keeps direct
+  DB-backed tool-run execution on the same validation path as the API.
+- Added regression coverage for invalid `sampleIndex: null` and
+  `generateSvg: "false"` inputs.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused pprof validation regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (99 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 InfluxQL Report Detection Parity
 
 - V2 Tool Runner stdout parsing now recognizes InfluxQL analyzer Report JSON

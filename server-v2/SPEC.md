@@ -665,7 +665,8 @@ or `LOGAGENT_TOOL_PPROF_GO` is configured, or `LOGAGENT_V2_PPROF_ENABLED=1` is
 used with an absolute Go command path. Its descriptor must expose V1 top-level
 `sampleIndex`, `nodeCount`, and `generateSvg` params schema entries plus the V2
 `properties` mirror. `sampleIndex` is trimmed and must contain only letters,
-digits, `_`, or `-`; `nodeCount` is clamped to 1..200.
+digits, `_`, or `-`; `generateSvg` must be a JSON boolean; `nodeCount` is
+clamped to 1..200.
 Built-in tools are not packaged. The
 archive contains:
 

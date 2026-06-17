@@ -177,7 +177,7 @@ export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
 cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
 ```
 
-访问 `http://127.0.0.1:50997/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；descriptor 的 `paramsSchema` 同时包含 V1 顶层 `sampleIndex` / `nodeCount` / `generateSvg` 和 V2 `properties` 镜像，运行时 `sampleIndex` 会按 Rust/V1 规则 trim 并限制为字母、数字、`_` 和 `-`。configured command tools 上传匹配文件并可在 `inputFiles` 中指定 `extracted/...` 或 `tool_inputs/...` 路径；metadata built-ins 不需要上传，`logagent.get_metadata_tag_fields` 的模板只需要 `instanceId`、`database`、`measurement` 和可选 `retentionPolicy`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
+访问 `http://127.0.0.1:50997/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；descriptor 的 `paramsSchema` 同时包含 V1 顶层 `sampleIndex` / `nodeCount` / `generateSvg` 和 V2 `properties` 镜像，运行时 `sampleIndex` 会按 Rust/V1 规则 trim 并限制为字母、数字、`_` 和 `-`，`generateSvg` 必须是 JSON boolean。configured command tools 上传匹配文件并可在 `inputFiles` 中指定 `extracted/...` 或 `tool_inputs/...` 路径；metadata built-ins 不需要上传，`logagent.get_metadata_tag_fields` 的模板只需要 `instanceId`、`database`、`measurement` 和可选 `retentionPolicy`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
 
 验证 Huawei package sync 时，需要在配置中启用 `huawei_cloud.package_sync` 并设置 OBS/GaussDB 环境变量；Tools 页面选择 `logagent.huawei_cloud_package_sync` 后上传一个包并填写 JSON 参数：
 

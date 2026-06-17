@@ -2463,10 +2463,18 @@ class StoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "sampleIndex"):
                 validate_tool_run_params(settings, "pprof_analyzer", {"sampleIndex": ""})
             with self.assertRaisesRegex(ValueError, "sampleIndex"):
+                validate_tool_run_params(settings, "pprof_analyzer", {"sampleIndex": None})
+            with self.assertRaisesRegex(ValueError, "sampleIndex"):
                 validate_tool_run_params(
                     settings,
                     "pprof_analyzer",
                     {"sampleIndex": "bad/value"},
+                )
+            with self.assertRaisesRegex(ValueError, "generateSvg"):
+                validate_tool_run_params(
+                    settings,
+                    "pprof_analyzer",
+                    {"generateSvg": "false"},
                 )
             self.assertEqual(
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
