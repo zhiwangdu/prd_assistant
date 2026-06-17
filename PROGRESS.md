@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Tool Result Aliases
+
+- Aligned V2 task MCP `logagent.run_domain_tool` with the Rust/V1 response
+  envelope while preserving the V2 nested payload. Tool calls now return
+  top-level `artifactPath`, `artifactPaths`, `summary`, and `evidenceRefs`
+  based on logical `tool_results/<action_id>/result.json` paths.
+- Added `finalEvidenceRefs` for finding-producing configured tools so Agent
+  responses can cite `tool_results/<action_id>/result.json#findings/<index>`
+  directly.
+- Updated V2 Server, Tool Runner, and Interfaces docs/specs.
+- Verification passed: focused Tool Runner MCP regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Recall MCP Evidence Refs
 
 - Aligned V2 task MCP `logagent.recall_cases` with Rust/V1 response fields by

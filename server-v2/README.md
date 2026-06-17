@@ -39,7 +39,10 @@ slice provides the durable foundation for the V2 product model:
   analyzers. Enabled storage analyzer materialized inputs point to safe artifact
   files or directory bundles extracted from uploads and archives. Generic JSON
   stdout and InfluxQL analyzer report/compare stdout are normalized into
-  `summary/findings`.
+  `summary/findings`. Task MCP responses preserve the V2 nested
+  `result/artifact/evidence` payload and also expose Rust/V1-compatible
+  top-level `artifactPath`, `summary`, and `evidenceRefs` fields, plus
+  finding-level `finalEvidenceRefs` when the tool produced findings.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.

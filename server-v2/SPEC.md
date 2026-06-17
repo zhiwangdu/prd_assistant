@@ -114,7 +114,10 @@ Implemented in this slice:
   for storage analyzers. Enabled storage analyzer materialized inputs are safe
   artifact files or directory bundles extracted from direct uploads and
   archives. Generic JSON stdout and InfluxQL analyzer report/compare stdout are
-  normalized into `summary/findings`.
+  normalized into `summary/findings`. Task MCP responses retain the V2 nested
+  `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
+  `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
+  `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`.

@@ -1671,6 +1671,14 @@ class StoreTests(unittest.TestCase):
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertEqual(payload["result"]["summary"], "mock ok")
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
+            self.assertEqual(payload["artifactPath"], "tool_results/mock_tool/result.json")
+            self.assertEqual(payload["artifactPaths"], [payload["artifactPath"]])
+            self.assertEqual(payload["summary"], "mock ok")
+            self.assertEqual(payload["evidenceRefs"], [payload["artifactPath"]])
+            self.assertEqual(
+                payload["finalEvidenceRefs"],
+                ["tool_results/mock_tool/result.json#findings/0"],
+            )
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
             results_response = task_mcp_response(
@@ -2435,6 +2443,15 @@ class StoreTests(unittest.TestCase):
             summaries = [item["summary"] for item in payload["results"]]
             self.assertEqual(summaries, ["plain log line", "select * from cpu"])
             self.assertEqual(len(payload["evidenceItems"]), 2)
+            self.assertEqual(
+                payload["artifactPaths"],
+                [
+                    f"tool_results/{payload['results'][0]['actionId']}/result.json",
+                    f"tool_results/{payload['results'][1]['actionId']}/result.json",
+                ],
+            )
+            self.assertEqual(payload["artifactPath"], payload["artifactPaths"][0])
+            self.assertEqual(payload["evidenceRefs"], payload["artifactPaths"])
             evidence = [
                 item
                 for item in store.list_evidence(run["id"])

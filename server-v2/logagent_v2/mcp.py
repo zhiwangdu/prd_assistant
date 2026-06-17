@@ -945,6 +945,7 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
     payload = {
         "result": result["result"],
         "evidence": result["evidence"],
+        **run_domain_tool_compat_payload(result),
     }
     if "results" in result:
         payload["results"] = result["results"]
@@ -955,6 +956,71 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
         indent=2,
     )
     return {"content": [{"type": "text", "text": text}]}
+
+
+def run_domain_tool_compat_payload(result: JsonObject) -> JsonObject:
+    artifact_paths = run_domain_tool_artifact_paths(result)
+    primary = result.get("result") if isinstance(result.get("result"), dict) else {}
+    summary = primary.get("summary") or result.get("evidence", {}).get("summary")
+    payload: JsonObject = {
+        "artifactPath": artifact_paths[0] if artifact_paths else None,
+        "artifactPaths": artifact_paths,
+        "summary": summary,
+        "evidenceRefs": artifact_paths,
+    }
+    final_refs = run_domain_tool_final_refs(result)
+    if final_refs:
+        payload["finalEvidenceRefs"] = final_refs
+    return payload
+
+
+def run_domain_tool_artifact_paths(result: JsonObject) -> list[str]:
+    artifacts = result.get("artifacts")
+    evidence_items = result.get("evidenceItems")
+    if isinstance(artifacts, list) and isinstance(evidence_items, list):
+        return list(
+            dict.fromkeys(
+                path
+                for path in (
+                    logical_tool_result_path(evidence, artifact)
+                    for evidence, artifact in zip(evidence_items, artifacts, strict=False)
+                    if isinstance(evidence, dict) and isinstance(artifact, dict)
+                )
+                if path
+            )
+        )
+    path = logical_tool_result_path(result.get("evidence"), result.get("artifact"))
+    return [path] if path else []
+
+
+def logical_tool_result_path(evidence: object, artifact: object) -> str | None:
+    if not isinstance(evidence, dict) or not isinstance(artifact, dict):
+        return None
+    path = logical_artifact_path(
+        str(evidence.get("kind") or "tool_result"),
+        evidence.get("payload") if isinstance(evidence.get("payload"), dict) else {},
+        str(artifact.get("relative_path") or ""),
+    )
+    return path or None
+
+
+def run_domain_tool_final_refs(result: JsonObject) -> list[str]:
+    items = []
+    if isinstance(result.get("results"), list) and isinstance(result.get("evidenceItems"), list):
+        items = list(zip(result["results"], result["evidenceItems"], strict=False))
+    elif isinstance(result.get("result"), dict) and isinstance(result.get("evidence"), dict):
+        items = [(result["result"], result["evidence"])]
+    refs: list[str] = []
+    for tool_result, evidence in items:
+        if not isinstance(tool_result, dict) or not isinstance(evidence, dict):
+            continue
+        payload = evidence.get("payload") if isinstance(evidence.get("payload"), dict) else {}
+        prefix = payload.get("evidenceRefPrefix")
+        findings = tool_result.get("findings")
+        if not isinstance(prefix, str) or not isinstance(findings, list):
+            continue
+        refs.extend(f"{prefix}{index}" for index, _ in enumerate(findings))
+    return list(dict.fromkeys(refs))
 
 
 def get_log_slice_descriptor() -> dict:
