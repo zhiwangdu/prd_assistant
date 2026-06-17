@@ -2677,6 +2677,134 @@ class StoreTests(unittest.TestCase):
                 package["finalEvidencePolicy"]["backgroundOnlyKinds"],
             )
 
+    def test_approved_collect_environment_can_use_remote_executor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps({'argv': sys.argv[1:]}))\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "need real environment evidence", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(run["id"], "waiting_for_approval", "waiting_for_approval")
+            executor = store.create_remote_executor(
+                {
+                    "name": "fake executor",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote node status",
+                    "input": {
+                        "executorId": executor["executorId"],
+                        "commandId": "env_snapshot",
+                        "scope": "node_status",
+                    },
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            pending = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(pending)
+            assert pending is not None
+            self.assertEqual(pending["payload"]["status"], "QUEUED")
+            self.assertEqual(pending["payload"]["remoteCommandId"], "env_snapshot")
+            self.assertEqual(
+                [
+                    item
+                    for item in store.list_evidence(run["id"])
+                    if item["kind"] == "environment_evidence"
+                ],
+                [],
+            )
+            remote_jobs = store.acquire_jobs("remote-worker", limit=1)
+            self.assertEqual(remote_jobs[0]["kind"], "remote_command_run")
+
+            asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+
+            evidence_items = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "environment_evidence"
+            ]
+            self.assertEqual(len(evidence_items), 1)
+            evidence = evidence_items[0]
+            self.assertEqual(evidence["payload"]["status"], "COLLECTED")
+            self.assertEqual(evidence["payload"]["remoteCommandId"], "env_snapshot")
+            artifact = store.get_artifact(evidence["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "COLLECTED")
+            self.assertEqual(artifact_json["remoteStatus"], "OK")
+            self.assertIn("uname", artifact_json["stdoutPreview"])
+            self.assertEqual(store.get_run(run["id"])["status"], "queued")
+            resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
+            self.assertEqual(resume_jobs[0]["kind"], "run_analysis")
+
+    def test_collect_environment_invalid_remote_target_records_rejection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("bad env target", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote node status",
+                    "input": {"commandId": "missing_executor"},
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            evidence = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence["payload"]["status"], "REMOTE_REJECTED")
+            artifact = store.get_artifact(evidence["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "REMOTE_REJECTED")
+            self.assertIn("executorId", artifact_json["error"])
+
     def test_metadata_import_query_and_mcp_background_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

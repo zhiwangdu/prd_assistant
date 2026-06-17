@@ -24,8 +24,14 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - Server 支持 `remote_command_run` task 和 `EXECUTE_REMOTE_COMMAND` phase，通过系统 `ssh` 二进制执行 `remote_execution.commands` 白名单模板。
 - 默认模板 `smoke_ls_root` 执行 `ls -la /root`，用于验证如 `root@112.74.50.120` 的免密 SSH。
 - V2 clean-room Server 已提供同类 Remote Executor 基础能力：`/api/v2/executors` 管理 SQLite executor，`/api/v2/executor-command-templates` 暴露环境配置的白名单模板，`/api/v2/executor-runs` 创建 DB-backed remote command job，并把 `result.json`、`stdout.txt`、`stderr.txt` 写入 `LOGAGENT_V2_DATA_DIR/remote_runs/<run_id>/remote_command/`。
-- V2 已接入与 Rust Server 等价的 `collect_environment` 审批后 mock 证据：用户批准 `actionType=collect_environment` 后写入 `environment_evidence/<action_id>/result.json`，状态明确为 `MOCK`，作为下一轮 Agent 的 background evidence。
-- 当前不支持 Analysis Agent 自动映射到真实 SSH/SCP 采集、不支持 SCP 文件采集、不支持多节点批量采集；这些仍属于 Environment Collector 后续工作。
+- V2 已接入 `collect_environment` 审批后的 evidence 闭环：如果 action input
+  含有效 `executorId` 和 `commandId`，Server 会通过 Remote Executor 执行该
+  白名单命令，完成后写入 `environment_evidence/<action_id>/result.json`，
+  状态为 `COLLECTED` 或 `REMOTE_FAILED`，并重新排队同一个 analysis run；
+  远程目标无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留
+  与 Rust Server 兼容的 `MOCK` evidence。
+- 当前不支持 SCP 文件采集、不支持多节点批量采集，也不支持由 Agent 自动选择
+  executor/command；这些仍属于完整 Environment Collector 后续工作。
 
 ## 适用场景
 
@@ -74,10 +80,11 @@ environments:
 
 ## 流程
 
-1. 用户选择测试环境和目标节点范围。
+1. 用户选择测试环境和目标节点范围，或 Agent 请求 `collect_environment`
+   审批并携带已配置的 `executorId` / `commandId`。
 2. 服务端根据配置建立 SSH 连接。
 3. SCP 拉取白名单路径下的日志和配置。
-4. 执行白名单诊断命令。
+4. 执行白名单诊断命令；V2 当前已支持单个 Remote Executor command 模板。
 5. 保存到任务 workspace。
 6. 生成 `environment_evidence.json` 和 `manifest.json`。
 7. 采集证据回填 Analysis Orchestrator，继续同一任务。
@@ -123,6 +130,8 @@ collected/
 - 只采集白名单路径。
 - 只执行白名单 argv 命令。
 - WebUI 显式 remote command run 只能选择已配置模板，不允许输入自由 shell 命令。
+- V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command id，
+  不接受自由命令或由用户消息临时扩展白名单。
 - SSH key 不进入 LLM Prompt。
 - 不做通用远程运维平台。
 - MCP 请求和用户消息不能增加配置外节点、路径或命令。

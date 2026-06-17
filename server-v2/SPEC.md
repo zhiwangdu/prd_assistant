@@ -112,9 +112,10 @@ Implemented in this slice:
   analysis summaries, user supplements mark pending user-input actions as
   answered, and user message/approval APIs requeue the run with bounded
   `interactionContext` in the next Agent request. Approved
-  `collect_environment` actions record V1-compatible MOCK
-  `environment_evidence` background artifacts and expose them through
-  analysis/task-MCP resources and the next Agent context.
+  `collect_environment` actions either record V1-compatible MOCK
+  `environment_evidence` background artifacts or, when the action input targets
+  an enabled Remote Executor and whitelisted command, queue a remote command and
+  record the completed command output before resuming the analysis run.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
@@ -979,14 +980,20 @@ SQLite job queue. User messages also mark pending `user_input` actions as
 containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has
-`actionType=collect_environment`, V2 records
-`environment_evidence/<action_id>/result.json` with `status=MOCK`, the approved
-input, and `finalEvidenceAllowed=false`; the resource is available from
-`GET /api/v2/runs/:run_id/analysis` and task MCP
+`actionType=collect_environment`, V2 checks the approved input for
+`executorId` and `commandId`. If present and valid, it queues a
+`remote_command_run` with idempotency key `environment:<action_id>`, keeps the
+analysis run waiting during collection, and writes
+`environment_evidence/<action_id>/result.json` with `status=COLLECTED` or
+`REMOTE_FAILED`, the approved input, remote run id, remote result paths, and
+bounded stdout/stderr previews. Invalid remote targets produce
+`status=REMOTE_REJECTED` background evidence. When no remote target is supplied,
+V2 records the V1-compatible `status=MOCK` artifact. The resource is available
+from `GET /api/v2/runs/:run_id/analysis` and task MCP
 `logagent-v2://run/<run_id>/environment_evidence`, and a bounded outline is
 included in the next `analysis_package` and Agent prompt. The current runtime
-still does not implement full LangGraph resume planning or real SSH/SCP
-Environment Collector execution.
+still does not implement full LangGraph resume planning, SCP file collection,
+or multi-node Environment Collector execution.
 
 ## Security
 

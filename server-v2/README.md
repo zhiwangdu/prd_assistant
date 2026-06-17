@@ -45,8 +45,11 @@ slice provides the durable foundation for the V2 product model:
   and `logagent.request_approval`, exposed through run analysis summaries for
   WebUI recovery; user supplements answer pending user-input actions and recent
   messages/action decisions are included in the next Agent request context.
-  Approved `collect_environment` actions now record V1-compatible mock
-  `environment_evidence` background artifacts for the next Agent request.
+  Approved `collect_environment` actions can either record V1-compatible mock
+  `environment_evidence` background artifacts or, when given a Remote Executor
+  `executorId` and whitelisted `commandId`, queue a remote command and record
+  the completed command output as background environment evidence before
+  resuming the analysis run.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
@@ -631,12 +634,18 @@ run through the SQLite job queue. Approving/rejecting a pending action records
 the decision and requeues approval-waiting runs. The next Agent request carries
 recent user messages, action results, and remaining pending actions in
 `interactionContext`. When an approved action payload has
-`actionType=collect_environment`, V2 also writes
-`environment_evidence/<action_id>/result.json` as a MOCK background evidence
-artifact, exposes it through `/analysis` resources and task MCP
-`environment_evidence`, and includes a bounded summary in the next
-`analysis_package` and Agent prompt. Environment evidence remains
-background-only and is not accepted as a final evidence ref.
+`actionType=collect_environment`, V2 checks `input.executorId` and
+`input.commandId`. If both target an enabled Remote Executor and whitelisted
+command template, V2 queues a `remote_command_run`, keeps the analysis run
+waiting while collection runs, then writes
+`environment_evidence/<action_id>/result.json` with the remote status,
+stdout/stderr previews, and result paths before requeueing the analysis run.
+Invalid remote targets produce `REMOTE_REJECTED` background evidence instead of
+leaving the approved action half-applied. If no remote target is supplied, V2
+preserves the V1-compatible MOCK evidence path. Environment evidence is exposed
+through `/analysis` resources and task MCP `environment_evidence`, included in
+the next `analysis_package` and Agent prompt, and remains background-only
+rather than a final evidence ref.
 
 ## Final Answers
 

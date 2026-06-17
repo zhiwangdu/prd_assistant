@@ -24,7 +24,10 @@ from .case_memory import (
     update_case,
 )
 from .config import Settings
-from .environment import persist_approved_environment_evidence
+from .environment import (
+    is_pending_environment_collection,
+    persist_approved_environment_evidence,
+)
 from .fetch import (
     endpoint_from_curl,
     endpoint_for_storage,
@@ -682,8 +685,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
         job = None
         if run["status"] == "waiting_for_approval":
-            store.update_run_status(run["id"], "queued", "queued")
-            job = store.enqueue_run(run["id"])
+            if is_pending_environment_collection(environment_evidence):
+                store.update_run_status(run["id"], "waiting_for_approval", "collect_environment")
+            else:
+                store.update_run_status(run["id"], "queued", "queued")
+                job = store.enqueue_run(run["id"])
         return {"action": action, "environmentEvidence": environment_evidence, "job": job}
 
     @app.get("/api/v2/evidence/{evidence_id}")

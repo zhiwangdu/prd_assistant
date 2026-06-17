@@ -7,6 +7,7 @@ from .store import JsonObject, Store, now_iso
 
 ENVIRONMENT_ACTION_TYPE = "collect_environment"
 ENVIRONMENT_EVIDENCE_KIND = "environment_evidence"
+ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX = "environment:"
 
 
 def persist_approved_environment_evidence(
@@ -14,12 +15,11 @@ def persist_approved_environment_evidence(
     store: Store,
     action: JsonObject,
 ) -> JsonObject | None:
-    """Record the V1-compatible mock environment artifact after approval.
+    """Record or schedule environment evidence after approval.
 
-    The current Rust server only records a mock environment evidence file after
-    a collect_environment approval. V2 keeps that explicit MOCK marker so the
-    later real SSH/SCP collector can replace this function without changing the
-    user-facing action flow.
+    If the approved action includes a configured Remote Executor target, V2
+    schedules the whitelisted remote command and records evidence when that
+    remote job finishes. Otherwise it preserves the V1-compatible MOCK marker.
     """
 
     if action.get("kind") != "approval" or action.get("status") != "approved":
@@ -29,21 +29,238 @@ def persist_approved_environment_evidence(
         return None
 
     run_id = action["run_id"]
+    existing = existing_environment_evidence(store, run_id, action["id"])
+    if existing is not None:
+        return existing
+
+    raw_input = environment_action_input(payload)
+    remote_requested = remote_target_requested(raw_input)
+    if remote_requested and not settings.remote_execution_enabled:
+        return persist_environment_evidence_result(
+            settings=settings,
+            store=store,
+            action=action,
+            status="REMOTE_REJECTED",
+            summary="remote environment collection rejected: remote execution is disabled",
+            result={"input": raw_input, "error": "remote execution is disabled"},
+        )
+    try:
+        remote_target = remote_collection_target(settings, store, raw_input)
+    except (KeyError, ValueError) as error:
+        return persist_environment_evidence_result(
+            settings=settings,
+            store=store,
+            action=action,
+            status="REMOTE_REJECTED",
+            summary=f"remote environment collection rejected: {error}",
+            result={"input": raw_input, "error": str(error)},
+        )
+    if remote_requested and remote_target is None:
+        return persist_environment_evidence_result(
+            settings=settings,
+            store=store,
+            action=action,
+            status="REMOTE_REJECTED",
+            summary="remote environment collection rejected: executorId and commandId are required",
+            result={"input": raw_input, "error": "executorId and commandId are required"},
+        )
+    if remote_target is not None:
+        return schedule_remote_environment_collection(settings, store, action, remote_target)
+
+    return persist_environment_evidence_result(
+        settings=settings,
+        store=store,
+        action=action,
+        status="MOCK",
+        summary="mock environment evidence captured after user approval",
+        result={"input": raw_input},
+    )
+
+
+def persist_remote_environment_evidence(
+    settings: Settings,
+    store: Store,
+    remote_run: JsonObject,
+) -> JsonObject | None:
+    idempotency_key = remote_run.get("idempotencyKey")
+    if not isinstance(idempotency_key, str) or not idempotency_key.startswith(
+        ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX
+    ):
+        return None
+    action_id = idempotency_key.removeprefix(ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX)
+    if not action_id:
+        return None
+    action = store.get_action(action_id)
+    if action.get("kind") != "approval" or action.get("status") != "approved":
+        return None
+    payload = action.get("payload") or {}
+    if payload.get("actionType") != ENVIRONMENT_ACTION_TYPE:
+        return None
+
+    existing = existing_environment_evidence(store, action["run_id"], action_id)
+    if existing is not None:
+        return existing
+
+    remote_result = remote_run.get("result")
+    command_result = remote_result.get("result") if isinstance(remote_result, dict) else None
+    if not isinstance(command_result, dict):
+        command_result = {}
+    remote_status = str(command_result.get("status") or remote_run.get("status") or "UNKNOWN")
+    status = "COLLECTED" if remote_status == "OK" else "REMOTE_FAILED"
+    summary = (
+        "remote environment evidence collected"
+        if status == "COLLECTED"
+        else f"remote environment collection finished with status {remote_status}"
+    )
+
+    evidence = persist_environment_evidence_result(
+        settings=settings,
+        store=store,
+        action=action,
+        status=status,
+        summary=summary,
+        result={
+            "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+            "remoteRunId": remote_run.get("taskId"),
+            "remoteExecutorId": remote_run.get("remoteExecutorId"),
+            "remoteCommandId": remote_run.get("remoteCommandId"),
+            "remoteStatus": remote_status,
+            "remoteResultPath": remote_result.get("resultPath")
+            if isinstance(remote_result, dict)
+            else None,
+            "stdoutPath": command_result.get("stdoutPath"),
+            "stderrPath": command_result.get("stderrPath"),
+            "stdoutPreview": command_result.get("stdoutPreview"),
+            "stderrPreview": command_result.get("stderrPreview"),
+            "error": command_result.get("error") or remote_run.get("error"),
+            "warnings": command_result.get("warnings", []),
+        },
+    )
+
+    analysis_run = store.get_run(action["run_id"])
+    if analysis_run.get("status") not in {"succeeded", "failed"}:
+        store.update_run_status(action["run_id"], "queued", "queued")
+        store.enqueue_run(action["run_id"])
+    return evidence
+
+
+def is_pending_environment_collection(value: JsonObject | None) -> bool:
+    if not isinstance(value, dict):
+        return False
+    payload = value.get("payload")
+    return isinstance(payload, dict) and payload.get("status") == "QUEUED"
+
+
+def remote_collection_target(
+    settings: Settings,
+    store: Store,
+    raw_input: JsonObject,
+) -> JsonObject | None:
+    executor_id = raw_input.get("executorId") or raw_input.get("remoteExecutorId")
+    command_id = raw_input.get("commandId") or raw_input.get("remoteCommandId")
+    if not isinstance(executor_id, str) or not executor_id.strip():
+        return None
+    if not isinstance(command_id, str) or not command_id.strip():
+        return None
+    executor = store.get_remote_executor(executor_id.strip())
+    if not executor["enabled"]:
+        raise ValueError(f"executor {executor_id} is disabled")
+    command = next(
+        (
+            item
+            for item in settings.remote_commands
+            if item.command_id == command_id.strip()
+        ),
+        None,
+    )
+    if command is None:
+        raise ValueError(f"unknown commandId {command_id}")
+    if not command.enabled:
+        raise ValueError(f"remote command {command_id} is disabled")
+    return {
+        "executorId": executor["executorId"],
+        "executorName": executor["name"],
+        "commandId": command.command_id,
+        "commandDisplayName": command.display_name,
+    }
+
+
+def environment_action_input(payload: JsonObject) -> JsonObject:
+    raw_input = payload.get("input")
+    return raw_input if isinstance(raw_input, dict) else {}
+
+
+def remote_target_requested(raw_input: JsonObject) -> bool:
+    return any(
+        key in raw_input
+        for key in ("executorId", "remoteExecutorId", "commandId", "remoteCommandId")
+    )
+
+
+def schedule_remote_environment_collection(
+    settings: Settings,
+    store: Store,
+    action: JsonObject,
+    target: JsonObject,
+) -> JsonObject:
+    run_id = action["run_id"]
+    existing = existing_environment_evidence(store, run_id, action["id"])
+    if existing is not None:
+        return existing
+    idempotency_key = f"{ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX}{action['id']}"
+    remote_run = store.create_remote_run(
+        executor_id=target["executorId"],
+        command_id=target["commandId"],
+        alias=f"Collect environment via {target['commandDisplayName']}",
+        idempotency_key=idempotency_key,
+    )
+    return {
+        "kind": ENVIRONMENT_EVIDENCE_KIND,
+        "final_allowed": False,
+        "summary": "remote environment collection queued",
+        "payload": {
+            "actionId": action["id"],
+            "status": "QUEUED",
+            "remoteRunId": remote_run["taskId"],
+            "remoteExecutorId": target["executorId"],
+            "remoteCommandId": target["commandId"],
+            "finalEvidenceAllowed": False,
+        },
+    }
+
+
+def existing_environment_evidence(
+    store: Store,
+    run_id: str,
+    action_id: str,
+) -> JsonObject | None:
     for evidence in store.list_evidence(run_id):
         if (
             evidence.get("kind") == ENVIRONMENT_EVIDENCE_KIND
-            and evidence.get("payload", {}).get("actionId") == action["id"]
+            and evidence.get("payload", {}).get("actionId") == action_id
         ):
             return evidence
+    return None
 
-    run = store.get_run(run_id)
+
+def persist_environment_evidence_result(
+    settings: Settings,
+    store: Store,
+    action: JsonObject,
+    status: str,
+    summary: str,
+    result: JsonObject,
+) -> JsonObject:
+    run = store.get_run(action["run_id"])
+    payload = action.get("payload") if isinstance(action.get("payload"), dict) else {}
     artifact_path = f"environment_evidence/{action['id']}/result.json"
     result = {
         "schemaVersion": 1,
         "actionId": action["id"],
-        "status": "MOCK",
-        "summary": "mock environment evidence captured after user approval",
+        "status": status,
+        "summary": summary,
         "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        **result,
         "createdAt": now_iso(),
         "finalEvidenceAllowed": False,
     }
@@ -57,16 +274,20 @@ def persist_approved_environment_evidence(
     )
     return store.create_evidence(
         workspace_id=run["workspace_id"],
-        run_id=run_id,
+        run_id=run["id"],
         kind=ENVIRONMENT_EVIDENCE_KIND,
         final_allowed=False,
-        summary=result["summary"],
+        summary=summary,
         artifact_id=artifact["id"],
         payload={
             "artifactId": artifact["id"],
             "path": artifact_path,
             "actionId": action["id"],
-            "status": result["status"],
+            "status": status,
+            "remoteRunId": result.get("remoteRunId"),
+            "remoteExecutorId": result.get("remoteExecutorId"),
+            "remoteCommandId": result.get("remoteCommandId"),
+            "remoteStatus": result.get("remoteStatus"),
             "finalEvidenceAllowed": False,
         },
     )

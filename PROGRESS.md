@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Remote Environment Evidence
+
+- Extended V2 `collect_environment` approval handling to use Remote Executor
+  when the approved action input includes an enabled `executorId` and
+  whitelisted `commandId`.
+- Remote environment collection now queues a `remote_command_run` with
+  idempotency key `environment:<action_id>`, writes background-only
+  `environment_evidence` after the remote command completes, and requeues the
+  original analysis run with the new evidence.
+- Invalid remote targets now write `REMOTE_REJECTED` background evidence instead
+  of leaving the approved action half-applied.
+- Kept the V1-compatible `MOCK` evidence path when no remote target is supplied.
+- Added fake-ssh regression coverage for the approved remote environment
+  collection flow and preserved the existing mock evidence coverage.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Legacy System Context Resources
 
 - Added V2 `/api/v2/system-context/*` compatibility APIs for V1-style System

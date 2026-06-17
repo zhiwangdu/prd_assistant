@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from .config import RemoteCommandTemplate, Settings
+from .environment import persist_remote_environment_evidence
 from .store import JsonObject, Store
 
 
@@ -124,7 +125,8 @@ def execute_remote_command_run(settings: Settings, store: Store, run_id: str) ->
         "resultPath": relative_path(settings, result_path),
         "result": result,
     }
-    store.complete_remote_run(run_id, response)
+    completed_run = store.complete_remote_run(run_id, response)
+    persist_remote_environment_evidence(settings, store, completed_run)
     return response
 
 
