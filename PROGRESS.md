@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 MCP Calls Audit Resource
+
+- Added V2 `mcp_calls.jsonl` audit persistence for successful task MCP
+  `resources/read` and `tools/call` requests.
+- Each call record now includes schema version, generated call id, timestamp,
+  tool/resource name, arguments, status, result payload, and extracted
+  evidence/background refs.
+- Exposed parsed MCP call history through task MCP
+  `logagent-v2://run/<run_id>/mcp_calls`, `analysis_package.json` resource
+  index, and `GET /api/v2/runs/:run_id/analysis` resources.
+- Kept MCP call audits background-only (`final_allowed=false`) so they support
+  WebUI/session inspection without becoming root-cause evidence.
+- Added regression coverage for resource-read/tool-call auditing, evidence ref
+  extraction, task MCP `mcp_calls` resource reads, and run analysis exposure.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Compatibility Aliases
 
 - Added V2 task MCP compatibility tools for Rust V1 names:

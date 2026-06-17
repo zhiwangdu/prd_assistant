@@ -466,12 +466,14 @@ refs. Task MCP exposes it as
 `logagent-v2://run/<run_id>/analysis_package`.
 
 Every Agent round also writes background-only audit artifacts:
-`agent_request.json`, `agent_response.json`, and `analysis_state.json`. The
-request artifact stores the provider/stub payload without Authorization
-headers, the response artifact stores provider output or structured failure
-details plus final-answer validation status, and the state artifact records the
-latest round status. Task MCP exposes them as `agent_request`,
-`agent_response`, and `analysis_state` resources.
+`agent_request.json`, `agent_response.json`, `analysis_state.json`, and
+`mcp_calls.jsonl`. The request artifact stores the provider/stub payload
+without Authorization headers, the response artifact stores provider output or
+structured failure details plus final-answer validation status, and the state
+artifact records the latest round status. Successful task MCP `resources/read`
+and `tools/call` requests append JSONL records with call id, arguments, status,
+result summary, and evidence/background refs. Task MCP exposes them as
+`agent_request`, `agent_response`, `analysis_state`, and `mcp_calls` resources.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 deterministic alias derived from the final summary or question. `GET
@@ -545,7 +547,8 @@ It currently supports:
 - `resources/list`
 - `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, `agent_response`, `result`, and `result_markdown`
+  `agent_request`, `agent_response`, `mcp_calls`, `result`, and
+  `result_markdown`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`

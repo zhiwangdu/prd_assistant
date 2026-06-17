@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import Settings
 from .mcp import read_latest_evidence_artifact
+from .mcp_audit import read_mcp_calls
 from .results import get_run_result
 from .store import JsonObject, Store
 
@@ -11,6 +12,7 @@ ANALYSIS_RESOURCE_KINDS = (
     "analysis_package",
     "agent_request",
     "agent_response",
+    "mcp_calls",
     "system_context",
     "metadata_context",
     "environment_evidence",
@@ -51,6 +53,8 @@ def optional_latest_artifact(
     kind: str,
 ) -> JsonObject | None:
     try:
+        if kind == "mcp_calls":
+            return read_mcp_calls(settings, store, run_id)
         return read_latest_evidence_artifact(settings, store, run_id, kind)
     except ValueError:
         return None

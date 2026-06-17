@@ -13,6 +13,7 @@ from .metadata import (
     metadata_tool_descriptors,
     task_metadata_tool_descriptors,
 )
+from .mcp_audit import evidence_refs_from_result, persist_mcp_call, read_mcp_calls
 from .results import latest_evidence, read_text_artifact
 from .settings_api import domain_adapter_summaries
 from .skills import (
@@ -51,6 +52,16 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             result = read_task_resource(settings, store, run, uri)
+            persist_mcp_call(
+                settings,
+                store,
+                run,
+                "resources/read",
+                {"uri": uri},
+                "succeeded",
+                {"resource": task_resource_name(run, uri)},
+                [],
+            )
         elif method == "tools/list":
             result = {
                 "tools": [
@@ -66,7 +77,19 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
                 ]
             }
         elif method == "tools/call":
-            result = call_task_tool(settings, store, run, request.get("params", {}))
+            params = request.get("params", {})
+            result = call_task_tool(settings, store, run, params)
+            value = task_tool_result_value(result)
+            persist_mcp_call(
+                settings,
+                store,
+                run,
+                str(params.get("name")),
+                params.get("arguments") or {},
+                "succeeded",
+                value,
+                evidence_refs_from_result(value),
+            )
         else:
             raise ValueError(f"unsupported MCP method {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
@@ -295,6 +318,7 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "analysis_state", "Latest Analysis Agent state snapshot"),
         resource(run_id, "agent_request", "Latest Agent provider request"),
         resource(run_id, "agent_response", "Latest Agent provider response"),
+        resource(run_id, "mcp_calls", "Task MCP call audit log"),
         resource(run_id, "result", "Final result JSON artifact"),
         resource(run_id, "result_markdown", "Final result Markdown artifact", "text/markdown"),
     ]
@@ -344,6 +368,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_request")
     elif name == "agent_response":
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_response")
+    elif name == "mcp_calls":
+        value = read_mcp_calls(settings, store, run["id"])
     elif name == "result":
         value = read_latest_evidence_artifact(settings, store, run["id"], "result")
     elif name == "result_markdown":
@@ -369,6 +395,28 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
             }
         ]
     }
+
+
+def task_resource_name(run: dict, uri: str) -> str | None:
+    prefix = f"logagent-v2://run/{run['id']}/"
+    return uri.removeprefix(prefix) if isinstance(uri, str) and uri.startswith(prefix) else None
+
+
+def task_tool_result_value(result: dict) -> dict:
+    content = result.get("content") if isinstance(result, dict) else None
+    if not isinstance(content, list) or not content:
+        return result
+    first = content[0]
+    if not isinstance(first, dict):
+        return result
+    text = first.get("text")
+    if not isinstance(text, str):
+        return result
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return {"text": text}
+    return value if isinstance(value, dict) else {"value": value}
 
 
 def read_latest_evidence_artifact(

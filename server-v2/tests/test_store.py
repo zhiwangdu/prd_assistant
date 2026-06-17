@@ -1321,6 +1321,7 @@ class StoreTests(unittest.TestCase):
             names = {item["name"] for item in listed["result"]["resources"]}
             self.assertIn("manifest", names)
             self.assertIn("grep_results", names)
+            self.assertIn("mcp_calls", names)
 
             manifest = task_mcp_response(
                 settings,
@@ -1378,6 +1379,38 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(slice_payload["slice"]["startLine"], 1)
             self.assertEqual(slice_payload["slice"]["endLine"], 2)
             self.assertTrue(slice_payload["slice"]["ref"].startswith("log_slices/"))
+
+            calls_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/mcp_calls"},
+                },
+            )
+            calls_body = json.loads(calls_response["result"]["contents"][0]["text"])
+            self.assertEqual(calls_body["callCount"], 3)
+            self.assertEqual(
+                [call["name"] for call in calls_body["calls"]],
+                [
+                    "resources/read",
+                    "logagent.search_logs",
+                    "logagent.get_log_slice",
+                ],
+            )
+            self.assertEqual(calls_body["calls"][0]["result"]["resource"], "manifest")
+            self.assertIn(payload["search"]["matches"][0]["ref"], calls_body["calls"][1]["evidenceRefs"])
+            self.assertIn(slice_payload["slice"]["ref"], calls_body["calls"][2]["evidenceRefs"])
+
+            analysis = get_run_analysis(settings, store, run["id"])
+            self.assertEqual(analysis["resources"]["mcp_calls"]["callCount"], 4)
+            self.assertEqual(
+                analysis["resources"]["mcp_calls"]["calls"][-1]["result"]["resource"],
+                "mcp_calls",
+            )
 
     def test_task_mcp_runs_configured_tool_by_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

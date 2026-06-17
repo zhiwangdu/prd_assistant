@@ -85,7 +85,7 @@ Implemented in this slice:
   Case Memory, Skill registry, and Domain Adapter summaries.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, `agent_response`, `result`, and `result_markdown`
+  `agent_request`, `agent_response`, `mcp_calls`, `result`, and `result_markdown`
   resources.
 - Task MCP `logagent.search_logs`, which creates follow-up `log_search`
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
@@ -400,7 +400,7 @@ Workspace uploads
   -> grep_results.json artifact
   -> manifest and log_search evidence
   -> analysis_package.json bounded Agent context
-  -> agent_request.json / agent_response.json / analysis_state.json audit
+  -> agent_request.json / agent_response.json / analysis_state.json / mcp_calls.jsonl audit
   -> stub, OpenAI-compatible, or binary JSON final answer
   -> result.json and result.md artifacts
 ```
@@ -994,7 +994,9 @@ analysis package artifact id, and request payload without Authorization
 headers. `agent_response` captures provider status, HTTP/body previews when
 available, parsed final answer, normalized final answer, and validation status
 or failure details. `analysis_state` captures the latest round status and links
-the request and response artifact ids. These evidence rows are
+the request and response artifact ids. `mcp_calls` captures successful task MCP
+`resources/read` and `tools/call` requests as JSONL with call id, arguments,
+status, result, and evidence/background refs. These evidence rows are
 background-only (`final_allowed=false`) and exposed through task MCP resources.
 
 After final-answer validation succeeds, V2 writes `result.json` with schema
