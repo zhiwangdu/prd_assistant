@@ -678,11 +678,12 @@ def read_task_tool_results(settings: Settings, store: Store, run: JsonObject) ->
             result = read_artifact_json(settings, store, artifact_id)
         except Exception as error:
             result = {"error": str(error)}
+        payload = evidence.get("payload") or {}
         entry = {
             **result,
             "path": logical_artifact_path(
                 evidence["kind"],
-                evidence.get("payload") or {},
+                payload,
                 artifact["relative_path"],
             ),
             "evidenceId": evidence["id"],
@@ -692,10 +693,13 @@ def read_task_tool_results(settings: Settings, store: Store, run: JsonObject) ->
             "summary": result.get("summary", evidence.get("summary")),
             "toolId": result.get("toolId")
             or result.get("tool")
-            or (evidence.get("payload") or {}).get("toolId")
-            or (evidence.get("payload") or {}).get("tool"),
-            "actionId": result.get("actionId")
-            or (evidence.get("payload") or {}).get("actionId"),
+            or payload.get("toolId")
+            or payload.get("tool"),
+            "actionId": result.get("actionId") or payload.get("actionId"),
+            "stdoutArtifactId": result.get("stdoutArtifactId")
+            or payload.get("stdoutArtifactId"),
+            "stderrArtifactId": result.get("stderrArtifactId")
+            or payload.get("stderrArtifactId"),
             "contentType": artifact["content_type"],
             "schemaName": artifact["schema_name"],
             "sha256": artifact["sha256"],

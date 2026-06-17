@@ -708,19 +708,55 @@ def run_single_configured_tool(
         spawn_error = str(error)
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    stdout = captured_output_bytes(completed.stdout if completed is not None else None)
+    raw_stdout = captured_output_bytes(completed.stdout if completed is not None else None)
     if spawn_error is not None:
-        stderr = spawn_error.encode("utf-8")
+        raw_stderr = spawn_error.encode("utf-8")
     else:
-        stderr = captured_output_bytes(completed.stderr if completed is not None else None)
-    if timed_out and not stderr:
-        stderr = b"tool timed out"
-    stdout = stdout[: tool.max_output_bytes]
-    stderr = stderr[: tool.max_output_bytes]
+        raw_stderr = captured_output_bytes(completed.stderr if completed is not None else None)
+    if timed_out and not raw_stderr:
+        raw_stderr = b"tool timed out"
+    stdout_truncated = len(raw_stdout) > tool.max_output_bytes
+    stderr_truncated = len(raw_stderr) > tool.max_output_bytes
+    stdout = raw_stdout[: tool.max_output_bytes]
+    stderr = raw_stderr[: tool.max_output_bytes]
     exit_code = None if timed_out or completed is None else int(completed.returncode)
     parsed_stdout = parse_json(stdout)
     status = configured_tool_status(timed_out, spawn_error, exit_code)
     error_message = configured_tool_error(status, spawn_error)
+    stdout_path = f"tool_results/{action_id}/stdout.txt"
+    stderr_path = f"tool_results/{action_id}/stderr.txt"
+    stdout_artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_stdout.txt",
+        data=stdout,
+        content_type="text/plain",
+        schema_name="logagent.v2.tool_stdout.v1",
+        preview={
+            "toolId": tool.id,
+            "actionId": action_id,
+            "path": stdout_path,
+            "sizeBytes": len(stdout),
+            "truncated": stdout_truncated,
+        },
+    )
+    stderr_artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_stderr.txt",
+        data=stderr,
+        content_type="text/plain",
+        schema_name="logagent.v2.tool_stderr.v1",
+        preview={
+            "toolId": tool.id,
+            "actionId": action_id,
+            "path": stderr_path,
+            "sizeBytes": len(stderr),
+            "truncated": stderr_truncated,
+        },
+    )
     result = {
         "schemaVersion": 2,
         "tool": tool.id,
@@ -736,8 +772,14 @@ def run_single_configured_tool(
         "timedOut": timed_out,
         "exitCode": exit_code,
         "durationMs": duration_ms,
-        "stdoutPath": f"tool_results/{action_id}/stdout.txt",
-        "stderrPath": f"tool_results/{action_id}/stderr.txt",
+        "stdoutPath": stdout_path,
+        "stderrPath": stderr_path,
+        "stdoutArtifactId": stdout_artifact["id"],
+        "stderrArtifactId": stderr_artifact["id"],
+        "artifactIds": {
+            "stdout": stdout_artifact["id"],
+            "stderr": stderr_artifact["id"],
+        },
         "stdoutPreview": stdout.decode("utf-8", errors="replace"),
         "stderrPreview": stderr.decode("utf-8", errors="replace"),
         "parsedStdout": parsed_stdout,
@@ -781,6 +823,10 @@ def run_single_configured_tool(
             "params": params,
             "exitCode": result["exitCode"],
             "timedOut": timed_out,
+            "stdoutPath": stdout_path,
+            "stderrPath": stderr_path,
+            "stdoutArtifactId": stdout_artifact["id"],
+            "stderrArtifactId": stderr_artifact["id"],
             "findingCount": len(result["findings"]),
             "evidenceRefPrefix": f"tool_results/{action_id}/result.json#findings/",
         },

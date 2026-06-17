@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Runner Stdout/Stderr Artifacts
+
+- V2 configured subprocess Tool Runner now persists bounded stdout and stderr
+  as first-class artifacts for every run, including success, non-zero exit,
+  timeout, and spawn-error paths.
+- Tool results and evidence payloads now expose `stdoutArtifactId` and
+  `stderrArtifactId` while keeping Rust/V1-compatible logical
+  `tool_results/<action_id>/stdout.txt` and `stderr.txt` paths plus existing
+  bounded previews.
+- Task MCP `tool_results` resources now surface the stdout/stderr artifact IDs
+  alongside the result artifact, so Agent/UI clients can fetch exact output
+  evidence through the V2 artifact API.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: configured tool stdout/spawn-error/timeout focused
+  regression tests, `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the
+  existing Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Agent Search Logs Schema
 
 - V2 OpenAI-compatible and binary Agent provider prompts now advertise

@@ -874,7 +874,10 @@ Configured subprocess `result.json` uses the Rust/V1 `ToolRunRecord` shape:
 `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`, `durationMs`,
 `command`, `inputFile`, `stdoutPath`, `stderrPath`, `summary`, `findings`, and
 `error`. V2 also keeps `toolId`, `displayName`, `params`, `argv`,
-`stdoutPreview`, `stderrPreview`, and `parsedStdout` for existing clients.
+`stdoutPreview`, `stderrPreview`, `parsedStdout`, `stdoutArtifactId`, and
+`stderrArtifactId` for existing clients. The logical `stdoutPath` and
+`stderrPath` point at Rust/V1-style `tool_results/<action_id>/stdout.txt` and
+`stderr.txt`; the artifact IDs point at the actual V2 persisted evidence files.
 Non-zero exits, timeouts, and spawn failures are recorded as `FAILED` or
 `TIMED_OUT` tool results instead of failing the MCP call before an artifact is
 written.

@@ -746,10 +746,13 @@ Configured subprocess `result.json` must retain the Rust/V1 `ToolRunRecord`
 record shape: `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`,
 `durationMs`, `command`, `inputFile`, `stdoutPath`, `stderrPath`, `summary`,
 `findings`, and `error`. V2 may include additive fields such as `toolId`,
-`displayName`, `params`, `argv`, `stdoutPreview`, `stderrPreview`, and
-`parsedStdout`. Non-zero exits, timeout, and subprocess spawn failures must be
-persisted as `FAILED` / `TIMED_OUT` tool results rather than surfacing as a
-missing-result MCP failure.
+`displayName`, `params`, `argv`, `stdoutPreview`, `stderrPreview`,
+`parsedStdout`, `stdoutArtifactId`, and `stderrArtifactId`. The logical
+`stdoutPath` / `stderrPath` must keep the Rust/V1
+`tool_results/<action_id>/stdout.txt` and `stderr.txt` shape, while the artifact
+IDs reference the actual V2 persisted stdout/stderr files. Non-zero exits,
+timeout, and subprocess spawn failures must be persisted as `FAILED` /
+`TIMED_OUT` tool results rather than surfacing as a missing-result MCP failure.
 
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and

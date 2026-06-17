@@ -2836,6 +2836,24 @@ class StoreTests(unittest.TestCase):
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertEqual(payload["result"]["summary"], "mock ok")
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
+            stdout_artifact = store.get_artifact(payload["result"]["stdoutArtifactId"])
+            stderr_artifact = store.get_artifact(payload["result"]["stderrArtifactId"])
+            stdout_text = resolve_artifact_path(
+                settings, stdout_artifact["relative_path"]
+            ).read_text(encoding="utf-8")
+            stderr_text = resolve_artifact_path(
+                settings, stderr_artifact["relative_path"]
+            ).read_text(encoding="utf-8")
+            self.assertIn("mock ok", stdout_text)
+            self.assertIn("hit", stdout_text)
+            self.assertEqual(stderr_text, "")
+            self.assertEqual(
+                payload["result"]["artifactIds"],
+                {
+                    "stdout": payload["result"]["stdoutArtifactId"],
+                    "stderr": payload["result"]["stderrArtifactId"],
+                },
+            )
             self.assertEqual(payload["artifactPath"], "tool_results/mock_tool/result.json")
             self.assertEqual(payload["artifactPaths"], [payload["artifactPath"]])
             self.assertEqual(payload["summary"], "mock ok")
@@ -2861,6 +2879,14 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(results_body["toolResultCount"], 1)
             self.assertEqual(results_body["toolResults"][0]["summary"], "mock ok")
             self.assertEqual(results_body["toolResults"][0]["toolId"], "mock_tool")
+            self.assertEqual(
+                results_body["toolResults"][0]["stdoutArtifactId"],
+                payload["result"]["stdoutArtifactId"],
+            )
+            self.assertEqual(
+                results_body["toolResults"][0]["stderrArtifactId"],
+                payload["result"]["stderrArtifactId"],
+            )
             self.assertEqual(
                 results_body["toolResults"][0]["path"],
                 f"tool_results/{results_body['toolResults'][0]['actionId']}/result.json",
@@ -4645,6 +4671,11 @@ fi
             )
             self.assertIn("missing-tool", result["error"])
             self.assertIn("missing-tool", result["stderrPreview"])
+            stderr_artifact = store.get_artifact(result["stderrArtifactId"])
+            stderr_text = resolve_artifact_path(
+                settings, stderr_artifact["relative_path"]
+            ).read_text(encoding="utf-8")
+            self.assertIn("missing-tool", stderr_text)
 
     def test_configured_tool_timeout_returns_timed_out_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4686,6 +4717,11 @@ fi
             self.assertEqual(result["summary"], "tool slow_tool timed out after 1 seconds")
             self.assertEqual(result["error"], "tool timed out")
             self.assertIn("tool timed out", result["stderrPreview"])
+            stderr_artifact = store.get_artifact(result["stderrArtifactId"])
+            stderr_text = resolve_artifact_path(
+                settings, stderr_artifact["relative_path"]
+            ).read_text(encoding="utf-8")
+            self.assertIn("tool timed out", stderr_text)
 
     def test_materialized_tool_inputs_feed_configured_tool(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
