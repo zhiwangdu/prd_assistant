@@ -627,6 +627,10 @@ tools, such as `log_searches/...#matches/<index>` or tool
 the provider can legally cite evidence it requested. The provider must
 eventually return one JSON final-answer object; V2 normalizes it and rejects
 unsupported or non-current evidence refs before marking the run `succeeded`.
+Provider-visible `logagent.get_log_slice` uses the same center-line or
+V1-compatible `startLine`/`endLine` range schema as task MCP, and
+provider-visible `logagent.run_domain_tool` uses the same `toolId` or
+V1-compatible `tool + inputFile` schema while excluding manual-only tools.
 
 Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` and
 implemented as explicit graph transitions: provider tool-call responses route

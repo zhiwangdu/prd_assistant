@@ -2657,6 +2657,18 @@ class StoreTests(unittest.TestCase):
             store.create_upload(workspace["id"], "range.log", artifact["id"])
             run = store.create_run(workspace["id"])
 
+            provider_slice_tool = next(
+                item
+                for item in agent_available_tools(settings)
+                if item["name"] == "logagent.get_log_slice"
+            )
+            self.assertEqual(
+                provider_slice_tool["inputSchema"]["anyOf"],
+                [{"required": ["lineNumber"]}, {"required": ["startLine", "endLine"]}],
+            )
+            self.assertIn("startLine", provider_slice_tool["inputSchema"]["properties"])
+            self.assertIn("endLine", provider_slice_tool["inputSchema"]["properties"])
+
             response = task_mcp_response(
                 settings,
                 store,

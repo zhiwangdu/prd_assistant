@@ -1144,7 +1144,7 @@ def search_logs_tool_descriptor() -> JsonObject:
 def get_log_slice_tool_descriptor() -> JsonObject:
     return {
         "name": "logagent.get_log_slice",
-        "description": "Read bounded context around a current Workspace log path.",
+        "description": "Read bounded context lines from a current Workspace log path.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1152,8 +1152,14 @@ def get_log_slice_tool_descriptor() -> JsonObject:
                 "lineNumber": {"type": "integer", "minimum": 1},
                 "before": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
                 "after": {"type": "integer", "minimum": 0, "maximum": 50, "default": 5},
+                "startLine": {"type": "integer", "minimum": 1},
+                "endLine": {"type": "integer", "minimum": 1},
             },
-            "required": ["path", "lineNumber"],
+            "required": ["path"],
+            "anyOf": [
+                {"required": ["lineNumber"]},
+                {"required": ["startLine", "endLine"]},
+            ],
             "additionalProperties": False,
         },
     }
