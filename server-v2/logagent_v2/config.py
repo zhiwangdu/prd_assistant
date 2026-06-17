@@ -520,7 +520,7 @@ def parse_remote_commands_env(raw: str | None) -> tuple[RemoteCommandTemplate, .
 def strings_from_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item) for item in value if str(item).strip()]
+    return [str(item).lower() for item in value if str(item).strip()]
 
 
 def normalize_params_schema(value: Any) -> dict[str, Any] | None:

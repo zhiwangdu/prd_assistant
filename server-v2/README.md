@@ -236,7 +236,9 @@ settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
 configuration loading; enabled tools fail startup if the resolved command is
 not absolute. User-configured tool IDs use the Rust/V1 `tools.<name>` safe
 pattern: non-empty ASCII letters, digits, `_`, and `-` only. Built-in
-`logagent.*` tools live outside that configured-tool namespace.
+`logagent.*` tools live outside that configured-tool namespace. Configured
+`match.filePatterns` and `match.keywords` are normalized to lowercase at load
+time, matching the Rust/V1 catalog behavior.
 
 Tool descriptor example:
 

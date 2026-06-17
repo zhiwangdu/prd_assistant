@@ -93,6 +93,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `tools.<name>.match.keywords`
 - `tools.pprof_analyzer.path` / `path_env`，首版必须指向 Go 可执行文件，Server 固定追加 `tool pprof` 子命令。
 - `tools.<name>` 的 name 只允许非空 ASCII 字母、数字、`_` 和 `-`
+- `tools.<name>.match.file_patterns` 和 `keywords` 加载后统一转小写
 - `remote_execution.enabled`
 - `remote_execution.ssh_binary`
 - `remote_execution.host_key_policy`

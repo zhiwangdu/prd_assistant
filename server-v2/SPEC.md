@@ -572,6 +572,9 @@ commands because they are not runnable or exported.
 User-configured tool IDs follow the Rust/V1 `tools.<name>` safe pattern:
 non-empty ASCII letters, digits, `_`, and `-` only. Built-in `logagent.*` tools
 are fixed server capabilities and are not loaded from `LOGAGENT_V2_TOOLS_JSON`.
+Configured `match.filePatterns` and `match.keywords` are normalized to
+lowercase during settings loading, so HTTP/MCP descriptors expose the same
+catalog shape as Rust/V1.
 
 The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
 readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP

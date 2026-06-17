@@ -102,6 +102,7 @@ tools:
 - 已支持固定 `path` 或环境变量 `path_env` 指定工具路径；固定 `path` 支持 `${ENV}` 展开；启用工具时最终路径必须是绝对路径。
 - Python V2 的 `LOGAGENT_V2_TOOLS_JSON.command` 和 `LOGAGENT_V2_TOOL_*_ANALYZER` 快捷环境变量同样支持 `${ENV}` / `$ENV` 和 `~` 展开；enabled 工具在配置加载阶段必须解析为绝对路径，否则 Server 启动失败，避免目录、导出和执行面看到不一致的 runnable 状态。
 - Python V2 的 `LOGAGENT_V2_TOOLS_JSON.id` 与 Rust/V1 `tools.<name>` 对齐，只允许非空 ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具不属于用户配置工具命名空间。
+- Python V2 的 `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` 和 `keywords` 在配置加载阶段统一转小写，HTTP/MCP 工具目录输出与 Rust/V1 保持一致。
 - 已支持 `max_input_files` 控制单个工具在同一任务中最多处理的匹配输入文件数量，默认 1。
 - 规则版 action 和 V2 task MCP 先使用显式 `inputFile` / `inputFiles`，再读取 `tool_inputs/index.json` 中声明给当前 toolId 的 materialized input；只要存在匹配项，就只使用这些 tool-ready 输入并受 `max_input_files` 限制，不再补充原始日志候选。V2 的 materialized input 覆盖 InfluxQL/Flux JSONL 和启用 analyzer 的 storage 文件/目录输入；后者从直接上传或 archive 内的 `.tssp`、`.tssp.init`、`.tsm`、`.tsi`、TSI/mergeset 目录和 `_series` 目录生成 artifact。没有显式输入且没有匹配 materialized input 时才按 manifest 文件模式匹配，并用 grep keyword 补充候选；每个 action id 包含工具名和输入文件稳定哈希，避免批量任务结果目录冲突。
 - 已支持 `tool_results/<action_id>/result.json`、`stdout.txt`、`stderr.txt`。

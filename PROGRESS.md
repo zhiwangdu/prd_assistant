@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Match Normalization
+
+- V2 now normalizes `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` and
+  `match.keywords` to lowercase while loading configured subprocess tools,
+  matching Rust/V1 `tools.<name>.match` catalog behavior.
+- HTTP/MCP Tool Plugin descriptors now expose normalized match metadata, while
+  execution keeps its existing case-insensitive file and keyword matching.
+- Added regression coverage for uppercase configured match values.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused configured tool match normalization regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (90 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Configured Tool ID Validation
 
 - V2 now validates `LOGAGENT_V2_TOOLS_JSON.id` while loading configured

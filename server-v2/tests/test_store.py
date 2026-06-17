@@ -1893,6 +1893,24 @@ class StoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid tool name"):
                     parse_tools_env(raw)
 
+    def test_parse_tools_env_normalizes_match_values(self) -> None:
+        raw = json.dumps(
+            [
+                {
+                    "id": "match_tool",
+                    "command": "/tmp/mock-tool",
+                    "enabled": False,
+                    "match": {
+                        "filePatterns": ["*.LOG", "*Timeout*"],
+                        "keywords": ["ERROR", "Slow Query"],
+                    },
+                }
+            ]
+        )
+        tools = {tool.id: tool for tool in parse_tools_env(raw)}
+        self.assertEqual(tools["match_tool"].match_file_patterns, ("*.log", "*timeout*"))
+        self.assertEqual(tools["match_tool"].match_keywords, ("error", "slow query"))
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",
