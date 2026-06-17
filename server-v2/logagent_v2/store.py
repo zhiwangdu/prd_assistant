@@ -134,10 +134,16 @@ class Store:
                 CREATE TABLE IF NOT EXISTS runs (
                   id TEXT PRIMARY KEY,
                   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                  kind TEXT NOT NULL DEFAULT 'analysis',
                   status TEXT NOT NULL,
                   phase TEXT NOT NULL,
                   budget_json TEXT NOT NULL,
+                  tool_id TEXT,
+                  tool_params_json TEXT NOT NULL DEFAULT '{}',
+                  tool_upload_ids_json TEXT NOT NULL DEFAULT '[]',
+                  tool_result_artifact_id TEXT REFERENCES artifacts(id),
                   final_answer_json TEXT,
+                  error_json TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -344,6 +350,14 @@ class Store:
             self._ensure_column_tx(
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
+            self._ensure_column_tx(conn, "runs", "kind", "TEXT NOT NULL DEFAULT 'analysis'")
+            self._ensure_column_tx(conn, "runs", "tool_id", "TEXT")
+            self._ensure_column_tx(conn, "runs", "tool_params_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column_tx(
+                conn, "runs", "tool_upload_ids_json", "TEXT NOT NULL DEFAULT '[]'"
+            )
+            self._ensure_column_tx(conn, "runs", "tool_result_artifact_id", "TEXT")
+            self._ensure_column_tx(conn, "runs", "error_json", "TEXT")
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column_tx(
@@ -680,25 +694,183 @@ class Store:
         with self.connect() as conn:
             if workspace_id is None:
                 rows = conn.execute(
-                    "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC"
+                    """
+                    SELECT * FROM runs
+                    WHERE kind = 'analysis'
+                    ORDER BY created_at DESC, rowid DESC
+                    """
                 ).fetchall()
             else:
                 self.get_workspace(workspace_id)
                 rows = conn.execute(
                     """
                     SELECT * FROM runs
-                    WHERE workspace_id = ?
+                    WHERE workspace_id = ? AND kind = 'analysis'
                     ORDER BY created_at DESC, rowid DESC
                     """,
                     (workspace_id,),
                 ).fetchall()
         result = []
         for row in rows:
-            item = dict(row)
-            item["budget"] = decode_json(item.pop("budget_json"), {})
-            item["finalAnswer"] = decode_json(item.pop("final_answer_json"), None)
-            result.append(item)
+            result.append(self._run_from_row(row))
         return result
+
+    def create_tool_run(
+        self,
+        workspace_id: str,
+        tool_id: str,
+        params: JsonObject,
+        upload_ids: list[str] | None = None,
+    ) -> JsonObject:
+        workspace = self.get_workspace(workspace_id)
+        if workspace["status"] == "deleted":
+            raise ValueError("workspace is deleted")
+        normalized_upload_ids = upload_ids or []
+        for upload_id in normalized_upload_ids:
+            upload = self.get_upload_with_artifact(upload_id)
+            if upload["workspace_id"] != workspace_id:
+                raise ValueError(f"upload {upload_id} does not belong to workspace {workspace_id}")
+        run_id = new_id("trun")
+        job_id = new_id("job")
+        ts = now_iso()
+        budget = {"toolCalls": 1}
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO runs(
+                  id, workspace_id, kind, status, phase, budget_json, tool_id,
+                  tool_params_json, tool_upload_ids_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    workspace_id,
+                    "tool_run",
+                    "queued",
+                    "queued",
+                    encode_json(budget),
+                    tool_id,
+                    encode_json(params),
+                    encode_json(normalized_upload_ids),
+                    ts,
+                    ts,
+                ),
+            )
+            self._append_event_tx(
+                conn,
+                workspace_id,
+                run_id,
+                "tool_run.queued",
+                {"toolId": tool_id, "uploadIds": normalized_upload_ids},
+                ts,
+            )
+            self._enqueue_tool_run_tx(conn, job_id, workspace_id, run_id, ts)
+        return self.get_run(run_id)
+
+    def list_tool_runs(
+        self,
+        tool_id: str | None = None,
+        workspace_id: str | None = None,
+        limit: int = 50,
+    ) -> list[JsonObject]:
+        limit = max(1, min(limit, 200))
+        clauses = ["kind = 'tool_run'"]
+        params: list[object] = []
+        if tool_id:
+            clauses.append("tool_id = ?")
+            params.append(tool_id)
+        if workspace_id:
+            self.get_workspace(workspace_id)
+            clauses.append("workspace_id = ?")
+            params.append(workspace_id)
+        params.append(limit)
+        query = (
+            "SELECT * FROM runs WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        )
+        with self.connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._run_from_row(row) for row in rows]
+
+    def mark_tool_run_running(self, run_id: str) -> JsonObject:
+        run = self.get_run(run_id)
+        if run.get("kind") != "tool_run":
+            raise ValueError(f"run {run_id} is not a tool run")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE runs
+                SET status = 'running', phase = 'tool_run', updated_at = ?
+                WHERE id = ?
+                """,
+                (ts, run_id),
+            )
+            self._append_event_tx(
+                conn,
+                run["workspace_id"],
+                run_id,
+                "tool_run.running",
+                {"toolId": run.get("toolId")},
+                ts,
+            )
+        return self.get_run(run_id)
+
+    def complete_tool_run(
+        self,
+        run_id: str,
+        result_artifact_id: str,
+        result: JsonObject,
+    ) -> JsonObject:
+        run = self.get_run(run_id)
+        if run.get("kind") != "tool_run":
+            raise ValueError(f"run {run_id} is not a tool run")
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE runs
+                SET status = 'succeeded', phase = 'finish', tool_result_artifact_id = ?,
+                    final_answer_json = ?, error_json = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (result_artifact_id, encode_json(result), ts, run_id),
+            )
+            self._append_event_tx(
+                conn,
+                run["workspace_id"],
+                run_id,
+                "tool_run.succeeded",
+                {"toolId": run.get("toolId"), "artifactId": result_artifact_id},
+                ts,
+            )
+        return self.get_run(run_id)
+
+    def fail_tool_run(self, run_id: str, message: str) -> JsonObject:
+        run = self.get_run(run_id)
+        if run.get("kind") != "tool_run":
+            raise ValueError(f"run {run_id} is not a tool run")
+        ts = now_iso()
+        error = {"message": message[:2000]}
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE runs
+                SET status = 'failed', phase = 'failed', error_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (encode_json(error), ts, run_id),
+            )
+            self._append_event_tx(
+                conn,
+                run["workspace_id"],
+                run_id,
+                "tool_run.failed",
+                {"toolId": run.get("toolId"), "error": message[:2000]},
+                ts,
+            )
+        return self.get_run(run_id)
 
     def enqueue_run(self, run_id: str) -> JsonObject:
         run = self.get_run(run_id)
@@ -714,9 +886,18 @@ class Store:
             row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if row is None:
             raise KeyError(f"unknown run {run_id}")
+        return self._run_from_row(row)
+
+    def _run_from_row(self, row: sqlite3.Row) -> JsonObject:
         result = dict(row)
         result["budget"] = decode_json(result.pop("budget_json"), {})
+        result["kind"] = result.get("kind") or "analysis"
+        result["toolId"] = result.pop("tool_id", None)
+        result["toolParams"] = decode_json(result.pop("tool_params_json", None), {})
+        result["toolUploadIds"] = decode_json(result.pop("tool_upload_ids_json", None), [])
+        result["toolResultArtifactId"] = result.pop("tool_result_artifact_id", None)
         result["finalAnswer"] = decode_json(result.pop("final_answer_json"), None)
+        result["error"] = decode_json(result.pop("error_json", None), None)
         return result
 
     def update_run_status(
@@ -827,6 +1008,41 @@ class Store:
         if row is None:
             raise KeyError(f"unknown upload {upload_id}")
         return dict(row)
+
+    def get_upload_with_artifact(self, upload_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                  uploads.id AS id,
+                  uploads.workspace_id AS workspace_id,
+                  uploads.filename AS filename,
+                  uploads.artifact_id AS artifact_id,
+                  uploads.created_at AS created_at,
+                  artifacts.relative_path AS artifact_relative_path,
+                  artifacts.sha256 AS artifact_sha256,
+                  artifacts.size_bytes AS artifact_size_bytes,
+                  artifacts.content_type AS artifact_content_type
+                FROM uploads
+                JOIN artifacts ON artifacts.id = uploads.artifact_id
+                WHERE uploads.id = ?
+                """,
+                (upload_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown upload {upload_id}")
+        return dict(row)
+
+    def list_uploads_by_ids(self, workspace_id: str, upload_ids: list[str]) -> list[JsonObject]:
+        if not upload_ids:
+            return self.list_uploads(workspace_id)
+        result = []
+        for upload_id in upload_ids:
+            upload = self.get_upload_with_artifact(upload_id)
+            if upload["workspace_id"] != workspace_id:
+                raise ValueError(f"upload {upload_id} does not belong to workspace {workspace_id}")
+            result.append(upload)
+        return result
 
     def create_remote_executor(self, record: JsonObject) -> JsonObject:
         executor_id = new_id("executor")
@@ -2116,6 +2332,8 @@ class Store:
         summary = {
             "runAnalysisRequeued": 0,
             "runAnalysisCompleted": 0,
+            "toolRunsRequeued": 0,
+            "toolRunsCompleted": 0,
             "remoteRunsRequeued": 0,
             "remoteRunsCompleted": 0,
             "failedJobs": 0,
@@ -2132,6 +2350,8 @@ class Store:
                 payload = decode_json(row["payload_json"], {})
                 if row["kind"] == "run_analysis":
                     self._recover_run_analysis_job_tx(conn, row, payload, ts, summary)
+                elif row["kind"] == "tool_run":
+                    self._recover_tool_run_job_tx(conn, row, payload, ts, summary)
                 elif row["kind"] == "remote_command_run":
                     self._recover_remote_run_job_tx(conn, row, payload, ts, summary)
                 else:
@@ -2187,6 +2407,54 @@ class Store:
             ts,
         )
         summary["runAnalysisRequeued"] += 1
+
+    def _recover_tool_run_job_tx(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        payload: JsonObject,
+        ts: str,
+        summary: JsonObject,
+    ) -> None:
+        run_id = payload.get("run_id")
+        if not isinstance(run_id, str):
+            self._mark_job_failed_tx(conn, row["id"], "tool_run job missing run_id", ts)
+            summary["failedJobs"] += 1
+            return
+        run = conn.execute(
+            "SELECT id, workspace_id, status, kind FROM runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if run is None:
+            self._mark_job_failed_tx(conn, row["id"], f"unknown tool run {run_id}", ts)
+            summary["failedJobs"] += 1
+            return
+        if run["kind"] != "tool_run":
+            self._mark_job_failed_tx(conn, row["id"], f"run {run_id} is not a tool run", ts)
+            summary["failedJobs"] += 1
+            return
+        if run["status"] in {"succeeded", "failed"}:
+            self._mark_job_succeeded_tx(conn, row["id"], ts)
+            summary["toolRunsCompleted"] += 1
+            return
+        conn.execute(
+            """
+            UPDATE runs
+            SET status = 'queued', phase = 'queued', updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, run_id),
+        )
+        self._mark_job_queued_tx(conn, row["id"], ts)
+        self._append_event_tx(
+            conn,
+            run["workspace_id"],
+            run_id,
+            "tool_run.recovered",
+            {"jobId": row["id"], "previousStatus": run["status"]},
+            ts,
+        )
+        summary["toolRunsRequeued"] += 1
 
     def _recover_remote_run_job_tx(
         self,
@@ -2307,6 +2575,34 @@ class Store:
                 encode_json({"run_id": run_id}),
                 0,
                 1,
+                ts,
+                ts,
+                ts,
+            ),
+        )
+
+    def _enqueue_tool_run_tx(
+        self,
+        conn: sqlite3.Connection,
+        job_id: str,
+        workspace_id: str,
+        run_id: str,
+        ts: str,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO jobs(
+              id, kind, status, payload_json, attempts, max_attempts, next_run_at,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                "tool_run",
+                "queued",
+                encode_json({"workspace_id": workspace_id, "run_id": run_id}),
+                0,
+                2,
                 ts,
                 ts,
                 ts,

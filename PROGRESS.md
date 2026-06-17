@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Tool Plugin Migration
+
+- Added a V2 Tool Plugin registry shared by `/api/v2/tools`, readonly MCP tool
+  catalog, manual tool runs, and task MCP configured tool execution.
+- Added DB-backed V2 `tool_run` runs/jobs plus APIs for creating, listing, and
+  reading tool run results/artifacts.
+- Migrated V1 built-ins into V2 descriptors and execution paths: metadata
+  tools, `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`,
+  and default-off `logagent.huawei_cloud_package_sync`.
+- Added V2 source-built analyzer environment variables and raw-upload fallback
+  for openGemini/InfluxDB storage analyzers.
+- Extended `deploy/rebuild-v2-install.sh` with `--with-tools`,
+  `--tools-only`, and `--only-tool` for fast analyzer rebuilds.
+- Added focused V2 regression coverage for the unified tool registry and
+  DB-backed manual metadata tool runs.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  `bash -n deploy/rebuild-v2-install.sh deploy/logagent-v2ctl.sh`, and `git diff --check`.
+
 ## 2026-06-17 V2 Deploy Quick Controls
 
 - Added `deploy/logagent-v2ctl.sh` for V2 start, stop, restart, status, and

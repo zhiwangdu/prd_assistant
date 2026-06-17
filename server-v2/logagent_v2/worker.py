@@ -46,6 +46,16 @@ class JobRunner:
                 AgentRuntime(self.settings, self.store).run_analysis(
                     payload["workspace_id"], payload["run_id"]
                 )
+            elif job["kind"] == "tool_run":
+                from .tools import execute_tool_run
+
+                payload = job["payload"]
+                await asyncio.to_thread(
+                    execute_tool_run,
+                    self.settings,
+                    self.store,
+                    payload["run_id"],
+                )
             elif job["kind"] == "remote_command_run":
                 payload = job["payload"]
                 await asyncio.to_thread(
@@ -69,6 +79,11 @@ class JobRunner:
                         "run.error",
                         {"error": str(error)[:2000]},
                     )
+                except Exception:
+                    pass
+            elif job.get("kind") == "tool_run" and isinstance(run_id, str):
+                try:
+                    self.store.fail_tool_run(run_id, str(error))
                 except Exception:
                     pass
             elif job.get("kind") == "remote_command_run" and isinstance(run_id, str):

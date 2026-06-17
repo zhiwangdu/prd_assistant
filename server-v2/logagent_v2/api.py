@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -29,7 +31,6 @@ from .fetch import (
     endpoint_for_storage,
     endpoint_with_credential_summary,
     execute_fetch_endpoint,
-    fetch_catalog_descriptor,
     hydrate_fetch_endpoint,
     normalize_fetch_endpoint,
     persist_fetch_credentials,
@@ -66,7 +67,7 @@ from .settings_api import (
 )
 from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
-from .tools import tool_descriptors
+from .tools import get_tool_descriptor, tool_descriptors, validate_manual_tool_run
 from .webui_static import WebuiStaticNotFound, resolve_webui_asset
 from .worker import JobRunner
 
@@ -207,6 +208,12 @@ class FetchEndpointUpdate(BaseModel):
     headers: dict[str, str] | None = None
     body: str | None = Field(default=None, max_length=200000)
     enabled: bool | None = None
+
+
+class ToolRunCreate(BaseModel):
+    workspaceId: str = Field(min_length=1, max_length=120)
+    uploadIds: list[str] = Field(default_factory=list, max_length=100)
+    params: dict = Field(default_factory=dict)
 
 
 class LlmDebugUpdate(BaseModel):
@@ -613,7 +620,98 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
-        return {"tools": [*tool_descriptors(settings), fetch_catalog_descriptor(settings)]}
+        return {"tools": tool_descriptors(settings)}
+
+    @app.post("/api/v2/tools/{tool_id}/runs", status_code=202)
+    async def create_tool_run(_: Auth, tool_id: str, payload: ToolRunCreate) -> dict:
+        try:
+            store.get_workspace(payload.workspaceId)
+            params = validate_manual_tool_run(
+                settings,
+                tool_id,
+                len(payload.uploadIds),
+                payload.params,
+            )
+            return store.create_tool_run(
+                workspace_id=payload.workspaceId,
+                tool_id=tool_id,
+                params=params,
+                upload_ids=payload.uploadIds,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/tools/runs")
+    async def list_tool_runs(
+        _: Auth,
+        toolId: str | None = None,
+        workspaceId: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
+        try:
+            return {
+                "runs": store.list_tool_runs(
+                    tool_id=toolId,
+                    workspace_id=workspaceId,
+                    limit=limit,
+                )
+            }
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/tools/runs/{run_id}")
+    async def get_tool_run(_: Auth, run_id: str) -> dict:
+        try:
+            run = store.get_run(run_id)
+            if run.get("kind") != "tool_run":
+                raise ValueError(f"run {run_id} is not a tool run")
+            return run
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/tools/runs/{run_id}/result")
+    async def get_tool_run_result(_: Auth, run_id: str) -> dict:
+        try:
+            run = store.get_run(run_id)
+            if run.get("kind") != "tool_run":
+                raise ValueError(f"run {run_id} is not a tool run")
+            artifact_id = run.get("toolResultArtifactId")
+            if not artifact_id:
+                raise ValueError("tool run result is not available")
+            artifact = store.get_artifact(artifact_id)
+            path = resolve_artifact_path(settings, artifact["relative_path"])
+            return {
+                "run": run,
+                "artifact": artifact,
+                "result": json_load_file(path),
+            }
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/tools/runs/{run_id}/artifacts")
+    async def get_tool_run_artifacts(_: Auth, run_id: str) -> dict:
+        try:
+            run = store.get_run(run_id)
+            if run.get("kind") != "tool_run":
+                raise ValueError(f"run {run_id} is not a tool run")
+            return store.list_run_artifacts(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/tools/{tool_id}")
+    async def get_tool(_: Auth, tool_id: str) -> dict:
+        try:
+            return get_tool_descriptor(settings, tool_id)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.get("/api/v2/debug/llm")
     async def get_llm_debug(_: Auth) -> dict:
@@ -1271,6 +1369,18 @@ def remote_run_detail(run: dict) -> dict:
         }
     )
     return result
+
+
+def json_load_file(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ValueError(f"artifact file is missing: {error}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"artifact is not JSON: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("artifact JSON is not an object")
+    return value
 
 
 app = create_app()

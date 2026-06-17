@@ -6,7 +6,7 @@ from .artifacts import resolve_artifact_path
 from .case_memory import call_case_tool, case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_slice, run_log_search
-from .fetch import call_fetch_tool, fetch_catalog_descriptor, fetch_tool_descriptors
+from .fetch import call_fetch_tool, fetch_tool_descriptors
 from .metadata import call_metadata_tool, metadata_tool_descriptors
 from .results import latest_evidence, read_text_artifact
 from .settings_api import domain_adapter_summaries
@@ -143,10 +143,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                         {
                             "type": "text",
                             "text": json.dumps(
-                                metadata_tool_descriptors()
-                                + case_tool_descriptors()
-                                + skill_tool_descriptors()
-                                + [fetch_catalog_descriptor(settings)],
+                                tool_descriptors(settings),
                                 ensure_ascii=True,
                             ),
                         }
@@ -200,12 +197,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             if uri == "logagent-v2://tools/catalog":
-                value = (
-                    metadata_tool_descriptors()
-                    + case_tool_descriptors()
-                    + skill_tool_descriptors()
-                    + [fetch_catalog_descriptor(settings)]
-                )
+                value = tool_descriptors(settings)
             elif uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
             elif uri == "logagent-v2://cases/recent":
@@ -552,7 +544,11 @@ def run_domain_tool_descriptor(settings: Settings) -> dict:
             "properties": {
                 "toolId": {
                     "type": "string",
-                    "enum": [tool["toolId"] for tool in tool_descriptors(settings) if tool["enabled"]],
+                    "enum": [
+                        tool["toolId"]
+                        for tool in tool_descriptors(settings)
+                        if tool["enabled"] and tool.get("source") == "configured"
+                    ],
                 },
                 "params": {"type": "object"},
             },

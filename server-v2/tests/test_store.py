@@ -72,6 +72,7 @@ from logagent_v2.settings_api import (
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
 from logagent_v2.tools import (
+    execute_tool_run,
     findings_from_stdout,
     parse_json,
     summary_from_stdout,
@@ -1288,6 +1289,73 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
+
+    def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="mock_tool",
+                display_name="Mock Tool",
+                command=sys.executable,
+                args=("-c", "print('ok')"),
+                timeout_seconds=5,
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+
+            descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
+
+            self.assertEqual(descriptors["mock_tool"]["source"], "configured")
+            self.assertIn("logagent.preprocess_log_package", descriptors)
+            self.assertIn("logagent.list_metadata_instances", descriptors)
+            self.assertIn("logagent.get_metadata_snapshot", descriptors)
+            self.assertIn("logagent.fetch", descriptors)
+            self.assertIn("pprof_analyzer", descriptors)
+            self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+
+    def test_manual_tool_run_executes_metadata_builtin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual metadata", "diagnose", "en-US")
+            import_metadata(
+                store,
+                instance_id="inst-manual",
+                template_type="json",
+                content=json.dumps(
+                    {
+                        "cluster": {
+                            "clusterId": "cluster-manual",
+                            "nodes": [{"nodeId": "n1", "host": "127.0.0.1"}],
+                        }
+                    }
+                ),
+                remark="manual tool run",
+            )
+
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="logagent.list_metadata_instances",
+                params={},
+            )
+
+            self.assertEqual(tool_run["kind"], "tool_run")
+            self.assertEqual(store.list_runs(workspace["id"]), [])
+            self.assertEqual(store.list_tool_runs(tool_id="logagent.list_metadata_instances")[0]["id"], tool_run["id"])
+            jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(jobs[0]["kind"], "tool_run")
+
+            executed = execute_tool_run(settings, store, tool_run["id"])
+            store.complete_job(jobs[0]["id"])
+
+            finished = store.get_run(tool_run["id"])
+            self.assertEqual(finished["status"], "succeeded")
+            self.assertEqual(finished["toolResultArtifactId"], executed["artifact"]["id"])
+            result_path = resolve_artifact_path(settings, executed["artifact"]["relative_path"])
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(result["value"]["instances"][0]["instanceId"], "inst-manual")
+            evidence = store.list_evidence(tool_run["id"])
+            self.assertTrue(any(item["kind"] == "metadata_slice" for item in evidence))
 
     def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

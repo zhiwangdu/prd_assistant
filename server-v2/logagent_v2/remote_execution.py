@@ -4,7 +4,6 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
 
 from .config import RemoteCommandTemplate, Settings
 from .store import JsonObject, Store

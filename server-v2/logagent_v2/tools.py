@@ -1,46 +1,429 @@
 from __future__ import annotations
 
+import base64
+import email.utils
+import hmac
 import json
+import os
 import re
+import shutil
 import subprocess
+import time
+import urllib.error
+import urllib.request
 from fnmatch import fnmatchcase
 from hashlib import sha256
 from pathlib import Path
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings, ToolDefinition
-from .evidence import TextFile, collect_text_files
+from .evidence import (
+    TextFile,
+    build_manifest,
+    collect_text_files,
+    grep_text_files,
+    materialize_tool_inputs,
+    search_keywords,
+    write_json_artifact,
+)
+from .fetch import fetch_catalog_descriptor
+from .metadata import query_field_types
 from .store import JsonObject, Store
 
 PARAM_PLACEHOLDER_RE = re.compile(r"\{params\.([A-Za-z0-9_]+)\}")
+PREPROCESS_LOG_PACKAGE_ID = "logagent.preprocess_log_package"
+PPROF_ANALYZER_ID = "pprof_analyzer"
+HUAWEI_PACKAGE_SYNC_TOOL_ID = "logagent.huawei_cloud_package_sync"
+METADATA_LIST_INSTANCES_ID = "logagent.list_metadata_instances"
+METADATA_GET_SNAPSHOT_ID = "logagent.get_metadata_snapshot"
+METADATA_GET_FIELD_TYPES_ID = "logagent.get_metadata_field_types"
+METADATA_GET_TAG_FIELDS_ID = "logagent.get_metadata_tag_fields"
+METADATA_TOOL_IDS = {
+    METADATA_LIST_INSTANCES_ID,
+    METADATA_GET_SNAPSHOT_ID,
+    METADATA_GET_FIELD_TYPES_ID,
+    METADATA_GET_TAG_FIELDS_ID,
+}
+STORAGE_TOOL_IDS = {"opengemini_storage_analyzer", "influxdb_storage_analyzer"}
 
 
 def tool_descriptors(settings: Settings) -> list[JsonObject]:
-    return [
+    descriptors = [
         {
             "toolId": tool.id,
             "displayName": tool.display_name,
+            "description": f"Configured subprocess tool {tool.display_name}.",
+            "source": "configured",
+            "tags": ["configured", "subprocess"],
             "enabled": tool.enabled,
             "backend": "subprocess",
             "readOnly": True,
             "editable": False,
+            "exportable": True,
             "runnable": tool.enabled,
+            "minFiles": 1 if tool_requires_input(tool) else 0,
+            "maxFiles": tool.max_input_files,
             "maxInputFiles": tool.max_input_files,
             "match": {
                 "filePatterns": list(tool.match_file_patterns),
                 "keywords": list(tool.match_keywords),
             },
+            "acceptedSuffixes": accepted_suffixes_from_patterns(tool.match_file_patterns),
             "paramsSchema": tool.params_schema
             or {"type": "object", "properties": {}, "additionalProperties": False},
+            "paramsTemplate": {},
+            "outputViews": ["summary", "findings", "stdout", "stderr"],
         }
         for tool in settings.tools
     ]
+    descriptors.extend(built_in_tool_descriptors(settings))
+    return descriptors
+
+
+def built_in_tool_descriptors(settings: Settings) -> list[JsonObject]:
+    return [
+        preprocess_descriptor(),
+        pprof_descriptor(settings),
+        *metadata_catalog_descriptors(),
+        fetch_catalog_descriptor(settings),
+        huawei_package_sync_descriptor(settings),
+    ]
+
+
+def accepted_suffixes_from_patterns(patterns: tuple[str, ...]) -> list[str]:
+    suffixes = []
+    for pattern in patterns:
+        if pattern.startswith("*.") and "/" not in pattern:
+            suffixes.append(pattern[1:])
+    return suffixes
+
+
+def preprocess_descriptor() -> JsonObject:
+    return {
+        "toolId": PREPROCESS_LOG_PACKAGE_ID,
+        "displayName": "Log package preprocessor",
+        "description": "Expand node log packages and materialize analyzer inputs.",
+        "source": "built_in",
+        "tags": ["built-in", "log", "preprocess", "manual-run"],
+        "enabled": True,
+        "backend": "builtin",
+        "readOnly": True,
+        "editable": False,
+        "exportable": False,
+        "runnable": True,
+        "minFiles": 1,
+        "maxFiles": 100,
+        "acceptedSuffixes": [".tar.gz", ".tgz"],
+        "paramsSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "paramsTemplate": {},
+        "outputViews": ["summary", "manifest", "tool_inputs", "log_groups", "warnings"],
+    }
+
+
+def pprof_descriptor(settings: Settings) -> JsonObject:
+    runnable = bool(settings.pprof_enabled and resolve_pprof_go_command(settings))
+    return {
+        "toolId": PPROF_ANALYZER_ID,
+        "displayName": "pprof Analyzer",
+        "description": "Run go tool pprof top/tree/raw against one uploaded profile.",
+        "source": "built_in",
+        "tags": ["built-in", "pprof", "profile", "manual-run"],
+        "enabled": settings.pprof_enabled,
+        "backend": "pprof",
+        "readOnly": True,
+        "editable": False,
+        "exportable": False,
+        "runnable": runnable,
+        "minFiles": 1,
+        "maxFiles": 1,
+        "acceptedSuffixes": [".pprof", ".prof", ".profile", ".pb.gz"],
+        "paramsSchema": {
+            "type": "object",
+            "properties": {
+                "sampleIndex": {"type": "string"},
+                "nodeCount": {"type": "integer"},
+                "generateSvg": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        "paramsTemplate": {"sampleIndex": "samples", "nodeCount": 20, "generateSvg": False},
+        "outputViews": ["summary", "top", "tree", "raw", "stderr"],
+    }
+
+
+def metadata_catalog_descriptors() -> list[JsonObject]:
+    base = {
+        "source": "built_in",
+        "tags": ["built-in", "metadata"],
+        "enabled": True,
+        "backend": "metadata",
+        "readOnly": True,
+        "editable": False,
+        "exportable": False,
+        "runnable": True,
+        "minFiles": 0,
+        "maxFiles": 0,
+        "acceptedSuffixes": [],
+        "outputViews": ["json"],
+    }
+    field_schema = {
+        "type": "object",
+        "properties": {
+            "instanceId": {"type": "string"},
+            "database": {"type": "string"},
+            "measurement": {"type": "string"},
+            "retentionPolicy": {"type": "string"},
+            "field": {"type": ["string", "array"]},
+        },
+        "required": ["instanceId", "database", "measurement"],
+        "additionalProperties": False,
+    }
+    tag_schema = {
+        "type": "object",
+        "properties": {
+            "instanceId": {"type": "string"},
+            "database": {"type": "string"},
+            "measurement": {"type": "string"},
+            "retentionPolicy": {"type": "string"},
+        },
+        "required": ["instanceId", "database", "measurement"],
+        "additionalProperties": False,
+    }
+    return [
+        {
+            **base,
+            "toolId": METADATA_LIST_INSTANCES_ID,
+            "displayName": "List Metadata Instances",
+            "description": "List imported metadata instances.",
+            "paramsSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "paramsTemplate": {},
+        },
+        {
+            **base,
+            "toolId": METADATA_GET_SNAPSHOT_ID,
+            "displayName": "Get Metadata Snapshot",
+            "description": "Read one imported metadata snapshot by instanceId.",
+            "paramsSchema": {
+                "type": "object",
+                "properties": {"instanceId": {"type": "string"}},
+                "required": ["instanceId"],
+                "additionalProperties": False,
+            },
+            "paramsTemplate": {"instanceId": ""},
+        },
+        {
+            **base,
+            "toolId": METADATA_GET_FIELD_TYPES_ID,
+            "displayName": "Get Metadata Field Types",
+            "description": "Query field types for one measurement.",
+            "paramsSchema": field_schema,
+            "paramsTemplate": {"instanceId": "", "database": "", "measurement": ""},
+        },
+        {
+            **base,
+            "toolId": METADATA_GET_TAG_FIELDS_ID,
+            "displayName": "Get Metadata Tag Fields",
+            "description": "Query tag fields for one measurement.",
+            "paramsSchema": tag_schema,
+            "paramsTemplate": {"instanceId": "", "database": "", "measurement": ""},
+        },
+    ]
+
+
+def huawei_package_sync_descriptor(settings: Settings) -> JsonObject:
+    config = settings.huawei_package_sync
+    runnable = bool(
+        config.enabled
+        and config.obs_endpoint
+        and config.obs_bucket
+        and config.obs_access_key
+        and config.obs_secret_key
+        and config.gaussdb_dsn
+    )
+    return {
+        "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID,
+        "displayName": "Huawei Cloud Package Sync",
+        "description": "Upload one package to Huawei OBS and verify/update GaussDB records.",
+        "source": "built_in",
+        "tags": ["built-in", "huawei", "obs", "gaussdb", "manual-run"],
+        "enabled": config.enabled,
+        "backend": "huawei_cloud_package_sync",
+        "readOnly": False,
+        "editable": False,
+        "exportable": False,
+        "runnable": runnable,
+        "minFiles": 1,
+        "maxFiles": 1,
+        "acceptedSuffixes": [".zip", ".tar", ".tar.gz", ".tgz", ".log", ".txt"],
+        "paramsSchema": {
+            "type": "object",
+            "properties": {
+                "objectKey": {"type": "string"},
+                "updateSql": {"type": "string"},
+                "querySql": {"type": "string"},
+            },
+            "required": ["updateSql", "querySql"],
+            "additionalProperties": False,
+        },
+        "paramsTemplate": {"objectKey": "", "updateSql": "", "querySql": ""},
+        "outputViews": ["summary", "obs", "gaussdb", "warnings"],
+    }
 
 
 def get_tool(settings: Settings, tool_id: str) -> ToolDefinition:
     for tool in settings.tools:
         if tool.id == tool_id:
             return tool
+    raise ValueError(f"unknown tool {tool_id}")
+
+
+def get_tool_descriptor(settings: Settings, tool_id: str) -> JsonObject:
+    for descriptor in tool_descriptors(settings):
+        if descriptor["toolId"] == tool_id:
+            return descriptor
+    raise ValueError(f"unknown tool {tool_id}")
+
+
+def validate_manual_tool_run(
+    settings: Settings,
+    tool_id: str,
+    upload_count: int,
+    params: JsonObject | None,
+) -> JsonObject:
+    descriptor = get_tool_descriptor(settings, tool_id)
+    if not descriptor.get("enabled"):
+        raise ValueError(f"tool {tool_id} is disabled")
+    if not descriptor.get("runnable"):
+        raise ValueError(f"tool {tool_id} is not runnable")
+    min_files = int(descriptor.get("minFiles", 0))
+    max_files = int(descriptor.get("maxFiles", 0))
+    if upload_count < min_files or upload_count > max_files:
+        raise ValueError(f"tool {tool_id} expects {min_files}..{max_files} upload(s)")
+    return validate_tool_run_params(settings, tool_id, params or {})
+
+
+def validate_tool_run_params(
+    settings: Settings,
+    tool_id: str,
+    params: JsonObject,
+) -> JsonObject:
+    if not isinstance(params, dict):
+        raise ValueError("tool params must be an object")
+    if tool_id in {PREPROCESS_LOG_PACKAGE_ID, METADATA_LIST_INSTANCES_ID}:
+        if params:
+            raise ValueError(f"tool {tool_id} does not accept params")
+        return {}
+    if tool_id == METADATA_GET_SNAPSHOT_ID:
+        instance_id = require_string_param(tool_id, params, "instanceId")
+        reject_unknown_params(tool_id, params, {"instanceId"})
+        return {"instanceId": instance_id}
+    if tool_id in {METADATA_GET_FIELD_TYPES_ID, METADATA_GET_TAG_FIELDS_ID}:
+        allowed = {"instanceId", "database", "measurement", "retentionPolicy"}
+        if tool_id == METADATA_GET_FIELD_TYPES_ID:
+            allowed.add("field")
+        reject_unknown_params(tool_id, params, allowed)
+        result: JsonObject = {
+            "instanceId": require_string_param(tool_id, params, "instanceId"),
+            "database": require_string_param(tool_id, params, "database"),
+            "measurement": require_string_param(tool_id, params, "measurement"),
+        }
+        if isinstance(params.get("retentionPolicy"), str) and params["retentionPolicy"].strip():
+            result["retentionPolicy"] = params["retentionPolicy"].strip()
+        if "field" in params and tool_id == METADATA_GET_FIELD_TYPES_ID:
+            field = params["field"]
+            if isinstance(field, str):
+                result["field"] = field.strip()
+            elif isinstance(field, list) and all(isinstance(item, str) for item in field):
+                result["field"] = [item.strip() for item in field if item.strip()]
+            else:
+                raise ValueError("field must be a string or string array")
+        return result
+    if tool_id == PPROF_ANALYZER_ID:
+        reject_unknown_params(tool_id, params, {"sampleIndex", "nodeCount", "generateSvg"})
+        node_count = params.get("nodeCount", 20)
+        if isinstance(node_count, bool) or not isinstance(node_count, int):
+            raise ValueError("nodeCount must be an integer")
+        return {
+            "sampleIndex": str(params.get("sampleIndex") or "samples"),
+            "nodeCount": max(1, min(node_count, 200)),
+            "generateSvg": bool(params.get("generateSvg", False)),
+        }
+    if tool_id == HUAWEI_PACKAGE_SYNC_TOOL_ID:
+        reject_unknown_params(tool_id, params, {"objectKey", "updateSql", "querySql"})
+        object_key = str(params.get("objectKey") or "").strip()
+        if object_key:
+            validate_obs_object_key(object_key)
+        return {
+            "objectKey": object_key,
+            "updateSql": require_string_param(tool_id, params, "updateSql"),
+            "querySql": require_string_param(tool_id, params, "querySql"),
+        }
+    if tool_id == "logagent.fetch":
+        reject_unknown_params(tool_id, params, {"endpointId", "fetchId"})
+        endpoint_id = params.get("endpointId") or params.get("fetchId")
+        if not isinstance(endpoint_id, str) or not endpoint_id.strip():
+            raise ValueError("logagent.fetch requires endpointId")
+        return {"endpointId": endpoint_id.strip()}
+    tool = get_tool(settings, tool_id)
+    return validate_tool_params(tool, params)
+
+
+def execute_tool_run(settings: Settings, store: Store, run_id: str) -> JsonObject:
+    run = store.get_run(run_id)
+    if run.get("kind") != "tool_run":
+        raise ValueError(f"run {run_id} is not a tool run")
+    tool_id = run.get("toolId")
+    if not isinstance(tool_id, str) or not tool_id:
+        raise ValueError(f"tool run {run_id} is missing toolId")
+    store.mark_tool_run_running(run_id)
+    try:
+        result = execute_tool_by_id(settings, store, run, tool_id, run.get("toolParams") or {})
+        artifact_id = result["artifact"]["id"]
+        store.complete_tool_run(run_id, artifact_id, result["result"])
+        return result
+    except Exception as error:
+        store.fail_tool_run(run_id, str(error))
+        raise
+
+
+def execute_tool_by_id(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    tool_id: str,
+    params: JsonObject,
+) -> JsonObject:
+    if tool_id in {tool.id for tool in settings.tools}:
+        return run_configured_tool(
+            settings,
+            store,
+            run["workspace_id"],
+            run["id"],
+            tool_id,
+            params,
+            upload_ids=run.get("toolUploadIds") or [],
+        )
+    if tool_id == PREPROCESS_LOG_PACKAGE_ID:
+        return run_preprocess_tool(settings, store, run, params)
+    if tool_id in METADATA_TOOL_IDS:
+        return run_metadata_tool(settings, store, run, tool_id, params)
+    if tool_id == PPROF_ANALYZER_ID:
+        return run_pprof_tool(settings, store, run, params)
+    if tool_id == "logagent.fetch":
+        from .fetch import execute_fetch_endpoint
+
+        endpoint_id = params.get("endpointId") or params.get("fetchId")
+        if not isinstance(endpoint_id, str) or not endpoint_id.strip():
+            raise ValueError("logagent.fetch requires endpointId")
+        return execute_fetch_endpoint(
+            settings=settings,
+            store=store,
+            workspace_id=run["workspace_id"],
+            run_id=run["id"],
+            endpoint_id=endpoint_id.strip(),
+        )
+    if tool_id == HUAWEI_PACKAGE_SYNC_TOOL_ID:
+        return run_huawei_package_sync_tool(settings, store, run, params)
     raise ValueError(f"unknown tool {tool_id}")
 
 
@@ -51,12 +434,13 @@ def run_configured_tool(
     run_id: str,
     tool_id: str,
     params: JsonObject | None = None,
+    upload_ids: list[str] | None = None,
 ) -> JsonObject:
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
         raise ValueError(f"tool {tool_id} is disabled")
     normalized_params = validate_tool_params(tool, params or {})
-    input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool)
+    input_entries = select_tool_inputs(settings, store, workspace_id, run_id, tool, upload_ids or [])
     if tool_requires_input(tool) and not input_entries:
         raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
     if input_entries:
@@ -170,6 +554,7 @@ def select_tool_inputs(
     workspace_id: str,
     run_id: str,
     tool: ToolDefinition,
+    upload_ids: list[str] | None = None,
 ) -> list[JsonObject]:
     if not tool_requires_input(tool):
         return []
@@ -190,7 +575,7 @@ def select_tool_inputs(
                 break
     if selected:
         return selected
-    return select_fallback_tool_inputs(settings, store, workspace_id, run_id, tool)
+    return select_fallback_tool_inputs(settings, store, workspace_id, run_id, tool, upload_ids or [])
 
 
 def select_fallback_tool_inputs(
@@ -199,8 +584,11 @@ def select_fallback_tool_inputs(
     workspace_id: str,
     run_id: str,
     tool: ToolDefinition,
+    upload_ids: list[str] | None = None,
 ) -> list[JsonObject]:
-    uploads = store.list_uploads(workspace_id)
+    uploads = store.list_uploads_by_ids(workspace_id, upload_ids or [])
+    if tool.id in STORAGE_TOOL_IDS:
+        return select_upload_artifact_inputs(uploads, tool)
     text_files = collect_text_files(settings, uploads)
     files_by_path = {text_file.path: text_file for text_file in text_files}
     selected_paths: list[str] = []
@@ -233,6 +621,36 @@ def select_fallback_tool_inputs(
         materialize_fallback_tool_input(settings, store, workspace_id, tool, files_by_path[path])
         for path in selected_paths[: tool.max_input_files]
     ]
+
+
+def select_upload_artifact_inputs(
+    uploads: list[JsonObject],
+    tool: ToolDefinition,
+) -> list[JsonObject]:
+    selected = []
+    for upload in uploads:
+        filename = upload["filename"]
+        if tool.match_file_patterns and not any(
+            matches_file_pattern(pattern, filename, filename)
+            for pattern in tool.match_file_patterns
+        ):
+            continue
+        selected.append(
+            {
+                "path": filename,
+                "inputKind": "upload_artifact",
+                "scope": "upload",
+                "toolIds": [tool.id],
+                "sourceFiles": [filename],
+                "sourceUploadId": upload["id"],
+                "sourceFilename": filename,
+                "artifactId": upload["artifact_id"],
+                "artifactRelativePath": upload["artifact_relative_path"],
+            }
+        )
+        if len(selected) >= tool.max_input_files:
+            break
+    return selected
 
 
 def latest_tool_input_index(settings: Settings, store: Store, run_id: str) -> JsonObject:
@@ -455,6 +873,525 @@ def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None, params:
 def safe_action_segment(value: str) -> str:
     result = "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
     return result[:80] or "tool"
+
+
+def run_preprocess_tool(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    params: JsonObject,
+) -> JsonObject:
+    if params:
+        raise ValueError("preprocess tool does not accept params")
+    uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
+    text_files = collect_text_files(settings, uploads)
+    tool_input_bundle = materialize_tool_inputs(settings, store, run["workspace_id"], text_files)
+    manifest = build_manifest(
+        run["workspace_id"],
+        run["id"],
+        uploads,
+        text_files,
+        tool_inputs_path=tool_input_bundle.get("path"),
+        tool_input_count=len(tool_input_bundle.get("inputs", [])),
+    )
+    grep_results = grep_text_files(
+        text_files,
+        search_keywords(""),
+        settings.max_grep_matches,
+        ref_base="grep_results.json#matches/",
+    )
+    manifest_artifact = write_json_artifact(
+        settings,
+        store,
+        run["workspace_id"],
+        f"{run['id']}_manifest.json",
+        manifest,
+        schema_name="logagent.v2.manifest.v1",
+    )
+    grep_artifact = write_json_artifact(
+        settings,
+        store,
+        run["workspace_id"],
+        f"{run['id']}_grep_results.json",
+        grep_results,
+        schema_name="logagent.v2.grep_results.v1",
+    )
+    log_groups: dict[str, int] = {}
+    node_packages: dict[str, JsonObject] = {}
+    for text_file in text_files:
+        if text_file.log_group:
+            log_groups[text_file.log_group] = log_groups.get(text_file.log_group, 0) + 1
+        if text_file.node_package:
+            node_packages[
+                f"{text_file.node_package.get('nodeId')}:{text_file.node_package.get('timestamp')}"
+            ] = text_file.node_package
+    action_id = f"act_tool_preprocess_{run['id']}"
+    result = {
+        "schemaVersion": 1,
+        "toolId": PREPROCESS_LOG_PACKAGE_ID,
+        "actionId": action_id,
+        "status": "OK",
+        "summary": (
+            f"Preprocessed {len(uploads)} upload(s), collected {len(text_files)} text file(s), "
+            f"materialized {len(tool_input_bundle.get('inputs', []))} tool input(s)."
+        ),
+        "uploadCount": len(uploads),
+        "fileCount": len(text_files),
+        "nodePackages": list(node_packages.values()),
+        "logGroups": log_groups,
+        "manifestArtifactId": manifest_artifact["id"],
+        "grepArtifactId": grep_artifact["id"],
+        "toolInputIndex": tool_input_bundle.get("inputs", []),
+    }
+    artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
+    evidence = store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="tool_result",
+        final_allowed=False,
+        summary=result["summary"],
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "toolId": PREPROCESS_LOG_PACKAGE_ID,
+            "actionId": action_id,
+            "manifestArtifactId": manifest_artifact["id"],
+            "grepArtifactId": grep_artifact["id"],
+            "toolInputCount": len(tool_input_bundle.get("inputs", [])),
+        },
+    )
+    return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def run_metadata_tool(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    tool_id: str,
+    params: JsonObject,
+) -> JsonObject:
+    if tool_id == METADATA_LIST_INSTANCES_ID:
+        value = {"instances": store.list_metadata_instances()}
+    elif tool_id == METADATA_GET_SNAPSHOT_ID:
+        value = store.get_metadata_snapshot(params["instanceId"])
+    elif tool_id in {METADATA_GET_FIELD_TYPES_ID, METADATA_GET_TAG_FIELDS_ID}:
+        value = query_field_types(
+            store=store,
+            instance_id=params["instanceId"],
+            database=params["database"],
+            measurement=params["measurement"],
+            retention_policy=params.get("retentionPolicy"),
+            field=params.get("field"),
+            tags_only=tool_id == METADATA_GET_TAG_FIELDS_ID,
+        )
+    else:
+        raise ValueError(f"unsupported metadata tool {tool_id}")
+    action_id = f"act_tool_{safe_action_segment(tool_id)}_{run['id']}"
+    result = {
+        "schemaVersion": 1,
+        "toolId": tool_id,
+        "actionId": action_id,
+        "status": "OK",
+        "summary": f"Metadata tool {tool_id} completed.",
+        "value": value,
+    }
+    artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
+    evidence = store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="metadata_slice",
+        final_allowed=False,
+        summary=result["summary"],
+        artifact_id=artifact["id"],
+        payload={"artifactId": artifact["id"], "toolId": tool_id, "actionId": action_id},
+    )
+    return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def run_pprof_tool(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    params: JsonObject,
+) -> JsonObject:
+    go_command = resolve_pprof_go_command(settings)
+    if not go_command:
+        raise ValueError("pprof analyzer is not configured")
+    uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
+    if len(uploads) != 1:
+        raise ValueError("pprof analyzer requires exactly one upload")
+    upload = uploads[0]
+    profile_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
+    if not profile_path.is_file():
+        raise ValueError("uploaded pprof profile is missing")
+    action_id = f"act_tool_pprof_{run['id']}"
+    node_count = int(params.get("nodeCount", 20))
+    sample_index = str(params.get("sampleIndex") or "samples")
+    commands = {
+        "top": [
+            go_command,
+            "tool",
+            "pprof",
+            f"-sample_index={sample_index}",
+            "-top",
+            f"-nodecount={node_count}",
+            str(profile_path),
+        ],
+        "tree": [go_command, "tool", "pprof", f"-sample_index={sample_index}", "-tree", str(profile_path)],
+        "raw": [go_command, "tool", "pprof", f"-sample_index={sample_index}", "-raw", str(profile_path)],
+    }
+    if params.get("generateSvg"):
+        commands["svg"] = [
+            go_command,
+            "tool",
+            "pprof",
+            f"-sample_index={sample_index}",
+            "-svg",
+            str(profile_path),
+        ]
+    outputs: dict[str, JsonObject] = {}
+    warnings = []
+    for name, argv in commands.items():
+        outputs[name] = run_pprof_command(settings, store, run["workspace_id"], action_id, name, argv)
+        if outputs[name].get("timedOut") or outputs[name].get("exitCode") not in {0, None}:
+            warnings.append(f"{name} command did not complete successfully")
+    top_entries = parse_pprof_top(outputs.get("top", {}).get("text", ""))
+    status = "OK" if outputs.get("top", {}).get("exitCode") == 0 else "FAILED"
+    result = {
+        "schemaVersion": 1,
+        "toolId": PPROF_ANALYZER_ID,
+        "actionId": action_id,
+        "status": status,
+        "summary": f"pprof top produced {len(top_entries)} row(s).",
+        "profile": {"uploadId": upload["id"], "filename": upload["filename"]},
+        "sampleIndex": sample_index,
+        "top": top_entries,
+        "artifacts": {key: value.get("artifactId") for key, value in outputs.items()},
+        "warnings": warnings,
+    }
+    artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
+    evidence = store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="tool_result",
+        final_allowed=True,
+        summary=result["summary"],
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "toolId": PPROF_ANALYZER_ID,
+            "actionId": action_id,
+            "findingCount": len(top_entries),
+            "evidenceRefPrefix": f"tool_results/{action_id}/result.json#top/",
+        },
+    )
+    return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def run_huawei_package_sync_tool(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    params: JsonObject,
+) -> JsonObject:
+    config = settings.huawei_package_sync
+    if not config.enabled:
+        raise ValueError("Huawei package sync is disabled")
+    uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
+    if len(uploads) != 1:
+        raise ValueError("Huawei package sync requires exactly one upload")
+    upload = uploads[0]
+    package_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
+    object_key = params.get("objectKey") or default_huawei_object_key(config.obs_object_prefix, upload["filename"])
+    validate_obs_object_key(object_key)
+    action_id = f"act_tool_huawei_package_sync_{run['id']}"
+    started = time.monotonic()
+    failed_step = None
+    error = None
+    obs_put = None
+    obs_head = None
+    update_result = None
+    query_result = None
+    try:
+        obs_put = huawei_obs_request(settings, "PUT", object_key, package_path.read_bytes())
+        update_result = execute_gaussdb_sql(config.gaussdb_dsn, params["updateSql"], fetch=False)
+        obs_head = huawei_obs_request(settings, "HEAD", object_key, b"")
+        query_result = execute_gaussdb_sql(config.gaussdb_dsn, params["querySql"], fetch=True)
+    except Exception as exc:
+        message = str(exc)
+        if obs_put is None:
+            failed_step = "obs_put"
+        elif update_result is None:
+            failed_step = "gaussdb_update"
+        elif obs_head is None:
+            failed_step = "obs_head"
+        else:
+            failed_step = "gaussdb_query"
+        error = message[:2000]
+    status = "FAILED" if error else "OK"
+    result = {
+        "schemaVersion": 1,
+        "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID,
+        "actionId": action_id,
+        "status": status,
+        "summary": (
+            "Huawei package sync completed."
+            if status == "OK"
+            else f"Huawei package sync failed at {failed_step}: {error}"
+        ),
+        "objectKey": object_key,
+        "objectUrl": huawei_object_url(settings, object_key),
+        "upload": {"uploadId": upload["id"], "filename": upload["filename"]},
+        "obsPut": obs_put,
+        "obsHead": obs_head,
+        "gaussdbUpdate": update_result,
+        "gaussdbQuery": query_result,
+        "failedStep": failed_step,
+        "error": error,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "credentialEnv": {
+            "obsAccessKey": "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY",
+            "obsSecretKey": "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY",
+            "gaussdbDsn": "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
+        },
+    }
+    artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
+    evidence = store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="tool_result",
+        final_allowed=False,
+        summary=result["summary"],
+        artifact_id=artifact["id"],
+        payload={"artifactId": artifact["id"], "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID, "actionId": action_id},
+    )
+    return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def write_tool_result_artifact(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    action_id: str,
+    result: JsonObject,
+) -> JsonObject:
+    return write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_result.json",
+        data=json.dumps(result, ensure_ascii=True, indent=2).encode("utf-8"),
+        content_type="application/json",
+        schema_name="logagent.v2.tool_result.v1",
+        preview={
+            "toolId": result.get("toolId"),
+            "actionId": action_id,
+            "status": result.get("status"),
+        },
+    )
+
+
+def run_pprof_command(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    action_id: str,
+    name: str,
+    argv: list[str],
+) -> JsonObject:
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            timeout=60,
+            env={**os.environ, "PPROF_TMPDIR": str(settings.tmp_dir)},
+        )
+        stdout = completed.stdout[: settings.remote_max_output_bytes]
+        stderr = completed.stderr[: settings.remote_max_output_bytes]
+        exit_code: int | None = completed.returncode
+        timed_out = False
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or b""
+        stderr = error.stderr or b""
+        exit_code = None
+        timed_out = True
+    text = stdout.decode("utf-8", errors="replace")
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=workspace_id,
+        filename=f"{action_id}_{name}.txt" if name != "svg" else f"{action_id}_{name}.svg",
+        data=stdout,
+        content_type="image/svg+xml" if name == "svg" else "text/plain",
+        schema_name=f"logagent.v2.pprof.{name}.v1",
+        preview={"actionId": action_id, "kind": name, "exitCode": exit_code, "timedOut": timed_out},
+    )
+    if stderr:
+        write_artifact_bytes(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=f"{action_id}_{name}_stderr.txt",
+            data=stderr,
+            content_type="text/plain",
+            schema_name="logagent.v2.pprof.stderr.v1",
+            preview={"actionId": action_id, "kind": name, "sizeBytes": len(stderr)},
+        )
+    return {
+        "artifactId": artifact["id"],
+        "exitCode": exit_code,
+        "timedOut": timed_out,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "text": text,
+    }
+
+
+def parse_pprof_top(text: str) -> list[JsonObject]:
+    rows = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 6 or not re.match(r"^\d", parts[0]):
+            continue
+        rows.append(
+            {
+                "rank": len(rows) + 1,
+                "flat": parts[0],
+                "flatPercent": parts[1] if len(parts) > 1 else None,
+                "sumPercent": parts[2] if len(parts) > 2 else None,
+                "cum": parts[3] if len(parts) > 3 else None,
+                "cumPercent": parts[4] if len(parts) > 4 else None,
+                "function": " ".join(parts[5:]),
+            }
+        )
+    return rows[:200]
+
+
+def resolve_pprof_go_command(settings: Settings) -> str | None:
+    command = settings.pprof_go_command or shutil.which("go")
+    if not command:
+        return None
+    path = Path(command)
+    if path.is_absolute() and path.is_file():
+        return str(path)
+    resolved = shutil.which(command)
+    return resolved
+
+
+def require_string_param(tool_id: str, params: JsonObject, key: str) -> str:
+    value = params.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"tool {tool_id} param {key} is required")
+    return value.strip()
+
+
+def reject_unknown_params(tool_id: str, params: JsonObject, allowed: set[str]) -> None:
+    unknown = sorted(key for key in params if key not in allowed)
+    if unknown:
+        raise ValueError(f"tool {tool_id} does not accept params: {', '.join(unknown)}")
+
+
+def validate_obs_object_key(value: str) -> None:
+    if not value or value.startswith("/") or "\\" in value or "?" in value or "#" in value:
+        raise ValueError("invalid OBS object key")
+    parts = value.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("invalid OBS object key")
+    if any(ord(char) < 32 for char in value):
+        raise ValueError("invalid OBS object key")
+
+
+def default_huawei_object_key(prefix: str, filename: str) -> str:
+    clean_prefix = prefix.strip("/")
+    clean_name = re.sub(r"[^A-Za-z0-9._/-]+", "_", Path(filename).name)
+    return f"{clean_prefix}/{clean_name}" if clean_prefix else clean_name
+
+
+def huawei_object_url(settings: Settings, object_key: str) -> str | None:
+    config = settings.huawei_package_sync
+    if not config.obs_endpoint or not config.obs_bucket:
+        return None
+    endpoint = config.obs_endpoint.rstrip("/")
+    return f"{endpoint}/{config.obs_bucket}/{object_key}"
+
+
+def huawei_obs_request(
+    settings: Settings,
+    method: str,
+    object_key: str,
+    body: bytes,
+) -> JsonObject:
+    config = settings.huawei_package_sync
+    if not all([config.obs_endpoint, config.obs_bucket, config.obs_access_key, config.obs_secret_key]):
+        raise ValueError("Huawei OBS credentials are incomplete")
+    url = huawei_object_url(settings, object_key)
+    assert url is not None
+    date = email.utils.formatdate(usegmt=True)
+    content_type = "application/octet-stream" if method == "PUT" else ""
+    resource = f"/{config.obs_bucket}/{object_key}"
+    string_to_sign = f"{method}\n\n{content_type}\n{date}\n{resource}"
+    signature = base64.b64encode(
+        hmac.new(
+            config.obs_secret_key.encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            "sha1",
+        ).digest()
+    ).decode("ascii")
+    headers = {
+        "Date": date,
+        "Authorization": f"OBS {config.obs_access_key}:{signature}",
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    if config.obs_security_token:
+        headers["x-obs-security-token"] = config.obs_security_token
+    request = urllib.request.Request(url, data=body if method == "PUT" else None, method=method, headers=headers)
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=config.timeout_seconds) as response:
+            return {
+                "statusCode": response.status,
+                "etag": response.headers.get("ETag"),
+                "contentLength": response.headers.get("Content-Length"),
+                "durationMs": int((time.monotonic() - started) * 1000),
+            }
+    except urllib.error.HTTPError as error:
+        raise ValueError(f"OBS {method} returned HTTP {error.code}") from error
+
+
+def execute_gaussdb_sql(dsn: str | None, sql: str, fetch: bool) -> JsonObject:
+    if not dsn:
+        raise ValueError("LOGAGENT_V2_HUAWEI_GAUSSDB_DSN is not configured")
+    try:
+        import psycopg
+    except ImportError as error:
+        raise ValueError("psycopg is required for Huawei GaussDB execution") from error
+    started = time.monotonic()
+    with psycopg.connect(dsn, connect_timeout=10) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            if fetch:
+                columns = [item.name for item in cursor.description or []]
+                rows = cursor.fetchmany(200)
+                return {
+                    "rowCount": len(rows),
+                    "truncated": len(rows) == 200,
+                    "rows": [
+                        {columns[index]: stringify_sql_value(value) for index, value in enumerate(row)}
+                        for row in rows
+                    ],
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                }
+            affected = cursor.rowcount
+        conn.commit()
+    return {"affectedRows": affected, "durationMs": int((time.monotonic() - started) * 1000)}
+
+
+def stringify_sql_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def parse_json(data: bytes) -> object | None:

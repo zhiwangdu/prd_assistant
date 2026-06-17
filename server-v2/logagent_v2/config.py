@@ -84,6 +84,19 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
     )
 
 
+@dataclass(frozen=True)
+class HuaweiPackageSyncSettings:
+    enabled: bool = False
+    obs_endpoint: str | None = None
+    obs_bucket: str | None = None
+    obs_object_prefix: str = ""
+    obs_access_key: str | None = None
+    obs_secret_key: str | None = None
+    obs_security_token: str | None = None
+    gaussdb_dsn: str | None = None
+    timeout_seconds: int = 30
+
+
 def default_webui_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "webui" / "out"
 
@@ -103,6 +116,11 @@ class Settings:
     job_poll_seconds: float = 1.0
     inline_worker: bool = True
     tools: tuple[ToolDefinition, ...] = ()
+    pprof_go_command: str | None = None
+    pprof_enabled: bool = False
+    huawei_package_sync: HuaweiPackageSyncSettings = field(
+        default_factory=HuaweiPackageSyncSettings
+    )
     fetch_enabled: bool = False
     fetch_allowed_hosts: tuple[str, ...] = ()
     fetch_timeout_seconds: int = 20
@@ -167,6 +185,27 @@ class Settings:
         max_concurrent_jobs = int(os.environ.get("LOGAGENT_V2_MAX_CONCURRENT_JOBS", "2"))
         inline_worker = os.environ.get("LOGAGENT_V2_INLINE_WORKER", "1") != "0"
         tools = parse_tools_env(os.environ.get("LOGAGENT_V2_TOOLS_JSON"))
+        pprof_go_command = (
+            os.environ.get("LOGAGENT_V2_PPROF_GO_COMMAND")
+            or os.environ.get("LOGAGENT_TOOL_PPROF_GO")
+        )
+        pprof_enabled = env_bool(
+            "LOGAGENT_V2_PPROF_ENABLED",
+            default=bool(pprof_go_command),
+        )
+        huawei_package_sync = HuaweiPackageSyncSettings(
+            enabled=env_bool("LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED", default=False),
+            obs_endpoint=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_ENDPOINT"),
+            obs_bucket=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_BUCKET"),
+            obs_object_prefix=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX", ""),
+            obs_access_key=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY"),
+            obs_secret_key=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY"),
+            obs_security_token=os.environ.get("LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN"),
+            gaussdb_dsn=os.environ.get("LOGAGENT_V2_HUAWEI_GAUSSDB_DSN"),
+            timeout_seconds=max(
+                1, int(os.environ.get("LOGAGENT_V2_HUAWEI_TIMEOUT_SECONDS", "30"))
+            ),
+        )
         fetch_enabled = os.environ.get("LOGAGENT_V2_FETCH_ENABLED", "0") == "1"
         fetch_allowed_hosts = tuple(
             item.strip().lower()
@@ -220,6 +259,9 @@ class Settings:
             max_concurrent_jobs=max_concurrent_jobs,
             inline_worker=inline_worker,
             tools=tools,
+            pprof_go_command=pprof_go_command,
+            pprof_enabled=pprof_enabled,
+            huawei_package_sync=huawei_package_sync,
             fetch_enabled=fetch_enabled,
             fetch_allowed_hosts=fetch_allowed_hosts,
             fetch_timeout_seconds=fetch_timeout_seconds,
@@ -245,12 +287,112 @@ class Settings:
 
 
 def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
-    if not raw:
-        return ()
-    decoded = json.loads(raw)
-    if not isinstance(decoded, list):
-        raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
-    return tuple(ToolDefinition.from_json(item) for item in decoded)
+    configured: list[ToolDefinition] = []
+    if raw:
+        decoded = json.loads(raw)
+        if not isinstance(decoded, list):
+            raise ValueError("LOGAGENT_V2_TOOLS_JSON must be a JSON array")
+        configured.extend(ToolDefinition.from_json(item) for item in decoded)
+    configured.extend(default_source_built_tools_from_env())
+    seen = set()
+    deduped = []
+    for tool in configured:
+        if tool.id in seen:
+            continue
+        seen.add(tool.id)
+        deduped.append(tool)
+    return tuple(deduped)
+
+
+def default_source_built_tools_from_env() -> list[ToolDefinition]:
+    definitions = [
+        (
+            "flux_query_analyzer",
+            "Flux Query Analyzer",
+            env_first("LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER", "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"),
+            (
+                "--input",
+                "{input_file}",
+                "--format",
+                "json",
+                "--top-k",
+                "20",
+                "--max-input-lines",
+                "100000",
+                "--max-error-findings",
+                "20",
+            ),
+            ("*.jsonl", "*.ndjson"),
+            ("flux", '"query"', "duration_ms"),
+        ),
+        (
+            "influxql_analyzer",
+            "InfluxQL Analyzer",
+            env_first(
+                "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER",
+                "LOGAGENT_TOOL_INFLUXQL_ANALYZER",
+            ),
+            ("-input", "{input_file}", "-output", "json", "-detail-limit", "5"),
+            ("*.jsonl",),
+            ("influxql", '"query"', "select", "show series", "show measurements"),
+        ),
+        (
+            "opengemini_storage_analyzer",
+            "openGemini Storage Analyzer",
+            env_first(
+                "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER",
+                "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER",
+            ),
+            ("--input", "{input_file}", "--format", "json"),
+            ("*.tssp", "*.tssp.init", "*tsi*", "*mergeset*"),
+            ("tssp", "tsi", "mergeset"),
+        ),
+        (
+            "influxdb_storage_analyzer",
+            "InfluxDB Storage Analyzer",
+            env_first(
+                "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER",
+                "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER",
+            ),
+            ("-input", "{input_file}", "-kind", "auto", "-max-samples", "10"),
+            ("*.tsm", "*.tsi", "*_series*"),
+            ("tsm", "tsi", "_series"),
+        ),
+    ]
+    tools = []
+    for tool_id, display_name, command, args, patterns, keywords in definitions:
+        if not command:
+            continue
+        tools.append(
+            ToolDefinition(
+                id=tool_id,
+                display_name=display_name,
+                command=command,
+                args=args,
+                enabled=True,
+                timeout_seconds=30,
+                max_output_bytes=1024 * 1024,
+                max_input_files=3,
+                match_file_patterns=patterns,
+                match_keywords=keywords,
+            )
+        )
+    return tools
+
+
+def env_first(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_remote_commands_env(raw: str | None) -> tuple[RemoteCommandTemplate, ...]:

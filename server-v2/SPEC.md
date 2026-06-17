@@ -88,13 +88,17 @@ Implemented in this slice:
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
   Workspace text path and persists `log_slice` evidence.
-- Minimal configured Tool Runner. Tools are loaded from
-  `LOGAGENT_V2_TOOLS_JSON`, listed through `/api/v2/tools`, and runnable through
-  task MCP `logagent.run_domain_tool`. Tools with `{input_file}` arguments
+- Tool Plugin registry. Configured subprocess tools are loaded from
+  `LOGAGENT_V2_TOOLS_JSON` or the V2 analyzer executable environment variables,
+  listed through `/api/v2/tools`, runnable through manual tool-run APIs, and
+  exposed to task MCP `logagent.run_domain_tool`. Tools with `{input_file}`
   consume matching materialized tool inputs before execution, then fall back to
-  manifest file patterns and initial grep keyword matches. Generic JSON stdout
-  and InfluxQL analyzer report/compare stdout are normalized into
-  `summary/findings`.
+  manifest file patterns, initial grep keyword matches, or raw upload artifacts
+  for storage analyzers. Generic JSON stdout and InfluxQL analyzer
+  report/compare stdout are normalized into `summary/findings`.
+- V1 built-in tool migration for metadata catalog tools,
+  `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
+  default-off `logagent.huawei_cloud_package_sync`.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP
@@ -141,7 +145,6 @@ Not yet implemented:
 - Full LangGraph multi-round planning and product-grade resume policies beyond
   the current bounded `interactionContext` handoff.
 - Additional analyzer materialized `tool_inputs/index.json` generation beyond
-  generic InfluxQL/Flux JSONL.
 - Full WebUI V2 cutover that replaces the legacy Rust-compatible panels instead
   of running V2 bridge panels alongside them.
 
@@ -185,6 +188,12 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/tools/:tool_id
+POST /api/v2/tools/:tool_id/runs
+GET  /api/v2/tools/runs
+GET  /api/v2/tools/runs/:run_id
+GET  /api/v2/tools/runs/:run_id/result
+GET  /api/v2/tools/runs/:run_id/artifacts
 GET  /api/v2/debug/llm
 PUT  /api/v2/debug/llm
 GET  /api/v2/settings/llm
@@ -286,6 +295,9 @@ SQLite tables:
 
 - `workspaces`
 - `runs`
+  - `kind=analysis|tool_run`
+  - tool-run columns: `tool_id`, `tool_params_json`, `tool_upload_ids_json`,
+    `tool_result_artifact_id`, `error_json`
 - `timeline_events`
 - `artifacts`
 - `uploads`
@@ -447,6 +459,7 @@ Configured Tool Runner execution:
 ```text
 LOGAGENT_V2_TOOLS_JSON
   -> /api/v2/tools descriptor
+  -> optional manual POST /api/v2/tools/:tool_id/runs
   -> MCP logagent.run_domain_tool { toolId, params? }
   -> optional paramsSchema validation
   -> optional materialized tool input selection
@@ -456,6 +469,24 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+The Tool Plugin registry is the single catalog source for `/api/v2/tools`,
+readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
+configured tool execution. Task MCP `logagent.run_domain_tool` only exposes
+configured subprocess tools. Built-ins use dedicated task MCP tools where
+available, or the protected manual Tools API. The migrated built-ins are:
+
+- metadata catalog tools: instance list, snapshot, field types, tag fields;
+- `logagent.preprocess_log_package`;
+- `logagent.fetch`;
+- `pprof_analyzer`;
+- `logagent.huawei_cloud_package_sync`, disabled until Huawei OBS/GaussDB
+  environment variables are configured.
+
+Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
+the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
+validated `params`; results are stored as V2 artifacts/evidence and exposed
+through `/api/v2/tools/runs/:run_id/result`.
 
 Configured tools may declare `paramsSchema`. V2 validates a conservative object
 schema subset: required fields, `additionalProperties=false`, primitive
@@ -515,6 +546,11 @@ as virtual `extracted/<manifest path>` inputs. Selection is de-duplicated,
 bounded by `maxInputFiles`, and preserves materialized-input priority.
 Multi-input MCP responses keep `result/evidence` for the primary execution and
 add `results[]` and `evidenceItems[]`.
+
+Storage analyzers (`opengemini_storage_analyzer` and
+`influxdb_storage_analyzer`) use raw upload artifact fallback when no
+materialized text input exists, so uploaded TSSP/TSI/TSM/_series payloads can be
+passed directly to the source-built analyzer binaries.
 
 ## Fetch Endpoints
 

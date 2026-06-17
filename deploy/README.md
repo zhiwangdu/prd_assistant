@@ -92,6 +92,16 @@ Optional variables:
 - `LOGAGENT_V2_VENV_DIR`: V2 virtualenv directory, defaults to `$LOGAGENT_APP_DIR/server-v2/.venv`.
 - `LOGAGENT_V2_PID_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.pid`.
 - `LOGAGENT_V2_LOG_FILE`: defaults to `$LOGAGENT_APP_DIR/logagent-v2.log`.
+- `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER`,
+  `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER`,
+  `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
+  `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER`: optional source-built analyzer
+  executable paths, usually under `$LOGAGENT_APP_DIR/bin/tools/`.
+- `LOGAGENT_V2_PPROF_ENABLED` and `LOGAGENT_V2_PPROF_GO_COMMAND`: optional
+  built-in `pprof_analyzer` configuration.
+- `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` plus `LOGAGENT_V2_HUAWEI_OBS_*`
+  and `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`: optional built-in Huawei OBS + GaussDB
+  package sync configuration.
 - `LOGAGENT_EMBEDDING_API_KEY`: reserved for future embedding/vector recall. The sample config keeps `embedding.enabled=false`, so it is not required today.
 - `LOGAGENT_CLAUDE_CODE_PATH`: required by the default `logagent.yaml`. Set it to the absolute Claude Code CLI path, usually the output of `which claude`.
 - `LOGAGENT_SUBMODULE_BASE_URL`: optional internal Git namespace for all source-built analyzer submodules.
@@ -176,6 +186,8 @@ Useful variants:
 
 ```bash
 ./rebuild-v2-install.sh --server-only
+./rebuild-v2-install.sh --with-tools
+./rebuild-v2-install.sh --tools-only --only-tool influxql
 ./rebuild-v2-install.sh --no-restart
 ```
 
@@ -183,6 +195,9 @@ The script creates `$LOGAGENT_V2_VENV_DIR`, installs `server-v2` with pip,
 initializes the V2 SQLite database under `$LOGAGENT_V2_DATA_DIR`, runs the WebUI
 build unless `--server-only` is set, syncs `webui/out` to
 `$LOGAGENT_V2_WEBUI_DIR`, and restarts V2 only if it was already running.
+`--with-tools` calls `scripts/build-tools.sh --output-dir
+$LOGAGENT_APP_DIR/bin/tools`; `--tools-only` skips server install, DB init, and
+WebUI sync for fast analyzer rebuilds.
 
 Useful overrides:
 

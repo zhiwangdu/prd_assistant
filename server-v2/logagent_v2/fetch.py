@@ -335,13 +335,28 @@ def fetch_catalog_descriptor(settings: Settings) -> JsonObject:
     return {
         "toolId": "logagent.fetch",
         "displayName": "Fetch endpoint",
+        "description": "Run one configured Fetch endpoint by endpointId.",
         "source": "built_in",
+        "tags": ["built-in", "fetch", "http"],
         "backend": "fetch",
         "readOnly": True,
         "editable": False,
         "exportable": False,
         "runnable": settings.fetch_enabled,
         "enabled": settings.fetch_enabled,
+        "minFiles": 0,
+        "maxFiles": 0,
+        "acceptedSuffixes": [],
+        "paramsSchema": {
+            "type": "object",
+            "properties": {
+                "endpointId": {"type": "string"},
+                "fetchId": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        "paramsTemplate": {"endpointId": ""},
+        "outputViews": ["summary", "request", "response"],
         "allowedHosts": list(settings.fetch_allowed_hosts),
     }
 

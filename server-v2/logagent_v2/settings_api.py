@@ -214,6 +214,10 @@ def test_response(callable_result: Any) -> JsonObject:
         return {"ok": False, "result": None, "error": f"{error.__class__.__name__}: {error}"}
 
 
+test_agent_chat.__test__ = False
+test_response.__test__ = False
+
+
 def validate_settings_message(message: str) -> str:
     normalized = message.strip()
     if not normalized:

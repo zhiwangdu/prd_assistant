@@ -323,7 +323,10 @@ def agent_available_tools(settings: Settings) -> list[JsonObject]:
         *case_tool_descriptors(),
         *skill_tool_descriptors(),
     ]
-    if any(tool["enabled"] for tool in tool_descriptors(settings)):
+    if any(
+        tool["enabled"] and tool.get("source") == "configured"
+        for tool in tool_descriptors(settings)
+    ):
         tools.append(run_domain_tool_descriptor(settings))
     fetch_tools = fetch_tool_descriptors()
     tools.append(fetch_tools[0])
@@ -380,7 +383,9 @@ def run_domain_tool_descriptor(settings: Settings) -> JsonObject:
                 "toolId": {
                     "type": "string",
                     "enum": [
-                        tool["toolId"] for tool in tool_descriptors(settings) if tool["enabled"]
+                        tool["toolId"]
+                        for tool in tool_descriptors(settings)
+                        if tool["enabled"] and tool.get("source") == "configured"
                     ],
                 },
                 "params": {"type": "object"},

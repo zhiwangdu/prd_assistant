@@ -28,12 +28,16 @@ slice provides the durable foundation for the V2 product model:
 - Task MCP endpoint with summary/evidence/manifest/grep/analysis_package plus
   Agent audit resources and `logagent.search_logs` follow-up search plus
   `logagent.get_log_slice`.
-- Minimal configured Tool Runner exposed through `/api/v2/tools` and task MCP
-  `logagent.run_domain_tool`; tools with `{input_file}` consume matching
+- Tool Plugin registry exposed through `/api/v2/tools`, readonly MCP tool
+  catalog, manual tool-run APIs, and task MCP `logagent.run_domain_tool`.
+  Configured subprocess tools with `{input_file}` consume matching
   materialized `tool_inputs` before execution, then fall back to manifest file
-  patterns and initial grep keyword matches. Generic JSON stdout and
-  InfluxQL analyzer report/compare stdout are normalized into
-  `summary/findings`.
+  patterns, initial grep keyword matches, or raw upload artifacts for storage
+  analyzers. Generic JSON stdout and InfluxQL analyzer report/compare stdout
+  are normalized into `summary/findings`.
+- V1 built-in tool migration for metadata catalog tools,
+  `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
+  default-off `logagent.huawei_cloud_package_sync`.
 - Fetch endpoint foundation with SQLite endpoint storage, HTTP API management,
   DevTools bash cURL import, default-off allowlist execution, task MCP
   `logagent.fetch`, and `fetch_result` final evidence refs.
@@ -123,6 +127,9 @@ cd deploy
 initializes SQLite, builds and syncs `webui/out`, and restarts V2 only when it
 was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
 `$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
+Use `--with-tools` to also build source-referenced analyzer submodules into
+`$LOGAGENT_APP_DIR/bin/tools`, or `--tools-only --only-tool <name>` for a fast
+tool-only rebuild.
 
 ## Configuration
 
@@ -142,6 +149,12 @@ Environment variables:
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors |
+| `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
+| `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
+| `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
+| `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
+| `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable built-in `pprof_analyzer` |
+| `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
 | `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
@@ -163,6 +176,13 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `off` host-key behavior |
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
+| `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
+| `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint |
+| `LOGAGENT_V2_HUAWEI_OBS_BUCKET` | unset | Huawei OBS bucket |
+| `LOGAGENT_V2_HUAWEI_OBS_OBJECT_PREFIX` | unset | Default object key prefix |
+| `LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY` | unset | Huawei OBS access key |
+| `LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY` | unset | Huawei OBS secret key |
+| `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync |
 
 Tool descriptor example:
 
@@ -223,6 +243,12 @@ POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
+GET  /api/v2/tools/:tool_id
+POST /api/v2/tools/:tool_id/runs
+GET  /api/v2/tools/runs
+GET  /api/v2/tools/runs/:run_id
+GET  /api/v2/tools/runs/:run_id/result
+GET  /api/v2/tools/runs/:run_id/artifacts
 GET  /api/v2/debug/llm
 PUT  /api/v2/debug/llm
 GET  /api/v2/settings/llm
@@ -342,10 +368,9 @@ python3 -m compileall logagent_v2
 PYTHONPATH=. python3 -m unittest discover tests
 ```
 
-This V2 slice intentionally does not yet migrate V1 analyzer materialized tool
-inputs beyond generic InfluxQL/Flux JSONL or the full LangGraph model loop. The
-Python server can serve the current static WebUI build, while full WebUI cutover
-remains a separate product step.
+This V2 slice migrates V1 configured analyzer execution, metadata/preprocess/
+fetch/pprof/Huawei built-ins, and storage analyzer raw upload fallback. Full
+LangGraph planning and full WebUI cutover remain separate product steps.
 
 ## Job Recovery
 
@@ -487,8 +512,11 @@ log_slices/<slice_id>.json#lines
 ```
 
 Configured tools can only be invoked by `toolId`; the model cannot provide an
-executable path, shell command, or argv. Tool stdout is parsed as JSON when
-possible and persisted as `tool_result` evidence. Generic JSON output can use
+executable path, shell command, or argv. Task MCP `logagent.run_domain_tool`
+only exposes configured subprocess tools. Built-ins are available through their
+dedicated task MCP tools or the protected manual Tools API according to each
+descriptor's `runnable` policy. Tool stdout is parsed as JSON when possible and
+persisted as `tool_result` evidence. Generic JSON output can use
 `summary`, `message`, or `title`, plus `findings`, `issues`, or `diagnostics`.
 InfluxQL analyzer report JSON is adapted into a compact summary and findings
 for special rules, parse errors, realtime classification, fingerprints, compare
@@ -518,6 +546,19 @@ as run-local tool input artifacts, exposed to the tool as virtual
 `extracted/<manifest path>` inputs, and bounded by `maxInputFiles`. Multi-input
 MCP calls keep `result/evidence` as the primary run and additionally return
 `results[]` and `evidenceItems[]`.
+
+Manual tool runs use:
+
+```http
+POST /api/v2/tools/:tool_id/runs
+```
+
+with `workspaceId`, optional `uploadIds`, and `params`. They create
+`kind=tool_run` Run rows and DB-backed `tool_run` jobs, so startup recovery and
+artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
+currently includes manual built-ins for metadata tools,
+`logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
+default-off `logagent.huawei_cloud_package_sync`.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools.
 The archive contains `README.md`, `tools-manifest.json`, executable files under
