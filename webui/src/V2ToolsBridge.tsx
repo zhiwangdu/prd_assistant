@@ -182,12 +182,6 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
       setStatus(`${selectedTool.displayName} is not runnable`);
       return;
     }
-    const minFiles = toolMinFiles(selectedTool);
-    const maxFiles = toolMaxFiles(selectedTool);
-    if (manualFiles.length < minFiles || manualFiles.length > maxFiles) {
-      setStatus(`Choose ${minFiles}..${maxFiles} file(s) for manual tool_run`);
-      return;
-    }
     let params: unknown;
     try {
       params = JSON.parse(paramsText);
@@ -197,6 +191,18 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
     if (!isJsonObject(params)) {
       setStatus("Params must be a JSON object");
+      return;
+    }
+    const minFiles = toolMinFiles(selectedTool);
+    const maxFiles = toolMaxFiles(selectedTool);
+    const explicitInputCount = explicitToolInputFileCount(selectedTool, params);
+    if (explicitInputCount > 0) {
+      if (explicitInputCount < minFiles || explicitInputCount > maxFiles) {
+        setStatus(`Params inputFiles must contain ${minFiles}..${maxFiles} path(s)`);
+        return;
+      }
+    } else if (manualFiles.length < minFiles || manualFiles.length > maxFiles) {
+      setStatus(`Choose ${minFiles}..${maxFiles} file(s) for manual tool_run`);
       return;
     }
     setLoading(true);
@@ -538,6 +544,24 @@ function toolMaxFiles(tool: V2ToolDescriptor) {
 function fileAccept(tool: V2ToolDescriptor) {
   const suffixes = (tool.acceptedSuffixes ?? []).filter((suffix) => suffix && suffix !== "*");
   return suffixes.join(",");
+}
+
+function explicitToolInputFileCount(tool: V2ToolDescriptor, params: Record<string, unknown>) {
+  if (!toolAcceptsInputFiles(tool)) return 0;
+  const value = params.inputFiles;
+  if (typeof value === "string") {
+    return value.trim() ? 1 : 0;
+  }
+  if (!Array.isArray(value)) {
+    return 0;
+  }
+  return new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)).size;
+}
+
+function toolAcceptsInputFiles(tool: V2ToolDescriptor) {
+  if (Object.prototype.hasOwnProperty.call(tool.paramsTemplate ?? {}, "inputFiles")) return true;
+  const properties = tool.paramsSchema?.properties;
+  return Boolean(isJsonObject(properties) && Object.prototype.hasOwnProperty.call(properties, "inputFiles"));
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

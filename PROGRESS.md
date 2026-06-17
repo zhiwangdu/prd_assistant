@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Manual Tool InputFiles
+
+- V2 Tools Workbench manual `tool_run` creation now honors descriptor-supported
+  `params.inputFiles` as explicit Workspace inputs, matching the V2 Tool Runner
+  backend path for reusing `extracted/...` or `tool_inputs/...` entries.
+- The WebUI no longer blocks configured command tool runs solely because no new
+  upload was selected when the Params JSON already provides valid
+  `inputFiles`; tools that do not advertise `inputFiles` keep the previous
+  upload-count validation.
+- Updated WebUI and Tool Runner README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Case Import History
 
 - V2 Memory Workbench now calls `GET /api/v2/cases/imports` while refreshing
