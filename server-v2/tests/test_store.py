@@ -74,7 +74,12 @@ from logagent_v2.metadata import (
     refresh_metadata_instance,
 )
 from logagent_v2.results import get_run_result
-from logagent_v2.llm import agent_available_tools, debug_log_responses, set_debug_log_responses
+from logagent_v2.llm import (
+    agent_available_tools,
+    debug_log_responses,
+    execute_agent_provider_request,
+    set_debug_log_responses,
+)
 from logagent_v2.remote_execution import command_templates, strict_host_key_checking_value
 from logagent_v2.settings_api import (
     agent_backend_diagnostic,
@@ -1427,6 +1432,79 @@ class StoreTests(unittest.TestCase):
                 )
                 self.assertEqual(response_doc["response"]["finishReason"], "stop")
                 self.assertEqual(response_doc["response"]["systemFingerprint"], "fp-v2")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_openai_compatible_provider_classifies_http_errors(self) -> None:
+        failures = [
+            (401, "authentication_failed", False, "req-auth"),
+            (429, "rate_limited", True, "req-rate"),
+            (413, "input_too_large", False, "req-large"),
+            (500, "provider_server_error", True, "req-server"),
+            (400, "provider_client_error", False, "req-client"),
+        ]
+        captured: dict[str, int] = {"count": 0}
+
+        class FailingProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                index = captured["count"]
+                captured["count"] = index + 1
+                status, classification, _retryable, request_id = failures[index]
+                body = json.dumps(
+                    {
+                        "error": {
+                            "type": classification,
+                            "message": f"provider failed with {classification}",
+                        }
+                    }
+                ).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("x-request-id", request_id)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), FailingProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                )
+                for status, classification, retryable, request_id in failures:
+                    result = execute_agent_provider_request(
+                        settings,
+                        {
+                            "provider": "openai_compatible",
+                            "model": "mock-model",
+                            "payload": {
+                                "model": "mock-model",
+                                "messages": [{"role": "user", "content": "{}"}],
+                            },
+                        },
+                    )
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(result["error"]["type"], "HTTPError")
+                    self.assertEqual(result["error"]["httpStatus"], status)
+                    self.assertEqual(result["error"]["classification"], classification)
+                    self.assertEqual(result["error"]["retryable"], retryable)
+                    self.assertEqual(result["response"]["httpStatus"], status)
+                    self.assertEqual(result["response"]["providerRequestId"], request_id)
+                    self.assertEqual(
+                        result["response"]["providerRequestHeaders"]["xRequestId"],
+                        request_id,
+                    )
+                self.assertEqual(captured["count"], len(failures))
         finally:
             server.shutdown()
             server.server_close()

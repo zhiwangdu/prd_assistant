@@ -21,6 +21,10 @@
   优先来自 allowlist response headers，没有时回退到响应体 `id`；同时保存
   `providerResponseId`、`responseModel`、`finishReason`、`usage`、
   `systemFingerprint` 和 allowlist `providerRequestHeaders`。
+- V2 OpenAI-compatible Agent provider 的 HTTP 失败会保留
+  `error.type=HTTPError`，并写入 `error.classification`、`error.retryable`
+  和 `error.httpStatus`，区分鉴权失败、限流、输入超限、Provider timeout、
+  5xx server error 和其他 4xx client error。
 - 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
 - session text、manifest/grep/metadata Prompt 和字符数裁剪。
 - System Context 背景资源 Prompt 和字符数裁剪。
@@ -139,6 +143,8 @@ binary provider 错误包括：
 - V2 OpenAI-compatible Agent provider 能把 Chat Completions `id`、response
   model、finish reason、usage 和 allowlist request-id headers 写入
   `agent_response.json`。
+- V2 OpenAI-compatible Agent provider 对 401/403、429、413、408/504、5xx 和
+  其他 4xx HTTP 失败必须写入稳定 `error.classification` 和 `retryable`。
 - FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。
 - 非法 schema、confidence 或 evidence ref 被拒绝。
 - 最终结果 schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。

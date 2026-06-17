@@ -302,6 +302,7 @@ def call_openai_compatible(
             response_payload,
             provider_response_headers(error.headers),
         )
+        error_classification = provider_http_error_classification(error.code)
         return failed_provider_result(
             provider="openai_compatible",
             model=settings.agent_model,
@@ -309,6 +310,9 @@ def call_openai_compatible(
             error_type="HTTPError",
             message=f"agent provider returned HTTP {error.code}: {body}",
             response=response_payload,
+            classification=error_classification["classification"],
+            retryable=error_classification["retryable"],
+            http_status=error.code,
         )
     except urllib.error.URLError as error:
         return failed_provider_result(
@@ -317,6 +321,8 @@ def call_openai_compatible(
             stage="transport",
             error_type=error.__class__.__name__,
             message=str(error),
+            classification="network_error",
+            retryable=True,
         )
     except Exception as error:
         return failed_provider_result(
@@ -325,6 +331,8 @@ def call_openai_compatible(
             stage="transport",
             error_type=error.__class__.__name__,
             message=str(error),
+            classification="transport_error",
+            retryable=True,
         )
 
     raw_text = raw.decode("utf-8", errors="replace")
@@ -1301,20 +1309,46 @@ def failed_provider_result(
     error_type: str,
     message: str,
     response: JsonObject | None = None,
+    classification: str | None = None,
+    retryable: bool | None = None,
+    http_status: int | None = None,
 ) -> JsonObject:
+    error_payload: JsonObject = {
+        "stage": stage,
+        "type": error_type,
+        "message": message[:4000],
+    }
+    if classification is not None:
+        error_payload["classification"] = classification
+    if retryable is not None:
+        error_payload["retryable"] = retryable
+    if http_status is not None:
+        error_payload["httpStatus"] = http_status
     result: JsonObject = {
         "provider": provider,
         "model": model,
         "status": "failed",
-        "error": {
-            "stage": stage,
-            "type": error_type,
-            "message": message[:4000],
-        },
+        "error": error_payload,
     }
     if response is not None:
         result["response"] = response
     return result
+
+
+def provider_http_error_classification(status_code: int) -> JsonObject:
+    if status_code in {401, 403}:
+        return {"classification": "authentication_failed", "retryable": False}
+    if status_code == 429:
+        return {"classification": "rate_limited", "retryable": True}
+    if status_code in {408, 504}:
+        return {"classification": "provider_timeout", "retryable": True}
+    if status_code == 413:
+        return {"classification": "input_too_large", "retryable": False}
+    if 500 <= status_code <= 599:
+        return {"classification": "provider_server_error", "retryable": True}
+    if 400 <= status_code <= 499:
+        return {"classification": "provider_client_error", "retryable": False}
+    return {"classification": "provider_http_error", "retryable": False}
 
 
 def provider_response_headers(headers: Any) -> JsonObject:

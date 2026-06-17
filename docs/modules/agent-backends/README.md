@@ -46,7 +46,9 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
   的 `response` 字段保存稳定审计元数据，包括 allowlist header
   `providerRequestId`、响应体 `providerResponseId`、response model、finish
   reason、usage 和 system fingerprint；请求 headers 和 API Key 不写入
-  artifact。
+  artifact。HTTP 失败会保留 `error.type=HTTPError`，同时写入
+  `error.classification`、`error.retryable` 和 `error.httpStatus`，用于区分
+  鉴权失败、限流、输入过大、Provider timeout、5xx 和其他 4xx。
 
 ## CLI 与 Agent SDK 取舍
 

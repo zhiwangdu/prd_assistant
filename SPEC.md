@@ -184,7 +184,8 @@ flowchart TD
 - LLM Gateway 支持 stub、OpenAI-compatible Chat Completions 和预留 binary provider；当前保留给 Case import、alias 生成和非 Agent Loop 的辅助结构化任务。Log Analysis 的 `PLAN_ANALYSIS` 不再调用 LLM Gateway 决策入口。
 - V2 OpenAI-compatible Agent provider 的 `agent_response.json` 已保存稳定
   provider 审计字段，包括 request id、response id、response model、finish
-  reason、usage、system fingerprint 和 allowlist response headers。
+  reason、usage、system fingerprint 和 allowlist response headers；HTTP 失败会
+  额外写入稳定 `error.classification`、`error.retryable` 和 `httpStatus`。
 - WEBUI 使用 React + Vite，Log Analysis 已改为 Session-first，顶部主入口显示为 Analyze，顶部导航顺序为 Analyze、Memory、System Context、Tools、Settings；支持 Session history、新建/删除非运行中 Session、草稿自动保存、Diagnostic Skill 选择和 Markdown 导入、上传附加、同一 Session 多次 run、统一 evidence timeline、Task execution 摘要、Claude Code session / MCP calls 展示、单次 LLM 结果、顶部 LLM debug 开关、Memory 管理页面、System Context 的 Skills/Metadata 页面、完整 Metadata 拓扑、Metadata Raw JSON 手动刷新和单条删除、Tools 工具集和 Executors 执行机页面、Settings Claude Code/LLM/Domain Adapter 诊断、Personal Claude Code 只读入口、Diagnostics 和 Raw JSON。
 
 ## 待实现能力

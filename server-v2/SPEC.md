@@ -112,6 +112,10 @@ Implemented in this slice:
   OpenAI-compatible provider responses promote provider request id, provider
   response id, response model, finish reason, allowlisted audit headers, usage,
   and system fingerprint into stable `agent_response.json` `response` fields.
+  Provider HTTP failures preserve `error.type=HTTPError` and also expose
+  `error.classification`, `error.retryable`, and `error.httpStatus` for
+  authentication failures, rate limits, input-too-large responses, provider
+  server errors, provider timeouts, and generic client errors.
   Follow-up evidence refs
   returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. After successful final-answer validation, non-stub

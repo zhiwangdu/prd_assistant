@@ -155,7 +155,11 @@ slice provides the durable foundation for the V2 product model:
   OpenAI-compatible provider responses now promote provider request id,
   response id, response model, finish reason, selected audit headers, usage,
   and system fingerprint into stable `agent_response.json` `response` fields,
-  while keeping the bounded raw body preview for troubleshooting.
+  while keeping the bounded raw body preview for troubleshooting. Provider
+  HTTP failures keep `type=HTTPError` for compatibility and add stable
+  `error.classification`, `error.retryable`, and `error.httpStatus` fields for
+  authentication failures, rate limits, input-too-large responses, server
+  errors, provider timeouts, and generic client errors.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
