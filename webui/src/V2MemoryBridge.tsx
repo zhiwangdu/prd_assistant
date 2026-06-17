@@ -1,9 +1,10 @@
-import { BookOpenCheck, CheckCircle2, FileText, MessageSquare, RefreshCw, Save, Search, Send, UploadCloud, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, FileText, History, MessageSquare, RefreshCw, Save, Search, Send, UploadCloud, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import {
   appendV2CaseImportMessage,
   confirmV2CaseImport,
+  listV2CaseImports,
   previewV2CaseImport,
   searchV2Cases,
   updateV2Case,
@@ -48,6 +49,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [caseImport, setCaseImport] = useState<V2CaseImport | null>(null);
+  const [caseImports, setCaseImports] = useState<V2CaseImport[]>([]);
   const [importDraft, setImportDraft] = useState<UiCaseDraft>(EMPTY_DRAFT);
   const [importMessage, setImportMessage] = useState("");
   const [status, setStatus] = useState("V2 Memory 等待加载");
@@ -67,10 +69,14 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     }
     setLoading(true);
     try {
-      const response = await searchV2Cases(apiKey, { query, includeDisabled, limit: 50 });
-      setCases(response.cases);
-      setStatus(`V2 loaded ${response.cases.length} cases`);
-      if (selectedCase && !response.cases.some((item) => item.caseId === selectedCase.caseId)) {
+      const [caseResponse, importResponse] = await Promise.all([
+        searchV2Cases(apiKey, { query, includeDisabled, limit: 50 }),
+        listV2CaseImports(apiKey, 20)
+      ]);
+      setCases(caseResponse.cases);
+      setCaseImports(importResponse.imports);
+      setStatus(`V2 loaded ${caseResponse.cases.length} cases and ${importResponse.imports.length} imports`);
+      if (selectedCase && !caseResponse.cases.some((item) => item.caseId === selectedCase.caseId)) {
         setSelectedCase(null);
       }
     } catch (reason) {
@@ -91,6 +97,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
       const content = sourceFile ? await sourceFile.text() : sourceText;
       const response = await previewV2CaseImport(apiKey, { content, filename: sourceFile?.name ?? null });
       setCaseImport(response.import);
+      upsertCaseImport(response.import);
       setImportDraft(fromV2Draft(response.import.draft));
       setImportMessage("");
       setStatus(response.import.validationErrors.length ? `V2 preview has ${response.import.validationErrors.length} validation errors` : "V2 preview ready to confirm");
@@ -107,10 +114,11 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     try {
       const response = await confirmV2CaseImport(apiKey, caseImport.importId, draftPayload(importDraft));
       setCaseImport(response.import);
+      upsertCaseImport(response.import);
       setSelectedCase(response.case);
       setEditDraft(toDraft(response.case));
-      setStatus(`V2 saved ${response.case.caseId}`);
       await refreshCases();
+      setStatus(`V2 saved ${response.case.caseId}`);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -124,6 +132,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     try {
       const response = await appendV2CaseImportMessage(apiKey, caseImport.importId, importMessage);
       setCaseImport(response.import);
+      upsertCaseImport(response.import);
       setImportDraft(fromV2Draft(response.import.draft));
       setImportMessage("");
       setStatus(response.import.validationErrors.length ? `V2 import still has ${response.import.validationErrors.length} validation errors` : "V2 import draft completed");
@@ -153,6 +162,17 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
   function selectCase(record: V2CaseRecord | V2CaseHit) {
     setSelectedCase(record);
     setEditDraft(toDraft(record));
+  }
+
+  function selectImport(record: V2CaseImport) {
+    setCaseImport(record);
+    setImportDraft(fromV2Draft(record.draft));
+    setImportMessage("");
+    setStatus(`Loaded V2 import ${record.importId}`);
+  }
+
+  function upsertCaseImport(record: V2CaseImport) {
+    setCaseImports((current) => [record, ...current.filter((item) => item.importId !== record.importId)].slice(0, 20));
   }
 
   function resetImport() {
@@ -250,12 +270,18 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
                 ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <span className="text-xs text-muted-foreground">{caseImport.filename ?? "pasted text"} · updated {new Date(caseImport.updatedAt).toLocaleString()}</span>
-                  <Button disabled={loading || !importReady} onClick={() => void confirmImport()}><Save className="mr-2 h-4 w-4" />Confirm</Button>
+                  <Button disabled={loading || !importReady || caseImport.status === "confirmed"} onClick={() => void confirmImport()}><Save className="mr-2 h-4 w-4" />Confirm</Button>
                 </div>
               </>
             ) : <EmptyState>Preview 后可编辑字段，再确认写入 V2 Case Memory。</EmptyState>}
           </div>
         </div>
+
+        <CaseImportHistory
+          imports={caseImports}
+          selectedImportId={caseImport?.importId ?? ""}
+          onSelect={selectImport}
+        />
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,520px)]">
           <div className="space-y-4 rounded-lg border border-border p-4">
@@ -358,6 +384,40 @@ function CaseImportMessages({ messages }: { messages: NonNullable<V2CaseImport["
   );
 }
 
+function CaseImportHistory({ imports, selectedImportId, onSelect }: { imports: V2CaseImport[]; selectedImportId: string; onSelect: (item: V2CaseImport) => void }) {
+  if (!imports.length) return null;
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <History className="h-5 w-5 text-primary" />
+          <div>
+            <h3 className="text-sm font-semibold">V2 import history</h3>
+            <p className="mt-1 text-xs text-muted-foreground">最近 {imports.length} 个导入草稿</p>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {imports.map((item) => (
+          <button
+            className={`rounded-lg border p-3 text-left transition hover:border-primary ${selectedImportId === item.importId ? "border-primary bg-slate-50" : "border-border bg-white"}`}
+            key={item.importId}
+            onClick={() => onSelect(item)}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-medium">{item.draft.title || item.filename || item.importId}</span>
+              <Badge variant={caseImportBadgeVariant(item)}>{item.status}</Badge>
+            </div>
+            <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.draft.rootCause || item.draft.symptom || "No draft summary"}</p>
+            <p className="mt-2 break-all text-xs text-muted-foreground">{item.importId}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatDate(item.updatedAt)}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DraftFields({ draft, onChange, compact = false }: { draft: UiCaseDraft; onChange: (draft: UiCaseDraft) => void; compact?: boolean }) {
   return (
     <div className="space-y-3">
@@ -389,6 +449,11 @@ function CaseScoreSummary({ caseHit }: { caseHit: V2CaseHit }) {
     caseHit.vectorScore == null ? null : `vector ${formatScore(caseHit.vectorScore)}`
   ].filter(Boolean);
   return <p className="mt-2 text-xs text-muted-foreground">{parts.join(" · ")}</p>;
+}
+
+function caseImportBadgeVariant(item: V2CaseImport) {
+  if (item.status === "confirmed") return "success";
+  return item.validationErrors.length ? "warning" : "secondary";
 }
 
 function caseSearchBackend(record: V2CaseRecord | V2CaseHit) {

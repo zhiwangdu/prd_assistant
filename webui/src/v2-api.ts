@@ -783,6 +783,12 @@ export async function searchV2Cases(apiKey: string, input: { query?: string; inc
   return fetchJson<{ cases: V2CaseHit[] }>(`/api/v2/cases?${params.toString()}`, { headers: authHeaders(apiKey) });
 }
 
+export async function listV2CaseImports(apiKey: string, limit = 20) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return fetchJson<{ imports: V2CaseImport[] }>(`/api/v2/cases/imports?${params.toString()}`, { headers: authHeaders(apiKey) });
+}
+
 export async function previewV2CaseImport(apiKey: string, input: { content: string; filename?: string | null }) {
   return fetchJson<{ import: V2CaseImport }>("/api/v2/cases/imports/preview", {
     method: "POST",

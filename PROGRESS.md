@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Case Import History
+
+- V2 Memory Workbench now calls `GET /api/v2/cases/imports` while refreshing
+  Case Memory, showing the recent import drafts alongside the Case search/edit
+  workflow.
+- Preview, supplement-message, and confirm flows update the in-memory import
+  history immediately, so the latest draft/status is visible without another
+  refresh.
+- Selecting a history item restores the structured draft, validation errors,
+  message history, status, and import metadata into the active V2 import editor.
+- Updated WebUI README/SPEC docs for the import history and draft restore
+  behavior.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 V2 Environment Approval Remote Target Selection
 
 - `POST /api/v2/actions/:action_id/decisions` now accepts an optional
