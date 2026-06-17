@@ -358,6 +358,7 @@ POST /api/v2/fetch/endpoints
 GET  /api/v2/fetch/endpoints/:endpoint_id
 PATCH /api/v2/fetch/endpoints/:endpoint_id
 DELETE /api/v2/fetch/endpoints/:endpoint_id
+POST /api/v2/fetch/endpoints/:endpoint_id/runs
 GET  /api/v2/fetch/runs
 POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
@@ -719,7 +720,9 @@ Task MCP `logagent.list_fetch_endpoints` matches the Rust/V1 envelope with
 JSON-RPC error instead of listing endpoints.
 `GET /api/v2/fetch/runs` lists persisted Fetch tool runs, filtered by
 `endpointId`, `fetchId`, V1-style `fetch_id`, or `workspaceId`, without
-executing network requests.
+executing network requests. `POST /api/v2/fetch/endpoints/:endpoint_id/runs`
+queues a Fetch `tool_run`; callers may provide `workspaceId`, otherwise V2
+creates an isolated workspace for the run.
 Saved endpoint bodies and runtime body overrides are rejected before the HTTP
 request when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.

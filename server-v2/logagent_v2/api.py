@@ -303,6 +303,7 @@ class FetchEndpointUpdate(BaseModel):
 
 
 class FetchRunCreate(BaseModel):
+    workspaceId: str | None = Field(default=None, max_length=120)
     variables: dict[str, str] = Field(default_factory=dict)
     headers: dict[str, str] = Field(default_factory=dict)
     body: str | None = Field(default=None, max_length=200000)
@@ -1247,6 +1248,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/v2/fetch/endpoints/{endpoint_id}/runs", status_code=202)
+    async def create_fetch_endpoint_run(
+        _: Auth,
+        endpoint_id: str,
+        payload: FetchRunCreate | None = None,
+    ) -> dict:
+        try:
+            endpoint = store.get_fetch_endpoint(endpoint_id)
+            if not endpoint.get("enabled", True):
+                raise ValueError(f"fetch endpoint {endpoint_id} is disabled")
+            values = fetch_run_payload_values(payload)
+            workspace_id = values.pop("workspaceId", None)
+            if workspace_id:
+                store.get_workspace(workspace_id)
+            else:
+                workspace = store.create_workspace(
+                    f"Run fetch endpoint {endpoint.get('name') or endpoint_id}",
+                    "diagnose",
+                    "en-US",
+                )
+                workspace_id = workspace["id"]
+            params = normalize_fetch_run_params({"endpointId": endpoint_id, **values})
+            validated = validate_manual_tool_run(
+                settings,
+                FETCH_TOOL_ID,
+                0,
+                params,
+            )
+            return store.create_tool_run(
+                workspace_id=workspace_id,
+                tool_id=FETCH_TOOL_ID,
+                params=validated,
+                upload_ids=[],
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.post("/api/v2/runs/{run_id}/fetch/{endpoint_id}")
     async def run_fetch_endpoint(
         _: Auth, run_id: str, endpoint_id: str, payload: FetchRunCreate | None = None
@@ -1256,11 +1296,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             params = normalize_fetch_run_params(
                 {
                     "endpointId": endpoint_id,
-                    **(
-                        payload.model_dump(exclude_none=True)
-                        if payload is not None
-                        else {}
-                    ),
+                    **fetch_run_payload_values(payload, include_workspace=False),
                 }
             )
             return execute_fetch_endpoint(
@@ -1646,6 +1682,16 @@ def normalize_fetch_run_filter(value: str | None) -> str | None:
     if len(normalized) > 200:
         raise ValueError("fetch run filter is too long")
     return normalized
+
+
+def fetch_run_payload_values(
+    payload: FetchRunCreate | None,
+    include_workspace: bool = True,
+) -> dict:
+    values = payload.model_dump(exclude_none=True) if payload else {}
+    if not include_workspace:
+        values.pop("workspaceId", None)
+    return values
 
 
 def fetch_run_endpoint_id(run: dict) -> str | None:

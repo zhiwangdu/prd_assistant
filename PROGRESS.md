@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Direct Fetch Tool Run API
+
+- Added `POST /api/v2/fetch/endpoints/:endpoint_id/runs` to queue a Fetch
+  `tool_run` directly from a saved endpoint, matching the Rust/V1 Fetch run
+  entrypoint while preserving V2's workspace-backed run model.
+- The endpoint validates Fetch configuration, endpoint state, and runtime
+  params; it reuses a provided `workspaceId` or creates an isolated workspace
+  when none is provided, then queues the standard DB-backed tool-run job.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused Fetch endpoint run API regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (77 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Run History API
 
 - Added `GET /api/v2/fetch/runs` as the V2 Fetch run-history endpoint for

@@ -3240,6 +3240,65 @@ fi
                     [second["id"]],
                 )
 
+    def test_fetch_endpoint_run_route_creates_tool_run(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                fetch_enabled=True,
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            endpoint = store.create_fetch_endpoint(
+                name="runtime metadata",
+                method="GET",
+                url="http://127.0.0.1/metadata/{instance}",
+                headers={},
+                body=None,
+                enabled=True,
+            )
+            workspace = store.create_workspace("existing workspace", "diagnose", "en-US")
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    f"/api/v2/fetch/endpoints/{endpoint['id']}/runs",
+                    headers=headers,
+                    json={
+                        "workspaceId": workspace["id"],
+                        "variables": {"instance": "inst-a"},
+                    },
+                )
+                self.assertEqual(created.status_code, 202)
+                created_body = created.json()
+                self.assertEqual(created_body["kind"], "tool_run")
+                self.assertEqual(created_body["toolId"], "logagent.fetch")
+                self.assertEqual(created_body["workspace_id"], workspace["id"])
+                self.assertEqual(created_body["toolParams"]["endpointId"], endpoint["id"])
+                self.assertEqual(
+                    created_body["toolParams"]["variables"],
+                    {"instance": "inst-a"},
+                )
+
+                auto_workspace_run = client.post(
+                    f"/api/v2/fetch/endpoints/{endpoint['id']}/runs",
+                    headers=headers,
+                    json={},
+                )
+                self.assertEqual(auto_workspace_run.status_code, 202)
+                auto_body = auto_workspace_run.json()
+                self.assertNotEqual(auto_body["workspace_id"], workspace["id"])
+                self.assertTrue(
+                    store.get_workspace(auto_body["workspace_id"])["question"].startswith(
+                        "Run fetch endpoint"
+                    )
+                )
+
     def test_fetch_runtime_params_apply_overrides_and_body_artifact(self) -> None:
         captured: dict[str, str] = {}
 
