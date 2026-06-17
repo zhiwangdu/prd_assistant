@@ -1,7 +1,7 @@
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -1492,11 +1492,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/mcp/readonly")
-    async def readonly_mcp(_: Auth, request: dict) -> dict:
+    async def readonly_mcp(_: Auth, request: Any) -> Any:
         return readonly_mcp_response(settings, store, request)
 
     @app.post("/api/v2/mcp/task/{run_id}")
-    async def task_mcp(_: Auth, run_id: str, request: dict) -> dict:
+    async def task_mcp(_: Auth, run_id: str, request: Any) -> Any:
         return task_mcp_response(settings, store, run_id, request)
 
     @app.get("/", include_in_schema=False)

@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 MCP JSON-RPC Batch Support
+
+- Added JSON-RPC batch array support to V2 readonly and task MCP handlers,
+  matching the Rust/V1 readonly MCP behavior while preserving single-request
+  handling.
+- Updated FastAPI MCP endpoints to accept arbitrary JSON payloads instead of
+  dict-only bodies so HTTP batch arrays are not rejected before reaching the
+  handler.
+- Added focused regression coverage for readonly and task MCP batch responses.
+- Updated V2 Server and Interfaces docs/specs.
+- Verification passed: focused MCP batch regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Readonly MCP Dynamic Resources
 
 - Aligned V2 readonly MCP `resources/list` with Rust/V1 discovery behavior:

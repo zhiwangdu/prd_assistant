@@ -1361,6 +1361,18 @@ class StoreTests(unittest.TestCase):
                 run["id"],
                 {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
             )
+            batch = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                [
+                    {"jsonrpc": "2.0", "id": 101, "method": "initialize"},
+                    {"jsonrpc": "2.0", "id": 102, "method": "resources/list"},
+                ],
+            )
+            self.assertIsInstance(batch, list)
+            self.assertEqual([item["id"] for item in batch], [101, 102])
+            self.assertEqual(batch[0]["result"]["serverInfo"]["name"], "logagent-v2-task")
             names = {item["name"] for item in listed["result"]["resources"]}
             resource_uris = {item["uri"] for item in listed["result"]["resources"]}
             self.assertIn("manifest", names)
@@ -5256,6 +5268,17 @@ grep_results.json#matches/0
                 store,
                 {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
             )
+            batch = readonly_mcp_response(
+                settings,
+                store,
+                [
+                    {"jsonrpc": "2.0", "id": 101, "method": "initialize"},
+                    {"jsonrpc": "2.0", "id": 102, "method": "resources/list"},
+                ],
+            )
+            self.assertIsInstance(batch, list)
+            self.assertEqual([item["id"] for item in batch], [101, 102])
+            self.assertEqual(batch[0]["result"]["serverInfo"]["name"], "logagent-v2-readonly")
             resource_uris = {
                 item["uri"] for item in resources["result"]["resources"]
             }

@@ -29,7 +29,8 @@ slice provides the durable foundation for the V2 product model:
   Skill registry, and Domain Adapter resources/tools. `resources/list`
   advertises both static collection resources and dynamic per-Skill /
   per-Metadata snapshot resources under `logagent://...` and
-  `logagent-v2://...`.
+  `logagent-v2://...`. Read-only and task MCP handlers accept single JSON-RPC
+  requests and JSON-RPC batch arrays.
 - Task MCP endpoint with summary/evidence/artifact_index/manifest/grep,
   analysis_package, case_context, tool_results, Agent audit resources, and
   `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.

@@ -90,6 +90,8 @@ LogAgent MCP tools 支持：
 
 Python V2 同时保留 `logagent-v2://...` URI alias；`resources/list` 会动态广告当前已导入的 Skill 和 Metadata snapshot 资源，resource 内容中的 `uri` 回显调用方请求的 URI。
 
+Python V2 的只读 MCP 和 task MCP handler 均接受单个 JSON-RPC request 或 JSON-RPC batch array；batch array 按输入顺序返回响应数组。
+
 只读 HTTP MCP tools 支持：
 
 - `logagent.search_cases`

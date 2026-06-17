@@ -37,7 +37,18 @@ SKILL_TOOL_NAMES = {tool["name"] for tool in skill_tool_descriptors()}
 FETCH_TOOL_NAMES = {tool["name"] for tool in fetch_tool_descriptors()}
 
 
-def task_mcp_response(settings: Settings, store: Store, run_id: str, request: dict) -> dict:
+def task_mcp_response(
+    settings: Settings, store: Store, run_id: str, request: object
+) -> JsonObject | list[JsonObject]:
+    if isinstance(request, list):
+        return [
+            task_mcp_response(settings, store, run_id, item)
+            if isinstance(item, dict)
+            else json_rpc_error(None, "invalid JSON-RPC request")
+            for item in request
+        ]
+    if not isinstance(request, dict):
+        return json_rpc_error(None, "invalid JSON-RPC request")
     method = request.get("method")
     request_id = request.get("id")
     try:
@@ -95,14 +106,21 @@ def task_mcp_response(settings: Settings, store: Store, run_id: str, request: di
             raise ValueError(f"unsupported MCP method {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     except Exception as error:
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": -32000, "message": str(error)},
-        }
+        return json_rpc_error(request_id, str(error))
 
 
-def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> dict:
+def readonly_mcp_response(
+    settings: Settings, store: Store, request: object
+) -> JsonObject | list[JsonObject]:
+    if isinstance(request, list):
+        return [
+            readonly_mcp_response(settings, store, item)
+            if isinstance(item, dict)
+            else json_rpc_error(None, "invalid JSON-RPC request")
+            for item in request
+        ]
+    if not isinstance(request, dict):
+        return json_rpc_error(None, "invalid JSON-RPC request")
     method = request.get("method")
     request_id = request.get("id")
     try:
@@ -233,11 +251,15 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
             raise ValueError(f"unsupported MCP method {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     except Exception as error:
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": -32000, "message": str(error)},
-        }
+        return json_rpc_error(request_id, str(error))
+
+
+def json_rpc_error(request_id: object, message: str, code: int = -32000) -> JsonObject:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": code, "message": message},
+    }
 
 
 def canonical_readonly_uri(uri: object) -> object:
