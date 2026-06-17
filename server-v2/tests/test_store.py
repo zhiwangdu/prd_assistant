@@ -31,6 +31,7 @@ from logagent_v2.case_memory import (
     update_case as update_case_record,
 )
 from logagent_v2.config import RemoteCommandTemplate, Settings, ToolDefinition
+from logagent_v2.environment import persist_approved_environment_evidence
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
     endpoint_for_storage,
@@ -2545,6 +2546,105 @@ class StoreTests(unittest.TestCase):
             decided = store.decide_action(approval["id"], "approved", "ok")
             self.assertEqual(decided["status"], "approved")
             self.assertEqual(decided["result"]["decision"], "approved")
+
+    def test_approved_collect_environment_records_background_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "need approved environment evidence", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need node status",
+                    "input": {"scope": "node", "commands": ["uptime"], "nodeId": "n1"},
+                },
+            )
+
+            decided = store.decide_action(action["id"], "approved", "ok")
+            evidence = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence["kind"], "environment_evidence")
+            self.assertFalse(evidence["final_allowed"])
+            self.assertEqual(evidence["payload"]["actionId"], action["id"])
+            artifact = store.get_artifact(evidence["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "MOCK")
+            self.assertEqual(artifact_json["input"]["nodeId"], "n1")
+            self.assertFalse(artifact_json["finalEvidenceAllowed"])
+
+            analysis = get_run_analysis(settings, store, run["id"])
+            self.assertEqual(
+                analysis["resources"]["environment_evidence"]["actionId"],
+                action["id"],
+            )
+            resource_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 77,
+                    "method": "resources/read",
+                    "params": {
+                        "uri": f"logagent-v2://run/{run['id']}/environment_evidence"
+                    },
+                },
+            )
+            resource_json = json.loads(resource_response["result"]["contents"][0]["text"])
+            self.assertEqual(resource_json["actionId"], action["id"])
+
+            final_answer = AgentRuntime(settings, store).run_analysis(
+                workspace["id"], run["id"]
+            )
+            self.assertEqual(final_answer["confidence"], "low")
+            request_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 78,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_request"},
+                },
+            )
+            request_doc = json.loads(request_response["result"]["contents"][0]["text"])
+            prompt = json.loads(request_doc["payload"]["prompt"])
+            self.assertEqual(
+                prompt["backgroundEvidence"][0]["kind"], "environment_evidence"
+            )
+            self.assertEqual(
+                prompt["backgroundEvidence"][0]["payload"]["actionId"], action["id"]
+            )
+            package_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 79,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_package"},
+                },
+            )
+            package = json.loads(package_response["result"]["contents"][0]["text"])
+            self.assertEqual(
+                package["backgroundEvidence"][0]["payload"]["actionId"], action["id"]
+            )
+            self.assertIn(
+                "environment_evidence",
+                package["finalEvidencePolicy"]["backgroundOnlyKinds"],
+            )
 
     def test_metadata_import_query_and_mcp_background_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

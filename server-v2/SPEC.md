@@ -108,7 +108,10 @@ Implemented in this slice:
   `logagent.request_approval`; pending actions are persisted, exposed in run
   analysis summaries, user supplements mark pending user-input actions as
   answered, and user message/approval APIs requeue the run with bounded
-  `interactionContext` in the next Agent request.
+  `interactionContext` in the next Agent request. Approved
+  `collect_environment` actions record V1-compatible MOCK
+  `environment_evidence` background artifacts and expose them through
+  analysis/task-MCP resources and the next Agent context.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   log search, log slice, or tool finding evidence.
@@ -382,7 +385,8 @@ grep_results.json#matches/<index>
 ```
 
 These refs are current-task evidence. Manifest evidence is background and not
-final evidence.
+final evidence. Approved `environment_evidence` is also background-only and is
+not accepted as a final evidence ref.
 
 Node log packages named
 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` or `.tgz` are a
@@ -942,8 +946,15 @@ SQLite job queue. User messages also mark pending `user_input` actions as
 `answered`. The next Agent request includes a bounded `interactionContext`
 containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
-user chooses finalization. The current runtime still does not implement full
-LangGraph resume planning.
+user chooses finalization. If an approved action has
+`actionType=collect_environment`, V2 records
+`environment_evidence/<action_id>/result.json` with `status=MOCK`, the approved
+input, and `finalEvidenceAllowed=false`; the resource is available from
+`GET /api/v2/runs/:run_id/analysis` and task MCP
+`logagent-v2://run/<run_id>/environment_evidence`, and a bounded outline is
+included in the next `analysis_package` and Agent prompt. The current runtime
+still does not implement full LangGraph resume planning or real SSH/SCP
+Environment Collector execution.
 
 ## Security
 

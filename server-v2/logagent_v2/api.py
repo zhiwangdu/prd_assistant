@@ -26,6 +26,7 @@ from .case_memory import (
     update_case,
 )
 from .config import Settings
+from .environment import persist_approved_environment_evidence
 from .fetch import (
     endpoint_from_curl,
     endpoint_for_storage,
@@ -591,6 +592,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
         try:
             action = store.decide_action(action_id, payload.decision, payload.reason)
+            environment_evidence = persist_approved_environment_evidence(
+                settings, store, action
+            )
             run = store.get_run(action["run_id"])
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -598,7 +602,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if run["status"] == "waiting_for_approval":
             store.update_run_status(run["id"], "queued", "queued")
             job = store.enqueue_run(run["id"])
-        return {"action": action, "job": job}
+        return {"action": action, "environmentEvidence": environment_evidence, "job": job}
 
     @app.get("/api/v2/evidence/{evidence_id}")
     async def get_evidence(_: Auth, evidence_id: str) -> dict:

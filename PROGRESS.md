@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Approved Environment Evidence
+
+- Added V2 `collect_environment` approval handling parity with the Rust server:
+  approving a pending action with `actionType=collect_environment` now writes a
+  MOCK `environment_evidence` artifact and evidence row.
+- Exposed the latest `environment_evidence` through run analysis resources and
+  task MCP `logagent-v2://run/<run_id>/environment_evidence`.
+- Included approved environment evidence as background context in
+  `analysis_package.json` and the next Agent provider prompt while keeping it
+  excluded from final evidence refs.
+- Updated server-v2 and Environment Collector docs to distinguish the completed
+  mock approval evidence path from the still-planned real SSH/SCP collector.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Plugin Migration
 
 - Added a V2 Tool Plugin registry shared by `/api/v2/tools`, readonly MCP tool

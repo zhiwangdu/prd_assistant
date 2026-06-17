@@ -247,6 +247,7 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "grep_results", "Initial grep results"),
         resource(run_id, "system_context", "System Context snapshot"),
         resource(run_id, "metadata_context", "Metadata Context snapshot"),
+        resource(run_id, "environment_evidence", "Latest approved environment evidence"),
         resource(run_id, "analysis_package", "Bounded Agent analysis package"),
         resource(run_id, "analysis_state", "Latest Analysis Agent state snapshot"),
         resource(run_id, "agent_request", "Latest Agent provider request"),
@@ -290,6 +291,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "system_context")
     elif name == "metadata_context":
         value = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
+    elif name == "environment_evidence":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "environment_evidence")
     elif name == "analysis_package":
         value = read_latest_evidence_artifact(settings, store, run["id"], "analysis_package")
     elif name == "analysis_state":

@@ -282,6 +282,7 @@ def build_agent_prompt(
         },
         "allowedEvidenceRefs": [item["ref"] for item in evidence_preview if item.get("ref")],
         "evidencePreview": evidence_preview,
+        "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
         "toolObservations": tool_observations or [],
         "interactionContext": interaction_context or {},
         "availableTools": agent_available_tools(settings),

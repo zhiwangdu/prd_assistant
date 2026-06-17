@@ -35,6 +35,7 @@ TEXT_SUFFIXES = {
 }
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 BASE_KEYWORDS = ["error", "fail", "fatal", "panic", "exception", "timeout", "warn", "slow"]
+BACKGROUND_EVIDENCE_KINDS = {"environment_evidence"}
 NODE_LOG_PACKAGE_RE = re.compile(
     r"^(?P<package_id>[^_]+)_(?P<instance_id>[^_]+)_(?P<node_id>[^_]+)_"
     r"(?P<timestamp>[^_]+)_logs\.(?:tar\.gz|tgz)$",
@@ -159,7 +160,28 @@ def build_initial_evidence(
         "manifestArtifact": manifest_artifact,
         "grepArtifact": grep_artifact,
         "toolInputIndex": tool_input_bundle if tool_input_bundle.get("artifact") else None,
+        "backgroundEvidence": background_evidence_outline(store, run_id),
     }
+
+
+def background_evidence_outline(store: Store, run_id: str) -> list[JsonObject]:
+    items = [
+        item
+        for item in store.list_evidence(run_id)
+        if item.get("kind") in BACKGROUND_EVIDENCE_KINDS
+    ]
+    return [
+        {
+            "evidenceId": item.get("id"),
+            "kind": item.get("kind"),
+            "summary": item.get("summary"),
+            "artifactId": item.get("artifact_id"),
+            "payload": item.get("payload", {}),
+            "finalEvidenceAllowed": False,
+            "createdAt": item.get("created_at"),
+        }
+        for item in items[-20:]
+    ]
 
 
 def run_log_search(

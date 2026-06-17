@@ -13,6 +13,7 @@ ANALYSIS_RESOURCE_KINDS = (
     "agent_response",
     "system_context",
     "metadata_context",
+    "environment_evidence",
 )
 
 

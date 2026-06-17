@@ -45,6 +45,8 @@ slice provides the durable foundation for the V2 product model:
   and `logagent.request_approval`, exposed through run analysis summaries for
   WebUI recovery; user supplements answer pending user-input actions and recent
   messages/action decisions are included in the next Agent request context.
+  Approved `collect_environment` actions now record V1-compatible mock
+  `environment_evidence` background artifacts for the next Agent request.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
@@ -596,7 +598,13 @@ a waiting run marks pending user-input actions as `answered` and requeues the
 run through the SQLite job queue. Approving/rejecting a pending action records
 the decision and requeues approval-waiting runs. The next Agent request carries
 recent user messages, action results, and remaining pending actions in
-`interactionContext`.
+`interactionContext`. When an approved action payload has
+`actionType=collect_environment`, V2 also writes
+`environment_evidence/<action_id>/result.json` as a MOCK background evidence
+artifact, exposes it through `/analysis` resources and task MCP
+`environment_evidence`, and includes a bounded summary in the next
+`analysis_package` and Agent prompt. Environment evidence remains
+background-only and is not accepted as a final evidence ref.
 
 ## Final Answers
 

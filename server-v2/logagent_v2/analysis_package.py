@@ -80,6 +80,7 @@ def build_analysis_package(
         "toolInputIndex": tool_input_outline(evidence_bundle.get("toolInputIndex")),
         "systemContext": context_outline(settings, store, run_id, "system_context"),
         "metadataContext": context_outline(settings, store, run_id, "metadata_context"),
+        "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
         "allowedEvidenceRefs": [
             match["ref"] for match in matches if isinstance(match.get("ref"), str)
         ],
@@ -96,6 +97,7 @@ def build_analysis_package(
                 "system_context",
                 "metadata_context",
                 "analysis_package",
+                "environment_evidence",
                 "metadata_slice",
                 "case_context",
                 "skill_reference",
@@ -112,6 +114,7 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         "grep_results",
         "system_context",
         "metadata_context",
+        "environment_evidence",
         "analysis_package",
         "analysis_state",
         "agent_request",
