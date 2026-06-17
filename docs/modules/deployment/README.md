@@ -46,6 +46,21 @@ logagentd --config ./logagent.yaml
 
 该脚本会构建 Server、后台启动、写入 `/tmp/logagent-server-llm.pid` 和 `/tmp/logagent-server-llm.log`，并等待 `/health` 成功；`--stub` 使用本地 stub provider，`--foreground` 用于调试启动日志。
 
+V2 本地快速开发使用仓库根目录的单脚本入口：
+
+```bash
+./scripts/v2-local.sh build
+./scripts/v2-local.sh start
+./scripts/v2-local.sh status
+./scripts/v2-local.sh logs
+./scripts/v2-local.sh stop
+```
+
+`v2-local.sh` 默认使用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口
+`50993` 和 `target/tools`。`start` 会在缺少 virtualenv 或 WebUI build 时自动补齐，
+已有运行环境则直接启动并等待 `/health`。需要构建 submodule analyzer 时显式使用
+`--with-tools` 或 `--only-tool influxql|flux|opengemini|influxdb`。
+
 运行目录脚本通过 `LOGAGENT_WORK_DIR` 显式定位运行目录。该变量未设置时，脚本必须直接报错，避免把 pid、日志、数据或构建产物写到不明确的位置：
 
 ```bash
@@ -74,7 +89,7 @@ cp logagent.example.yaml logagent.yaml
 
 `deploy/logagentctl.sh` 和 `deploy/rebuild-install.sh` 会自动加载同目录 `.env`，默认使用父目录作为 `LOGAGENT_APP_DIR`。`logagentctl.sh` 以 detached 后台方式启动 Server，适合从非交互 shell 或自动化脚本执行。部署脚本会预创建 `data/uploads`、`data/sessions`、`data/tasks`、`data/workspaces`、`data/cases`、`data/case_imports` 和 `data/memory`；其中 `data/memory/memory.sqlite` 是 Memory SQLite 主索引，`data/cases/*.json` 保留为 legacy Case 迁移和回滚源。`deploy/rebuild-v2-install.sh` 也会在存在 `$HOME/.cargo/env` 时加载它，保证非交互 SSH shell 下用 `--with-tools` / `--tools-only` 构建 Flux analyzer 时能找到 rustup-managed `cargo`。
 
-`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。`deploy/.env.example` 还提供 V2 Fetch allowlist、request/response size、redirect 和 credential secret 示例，以及 submodule 内网镜像变量：`LOGAGENT_SUBMODULE_BASE_URL` 适合四个工具仓库位于同一 Git namespace 的场景，单仓库变量 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL` 和 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 优先级更高。
+`deploy/logagent.example.yaml` 包含默认关闭的 `embedding` 配置块、`claude_code` 配置和 `mcp.transport=stdio`。当前部署不需要 `LOGAGENT_EMBEDDING_API_KEY`；默认需要 `LOGAGENT_CLAUDE_CODE_PATH` 指向 `claude` CLI。`deploy/.env.example` 还提供 V2 Fetch allowlist、request/response size、redirect 和 credential secret 示例，V2 Remote Executor SSH/timeout/host-key-policy/command-template 示例，以及 submodule 内网镜像变量：`LOGAGENT_SUBMODULE_BASE_URL` 适合四个工具仓库位于同一 Git namespace 的场景，单仓库变量 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL` 和 `LOGAGENT_SUBMODULE_INFLUXDB_URL` 优先级更高。
 
 V2 `deploy/logagent-v2ctl.sh start` 和 `restart` 会等待配置的 health URL
 成功；如果进程启动后退出或超过 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`

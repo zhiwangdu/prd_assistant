@@ -10,6 +10,11 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
 
 - Server 从项目根目录启动并托管 `webui/`。
 - `scripts/start-local.sh` 支持真实 LLM、stub 和前台调试模式；后台模式必须在非交互 shell 中保持 Server 进程存活。
+- `scripts/v2-local.sh` 支持 V2 本地 build/start/stop/restart/status/logs；
+  默认使用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口 `50993` 和
+  `target/tools`，`start` 在已有 virtualenv/WebUI 时不得重复执行 editable
+  install，显式 `--with-tools` / `--only-tool <name>` 时才构建 source-built
+  analyzers。
 - 工作目录脚本通过 `LOGAGENT_WORK_DIR` 定位运行目录，支持初始化 `bin/config/data/logs/run/webui`、快速编译 Server、快速编译 WebUI、启动、停止、重启、状态和日志查看；缺少 `LOGAGENT_WORK_DIR` 时必须报错。
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本 best-effort 加载 `$HOME/.bashrc` 后自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
 - `deploy/logagent-v2ctl.sh` 和 `deploy/rebuild-v2-install.sh` 提供 V2 Python/FastAPI runtime 的快速构建、安装、启动、停止、重启、状态和日志查看。V2 默认使用 `$LOGAGENT_APP_DIR/server-v2/.venv`、`$LOGAGENT_APP_DIR/data-v2`、`$LOGAGENT_APP_DIR/webui/out` 和端口 `50993`。`logagent-v2ctl.sh start/restart` 会等待 health ready，启动失败时清理 stale pid 并返回非零状态；默认只按当前 runtime 的 pid file 判定运行进程，避免多实例互相误控。`rebuild-v2-install.sh --with-tools` 会把 source-built analyzers 构建到 `$LOGAGENT_APP_DIR/bin/tools`，`--tools-only --only-tool <name>` 用于快速单工具重建；脚本会在存在 `$HOME/.cargo/env` 时加载它，以支持非交互 SSH shell 下的 rustup cargo。
@@ -49,6 +54,7 @@ WEBUI -> Server 同源 API
 - Repository `deploy/.env.example`、`deploy/logagent.example.yaml`、`deploy/logagentctl.sh`、`deploy/rebuild-install.sh`
 - Repository `deploy/logagent-v2ctl.sh`、`deploy/rebuild-v2-install.sh`
 - Repository `deploy/install-deps.sh`
+- Repository `scripts/v2-local.sh`
 - Runtime `$LOGAGENT_APP_DIR/server-v2/.venv`
 - Runtime `$LOGAGENT_APP_DIR/data-v2/logagent.sqlite`
 - Runtime `$LOGAGENT_APP_DIR/logagent-v2.pid`
@@ -68,9 +74,13 @@ WEBUI -> Server 同源 API
 - `deploy/install-deps.sh --dry-run` 和 `--help` 可执行，不修改宿主。
 - deploy 模板启动前会创建 `data/memory`、`data/cases` 和 `data/case_imports`，且重建安装不能删除已有运行数据。
 - V2 deploy 模板能创建 virtualenv、安装 `server-v2`、初始化 SQLite、同步 WebUI、启动/停止/重启服务，并且不删除已有 `data-v2`。
+- `scripts/v2-local.sh --help` 可执行；`build` 能创建/更新本地 V2
+  virtualenv 并初始化 SQLite；`start --no-build` 在已有 virtualenv 时能直接
+  启动并等待 health；`status`、`stop`、`restart`、`logs` 使用本地 pid/log
+  文件，不影响 runtime deploy pid。
 - V2 `logagent-v2ctl.sh start/restart` 必须等待 `/health` 成功；进程提前退出或 health 超时必须清理 pid 文件并返回失败。
 - V2 控制脚本默认必须按当前 runtime pid file 管理进程，不得在未显式开启发现模式时通过全局 `pgrep` 控制其它运行目录的 V2 实例。
-- V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，非交互 SSH shell 下也能通过 `$HOME/.cargo/env` 找到 rustup-managed `cargo`，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、pprof 和 Huawei package sync 的环境变量样例。设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 后，V2 会按 `examples/server-tools.yaml` 的 args、timeout、`maxInputFiles` 和 match rules 自动注册对应 analyzer。
+- V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，非交互 SSH shell 下也能通过 `$HOME/.cargo/env` 找到 rustup-managed `cargo`，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、Remote Executor SSH 边界、pprof 和 Huawei package sync 的环境变量样例。设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 后，V2 会按 `examples/server-tools.yaml` 的 args、timeout、`maxInputFiles` 和 match rules 自动注册对应 analyzer。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
 - 运行目录和 deploy rebuild 脚本会从 submodules 构建 source-built analyzers，并把默认配置中的工具路径指向对应构建产物。
 - 内网环境可以在不修改 `.gitmodules` 的情况下通过 `.env` 或环境变量指定 source-built analyzer submodule clone URL；`build-tools.sh` 和手工 `configure-tool-submodules.sh` 都必须把这些 URL 写入本地 Git submodule config，并且在 submodule 目录存在但未初始化时不得把顶层仓库 `origin` 改成 submodule URL。

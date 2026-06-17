@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Local Build And Service Script
+
+- Added `scripts/v2-local.sh` for local V2 build/start/stop/restart/status/logs
+  without copying the runtime `deploy/` template.
+- The helper defaults to `server-v2/.venv`, `/tmp/logagent-v2-local`, port
+  `50993`, and `target/tools`; `start` reuses an existing virtualenv/WebUI build
+  for fast restarts, while `--with-tools` and `--only-tool <name>` explicitly
+  rebuild source-referenced analyzer submodules.
+- Documented the split between local V2 development controls and runtime V2
+  deploy controls, and added V2 Remote Executor environment examples to
+  `deploy/.env.example`.
+- Verification passed: `bash -n scripts/v2-local.sh`,
+  `scripts/v2-local.sh --help`, and `git diff --check`.
+
 ## 2026-06-18 V2 Remote Executor File Downloads
 
 - Added protected `GET /api/v2/executor-runs/:run_id/files/:file_name` for V2

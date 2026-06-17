@@ -110,6 +110,16 @@ Optional variables:
   `rebuild-v2-install.sh --with-tools`.
 - `LOGAGENT_V2_PPROF_ENABLED` and `LOGAGENT_V2_PPROF_GO_COMMAND`: optional
   built-in `pprof_analyzer` configuration.
+- `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED`, `LOGAGENT_V2_REMOTE_SSH_COMMAND`,
+  `LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS`,
+  `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS`,
+  `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`,
+  `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY`, and
+  `LOGAGENT_V2_REMOTE_COMMANDS_JSON`: optional V2 Remote Executor SSH boundary
+  and whitelisted command template configuration. Remote execution is enabled
+  by default with the low-risk `smoke_ls_root` template; set
+  `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED=0` in runtimes where SSH should never
+  run.
 - `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` plus `LOGAGENT_V2_HUAWEI_OBS_*`
   and `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`: optional built-in Huawei OBS + GaussDB
   package sync configuration.
@@ -214,6 +224,20 @@ filenames from `$LOGAGENT_APP_DIR/bin/tools` unless explicit
 `LOGAGENT_V2_TOOL_*` overrides are set. `rebuild-v2-install.sh` also loads
 `$HOME/.cargo/env` when present so Flux analyzer builds can find rustup-managed
 `cargo` in non-interactive SSH shells.
+
+For local development from the source checkout, `scripts/v2-local.sh` provides
+the same fast V2 build/start/stop/status/logs loop without copying `deploy/`:
+
+```bash
+./scripts/v2-local.sh build
+./scripts/v2-local.sh start
+./scripts/v2-local.sh status
+./scripts/v2-local.sh stop
+```
+
+It defaults to `server-v2/.venv`, `/tmp/logagent-v2-local`, port `50993`, and
+`target/tools`. Use `--with-tools` or `--only-tool <name>` when source-built
+analyzers need to be rebuilt.
 
 Useful overrides:
 

@@ -152,6 +152,23 @@ slice provides the durable foundation for the V2 product model:
 
 ## Local Run
 
+For the fastest local V2 loop from the repository root:
+
+```bash
+./scripts/v2-local.sh build
+./scripts/v2-local.sh start
+./scripts/v2-local.sh status
+./scripts/v2-local.sh stop
+```
+
+The helper creates or reuses `server-v2/.venv`, installs `server-v2` in
+editable mode, initializes SQLite under `/tmp/logagent-v2-local` by default,
+uses port `50993`, and only rebuilds source-referenced analyzers when
+`--with-tools` or `--only-tool <name>` is supplied. `start` waits for
+`/health`; `--foreground` keeps the FastAPI server attached for debugging.
+
+Manual startup remains available:
+
 ```bash
 cd server-v2
 python3 -m venv .venv
