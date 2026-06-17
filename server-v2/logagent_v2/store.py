@@ -140,6 +140,7 @@ class Store:
                   session_status TEXT NOT NULL DEFAULT 'draft',
                   system_context_ids_json TEXT NOT NULL DEFAULT '[]',
                   skill_ids_json TEXT NOT NULL DEFAULT '[]',
+                  upload_ids_json TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -395,6 +396,9 @@ class Store:
             self._ensure_column_tx(
                 conn, "workspaces", "skill_ids_json", "TEXT NOT NULL DEFAULT '[]'"
             )
+            self._ensure_column_tx(
+                conn, "workspaces", "upload_ids_json", "TEXT NOT NULL DEFAULT '[]'"
+            )
             self._ensure_column_tx(conn, "runs", "kind", "TEXT NOT NULL DEFAULT 'analysis'")
             self._ensure_column_tx(conn, "runs", "tool_id", "TEXT")
             self._ensure_column_tx(conn, "runs", "tool_params_json", "TEXT NOT NULL DEFAULT '{}'")
@@ -414,6 +418,7 @@ class Store:
             )
             self._ensure_case_fts_tx(conn)
             self._backfill_case_vectors_tx(conn)
+            self._backfill_workspace_upload_ids_tx(conn)
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str
@@ -478,6 +483,35 @@ class Store:
                 (encode_json(case_vector(row["searchable_text"])), row["case_id"]),
             )
 
+    def _backfill_workspace_upload_ids_tx(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("SELECT id, upload_ids_json FROM workspaces").fetchall()
+        for row in rows:
+            if decode_json(row["upload_ids_json"], []):
+                continue
+            uploads = conn.execute(
+                """
+                SELECT id FROM uploads
+                WHERE workspace_id = ?
+                ORDER BY created_at ASC, id ASC
+                """,
+                (row["id"],),
+            ).fetchall()
+            upload_ids = [upload["id"] for upload in uploads]
+            if not upload_ids:
+                continue
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET upload_ids_json = ?,
+                    session_status = CASE
+                      WHEN session_status = 'draft' THEN 'ready'
+                      ELSE session_status
+                    END
+                WHERE id = ?
+                """,
+                (encode_json(upload_ids), row["id"]),
+            )
+
     def _workspace_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
         if not item.get("title"):
@@ -488,6 +522,7 @@ class Store:
         item["sessionStatus"] = item.pop("session_status", "draft")
         item["systemContextIds"] = decode_json(item.pop("system_context_ids_json", None), [])
         item["skillIds"] = decode_json(item.pop("skill_ids_json", None), [])
+        item["uploadIds"] = decode_json(item.pop("upload_ids_json", None), [])
         return item
 
     def create_workspace(
@@ -513,9 +548,10 @@ class Store:
                 """
                 INSERT INTO workspaces(
                   id, title, question, source_url, instance_id, node_id, mode, language, status,
-                  session_status, system_context_ids_json, skill_ids_json, created_at, updated_at
+                  session_status, system_context_ids_json, skill_ids_json, upload_ids_json,
+                  created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     workspace_id,
@@ -530,6 +566,7 @@ class Store:
                     session_status,
                     encode_json(system_context_ids),
                     encode_json(skill_ids),
+                    encode_json([]),
                     ts,
                     ts,
                 ),
@@ -691,9 +728,14 @@ class Store:
         return self.get_workspace(workspace_id)
 
     def list_uploads(self, workspace_id: str) -> list[JsonObject]:
+        workspace = self.get_workspace(workspace_id)
+        upload_ids = workspace.get("uploadIds", [])
+        if not upload_ids:
+            return []
+        placeholders = ",".join("?" for _ in upload_ids)
         with self.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                   uploads.id AS id,
                   uploads.workspace_id AS workspace_id,
@@ -707,11 +749,93 @@ class Store:
                 FROM uploads
                 JOIN artifacts ON artifacts.id = uploads.artifact_id
                 WHERE uploads.workspace_id = ?
+                  AND uploads.id IN ({placeholders})
                 ORDER BY uploads.created_at ASC, uploads.id ASC
                 """,
-                (workspace_id,),
+                (workspace_id, *upload_ids),
             ).fetchall()
-        return [dict(row) for row in rows]
+        by_id = {row["id"]: dict(row) for row in rows}
+        return [by_id[upload_id] for upload_id in upload_ids if upload_id in by_id]
+
+    def attach_uploads(self, workspace_id: str, upload_ids: list[str]) -> JsonObject:
+        workspace = self.get_workspace(workspace_id)
+        unique_upload_ids = []
+        for upload_id in upload_ids:
+            upload_id = upload_id.strip()
+            if upload_id and upload_id not in unique_upload_ids:
+                unique_upload_ids.append(upload_id)
+        if not unique_upload_ids:
+            raise ValueError("missing uploadIds")
+
+        ts = now_iso()
+        with self.connect() as conn:
+            attached_upload_ids = list(workspace.get("uploadIds", []))
+            for upload_id in unique_upload_ids:
+                upload = conn.execute(
+                    "SELECT id, workspace_id FROM uploads WHERE id = ?",
+                    (upload_id,),
+                ).fetchone()
+                if upload is None:
+                    raise KeyError(f"unknown upload {upload_id}")
+                if upload["workspace_id"] != workspace_id:
+                    raise ValueError(f"upload {upload_id} does not belong to workspace {workspace_id}")
+                if upload_id not in attached_upload_ids:
+                    attached_upload_ids.append(upload_id)
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET upload_ids_json = ?,
+                    session_status = CASE
+                      WHEN session_status = 'draft' THEN 'ready'
+                      ELSE session_status
+                    END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (encode_json(attached_upload_ids), ts, workspace_id),
+            )
+            for upload_id in unique_upload_ids:
+                self._append_event_tx(
+                    conn,
+                    workspace_id,
+                    None,
+                    "upload.attached",
+                    {"uploadId": upload_id},
+                    ts,
+                )
+        return self.get_workspace(workspace_id)
+
+    def detach_upload(self, workspace_id: str, upload_id: str) -> JsonObject:
+        workspace = self.get_workspace(workspace_id)
+        attached_upload_ids = list(workspace.get("uploadIds", []))
+        if upload_id not in attached_upload_ids:
+            return workspace
+        runs = self.list_runs(workspace_id)
+        if runs:
+            raise ValueError("cannot detach uploads after a task run has been created")
+        ts = now_iso()
+        attached_upload_ids = [value for value in attached_upload_ids if value != upload_id]
+        next_status = "draft" if not attached_upload_ids else workspace.get("sessionStatus", "ready")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET upload_ids_json = ?,
+                    session_status = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (encode_json(attached_upload_ids), next_status, ts, workspace_id),
+            )
+            self._append_event_tx(
+                conn,
+                workspace_id,
+                None,
+                "upload.detached",
+                {"uploadId": upload_id},
+                ts,
+            )
+        return self.get_workspace(workspace_id)
 
     def list_run_artifacts(self, run_id: str) -> JsonObject:
         run = self.get_run(run_id)
@@ -1180,17 +1304,25 @@ class Store:
                 """,
                 (upload_id, workspace_id, filename, artifact_id, ts),
             )
+            row = conn.execute(
+                "SELECT upload_ids_json FROM workspaces WHERE id = ?",
+                (workspace_id,),
+            ).fetchone()
+            attached_upload_ids = decode_json(row["upload_ids_json"], []) if row else []
+            if upload_id not in attached_upload_ids:
+                attached_upload_ids.append(upload_id)
             conn.execute(
                 """
                 UPDATE workspaces
-                SET session_status = CASE
+                SET upload_ids_json = ?,
+                    session_status = CASE
                       WHEN session_status = 'draft' THEN 'ready'
                       ELSE session_status
                     END,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (ts, workspace_id),
+                (encode_json(attached_upload_ids), ts, workspace_id),
             )
             self._append_event_tx(
                 conn,

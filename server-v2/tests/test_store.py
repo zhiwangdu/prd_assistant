@@ -263,6 +263,30 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(uploaded.status_code, 200)
                 upload_id = uploaded.json()["upload"]["id"]
 
+                detached = client.delete(
+                    f"/api/v2/sessions/{session_id}/uploads/{upload_id}",
+                    headers=headers,
+                )
+                self.assertEqual(detached.status_code, 200)
+                self.assertEqual(detached.json()["uploadIds"], [])
+                self.assertEqual(detached.json()["status"], "draft")
+
+                empty_uploads = client.get(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                )
+                self.assertEqual(empty_uploads.status_code, 200)
+                self.assertEqual(empty_uploads.json()["uploads"], [])
+
+                attached = client.post(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                    json={"uploadIds": [upload_id]},
+                )
+                self.assertEqual(attached.status_code, 200)
+                self.assertEqual(attached.json()["uploadIds"], [upload_id])
+                self.assertEqual(attached.json()["status"], "ready")
+
                 uploads = client.get(
                     f"/api/v2/sessions/{session_id}/uploads",
                     headers=headers,
@@ -292,6 +316,11 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(after_task.status_code, 200)
                 self.assertEqual(after_task.json()["status"], "ready")
                 self.assertEqual(after_task.json()["activeTaskId"], task_body["taskId"])
+                blocked_detach = client.delete(
+                    f"/api/v2/sessions/{session_id}/uploads/{upload_id}",
+                    headers=headers,
+                )
+                self.assertEqual(blocked_detach.status_code, 409)
 
                 tasks = client.get(
                     f"/api/v2/sessions/{session_id}/tasks",
@@ -312,6 +341,8 @@ class StoreTests(unittest.TestCase):
                 self.assertIn("workspace.created", event_kinds)
                 self.assertIn("workspace.updated", event_kinds)
                 self.assertIn("upload.created", event_kinds)
+                self.assertIn("upload.detached", event_kinds)
+                self.assertIn("upload.attached", event_kinds)
                 self.assertIn("run.queued", event_kinds)
 
                 blocked_delete = client.delete(

@@ -18,9 +18,9 @@ slice provides the durable foundation for the V2 product model:
   to the Workspace id, maps `taskIds` to Run ids, persists Rust-style Session
   fields (`title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
   `skillIds`, and language), exposes Session uploads, restartable upload
-  sessions, task creation/listing, and workspace-level timeline events, maps
-  queued tasks to Session `ready`, and rejects Session deletion while any task
-  is unfinished.
+  sessions, JSON upload attachment, pre-run upload detach, task
+  creation/listing, and workspace-level timeline events, maps queued tasks to
+  Session `ready`, and rejects Session deletion while any task is unfinished.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
@@ -571,6 +571,13 @@ V2 supports three upload paths:
 - `POST /api/v2/workspaces/<workspace_id>/uploads/init`, followed by
   `POST /api/v2/uploads/<session_id>/chunks?offset=<bytes>` and
   `POST /api/v2/uploads/<session_id>/complete`, for restartable chunked upload.
+
+Session APIs expose the same stored uploads through an attachment set:
+`POST /api/v2/sessions/<session_id>/uploads` accepts either one multipart
+`file` for direct upload or JSON `{"uploadIds":[...]}` to attach existing
+Workspace uploads. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
+detaches an upload only before any task run exists; the Upload row and artifact
+remain available for explicit tool runs.
 
 Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Completion validates received size, converts the

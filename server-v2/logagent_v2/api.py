@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .analysis import get_run_analysis
 from .artifacts import (
@@ -125,6 +125,10 @@ class SessionUpdate(BaseModel):
     systemContextIds: list[str] | None = Field(default=None, max_length=20)
     skillIds: list[str] | None = Field(default=None, max_length=20)
     status: Literal["draft", "ready"] | None = None
+
+
+class AttachSessionUploads(BaseModel):
+    uploadIds: list[str] = Field(min_length=1, max_length=100)
 
 
 class MessageCreate(BaseModel):
@@ -690,10 +694,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"upload": upload, "artifact": artifact}
 
     @app.post("/api/v2/sessions/{session_id}/uploads")
-    async def upload_session_file(
-        _: Auth, session_id: str, file: UploadFile = File(...)
+    async def upload_or_attach_session_uploads(
+        _: Auth, session_id: str, request: Request
     ) -> dict:
-        return await upload_file(None, session_id, file)
+        content_type = request.headers.get("content-type", "").lower()
+        if content_type.startswith("application/json"):
+            try:
+                store.get_workspace(session_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            try:
+                payload = AttachSessionUploads.model_validate(await request.json())
+                workspace = store.attach_uploads(session_id, payload.uploadIds)
+                return _session_record(store, workspace)
+            except ValidationError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except KeyError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+        if content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            files = form.getlist("file")
+            if len(files) != 1 or not hasattr(files[0], "read"):
+                raise HTTPException(status_code=400, detail="expected exactly one file field")
+            return await upload_file(None, session_id, files[0])
+        raise HTTPException(status_code=415, detail="unsupported upload content type")
+
+    @app.delete("/api/v2/sessions/{session_id}/uploads/{upload_id}")
+    async def detach_session_upload(_: Auth, session_id: str, upload_id: str) -> dict:
+        try:
+            store.get_workspace(session_id)
+            workspace = store.detach_upload(session_id, upload_id)
+            return _session_record(store, workspace)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/api/v2/workspaces/{workspace_id}/uploads/batch")
     async def upload_files(

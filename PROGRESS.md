@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Upload Attachments
+
+- V2 Workspaces now persist Session `uploadIds` as an attachment set instead
+  of deriving Session uploads from every Upload row under the Workspace.
+- Direct Workspace/Session uploads and completed chunked uploads auto-attach
+  the new upload id; existing databases are backfilled from current Workspace
+  uploads during SQLite initialization.
+- `POST /api/v2/sessions/:session_id/uploads` now supports both one multipart
+  `file` direct upload and JSON `{"uploadIds":[...]}` attachment.
+- Added `DELETE /api/v2/sessions/:session_id/uploads/:upload_id` to detach an
+  upload before any task run exists. Detached uploads and artifacts remain
+  stored, but no longer appear in Session `uploadIds`, Session upload lists, or
+  initial analysis evidence.
+- Verification passed: focused Session alias upload attachment regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (108 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Field Persistence
 
 - V2 Workspaces now persist Rust-style Session fields used by the Session-first

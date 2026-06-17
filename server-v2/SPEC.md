@@ -53,6 +53,9 @@ Implemented in this slice:
   `skillIds`, and language are persisted. `taskId` equals the underlying Run
   id, `activeTaskId` is the newest Run, queued Runs map to Session `ready`, and
   Session deletion is rejected while any Run is not `succeeded` or `failed`.
+  Session uploadIds are stored as an attachment set: direct uploads auto-attach,
+  JSON attach can reattach existing Workspace uploads, and detach is allowed
+  only before any task run exists.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
@@ -258,6 +261,7 @@ POST /api/v2/workspaces/:workspace_id/uploads/init
 POST /api/v2/sessions/:session_id/uploads
 POST /api/v2/sessions/:session_id/uploads/batch
 POST /api/v2/sessions/:session_id/uploads/init
+DELETE /api/v2/sessions/:session_id/uploads/:upload_id
 GET  /api/v2/uploads/:session_id
 POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
 POST /api/v2/uploads/:session_id/complete
