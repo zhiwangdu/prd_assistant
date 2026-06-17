@@ -702,11 +702,11 @@ POST /api/v2/fetch/imports
 ```
 
 The cURL importer supports request method, headers, body, cookies,
-`--compressed`, `--head`, and `--location`. It rejects unsupported flags such as
-form uploads, proxy, cert, file, or resolver options rather than widening the
-network or filesystem boundary. Import previews redact sensitive query,
-header, and JSON/form body fields and return detected sensitive field
-locations.
+`--compressed`, `--head`, and `--location`, and accepts a leading `$` shell
+prompt from copied terminal commands. It rejects unsupported flags such as form
+uploads, proxy, cert, file, or resolver options rather than widening the network
+or filesystem boundary. Import previews redact sensitive query, header, and
+JSON/form body fields and return detected sensitive field locations.
 
 If a URL query parameter, header, or body field name looks like a token,
 secret, password, API key, session, Authorization, or Cookie, creating or

@@ -77,6 +77,8 @@ def endpoint_from_curl(
 def parse_curl(curl: str) -> JsonObject:
     normalized = curl.replace("\\\r\n", " ").replace("\\\n", " ").replace("\\\r", " ")
     normalized = normalized.strip()
+    if normalized.startswith("$"):
+        normalized = normalized[1:].lstrip()
     if "`" in normalized or normalized.startswith("curl.exe "):
         raise ValueError("only bash-style curl commands are supported")
     try:

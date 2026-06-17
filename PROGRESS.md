@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch cURL Prompt Import
+
+- V2 Fetch cURL import now accepts copied bash commands with a leading `$`
+  shell prompt, matching Rust/V1 import tolerance for terminal copy/paste.
+- The importer still rejects unsupported flags and non-bash cURL forms; this
+  change only strips the prompt before the existing parser runs.
+- Added regression coverage in the Fetch cURL import test.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused Fetch cURL import regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (83 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Tool Command Path Validation
 
 - V2 now expands environment variables and `~` in `LOGAGENT_V2_TOOLS_JSON`

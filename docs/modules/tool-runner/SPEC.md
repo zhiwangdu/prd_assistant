@@ -161,6 +161,9 @@ Huawei package sync 的 `result.json` 至少包含：
 - Claude Code 只能通过 `logagent.run_domain_tool` 选择允许的工具、受控 workspace-relative 输入和结构化参数，不能传入任意命令、本地路径或环境变量。
 - 只读 HTTP MCP 和 `tools.zip` 导出不能运行 Tool Runner，不能导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件；内置工具必须标记为只读、不可编辑、不可导出，是否可手动运行由 descriptor 的 `runnable` 决定。
 - Fetch endpoint 默认关闭；启用后只允许访问 `fetch.allowed_hosts` 中的 `http/https` 目标，每个 redirect hop 重新校验 allowlist，跨 host 不转发 Authorization/Cookie，所有 sensitive header/query/body 值必须脱敏展示并加密持久化。
+- V2 Fetch cURL import accepts copied bash commands with an optional leading
+  `$` shell prompt, matching the Rust/V1 import tolerance, while still rejecting
+  unsupported flags instead of broadening the network or filesystem boundary.
 - Huawei package sync 默认关闭；启用后 OBS access key、secret key、可选 security token 和 GaussDB password 必须来自环境变量。用户只能引用 Server 已完成 upload，不能传本地路径或 URL；OBS `objectKey` 必须是相对 key，不能包含 `..`、空 path segment、反斜杠、`?`、`#` 或控制字符。该工具会执行受保护 API 使用者提交的 SQL，首版不对 SQL 做表名或语句类型白名单。
 
 ## 验收标准

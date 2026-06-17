@@ -719,7 +719,8 @@ credentials, runtime environment values, uploads, artifacts, or workspace data.
 Fetch endpoints are configured through the protected HTTP API or imported from
 DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
 `POST /api/v2/fetch/imports`. Supported cURL flags are limited to request
-method, headers, body, cookies, compression, HEAD, and location. Execution is
+method, headers, body, cookies, compression, HEAD, and location; commands may
+include a leading `$` shell prompt from terminal copy/paste. Execution is
 disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
 URLs whose host or host:port exactly matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`.
 Runtime calls accept either `endpointId` or the V1-compatible `fetchId`,

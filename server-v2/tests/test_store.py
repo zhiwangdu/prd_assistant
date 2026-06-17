@@ -3984,6 +3984,10 @@ fi
         head = endpoint_from_curl("curl -I https://api.example.com/health")
         self.assertEqual(head["method"], "HEAD")
 
+        prompted = endpoint_from_curl("$ curl -I https://api.example.com/health")
+        self.assertEqual(prompted["method"], "HEAD")
+        self.assertEqual(prompted["url"], "https://api.example.com/health")
+
         with self.assertRaisesRegex(ValueError, "unsupported curl flag --form"):
             preview_curl_import("curl https://api.example.com --form file=@/tmp/a")
 
