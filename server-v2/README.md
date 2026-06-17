@@ -943,8 +943,11 @@ does not create a run or write `system_context.json`.
 
 Task MCP `logagent.get_skill_reference` only reads references declared in the
 run's `system_context` snapshot and persists a `skill_reference` background
-artifact with `final_allowed=false`. Readonly MCP reads the current registry and
-does not write workspace artifacts.
+artifact with `final_allowed=false`. Its response follows the Rust/V1 background
+artifact shape with stable `artifactPath`, `backgroundRef`, `canonicalRef`,
+`evidenceRefs`, `skillRevision`, reference metadata, `truncated`, and
+`finalEvidenceAllowed=false`. Readonly MCP reads the current registry and does
+not write workspace artifacts.
 
 `GET /api/v2/exports/skills.zip` exports the current Skill registry as a zip
 snapshot. It includes regular files under each Skill directory, preserves

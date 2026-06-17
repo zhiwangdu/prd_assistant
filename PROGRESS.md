@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Skill Reference MCP Envelope
+
+- Aligned V2 task MCP `logagent.get_skill_reference` with the Rust/V1
+  background artifact envelope while preserving the existing content payload.
+- Skill reference responses now use stable
+  `skill_references/skill_ref_<hash>.json` logical paths and return
+  `artifactPath`, `backgroundRef`, `canonicalRef`, `evidenceRefs`,
+  `skillRevision`, reference metadata, `truncated`, and
+  `finalEvidenceAllowed=false`.
+- Persisted `skill_reference` evidence now records the same logical path and
+  background ref for later resource aggregation.
+- Updated V2 Server and Interfaces docs/specs.
+- Verification passed: focused Skill reference MCP regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Endpoint MCP Envelope
 
 - Aligned V2 task MCP `logagent.list_fetch_endpoints` with the Rust/V1 Fetch

@@ -919,7 +919,10 @@ the current registry. Readonly `preview_system_context` accepts `skillIds`,
 preview without writing a run. Task MCP exposes the same tools, but
 `logagent.get_skill_reference` is constrained to Skills and references captured
 in the current run's `system_context` snapshot and persists `skill_reference`
-evidence with `final_allowed=false`.
+evidence with `final_allowed=false`. Task responses must include the
+Rust/V1-compatible background artifact envelope: stable `artifactPath`,
+`backgroundRef`, `canonicalRef`, `evidenceRefs`, `skillRevision`, reference
+metadata, `truncated`, and `finalEvidenceAllowed=false`.
 
 `GET /api/v2/exports/skills.zip` builds a current registry snapshot. The archive
 contains each Skill directory's regular files under `<skillId>/...` plus a root

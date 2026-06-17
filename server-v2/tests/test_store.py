@@ -4787,11 +4787,28 @@ grep_results.json#matches/0
             )
             ref_body = json.loads(task_ref["result"]["content"][0]["text"])
             self.assertIn("shard topology", ref_body["content"])
+            self.assertTrue(ref_body["artifactPath"].startswith("skill_references/skill_ref_"))
             self.assertTrue(ref_body["backgroundRef"].startswith("skill_references/"))
+            self.assertEqual(ref_body["backgroundRef"], f"{ref_body['artifactPath']}#content")
+            self.assertEqual(ref_body["canonicalRef"], ref_body["backgroundRef"])
+            self.assertEqual(ref_body["evidenceRefs"], [ref_body["backgroundRef"]])
+            self.assertFalse(ref_body["finalEvidenceAllowed"])
+            self.assertEqual(
+                ref_body["skillRevision"], context["resources"][0]["revision"]
+            )
+            self.assertEqual(ref_body["referenceId"], "topology")
+            self.assertEqual(ref_body["path"], "references/topology.md")
+            self.assertEqual(ref_body["title"], "Topology")
+            self.assertEqual(ref_body["summary"], "Topology reference")
+            self.assertFalse(ref_body["truncated"])
             evidence = store.list_evidence(run["id"])
             skill_refs = [item for item in evidence if item["kind"] == "skill_reference"]
             self.assertEqual(len(skill_refs), 1)
             self.assertFalse(skill_refs[0]["final_allowed"])
+            self.assertEqual(skill_refs[0]["payload"]["path"], ref_body["artifactPath"])
+            self.assertEqual(
+                skill_refs[0]["payload"]["backgroundRef"], ref_body["backgroundRef"]
+            )
 
             readonly_ref = readonly_mcp_response(
                 settings,

@@ -173,6 +173,7 @@ logical `case_recall/recall_<stable_id>.json` path on background
 - `RUNNING` 任务重启后保留 phase，并从该 phase 幂等恢复。
 - phase 推进带 expected phase 校验，陈旧执行器不能覆盖状态。
 - `tool_run` 任务不能混入 `/api/tasks` 日志分析列表，必须通过 `/api/tools/runs` 查询。
+- Task MCP `logagent.get_skill_reference` 必须返回稳定 background artifact envelope，包括 `artifactPath`、`backgroundRef`、`canonicalRef`、`evidenceRefs`、`skillRevision`、reference metadata、`truncated` 和 `finalEvidenceAllowed=false`。
 - 只读 HTTP MCP 不能执行 Fetch endpoint；任务 MCP 才能调用 `logagent.list_fetch_endpoints` 和 `logagent.fetch`。
 - `logagent.list_fetch_endpoints` 在 Fetch 关闭时必须失败；开启时必须返回 Rust/V1 `schemaVersion=1`、enabled endpoint summaries 和 `finalEvidenceAllowed=false`。
 - Fetch response 的最终证据引用格式只接受 `tool_results/<action_id>/result.json#response`，且必须校验该 action 属于当前任务并且 `tool=logagent.fetch`。

@@ -8,8 +8,7 @@ from typing import Any
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
-from .ids import new_id
-from .store import JsonObject, Store
+from .store import JsonObject, Store, now_iso
 
 
 SKILL_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -370,26 +369,38 @@ def read_task_skill_reference(
     if current["revision"] != resource["revision"]:
         raise ValueError(f"skill {skill_id} revision changed since run snapshot")
     reference = find_reference(resource["references"], reference_id, path)
-    content = read_reference_content(settings, skill_id, reference["path"])
-    ref_id = new_id("skillref")
-    artifact_path = f"skill_references/{ref_id}.json"
+    content, truncated = read_reference_content_with_truncation(
+        settings, skill_id, reference["path"]
+    )
+    artifact_path = stable_skill_reference_path(skill_id, resource["revision"], reference["path"])
+    background_ref = f"{artifact_path}#content"
     value = {
         "schemaVersion": 1,
         "skillId": skill_id,
+        "skillRevision": resource["revision"],
         "reference": reference,
+        "referenceId": reference.get("referenceId"),
+        "path": reference["path"],
+        "title": reference.get("title"),
+        "summary": reference.get("summary"),
         "content": content,
-        "backgroundRef": f"{artifact_path}#content",
+        "truncated": truncated,
+        "artifactPath": artifact_path,
+        "backgroundRef": background_ref,
+        "canonicalRef": background_ref,
+        "evidenceRefs": [background_ref],
         "finalEvidenceAllowed": False,
+        "createdAt": now_iso(),
     }
     artifact = write_artifact_bytes(
         settings=settings,
         store=store,
         workspace_id=store.get_run(run_id)["workspace_id"],
-        filename=f"{ref_id}.json",
+        filename=artifact_path.rsplit("/", 1)[-1],
         data=json.dumps(value, ensure_ascii=True, indent=2).encode("utf-8"),
         content_type="application/json",
         schema_name="logagent.v2.skill_reference.v1",
-        preview={"skillId": skill_id, "path": reference["path"]},
+        preview={"skillId": skill_id, "path": reference["path"], "artifactPath": artifact_path},
     )
     store.create_evidence(
         workspace_id=store.get_run(run_id)["workspace_id"],
@@ -398,7 +409,11 @@ def read_task_skill_reference(
         final_allowed=False,
         summary=f"Skill reference {skill_id}:{reference['path']}.",
         artifact_id=artifact["id"],
-        payload={"artifactId": artifact["id"], "backgroundRef": value["backgroundRef"]},
+        payload={
+            "artifactId": artifact["id"],
+            "path": artifact_path,
+            "backgroundRef": value["backgroundRef"],
+        },
     )
     return value
 
@@ -455,9 +470,27 @@ def find_reference(
 
 
 def read_reference_content(settings: Settings, skill_id: str, path: str) -> str:
+    return read_reference_content_with_truncation(settings, skill_id, path)[0]
+
+
+def read_reference_content_with_truncation(
+    settings: Settings, skill_id: str, path: str
+) -> tuple[str, bool]:
     skill_dir = settings.skills_dir / skill_id
     target = validate_reference_path(skill_dir, path)
-    return target.read_text(encoding="utf-8")[:20000]
+    content = target.read_text(encoding="utf-8")
+    return content[:20000], len(content) > 20000
+
+
+def stable_skill_reference_path(skill_id: str, revision: str, path: str) -> str:
+    payload = json.dumps(
+        {"skillId": skill_id, "revision": revision, "path": path},
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return f"skill_references/skill_ref_{digest}.json"
 
 
 def validate_skill_id(skill_id: str) -> None:
