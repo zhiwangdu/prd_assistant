@@ -758,7 +758,9 @@ Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and
 finding fields `severity` / `level` / `status`, `file` / `path` / `filename`,
 `line` / `lineNumber` / `startLine`, and `message` / `summary` /
-`description` / `detail` / `title` / `cause`.
+`description` / `detail` / `title` / `cause`. For Rust/V1 parser compatibility,
+JSON number values in these string-like fields are normalized to strings, while
+booleans are ignored for those fields.
 
 InfluxQL analyzer report stdout is specially adapted. Summary includes
 `total_records`, `records_in_window`, `total_statements`, `parse_error_count`,

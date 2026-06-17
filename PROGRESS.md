@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Runner Numeric Field Parser Parity
+
+- V2 Tool Runner generic stdout JSON parser now matches Rust/V1 string-field
+  coercion for analyzer outputs: JSON number values in summary/message/status/
+  path-like fields are normalized to strings, while booleans remain ignored for
+  those fields.
+- Added regression coverage for numeric `summary`, finding `description`,
+  `status`, and `path` fields while retaining line-number parsing.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: focused Tool Runner parser regressions,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`120 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Tool Runner Stdout/Stderr Artifacts
 
 - V2 configured subprocess Tool Runner now persists bounded stdout and stderr

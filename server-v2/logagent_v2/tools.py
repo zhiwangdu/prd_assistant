@@ -2646,6 +2646,8 @@ def string_field(value: JsonObject, keys: tuple[str, ...]) -> str | None:
         item = value.get(key)
         if isinstance(item, str) and item.strip():
             return item.strip()
+        if not isinstance(item, bool) and isinstance(item, (int, float)):
+            return number_to_string(item)
     return None
 
 

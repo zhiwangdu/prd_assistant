@@ -816,6 +816,8 @@ tools or the protected manual Tools API according to each descriptor's
 Tool stdout is parsed as JSON when possible and persisted as `tool_result`
 evidence. Generic JSON output can use
 `summary`, `message`, or `title`, plus `findings`, `issues`, or `diagnostics`.
+For Rust/V1 parser compatibility, JSON number values in string-like fields are
+normalized to strings while booleans are ignored for those fields.
 InfluxQL analyzer report JSON is adapted into a compact summary and findings
 for special rules, parse errors, realtime classification, fingerprints, compare
 fingerprint deltas, and rule deltas. V2 uses the Rust/V1 report detection

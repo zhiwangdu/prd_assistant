@@ -5627,6 +5627,29 @@ fi
         )
         self.assertEqual(findings_from_stdout(parsed), [])
 
+    def test_tool_stdout_normalizes_numeric_string_fields_like_v1(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "summary": 42,
+  "findings": [
+    {"status": 500, "path": 12345, "lineNumber": "7", "description": 99.5}
+  ]
+}"""
+        )
+
+        self.assertEqual(summary_from_stdout(parsed, b"", False), "42")
+        self.assertEqual(
+            findings_from_stdout(parsed),
+            [
+                {
+                    "message": "99.5",
+                    "severity": "500",
+                    "file": "12345",
+                    "line": 7,
+                }
+            ],
+        )
+
     def test_tool_stdout_parses_influxql_compare_report(self) -> None:
         parsed = parse_json(
             b"""{

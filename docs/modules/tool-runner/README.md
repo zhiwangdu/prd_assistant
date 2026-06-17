@@ -238,6 +238,8 @@ cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
 - severity 可来自 `severity`、`level` 或 `status`。
 - file 可来自 `file`、`path` 或 `filename`。
 - line 可来自 `line`、`lineNumber` 或 `startLine`。
+- 上述字符串字段兼容 Rust/V1 行为：JSON number 会转成字符串，JSON boolean
+  不会被当作字符串字段。
 
 `result.json` 标准化后结构：
 

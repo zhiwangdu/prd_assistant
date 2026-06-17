@@ -116,6 +116,9 @@ result。
 - finding 内的 `line` / `lineNumber` / `startLine`
 - finding 内的 `message` / `summary` / `description` / `detail` / `title` / `cause`
 
+上述字符串字段必须兼容 Rust/V1 parser：JSON number 转成字符串，JSON boolean
+不作为字符串字段。
+
 真实 `influxql-analyzer` 的 Report stdout 会被专门适配：
 
 - Report 识别与 Rust/V1 一致：stdout JSON 同时包含 `total_records`、
