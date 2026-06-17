@@ -25,9 +25,9 @@ slice provides the durable foundation for the V2 product model:
 - `manifest.json` and `grep_results.json` artifact generation.
 - Read-only MCP endpoint with V1-shaped tool catalog, Metadata, Case Memory,
   Skill registry, and Domain Adapter resources/tools.
-- Task MCP endpoint with summary/evidence/manifest/grep/analysis_package plus
-  Agent audit resources and `logagent.search_logs` follow-up search plus
-  `logagent.get_log_slice`.
+- Task MCP endpoint with summary/evidence/artifact_index/manifest/grep,
+  analysis_package, case_context, tool_results, Agent audit resources, and
+  `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
 - Tool Plugin registry exposed through `/api/v2/tools`, readonly MCP tool
   catalog, manual tool-run APIs, and task MCP `logagent.run_domain_tool`.
   Configured subprocess tools with `{input_file}` accept explicit
@@ -474,6 +474,10 @@ artifact records the latest round status. Successful task MCP `resources/read`
 and `tools/call` requests append JSONL records with call id, arguments, status,
 result summary, and evidence/background refs. Task MCP exposes them as
 `agent_request`, `agent_response`, `analysis_state`, and `mcp_calls` resources.
+Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
+lists current run uploads and evidence artifacts by stable logical path,
+`tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
+`case_context` returns the latest background Case recall/search context.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 deterministic alias derived from the final summary or question. `GET
@@ -545,10 +549,10 @@ It currently supports:
 
 - `initialize`
 - `resources/list`
-- `resources/read` for `summary`, `evidence`, `manifest`, `grep_results`,
-  `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, `agent_response`, `mcp_calls`, `result`, and
-  `result_markdown`
+- `resources/read` for `summary`, `artifact_index`, `evidence`, `manifest`,
+  `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
+  `analysis_state`, `agent_request`, `agent_response`, `case_context`,
+  `tool_results`, `mcp_calls`, `result`, and `result_markdown`
 - `tools/list`
 - `tools/call logagent.search_logs`
 - `tools/call logagent.get_log_slice`

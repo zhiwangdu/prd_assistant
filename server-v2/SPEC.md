@@ -83,10 +83,10 @@ Implemented in this slice:
 - Read-only MCP endpoint with `initialize`, `resources/list`, `resources/read`,
   `tools/list`, and tools/resources for V1-shaped tool catalog, Metadata,
   Case Memory, Skill registry, and Domain Adapter summaries.
-- Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
-  `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
-  `agent_request`, `agent_response`, `mcp_calls`, `result`, and `result_markdown`
-  resources.
+- Task MCP endpoint with `summary`, `artifact_index`, `evidence`, `manifest`,
+  `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
+  `analysis_state`, `agent_request`, `agent_response`, `case_context`,
+  `tool_results`, `mcp_calls`, `result`, and `result_markdown` resources.
 - Task MCP `logagent.search_logs`, which creates follow-up `log_search`
   evidence and stable `log_searches/<search_id>.json#matches/<index>` refs.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
@@ -998,6 +998,12 @@ the request and response artifact ids. `mcp_calls` captures successful task MCP
 `resources/read` and `tools/call` requests as JSONL with call id, arguments,
 status, result, and evidence/background refs. These evidence rows are
 background-only (`final_allowed=false`) and exposed through task MCP resources.
+Task MCP also exposes aggregate compatibility resources: `artifact_index`
+enumerates current run upload and evidence artifacts with stable logical paths,
+`tool_results` returns parsed `tool_result` and `fetch_result` artifacts under
+the canonical `tool_results/<action_id>/result.json` shape, and `case_context`
+returns the latest background-only Case search/recall context or an empty
+context when no Case tool has run.
 
 After final-answer validation succeeds, V2 writes `result.json` with schema
 version 1 and `result.md` as a Markdown rendering of the same final answer.

@@ -109,6 +109,7 @@ def build_analysis_package(
 def task_resource_index(run_id: str) -> list[JsonObject]:
     names = [
         "summary",
+        "artifact_index",
         "evidence",
         "manifest",
         "grep_results",
@@ -119,6 +120,8 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         "analysis_state",
         "agent_request",
         "agent_response",
+        "case_context",
+        "tool_results",
         "mcp_calls",
         "result",
         "result_markdown",

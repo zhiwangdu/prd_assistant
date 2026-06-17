@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from .config import Settings
-from .mcp import read_latest_evidence_artifact
+from .mcp import (
+    build_task_artifact_index,
+    read_latest_evidence_artifact,
+    read_task_case_context,
+    read_task_tool_results,
+)
 from .mcp_audit import read_mcp_calls
 from .results import get_run_result
 from .store import JsonObject, Store
 
 
 ANALYSIS_RESOURCE_KINDS = (
+    "artifact_index",
     "analysis_state",
     "analysis_package",
     "agent_request",
     "agent_response",
+    "case_context",
+    "tool_results",
     "mcp_calls",
     "system_context",
     "metadata_context",
@@ -53,6 +61,13 @@ def optional_latest_artifact(
     kind: str,
 ) -> JsonObject | None:
     try:
+        run = store.get_run(run_id)
+        if kind == "artifact_index":
+            return build_task_artifact_index(store, run)
+        if kind == "case_context":
+            return read_task_case_context(settings, store, run)
+        if kind == "tool_results":
+            return read_task_tool_results(settings, store, run)
         if kind == "mcp_calls":
             return read_mcp_calls(settings, store, run_id)
         return read_latest_evidence_artifact(settings, store, run_id, kind)

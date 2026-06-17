@@ -116,6 +116,7 @@ LogAgent MCP tools 支持：
 - Claude CLI argv/stdin 不能承载完整 `analysis_package.json`；Claude Code 通过 MCP resources/tools 获取证据和请求领域能力。
 - `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 不能承载完整 Metadata payload；只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json` 背景 slice。
 - `mcp_calls.jsonl` 记录成功的任务 MCP `resources/read` 和 `tools/call` 调用，包含 call id、arguments、status、result 和 evidence/background refs；Python V2 通过 `mcp_calls` task resource 与 run analysis resources 暴露解析后的调用列表。
+- Python V2 任务 MCP 兼容 V1 的 `artifact_index`、`case_context` 和 `tool_results` 资源；`artifact_index` 从 V2 Store 枚举当前 run 上传和 evidence artifacts，`case_context` 返回最新 Case background context，`tool_results` 聚合 `tool_result` / `fetch_result` artifact 并保持 `tool_results/<action_id>/result.json` canonical path。
 - `agent_response.json` 只能表达 completed / waiting outcome。
 - Server 继续负责 MCP tool schema、白名单、预算、幂等、审批和 final evidence ref 校验。
 

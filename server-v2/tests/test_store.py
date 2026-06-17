@@ -1321,6 +1321,9 @@ class StoreTests(unittest.TestCase):
             names = {item["name"] for item in listed["result"]["resources"]}
             self.assertIn("manifest", names)
             self.assertIn("grep_results", names)
+            self.assertIn("artifact_index", names)
+            self.assertIn("case_context", names)
+            self.assertIn("tool_results", names)
             self.assertIn("mcp_calls", names)
 
             manifest = task_mcp_response(
@@ -1380,6 +1383,24 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(slice_payload["slice"]["endLine"], 2)
             self.assertTrue(slice_payload["slice"]["ref"].startswith("log_slices/"))
 
+            index_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 45,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/artifact_index"},
+                },
+            )
+            index_body = json.loads(index_response["result"]["contents"][0]["text"])
+            index_paths = {item["path"] for item in index_body["artifacts"]}
+            self.assertIn("manifest.json", index_paths)
+            self.assertIn("grep_results.json", index_paths)
+            self.assertIn("mcp_calls.jsonl", index_paths)
+            self.assertTrue(any(path.startswith("log_searches/") for path in index_paths))
+
             calls_response = task_mcp_response(
                 settings,
                 store,
@@ -1392,21 +1413,26 @@ class StoreTests(unittest.TestCase):
                 },
             )
             calls_body = json.loads(calls_response["result"]["contents"][0]["text"])
-            self.assertEqual(calls_body["callCount"], 3)
+            self.assertEqual(calls_body["callCount"], 4)
             self.assertEqual(
                 [call["name"] for call in calls_body["calls"]],
                 [
                     "resources/read",
                     "logagent.search_logs",
                     "logagent.get_log_slice",
+                    "resources/read",
                 ],
             )
             self.assertEqual(calls_body["calls"][0]["result"]["resource"], "manifest")
+            self.assertEqual(calls_body["calls"][3]["result"]["resource"], "artifact_index")
             self.assertIn(payload["search"]["matches"][0]["ref"], calls_body["calls"][1]["evidenceRefs"])
             self.assertIn(slice_payload["slice"]["ref"], calls_body["calls"][2]["evidenceRefs"])
 
             analysis = get_run_analysis(settings, store, run["id"])
-            self.assertEqual(analysis["resources"]["mcp_calls"]["callCount"], 4)
+            self.assertEqual(analysis["resources"]["artifact_index"]["artifactCount"], len(index_paths))
+            self.assertEqual(analysis["resources"]["case_context"]["caseCount"], 0)
+            self.assertEqual(analysis["resources"]["tool_results"]["toolResultCount"], 0)
+            self.assertEqual(analysis["resources"]["mcp_calls"]["callCount"], 5)
             self.assertEqual(
                 analysis["resources"]["mcp_calls"]["calls"][-1]["result"]["resource"],
                 "mcp_calls",
@@ -1450,6 +1476,25 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["result"]["findings"][0]["message"], "hit")
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
+            results_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/tool_results"},
+                },
+            )
+            results_body = json.loads(results_response["result"]["contents"][0]["text"])
+            self.assertEqual(results_body["toolResultCount"], 1)
+            self.assertEqual(results_body["toolResults"][0]["summary"], "mock ok")
+            self.assertEqual(results_body["toolResults"][0]["toolId"], "mock_tool")
+            self.assertEqual(
+                results_body["toolResults"][0]["path"],
+                f"tool_results/{results_body['toolResults'][0]['actionId']}/result.json",
+            )
 
     def test_tool_registry_includes_configured_and_builtin_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3575,6 +3620,21 @@ class StoreTests(unittest.TestCase):
             case_context = [item for item in evidence if item["kind"] == "case_context"]
             self.assertEqual(len(case_context), 1)
             self.assertFalse(case_context[0]["final_allowed"])
+            context_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 171,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/case_context"},
+                },
+            )
+            context_body = json.loads(context_response["result"]["contents"][0]["text"])
+            self.assertEqual(context_body["caseCount"], 1)
+            self.assertEqual(context_body["cases"][0]["caseId"], task_case["caseId"])
+            self.assertFalse(context_body["finalEvidenceAllowed"])
 
             recall_response = task_mcp_response(
                 settings,

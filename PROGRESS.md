@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Aggregate Resources
+
+- Added V1-compatible V2 task MCP resources `artifact_index`, `case_context`,
+  and `tool_results`.
+- `artifact_index` now enumerates current run upload artifacts and evidence
+  artifacts from the V2 Store, using stable logical paths such as
+  `manifest.json`, `grep_results.json`, `mcp_calls.jsonl`, and
+  `tool_results/<action_id>/result.json`.
+- `case_context` returns the latest Case search/recall background artifact, or
+  an empty background context when no Case tool has run.
+- `tool_results` aggregates parsed `tool_result` and `fetch_result` artifacts
+  for task MCP consumers while preserving canonical tool-result paths.
+- Exposed these resources through `analysis_package.json` resource indexes and
+  `GET /api/v2/runs/:run_id/analysis` resources.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 MCP Calls Audit Resource
 
 - Added V2 `mcp_calls.jsonl` audit persistence for successful task MCP

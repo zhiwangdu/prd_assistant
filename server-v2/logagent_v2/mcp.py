@@ -24,7 +24,7 @@ from .skills import (
     read_task_skill_reference,
     skill_tool_descriptors,
 )
-from .store import Store
+from .store import JsonObject, Store
 from .tools import run_configured_tool, tool_descriptors
 
 
@@ -308,6 +308,7 @@ def task_resources(run: dict) -> list[dict]:
     run_id = run["id"]
     return [
         resource(run_id, "summary", "Run summary"),
+        resource(run_id, "artifact_index", "Artifact index"),
         resource(run_id, "evidence", "Evidence index"),
         resource(run_id, "manifest", "Initial manifest"),
         resource(run_id, "grep_results", "Initial grep results"),
@@ -318,6 +319,8 @@ def task_resources(run: dict) -> list[dict]:
         resource(run_id, "analysis_state", "Latest Analysis Agent state snapshot"),
         resource(run_id, "agent_request", "Latest Agent provider request"),
         resource(run_id, "agent_response", "Latest Agent provider response"),
+        resource(run_id, "case_context", "Latest Case background context"),
+        resource(run_id, "tool_results", "Tool result artifacts"),
         resource(run_id, "mcp_calls", "Task MCP call audit log"),
         resource(run_id, "result", "Final result JSON artifact"),
         resource(run_id, "result_markdown", "Final result Markdown artifact", "text/markdown"),
@@ -348,6 +351,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
             "run": run,
             "workspace": store.get_workspace(run["workspace_id"]),
         }
+    elif name == "artifact_index":
+        value = build_task_artifact_index(store, run)
     elif name == "evidence":
         value = {"evidence": store.list_evidence(run["id"])}
     elif name == "manifest":
@@ -368,6 +373,10 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_request")
     elif name == "agent_response":
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_response")
+    elif name == "case_context":
+        value = read_task_case_context(settings, store, run)
+    elif name == "tool_results":
+        value = read_task_tool_results(settings, store, run)
     elif name == "mcp_calls":
         value = read_mcp_calls(settings, store, run["id"])
     elif name == "result":
@@ -417,6 +426,143 @@ def task_tool_result_value(result: dict) -> dict:
     except json.JSONDecodeError:
         return {"text": text}
     return value if isinstance(value, dict) else {"value": value}
+
+
+def build_task_artifact_index(store: Store, run: JsonObject) -> JsonObject:
+    run_artifacts = store.list_run_artifacts(run["id"])
+    artifacts_by_path: dict[str, JsonObject] = {}
+
+    for upload in run_artifacts["uploads"]:
+        path = f"uploads/{upload['upload_id']}/{upload['filename']}"
+        artifacts_by_path[path] = {
+            "path": path,
+            "bytes": upload["size_bytes"],
+            "sizeBytes": upload["size_bytes"],
+            "artifactId": upload["artifact_id"],
+            "uploadId": upload["upload_id"],
+            "filename": upload["filename"],
+            "source": "upload",
+            "contentType": upload["content_type"],
+            "sha256": upload["sha256"],
+            "createdAt": upload["created_at"],
+        }
+
+    for item in run_artifacts["evidenceArtifacts"]:
+        payload = item.get("evidence_payload") or {}
+        path = logical_artifact_path(
+            item["evidence_kind"],
+            payload,
+            item["relative_path"],
+        )
+        artifacts_by_path[path] = {
+            "path": path,
+            "bytes": item["size_bytes"],
+            "sizeBytes": item["size_bytes"],
+            "artifactId": item["artifact_id"],
+            "evidenceId": item["evidence_id"],
+            "evidenceKind": item["evidence_kind"],
+            "finalAllowed": item["final_allowed"],
+            "summary": item["evidence_summary"],
+            "source": "evidence",
+            "relativePath": item["relative_path"],
+            "contentType": item["content_type"],
+            "schemaName": item["schema_name"],
+            "sha256": item["sha256"],
+            "createdAt": item["evidence_created_at"],
+        }
+
+    artifacts = list(artifacts_by_path.values())
+    return {
+        "schemaVersion": 1,
+        "runId": run["id"],
+        "artifactCount": len(artifacts),
+        "artifacts": artifacts,
+    }
+
+
+def read_task_case_context(settings: Settings, store: Store, run: JsonObject) -> JsonObject:
+    try:
+        value = read_latest_evidence_artifact(settings, store, run["id"], "case_context")
+    except ValueError:
+        return empty_case_context(run["id"])
+    value.setdefault("schemaVersion", 1)
+    value.setdefault("kind", "case_context")
+    value.setdefault("runId", run["id"])
+    value.setdefault("cases", [])
+    value.setdefault("caseCount", len(value["cases"]) if isinstance(value["cases"], list) else 0)
+    value.setdefault("finalEvidenceAllowed", False)
+    return value
+
+
+def empty_case_context(run_id: str) -> JsonObject:
+    return {
+        "schemaVersion": 1,
+        "kind": "case_context",
+        "runId": run_id,
+        "cases": [],
+        "caseCount": 0,
+        "finalEvidenceAllowed": False,
+    }
+
+
+def read_task_tool_results(settings: Settings, store: Store, run: JsonObject) -> JsonObject:
+    results = []
+    for evidence in store.list_evidence(run["id"]):
+        if evidence["kind"] not in {"tool_result", "fetch_result"}:
+            continue
+        artifact_id = evidence.get("artifact_id")
+        if not artifact_id:
+            continue
+        artifact = store.get_artifact(artifact_id)
+        try:
+            result = read_artifact_json(settings, store, artifact_id)
+        except Exception as error:
+            result = {"error": str(error)}
+        entry = {
+            **result,
+            "path": logical_artifact_path(
+                evidence["kind"],
+                evidence.get("payload") or {},
+                artifact["relative_path"],
+            ),
+            "evidenceId": evidence["id"],
+            "artifactId": artifact_id,
+            "evidenceKind": evidence["kind"],
+            "finalAllowed": evidence["final_allowed"],
+            "summary": result.get("summary", evidence.get("summary")),
+            "toolId": result.get("toolId")
+            or result.get("tool")
+            or (evidence.get("payload") or {}).get("toolId")
+            or (evidence.get("payload") or {}).get("tool"),
+            "actionId": result.get("actionId")
+            or (evidence.get("payload") or {}).get("actionId"),
+            "contentType": artifact["content_type"],
+            "schemaName": artifact["schema_name"],
+            "sha256": artifact["sha256"],
+            "sizeBytes": artifact["size_bytes"],
+        }
+        results.append(entry)
+    return {
+        "schemaVersion": 1,
+        "runId": run["id"],
+        "toolResultCount": len(results),
+        "toolResults": results,
+    }
+
+
+def logical_artifact_path(
+    evidence_kind: str,
+    payload: JsonObject,
+    relative_path: str,
+) -> str:
+    if isinstance(payload.get("path"), str) and payload["path"]:
+        return payload["path"]
+    action_id = payload.get("actionId")
+    if evidence_kind in {"tool_result", "fetch_result"} and isinstance(action_id, str):
+        return f"tool_results/{action_id}/result.json"
+    if evidence_kind == "case_context":
+        return "case_context.json"
+    return relative_path
 
 
 def read_latest_evidence_artifact(
