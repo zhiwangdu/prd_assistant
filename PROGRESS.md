@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Deployment Script Regression Tests
+
+- Added `server-v2/tests/test_deploy_scripts.py` with lightweight subprocess
+  coverage for V2 local/deploy control scripts.
+- Covered `scripts/v2-local.sh --help`, invalid
+  `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`, `deploy/logagent-v2ctl.sh` default
+  pid-file scoping, and fast failure when `start` is used before the V2 runtime
+  virtualenv is installed.
+- Updated Deployment README/SPEC to record the script behavior now protected by
+  regression tests.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, `PYTHONPATH=. uv run --extra dev pytest
+  tests/test_deploy_scripts.py`, and `git diff --check`.
+
 ## 2026-06-18 V2 Agent Provider Error Classification
 
 - V2 Agent provider failures now include stable `error.classification` and

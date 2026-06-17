@@ -60,6 +60,8 @@ V2 本地快速开发使用仓库根目录的单脚本入口：
 `50993` 和 `target/tools`。`start` 会在缺少 virtualenv 或 WebUI build 时自动补齐，
 已有运行环境则直接启动并等待 `/health`。需要构建 submodule analyzer 时显式使用
 `--with-tools` 或 `--only-tool influxql|flux|opengemini|influxdb`。
+V2 部署脚本的帮助输出、启动超时参数校验、pid file 作用域和缺少 runtime
+安装时的快速失败路径由 `server-v2/tests/test_deploy_scripts.py` 覆盖。
 
 运行目录脚本通过 `LOGAGENT_WORK_DIR` 显式定位运行目录。该变量未设置时，脚本必须直接报错，避免把 pid、日志、数据或构建产物写到不明确的位置：
 
@@ -94,7 +96,8 @@ cp logagent.example.yaml logagent.yaml
 V2 `deploy/logagent-v2ctl.sh start` 和 `restart` 会等待配置的 health URL
 成功；如果进程启动后退出或超过 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`
 仍未 ready，脚本会清理 stale pid 并以非零状态退出。控制脚本默认只信任
-当前 runtime 的 pid file，不通过全局进程扫描接管其它运行目录的 V2 进程。
+当前 runtime 的 pid file，不通过全局进程扫描接管其它运行目录的 V2 进程；
+该约束有轻量脚本回归测试，避免后续改动重新引入跨实例误控风险。
 
 个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：
 
