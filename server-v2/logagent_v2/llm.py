@@ -1055,10 +1055,7 @@ def agent_available_tools(
         tools.extend(
             [request_user_input_tool_descriptor(), request_approval_tool_descriptor()]
         )
-    if any(
-        tool["enabled"] and tool.get("source") == "configured"
-        for tool in tool_descriptors(settings)
-    ):
+    if agent_domain_tool_ids(settings):
         tools.append(run_domain_tool_descriptor(settings))
     fetch_tools = fetch_tool_descriptors()
     tools.append(fetch_tools[0])
@@ -1163,26 +1160,39 @@ def get_log_slice_tool_descriptor() -> JsonObject:
 
 
 def run_domain_tool_descriptor(settings: Settings) -> JsonObject:
+    configured_tool_ids = agent_domain_tool_ids(settings)
     return {
         "name": "logagent.run_domain_tool",
-        "description": "Run a configured read-only diagnostic tool by toolId.",
+        "description": "Run a configured read-only diagnostic tool by toolId or legacy tool/inputFile.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "toolId": {
                     "type": "string",
-                    "enum": [
-                        tool["toolId"]
-                        for tool in tool_descriptors(settings)
-                        if tool["enabled"] and tool.get("source") == "configured"
-                    ],
+                    "enum": configured_tool_ids,
                 },
+                "tool": {
+                    "type": "string",
+                    "enum": configured_tool_ids,
+                },
+                "inputFile": {"type": "string"},
                 "params": {"type": "object"},
             },
-            "required": ["toolId"],
+            "anyOf": [
+                {"required": ["toolId"]},
+                {"required": ["tool", "inputFile"]},
+            ],
             "additionalProperties": False,
         },
     }
+
+
+def agent_domain_tool_ids(settings: Settings) -> list[str]:
+    return [
+        tool["toolId"]
+        for tool in tool_descriptors(settings)
+        if tool["enabled"] and tool.get("source") == "configured" and not tool.get("manualOnly")
+    ]
 
 
 def allowed_evidence_refs(

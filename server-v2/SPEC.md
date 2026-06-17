@@ -667,8 +667,11 @@ readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
 configured tool execution. Task MCP `logagent.run_domain_tool` only exposes
 configured subprocess tools. Its `tools/list` descriptor input schema must
 advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
-call shape with `anyOf`. Built-ins use dedicated task MCP tools where
-available, or the protected manual Tools API. The migrated built-ins are:
+call shape with `anyOf`. The OpenAI-compatible and binary Agent provider
+`availableTools` prompt must advertise the same schema and configured-tool enum,
+and must exclude manual-only tools such as `pprof_analyzer`. Built-ins use
+dedicated task MCP tools where available, or the protected manual Tools API.
+The migrated built-ins are:
 
 - metadata catalog tools: instance list, snapshot, field types, tag fields,
   using Rust/V1 `backend=builtin`, `read-only` / `manual-run` tags, and
@@ -1327,10 +1330,13 @@ prompt delivery, and linked `agent_response` artifact id.
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
 Skill references, Fetch catalog, configured domain tools when present, and
-Fetch execution when Fetch is enabled. Waiting/approval tools are advertised
-unless the run is resuming with `resumeMode=finalize`. V2 validates the tool
-name and arguments as JSON objects, executes the Server-owned task MCP tool,
-records the resulting evidence/artifacts through the existing tool
+Fetch execution when Fetch is enabled. Configured domain tools must use the
+same `toolId` or V1-compatible `tool + inputFile` schema exposed by task MCP
+`tools/list`, and manual-only tools are not advertised to the provider.
+Waiting/approval tools are advertised unless the run is resuming with
+`resumeMode=finalize`. V2 validates the tool name and arguments as JSON
+objects, executes the Server-owned task MCP tool, records the resulting
+evidence/artifacts through the existing tool
 implementation, records the call in `mcp_calls.jsonl`, and feeds ordinary
 structured observations into the next provider round. If a provider calls
 `logagent.request_user_input` or

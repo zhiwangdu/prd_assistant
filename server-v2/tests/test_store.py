@@ -74,7 +74,7 @@ from logagent_v2.metadata import (
     refresh_metadata_instance,
 )
 from logagent_v2.results import get_run_result
-from logagent_v2.llm import debug_log_responses, set_debug_log_responses
+from logagent_v2.llm import agent_available_tools, debug_log_responses, set_debug_log_responses
 from logagent_v2.remote_execution import command_templates, strict_host_key_checking_value
 from logagent_v2.settings_api import (
     agent_backend_diagnostic,
@@ -2777,6 +2777,22 @@ class StoreTests(unittest.TestCase):
             )
             self.assertEqual(
                 run_tool_descriptor["inputSchema"]["properties"]["toolId"]["enum"],
+                ["mock_tool"],
+            )
+            provider_tools = agent_available_tools(settings)
+            provider_run_tool = next(
+                item for item in provider_tools if item["name"] == "logagent.run_domain_tool"
+            )
+            self.assertEqual(
+                provider_run_tool["inputSchema"]["anyOf"],
+                [{"required": ["toolId"]}, {"required": ["tool", "inputFile"]}],
+            )
+            self.assertEqual(
+                provider_run_tool["inputSchema"]["properties"]["tool"]["enum"],
+                ["mock_tool"],
+            )
+            self.assertEqual(
+                provider_run_tool["inputSchema"]["properties"]["toolId"]["enum"],
                 ["mock_tool"],
             )
 

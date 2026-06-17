@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Domain Tool Schema
+
+- V2 OpenAI-compatible and binary Agent provider prompts now advertise
+  `logagent.run_domain_tool` with the same schema as task MCP `tools/list`:
+  either V2 `toolId` or Rust/V1-compatible `tool + inputFile`.
+- Provider-visible configured tool enums now exclude manual-only tools such as
+  `pprof_analyzer`, matching task MCP behavior and preventing providers from
+  requesting tool runs that only the protected Tools API should start.
+- Added regression coverage for provider `availableTools` schema parity and
+  manual-only exclusion.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: focused run-domain-tool/provider regressions,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, and
+  `PYTHONPATH=. uv run --extra dev pytest` (`119 passed`, with the existing
+  Starlette/httpx deprecation warning).
+
 ## 2026-06-18 V2 Session Analysis Mode
 
 - V2 Session alias APIs now persist and return `analysisMode` on create, read,
