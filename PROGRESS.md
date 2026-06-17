@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 WebUI Remote File Approval Selection
+
+- Extended the V2 Analyze `collect_environment` approval card to load
+  `/api/v2/executor-file-templates` alongside Remote Executors and command
+  templates.
+- The approval card now lets users choose the remote target type explicitly:
+  command targets submit `executorId + commandId`, file targets submit
+  `executorId + fileId`, and blank selections preserve the compatible MOCK
+  evidence path.
+- Updated WebUI and Environment Collector README/SPEC docs to describe the
+  command/file mutually exclusive approval input.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run
+  typecheck`, `cd webui && npm run build`, and `git diff --check`.
+
 ## 2026-06-18 V2 Source-built Analyzer Catalog Status
 
 - Added `sourceBuiltAnalyzers` to the shared V2 tool catalog returned by

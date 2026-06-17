@@ -41,9 +41,9 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   远程目标无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留
   与 Rust Server 兼容的 `MOCK` evidence。
 - V2 Analyze 审批卡片当前会在 `collect_environment` action 上加载已启用的
-  Remote Executor 和白名单命令模板；文件模板可通过 API 和批准 input 使用，
-  WebUI 选择器后续补齐。用户批准时可把选择作为 decision `input` 提交，
-  Server 会先写回 action payload 再调度采集。
+  Remote Executor、白名单命令模板和白名单文件模板；用户选择 executor 后可在
+  command/file 目标类型之间二选一，批准时把互斥的 `commandId` 或 `fileId`
+  作为 decision `input` 提交，Server 会先写回 action payload 再调度采集。
 - 当前不支持多节点批量采集，也不支持由 Agent 自动选择
   executor/command/file；这些仍属于完整 Environment Collector 后续工作。
 

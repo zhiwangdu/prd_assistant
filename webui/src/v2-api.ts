@@ -599,6 +599,16 @@ export type V2RemoteCommandTemplate = {
   timeoutSeconds?: number | null;
 };
 
+export type V2RemoteFileTemplate = {
+  fileId: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  remotePath: string;
+  timeoutSeconds?: number | null;
+  maxBytes?: number | null;
+};
+
 export type V2RemoteRunSummary = {
   taskId: string;
   alias?: string | null;
@@ -1173,6 +1183,10 @@ export async function disableV2Executor(apiKey: string, executorId: string) {
 
 export async function listV2ExecutorCommandTemplates(apiKey: string) {
   return fetchJson<{ enabled: boolean; commands: V2RemoteCommandTemplate[] }>("/api/v2/executor-command-templates", { headers: authHeaders(apiKey) });
+}
+
+export async function listV2ExecutorFileTemplates(apiKey: string) {
+  return fetchJson<{ enabled: boolean; files: V2RemoteFileTemplate[] }>("/api/v2/executor-file-templates", { headers: authHeaders(apiKey) });
 }
 
 export async function listV2ExecutorRuns(apiKey: string, input: { executorId?: string; limit?: number }) {

@@ -12,6 +12,7 @@ import {
   getV2Workspace,
   getV2RunAnalysis,
   listV2ExecutorCommandTemplates,
+  listV2ExecutorFileTemplates,
   listV2Executors,
   listV2WorkspaceRuns,
   listV2Workspaces,
@@ -27,6 +28,7 @@ import {
   type V2Mode,
   type V2RemoteCommandTemplate,
   type V2RemoteExecutorRecord,
+  type V2RemoteFileTemplate,
   type V2Run,
   type V2RunAnalysis,
   type V2RunStatus,
@@ -35,6 +37,7 @@ import {
 } from "./v2-api";
 
 type BridgeCopy = (typeof copyByLanguage)[UiLanguage];
+type EnvironmentTargetKind = "command" | "file";
 type RunCaseDraft = {
   title: string;
   symptom: string;
@@ -127,9 +130,14 @@ const copyByLanguage = {
     reject: "拒绝",
     environmentTarget: "环境采集目标",
     remoteExecutor: "执行机",
+    remoteTargetType: "采集类型",
     remoteCommand: "命令模板",
+    remoteFile: "文件模板",
     mockEnvironmentTarget: "不指定远程目标（使用 MOCK）",
     noRemoteCommand: "不指定命令模板",
+    noRemoteFile: "不指定文件模板",
+    remoteCommandTarget: "远程命令",
+    remoteFileTarget: "远程文件",
     reasonPlaceholder: "可选：审批原因",
     noPendingAction: "Run 处于等待状态，但没有 pending action。",
     latestEvents: "最近事件",
@@ -229,9 +237,14 @@ const copyByLanguage = {
     reject: "Reject",
     environmentTarget: "Environment target",
     remoteExecutor: "Executor",
+    remoteTargetType: "Target type",
     remoteCommand: "Command template",
+    remoteFile: "File template",
     mockEnvironmentTarget: "No remote target (use MOCK)",
     noRemoteCommand: "No command template",
+    noRemoteFile: "No file template",
+    remoteCommandTarget: "Remote command",
+    remoteFileTarget: "Remote file",
     reasonPlaceholder: "Optional approval reason",
     noPendingAction: "The run is waiting, but no pending action is available.",
     latestEvents: "Latest events",
@@ -265,8 +278,11 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const [decisionReason, setDecisionReason] = useState("");
   const [environmentExecutors, setEnvironmentExecutors] = useState<V2RemoteExecutorRecord[]>([]);
   const [environmentCommands, setEnvironmentCommands] = useState<V2RemoteCommandTemplate[]>([]);
+  const [environmentFiles, setEnvironmentFiles] = useState<V2RemoteFileTemplate[]>([]);
   const [environmentExecutorId, setEnvironmentExecutorId] = useState("");
+  const [environmentTargetKind, setEnvironmentTargetKind] = useState<EnvironmentTargetKind>("command");
   const [environmentCommandId, setEnvironmentCommandId] = useState("");
+  const [environmentFileId, setEnvironmentFileId] = useState("");
   const [caseDraft, setCaseDraft] = useState<RunCaseDraft>(emptyRunCaseDraft());
   const [caseDraftRunId, setCaseDraftRunId] = useState("");
   const [savedCase, setSavedCase] = useState<V2CaseRecord | null>(null);
@@ -290,37 +306,59 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     if (!action || !apiKey.trim()) {
       setEnvironmentExecutors([]);
       setEnvironmentCommands([]);
+      setEnvironmentFiles([]);
       setEnvironmentExecutorId("");
+      setEnvironmentTargetKind("command");
       setEnvironmentCommandId("");
+      setEnvironmentFileId("");
       return;
     }
     const currentInput = actionInputRecord(action);
     const currentExecutorId = stringRecordValue(currentInput, "executorId") || stringRecordValue(currentInput, "remoteExecutorId");
     const currentCommandId = stringRecordValue(currentInput, "commandId") || stringRecordValue(currentInput, "remoteCommandId");
+    const currentFileId = stringRecordValue(currentInput, "fileId") || stringRecordValue(currentInput, "remoteFileId");
     try {
-      const [executorResponse, commandResponse] = await Promise.all([
+      const [executorResponse, commandResponse, fileResponse] = await Promise.all([
         listV2Executors(apiKey),
-        listV2ExecutorCommandTemplates(apiKey)
+        listV2ExecutorCommandTemplates(apiKey),
+        listV2ExecutorFileTemplates(apiKey)
       ]);
       const enabledExecutors = executorResponse.executors.filter((executor) => executor.enabled);
       const enabledCommands = commandResponse.enabled
         ? commandResponse.commands.filter((command) => command.enabled)
         : [];
+      const enabledFiles = fileResponse.enabled
+        ? fileResponse.files.filter((file) => file.enabled)
+        : [];
       const selectedExecutorId = currentExecutorId && enabledExecutors.some((executor) => executor.executorId === currentExecutorId)
         ? currentExecutorId
         : enabledExecutors[0]?.executorId || "";
-      const selectedCommandId = selectedExecutorId && currentCommandId && enabledCommands.some((command) => command.commandId === currentCommandId)
+      const hasCurrentFile = Boolean(currentFileId && enabledFiles.some((file) => file.fileId === currentFileId));
+      const hasCurrentCommand = Boolean(currentCommandId && enabledCommands.some((command) => command.commandId === currentCommandId));
+      const nextTargetKind: EnvironmentTargetKind = hasCurrentFile
+        ? "file"
+        : hasCurrentCommand || enabledCommands.length ? "command" : "file";
+      const selectedCommandId = selectedExecutorId && nextTargetKind === "command" && currentCommandId && enabledCommands.some((command) => command.commandId === currentCommandId)
         ? currentCommandId
-        : selectedExecutorId ? enabledCommands[0]?.commandId || "" : "";
+        : selectedExecutorId && nextTargetKind === "command" ? enabledCommands[0]?.commandId || "" : "";
+      const selectedFileId = selectedExecutorId && nextTargetKind === "file" && currentFileId && enabledFiles.some((file) => file.fileId === currentFileId)
+        ? currentFileId
+        : selectedExecutorId && nextTargetKind === "file" ? enabledFiles[0]?.fileId || "" : "";
       setEnvironmentExecutors(enabledExecutors);
       setEnvironmentCommands(enabledCommands);
+      setEnvironmentFiles(enabledFiles);
       setEnvironmentExecutorId(selectedExecutorId);
+      setEnvironmentTargetKind(nextTargetKind);
       setEnvironmentCommandId(selectedCommandId);
+      setEnvironmentFileId(selectedFileId);
     } catch {
       setEnvironmentExecutors([]);
       setEnvironmentCommands([]);
+      setEnvironmentFiles([]);
       setEnvironmentExecutorId(currentExecutorId);
+      setEnvironmentTargetKind(currentFileId ? "file" : "command");
       setEnvironmentCommandId(currentCommandId);
+      setEnvironmentFileId(currentFileId);
     }
   }, [apiKey]);
 
@@ -521,7 +559,13 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     try {
       const reason = decisionReason.trim() || null;
       const approvalInput = decision === "approved" && isCollectEnvironmentAction(action)
-        ? buildEnvironmentApprovalInput(action, environmentExecutorId, environmentCommandId)
+        ? buildEnvironmentApprovalInput(
+            action,
+            environmentExecutorId,
+            environmentTargetKind,
+            environmentCommandId,
+            environmentFileId
+          )
         : undefined;
       await decideV2Action(apiKey, action.id, {
         decision,
@@ -563,10 +607,27 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     setEnvironmentExecutorId(value);
     if (!value) {
       setEnvironmentCommandId("");
+      setEnvironmentFileId("");
       return;
     }
-    if (!environmentCommandId && environmentCommands[0]) {
+    if (environmentTargetKind === "command" && !environmentCommandId && environmentCommands[0]) {
       setEnvironmentCommandId(environmentCommands[0].commandId);
+    }
+    if (environmentTargetKind === "file" && !environmentFileId && environmentFiles[0]) {
+      setEnvironmentFileId(environmentFiles[0].fileId);
+    }
+  }
+
+  function updateEnvironmentTargetKind(value: EnvironmentTargetKind) {
+    setEnvironmentTargetKind(value);
+    if (value === "command") {
+      if (!environmentCommandId && environmentCommands[0]) {
+        setEnvironmentCommandId(environmentCommands[0].commandId);
+      }
+      return;
+    }
+    if (!environmentFileId && environmentFiles[0]) {
+      setEnvironmentFileId(environmentFiles[0].fileId);
     }
   }
 
@@ -685,13 +746,18 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           reason={decisionReason}
           environmentExecutors={environmentExecutors}
           environmentCommands={environmentCommands}
+          environmentFiles={environmentFiles}
           environmentExecutorId={environmentExecutorId}
+          environmentTargetKind={environmentTargetKind}
           environmentCommandId={environmentCommandId}
+          environmentFileId={environmentFileId}
           loading={loading}
           onMessageChange={setWaitingMessage}
           onReasonChange={setDecisionReason}
           onEnvironmentExecutorChange={updateEnvironmentExecutor}
+          onEnvironmentTargetKindChange={updateEnvironmentTargetKind}
           onEnvironmentCommandChange={setEnvironmentCommandId}
+          onEnvironmentFileChange={setEnvironmentFileId}
           onSend={(action, resumeMode) => void sendWaitingMessage(action, resumeMode)}
           onDecision={(action, decision) => void decideWaitingAction(action, decision)}
         />
@@ -845,13 +911,18 @@ function WaitingActionsPanel({
   reason,
   environmentExecutors,
   environmentCommands,
+  environmentFiles,
   environmentExecutorId,
+  environmentTargetKind,
   environmentCommandId,
+  environmentFileId,
   loading,
   onMessageChange,
   onReasonChange,
   onEnvironmentExecutorChange,
+  onEnvironmentTargetKindChange,
   onEnvironmentCommandChange,
+  onEnvironmentFileChange,
   onSend,
   onDecision
 }: {
@@ -862,13 +933,18 @@ function WaitingActionsPanel({
   reason: string;
   environmentExecutors: V2RemoteExecutorRecord[];
   environmentCommands: V2RemoteCommandTemplate[];
+  environmentFiles: V2RemoteFileTemplate[];
   environmentExecutorId: string;
+  environmentTargetKind: EnvironmentTargetKind;
   environmentCommandId: string;
+  environmentFileId: string;
   loading: boolean;
   onMessageChange: (value: string) => void;
   onReasonChange: (value: string) => void;
   onEnvironmentExecutorChange: (value: string) => void;
+  onEnvironmentTargetKindChange: (value: EnvironmentTargetKind) => void;
   onEnvironmentCommandChange: (value: string) => void;
+  onEnvironmentFileChange: (value: string) => void;
   onSend: (action: V2Action, resumeMode: "continue" | "finalize") => void;
   onDecision: (action: V2Action, decision: "approved" | "rejected") => void;
 }) {
@@ -899,7 +975,7 @@ function WaitingActionsPanel({
         {isEnvironmentApproval ? (
           <div className="rounded-md border border-amber-200 bg-white/60 p-3">
             <div className="mb-2 text-xs font-semibold text-amber-900">{copy.environmentTarget}</div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-xs text-muted-foreground">
                 {copy.remoteExecutor}
                 <select
@@ -916,20 +992,48 @@ function WaitingActionsPanel({
                 </select>
               </label>
               <label className="space-y-1 text-xs text-muted-foreground">
-                {copy.remoteCommand}
+                {copy.remoteTargetType}
                 <select
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-amber-500/20 disabled:opacity-60"
-                  value={environmentCommandId}
-                  onChange={(event) => onEnvironmentCommandChange(event.target.value)}
+                  value={environmentTargetKind}
+                  onChange={(event) => onEnvironmentTargetKindChange(event.target.value as EnvironmentTargetKind)}
                   disabled={!environmentExecutorId}
                 >
-                  <option value="">{copy.noRemoteCommand}</option>
-                  {environmentCommands.map((command) => (
-                    <option key={command.commandId} value={command.commandId}>
-                      {command.displayName} · {command.commandId}
-                    </option>
-                  ))}
+                  <option value="command">{copy.remoteCommandTarget}</option>
+                  <option value="file">{copy.remoteFileTarget}</option>
                 </select>
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                {environmentTargetKind === "file" ? copy.remoteFile : copy.remoteCommand}
+                {environmentTargetKind === "file" ? (
+                  <select
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-amber-500/20 disabled:opacity-60"
+                    value={environmentFileId}
+                    onChange={(event) => onEnvironmentFileChange(event.target.value)}
+                    disabled={!environmentExecutorId}
+                  >
+                    <option value="">{copy.noRemoteFile}</option>
+                    {environmentFiles.map((file) => (
+                      <option key={file.fileId} value={file.fileId}>
+                        {file.displayName} · {file.fileId} · {file.remotePath}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-amber-500/20 disabled:opacity-60"
+                    value={environmentCommandId}
+                    onChange={(event) => onEnvironmentCommandChange(event.target.value)}
+                    disabled={!environmentExecutorId}
+                  >
+                    <option value="">{copy.noRemoteCommand}</option>
+                    {environmentCommands.map((command) => (
+                      <option key={command.commandId} value={command.commandId}>
+                        {command.displayName} · {command.commandId}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </label>
             </div>
           </div>
@@ -1368,21 +1472,36 @@ function stringRecordValue(payload: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
-function buildEnvironmentApprovalInput(action: V2Action, executorId: string, commandId: string) {
+function buildEnvironmentApprovalInput(
+  action: V2Action,
+  executorId: string,
+  targetKind: EnvironmentTargetKind,
+  commandId: string,
+  fileId: string
+) {
   const input: Record<string, unknown> = { ...actionInputRecord(action) };
   const nextExecutorId = executorId.trim();
   const nextCommandId = commandId.trim();
+  const nextFileId = fileId.trim();
   delete input.remoteExecutorId;
   delete input.remoteCommandId;
-  if (nextExecutorId) {
+  delete input.remoteFileId;
+  delete input.commandId;
+  delete input.fileId;
+  const hasRemoteTarget = nextExecutorId && (
+    (targetKind === "command" && nextCommandId) ||
+    (targetKind === "file" && nextFileId)
+  );
+  if (hasRemoteTarget) {
     input.executorId = nextExecutorId;
   } else {
     delete input.executorId;
   }
-  if (nextCommandId && nextExecutorId) {
+  if (hasRemoteTarget && targetKind === "command") {
     input.commandId = nextCommandId;
-  } else {
-    delete input.commandId;
+  }
+  if (hasRemoteTarget && targetKind === "file") {
+    input.fileId = nextFileId;
   }
   return input;
 }
