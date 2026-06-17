@@ -81,6 +81,7 @@ def build_analysis_package(
             "phase": run.get("phase"),
             "budget": run.get("budget", {}),
         },
+        "analysisState": analysis_state_outline(store, run_id),
         "resources": task_resource_index(run_id),
         "manifest": manifest_outline(manifest),
         "grepResults": grep_outline(grep_results, matches),
@@ -109,6 +110,56 @@ def build_analysis_package(
                 "skill_reference",
             ],
         },
+    }
+
+
+def analysis_state_outline(store: Store, run_id: str) -> JsonObject:
+    timeline = store.list_timeline(run_id)
+    user_messages = [
+        {
+            "questionId": event.get("payload", {}).get("questionId"),
+            "message": event.get("payload", {}).get("message"),
+            "resumeMode": event.get("payload", {}).get("resumeMode"),
+            "createdAt": event.get("created_at"),
+        }
+        for event in timeline
+        if event.get("kind") == "user.message"
+        and isinstance(event.get("payload"), dict)
+        and isinstance(event["payload"].get("message"), str)
+    ]
+    actions = store.list_actions(run_id)
+    pending_actions = [
+        {
+            "id": action.get("id"),
+            "kind": action.get("kind"),
+            "payload": action.get("payload", {}),
+            "createdAt": action.get("created_at"),
+        }
+        for action in actions
+        if action.get("status") == "pending"
+    ]
+    action_results = [
+        {
+            "id": action.get("id"),
+            "kind": action.get("kind"),
+            "status": action.get("status"),
+            "result": action.get("result"),
+            "updatedAt": action.get("updated_at"),
+        }
+        for action in actions
+        if action.get("status") != "pending"
+    ]
+    finalize_requested = (
+        bool(user_messages) and user_messages[-1].get("resumeMode") == "finalize"
+    )
+    return {
+        "finalizeRequested": finalize_requested,
+        "resumeDirective": (
+            "finalize_with_current_evidence" if finalize_requested else None
+        ),
+        "recentUserMessages": user_messages[-10:],
+        "pendingActions": pending_actions[-10:],
+        "actionResults": action_results[-10:],
     }
 
 

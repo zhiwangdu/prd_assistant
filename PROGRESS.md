@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Analysis Package Resume State
+
+- V2 `analysis_package.json` now includes a bounded `analysisState` section
+  with recent user messages, action results, pending actions, and
+  `finalizeRequested`.
+- This aligns V2 with the Rust/V1 Claude prompt contract where
+  `analysis_package.analysisState.finalizeRequested=true` tells the Agent not
+  to request more user input and to answer from current evidence.
+- Added regression coverage that `resumeMode=finalize` appears both in the
+  provider prompt policy and in the task MCP `analysis_package` resource.
+
 ## 2026-06-17 V2 Provider Tool MCP Audit
 
 - V2 Agent provider loop now writes successful provider-executed task tool calls

@@ -98,7 +98,8 @@ Implemented in this slice:
 - `analysis_package.json` generation after initial evidence collection, exposed
   as task MCP resource for Agent loop context. The package includes Session
   title, source URL, Metadata binding, System Context ids, Skill ids, and
-  attached upload ids in its `workspace` section.
+  attached upload ids in its `workspace` section, plus bounded `analysisState`
+  resume context with `finalizeRequested`.
 - Timeline events for workspace, upload, run, and evidence lifecycle.
 - Artifact download.
 - Evidence and artifact listing for a run, including uploaded input artifacts,
@@ -1280,9 +1281,10 @@ current evidence.
 
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
-bounded tool input summaries, system/metadata context outlines, allowed
-current-run evidence refs starting with `session_text_input.json#question`, and
-final-evidence policy including `case_context.json#cases/<index>`. It
+bounded tool input summaries, system/metadata context outlines, bounded
+`analysisState` resume context, allowed current-run evidence refs starting with
+`session_text_input.json#question`, and final-evidence policy including
+`case_context.json#cases/<index>`. It
 intentionally omits full Skill content, full Metadata topology, and raw
 uploaded text. Task MCP exposes it at
 `logagent://task/<run_id>/analysis_package` and retains the

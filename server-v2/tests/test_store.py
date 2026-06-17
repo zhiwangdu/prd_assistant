@@ -891,6 +891,27 @@ class StoreTests(unittest.TestCase):
             available_tool_names = {tool["name"] for tool in prompt["availableTools"]}
             self.assertNotIn("logagent.request_user_input", available_tool_names)
             self.assertNotIn("logagent.request_approval", available_tool_names)
+            package_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_package"},
+                },
+            )
+            package = json.loads(package_response["result"]["contents"][0]["text"])
+            self.assertTrue(package["analysisState"]["finalizeRequested"])
+            self.assertEqual(
+                package["analysisState"]["resumeDirective"],
+                "finalize_with_current_evidence",
+            )
+            self.assertEqual(
+                package["analysisState"]["recentUserMessages"][-1]["resumeMode"],
+                "finalize",
+            )
 
     def test_run_message_api_validates_waiting_question_and_idempotency(self) -> None:
         from fastapi.testclient import TestClient
