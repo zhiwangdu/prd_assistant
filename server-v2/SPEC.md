@@ -742,6 +742,8 @@ Only `http` and `https` URLs are supported. `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`
 must be non-empty when Fetch is enabled. Allowlist entries support exact
 `host`, `host:port`, or scheme-specific `http(s)://host[:port]` forms.
 URL-form entries pin both scheme and port, using the default port when omitted.
+Fetch timeout, request-byte cap, and response-byte cap use a minimum value of
+1; maximum redirects uses a minimum value of 0.
 Controlled headers such as `Host`,
 `Content-Length`, `Transfer-Encoding`, and `Connection` are rejected when
 endpoints are saved. Sensitive headers, query parameters, and JSON/form body fields

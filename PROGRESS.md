@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Numeric Settings Clamp Parity
+
+- V2 now clamps non-positive `LOGAGENT_V2_MAX_CONCURRENT_JOBS` to 1, matching
+  the Rust/V1 fail-safe worker concurrency boundary.
+- V2 Fetch runtime limits now clamp timeout, request bytes, and response bytes
+  to at least 1, while redirect count continues to clamp negative values to 0.
+- Added regression coverage for environment-loaded non-positive job and Fetch
+  numeric settings.
+- Updated V2 Server and Configuration docs/specs.
+- Verification passed: focused numeric settings clamp regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (97 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 pprof Analyzer Config Boundary
 
 - V2 `Settings.from_env` now treats `pprof_analyzer` like a Rust/V1 configured

@@ -245,7 +245,7 @@ metadata:
 - `fetch.enabled` 默认 false。启用时必须配置 `fetch.secret_key_env`；V2 使用 `LOGAGENT_V2_FETCH_SECRET_KEY`，对应环境变量值必须是 32-byte base64 key，并且 `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 不能为空。
 - `fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 条目可写为 `host`、`host:port` 或 `http(s)://host[:port]`；URL 形式会固定 scheme 和端口，省略端口时使用默认端口。Fetch 执行只允许命中这些 `http/https` 目标，每个 redirect hop 都重新校验。
 - `fetch.request_timeout_seconds`、`fetch.max_request_bytes`、`fetch.max_response_bytes` 和 `fetch.max_redirects` 控制内置 Fetch tool 的请求超时、请求体大小、响应体大小和 redirect 次数。
-- Python V2 runtime 使用环境变量承载同类边界；`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` 默认 1048576，用于限制保存的 endpoint body 和运行时 body override 的 UTF-8 字节数。
+- Python V2 runtime 使用环境变量承载同类边界；`LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` 默认 1048576，用于限制保存的 endpoint body 和运行时 body override 的 UTF-8 字节数。V2 `LOGAGENT_V2_MAX_CONCURRENT_JOBS`、Fetch timeout、request-byte cap 和 response-byte cap 的非正值按 1 处理，Fetch redirect 上限的负值按 0 处理。
 - `huawei_cloud.package_sync.enabled` 默认 false。启用时必须配置 OBS `endpoint`、`bucket`、`access_key_env`、`secret_key_env` 和 GaussDB `host`、`database`、`user`、`password_env`；V2 当前使用 `LOGAGENT_V2_HUAWEI_OBS_*` 和 `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` 扁平环境变量。对应环境变量缺失或为空会导致启动失败。禁用时不读取这些环境变量。
 - `huawei_cloud.package_sync.obs.endpoint` / `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` 只支持 `http/https` 且不能带 path/query/fragment；`object_prefix` 可为空，但非空时必须是安全相对 object key 前缀。
 - `huawei_cloud.package_sync.obs.security_token_env` 可选，用于临时凭据；配置后启用时同样必须存在。

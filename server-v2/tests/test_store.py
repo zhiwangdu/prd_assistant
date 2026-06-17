@@ -2155,6 +2155,31 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(settings.pprof_enabled)
         self.assertEqual(settings.pprof_go_command, str(Path(tmpdir) / "go"))
 
+    def test_settings_clamps_job_and_fetch_numeric_limits(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_MAX_CONCURRENT_JOBS": "0",
+            "LOGAGENT_V2_FETCH_TIMEOUT_SECONDS": "0",
+            "LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES": "0",
+            "LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES": "0",
+            "LOGAGENT_V2_FETCH_MAX_REDIRECTS": "-1",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(settings.max_concurrent_jobs, 1)
+        self.assertEqual(settings.fetch_timeout_seconds, 1)
+        self.assertEqual(settings.fetch_max_request_bytes, 1)
+        self.assertEqual(settings.fetch_max_response_bytes, 1)
+        self.assertEqual(settings.fetch_max_redirects, 0)
+
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": "relative-influxql-analyzer",

@@ -185,7 +185,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_ARCHIVE_BYTES` | `268435456` | Maximum aggregate extracted text bytes |
 | `LOGAGENT_V2_MAX_TEXT_FILE_BYTES` | `16777216` | Maximum single text file size |
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
-| `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency |
+| `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency; non-positive values clamp to 1 |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array of fixed whitelist tool descriptors; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
 | `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
@@ -196,10 +196,10 @@ Environment variables:
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or unset | Go executable for `go tool pprof`; required and absolute when pprof is enabled |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact `host`, `host:port`, or `http(s)://host[:port]` allowlist; required when Fetch is enabled |
-| `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout |
-| `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` | `1048576` | Maximum Fetch request body bytes |
-| `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
-| `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
+| `LOGAGENT_V2_FETCH_TIMEOUT_SECONDS` | `20` | Per-request Fetch timeout; non-positive values clamp to 1 |
+| `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` | `1048576` | Maximum Fetch request body bytes; non-positive values clamp to 1 |
+| `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes; non-positive values clamp to 1 |
+| `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects; negative values clamp to 0 |
 | `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key; required when Fetch is enabled and used for encrypted credential sets |
 | `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary`; invalid values fail settings loading |
 | `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, required when that provider is selected |
