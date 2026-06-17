@@ -73,6 +73,13 @@ from logagent_v2.settings_api import (
 )
 from logagent_v2.skills import import_skill, list_skills
 from logagent_v2.store import Store
+from logagent_v2.system_context import (
+    activate_system_context_version,
+    create_system_context_resource,
+    create_system_context_version,
+    list_system_context_resource_summaries,
+    preview_system_context_resources,
+)
 from logagent_v2.tools import (
     execute_tool_run,
     findings_from_stdout,
@@ -3277,6 +3284,152 @@ grep_results.json#matches/0
             self.assertEqual(resources["opengemini-topology"]["selectionReason"], "auto")
             self.assertGreater(resources["opengemini-topology"]["matchScore"], 0)
             self.assertNotIn("unrelated", resources)
+
+    def test_legacy_system_context_resources_versions_and_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "logagent.sqlite")
+            store.initialize()
+            resource = create_system_context_resource(
+                store,
+                {
+                    "kind": "runbook",
+                    "title": "Compaction runbook",
+                    "description": "Triage compaction timeout cases.",
+                    "scope": "log_analysis",
+                    "enabled": True,
+                    "tags": ["compaction", "timeout", "compaction"],
+                    "product": "openGemini",
+                    "contentType": "markdown",
+                    "content": "Check compaction backlog before changing query limits.",
+                    "summary": "Compaction triage",
+                    "promptPolicy": {
+                        "includeByDefault": False,
+                        "priority": 20,
+                        "maxChars": 2000,
+                    },
+                },
+            )
+            context_id = resource["contextId"]
+            first_version_id = resource["activeVersionId"]
+
+            summaries = list_system_context_resource_summaries(store)
+            self.assertEqual(summaries[0]["contextId"], context_id)
+            self.assertEqual(summaries[0]["tags"], ["compaction", "timeout"])
+            self.assertEqual(
+                preview_system_context_resources(store)["resources"],
+                [],
+            )
+
+            explicit_preview = preview_system_context_resources(
+                store,
+                context_ids=[context_id],
+                product="openGemini",
+            )
+            self.assertEqual(explicit_preview["resources"][0]["contextId"], context_id)
+            self.assertIn("Check compaction backlog", explicit_preview["prompt"])
+
+            with_draft = create_system_context_version(
+                store,
+                context_id,
+                {
+                    "contentType": "plain_text",
+                    "content": "Use compaction queue and shard ownership evidence.",
+                    "summary": "Updated compaction triage",
+                    "activate": False,
+                },
+            )
+            second_version_id = with_draft["versions"][-1]["versionId"]
+            self.assertEqual(with_draft["activeVersionId"], first_version_id)
+
+            activated = activate_system_context_version(store, context_id, second_version_id)
+            versions = {item["versionId"]: item for item in activated["versions"]}
+            self.assertEqual(activated["activeVersionId"], second_version_id)
+            self.assertEqual(versions[first_version_id]["status"], "archived")
+            self.assertEqual(versions[second_version_id]["status"], "active")
+
+            metadata_snapshot = {
+                "instance": {
+                    "product": "openGemini",
+                    "version": "1.4",
+                    "environment": "prod",
+                },
+                "cluster": {
+                    "nodes": [{"nodeId": "n1"}],
+                    "databases": [{"name": "db0"}],
+                },
+            }
+            store.upsert_metadata_instance(
+                "prod-og",
+                "production",
+                "json",
+                metadata_snapshot,
+                metadata_snapshot,
+            )
+            all_summaries = {
+                item["contextId"]: item for item in list_system_context_resource_summaries(store)
+            }
+            self.assertIn("meta_prod-og", all_summaries)
+            metadata_preview = preview_system_context_resources(
+                store,
+                context_ids=["meta_prod-og"],
+            )
+            self.assertEqual(metadata_preview["resources"][0]["kind"], "metadata_instance")
+            self.assertIn("Metadata adapter", metadata_preview["prompt"])
+
+    def test_legacy_system_context_resource_api_smoke(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            headers = {"Authorization": "Bearer test"}
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    "/api/v2/system-context/resources",
+                    headers=headers,
+                    json={
+                        "kind": "knowledge_note",
+                        "title": "API note",
+                        "scope": "global",
+                        "contentType": "markdown",
+                        "content": "Use API-created context in previews.",
+                        "promptPolicy": {"includeByDefault": False, "priority": 10},
+                    },
+                )
+                self.assertEqual(created.status_code, 201)
+                context_id = created.json()["contextId"]
+
+                listed = client.get("/api/v2/system-context/resources", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(listed.json()["resources"][0]["contextId"], context_id)
+
+                new_version = client.post(
+                    f"/api/v2/system-context/resources/{context_id}/versions",
+                    headers=headers,
+                    json={
+                        "contentType": "plain_text",
+                        "content": "Second version content.",
+                        "activate": False,
+                    },
+                )
+                self.assertEqual(new_version.status_code, 201)
+                version_id = new_version.json()["versions"][-1]["versionId"]
+
+                activated = client.post(
+                    f"/api/v2/system-context/resources/{context_id}/versions/"
+                    f"{version_id}/activate",
+                    headers=headers,
+                )
+                self.assertEqual(activated.status_code, 200)
+                self.assertEqual(activated.json()["activeVersionId"], version_id)
+
+                preview = client.post(
+                    "/api/v2/system-context/preview",
+                    headers=headers,
+                    json={"contextIds": [context_id], "taskKind": "log_analysis"},
+                )
+                self.assertEqual(preview.status_code, 200)
+                self.assertIn("Second version content.", preview.json()["prompt"])
 
     def test_skills_zip_exports_regular_files_and_skips_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

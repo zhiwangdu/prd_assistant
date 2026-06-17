@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -68,6 +66,16 @@ from .settings_api import (
 )
 from .skills import get_skill, import_skill, list_skills, preview_system_context
 from .store import Store
+from .system_context import (
+    activate_system_context_version,
+    create_system_context_resource,
+    create_system_context_version,
+    get_system_context_resource,
+    list_system_context_resource_summaries,
+    patch_system_context_resource,
+    patch_system_context_version,
+    preview_system_context_resources,
+)
 from .tools import get_tool_descriptor, tool_descriptors, validate_manual_tool_run
 from .webui_static import WebuiStaticNotFound, resolve_webui_asset
 from .worker import JobRunner
@@ -181,6 +189,80 @@ class SkillImportCreate(BaseModel):
 
 class SkillPreviewCreate(BaseModel):
     skillIds: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SystemContextPromptPolicy(BaseModel):
+    includeByDefault: bool = True
+    maxChars: int = Field(default=4000, ge=200, le=20000)
+    priority: int = 0
+    allowedTaskKinds: list[Literal["log_analysis", "tool_run"]] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
+
+class SystemContextResourceCreate(BaseModel):
+    kind: Literal[
+        "prompt_pack",
+        "architecture_doc",
+        "runbook",
+        "glossary",
+        "tool_capability",
+        "knowledge_note",
+        "diagnostic_skill",
+    ]
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    scope: Literal["global", "log_analysis", "tool_run", "case_import"] = "log_analysis"
+    enabled: bool = True
+    tags: list[str] = Field(default_factory=list, max_length=32)
+    product: str | None = Field(default=None, max_length=120)
+    version: str | None = Field(default=None, max_length=120)
+    environment: str | None = Field(default=None, max_length=120)
+    contentType: Literal["markdown", "plain_text", "json"]
+    content: str = Field(min_length=1, max_length=200000)
+    summary: str | None = Field(default=None, max_length=2000)
+    promptPolicy: SystemContextPromptPolicy = Field(
+        default_factory=SystemContextPromptPolicy
+    )
+
+
+class SystemContextResourceUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    scope: Literal["global", "log_analysis", "tool_run", "case_import"] | None = None
+    enabled: bool | None = None
+    tags: list[str] | None = Field(default=None, max_length=32)
+    product: str | None = Field(default=None, max_length=120)
+    version: str | None = Field(default=None, max_length=120)
+    environment: str | None = Field(default=None, max_length=120)
+
+
+class SystemContextVersionCreate(BaseModel):
+    contentType: Literal["markdown", "plain_text", "json"]
+    content: str = Field(min_length=1, max_length=200000)
+    summary: str | None = Field(default=None, max_length=2000)
+    promptPolicy: SystemContextPromptPolicy = Field(
+        default_factory=SystemContextPromptPolicy
+    )
+    activate: bool = True
+
+
+class SystemContextVersionUpdate(BaseModel):
+    contentType: Literal["markdown", "plain_text", "json"] | None = None
+    content: str | None = Field(default=None, min_length=1, max_length=200000)
+    summary: str | None = Field(default=None, max_length=2000)
+    promptPolicy: SystemContextPromptPolicy | None = None
+    status: Literal["draft", "active", "archived"] | None = None
+
+
+class SystemContextPreviewCreate(BaseModel):
+    contextIds: list[str] = Field(default_factory=list, max_length=50)
+    taskKind: Literal["log_analysis", "tool_run"] = "log_analysis"
+    product: str | None = Field(default=None, max_length=120)
+    version: str | None = Field(default=None, max_length=120)
+    environment: str | None = Field(default=None, max_length=120)
+    instanceId: str | None = Field(default=None, max_length=200)
 
 
 class FetchEndpointCreate(BaseModel):
@@ -910,6 +992,109 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def preview_skills(_: Auth, payload: SkillPreviewCreate) -> dict:
         try:
             return preview_system_context(settings, payload.skillIds)
+        except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/system-context/resources")
+    async def list_system_context_resources(_: Auth) -> dict:
+        return {"resources": list_system_context_resource_summaries(store)}
+
+    @app.post("/api/v2/system-context/resources", status_code=201)
+    async def create_system_context_resource_api(
+        _: Auth, payload: SystemContextResourceCreate
+    ) -> dict:
+        try:
+            return create_system_context_resource(store, payload.model_dump())
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/v2/system-context/resources/{context_id}")
+    async def get_system_context_resource_api(_: Auth, context_id: str) -> dict:
+        try:
+            return get_system_context_resource(store, context_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.patch("/api/v2/system-context/resources/{context_id}")
+    async def patch_system_context_resource_api(
+        _: Auth,
+        context_id: str,
+        payload: SystemContextResourceUpdate,
+    ) -> dict:
+        try:
+            return patch_system_context_resource(
+                store,
+                context_id,
+                payload.model_dump(exclude_unset=True),
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/system-context/resources/{context_id}/versions", status_code=201)
+    async def create_system_context_version_api(
+        _: Auth,
+        context_id: str,
+        payload: SystemContextVersionCreate,
+    ) -> dict:
+        try:
+            return create_system_context_version(store, context_id, payload.model_dump())
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.patch("/api/v2/system-context/resources/{context_id}/versions/{version_id}")
+    async def patch_system_context_version_api(
+        _: Auth,
+        context_id: str,
+        version_id: str,
+        payload: SystemContextVersionUpdate,
+    ) -> dict:
+        try:
+            return patch_system_context_version(
+                store,
+                context_id,
+                version_id,
+                payload.model_dump(exclude_unset=True),
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/api/v2/system-context/resources/{context_id}/versions/{version_id}/activate"
+    )
+    async def activate_system_context_version_api(
+        _: Auth,
+        context_id: str,
+        version_id: str,
+    ) -> dict:
+        try:
+            return activate_system_context_version(store, context_id, version_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/system-context/preview")
+    async def preview_system_context_resources_api(
+        _: Auth, payload: SystemContextPreviewCreate
+    ) -> dict:
+        try:
+            return preview_system_context_resources(
+                store,
+                context_ids=payload.contextIds,
+                task_kind=payload.taskKind,
+                product=payload.product,
+                version=payload.version,
+                environment=payload.environment,
+                instance_id=payload.instanceId,
+            )
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 

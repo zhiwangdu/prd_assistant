@@ -29,7 +29,25 @@ POST /api/system-context/preview
 POST /api/mcp/readonly
 ```
 
+V2 兼容入口：
+
+```http
+GET /api/v2/system-context/resources
+POST /api/v2/system-context/resources
+GET /api/v2/system-context/resources/:context_id
+PATCH /api/v2/system-context/resources/:context_id
+POST /api/v2/system-context/resources/:context_id/versions
+PATCH /api/v2/system-context/resources/:context_id/versions/:version_id
+POST /api/v2/system-context/resources/:context_id/versions/:version_id/activate
+POST /api/v2/system-context/preview
+```
+
 `GET /api/system-context/resources` 默认只返回 `metadata_instance` adapter。旧非 Metadata resources 不删除，但不作为新 UI 和新任务入口。
+
+`GET /api/v2/system-context/resources` 返回 SQLite 中的 V1 风格资源摘要和
+Metadata adapter 摘要；`POST /api/v2/system-context/preview` 可以按
+`contextIds`、task kind、产品、版本、环境和 `instanceId` 生成 prompt preview。
+V2 兼容资源当前不自动注入新分析运行，运行时知识仍优先迁移为 Skills。
 
 `POST /api/skills/imports` 是 Skill 管理入口，不直接写 `system_context.json`；导入成功后的 Skill 可在后续 Session draft 中显式选择并固化到 task snapshot。
 
@@ -80,4 +98,6 @@ knowledge_note
 - Claude Code 输入包含 Diagnostic Skills 摘要和 Metadata adapter 摘要。
 - MCP `resources/read system_context` 可读取快照。
 - 只读 HTTP MCP `logagent.preview_system_context` 可预览 Skill-backed System Context，且不产生持久化副作用。
+- V2 `/api/v2/system-context/*` 可创建资源、创建 draft 版本、激活版本，并
+  在 preview 中显式包含资源或 `meta_<instanceId>` Metadata adapter。
 - Metadata 原有 API 和 WebUI 拓扑展示保持可用。

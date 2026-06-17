@@ -64,6 +64,11 @@ slice provides the durable foundation for the V2 product model:
   Markdown import, explicit or auto-matched Workspace skill selection,
   `system_context` run snapshot, readonly/task MCP reference reading, and
   `skills.zip` export.
+- Legacy System Context resource compatibility APIs backed by SQLite for
+  prompt packs, architecture docs, runbooks, glossaries, tool capability notes,
+  knowledge notes, diagnostic-skill records, version activation, and prompt
+  preview. Metadata instances are exposed as read-only `metadata_instance`
+  adapter resources in the compatibility list/preview surface.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
   executables, shell wrappers, examples, and a manifest.
 - Agent runtime with default stub final answer plus optional bounded
@@ -300,6 +305,14 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+GET  /api/v2/system-context/resources
+POST /api/v2/system-context/resources
+GET  /api/v2/system-context/resources/:context_id
+PATCH /api/v2/system-context/resources/:context_id
+POST /api/v2/system-context/resources/:context_id/versions
+PATCH /api/v2/system-context/resources/:context_id/versions/:version_id
+POST /api/v2/system-context/resources/:context_id/versions/:version_id/activate
+POST /api/v2/system-context/preview
 POST /api/v2/fetch/imports/preview
 POST /api/v2/fetch/imports
 GET  /api/v2/fetch/endpoints
@@ -311,6 +324,21 @@ POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
+
+## System Context Resources
+
+V2's primary run-time System Context remains Skill-backed: Workspace
+`skillIds`, auto-matched Skills, and Metadata context are materialized into the
+per-run `system_context` snapshot. For V1 management parity, V2 also exposes
+legacy System Context resource APIs under `/api/v2/system-context/*`.
+
+The compatibility store persists resource records and versions in SQLite,
+supports draft/active/archived version states, and renders a prompt preview for
+selected or default-included resources. User-created compatibility resources are
+management/preview inputs only; new analysis runs continue to use the
+Skill-backed System Context path unless later product work explicitly maps
+those resources into Skills. Metadata instances appear as read-only
+`meta_<instanceId>` adapter resources and can be included in preview requests.
 
 ## Settings And Diagnostics
 

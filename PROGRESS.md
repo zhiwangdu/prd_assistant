@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Legacy System Context Resources
+
+- Added V2 `/api/v2/system-context/*` compatibility APIs for V1-style System
+  Context resources: create/list/read/update, version create/update/activate,
+  and prompt preview.
+- Persisted compatibility resources in SQLite through the
+  `system_context_resources` table while keeping Metadata instances exposed as
+  read-only `meta_<instanceId>` adapter resources in list/preview responses.
+- Kept V2 run-time System Context Skill-backed; compatibility resources are
+  management/preview inputs in this slice and are not automatically injected
+  into new analysis runs.
+- Fixed the FastAPI protected-route auth dependency annotation so `/api/v2/*`
+  routes no longer interpret the local auth alias as a required `_` query
+  parameter.
+- Added regression coverage for compatibility resource version activation,
+  Metadata adapter preview, and HTTP route smoke coverage.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Run Alias Persistence
 
 - Added deterministic fallback alias generation for successful V2 analysis

@@ -132,6 +132,12 @@ Implemented in this slice:
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, readonly MCP Skill tools, and task MCP reference
   artifacts.
+- Legacy System Context resource compatibility APIs backed by SQLite. V2 can
+  create, list, read, update, version, activate, and preview prompt packs,
+  architecture docs, runbooks, glossaries, tool capability notes, knowledge
+  notes, and diagnostic-skill records. Metadata instances are exposed as
+  read-only `metadata_instance` adapter resources in the same list/preview
+  surface.
 - `skills.zip` export for the current Skill registry, with regular files only,
   root manifest, and symlink skipping.
 - `tools.zip` export for enabled configured subprocess tools, with packaged
@@ -248,6 +254,14 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+GET  /api/v2/system-context/resources
+POST /api/v2/system-context/resources
+GET  /api/v2/system-context/resources/:context_id
+PATCH /api/v2/system-context/resources/:context_id
+POST /api/v2/system-context/resources/:context_id/versions
+PATCH /api/v2/system-context/resources/:context_id/versions/:version_id
+POST /api/v2/system-context/resources/:context_id/versions/:version_id/activate
+POST /api/v2/system-context/preview
 POST /api/v2/fetch/imports/preview
 POST /api/v2/fetch/imports
 GET  /api/v2/fetch/endpoints
@@ -259,6 +273,20 @@ POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
+
+## System Context Compatibility
+
+The canonical V2 run-time System Context is Skill-backed. Workspace `skillIds`,
+auto-matched Skills, and Metadata context are materialized into a per-run
+`system_context` artifact and exposed through task MCP.
+
+The `/api/v2/system-context/*` endpoints provide the V1-style management
+surface for internal tools that still model prompt packs, runbooks, glossaries,
+and similar knowledge as System Context resources. These records are persisted
+in SQLite, support draft/active/archived versions, and can be previewed with
+task kind, product, version, environment, and metadata instance filters. They
+are not automatically injected into new analysis runs in this slice;
+productized run-time knowledge should continue to be represented as Skills.
 
 ## Storage
 
@@ -319,6 +347,7 @@ SQLite tables:
 - `fetch_credential_sets`
 - `remote_executors`
 - `remote_runs`
+- `system_context_resources`
 
 The database stores state and bounded previews. Large payloads live in artifact
 files and are referenced by `relative_path`, `sha256`, and size.

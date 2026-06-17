@@ -329,6 +329,13 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS system_context_resources (
+                  id TEXT PRIMARY KEY,
+                  record_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
@@ -346,6 +353,8 @@ class Store:
                   ON remote_runs(executor_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_remote_runs_idempotency
                   ON remote_runs(idempotency_key);
+                CREATE INDEX IF NOT EXISTS idx_system_context_resources_updated
+                  ON system_context_resources(updated_at);
                 """
             )
             self._ensure_column_tx(
@@ -664,6 +673,45 @@ class Store:
                     (workspace_id,),
                 ).fetchall()
         return [dict(row) for row in rows]
+
+    def upsert_system_context_resource(self, record: JsonObject) -> JsonObject:
+        context_id = record.get("contextId")
+        if not isinstance(context_id, str) or not context_id:
+            raise ValueError("system context record requires contextId")
+        created_at = str(record.get("createdAt") or now_iso())
+        updated_at = str(record.get("updatedAt") or now_iso())
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO system_context_resources(id, record_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  record_json = excluded.record_json,
+                  updated_at = excluded.updated_at
+                """,
+                (context_id, encode_json(record), created_at, updated_at),
+            )
+        return self.get_system_context_resource(context_id)
+
+    def list_system_context_resources(self) -> list[JsonObject]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT record_json FROM system_context_resources
+                ORDER BY updated_at DESC, id ASC
+                """
+            ).fetchall()
+        return [decode_json(row["record_json"], {}) for row in rows]
+
+    def get_system_context_resource(self, context_id: str) -> JsonObject:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT record_json FROM system_context_resources WHERE id = ?",
+                (context_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown context {context_id}")
+        return decode_json(row["record_json"], {})
 
     def create_run(self, workspace_id: str) -> JsonObject:
         workspace = self.get_workspace(workspace_id)
