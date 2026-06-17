@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Pprof Command Arg Parity
+
+- V2 `pprof_analyzer` now builds `go tool pprof` argv like Rust/V1:
+  top/tree/svg pass `-nodecount=<nodeCount>`, and top/tree/raw/svg all pass
+  `-symbolize=none`.
+- The pprof regression fake Go executable now verifies these flags for top,
+  tree, raw, and SVG calls, including that raw does not receive nodecount.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused pprof result regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (99 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Pprof Param Type Parity
 
 - V2 pprof parameter validation now matches Rust/V1 serde semantics more

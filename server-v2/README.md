@@ -730,6 +730,8 @@ mirror; `sampleIndex` is trimmed and must contain only letters, digits, `_`, or
 Its result JSON includes parsed `profileType`, `total`, top rows, V2 artifact
 id mappings, and Rust/V1-style `artifactPaths` for
 `tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.
+The pprof subprocess argv matches Rust/V1: top/tree/svg use
+`-nodecount=<nodeCount>`, and all pprof subcommands use `-symbolize=none`.
 
 Readonly MCP exposes the same tool registry as `logagent://tools/catalog`,
 the retained `logagent-v2://tools/catalog` alias, and `logagent.list_tools`.

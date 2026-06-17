@@ -666,7 +666,8 @@ used with an absolute Go command path. Its descriptor must expose V1 top-level
 `sampleIndex`, `nodeCount`, and `generateSvg` params schema entries plus the V2
 `properties` mirror. `sampleIndex` is trimmed and must contain only letters,
 digits, `_`, or `-`; `generateSvg` must be a JSON boolean; `nodeCount` is
-clamped to 1..200.
+clamped to 1..200. The subprocess argv must match Rust/V1: top/tree/svg pass
+`-nodecount=<nodeCount>`, and top/tree/raw/svg all pass `-symbolize=none`.
 Built-in tools are not packaged. The
 archive contains:
 

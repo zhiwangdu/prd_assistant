@@ -2689,16 +2689,24 @@ class StoreTests(unittest.TestCase):
 set -euo pipefail
 args=" $* "
 if [[ "$args" == *" -top "* ]]; then
+  [[ "$args" == *" -nodecount=20 "* ]] || { echo "missing top nodecount: $*" >&2; exit 3; }
+  [[ "$args" == *" -symbolize=none "* ]] || { echo "missing top symbolize: $*" >&2; exit 3; }
   cat <<'OUT'
 Type: samples
 Showing nodes accounting for 10ms, 10% of 100ms total
 10ms 10% 10% 20ms 20% github.com/acme/foo
 OUT
 elif [[ "$args" == *" -tree "* ]]; then
+  [[ "$args" == *" -nodecount=20 "* ]] || { echo "missing tree nodecount: $*" >&2; exit 3; }
+  [[ "$args" == *" -symbolize=none "* ]] || { echo "missing tree symbolize: $*" >&2; exit 3; }
   echo "tree output"
 elif [[ "$args" == *" -raw "* ]]; then
+  [[ "$args" != *" -nodecount=20 "* ]] || { echo "unexpected raw nodecount: $*" >&2; exit 3; }
+  [[ "$args" == *" -symbolize=none "* ]] || { echo "missing raw symbolize: $*" >&2; exit 3; }
   echo "raw output"
 elif [[ "$args" == *" -svg "* ]]; then
+  [[ "$args" == *" -nodecount=20 "* ]] || { echo "missing svg nodecount: $*" >&2; exit 3; }
+  [[ "$args" == *" -symbolize=none "* ]] || { echo "missing svg symbolize: $*" >&2; exit 3; }
   echo "<svg></svg>"
 else
   echo "unexpected pprof args: $*" >&2
