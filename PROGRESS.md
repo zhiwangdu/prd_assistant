@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Task Summaries
+
+- V2 Session task APIs now return product-level TaskSummary fields instead of
+  only exposing raw Run rows.
+- `POST /api/v2/sessions/:session_id/tasks` returns top-level `taskId`,
+  `runId`, `taskKind=log_analysis`, `sessionId`, `analysisMode`,
+  `analysisLanguage`, upper-case task `status`, `phase`, `url`, and the summary
+  under `task`, while retaining the raw V2 Run under `run`.
+- `GET /api/v2/sessions/:session_id/tasks` returns summary objects in `tasks`
+  and keeps raw V2 Run records in `runs` for diagnostics and V2-native clients.
+- Verification passed: focused Session alias task summary regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (108 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Upload Attachments
 
 - V2 Workspaces now persist Session `uploadIds` as an attachment set instead

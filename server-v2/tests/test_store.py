@@ -309,6 +309,9 @@ class StoreTests(unittest.TestCase):
                 self.assertTrue(task_body["taskId"].startswith("run_"))
                 self.assertEqual(task_body["runId"], task_body["taskId"])
                 self.assertEqual(task_body["sessionId"], session_id)
+                self.assertEqual(task_body["task"]["taskId"], task_body["taskId"])
+                self.assertEqual(task_body["taskKind"], "log_analysis")
+                self.assertEqual(task_body["status"], "QUEUED")
                 after_task = client.get(
                     f"/api/v2/sessions/{session_id}",
                     headers=headers,
@@ -328,9 +331,11 @@ class StoreTests(unittest.TestCase):
                 )
                 self.assertEqual(tasks.status_code, 200)
                 self.assertEqual(
-                    [item["id"] for item in tasks.json()["tasks"]],
+                    [item["taskId"] for item in tasks.json()["tasks"]],
                     [task_body["taskId"]],
                 )
+                self.assertEqual(tasks.json()["tasks"][0]["status"], "QUEUED")
+                self.assertEqual(tasks.json()["runs"][0]["id"], task_body["taskId"])
 
                 timeline = client.get(
                     f"/api/v2/sessions/{session_id}/timeline",

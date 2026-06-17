@@ -21,6 +21,8 @@ slice provides the durable foundation for the V2 product model:
   sessions, JSON upload attachment, pre-run upload detach, task
   creation/listing, and workspace-level timeline events, maps queued tasks to
   Session `ready`, and rejects Session deletion while any task is unfinished.
+  Session task APIs return Rust-style TaskSummary fields while retaining raw
+  V2 Run records under `runs` for diagnostics.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.

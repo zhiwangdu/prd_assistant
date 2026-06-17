@@ -55,7 +55,10 @@ Implemented in this slice:
   Session deletion is rejected while any Run is not `succeeded` or `failed`.
   Session uploadIds are stored as an attachment set: direct uploads auto-attach,
   JSON attach can reattach existing Workspace uploads, and detach is allowed
-  only before any task run exists.
+  only before any task run exists. Session task create/list responses return
+  Rust-style TaskSummary objects with `taskId`, `taskKind`, `sessionId`,
+  `analysisLanguage`, `status`, `phase`, and `url`, while retaining raw Run
+  records under `runs`.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked

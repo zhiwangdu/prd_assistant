@@ -463,6 +463,25 @@ def _session_record(store: Store, workspace: dict) -> dict:
     }
 
 
+def _task_summary(workspace: dict, run: dict) -> dict:
+    phase = run.get("phase")
+    return {
+        "taskId": run["id"],
+        "runId": run["id"],
+        "alias": run.get("alias"),
+        "url": f"/api/v2/runs/{run['id']}",
+        "taskKind": "log_analysis",
+        "sessionId": workspace["id"],
+        "workspaceId": workspace["id"],
+        "analysisMode": workspace.get("mode"),
+        "analysisLanguage": workspace.get("language"),
+        "status": str(run.get("status") or "").upper(),
+        "phase": str(phase).upper() if phase else None,
+        "createdAt": run.get("created_at"),
+        "updatedAt": run.get("updated_at"),
+    }
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.ensure_dirs()
@@ -659,8 +678,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/sessions/{session_id}/tasks")
     async def list_session_tasks(_: Auth, session_id: str) -> dict:
         try:
+            workspace = store.get_workspace(session_id)
             runs = store.list_runs(session_id)
-            return {"tasks": runs, "runs": runs}
+            return {
+                "sessionId": session_id,
+                "tasks": [_task_summary(workspace, run) for run in runs],
+                "runs": runs,
+            }
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -898,13 +922,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v2/sessions/{session_id}/tasks", status_code=202)
     async def create_session_task(_: Auth, session_id: str) -> dict:
         try:
+            workspace = store.get_workspace(session_id)
             run = store.create_run(session_id)
+            task = _task_summary(workspace, run)
             return {
+                **task,
                 "sessionId": session_id,
                 "workspaceId": session_id,
                 "taskId": run["id"],
                 "runId": run["id"],
-                "task": run,
+                "task": task,
                 "run": run,
             }
         except KeyError as error:
