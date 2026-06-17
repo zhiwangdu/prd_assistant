@@ -200,7 +200,7 @@ Environment variables:
 | `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES` | `1048576` | Maximum Fetch request body bytes |
 | `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES` | `1048576` | Maximum stored Fetch response preview bytes |
 | `LOGAGENT_V2_FETCH_MAX_REDIRECTS` | `5` | Maximum manually revalidated Fetch redirects |
-| `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key for encrypted Fetch credential sets |
+| `LOGAGENT_V2_FETCH_SECRET_KEY` | unset | Fernet 32-byte base64 key; required when Fetch is enabled and used for encrypted credential sets |
 | `LOGAGENT_V2_AGENT_PROVIDER` | `stub` | `stub`, `openai_compatible`, or `binary` final-answer provider |
 | `LOGAGENT_V2_AGENT_BASE_URL` | unset | OpenAI-compatible base URL, e.g. `https://api.openai.com/v1` |
 | `LOGAGENT_V2_AGENT_MODEL` | unset | Model name for the OpenAI-compatible provider |
@@ -767,6 +767,8 @@ logical V1-style `tool_results/<action_id>/response_body.bin` path plus the
 actual V2 artifact id and relative path.
 
 Sensitive Fetch endpoint material is split into an encrypted credential set.
+When Fetch execution is enabled, `LOGAGENT_V2_FETCH_SECRET_KEY` is validated at
+settings load time as a Fernet 32-byte base64 key.
 If a URL query parameter, header, or body field looks like a token, secret,
 password, API key, session, Authorization, or Cookie, V2 stores only a redacted
 endpoint definition in `fetch_endpoints` and encrypts the full request material

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import json
 import urllib.parse
+import base64
+import binascii
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -228,7 +230,10 @@ class Settings:
             os.environ.get("LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES", str(1024 * 1024))
         )
         fetch_max_redirects = int(os.environ.get("LOGAGENT_V2_FETCH_MAX_REDIRECTS", "5"))
-        fetch_secret_key = os.environ.get("LOGAGENT_V2_FETCH_SECRET_KEY")
+        fetch_secret_key = parse_fetch_secret_key_env(
+            os.environ.get("LOGAGENT_V2_FETCH_SECRET_KEY"),
+            enabled=fetch_enabled,
+        )
         agent_provider = os.environ.get("LOGAGENT_V2_AGENT_PROVIDER", "stub")
         agent_model = os.environ.get("LOGAGENT_V2_AGENT_MODEL")
         agent_base_url = os.environ.get("LOGAGENT_V2_AGENT_BASE_URL")
@@ -548,6 +553,30 @@ def parse_fetch_allowed_host(raw: str) -> str:
     if port is None:
         return host
     return f"{host}:{port}"
+
+
+def parse_fetch_secret_key_env(raw: str | None, *, enabled: bool) -> str | None:
+    secret_key = raw.strip() if raw else ""
+    if not secret_key:
+        if enabled:
+            raise ValueError("LOGAGENT_V2_FETCH_SECRET_KEY is required when Fetch is enabled")
+        return None
+    if enabled:
+        validate_fetch_secret_key(secret_key)
+    return secret_key
+
+
+def validate_fetch_secret_key(secret_key: str) -> None:
+    try:
+        decoded = base64.b64decode(
+            secret_key.encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+    except (binascii.Error, UnicodeEncodeError, ValueError) as error:
+        raise ValueError("LOGAGENT_V2_FETCH_SECRET_KEY must be a valid base64 key") from error
+    if len(decoded) != 32:
+        raise ValueError("LOGAGENT_V2_FETCH_SECRET_KEY must decode to 32 bytes")
 
 
 def split_fetch_host_port(value: str) -> tuple[str, int | None]:

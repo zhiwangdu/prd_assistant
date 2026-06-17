@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Fetch Secret Key Startup Validation
+
+- V2 now validates `LOGAGENT_V2_FETCH_SECRET_KEY` during settings loading when
+  Fetch is enabled, matching Rust/V1's enabled-Fetch configuration boundary.
+- The key is trimmed, must be base64/URL-safe-base64 text, and must decode to
+  exactly 32 bytes before Fetch endpoints or runs can be exposed as runnable.
+- Fetch-disabled settings still do not require the key; sensitive endpoint
+  writes continue to use the same key for credential encryption.
+- Added regression coverage for missing, invalid-base64, wrong-length, and
+  valid Fetch secret keys.
+- Updated V2 Server, Tool Runner, and Configuration docs/specs.
+- Verification passed: focused Fetch secret-key config regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (93 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Fetch Allowlist Config Parity
 
 - V2 now validates `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` during settings loading:

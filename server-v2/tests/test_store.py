@@ -1930,9 +1930,11 @@ class StoreTests(unittest.TestCase):
                     os.environ[key] = value
 
     def test_settings_normalizes_scheme_specific_fetch_allowed_hosts(self) -> None:
+        key = base64.urlsafe_b64encode(b"2" * 32).decode("ascii")
         env_values = {
             "LOGAGENT_V2_FETCH_ENABLED": "1",
             "LOGAGENT_V2_FETCH_ALLOWED_HOSTS": "HTTP://127.0.0.1:50992,https://example.com",
+            "LOGAGENT_V2_FETCH_SECRET_KEY": key,
         }
         previous = {key: os.environ.get(key) for key in env_values}
         try:
@@ -1955,6 +1957,42 @@ class StoreTests(unittest.TestCase):
             validate_url_allowed(settings, "https://127.0.0.1:50992/getdata")
         with self.assertRaisesRegex(ValueError, "not in allowlist"):
             validate_url_allowed(settings, "http://example.com/getdata")
+
+    def test_settings_validates_fetch_secret_key_when_enabled(self) -> None:
+        env_names = {
+            "LOGAGENT_V2_FETCH_ENABLED",
+            "LOGAGENT_V2_FETCH_ALLOWED_HOSTS",
+            "LOGAGENT_V2_FETCH_SECRET_KEY",
+        }
+        previous = {key: os.environ.get(key) for key in env_names}
+        try:
+            os.environ["LOGAGENT_V2_FETCH_ENABLED"] = "1"
+            os.environ["LOGAGENT_V2_FETCH_ALLOWED_HOSTS"] = "127.0.0.1"
+            os.environ.pop("LOGAGENT_V2_FETCH_SECRET_KEY", None)
+            with self.assertRaisesRegex(ValueError, "FETCH_SECRET_KEY.*required"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_FETCH_SECRET_KEY"] = "not-base64!"
+            with self.assertRaisesRegex(ValueError, "FETCH_SECRET_KEY.*base64"):
+                Settings.from_env()
+
+            os.environ["LOGAGENT_V2_FETCH_SECRET_KEY"] = base64.urlsafe_b64encode(
+                b"short"
+            ).decode("ascii")
+            with self.assertRaisesRegex(ValueError, "FETCH_SECRET_KEY.*32 bytes"):
+                Settings.from_env()
+
+            valid_key = base64.urlsafe_b64encode(b"3" * 32).decode("ascii")
+            os.environ["LOGAGENT_V2_FETCH_SECRET_KEY"] = f" {valid_key} "
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(settings.fetch_secret_key, valid_key)
 
     def test_source_built_tool_env_rejects_relative_command(self) -> None:
         env_values = {

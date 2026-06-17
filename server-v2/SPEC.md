@@ -716,11 +716,12 @@ or resolver options rather than widening the network or filesystem boundary.
 Import previews redact sensitive query, header, and JSON/form body fields and
 return detected sensitive field locations.
 
-If a URL query parameter, header, or body field name looks like a token,
-secret, password, API key, session, Authorization, or Cookie, creating or
-updating the endpoint requires a valid Fernet 32-byte base64 key in
-`LOGAGENT_V2_FETCH_SECRET_KEY`. Without that key, the write is rejected before
-the endpoint row is stored.
+When Fetch execution is enabled, settings loading requires
+`LOGAGENT_V2_FETCH_SECRET_KEY` to be a valid Fernet 32-byte base64 key. If a
+URL query parameter, header, or body field name looks like a token, secret,
+password, API key, session, Authorization, or Cookie, creating or updating the
+endpoint uses that key to encrypt the sensitive values before the endpoint row
+is stored.
 
 Fetch execution is disabled by default. To execute endpoints, set:
 
