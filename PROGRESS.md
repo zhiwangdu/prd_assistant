@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Metadata Snapshot Envelope
+
+- Aligned V2 readonly MCP and manual tool-run `logagent.get_metadata_snapshot`
+  responses with the Rust/V1 `snapshot` envelope while preserving V2 top-level
+  snapshot fields.
+- Updated Interfaces and Metadata README/SPEC docs.
+- Added regression coverage for readonly MCP and manual tool-run snapshot
+  wrappers.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Readonly MCP Skill Envelope
 
 - Aligned V2 readonly MCP `logagent.get_skill` with the Rust/V1 response

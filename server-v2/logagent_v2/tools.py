@@ -1151,7 +1151,8 @@ def run_metadata_tool(
     if tool_id == METADATA_LIST_INSTANCES_ID:
         value = {"instances": store.list_metadata_instances()}
     elif tool_id == METADATA_GET_SNAPSHOT_ID:
-        value = store.get_metadata_snapshot(params["instanceId"])
+        snapshot = store.get_metadata_snapshot(params["instanceId"])
+        value = {**snapshot, "snapshot": snapshot}
     elif tool_id in {METADATA_GET_FIELD_TYPES_ID, METADATA_GET_TAG_FIELDS_ID}:
         value = query_field_types(
             store=store,

@@ -112,6 +112,9 @@ split `skillResources` / `systemResources`, plus a prompt preview without
 writing task artifacts.
 Readonly `logagent.get_skill` returns the indexed skill both at top level and
 inside the Rust/V1-compatible `skill` wrapper.
+Readonly and manual-tool `logagent.get_metadata_snapshot` responses preserve
+the V2 top-level snapshot fields and add the Rust/V1-compatible `snapshot`
+wrapper.
 
 只读 HTTP MCP 的工具目录资源和 `logagent.list_tools` 可以展示 `logagent.fetch` descriptor，便于个人 Claude Code 理解团队 Server 有哪些受控能力；`tools/call logagent.fetch` 必须返回不支持，不能执行 HTTP 请求。
 

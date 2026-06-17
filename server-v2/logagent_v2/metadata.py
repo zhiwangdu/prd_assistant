@@ -1721,7 +1721,8 @@ def call_metadata_tool(
         value = {"instances": store.list_metadata_instances()}
     elif name == "logagent.get_metadata_snapshot":
         instance_id = require_string(arguments, "instanceId")
-        value = store.get_metadata_snapshot(instance_id)
+        snapshot = store.get_metadata_snapshot(instance_id)
+        value = {**snapshot, "snapshot": snapshot}
     elif name in {"logagent.get_metadata_field_types", "logagent.get_metadata_tag_fields"}:
         raw_value = query_field_types(
             store=store,

@@ -1817,6 +1817,22 @@ class StoreTests(unittest.TestCase):
             evidence = store.list_evidence(tool_run["id"])
             self.assertTrue(any(item["kind"] == "metadata_slice" for item in evidence))
 
+            snapshot_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="logagent.get_metadata_snapshot",
+                params={"instanceId": "inst-manual"},
+            )
+            executed_snapshot = execute_tool_run(settings, store, snapshot_run["id"])
+            snapshot_result_path = resolve_artifact_path(
+                settings, executed_snapshot["artifact"]["relative_path"]
+            )
+            snapshot_result = json.loads(snapshot_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                snapshot_result["value"]["snapshot"]["instance"]["instanceId"],
+                "inst-manual",
+            )
+            self.assertEqual(snapshot_result["value"]["instance"]["instanceId"], "inst-manual")
+
     def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (
@@ -3848,6 +3864,25 @@ class StoreTests(unittest.TestCase):
                 readonly_snapshot_alias["result"]["contents"][0]["text"]
             )
             self.assertEqual(snapshot_alias_body["instance"]["instanceId"], "inst1")
+
+            readonly_snapshot_tool = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 133,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_metadata_snapshot",
+                        "arguments": {"instanceId": "inst1"},
+                    },
+                },
+            )
+            readonly_snapshot_body = json.loads(
+                readonly_snapshot_tool["result"]["content"][0]["text"]
+            )
+            self.assertEqual(readonly_snapshot_body["snapshot"]["instance"]["instanceId"], "inst1")
+            self.assertEqual(readonly_snapshot_body["instance"]["instanceId"], "inst1")
 
             readonly_tags = readonly_mcp_response(
                 settings,
