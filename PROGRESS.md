@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Runtime Detail Parity
+
+- V2 Executors bridge now surfaces executor last-check status/message,
+  command template descriptions and timeouts, remote run attempts,
+  executor/command IDs, timestamps, SSH argv preview, and persisted result
+  timing details.
+- V2 Memory bridge now exposes Case Memory search backend details with total,
+  FTS, and vector scores in both search results and selected Case details.
+- Updated WebUI README/SPEC for the richer V2 executor and memory runtime
+  inspection surfaces.
+
 ## 2026-06-18 WebUI V2 Fetch Run Overrides
 
 - V2 Fetch bridge now accepts run-scoped override JSON when executing

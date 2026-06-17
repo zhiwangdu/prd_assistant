@@ -237,6 +237,10 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
                     <Badge variant={executor.enabled ? "success" : "destructive"}>{executor.enabled ? "enabled" : "disabled"}</Badge>
                   </div>
                   {executor.tags.length ? <p className="mt-2 text-xs text-muted-foreground">{executor.tags.join(", ")}</p> : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <LastCheckBadge executor={executor} />
+                    <span>{executor.lastCheck ? formatDate(executor.lastCheck.checkedAt) : "No last check"}</span>
+                  </div>
                 </button>
               )) : <EmptyState>No V2 executors yet.</EmptyState>}
             </div>
@@ -263,6 +267,16 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
                 </label>
               </div>
               <textarea className="mt-3 min-h-20 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes" />
+              {selectedExecutor ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Metric label="Executor ID" value={selectedExecutor.executorId} />
+                    <Metric label="Created" value={formatDate(selectedExecutor.createdAt)} />
+                    <Metric label="Updated" value={formatDate(selectedExecutor.updatedAt)} />
+                  </div>
+                  <LastCheckDetails executor={selectedExecutor} />
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">{status}</span>
                 <div className="flex flex-wrap gap-2">
@@ -285,7 +299,9 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
                         <p className="text-sm font-medium">{command.displayName}</p>
                         <Badge variant={command.enabled ? "success" : "destructive"}>{command.enabled ? "enabled" : "disabled"}</Badge>
                       </div>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{command.description}</p>
                       <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{command.argv.join(" ")}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">timeout {command.timeoutSeconds ?? "-"}s · {command.commandId}</p>
                     </button>
                   )) : <EmptyState>No V2 command templates configured.</EmptyState>}
                 </div>
@@ -302,6 +318,7 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
                     <button className={`w-full rounded-lg border p-3 text-left ${selectedRun?.taskId === run.taskId ? "border-primary bg-slate-50" : "border-border"}`} key={run.taskId} onClick={() => void selectRun(run.taskId)}>
                       <div className="flex items-center justify-between gap-2"><span className="font-mono text-xs">{run.taskId}</span><RunStatusBadge status={run.status} /></div>
                       <p className="mt-1 text-xs text-muted-foreground">{run.alias ?? run.phase ?? "Remote command"} · {new Date(run.createdAt).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{run.phase ?? "queued"}</p>
                     </button>
                   )) : <EmptyState>No V2 remote runs yet.</EmptyState>}
                 </div>
@@ -313,6 +330,14 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
               {selectedRun ? (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2"><RunStatusBadge status={selectedRun.status} /><span className="text-sm text-muted-foreground">{selectedRun.phase ?? "No active phase"}</span></div>
+                  <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <Metric label="Run ID" value={selectedRun.taskId} />
+                    <Metric label="Attempts" value={String(selectedRun.attempts ?? 0)} />
+                    <Metric label="Executor" value={selectedRun.remoteExecutorId ?? "-"} />
+                    <Metric label="Command" value={selectedRun.remoteCommandId ?? "-"} />
+                    <Metric label="Created" value={formatDate(selectedRun.createdAt)} />
+                    <Metric label="Updated" value={selectedRun.updatedAt ? formatDate(selectedRun.updatedAt) : "-"} />
+                  </div>
                   {selectedRun.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedRun.error?.phase ? `${selectedRun.error.phase}: ` : ""}{selectedRun.error?.message ?? "Remote run failed"}</div> : null}
                   {selectedRun.status === "SUCCEEDED" && !result ? <Button onClick={() => void selectRun(selectedRun.taskId)}>Load V2 result</Button> : null}
                   {result ? <RemoteResultView result={result} /> : null}
@@ -333,10 +358,15 @@ function RemoteResultView({ result }: { result: V2RemoteRunResult }) {
         <Metric label="Status" value={result.result.status} />
         <Metric label="Exit" value={result.result.exitCode == null ? "-" : String(result.result.exitCode)} />
         <Metric label="Duration" value={`${result.result.durationMs}ms`} />
+        <Metric label="Executor" value={result.executorId} />
+        <Metric label="Command ID" value={result.commandId} />
+        <Metric label="Started" value={formatDate(result.result.startedAt)} />
+        <Metric label="Completed" value={formatDate(result.result.completedAt)} />
         <Metric label="Command" value={result.result.commandArgv.join(" ")} />
       </div>
       {result.result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.result.error}</div> : null}
       {result.result.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{result.result.warnings.join(" · ")}</div> : null}
+      {result.result.sshArgvPreview?.length ? <OutputPreview title="ssh argv preview" value={result.result.sshArgvPreview.join(" ")} /> : null}
       <div className="grid gap-3 lg:grid-cols-2">
         <OutputPreview title="stdout" value={result.result.stdoutPreview} />
         <OutputPreview title="stderr" value={result.result.stderrPreview} />
@@ -367,6 +397,26 @@ function ArtifactPath({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-2 text-xs text-muted-foreground"><Server className="h-4 w-4" />{label}</div><p className="mt-1 break-all font-mono text-xs">{value}</p></div>;
 }
 
+function LastCheckBadge({ executor }: { executor: V2RemoteExecutorRecord }) {
+  if (!executor.lastCheck) {
+    return <Badge variant="secondary">unchecked</Badge>;
+  }
+  return <Badge variant={executor.lastCheck.status === "OK" ? "success" : "destructive"}>{executor.lastCheck.status}</Badge>;
+}
+
+function LastCheckDetails({ executor }: { executor: V2RemoteExecutorRecord }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-muted-foreground">Last check</p>
+        <LastCheckBadge executor={executor} />
+        <span className="text-xs text-muted-foreground">{executor.lastCheck ? formatDate(executor.lastCheck.checkedAt) : "-"}</span>
+      </div>
+      <p className="mt-1 break-words text-sm">{executor.lastCheck?.message ?? "No executor check has been recorded."}</p>
+    </div>
+  );
+}
+
 function RunStatusBadge({ status }: { status: V2RemoteRunStatus }) {
   return <Badge variant={status === "FAILED" ? "destructive" : status === "SUCCEEDED" ? "default" : "secondary"}>{status}</Badge>;
 }
@@ -377,6 +427,12 @@ function isTerminal(status: V2RemoteRunStatus) {
 
 function parseTags(value: string) {
   return value.split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function errorMessage(reason: unknown) {

@@ -43,7 +43,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
   const [query, setQuery] = useState("");
   const [includeDisabled, setIncludeDisabled] = useState(true);
   const [cases, setCases] = useState<V2CaseHit[]>([]);
-  const [selectedCase, setSelectedCase] = useState<V2CaseRecord | null>(null);
+  const [selectedCase, setSelectedCase] = useState<V2CaseRecord | V2CaseHit | null>(null);
   const [editDraft, setEditDraft] = useState<UiCaseDraft>(EMPTY_DRAFT);
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -150,7 +150,7 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
     }
   }
 
-  function selectCase(record: V2CaseRecord) {
+  function selectCase(record: V2CaseRecord | V2CaseHit) {
     setSelectedCase(record);
     setEditDraft(toDraft(record));
   }
@@ -288,7 +288,8 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
                     <Badge variant={item.enabled ? "success" : "destructive"}>{item.enabled ? "enabled" : "disabled"}</Badge>
                   </div>
                   <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.rootCause}</p>
-                  <p className="mt-2 break-all text-xs text-muted-foreground">{item.caseId} · score {item.score.toFixed(2)} · {item.searchBackend ?? "recent"}</p>
+                  <CaseScoreSummary caseHit={item} />
+                  <p className="mt-2 break-all text-xs text-muted-foreground">{item.caseId}</p>
                 </button>
               )) : <EmptyState>暂无 V2 Case。</EmptyState>}
             </div>
@@ -315,9 +316,15 @@ export function V2MemoryBridge({ apiKey }: { apiKey: string }) {
                 <DraftFields draft={editDraft} onChange={setEditDraft} compact />
                 <div className="grid gap-3 text-xs text-muted-foreground md:grid-cols-2">
                   <Info label="Schema" value={String(selectedCase.schemaVersion)} />
+                  <Info label="Source type" value={selectedCase.sourceType} />
                   <Info label="Task" value={selectedCase.taskId ?? "-"} />
                   <Info label="Source result" value={selectedCase.sourceResultPath ?? "-"} />
-                  <Info label="Updated" value={new Date(selectedCase.updatedAt).toLocaleString()} />
+                  <Info label="Created" value={formatDate(selectedCase.createdAt)} />
+                  <Info label="Updated" value={formatDate(selectedCase.updatedAt)} />
+                  <Info label="Search backend" value={caseSearchBackend(selectedCase)} />
+                  <Info label="Score" value={caseScoreValue(selectedCase, "score")} />
+                  <Info label="FTS score" value={caseScoreValue(selectedCase, "ftsScore")} />
+                  <Info label="Vector score" value={caseScoreValue(selectedCase, "vectorScore")} />
                 </div>
               </>
             ) : <EmptyState>选择一个 V2 Case 查看详情。</EmptyState>}
@@ -372,6 +379,36 @@ function DraftFields({ draft, onChange, compact = false }: { draft: UiCaseDraft;
 
 function Info({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><p>{label}</p><p className="mt-1 break-all font-mono text-foreground">{value}</p></div>;
+}
+
+function CaseScoreSummary({ caseHit }: { caseHit: V2CaseHit }) {
+  const parts = [
+    `score ${formatScore(caseHit.score)}`,
+    caseHit.searchBackend ?? "recent",
+    caseHit.ftsScore == null ? null : `fts ${formatScore(caseHit.ftsScore)}`,
+    caseHit.vectorScore == null ? null : `vector ${formatScore(caseHit.vectorScore)}`
+  ].filter(Boolean);
+  return <p className="mt-2 text-xs text-muted-foreground">{parts.join(" · ")}</p>;
+}
+
+function caseSearchBackend(record: V2CaseRecord | V2CaseHit) {
+  const hit = record as Partial<V2CaseHit>;
+  return hit.searchBackend ?? (typeof hit.score === "number" ? "recent" : "-");
+}
+
+function caseScoreValue(record: V2CaseRecord | V2CaseHit, key: keyof Pick<V2CaseHit, "score" | "ftsScore" | "vectorScore">) {
+  const value = (record as Partial<V2CaseHit>)[key];
+  return typeof value === "number" ? formatScore(value) : "-";
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3);
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function toDraft(record: V2CaseRecord): UiCaseDraft {
