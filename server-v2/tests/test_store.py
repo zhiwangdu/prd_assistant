@@ -1130,14 +1130,24 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(store.list_upload_sessions()[0]["id"], session_id)
 
     def test_agent_runtime_uses_openai_compatible_provider(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, object] = {"payloads": []}
 
         class AgentProviderHandler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
                 captured["authorization"] = self.headers.get("Authorization")
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
-                captured["payload"] = payload
+                captured["payloads"].append(payload)
+                prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps({"alias": "Shard timeout diagnosis"})}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 answer = {
                     "summary": "model summary",
                     "symptoms": ["timeout line"],
@@ -1197,10 +1207,15 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(final_answer["summary"], "model summary")
                 self.assertEqual(final_answer["confidence"], "medium")
                 self.assertEqual(captured["authorization"], "Bearer secret")
-                request_payload = captured["payload"]
-                assert isinstance(request_payload, dict)
+                payloads = captured["payloads"]
+                assert isinstance(payloads, list)
+                self.assertEqual(len(payloads), 2)
+                request_payload = payloads[0]
+                alias_payload = payloads[1]
                 self.assertEqual(request_payload["model"], "mock-model")
                 self.assertIn("grep_results.json#matches/0", request_payload["messages"][1]["content"])
+                self.assertEqual(json.loads(alias_payload["messages"][1]["content"])["task"], "run_alias")
+                self.assertEqual(store.get_run(run["id"])["alias"], "Shard timeout diagnosis")
                 agent_request = task_mcp_response(
                     settings,
                     store,
@@ -1240,7 +1255,7 @@ class StoreTests(unittest.TestCase):
     def test_agent_runtime_uses_binary_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            prompt_capture = root / "binary_prompt.txt"
+            prompt_capture = root / "binary_prompts.jsonl"
             binary = root / "fake-agent-provider"
             answer = {
                 "summary": "binary summary",
@@ -1262,8 +1277,12 @@ class StoreTests(unittest.TestCase):
                 "import json, pathlib, sys\n"
                 "if len(sys.argv) != 3 or sys.argv[1] != 'run':\n"
                 "    raise SystemExit(2)\n"
-                f"pathlib.Path({json.dumps(prompt_capture.as_posix())}).write_text(sys.argv[2])\n"
-                f"print(json.dumps({json.dumps(answer)}))\n",
+                f"with pathlib.Path({json.dumps(prompt_capture.as_posix())}).open('a') as fh:\n"
+                "    fh.write(json.dumps(sys.argv[2]) + '\\n')\n"
+                "if '\"task\": \"run_alias\"' in sys.argv[2]:\n"
+                "    print(json.dumps({'alias': 'Binary timeout diagnosis'}))\n"
+                "else:\n"
+                f"    print(json.dumps({json.dumps(answer)}))\n",
                 encoding="utf-8",
             )
             binary.chmod(0o755)
@@ -1294,7 +1313,14 @@ class StoreTests(unittest.TestCase):
             )
 
             self.assertEqual(final_answer["summary"], "binary summary")
-            self.assertIn("grep_results.json#matches/0", prompt_capture.read_text())
+            prompts = [
+                json.loads(line)
+                for line in prompt_capture.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(prompts), 2)
+            self.assertIn("grep_results.json#matches/0", prompts[0])
+            self.assertIn('"task": "run_alias"', prompts[1])
+            self.assertEqual(store.get_run(run["id"])["alias"], "Binary timeout diagnosis")
             agent_request = task_mcp_response(
                 settings,
                 store,
@@ -1440,6 +1466,16 @@ class StoreTests(unittest.TestCase):
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "Follow-up panic finding"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 captured_prompts.append(prompt)
                 if len(captured_prompts) == 1:
                     answer = {
@@ -1725,6 +1761,16 @@ class StoreTests(unittest.TestCase):
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "Compaction case recall"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 captured_prompts.append(prompt)
                 if len(captured_prompts) == 1:
                     answer = {

@@ -96,9 +96,10 @@ Implemented in this slice:
   includes `graphRuntime.engine=langgraph`, the graph name, and node list.
   Follow-up evidence refs
   returned by tool observations are added to the next round's
-  `allowedEvidenceRefs`. Successful analysis runs persist a deterministic
-  fallback alias derived from the final summary or question for history/UI
-  display.
+  `allowedEvidenceRefs`. After successful final-answer validation, non-stub
+  providers receive a separate `run_alias` JSON prompt; valid aliases are
+  persisted for history/UI display, while stub mode or alias failures fall back
+  to a deterministic alias derived from the final summary or question.
 - `analysis_package.json` generation after initial evidence collection, exposed
   as task MCP resource for Agent loop context. The package includes Session
   title, source URL, Metadata binding, System Context ids, Skill ids, and

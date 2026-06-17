@@ -90,8 +90,8 @@ slice provides the durable foundation for the V2 product model:
   `session_text_input.json#question`, and recalled Cases can be cited through
   `case_context.json#cases/<index>`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
-  HTTP and task MCP read surfaces, plus deterministic fallback run alias
-  persistence for history/UI display.
+  HTTP and task MCP read surfaces, plus provider-backed run alias generation
+  with deterministic fallback for history/UI display.
 - Run artifact HTTP aggregation: `GET /api/v2/runs/<run_id>/artifacts`
   preserves raw V2 run/upload/evidence lists and also returns Rust/V1-style
   aggregate fields for manifest, grep results, Session text input,
@@ -612,7 +612,9 @@ response for WebUI and Rust/V1 migration callers: `manifestPath`/`manifest`,
 `toolResults`.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
-deterministic alias derived from the final summary or question. `GET
+alias. OpenAI-compatible and binary Agent providers receive a separate
+`run_alias` JSON prompt after the final answer is validated; stub mode and any
+alias provider failure fall back to the final summary or question. `GET
 /api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
 evidence metadata, while task MCP exposes `result` and `result_markdown`. The
 alias is stored on the Run record for history/UI display; it is not model

@@ -17,6 +17,20 @@ Last updated: 2026-06-18
   `graphRuntime.engine=langgraph` and the expected node list through task MCP
   and Settings diagnostics.
 
+## 2026-06-18 V2 Provider-Backed Run Alias
+
+- Successful V2 analysis runs now mirror Rust/V1 task naming more closely:
+  OpenAI-compatible and local binary Agent providers receive a separate
+  `run_alias` JSON prompt after final-answer validation.
+- Alias generation is non-blocking for task success. Stub mode, provider
+  errors, non-JSON output, or invalid/generic aliases fall back to the existing
+  deterministic summary/question alias.
+- Added regression coverage for OpenAI-compatible and binary provider alias
+  generation while preserving existing Agent request/response audit artifacts.
+- Updated V2 Server README/SPEC for the alias behavior.
+- Verification passed: focused provider alias regressions, V2 ruff, V2 full
+  pytest, compileall, and `git diff --check`.
+
 ## 2026-06-18 V2 Runtime Tool Auto-Discovery
 
 - V2 now auto-registers source-built analyzer tools from

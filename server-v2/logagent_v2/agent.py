@@ -12,7 +12,7 @@ from .agent_audit import (
     persist_analysis_state,
 )
 from .agent_graph import graph_runtime_metadata
-from .alias import fallback_run_alias
+from .alias import generate_run_alias
 from .analysis_package import persist_analysis_package
 from .config import Settings
 from .claude_contracts import persist_claude_contracts
@@ -171,9 +171,15 @@ class AgentRuntime:
         workspace_id = state["workspaceId"]
         run_id = state["runId"]
         workspace = state["workspace"]
+        evidence_bundle = state["evidenceBundle"]
         final_answer = state["finalAnswer"]
         persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
-        alias = fallback_run_alias(final_answer, workspace.get("question", ""))
+        alias = generate_run_alias(
+            self.settings,
+            workspace,
+            final_answer,
+            evidence_bundle,
+        )
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer, alias=alias)
         return {
             "runtimeStatus": "succeeded",
