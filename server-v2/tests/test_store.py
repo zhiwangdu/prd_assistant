@@ -1673,7 +1673,13 @@ class StoreTests(unittest.TestCase):
                 ),
                 timeout_seconds=5,
             )
-            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                tools=(tool,),
+                pprof_enabled=True,
+                pprof_go_command=sys.executable,
+            )
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
@@ -1771,6 +1777,16 @@ class StoreTests(unittest.TestCase):
             self.assertIn("logagent.fetch", descriptors)
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
+            self.assertEqual(descriptors["pprof_analyzer"]["source"], "configured")
+            self.assertEqual(descriptors["pprof_analyzer"]["backend"], "command")
+            self.assertEqual(descriptors["pprof_analyzer"]["readOnly"], False)
+            self.assertEqual(descriptors["pprof_analyzer"]["editable"], True)
+            self.assertEqual(descriptors["pprof_analyzer"]["exportable"], False)
+            self.assertEqual(descriptors["pprof_analyzer"]["manualOnly"], True)
+            self.assertEqual(
+                descriptors["pprof_analyzer"]["paramsTemplate"]["nodeCount"],
+                50,
+            )
             self.assertEqual(
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
                 ["*"],
@@ -1813,6 +1829,11 @@ fi
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
+            descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
+            self.assertEqual(descriptors["pprof_analyzer"]["source"], "configured")
+            self.assertEqual(descriptors["pprof_analyzer"]["exportable"], True)
+            self.assertEqual(descriptors["pprof_analyzer"]["runnable"], True)
+            self.assertEqual(descriptors["pprof_analyzer"]["paramsTemplate"]["nodeCount"], 50)
             workspace = store.create_workspace("pprof run", "tool_run", "en-US")
             profile_artifact = write_artifact_bytes(
                 settings,
@@ -1903,8 +1924,13 @@ fi
             self.assertEqual(configured["mock_tool"]["maxInputFiles"], 3)
             self.assertEqual(configured["mock_tool"]["match"]["filePatterns"], ["*.log"])
             self.assertEqual(configured["mock_tool"]["match"]["keywords"], ["timeout"])
+            self.assertEqual(configured["pprof_analyzer"]["enabled"], False)
+            self.assertEqual(configured["pprof_analyzer"]["timeoutSeconds"], 60)
+            self.assertEqual(configured["pprof_analyzer"]["configuredArgs"], [])
             tools = {item["toolId"]: item for item in catalog["tools"]}
             self.assertEqual(tools["mock_tool"]["source"], "configured")
+            self.assertEqual(tools["pprof_analyzer"]["source"], "configured")
+            self.assertEqual(tools["pprof_analyzer"]["manualOnly"], True)
             self.assertEqual(tools["logagent.fetch"]["source"], "built_in")
 
             tool_call = readonly_mcp_response(
@@ -5333,6 +5359,36 @@ grep_results.json#matches/0
             self.assertTrue(tools["missing_tool"]["skipped"])
             self.assertIn("regular file", tools["missing_tool"]["skipReason"])
             self.assertNotIn("disabled_tool", tools)
+
+    def test_tools_zip_exports_enabled_pprof_go_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_go = root / "fake-go"
+            fake_go.write_text("#!/usr/bin/env sh\necho go\n", encoding="utf-8")
+            fake_go.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                pprof_enabled=True,
+                pprof_go_command=fake_go.as_posix(),
+            )
+
+            archive_bytes = build_tools_zip(settings)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                names = set(archive.namelist())
+                self.assertIn("bin/pprof_analyzer/fake-go", names)
+                self.assertIn("wrappers/pprof_analyzer.sh", names)
+                self.assertIn("config/examples/pprof_analyzer.yaml", names)
+                manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))
+
+            tools = {item["toolId"]: item for item in manifest["tools"]}
+            self.assertTrue(tools["pprof_analyzer"]["packaged"])
+            self.assertFalse(tools["pprof_analyzer"]["skipped"])
+            self.assertEqual(tools["pprof_analyzer"]["configuredArgs"], [])
+            self.assertEqual(
+                tools["pprof_analyzer"]["matchRules"]["filePatterns"],
+                ["*.pprof", "*.prof", "*.profile", "*.pb.gz"],
+            )
 
     def test_v2_settings_summaries_and_debug_toggle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

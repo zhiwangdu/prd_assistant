@@ -190,7 +190,7 @@ Environment variables:
 | `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
 | `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
-| `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable built-in `pprof_analyzer` |
+| `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or `go` | Go executable for `go tool pprof` |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
 | `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` | unset | Comma-separated exact host or host:port allowlist |
@@ -661,13 +661,16 @@ with `workspaceId`, optional `uploadIds`, and `params`. They create
 `kind=tool_run` Run rows and DB-backed `tool_run` jobs, so startup recovery and
 artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
 currently includes manual built-ins for metadata tools,
-`logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
-default-off `logagent.huawei_cloud_package_sync`.
+`logagent.preprocess_log_package`, `logagent.fetch`, and default-off
+`logagent.huawei_cloud_package_sync`, plus the V1-style configured command
+adapter `pprof_analyzer`.
 Huawei package sync matches the Rust/V1 catalog behavior by accepting any
 single completed upload (`acceptedSuffixes=["*"]`) and validating only the
 single-upload count plus structured SQL/object-key params.
-`pprof_analyzer` result JSON includes parsed `profileType`, `total`, top rows,
-V2 artifact id mappings, and Rust/V1-style `artifactPaths` for
+`pprof_analyzer` catalog metadata uses the Rust/V1 configured command shape
+(`source=configured`, `backend=command`) while remaining manual-only in V2.
+Its result JSON includes parsed `profileType`, `total`, top rows, V2 artifact
+id mappings, and Rust/V1-style `artifactPaths` for
 `tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.
 
 Readonly MCP exposes the same tool registry as `logagent://tools/catalog`,
@@ -677,7 +680,8 @@ All return
 `configuredTools` summary with configured args, timeout, match rules, and
 `maxInputFiles`. The readonly endpoint never runs tools.
 
-`GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools.
+`GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
+and the enabled `pprof_analyzer` Go executable.
 The archive contains `README.md`, `tools-manifest.json`, executable files under
 `bin/<toolId>/`, shell wrappers under `wrappers/`, and config examples under
 `config/examples/`. Missing, relative, non-file, or non-executable tool

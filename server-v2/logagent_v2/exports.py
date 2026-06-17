@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from .config import Settings, ToolDefinition
 from .skills import get_skill, list_skills
 from .store import JsonObject
+from .tools import PPROF_ANALYZER_ID, resolve_pprof_go_command
 
 
 def build_skills_zip(settings: Settings) -> bytes:
@@ -72,7 +73,7 @@ def build_tools_zip(settings: Settings) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README.md", tools_package_readme())
-        for tool in settings.tools:
+        for tool in exportable_tool_definitions(settings):
             if not tool.enabled:
                 continue
             entry = tool_manifest_entry(tool, server_os, server_arch)
@@ -90,6 +91,27 @@ def build_tools_zip(settings: Settings) -> bytes:
             json.dumps(manifest, ensure_ascii=True, indent=2).encode("utf-8"),
         )
     return buffer.getvalue()
+
+
+def exportable_tool_definitions(settings: Settings) -> list[ToolDefinition]:
+    tools = [tool for tool in settings.tools if tool.enabled]
+    pprof_command = resolve_pprof_go_command(settings) if settings.pprof_enabled else None
+    if pprof_command:
+        tools.append(
+            ToolDefinition(
+                id=PPROF_ANALYZER_ID,
+                display_name="Golang pprof Analyzer",
+                command=pprof_command,
+                args=(),
+                enabled=True,
+                timeout_seconds=60,
+                max_output_bytes=settings.remote_max_output_bytes,
+                max_input_files=1,
+                match_file_patterns=("*.pprof", "*.prof", "*.profile", "*.pb.gz"),
+                match_keywords=(),
+            )
+        )
+    return tools
 
 
 def tool_manifest_entry(tool: ToolDefinition, server_os: str, server_arch: str) -> JsonObject:

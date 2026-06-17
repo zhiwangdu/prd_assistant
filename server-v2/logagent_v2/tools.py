@@ -148,30 +148,32 @@ def pprof_descriptor(settings: Settings) -> JsonObject:
     runnable = bool(settings.pprof_enabled and resolve_pprof_go_command(settings))
     return {
         "toolId": PPROF_ANALYZER_ID,
-        "displayName": "pprof Analyzer",
-        "description": "Run go tool pprof top/tree/raw against one uploaded profile.",
-        "source": "built_in",
-        "tags": ["built-in", "pprof", "profile", "manual-run"],
+        "displayName": "Golang pprof Analyzer",
+        "description": "Upload a Go pprof profile and inspect top functions plus raw/tree output.",
+        "source": "configured",
+        "tags": ["configured", "manual-run", "pprof"],
         "enabled": settings.pprof_enabled,
-        "backend": "pprof",
-        "readOnly": True,
-        "editable": False,
-        "exportable": False,
+        "backend": "command",
+        "readOnly": False,
+        "editable": True,
+        "exportable": runnable,
         "runnable": runnable,
+        "manualOnly": True,
         "minFiles": 1,
         "maxFiles": 1,
+        "maxInputFiles": 1,
         "acceptedSuffixes": [".pprof", ".prof", ".profile", ".pb.gz"],
         "paramsSchema": {
             "type": "object",
             "properties": {
-                "sampleIndex": {"type": "string"},
-                "nodeCount": {"type": "integer"},
-                "generateSvg": {"type": "boolean"},
+                "sampleIndex": {"type": "string", "default": "samples"},
+                "nodeCount": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
+                "generateSvg": {"type": "boolean", "default": False},
             },
             "additionalProperties": False,
         },
-        "paramsTemplate": {"sampleIndex": "samples", "nodeCount": 20, "generateSvg": False},
-        "outputViews": ["summary", "top", "tree", "raw", "stderr"],
+        "paramsTemplate": {"sampleIndex": "samples", "nodeCount": 50, "generateSvg": False},
+        "outputViews": ["summary", "top_table", "tree_text", "raw_text", "svg"],
     }
 
 
@@ -366,7 +368,7 @@ def validate_tool_run_params(
         return result
     if tool_id == PPROF_ANALYZER_ID:
         reject_unknown_params(tool_id, params, {"sampleIndex", "nodeCount", "generateSvg"})
-        node_count = params.get("nodeCount", 20)
+        node_count = params.get("nodeCount", 50)
         if isinstance(node_count, bool) or not isinstance(node_count, int):
             raise ValueError("nodeCount must be an integer")
         return {
@@ -1204,7 +1206,7 @@ def run_pprof_tool(
     if not profile_path.is_file():
         raise ValueError("uploaded pprof profile is missing")
     action_id = f"act_tool_pprof_{run['id']}"
-    node_count = int(params.get("nodeCount", 20))
+    node_count = int(params.get("nodeCount", 50))
     sample_index = str(params.get("sampleIndex") or "samples")
     commands = {
         "top": [

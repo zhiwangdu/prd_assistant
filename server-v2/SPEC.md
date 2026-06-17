@@ -124,14 +124,17 @@ Implemented in this slice:
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
   `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
 - V1 built-in tool migration for metadata catalog tools,
-  `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
-  default-off `logagent.huawei_cloud_package_sync`.
+  `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
+  `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
+  adapter `pprof_analyzer`.
 - Huawei package sync descriptors match Rust/V1 by using
   `acceptedSuffixes=["*"]`; execution still requires exactly one completed
   upload and validated object-key / SQL params.
-- `pprof_analyzer` tool-run results preserve V2 artifact ids and include
-  Rust/V1-style `artifactPaths` for top/tree/raw/stderr/SVG outputs, plus
-  parsed `profileType`, `total`, and top table rows.
+- `pprof_analyzer` catalog metadata matches the Rust/V1 configured command
+  shape (`source=configured`, `backend=command`) while remaining manual-only in
+  V2. Tool-run results preserve V2 artifact ids and include Rust/V1-style
+  `artifactPaths` for top/tree/raw/stderr/SVG outputs, plus parsed
+  `profileType`, `total`, and top table rows.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP
@@ -599,8 +602,9 @@ stdout is also adapted: `statement_delta`, `qps_delta`, `batch_a`, and
 `batch_b` go into summary, while new/removed/changed fingerprints and
 `rule_deltas` become findings.
 
-`GET /api/v2/exports/tools.zip` exports only enabled configured subprocess
-tools from `LOGAGENT_V2_TOOLS_JSON`. Built-in tools are not packaged. The
+`GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
+from `LOGAGENT_V2_TOOLS_JSON` and the enabled `pprof_analyzer` Go executable.
+Built-in tools are not packaged. The
 archive contains:
 
 ```text

@@ -26,7 +26,7 @@ from .skills import (
 )
 from .store import JsonObject, Store, now_iso
 from .system_context import preview_system_context_resources
-from .tools import run_configured_tool, tool_descriptors
+from .tools import PPROF_ANALYZER_ID, run_configured_tool, tool_descriptors
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
@@ -368,6 +368,8 @@ def find_configured_tool_timeout(settings: Settings, tool_id: str) -> int | None
     for tool in settings.tools:
         if tool.id == tool_id:
             return tool.timeout_seconds
+    if tool_id == PPROF_ANALYZER_ID:
+        return 60
     return None
 
 
@@ -1015,7 +1017,7 @@ def run_domain_tool_descriptor(settings: Settings) -> dict:
     configured_tool_ids = [
         tool["toolId"]
         for tool in tool_descriptors(settings)
-        if tool["enabled"] and tool.get("source") == "configured"
+        if tool["enabled"] and tool.get("source") == "configured" and not tool.get("manualOnly")
     ]
     return {
         "name": "logagent.run_domain_tool",

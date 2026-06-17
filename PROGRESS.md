@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 pprof Catalog and Export Compatibility
+
+- Aligned V2 `pprof_analyzer` catalog metadata with the Rust/V1 configured
+  command shape: `source=configured`, `backend=command`, editable/exportable
+  when runnable, and default `nodeCount=50`.
+- Kept pprof manual-only for V2 tool runs so it does not appear in task MCP
+  `logagent.run_domain_tool` configured subprocess enums.
+- Extended `tools.zip` export to package the enabled pprof Go executable,
+  wrapper, config example, and `tools-manifest.json` entry.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused pprof/catalog/export/task-MCP regressions,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (72 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Domain Tool MCP Schema Compatibility
 
 - Aligned V2 task MCP `logagent.run_domain_tool` descriptor with the
