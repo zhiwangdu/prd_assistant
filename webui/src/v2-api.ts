@@ -258,6 +258,10 @@ export type V2ToolRunResult = {
   result: Record<string, unknown>;
 };
 
+export type V2ToolRunArtifacts = Omit<V2RunArtifacts, "run"> & {
+  run: V2ToolRun;
+};
+
 export type V2McpResponse = {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -730,6 +734,10 @@ export async function getV2ToolRun(apiKey: string, runId: string) {
 
 export async function getV2ToolRunResult(apiKey: string, runId: string) {
   return fetchJson<V2ToolRunResult>(`/api/v2/tools/runs/${encodeURIComponent(runId)}/result`, { headers: authHeaders(apiKey) });
+}
+
+export async function getV2ToolRunArtifacts(apiKey: string, runId: string) {
+  return fetchJson<V2ToolRunArtifacts>(`/api/v2/tools/runs/${encodeURIComponent(runId)}/artifacts`, { headers: authHeaders(apiKey) });
 }
 
 export async function callV2TaskTool(apiKey: string, runId: string, name: string, args: Record<string, unknown>) {

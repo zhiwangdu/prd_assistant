@@ -5,14 +5,17 @@ import {
   callV2TaskTool,
   createV2ToolRun,
   createV2Workspace,
+  downloadV2Artifact,
   downloadV2ToolsZip,
   getV2ToolRun,
+  getV2ToolRunArtifacts,
   getV2ToolRunResult,
   listV2ToolRuns,
   listV2Tools,
   uploadV2Files,
   type V2ToolDescriptor,
-  type V2ToolRun
+  type V2ToolRun,
+  type V2ToolRunArtifacts
 } from "./v2-api";
 
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
@@ -24,6 +27,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [manualRuns, setManualRuns] = useState<V2ToolRun[]>([]);
   const [selectedManualRunId, setSelectedManualRunId] = useState("");
   const [manualResultText, setManualResultText] = useState("");
+  const [manualArtifacts, setManualArtifacts] = useState<V2ToolRunArtifacts | null>(null);
   const [manualUploadProgress, setManualUploadProgress] = useState(0);
   const [paramsText, setParamsText] = useState("{}");
   const [resultText, setResultText] = useState("");
@@ -54,9 +58,25 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
   }, [apiKey, selectedToolId]);
 
+  const loadManualRun = useCallback(async (targetRunId: string) => {
+    if (!apiKey.trim()) return null;
+    const run = await getV2ToolRun(apiKey, targetRunId);
+    setManualRuns((current) => upsertRun(current, run));
+    const artifacts = await getV2ToolRunArtifacts(apiKey, targetRunId);
+    setManualArtifacts(artifacts);
+    if (run.status === "succeeded") {
+      const result = await getV2ToolRunResult(apiKey, targetRunId);
+      setManualResultText(JSON.stringify(result.result, null, 2));
+    } else {
+      setManualResultText(JSON.stringify(run, null, 2));
+    }
+    return run;
+  }, [apiKey]);
+
   const refreshManualRuns = useCallback(async () => {
     if (!apiKey.trim()) {
       setManualRuns([]);
+      setManualArtifacts(null);
       return;
     }
     const response = await listV2ToolRuns(apiKey, {
@@ -67,14 +87,14 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     setManualRuns(response.runs);
     if (selectedManualRunId) {
       const current = response.runs.find((run) => run.id === selectedManualRunId);
-      if (current?.status === "succeeded") {
-        const result = await getV2ToolRunResult(apiKey, selectedManualRunId);
-        setManualResultText(JSON.stringify(result.result, null, 2));
-      } else if (current) {
-        setManualResultText(JSON.stringify(current, null, 2));
+      if (current) {
+        await loadManualRun(current.id);
+      } else {
+        setManualArtifacts(null);
+        setManualResultText("");
       }
     }
-  }, [apiKey, manualWorkspaceId, selectedManualRunId, selectedTool?.toolId]);
+  }, [apiKey, loadManualRun, manualWorkspaceId, selectedManualRunId, selectedTool?.toolId]);
 
   useEffect(() => {
     void refreshTools();
@@ -85,9 +105,18 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   }, [refreshManualRuns]);
 
   useEffect(() => {
+    if (!selectedManualRunId || !selectedManualRun || isTerminalToolRun(selectedManualRun.status)) return;
+    const timer = window.setInterval(() => {
+      void loadManualRun(selectedManualRunId).catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [loadManualRun, selectedManualRun, selectedManualRunId]);
+
+  useEffect(() => {
     setParamsText(JSON.stringify(selectedTool?.paramsTemplate ?? {}, null, 2));
     setResultText("");
     setManualResultText("");
+    setManualArtifacts(null);
     setManualFiles([]);
     setSelectedManualRunId("");
     setManualUploadProgress(0);
@@ -172,6 +201,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
     setLoading(true);
     setManualResultText("");
+    setManualArtifacts(null);
     try {
       let workspaceId = manualWorkspaceId.trim();
       if (!workspaceId) {
@@ -195,10 +225,10 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
         params
       });
       setSelectedManualRunId(run.id);
-      setManualRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setManualRuns((current) => upsertRun(current, run));
       setManualResultText(JSON.stringify(run, null, 2));
       setStatus(`Created V2 tool_run ${run.id}`);
-      await refreshManualRuns();
+      await loadManualRun(run.id);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -209,15 +239,22 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   async function selectManualRun(runId: string) {
     setSelectedManualRunId(runId);
     setManualResultText("");
+    setManualArtifacts(null);
+    setLoading(true);
     try {
-      const run = await getV2ToolRun(apiKey, runId);
-      if (run.status === "succeeded") {
-        const result = await getV2ToolRunResult(apiKey, runId);
-        setManualResultText(JSON.stringify(result.result, null, 2));
-      } else {
-        setManualResultText(JSON.stringify(run, null, 2));
-      }
+      await loadManualRun(runId);
       setStatus(`Loaded V2 tool_run ${runId}`);
+    } catch (reason) {
+      setStatus(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function downloadManualArtifact(artifactId: string, relativePath: string) {
+    try {
+      await downloadV2Artifact(apiKey, artifactId, filenameFromPath(relativePath));
+      setStatus(`Downloaded artifact ${relativePath}`);
     } catch (reason) {
       setStatus(errorMessage(reason));
     }
@@ -371,13 +408,36 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
                     <button className={`w-full rounded-md border p-2 text-left ${selectedManualRun?.id === run.id ? "border-primary bg-slate-50" : "border-border"}`} key={run.id} onClick={() => void selectManualRun(run.id)}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-mono text-xs"><FileArchive className="mr-1 inline h-3.5 w-3.5 text-slate-400" />{run.id}</span>
-                        <Badge variant={run.status === "succeeded" ? "success" : run.status === "failed" ? "destructive" : "secondary"}>{run.status}</Badge>
+                        <Badge variant={runStatusVariant(run.status)}>{run.status}</Badge>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{run.phase} · {new Date(run.created_at).toLocaleString()}</p>
                     </button>
                   ))}
                 </div>
               ) : <EmptyState>No manual tool runs.</EmptyState>}
+              {selectedManualRun ? (
+                <div className="grid gap-2 rounded-lg border border-border p-3 text-xs sm:grid-cols-2">
+                  <div>
+                    <p className="text-muted-foreground">Selected run</p>
+                    <p className="mt-1 break-all font-mono">{selectedManualRun.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Status</p>
+                    <div className="mt-1"><Badge variant={runStatusVariant(selectedManualRun.status)}>{selectedManualRun.status}</Badge></div>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Phase</p>
+                    <p className="mt-1 break-all">{selectedManualRun.phase}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Artifacts</p>
+                    <p className="mt-1">{artifactCount(manualArtifacts)}</p>
+                  </div>
+                </div>
+              ) : null}
+              {manualArtifacts ? (
+                <ToolRunArtifactList artifacts={manualArtifacts} onDownload={(artifactId, relativePath) => void downloadManualArtifact(artifactId, relativePath)} />
+              ) : null}
               {manualResultText ? <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{manualResultText}</pre> : null}
             </div>
           </div>
@@ -400,6 +460,73 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+function ToolRunArtifactList({ artifacts, onDownload }: { artifacts: V2ToolRunArtifacts; onDownload: (artifactId: string, relativePath: string) => void }) {
+  type ToolRunArtifactItem = {
+    id: string;
+    kind: string;
+    summary: string;
+    relativePath: string;
+    logicalPath?: string;
+    sizeBytes: number;
+    contentType: string;
+  };
+  const items: ToolRunArtifactItem[] = [
+    ...artifacts.uploads.map((upload) => ({
+      id: upload.artifact_id,
+      kind: "upload",
+      summary: upload.filename,
+      relativePath: upload.relative_path,
+      sizeBytes: upload.size_bytes,
+      contentType: upload.content_type
+    })),
+    ...artifacts.evidenceArtifacts.map((artifact) => ({
+      id: artifact.artifact_id,
+      kind: artifact.evidence_kind,
+      summary: artifact.evidence_summary,
+      relativePath: artifact.relative_path,
+      sizeBytes: artifact.size_bytes,
+      contentType: artifact.content_type
+    })),
+    ...(artifacts.supportArtifacts ?? []).map((artifact) => ({
+      id: artifact.artifact_id,
+      kind: artifact.source_evidence_kind ?? "support",
+      summary: artifact.role ?? artifact.logical_path,
+      relativePath: artifact.relative_path,
+      logicalPath: artifact.logical_path,
+      sizeBytes: artifact.size_bytes,
+      contentType: artifact.content_type
+    }))
+  ];
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Artifacts</p>
+        <Badge variant="secondary">{items.length}</Badge>
+      </div>
+      {items.length ? (
+        <div className="max-h-56 space-y-2 overflow-auto">
+          {items.map((item) => (
+            <div className="rounded-md border border-border p-2" key={`${item.kind}:${item.id}:${item.relativePath}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium"><FileArchive className="mr-1 inline h-3.5 w-3.5 text-slate-400" />{item.kind}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.summary}</p>
+                </div>
+                <Button className="h-8 w-8 shrink-0 px-0" variant="outline" title="Download artifact" aria-label="Download artifact" onClick={() => onDownload(item.id, item.relativePath)}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{item.logicalPath ?? item.relativePath}</p>
+              {item.logicalPath ? <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.relativePath}</p> : null}
+              <p className="mt-1 text-[11px] text-muted-foreground">{item.contentType} · {item.sizeBytes.toLocaleString()} bytes</p>
+            </div>
+          ))}
+        </div>
+      ) : <EmptyState>No artifacts for this run.</EmptyState>}
+    </div>
+  );
+}
+
 function toolMinFiles(tool: V2ToolDescriptor) {
   return tool.minFiles ?? 0;
 }
@@ -415,6 +542,31 @@ function fileAccept(tool: V2ToolDescriptor) {
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTerminalToolRun(status: V2ToolRun["status"]) {
+  return status === "succeeded" || status === "failed";
+}
+
+function runStatusVariant(status: V2ToolRun["status"]) {
+  if (status === "succeeded") return "success";
+  if (status === "failed") return "destructive";
+  if (status.startsWith("waiting")) return "warning";
+  return "secondary";
+}
+
+function artifactCount(artifacts: V2ToolRunArtifacts | null) {
+  if (!artifacts) return 0;
+  return artifacts.uploads.length + artifacts.evidenceArtifacts.length + (artifacts.supportArtifacts?.length ?? 0);
+}
+
+function upsertRun(runs: V2ToolRun[], run: V2ToolRun) {
+  return [run, ...runs.filter((item) => item.id !== run.id)];
+}
+
+function filenameFromPath(path: string) {
+  const value = path.split("/").filter(Boolean).pop();
+  return value || "artifact";
 }
 
 function errorMessage(reason: unknown) {

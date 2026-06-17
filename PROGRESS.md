@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Manual Tool Run Artifacts
+
+- V2 Tools Workbench now polls the selected non-terminal manual `tool_run`
+  every second and refreshes its status/phase/result panel from the V2 run API.
+- Manual `tool_run` selection now reads
+  `/api/v2/tools/runs/:run_id/artifacts`, displays uploads, evidence artifacts,
+  and V2 `supportArtifacts`, and downloads each artifact through the
+  authenticated `/api/v2/artifacts/:artifact_id` endpoint.
+- Added typed V2 API support for manual tool-run artifact listing.
+- Updated WebUI README/SPEC docs.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build`.
+
 ## 2026-06-18 WebUI V2 Manual Tool Runs
 
 - V2 Tools Workbench now supports the Server V2 manual `tool_run` API in
