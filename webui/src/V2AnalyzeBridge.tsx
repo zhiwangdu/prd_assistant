@@ -401,7 +401,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     }
   }
 
-  async function sendWaitingMessage(resumeMode: "continue" | "finalize") {
+  async function sendWaitingMessage(action: V2Action, resumeMode: "continue" | "finalize") {
     if (!selectedRunId) return;
     const message = resumeMode === "finalize"
       ? waitingMessage.trim() || copy.finalizeMessage
@@ -409,7 +409,13 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     if (!message) return;
     setLoading(true);
     try {
-      await postV2RunMessage(apiKey, selectedRunId, { message, resumeMode });
+      const questionId = stringPayload(action.payload, "questionId") || undefined;
+      await postV2RunMessage(apiKey, selectedRunId, {
+        message,
+        resumeMode,
+        questionId,
+        idempotencyKey: v2IdempotencyKey("message", selectedRunId, action.id, resumeMode, message)
+      });
       setWaitingMessage("");
       setStatus(copy.refreshed);
       await refreshSelectedRun();
@@ -423,7 +429,12 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   async function decideWaitingAction(action: V2Action, decision: "approved" | "rejected") {
     setLoading(true);
     try {
-      await decideV2Action(apiKey, action.id, { decision, reason: decisionReason.trim() || null });
+      const reason = decisionReason.trim() || null;
+      await decideV2Action(apiKey, action.id, {
+        decision,
+        reason,
+        idempotencyKey: v2IdempotencyKey("decision", selectedRunId || action.run_id, action.id, decision, reason ?? "")
+      });
       setDecisionReason("");
       setStatus(copy.refreshed);
       await refreshSelectedRun();
@@ -564,7 +575,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           loading={loading}
           onMessageChange={setWaitingMessage}
           onReasonChange={setDecisionReason}
-          onSend={(resumeMode) => void sendWaitingMessage(resumeMode)}
+          onSend={(action, resumeMode) => void sendWaitingMessage(action, resumeMode)}
           onDecision={(action, decision) => void decideWaitingAction(action, decision)}
         />
 
@@ -726,7 +737,7 @@ function WaitingActionsPanel({
   loading: boolean;
   onMessageChange: (value: string) => void;
   onReasonChange: (value: string) => void;
-  onSend: (resumeMode: "continue" | "finalize") => void;
+  onSend: (action: V2Action, resumeMode: "continue" | "finalize") => void;
   onDecision: (action: V2Action, decision: "approved" | "rejected") => void;
 }) {
   if (!run || !run.status.startsWith("waiting")) return null;
@@ -780,8 +791,8 @@ function WaitingActionsPanel({
         placeholder={copy.answerPlaceholder}
       />
       <div className="flex flex-wrap justify-end gap-2">
-        <Button disabled={loading} variant="outline" onClick={() => onSend("finalize")}>{copy.finalizeNow}</Button>
-        <Button disabled={loading || !message.trim()} onClick={() => onSend("continue")}><MessageSquare className="mr-2 h-4 w-4" />{copy.sendAnswer}</Button>
+        <Button disabled={loading} variant="outline" onClick={() => onSend(action, "finalize")}>{copy.finalizeNow}</Button>
+        <Button disabled={loading || !message.trim()} onClick={() => onSend(action, "continue")}><MessageSquare className="mr-2 h-4 w-4" />{copy.sendAnswer}</Button>
       </div>
     </div>
   );
@@ -933,6 +944,19 @@ function eventKind(event: { kind?: string; event_type?: string }) {
 function stringPayload(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
   return typeof value === "string" ? value : "";
+}
+
+function v2IdempotencyKey(kind: "message" | "decision", runId: string, actionId: string, intent: string, content: string) {
+  return `v2:${kind}:${runId}:${actionId}:${intent}:${stableHash(content)}`.slice(0, 200);
+}
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function filenameFromPath(relativePath: string) {

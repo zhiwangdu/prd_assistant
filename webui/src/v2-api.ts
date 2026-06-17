@@ -517,15 +517,20 @@ export async function getV2RunAnalysis(apiKey: string, runId: string) {
   return fetchJson<V2RunAnalysis>(`/api/v2/runs/${encodeURIComponent(runId)}/analysis`, { headers: authHeaders(apiKey) });
 }
 
-export async function postV2RunMessage(apiKey: string, runId: string, input: { message: string; resumeMode?: "continue" | "finalize" }) {
+export async function postV2RunMessage(apiKey: string, runId: string, input: { message: string; resumeMode?: "continue" | "finalize"; questionId?: string; idempotencyKey?: string }) {
   return fetchJson<{ event: V2TimelineEvent; answeredActions?: V2Action[]; job?: Record<string, unknown> | null }>(`/api/v2/runs/${encodeURIComponent(runId)}/messages`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
-    body: JSON.stringify({ message: input.message, resumeMode: input.resumeMode ?? "continue" })
+    body: JSON.stringify({
+      message: input.message,
+      resumeMode: input.resumeMode ?? "continue",
+      questionId: input.questionId,
+      idempotencyKey: input.idempotencyKey
+    })
   });
 }
 
-export async function decideV2Action(apiKey: string, actionId: string, input: { decision: "approved" | "rejected"; reason?: string | null }) {
+export async function decideV2Action(apiKey: string, actionId: string, input: { decision: "approved" | "rejected"; reason?: string | null; idempotencyKey?: string }) {
   return fetchJson<{ action: V2Action; job?: Record<string, unknown> | null }>(`/api/v2/actions/${encodeURIComponent(actionId)}/decisions`, {
     method: "POST",
     headers: jsonHeaders(apiKey),

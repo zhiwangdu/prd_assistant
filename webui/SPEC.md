@@ -87,9 +87,9 @@ Database
 - V2 bridge 当前是迁移桥接层；完整 V2 原生页面仍需后续逐页切换。
 - 状态展示使用 `QUEUED`、`RUNNING`、`WAITING_FOR_USER`、`WAITING_FOR_APPROVAL`、`SUCCEEDED`、`FAILED`。
 - 执行阶段作为次级进度展示，不能由前端直接修改。
-- `WAITING_FOR_USER` 按 `questionId` 提交回答，重复提交使用幂等 key。
+- `WAITING_FOR_USER` 按 pending action payload 中的 `questionId` 提交回答，重复提交使用由 run、action、resumeMode 和消息内容派生的稳定幂等 key。
 - `WAITING_FOR_USER` 必须提供“没有更多信息，直接生成最终结果”入口，点击时调用 message API 并传 `resumeMode: "finalize"`；即使回答框为空也必须提交默认说明，使任务基于当前证据直接恢复到最终结果生成。
-- `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因。
+- `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因；批准或拒绝请求使用由 run、action、decision 和原因派生的稳定幂等 key。
 - 当前 WebUI 已在 Task execution 卡片内展示 pending prompt / pending approval，并通过 Server API 恢复任务。
 - 时间线来自服务端事件摘要，不渲染隐藏思维链或未经清洗的 Provider 原始响应。
 - Analyze 必须以 Session 为唯一历史入口。未选择 Session 时只显示新建入口；选择后展示 Session draft editor、uploads、active run、历史 runs 和 Evidence timeline。

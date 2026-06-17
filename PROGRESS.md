@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 WebUI Waiting Idempotency
+
+- V2 Analyze bridge now sends pending action `questionId` when answering
+  `WAITING_FOR_USER` runs, so the frontend targets the same question contract
+  enforced by `POST /api/v2/runs/:run_id/messages`.
+- User-message and approval/rejection requests now include stable
+  `idempotencyKey` values derived from run/action/intent/content, preventing
+  duplicate resume or approval events on repeated clicks or network retries.
+- Updated WebUI docs/specs for the V2 waiting-state bridge behavior.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, `cd webui && npm run build`, and
+  `git diff --check`.
+
 ## 2026-06-17 V2 Huawei Package Sync Result Parity
 
 - V2 `logagent.huawei_cloud_package_sync` worker execution now revalidates and
