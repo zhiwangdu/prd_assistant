@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 LangGraph Runtime Envelope
+
+- V2 `AgentRuntime.run_analysis` now executes through a real LangGraph
+  `StateGraph` named `logagent_v2_analysis` with
+  `collect_initial_evidence`, `agent_round`, and `finalize_result` nodes.
+- Existing provider/tool-loop behavior, waiting states, audit artifacts,
+  evidence validation, and result persistence remain Server-owned and bounded;
+  the graph envelope now records `graphRuntime` metadata in
+  `analysis_state.json`.
+- Added regression coverage that a completed stub run exposes
+  `graphRuntime.engine=langgraph` and the expected node list through task MCP.
+
 ## 2026-06-18 V2 LLM Debug Route Parity Coverage
 
 - Added route-level regression coverage for `GET/PUT /api/v2/debug/llm`, so

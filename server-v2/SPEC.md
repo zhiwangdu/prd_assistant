@@ -6,7 +6,7 @@ V2 is a clean-room small-team implementation of LogAgent. It favors a simple
 single-machine deployment over distributed infrastructure:
 
 - Python + FastAPI for the API.
-- LangGraph-oriented Agent runtime.
+- LangGraph state graph envelope around the Agent runtime.
 - SQLite WAL for durable state.
 - Local filesystem artifacts for large evidence.
 - DB-backed jobs instead of Redis.
@@ -81,16 +81,20 @@ Implemented in this slice:
   the V1 `ToolInputEntry` shape and include V2 artifact ids for local
   execution.
 - `manifest.json` and `grep_results.json` artifact generation.
-- Agent runtime that records initial question evidence as
-  `session_text_input.json`, consumes the initial evidence pipeline, and either
-  returns a deterministic stub summary or calls a bounded OpenAI-compatible or
-  local binary provider loop for advertised Server-owned tools and an
-  evidence-validated JSON final answer. Provider-requested
+- Agent runtime that executes the run lifecycle through a LangGraph state graph
+  with `collect_initial_evidence`, `agent_round`, and `finalize_result` nodes.
+  The graph records initial question evidence as `session_text_input.json`,
+  consumes the initial evidence pipeline, and either returns a deterministic
+  stub summary or calls a bounded OpenAI-compatible or local binary provider
+  loop for advertised Server-owned tools and an evidence-validated JSON final
+  answer. Provider-requested
   `logagent.request_user_input` / `logagent.request_approval` calls pause the
   run in the matching waiting state instead of writing a final result. Each
   round persists `agent_request.json`, `agent_response.json`,
   `analysis_state.json`, and provider tool-call `mcp_calls.jsonl` audit
-  artifacts before the run reaches a terminal state. Follow-up evidence refs
+  artifacts before the run reaches a terminal state. `analysis_state.json`
+  includes `graphRuntime.engine=langgraph`, the graph name, and node list.
+  Follow-up evidence refs
   returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. Successful analysis runs persist a deterministic
   fallback alias derived from the final summary or question for history/UI
@@ -245,8 +249,8 @@ Implemented in this slice:
 
 Not yet implemented:
 
-- Full LangGraph multi-round planning and product-grade resume policies beyond
-  the current bounded `interactionContext` handoff.
+- Full LangGraph planner decomposition beyond the current state graph envelope
+  and bounded provider/tool-loop node.
 - Full WebUI V2 cutover that replaces the legacy Rust-compatible panels instead
   of running V2 bridge panels alongside them.
 

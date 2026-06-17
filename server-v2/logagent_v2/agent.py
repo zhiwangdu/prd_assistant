@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+from typing import TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from .agent_audit import (
     failed_agent_response,
@@ -27,6 +30,31 @@ from .skills import persist_system_context
 from .store import JsonObject, Store
 
 MAX_TOOL_CALLS_PER_ROUND = 4
+AGENT_GRAPH_NODES = (
+    "collect_initial_evidence",
+    "agent_round",
+    "finalize_result",
+)
+
+
+class AgentGraphState(TypedDict, total=False):
+    workspaceId: str
+    runId: str
+    workspace: JsonObject
+    evidenceBundle: JsonObject
+    analysisPackageArtifactId: str
+    interactionContext: JsonObject
+    finalAnswer: JsonObject
+    runtimeStatus: str
+    result: JsonObject
+
+
+def graph_runtime_metadata() -> JsonObject:
+    return {
+        "engine": "langgraph",
+        "graph": "logagent_v2_analysis",
+        "nodes": list(AGENT_GRAPH_NODES),
+    }
 
 
 class AgentRuntime:
@@ -43,6 +71,31 @@ class AgentRuntime:
         self.store = store
 
     def run_analysis(self, workspace_id: str, run_id: str) -> JsonObject:
+        graph = self._build_agent_graph()
+        state = graph.invoke({"workspaceId": workspace_id, "runId": run_id})
+        result = state.get("result")
+        if isinstance(result, dict):
+            return result
+        raise ValueError("agent graph finished without a result")
+
+    def _build_agent_graph(self):
+        graph = StateGraph(AgentGraphState)
+        graph.add_node("collect_initial_evidence", self._graph_collect_initial_evidence)
+        graph.add_node("agent_round", self._graph_agent_round)
+        graph.add_node("finalize_result", self._graph_finalize_result)
+        graph.add_edge(START, "collect_initial_evidence")
+        graph.add_edge("collect_initial_evidence", "agent_round")
+        graph.add_conditional_edges(
+            "agent_round",
+            self._graph_after_agent_round,
+            {"finalize_result": "finalize_result", "end": END},
+        )
+        graph.add_edge("finalize_result", END)
+        return graph.compile(name="logagent_v2_analysis")
+
+    def _graph_collect_initial_evidence(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
         workspace = self.store.get_workspace(workspace_id)
         self.store.update_run_status(run_id, "running", "collect_initial_evidence")
         persist_session_text_input(
@@ -75,32 +128,69 @@ class AgentRuntime:
             analysis_package["artifact"]["id"],
         )
         self.store.update_run_status(run_id, "running", "agent_round")
+        return {
+            "workspace": workspace,
+            "evidenceBundle": evidence_bundle,
+            "analysisPackageArtifactId": analysis_package["artifact"]["id"],
+            "interactionContext": self._interaction_context(run_id),
+            "runtimeStatus": "agent_round",
+        }
+
+    def _graph_agent_round(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
+        workspace = state["workspace"]
+        evidence_bundle = state["evidenceBundle"]
         interaction_context = self._interaction_context(run_id)
         final_answer = self._run_agent_round(
             workspace=workspace,
             workspace_id=workspace_id,
             run_id=run_id,
             evidence_bundle=evidence_bundle,
-            analysis_package_artifact_id=analysis_package["artifact"]["id"],
+            analysis_package_artifact_id=state.get("analysisPackageArtifactId"),
             interaction_context=interaction_context,
         )
         if final_answer is None:
             run = self.store.get_run(run_id)
             if run["status"] in {"waiting_for_user", "waiting_for_approval"}:
                 return {
-                    "status": run["status"],
-                    "phase": run["phase"],
-                    "pendingActions": [
-                        action
-                        for action in self.store.list_actions(run_id)
-                        if action.get("status") == "pending"
-                    ],
+                    "interactionContext": interaction_context,
+                    "runtimeStatus": run["status"],
+                    "result": {
+                        "graphRuntime": graph_runtime_metadata(),
+                        "status": run["status"],
+                        "phase": run["phase"],
+                        "pendingActions": [
+                            action
+                            for action in self.store.list_actions(run_id)
+                            if action.get("status") == "pending"
+                        ],
+                    },
                 }
             raise ValueError("agent paused without a waiting run state")
+        return {
+            "interactionContext": interaction_context,
+            "runtimeStatus": "final_answer_ready",
+            "finalAnswer": final_answer,
+        }
+
+    def _graph_after_agent_round(self, state: AgentGraphState) -> str:
+        if isinstance(state.get("finalAnswer"), dict):
+            return "finalize_result"
+        return "end"
+
+    def _graph_finalize_result(self, state: AgentGraphState) -> AgentGraphState:
+        workspace_id = state["workspaceId"]
+        run_id = state["runId"]
+        workspace = state["workspace"]
+        final_answer = state["finalAnswer"]
         persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
         alias = fallback_run_alias(final_answer, workspace.get("question", ""))
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer, alias=alias)
-        return final_answer
+        return {
+            "runtimeStatus": "succeeded",
+            "result": final_answer,
+        }
 
     def _run_agent_round(
         self,
@@ -395,6 +485,7 @@ class AgentRuntime:
         state: JsonObject = {
             "status": status,
             "phase": phase,
+            "graphRuntime": graph_runtime_metadata(),
             "rounds": rounds,
         }
         if final_answer_status is not None:

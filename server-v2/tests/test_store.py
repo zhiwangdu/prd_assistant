@@ -484,6 +484,12 @@ class StoreTests(unittest.TestCase):
             )
             state = json.loads(state_response["result"]["contents"][0]["text"])
             self.assertEqual(state["status"], "succeeded")
+            self.assertEqual(state["graphRuntime"]["engine"], "langgraph")
+            self.assertEqual(state["graphRuntime"]["graph"], "logagent_v2_analysis")
+            self.assertEqual(
+                state["graphRuntime"]["nodes"],
+                ["collect_initial_evidence", "agent_round", "finalize_result"],
+            )
             self.assertEqual(state["rounds"][0]["status"], "completed")
             request_response = task_mcp_response(
                 settings,
