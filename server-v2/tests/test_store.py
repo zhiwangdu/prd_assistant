@@ -2523,6 +2523,66 @@ class StoreTests(unittest.TestCase):
         )
         self.assertIn("series file", tools["influxdb_storage_analyzer"].match_keywords)
 
+    def test_source_built_tools_auto_discover_runtime_bin_dir(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOLS_DIR": None,
+            "LOGAGENT_V2_APP_DIR": None,
+            "LOGAGENT_APP_DIR": None,
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tools_dir = Path(tmpdir) / "bin" / "tools"
+                tools_dir.mkdir(parents=True)
+                for filename in (
+                    "flux_query_analyzer",
+                    "influxql-analyzer",
+                    "opengemini-storage-analyzer",
+                    "influxdb_storage_analyzer",
+                ):
+                    path = tools_dir / filename
+                    path.write_text("#!/bin/sh\n", encoding="utf-8")
+                    path.chmod(0o755)
+                for key, value in env_values.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                os.environ["LOGAGENT_V2_APP_DIR"] = tmpdir
+
+                discovered = {tool.id: tool for tool in parse_tools_env(None)}
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(
+            discovered["flux_query_analyzer"].command,
+            str((tools_dir / "flux_query_analyzer").resolve()),
+        )
+        self.assertEqual(
+            discovered["influxql_analyzer"].command,
+            str((tools_dir / "influxql-analyzer").resolve()),
+        )
+        self.assertEqual(
+            discovered["opengemini_storage_analyzer"].command,
+            str((tools_dir / "opengemini-storage-analyzer").resolve()),
+        )
+        self.assertEqual(
+            discovered["influxdb_storage_analyzer"].command,
+            str((tools_dir / "influxdb_storage_analyzer").resolve()),
+        )
+
     def test_parse_tools_env_expands_command_and_allows_disabled_relative(self) -> None:
         previous = os.environ.get("LOGAGENT_TEST_TOOL_DIR")
         try:

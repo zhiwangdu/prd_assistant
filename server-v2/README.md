@@ -188,9 +188,12 @@ was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
 `$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
 Use `--with-tools` to also build source-referenced analyzer submodules into
 `$LOGAGENT_APP_DIR/bin/tools`, or `--tools-only --only-tool <name>` for a fast
-tool-only rebuild. The rebuild script loads `$HOME/.cargo/env` when present so
-rustup-managed `cargo` is available for Flux analyzer builds in non-interactive
-SSH shells. `logagent-v2ctl.sh start` and `restart` wait for `/health` until
+tool-only rebuild. When explicit analyzer env vars are unset, V2 auto-registers
+the standard analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
+`$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when
+present so rustup-managed `cargo` is available for Flux analyzer builds in
+non-interactive SSH shells. `logagent-v2ctl.sh start` and `restart` export
+`LOGAGENT_V2_APP_DIR`, wait for `/health` until
 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` expires, and clean stale pid files when
 startup fails. The control script is pid-file scoped by default so separate
 runtime directories do not control each other's V2 processes.
@@ -205,6 +208,7 @@ Environment variables:
 | `LOGAGENT_V2_API_KEY` | `dev-token` | Bearer token for protected APIs |
 | `LOGAGENT_V2_HOST` | `127.0.0.1` | Server bind host |
 | `LOGAGENT_V2_PORT` | `50993` | Server bind port |
+| `LOGAGENT_V2_APP_DIR` | unset | Runtime root used to auto-discover source-built analyzers under `bin/tools`; deploy control scripts export it |
 | `LOGAGENT_V2_MAX_UPLOAD_BYTES` | `536870912` | Per-upload limit |
 | `LOGAGENT_V2_MAX_ARCHIVE_FILES` | `2000` | Maximum files scanned per archive |
 | `LOGAGENT_V2_MAX_ARCHIVE_BYTES` | `268435456` | Maximum aggregate extracted text bytes |
@@ -213,6 +217,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency; non-positive values clamp to 1 |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array or object map of fixed whitelist tool descriptors; supports V2 `command` plus V1 `path` / `path_env`, camelCase or snake_case limits; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
+| `LOGAGENT_V2_TOOLS_DIR` | unset | Optional directory for standard source-built analyzer binaries; falls back to `$LOGAGENT_V2_APP_DIR/bin/tools` or `$LOGAGENT_APP_DIR/bin/tools` |
 | `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
 | `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
 | `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
@@ -253,11 +258,14 @@ Environment variables:
 | `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync; required and trimmed when enabled |
 
 Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
-source-built analyzer as a configured subprocess tool using the same args,
-timeouts, `maxInputFiles`, match patterns, and keywords as
-`examples/server-tools.yaml`. The storage defaults preserve the wider V1
-settings: openGemini storage uses `maxInputFiles=10`; InfluxDB storage uses
-`timeoutSeconds=60` and `maxInputFiles=5`. `LOGAGENT_V2_TOOLS_JSON` accepts
+source-built analyzer as a configured subprocess tool. If those variables are
+unset, V2 auto-discovers the standard analyzer filenames from
+`LOGAGENT_V2_TOOLS_DIR`, `$LOGAGENT_V2_APP_DIR/bin/tools`, or
+`$LOGAGENT_APP_DIR/bin/tools`. Both paths use the same args, timeouts,
+`maxInputFiles`, match patterns, and keywords as `examples/server-tools.yaml`.
+The storage defaults preserve the wider V1 settings: openGemini storage uses
+`maxInputFiles=10`; InfluxDB storage uses `timeoutSeconds=60` and
+`maxInputFiles=5`. `LOGAGENT_V2_TOOLS_JSON` accepts
 either a V2 descriptor array or a Rust/V1-style object keyed by tool id. Each
 descriptor may use V2 `command`, V1 `path`, or V1 `path_env` / `pathEnv`, and
 may use camelCase or snake_case limit fields such as `timeoutSeconds` /

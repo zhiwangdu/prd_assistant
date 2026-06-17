@@ -99,11 +99,15 @@ Optional variables:
 - `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`: defaults to `1048576`, limiting saved endpoint bodies and runtime body overrides.
 - `LOGAGENT_V2_FETCH_MAX_RESPONSE_BYTES`: defaults to `1048576`, limiting stored Fetch response bodies/previews.
 - `LOGAGENT_V2_FETCH_SECRET_KEY`: optional Fernet-compatible 32-byte urlsafe base64 key required when saving sensitive Fetch credentials.
+- `LOGAGENT_V2_TOOLS_DIR`: optional custom directory for V2 source-built
+  analyzer binaries. If unset, V2 auto-discovers the standard analyzer
+  filenames from `$LOGAGENT_V2_APP_DIR/bin/tools` or `$LOGAGENT_APP_DIR/bin/tools`.
 - `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER`,
   `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER`,
   `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
-  `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER`: optional source-built analyzer
-  executable paths, usually under `$LOGAGENT_APP_DIR/bin/tools/`.
+  `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER`: optional explicit source-built
+  analyzer executable path overrides, usually unnecessary when using
+  `rebuild-v2-install.sh --with-tools`.
 - `LOGAGENT_V2_PPROF_ENABLED` and `LOGAGENT_V2_PPROF_GO_COMMAND`: optional
   built-in `pprof_analyzer` configuration.
 - `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` plus `LOGAGENT_V2_HUAWEI_OBS_*`
@@ -204,7 +208,10 @@ build unless `--server-only` is set, syncs `webui/out` to
 `$LOGAGENT_V2_WEBUI_DIR`, and restarts V2 only if it was already running.
 `--with-tools` calls `scripts/build-tools.sh --output-dir
 $LOGAGENT_APP_DIR/bin/tools`; `--tools-only` skips server install, DB init, and
-WebUI sync for fast analyzer rebuilds. `rebuild-v2-install.sh` also loads
+WebUI sync for fast analyzer rebuilds. `logagent-v2ctl.sh` exports
+`LOGAGENT_V2_APP_DIR`, so a later V2 start auto-registers the standard analyzer
+filenames from `$LOGAGENT_APP_DIR/bin/tools` unless explicit
+`LOGAGENT_V2_TOOL_*` overrides are set. `rebuild-v2-install.sh` also loads
 `$HOME/.cargo/env` when present so Flux analyzer builds can find rustup-managed
 `cargo` in non-interactive SSH shells.
 

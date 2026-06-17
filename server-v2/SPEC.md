@@ -141,9 +141,11 @@ Implemented in this slice:
   also exposes Rust-compatible top-level `artifactPath`, `evidenceRefs`, and
   `lines` fields.
 - Tool Plugin registry. Configured subprocess tools are loaded from
-  `LOGAGENT_V2_TOOLS_JSON` or the V2 analyzer executable environment variables,
-  listed through `/api/v2/tools`, runnable through manual tool-run APIs, and
-  exposed to task MCP `logagent.run_domain_tool`. Tools with `{input_file}`
+  `LOGAGENT_V2_TOOLS_JSON`, explicit V2 analyzer executable environment
+  variables, or standard source-built analyzer filenames auto-discovered under
+  `LOGAGENT_V2_TOOLS_DIR` / `$LOGAGENT_V2_APP_DIR/bin/tools`, listed through
+  `/api/v2/tools`, runnable through manual tool-run APIs, and exposed to task
+  MCP `logagent.run_domain_tool`. Tools with `{input_file}`
   can use explicit `inputFile`/`inputFiles` workspace selectors, otherwise
   consume matching materialized tool inputs before execution, then fall back to
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
@@ -154,15 +156,15 @@ Implemented in this slice:
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
   `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
-- Source-built analyzer environment variables create default configured
-  descriptors aligned with `examples/server-tools.yaml`: Flux and InfluxQL use
-  the V1 query analyzer args with `timeoutSeconds=30` and `maxInputFiles=3`,
-  openGemini storage uses the full TSSP/TSI/mergeset file-pattern set with
-  `maxInputFiles=10`, and InfluxDB storage uses `timeoutSeconds=60`,
-  `maxInputFiles=5`, and the V1 TSM/TSI patterns. JSON-configured commands
-  and source-built analyzer environment paths expand environment variables and
-  `~` during configuration loading; enabled tools must resolve to absolute
-  commands before they enter the registry.
+- Source-built analyzer env vars or runtime `bin/tools` auto-discovery create
+  default configured descriptors aligned with `examples/server-tools.yaml`:
+  Flux and InfluxQL use the V1 query analyzer args with `timeoutSeconds=30`
+  and `maxInputFiles=3`, openGemini storage uses the full TSSP/TSI/mergeset
+  file-pattern set with `maxInputFiles=10`, and InfluxDB storage uses
+  `timeoutSeconds=60`, `maxInputFiles=5`, and the V1 TSM/TSI patterns.
+  JSON-configured commands and source-built analyzer paths expand environment
+  variables and `~` during configuration loading; enabled tools must resolve
+  to absolute commands before they enter the registry.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
   `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
@@ -627,11 +629,13 @@ object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1
 as `timeoutSeconds` / `timeout_seconds`, `maxOutputBytes` / `max_output_bytes`,
 and `maxInputFiles` / `max_input_files`. V2 expands `${ENV}` / `$ENV` variables
 and `~` in configured command paths and in source-built analyzer executable
-environment variables. If an enabled configured tool does not resolve to an
-absolute command path, settings loading fails before the descriptor is exposed
-through HTTP, readonly MCP, or task MCP surfaces. Disabled descriptors may
-retain unresolved or relative commands because they are not runnable or
-exported.
+environment variables. When explicit source-built analyzer env vars are unset,
+V2 auto-discovers the standard analyzer filenames from `LOGAGENT_V2_TOOLS_DIR`,
+`$LOGAGENT_V2_APP_DIR/bin/tools`, or `$LOGAGENT_APP_DIR/bin/tools`. If an
+enabled configured tool does not resolve to an absolute command path, settings
+loading fails before the descriptor is exposed through HTTP, readonly MCP, or
+task MCP surfaces. Disabled descriptors may retain unresolved or relative
+commands because they are not runnable or exported.
 User-configured tool IDs follow the Rust/V1 `tools.<name>` safe pattern:
 non-empty ASCII letters, digits, `_`, and `-` only. Built-in `logagent.*` tools
 are fixed server capabilities and are not loaded from `LOGAGENT_V2_TOOLS_JSON`.

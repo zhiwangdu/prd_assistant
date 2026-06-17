@@ -411,7 +411,10 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
         (
             "flux_query_analyzer",
             "Flux Query Analyzer",
-            env_first("LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER", "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"),
+            source_built_tool_command(
+                ("LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER", "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER"),
+                "flux_query_analyzer",
+            ),
             30,
             3,
             (
@@ -432,9 +435,12 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
         (
             "influxql_analyzer",
             "InfluxQL Analyzer",
-            env_first(
-                "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER",
-                "LOGAGENT_TOOL_INFLUXQL_ANALYZER",
+            source_built_tool_command(
+                (
+                    "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER",
+                    "LOGAGENT_TOOL_INFLUXQL_ANALYZER",
+                ),
+                "influxql-analyzer",
             ),
             30,
             3,
@@ -445,9 +451,12 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
         (
             "opengemini_storage_analyzer",
             "openGemini Storage Analyzer",
-            env_first(
-                "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER",
-                "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER",
+            source_built_tool_command(
+                (
+                    "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER",
+                    "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER",
+                ),
+                "opengemini-storage-analyzer",
             ),
             30,
             10,
@@ -475,9 +484,12 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
         (
             "influxdb_storage_analyzer",
             "InfluxDB Storage Analyzer",
-            env_first(
-                "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER",
-                "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER",
+            source_built_tool_command(
+                (
+                    "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER",
+                    "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER",
+                ),
+                "influxdb_storage_analyzer",
             ),
             60,
             5,
@@ -516,6 +528,38 @@ def default_source_built_tools_from_env() -> list[ToolDefinition]:
             )
         )
     return tools
+
+
+def source_built_tool_command(env_names: tuple[str, ...], filename: str) -> str | None:
+    configured = env_first(*env_names)
+    if configured:
+        return configured
+    for tools_dir in source_built_tool_dirs():
+        candidate = tools_dir / filename
+        if candidate.is_file():
+            return str(candidate.resolve())
+    return None
+
+
+def source_built_tool_dirs() -> list[Path]:
+    raw_dirs = []
+    if os.environ.get("LOGAGENT_V2_TOOLS_DIR"):
+        raw_dirs.append(os.environ["LOGAGENT_V2_TOOLS_DIR"])
+    for env_name in ("LOGAGENT_V2_APP_DIR", "LOGAGENT_APP_DIR"):
+        app_dir = non_empty_string(os.environ.get(env_name))
+        if app_dir:
+            raw_dirs.append(str(Path(app_dir) / "bin" / "tools"))
+    dirs: list[Path] = []
+    seen: set[str] = set()
+    for raw_dir in raw_dirs:
+        path = Path(os.path.expandvars(os.path.expanduser(raw_dir)))
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            dirs.append(path)
+    return dirs
 
 
 def expand_tool_command(command: str) -> str:

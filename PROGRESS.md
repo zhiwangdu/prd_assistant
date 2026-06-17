@@ -17,6 +17,21 @@ Last updated: 2026-06-18
   `graphRuntime.engine=langgraph` and the expected node list through task MCP
   and Settings diagnostics.
 
+## 2026-06-18 V2 Runtime Tool Auto-Discovery
+
+- V2 now auto-registers source-built analyzer tools from
+  `LOGAGENT_V2_TOOLS_DIR`, `$LOGAGENT_V2_APP_DIR/bin/tools`, or
+  `$LOGAGENT_APP_DIR/bin/tools` when explicit `LOGAGENT_V2_TOOL_*` variables
+  are unset.
+- `deploy/logagent-v2ctl.sh` now exports `LOGAGENT_V2_APP_DIR` before starting
+  the Python server, so `rebuild-v2-install.sh --with-tools` plus
+  `logagent-v2ctl.sh start` is enough for the standard analyzer binaries to
+  appear in `/api/v2/tools`.
+- Updated V2 Server and Deploy docs/specs, plus `.env.example`, for the
+  source-built analyzer auto-discovery behavior.
+- Verification passed: focused source-built tool config regressions, V2 ruff,
+  V2 full pytest, compileall, shell syntax checks, and `git diff --check`.
+
 ## 2026-06-18 V2 LLM Debug Route Parity Coverage
 
 - Added route-level regression coverage for `GET/PUT /api/v2/debug/llm`, so
