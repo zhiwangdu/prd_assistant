@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Configured Tool Descriptor Compatibility
+
+- Aligned regular V2 configured subprocess tool descriptors with the Rust/V1
+  command catalog shape: `backend=command`, `readOnly=false`, `editable=true`,
+  `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied directly
+  from configured `match.filePatterns`.
+- Preserved V2 params schema validation and controlled `params.inputFiles`
+  selection while restoring the V1 manual-run upload-count contract.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused configured tool descriptor/manual validation
+  regressions, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (75 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Case Import Draft Patch Compatibility
 
 - Added `PATCH /api/v2/cases/imports/:import_id` to match the Rust/V1 Case

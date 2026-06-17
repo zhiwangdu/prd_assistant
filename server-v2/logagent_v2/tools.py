@@ -52,23 +52,25 @@ def tool_descriptors(settings: Settings) -> list[JsonObject]:
         {
             "toolId": tool.id,
             "displayName": tool.display_name,
-            "description": f"Configured subprocess tool {tool.display_name}.",
+            "description": (
+                f"Configured Tool Runner command with up to {tool.max_input_files} input file(s)."
+            ),
             "source": "configured",
-            "tags": ["configured", "subprocess"],
+            "tags": ["configured", "manual-run", "tool-runner", "external"],
             "enabled": tool.enabled,
-            "backend": "subprocess",
-            "readOnly": True,
-            "editable": False,
-            "exportable": True,
+            "backend": "command",
+            "readOnly": False,
+            "editable": True,
+            "exportable": tool.enabled,
             "runnable": tool.enabled,
-            "minFiles": 1 if tool_requires_input(tool) else 0,
+            "minFiles": 1,
             "maxFiles": tool.max_input_files,
             "maxInputFiles": tool.max_input_files,
             "match": {
                 "filePatterns": list(tool.match_file_patterns),
                 "keywords": list(tool.match_keywords),
             },
-            "acceptedSuffixes": accepted_suffixes_from_patterns(tool.match_file_patterns),
+            "acceptedSuffixes": list(tool.match_file_patterns),
             "paramsSchema": configured_tool_params_schema(tool),
             "paramsTemplate": configured_tool_params_template(tool),
             "outputViews": ["summary", "findings", "stdout", "stderr"],
@@ -87,15 +89,6 @@ def built_in_tool_descriptors(settings: Settings) -> list[JsonObject]:
         fetch_catalog_descriptor(settings),
         huawei_package_sync_descriptor(settings),
     ]
-
-
-def accepted_suffixes_from_patterns(patterns: tuple[str, ...]) -> list[str]:
-    suffixes = []
-    for pattern in patterns:
-        if pattern.startswith("*.") and "/" not in pattern:
-            suffixes.append(pattern[1:])
-    return suffixes
-
 
 def configured_tool_params_schema(tool: ToolDefinition) -> JsonObject:
     base = tool.params_schema or {

@@ -87,6 +87,10 @@ tools:
 - 工具失败不应导致整个任务失败，除非标记为必需。
 - 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
 - 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable/paramsTemplate`；内置工具使用 `source=built_in`，只读、不可编辑、不可导出，是否支持页面手动运行由 `runnable` 决定。
+- configured subprocess 工具按 Rust/V1 command descriptor 形态暴露：
+  `source=configured`、`backend=command`、`readOnly=false`、`editable=true`、
+  `exportable=enabled`、`minFiles=1`，并将 `acceptedSuffixes` 原样设置为
+  `match.filePatterns`。
 - `logagent.fetch` 使用 `source=built_in`、`backend=fetch`、不可导出、不可编辑、无需上传文件；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。
 - `logagent.huawei_cloud_package_sync` 使用 `source=built_in`、`backend=huawei_cloud_package_sync`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`；只有 `huawei_cloud.package_sync.enabled=true` 且 OBS/GaussDB 凭据环境变量解析成功时才可运行。它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
 

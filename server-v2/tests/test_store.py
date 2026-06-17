@@ -1766,12 +1766,47 @@ class StoreTests(unittest.TestCase):
                 command=sys.executable,
                 args=("-c", "print('ok')"),
                 timeout_seconds=5,
+                match_file_patterns=("*.log", "*timeout*"),
+                match_keywords=("timeout",),
             )
-            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            disabled_tool = ToolDefinition(
+                id="disabled_tool",
+                display_name="Disabled Tool",
+                command=sys.executable,
+                args=("-c", "print('disabled')"),
+                enabled=False,
+                match_file_patterns=("*.trace",),
+            )
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                tools=(tool, disabled_tool),
+            )
 
             descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
 
             self.assertEqual(descriptors["mock_tool"]["source"], "configured")
+            self.assertEqual(descriptors["mock_tool"]["backend"], "command")
+            self.assertEqual(descriptors["mock_tool"]["readOnly"], False)
+            self.assertEqual(descriptors["mock_tool"]["editable"], True)
+            self.assertEqual(descriptors["mock_tool"]["exportable"], True)
+            self.assertEqual(descriptors["mock_tool"]["minFiles"], 1)
+            self.assertEqual(descriptors["mock_tool"]["acceptedSuffixes"], ["*.log", "*timeout*"])
+            self.assertIn("manual-run", descriptors["mock_tool"]["tags"])
+            self.assertIn("tool-runner", descriptors["mock_tool"]["tags"])
+            self.assertIn("external", descriptors["mock_tool"]["tags"])
+            self.assertEqual(descriptors["disabled_tool"]["source"], "configured")
+            self.assertEqual(descriptors["disabled_tool"]["backend"], "command")
+            self.assertEqual(descriptors["disabled_tool"]["readOnly"], False)
+            self.assertEqual(descriptors["disabled_tool"]["editable"], True)
+            self.assertEqual(descriptors["disabled_tool"]["exportable"], False)
+            self.assertEqual(descriptors["disabled_tool"]["runnable"], False)
+            with self.assertRaises(ValueError):
+                validate_manual_tool_run(settings, "mock_tool", upload_count=0, params={})
+            self.assertEqual(
+                validate_manual_tool_run(settings, "mock_tool", upload_count=1, params={}),
+                {},
+            )
             self.assertIn("logagent.preprocess_log_package", descriptors)
             self.assertIn("logagent.list_metadata_instances", descriptors)
             self.assertIn("logagent.get_metadata_snapshot", descriptors)

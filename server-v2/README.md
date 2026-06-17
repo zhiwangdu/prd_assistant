@@ -667,7 +667,10 @@ POST /api/v2/tools/:tool_id/runs
 with `workspaceId`, optional `uploadIds`, and `params`. They create
 `kind=tool_run` Run rows and DB-backed `tool_run` jobs, so startup recovery and
 artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
-currently includes manual built-ins for metadata tools,
+configured subprocess descriptors use the Rust/V1 command shape:
+`source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
+`exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from
+`match.filePatterns`. V2 currently includes manual built-ins for metadata tools,
 `logagent.preprocess_log_package`, `logagent.fetch`, and default-off
 `logagent.huawei_cloud_package_sync`, plus the V1-style configured command
 adapter `pprof_analyzer`.

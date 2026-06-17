@@ -590,7 +590,11 @@ artifacts/evidence and can be substituted into configured argv with
 `{params.<name>}` placeholders. For `{input_file}` tools, V2 augments the
 descriptor with reserved `inputFiles` but never substitutes it into argv unless
 the configured args explicitly contain `{input_file}`. Params affect the stable
-action id so different parameter sets do not reuse one result path.
+action id so different parameter sets do not reuse one result path. Configured
+tool descriptors must retain the Rust/V1 catalog semantics:
+`source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
+`exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from
+`match.filePatterns`.
 
 Tool stdout is parsed as JSON when possible. Generic JSON output supports
 `summary` / `message` / `title`, `findings` / `issues` / `diagnostics`, and
