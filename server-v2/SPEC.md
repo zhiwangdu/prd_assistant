@@ -121,7 +121,8 @@ Implemented in this slice:
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   `session_text_input.json#question`, log search, log slice, Fetch response, or
-  tool finding evidence.
+  tool finding evidence; recalled Case context is accepted through
+  `case_context.json#cases/<index>`.
 - Final result persistence as `result.json` and `result.md` background
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
@@ -924,16 +925,22 @@ Final answers must be JSON objects with a non-empty `summary`, string arrays for
 normalized to one-item arrays.
 
 The validator collects top-level `evidenceRefs` and
-`likelyRootCauses[].evidenceRefs`, then verifies every ref against evidence rows
-visible to the current run where `final_allowed=true`.
+`likelyRootCauses[].evidenceRefs`, normalizes current-run Case id aliases such
+as `历史案例 case_<id>` to canonical `case_context.json#cases/<index>`, then
+verifies every ref against evidence rows visible to the current run. Most refs
+must resolve to `final_allowed=true` evidence; Case context refs resolve against
+the current run's `case_context` artifact.
 
 Accepted ref formats:
 
 ```text
+session_text_input.json#question
 grep_results.json#matches/<index>
 log_searches/<search_id>.json#matches/<index>
 log_slices/<slice_id>.json#lines
+case_context.json#cases/<index>
 tool_results/<tool_id>/result.json#findings/<index>
+tool_results/<fetch_action_id>/result.json#response
 ```
 
 The referenced artifact must exist and the match/finding index must be in
@@ -987,8 +994,9 @@ Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
 bounded tool input summaries, system/metadata context outlines, allowed
 current-run evidence refs starting with `session_text_input.json#question`, and
-final-evidence policy. It intentionally omits full Skill content, full Metadata
-topology, and raw uploaded text. Task MCP exposes it at
+final-evidence policy including `case_context.json#cases/<index>`. It
+intentionally omits full Skill content, full Metadata topology, and raw
+uploaded text. Task MCP exposes it at
 `logagent-v2://run/<run_id>/analysis_package`.
 
 The Agent boundary is audited with schema version 1 artifacts. `agent_request`

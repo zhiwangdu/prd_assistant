@@ -18,6 +18,8 @@ TOOL_FINDING_RE = re.compile(
     r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#findings/(\d+)$"
 )
 FETCH_RESPONSE_RE = re.compile(r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#response$")
+CASE_CONTEXT_RE = re.compile(r"^case_context\.json#cases/(\d+)$")
+CASE_ID_RE = re.compile(r"(case_[A-Za-z0-9_]+)")
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
@@ -32,6 +34,7 @@ def normalize_and_validate_final_answer(
     final_answer: JsonObject,
 ) -> JsonObject:
     normalized = normalize_final_answer(final_answer)
+    normalized = normalize_case_refs(settings, store, run_id, normalized)
     validate_evidence_refs(settings, store, run_id, collect_evidence_refs(normalized))
     return normalized
 
@@ -116,7 +119,7 @@ def validate_evidence_refs(
 ) -> None:
     if not refs:
         return
-    evidence_items = [item for item in store.list_evidence(run_id) if item["final_allowed"]]
+    evidence_items = store.list_evidence(run_id)
     for ref in refs:
         if not is_valid_ref(settings, store, evidence_items, ref):
             raise FinalAnswerValidationError(f"invalid or unsupported final evidence ref: {ref}")
@@ -134,10 +137,16 @@ def is_valid_ref(
     if ref == SESSION_TEXT_INPUT_REF:
         return any(
             item["kind"] == "user_question"
+            and item["final_allowed"]
             and item["payload"].get("ref") == SESSION_TEXT_INPUT_REF
             and artifact_question_exists(settings, store, item)
             for item in evidence_items
         )
+
+    case_context = CASE_CONTEXT_RE.match(ref)
+    if case_context:
+        index = int(case_context.group(1))
+        return latest_case_exists(settings, store, evidence_items, index)
 
     log_match = LOG_MATCH_RE.match(ref)
     if log_match:
@@ -145,6 +154,7 @@ def is_valid_ref(
         index = int(log_match.group(2))
         return any(
             item["kind"] == "log_search"
+            and item["final_allowed"]
             and item["payload"].get("path") == path
             and artifact_match_exists(settings, store, item, "matches", index)
             for item in evidence_items
@@ -155,6 +165,7 @@ def is_valid_ref(
         path = log_slice.group(1)
         return any(
             item["kind"] == "log_slice"
+            and item["final_allowed"]
             and item["payload"].get("path") == path
             and artifact_ref_exists(settings, store, item, "ref", ref)
             for item in evidence_items
@@ -166,6 +177,7 @@ def is_valid_ref(
         index = int(tool_finding.group(2))
         return any(
             item["kind"] == "tool_result"
+            and item["final_allowed"]
             and item["payload"].get("evidenceRefPrefix") == prefix
             and artifact_match_exists(settings, store, item, "findings", index)
             for item in evidence_items
@@ -175,12 +187,72 @@ def is_valid_ref(
     if fetch_response:
         return any(
             item["kind"] == "fetch_result"
+            and item["final_allowed"]
             and item["payload"].get("ref") == ref
             and artifact_response_exists(settings, store, item)
             for item in evidence_items
         )
 
     return False
+
+
+def normalize_case_refs(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    final_answer: JsonObject,
+) -> JsonObject:
+    value = dict(final_answer)
+    value["evidenceRefs"] = [
+        normalize_case_ref(settings, store, run_id, ref)
+        for ref in value.get("evidenceRefs", [])
+    ]
+    root_causes = []
+    for root_cause in value.get("likelyRootCauses", []):
+        if not isinstance(root_cause, dict):
+            root_causes.append(root_cause)
+            continue
+        normalized = dict(root_cause)
+        normalized["evidenceRefs"] = [
+            normalize_case_ref(settings, store, run_id, ref)
+            for ref in normalized.get("evidenceRefs", [])
+        ]
+        root_causes.append(normalized)
+    value["likelyRootCauses"] = root_causes
+    return value
+
+
+def normalize_case_ref(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    ref: str,
+) -> str:
+    if CASE_CONTEXT_RE.match(ref):
+        return ref
+    match = CASE_ID_RE.search(ref)
+    if not match:
+        return ref
+    index = find_case_index(settings, store, run_id, match.group(1))
+    return f"case_context.json#cases/{index}" if index is not None else ref
+
+
+def find_case_index(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    case_id: str,
+) -> int | None:
+    for evidence in reversed(store.list_evidence(run_id)):
+        if evidence["kind"] != "case_context" or not evidence.get("artifact_id"):
+            continue
+        cases = read_evidence_artifact(settings, store, evidence).get("cases")
+        if not isinstance(cases, list):
+            continue
+        for index, item in enumerate(cases):
+            if isinstance(item, dict) and item.get("caseId") == case_id:
+                return index
+    return None
 
 
 def artifact_match_exists(
@@ -206,6 +278,33 @@ def artifact_ref_exists(
 
 def artifact_response_exists(settings: Settings, store: Store, evidence: JsonObject) -> bool:
     return isinstance(read_evidence_artifact(settings, store, evidence).get("response"), dict)
+
+
+def artifact_case_exists(
+    settings: Settings,
+    store: Store,
+    evidence: JsonObject,
+    index: int,
+) -> bool:
+    cases = read_evidence_artifact(settings, store, evidence).get("cases")
+    if not isinstance(cases, list) or not 0 <= index < len(cases):
+        return False
+    item = cases[index]
+    if not isinstance(item, dict):
+        return False
+    return item.get("enabled", True) is not False
+
+
+def latest_case_exists(
+    settings: Settings,
+    store: Store,
+    evidence_items: list[JsonObject],
+    index: int,
+) -> bool:
+    for evidence in reversed(evidence_items):
+        if evidence["kind"] == "case_context":
+            return artifact_case_exists(settings, store, evidence, index)
+    return False
 
 
 def artifact_question_exists(settings: Settings, store: Store, evidence: JsonObject) -> bool:

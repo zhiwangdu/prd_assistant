@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Context Final Evidence Refs
+
+- Added V2 final-answer validation support for
+  `case_context.json#cases/<index>` refs backed by the current run's
+  `case_context` artifact.
+- Added V1-compatible Case id alias normalization: model refs such as
+  `case_<id>` or `历史案例 case_<id>` are converted to the matching
+  `case_context.json#cases/<index>` canonical ref.
+- Kept `case_context` evidence background-only while allowing only the
+  canonical Case item refs as final evidence.
+- Updated `analysis_package.json` final-evidence policy to include
+  `case_context.json#cases/<index>`.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Session Text Input Evidence
 
 - Added V2 `session_text_input.json` persistence for each analysis run's

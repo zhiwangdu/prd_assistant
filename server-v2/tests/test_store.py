@@ -3675,6 +3675,35 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(context_body["caseCount"], 1)
             self.assertEqual(context_body["cases"][0]["caseId"], task_case["caseId"])
             self.assertFalse(context_body["finalEvidenceAllowed"])
+            case_answer = {
+                "summary": "Historical Case evidence is citeable.",
+                "symptoms": [],
+                "likelyRootCauses": [
+                    {
+                        "cause": "The recalled Case matches the symptom.",
+                        "evidenceRefs": [f"历史案例 {task_case['caseId']}"],
+                    }
+                ],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": ["case_context.json#cases/0"],
+            }
+            case_validated = normalize_and_validate_final_answer(
+                settings,
+                store,
+                run["id"],
+                case_answer,
+            )
+            self.assertEqual(case_validated["evidenceRefs"], ["case_context.json#cases/0"])
+            self.assertEqual(
+                case_validated["likelyRootCauses"][0]["evidenceRefs"],
+                ["case_context.json#cases/0"],
+            )
+            bad_case_answer = dict(case_answer, evidenceRefs=["case_context.json#cases/2"])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], bad_case_answer)
 
             recall_response = task_mcp_response(
                 settings,

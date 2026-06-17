@@ -54,7 +54,8 @@ slice provides the durable foundation for the V2 product model:
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`; the run question is persisted as
   `session_text_input.json` and can be cited as
-  `session_text_input.json#question`.
+  `session_text_input.json#question`, and recalled Cases can be cited through
+  `case_context.json#cases/<index>`.
 - Final result persistence as `result.json` and `result.md` artifacts, with
   HTTP and task MCP read surfaces, plus deterministic fallback run alias
   persistence for history/UI display.
@@ -700,12 +701,16 @@ The current required shape is:
 - `confidence`: `low`, `medium`, or `high`
 - `evidenceRefs`: optional top-level string array
 
-Only current-task, final-allowed evidence refs are accepted:
+Only current-task evidence refs are accepted. Most refs must come from
+`final_allowed=true` evidence; `case_context.json#cases/<index>` is the
+canonical exception for recalled Case background context:
 
 ```text
+session_text_input.json#question
 grep_results.json#matches/<index>
 log_searches/<search_id>.json#matches/<index>
 log_slices/<slice_id>.json#lines
+case_context.json#cases/<index>
 tool_results/<tool_id>/result.json#findings/<index>
 tool_results/<fetch_action_id>/result.json#response
 ```
