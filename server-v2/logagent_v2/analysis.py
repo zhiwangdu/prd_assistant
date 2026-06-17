@@ -19,6 +19,8 @@ ANALYSIS_RESOURCE_KINDS = (
     "analysis_package",
     "agent_request",
     "agent_response",
+    "claude_mcp_config",
+    "claude_session",
     "case_context",
     "tool_results",
     "mcp_calls",
@@ -42,6 +44,12 @@ RUN_ARTIFACT_KINDS = {
         "analysis_package.json",
     ),
     "agent_response": ("agentResponsePath", "agentResponse", "agent_response.json"),
+    "claude_mcp_config": (
+        "claudeMcpConfigPath",
+        "claudeMcpConfig",
+        "claude_mcp_config.json",
+    ),
+    "claude_session": ("claudeSessionPath", "claudeSession", "claude_session.json"),
     "analysis_state": ("analysisStatePath", "analysisState", "analysis_state.json"),
     "user_question": ("textInputPath", "textInput", "session_text_input.json"),
 }

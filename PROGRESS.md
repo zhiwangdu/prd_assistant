@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Claude Runtime Artifact Compatibility
+
+- V2 task MCP now advertises optional Rust/V1 Claude runtime resources
+  `claude_mcp_config` and `claude_session` on both `logagent://task/...` and
+  `logagent-v2://run/...` URI schemes.
+- `GET /api/v2/runs/:run_id/artifacts` now includes
+  `claudeMcpConfigPath` / `claudeMcpConfig` and `claudeSessionPath` /
+  `claudeSession` when matching evidence artifacts exist; current Python V2
+  Agent runs still do not generate Claude runtime artifacts.
+- Added regression coverage by writing simulated Claude config/session evidence
+  artifacts, reading one through task MCP, and checking the HTTP aggregate
+  response.
+- Verification passed: focused Claude runtime artifact compatibility
+  regression, ruff for `server-v2/logagent_v2` and `server-v2/tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, compileall for
+  `server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Run Artifact Aggregate Response
 
 - `GET /api/v2/runs/:run_id/artifacts` now keeps the raw V2 `run`, `uploads`,

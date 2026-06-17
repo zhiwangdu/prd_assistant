@@ -99,7 +99,8 @@ Implemented in this slice:
 - Evidence and artifact listing for a run, including uploaded input artifacts,
   evidence artifact outputs, and Rust/V1-style aggregate fields for manifest,
   grep results, Session text input, metadata/system/case context, analysis
-  package, Agent audit artifacts, MCP calls, and tool results.
+  package, Agent audit artifacts, optional Claude MCP config/session artifacts,
+  MCP calls, and tool results.
 - Run analysis summary endpoint combining run metadata, timeline, evidence,
   artifacts, analysis resources, final result, and run alias for WebUI
   inspection.
@@ -113,8 +114,9 @@ Implemented in this slice:
   `ping` and empty `prompts/list`.
 - Task MCP endpoint with `summary`, `artifact_index`, `evidence`, `manifest`,
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
-  `analysis_state`, `agent_request`, `agent_response`, `case_context`,
-  `tool_results`, `mcp_calls`, `result`, and `result_markdown` resources.
+  `analysis_state`, `agent_request`, `agent_response`, `claude_mcp_config`,
+  `claude_session`, `case_context`, `tool_results`, `mcp_calls`, `result`, and
+  `result_markdown` resources.
 - Task MCP `logagent.search_logs`, which accepts V1-compatible optional
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
   returns stable `log_searches/<search_id>.json#matches/<index>` refs. The
@@ -1265,6 +1267,9 @@ the request and response artifact ids. `mcp_calls` captures successful task MCP
 `resources/read` and `tools/call` requests as JSONL with call id, arguments,
 status, result, and evidence/background refs. These evidence rows are
 background-only (`final_allowed=false`) and exposed through task MCP resources.
+Task MCP also advertises optional Rust/V1 Claude runtime compatibility
+resources `claude_mcp_config` and `claude_session`; current Python V2 Agent
+runs do not create them, but matching evidence artifacts are readable.
 Task MCP also exposes aggregate compatibility resources: `artifact_index`
 enumerates current run upload and evidence artifacts with stable logical paths,
 `tool_results` returns parsed `tool_result` and `fetch_result` artifacts under
@@ -1280,7 +1285,9 @@ question at `session_text_input.json`.
 `metadataContextPath`/`metadataContext`, `systemContextPath`/`systemContext`,
 `caseContextPath`/`caseContext`, `analysisPackagePath`/`analysisPackage`,
 `agentResponsePath`/`agentResponse`, `analysisStatePath`/`analysisState`,
-`mcpCallsPath`/`mcpCalls`, and `toolResults`.
+`claudeMcpConfigPath`/`claudeMcpConfig`,
+`claudeSessionPath`/`claudeSession`, `mcpCallsPath`/`mcpCalls`, and
+`toolResults`.
 
 After final-answer validation succeeds, V2 writes `result.json` with schema
 version 1 and `result.md` as a Markdown rendering of the same final answer.

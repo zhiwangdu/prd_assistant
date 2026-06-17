@@ -92,7 +92,7 @@ slice provides the durable foundation for the V2 product model:
   preserves raw V2 run/upload/evidence lists and also returns Rust/V1-style
   aggregate fields for manifest, grep results, Session text input,
   metadata/system/case context, analysis package, Agent audit artifacts, MCP
-  calls, and tool results.
+  calls, optional Claude MCP config/session artifacts, and tool results.
 - Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
   fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
@@ -557,6 +557,9 @@ artifact records the latest round status. Successful task MCP `resources/read`
 and `tools/call` requests append JSONL records with call id, arguments, status,
 result summary, and evidence/background refs. Task MCP exposes them as
 `agent_request`, `agent_response`, `analysis_state`, and `mcp_calls` resources.
+It also advertises optional Rust/V1 Claude runtime compatibility resources
+`claude_mcp_config` and `claude_session`; current Python V2 Agent runs do not
+create those artifacts, but imported or future evidence rows are readable.
 Task MCP also exposes V1-compatible aggregate resources: `artifact_index`
 lists current run uploads and evidence artifacts by stable logical path,
 `tool_results` aggregates `tool_result` and `fetch_result` artifacts, and
@@ -568,7 +571,9 @@ response for WebUI and Rust/V1 migration callers: `manifestPath`/`manifest`,
 `metadataContextPath`/`metadataContext`, `systemContextPath`/`systemContext`,
 `caseContextPath`/`caseContext`, `analysisPackagePath`/`analysisPackage`,
 `agentResponsePath`/`agentResponse`, `analysisStatePath`/`analysisState`,
-`mcpCallsPath`/`mcpCalls`, and `toolResults`.
+`claudeMcpConfigPath`/`claudeMcpConfig`,
+`claudeSessionPath`/`claudeSession`, `mcpCallsPath`/`mcpCalls`, and
+`toolResults`.
 
 Successful runs also write `result.json` and `result.md`, then persist a short
 deterministic alias derived from the final summary or question. `GET

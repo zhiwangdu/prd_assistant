@@ -393,6 +393,8 @@ def task_resources(run: dict) -> list[dict]:
         ("analysis_state", "Latest Analysis Agent state snapshot", "application/json"),
         ("agent_request", "Latest Agent provider request", "application/json"),
         ("agent_response", "Latest Agent provider response", "application/json"),
+        ("claude_mcp_config", "Claude MCP config artifact", "application/json"),
+        ("claude_session", "Claude session artifact", "application/json"),
         ("case_context", "Latest Case background context", "application/json"),
         ("tool_results", "Tool result artifacts", "application/json"),
         ("mcp_calls", "Task MCP call audit log", "application/json"),
@@ -456,6 +458,10 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_request")
     elif name == "agent_response":
         value = read_latest_evidence_artifact(settings, store, run["id"], "agent_response")
+    elif name == "claude_mcp_config":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "claude_mcp_config")
+    elif name == "claude_session":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "claude_session")
     elif name == "case_context":
         value = read_task_case_context(settings, store, run)
     elif name == "tool_results":
