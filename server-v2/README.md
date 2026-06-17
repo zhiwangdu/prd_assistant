@@ -705,8 +705,10 @@ adapter `pprof_analyzer`.
 Manual tool run creation validates both upload count and uploaded filenames
 against the selected descriptor's `acceptedSuffixes`; `params.inputFiles` can
 still select existing workspace inputs without attaching uploads.
-Huawei package sync matches the Rust/V1 catalog behavior by accepting any
-single completed upload (`acceptedSuffixes=["*"]`) and validating only the
+Huawei package sync matches the Rust/V1 catalog behavior by using the
+`Huawei OBS + GaussDB Package Sync` display name, `huawei-cloud` tag,
+`outputViews=["summary","obs","gaussdb","json"]`, accepting any single
+completed upload (`acceptedSuffixes=["*"]`), and validating only the
 single-upload count plus structured SQL/object-key params.
 `pprof_analyzer` catalog metadata uses the Rust/V1 configured command shape
 (`source=configured`, `backend=command`) while remaining manual-only in V2.

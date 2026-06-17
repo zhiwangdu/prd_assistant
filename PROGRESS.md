@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Huawei Descriptor Catalog Parity
+
+- V2 `logagent.huawei_cloud_package_sync` catalog metadata now matches the
+  Rust/V1 descriptor beyond upload suffixes: display name is
+  `Huawei OBS + GaussDB Package Sync`, tags include `huawei-cloud`, and
+  `outputViews` is `["summary", "obs", "gaussdb", "json"]`.
+- Execution behavior is unchanged: the tool remains default-off and still
+  requires exactly one completed upload plus validated object-key / SQL params.
+- Added regression coverage for the catalog descriptor fields.
+- Updated V2 Server and Tool Runner docs/specs.
+- Verification passed: focused tool registry regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (98 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Field Param Parity
 
 - V2 metadata field filters now match Rust/V1 across Tools API, readonly MCP,

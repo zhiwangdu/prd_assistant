@@ -2385,6 +2385,18 @@ class StoreTests(unittest.TestCase):
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
                 ["*"],
             )
+            self.assertEqual(
+                descriptors["logagent.huawei_cloud_package_sync"]["displayName"],
+                "Huawei OBS + GaussDB Package Sync",
+            )
+            self.assertIn(
+                "huawei-cloud",
+                descriptors["logagent.huawei_cloud_package_sync"]["tags"],
+            )
+            self.assertEqual(
+                descriptors["logagent.huawei_cloud_package_sync"]["outputViews"],
+                ["summary", "obs", "gaussdb", "json"],
+            )
             field_schema = descriptors["logagent.get_metadata_field_types"][
                 "paramsSchema"
             ]["properties"]["field"]

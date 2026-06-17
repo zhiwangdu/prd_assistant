@@ -30,7 +30,7 @@ ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具是固定 Server
 
 Server 还实现内置 `logagent.preprocess_log_package` 和 `logagent.fetch` runnable tools。预处理 tool 复用 Analyze 解压链路，按节点日志包生成 `tool_inputs` 和摘要 result；Fetch tool 复用 `tool_run`、Tools 目录和 `tool_results` artifact，但执行由 `fetch.enabled`、AES-256-GCM credential store、HTTP allowlist 和 reqwest 负责；二者都不导出到 `tools.zip`。
 
-Server 还实现内置 Huawei package sync runnable tool `logagent.huawei_cloud_package_sync`。它复用 `tool_run`、Tools 目录和 `tool_results` artifact，执行由 `huawei_cloud.package_sync` 配置、Huawei OBS 签名 PUT/HEAD 和 GaussDB SQL 连接负责；首版仅支持受保护 Tools API 手动运行，不暴露为任务 MCP tool，也不导出到 `tools.zip`。
+Server 还实现内置 Huawei package sync runnable tool `logagent.huawei_cloud_package_sync`。它复用 `tool_run`、Tools 目录和 `tool_results` artifact，执行由 `huawei_cloud.package_sync` 配置、Huawei OBS 签名 PUT/HEAD 和 GaussDB SQL 连接负责；首版仅支持受保护 Tools API 手动运行，不暴露为任务 MCP tool，也不导出到 `tools.zip`。V2 catalog descriptor 对齐 Rust/V1：display name 为 `Huawei OBS + GaussDB Package Sync`，tag 包含 `huawei-cloud`，`outputViews=["summary","obs","gaussdb","json"]`。
 
 Server 还提供只读工具目录和工具包导出：
 
@@ -189,7 +189,7 @@ Huawei package sync 的 `result.json` 至少包含：
 - `logagent.list_fetch_endpoints` 在 Fetch 关闭时必须返回错误；开启时必须返回 Rust/V1 `schemaVersion=1`、enabled endpoint summaries、`fetchId`、`urlTemplate`、`credentialVersion` 和 `finalEvidenceAllowed=false`。
 - `logagent.preprocess_log_package` 必须出现在工具目录中并标记 `source=built_in` / `backend=builtin` / `readOnly=true` / `exportable=false` / `editable=false` / `runnable=true`，支持 1..100 个 `.tar.gz` / `.tgz` 上传，创建手动 tool run 时必须拒绝不匹配的上传文件名。
 - Fetch result 必须包含 redacted request、status code、duration、redacted response headers、body preview、body artifact path、truncated 标记、credential version 和 `httpOk`；HTTP 4xx/5xx 不导致 task failed。
-- `logagent.huawei_cloud_package_sync` 必须出现在工具目录中并标记 `source=built_in` / `backend=huawei_cloud_package_sync` / `exportable=false` / `editable=false` / `minFiles=maxFiles=1` / `acceptedSuffixes=["*"]`；配置关闭时 `runnable=false`，开启时 WebUI Tool plugins 可手动运行。
+- `logagent.huawei_cloud_package_sync` 必须出现在工具目录中并标记 `source=built_in` / `backend=huawei_cloud_package_sync` / `exportable=false` / `editable=false` / `minFiles=maxFiles=1` / `acceptedSuffixes=["*"]` / `outputViews=["summary","obs","gaussdb","json"]`，display name 为 `Huawei OBS + GaussDB Package Sync`，tag 包含 `huawei-cloud`；配置关闭时 `runnable=false`，开启时 WebUI Tool plugins 可手动运行。
 - Huawei package sync 必须只接受一个已完成 upload，生成安全 OBS object key，流式上传包，不把密钥或原始 SQL 写入 artifact；OBS/GaussDB 失败必须写入 `status=FAILED`、`failedStep` 和 `error`。
 - Configured command tools 必须在 enabled 时 `runnable=true`，通过 `paramsTemplate.inputFiles` 显式输入或按 match rules 自动选择 `extracted/...` 文件，不允许用户传入任意 argv。
 - Configured command tools 的 `paramsTemplate.inputFiles` 可显式输入 manifest 文本路径、`extracted/...` 或 `tool_inputs/...` workspace 相对路径；V2 task MCP 还必须兼容 V1 `tool` + `inputFile` 调用形态，并在 `tools/list` input schema 中广告该兼容形态。

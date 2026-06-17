@@ -265,10 +265,13 @@ def huawei_package_sync_descriptor(settings: Settings) -> JsonObject:
     )
     return {
         "toolId": HUAWEI_PACKAGE_SYNC_TOOL_ID,
-        "displayName": "Huawei Cloud Package Sync",
-        "description": "Upload one package to Huawei OBS and verify/update GaussDB records.",
+        "displayName": "Huawei OBS + GaussDB Package Sync",
+        "description": (
+            "Upload one package to Huawei OBS, execute a GaussDB update SQL, "
+            "then query OBS/GaussDB summary."
+        ),
         "source": "built_in",
-        "tags": ["built-in", "huawei", "obs", "gaussdb", "manual-run"],
+        "tags": ["built-in", "huawei-cloud", "obs", "gaussdb", "manual-run"],
         "enabled": config.enabled,
         "backend": "huawei_cloud_package_sync",
         "readOnly": False,
@@ -289,7 +292,7 @@ def huawei_package_sync_descriptor(settings: Settings) -> JsonObject:
             "additionalProperties": False,
         },
         "paramsTemplate": {"objectKey": "", "updateSql": "", "querySql": ""},
-        "outputViews": ["summary", "obs", "gaussdb", "warnings"],
+        "outputViews": ["summary", "obs", "gaussdb", "json"],
     }
 
 

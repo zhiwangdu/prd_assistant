@@ -591,9 +591,12 @@ available, or the protected manual Tools API. The migrated built-ins are:
 - `logagent.fetch`;
 - `pprof_analyzer`;
 - `logagent.huawei_cloud_package_sync`, disabled until Huawei OBS/GaussDB
-  environment variables are configured and pass startup validation. V2 validates
-  OBS endpoint scheme/shape, bucket characters, safe object prefix, required
-  OBS keys, and required GaussDB DSN when package sync is enabled.
+  environment variables are configured and pass startup validation. Its catalog
+  descriptor uses the Rust/V1 display name `Huawei OBS + GaussDB Package Sync`,
+  the `huawei-cloud` tag, and
+  `outputViews=["summary","obs","gaussdb","json"]`. V2 validates OBS endpoint
+  scheme/shape, bucket characters, safe object prefix, required OBS keys, and
+  required GaussDB DSN when package sync is enabled.
 
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
