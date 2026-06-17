@@ -81,7 +81,7 @@ agent_response.json
 
 ## MCP
 
-MCP resources/read 和 tools/call 只能访问当前 task workspace 内的安全 artifact。`analysis_package` resource 映射到 workspace 内的 `analysis_package.json`，用于承载证据上下文；其中 Metadata 只有 outline/counts，完整 `metadata_context.json` 不作为默认 resource 输出。`get_log_slice` 只允许 `raw/` 或 `extracted/` 下的 workspace-relative path，禁止绝对路径和 `..`。
+MCP resources/read 和 tools/call 只能访问当前 task workspace 内的安全 artifact。Task MCP resource 主 URI 为 `logagent://task/<run_id>/<resource>`，Python V2 保留 `logagent-v2://run/<run_id>/<resource>` alias。`analysis_package` resource 映射到 workspace 内的 `analysis_package.json`，用于承载证据上下文；其中 Metadata 只有 outline/counts，完整 `metadata_context.json` 不作为默认 resource 输出。`get_log_slice` 只允许 `raw/` 或 `extracted/` 下的 workspace-relative path，禁止绝对路径和 `..`。
 
 MCP tools：
 

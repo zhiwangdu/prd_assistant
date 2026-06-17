@@ -803,7 +803,8 @@ results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
 background context and cannot be cited by final answers as root-cause evidence.
 
 Run startup writes `metadata_context.json` as background evidence and exposes it
-through task MCP resource `logagent-v2://run/<run_id>/metadata_context`. The
+through task MCP resource `logagent://task/<run_id>/metadata_context`, with
+`logagent-v2://run/<run_id>/metadata_context` retained as an alias. The
 context has schema version 1, a selection summary, and bounded
 `metadata_instance` resources. If exactly one instance exists, V2 includes it as
 `default_single`; if multiple exist, V2 scores instance id, remark, product,
@@ -1046,7 +1047,8 @@ current-run evidence refs starting with `session_text_input.json#question`, and
 final-evidence policy including `case_context.json#cases/<index>`. It
 intentionally omits full Skill content, full Metadata topology, and raw
 uploaded text. Task MCP exposes it at
-`logagent-v2://run/<run_id>/analysis_package`.
+`logagent://task/<run_id>/analysis_package` and retains the
+`logagent-v2://run/<run_id>/analysis_package` alias.
 
 The Agent boundary is audited with schema version 1 artifacts. `agent_request`
 captures the provider/stub, model, transport metadata, allowed evidence refs,
@@ -1102,8 +1104,9 @@ bounded stdout/stderr previews. Invalid remote targets produce
 `status=REMOTE_REJECTED` background evidence. When no remote target is supplied,
 V2 records the V1-compatible `status=MOCK` artifact. The resource is available
 from `GET /api/v2/runs/:run_id/analysis` and task MCP
-`logagent-v2://run/<run_id>/environment_evidence`, and a bounded outline is
-included in the next `analysis_package` and Agent prompt. The current runtime
+`logagent://task/<run_id>/environment_evidence`, with the
+`logagent-v2://run/<run_id>/environment_evidence` alias retained. A bounded
+outline is included in the next `analysis_package` and Agent prompt. The current runtime
 still does not implement full LangGraph resume planning, SCP file collection,
 or multi-node Environment Collector execution.
 

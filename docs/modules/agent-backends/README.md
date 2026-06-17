@@ -18,7 +18,7 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - `claude_code` 配置块，读取 `LOGAGENT_CLAUDE_CODE_PATH` 或显式 `command_path`。
 - `mcp.enabled` / `mcp.transport=stdio` 配置。
 - `logagent-server mcp --config <logagent.yaml> --task-id <task_id> --mode <diagnose|code_investigation|fix>` stdio 子命令。
-- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，证据包由 Claude 通过 MCP `analysis_package` resource 读取。
+- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，证据包由 Claude 通过 MCP `analysis_package` resource 读取。Task MCP resource 主 URI 为 `logagent://task/<run_id>/<resource>`，Python V2 保留 `logagent-v2://run/<run_id>/<resource>` alias。
 - `analysis_package.json` 不再内联完整 Metadata；Claude 初始只看到 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 也返回 outline，细节通过 `logagent.query_metadata` 分页读取。
 - 分模式 permission profile：默认 `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/受控 Bash，`fix` 预留 Edit/Write/Test 能力。所有 profile 都自动允许 `mcp__logagent__*`，否则 Claude Code 的 `dontAsk` 模式会拒绝任务 MCP tools。
 - task 创建接受 `analysisMode`，默认来自 `claude_code.default_mode`。

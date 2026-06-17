@@ -474,7 +474,8 @@ package is a bounded Agent context bundle: Workspace/run metadata, task MCP
 resource URIs, manifest outline, grep match preview, analyzer tool input
 outline, system/metadata context outlines, and the current allowed evidence
 refs, including `session_text_input.json#question`. Task MCP exposes it as
-`logagent-v2://run/<run_id>/analysis_package`.
+`logagent://task/<run_id>/analysis_package` and retains the
+`logagent-v2://run/<run_id>/analysis_package` alias.
 
 Every Agent round also writes background-only audit artifacts:
 `agent_request.json`, `agent_response.json`, `analysis_state.json`, and
@@ -828,8 +829,9 @@ evidence. If exactly one metadata instance exists, it is selected as
 cluster, node, database, retention policy, measurement, and field names against
 the Workspace question/mode and includes up to three matched outlines. The
 outline is bounded to node/database/schema summaries and is exposed through task
-MCP resource `logagent-v2://run/<run_id>/metadata_context`; full snapshots and
-field details remain available through the Metadata MCP tools.
+MCP resource `logagent://task/<run_id>/metadata_context`; the
+`logagent-v2://run/<run_id>/metadata_context` alias is retained. Full snapshots
+and field details remain available through the Metadata MCP tools.
 
 ## Case Memory
 

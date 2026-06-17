@@ -224,8 +224,12 @@ class StoreTests(unittest.TestCase):
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "resources/read",
-                    "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_package"},
+                    "params": {"uri": f"logagent://task/{run['id']}/analysis_package"},
                 },
+            )
+            self.assertEqual(
+                package_response["result"]["contents"][0]["uri"],
+                f"logagent://task/{run['id']}/analysis_package",
             )
             package = json.loads(package_response["result"]["contents"][0]["text"])
             self.assertEqual(package["workspace"]["question"], "why did the query timeout?")
@@ -1358,12 +1362,15 @@ class StoreTests(unittest.TestCase):
                 {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
             )
             names = {item["name"] for item in listed["result"]["resources"]}
+            resource_uris = {item["uri"] for item in listed["result"]["resources"]}
             self.assertIn("manifest", names)
             self.assertIn("grep_results", names)
             self.assertIn("artifact_index", names)
             self.assertIn("case_context", names)
             self.assertIn("tool_results", names)
             self.assertIn("mcp_calls", names)
+            self.assertIn(f"logagent://task/{run['id']}/analysis_package", resource_uris)
+            self.assertIn(f"logagent-v2://run/{run['id']}/analysis_package", resource_uris)
 
             manifest = task_mcp_response(
                 settings,

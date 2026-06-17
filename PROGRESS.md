@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Resource URI Aliases
+
+- Added V1-compatible task MCP resource URI support for
+  `logagent://task/<run_id>/<resource>` while retaining existing
+  `logagent-v2://run/<run_id>/<resource>` URIs.
+- `resources/list` now advertises both URI schemes for all task resources.
+- `resources/read` now normalizes both task URI schemes, persists the same MCP
+  call audit entry, and echoes the caller-provided URI in returned content.
+- Updated V2 server, Interfaces, and Agent Backends README/SPEC docs.
+- Added regression coverage for V1 `analysis_package` reads and dual URI
+  advertisement.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Readonly MCP System Context Preview
 
 - Aligned V2 readonly MCP `logagent.preview_system_context` with the Rust/V1

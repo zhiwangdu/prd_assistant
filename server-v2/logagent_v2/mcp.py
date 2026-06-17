@@ -325,46 +325,60 @@ def find_configured_tool_timeout(settings: Settings, tool_id: str) -> int | None
 
 def task_resources(run: dict) -> list[dict]:
     run_id = run["id"]
-    return [
-        resource(run_id, "summary", "Run summary"),
-        resource(run_id, "artifact_index", "Artifact index"),
-        resource(run_id, "evidence", "Evidence index"),
-        resource(run_id, "manifest", "Initial manifest"),
-        resource(run_id, "grep_results", "Initial grep results"),
-        resource(run_id, "system_context", "System Context snapshot"),
-        resource(run_id, "metadata_context", "Metadata Context snapshot"),
-        resource(run_id, "environment_evidence", "Latest approved environment evidence"),
-        resource(run_id, "analysis_package", "Bounded Agent analysis package"),
-        resource(run_id, "analysis_state", "Latest Analysis Agent state snapshot"),
-        resource(run_id, "agent_request", "Latest Agent provider request"),
-        resource(run_id, "agent_response", "Latest Agent provider response"),
-        resource(run_id, "case_context", "Latest Case background context"),
-        resource(run_id, "tool_results", "Tool result artifacts"),
-        resource(run_id, "mcp_calls", "Task MCP call audit log"),
-        resource(run_id, "result", "Final result JSON artifact"),
-        resource(run_id, "result_markdown", "Final result Markdown artifact", "text/markdown"),
-    ]
+    resources = []
+    for item in [
+        ("summary", "Run summary", "application/json"),
+        ("artifact_index", "Artifact index", "application/json"),
+        ("evidence", "Evidence index", "application/json"),
+        ("manifest", "Initial manifest", "application/json"),
+        ("grep_results", "Initial grep results", "application/json"),
+        ("system_context", "System Context snapshot", "application/json"),
+        ("metadata_context", "Metadata Context snapshot", "application/json"),
+        (
+            "environment_evidence",
+            "Latest approved environment evidence",
+            "application/json",
+        ),
+        ("analysis_package", "Bounded Agent analysis package", "application/json"),
+        ("analysis_state", "Latest Analysis Agent state snapshot", "application/json"),
+        ("agent_request", "Latest Agent provider request", "application/json"),
+        ("agent_response", "Latest Agent provider response", "application/json"),
+        ("case_context", "Latest Case background context", "application/json"),
+        ("tool_results", "Tool result artifacts", "application/json"),
+        ("mcp_calls", "Task MCP call audit log", "application/json"),
+        ("result", "Final result JSON artifact", "application/json"),
+        ("result_markdown", "Final result Markdown artifact", "text/markdown"),
+    ]:
+        resources.extend(resource_aliases(run_id, *item))
+    return resources
 
 
-def resource(
+def resource_aliases(
     run_id: str,
     name: str,
     description: str,
     mime_type: str = "application/json",
-) -> dict:
-    return {
-        "uri": f"logagent-v2://run/{run_id}/{name}",
-        "name": name,
-        "description": description,
-        "mimeType": mime_type,
-    }
+) -> list[dict]:
+    return [
+        {
+            "uri": f"logagent://task/{run_id}/{name}",
+            "name": name,
+            "description": description,
+            "mimeType": mime_type,
+        },
+        {
+            "uri": f"logagent-v2://run/{run_id}/{name}",
+            "name": name,
+            "description": description,
+            "mimeType": mime_type,
+        },
+    ]
 
 
 def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) -> dict:
-    prefix = f"logagent-v2://run/{run['id']}/"
-    if not isinstance(uri, str) or not uri.startswith(prefix):
+    name = task_resource_name(run, uri)
+    if not name:
         raise ValueError("resource URI does not belong to this run")
-    name = uri.removeprefix(prefix)
     if name == "summary":
         value = {
             "run": run,
@@ -426,8 +440,15 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
 
 
 def task_resource_name(run: dict, uri: str) -> str | None:
-    prefix = f"logagent-v2://run/{run['id']}/"
-    return uri.removeprefix(prefix) if isinstance(uri, str) and uri.startswith(prefix) else None
+    if not isinstance(uri, str):
+        return None
+    for prefix in (
+        f"logagent://task/{run['id']}/",
+        f"logagent-v2://run/{run['id']}/",
+    ):
+        if uri.startswith(prefix):
+            return uri.removeprefix(prefix)
+    return None
 
 
 def task_tool_result_value(result: dict) -> dict:
