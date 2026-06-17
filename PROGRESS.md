@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Session Alias API
+
+- Added Session-first HTTP aliases under `/api/v2/sessions` while keeping the
+  V2 internal Workspace/Run model unchanged.
+- `sessionId` maps to the Workspace id, `taskId` maps to the Run id, and
+  Session records expose `uploadIds`, `taskIds`, `activeTaskId`,
+  `analysisLanguage`, status, counts, and the backing Workspace payload.
+- Added aliases for Session CRUD, Session uploads, batch uploads, restartable
+  upload init/list, task creation/listing, and workspace-level Session timeline
+  events.
+- Session deletion now rejects unfinished tasks on the alias surface, matching
+  the Rust/WebUI expectation that active analysis sessions cannot be deleted.
+- Added API regression coverage for create/update/upload/task/timeline/delete
+  Session alias behavior.
+- Verification passed: focused Session alias API regression,
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (108 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Built-in Tool Surface Coverage
 
 - Added regression coverage that locks V1 built-in tool names across V2 task

@@ -1667,6 +1667,24 @@ class Store:
             events.append(item)
         return events
 
+    def list_workspace_timeline(self, workspace_id: str) -> list[JsonObject]:
+        self.get_workspace(workspace_id)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM timeline_events
+                WHERE workspace_id = ?
+                ORDER BY created_at ASC, id ASC
+                """,
+                (workspace_id,),
+            ).fetchall()
+        events = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = decode_json(item.pop("payload_json"), {})
+            events.append(item)
+        return events
+
     def upsert_metadata_instance(
         self,
         instance_id: str,

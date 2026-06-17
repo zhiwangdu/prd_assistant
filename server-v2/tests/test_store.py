@@ -182,6 +182,118 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.create_run(workspace["id"])
 
+    def test_session_alias_routes_map_to_workspace_runs(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    "/api/v2/sessions",
+                    headers=headers,
+                    json={
+                        "title": "Timeout analysis",
+                        "question": "why timeout?",
+                        "analysisLanguage": "en-US",
+                        "skillIds": ["skill-a"],
+                    },
+                )
+                self.assertEqual(created.status_code, 201)
+                session = created.json()
+                session_id = session["sessionId"]
+                self.assertTrue(session_id.startswith("ws_"))
+                self.assertEqual(session["workspaceId"], session_id)
+                self.assertEqual(session["question"], "why timeout?")
+                self.assertEqual(session["analysisLanguage"], "en-US")
+                self.assertEqual(session["skillIds"], ["skill-a"])
+                self.assertEqual(session["status"], "draft")
+
+                patched = client.patch(
+                    f"/api/v2/sessions/{session_id}",
+                    headers=headers,
+                    json={"question": "updated question", "analysisLanguage": "zh-CN"},
+                )
+                self.assertEqual(patched.status_code, 200)
+                self.assertEqual(patched.json()["question"], "updated question")
+                self.assertEqual(patched.json()["analysisLanguage"], "zh-CN")
+
+                uploaded = client.post(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                    files={"file": ("db.log", b"query timeout\n", "text/plain")},
+                )
+                self.assertEqual(uploaded.status_code, 200)
+                upload_id = uploaded.json()["upload"]["id"]
+
+                uploads = client.get(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                )
+                self.assertEqual(uploads.status_code, 200)
+                self.assertEqual([item["id"] for item in uploads.json()["uploads"]], [upload_id])
+
+                task = client.post(
+                    f"/api/v2/sessions/{session_id}/tasks",
+                    headers=headers,
+                )
+                self.assertEqual(task.status_code, 202)
+                task_body = task.json()
+                self.assertTrue(task_body["taskId"].startswith("run_"))
+                self.assertEqual(task_body["runId"], task_body["taskId"])
+                self.assertEqual(task_body["sessionId"], session_id)
+
+                tasks = client.get(
+                    f"/api/v2/sessions/{session_id}/tasks",
+                    headers=headers,
+                )
+                self.assertEqual(tasks.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in tasks.json()["tasks"]],
+                    [task_body["taskId"]],
+                )
+
+                timeline = client.get(
+                    f"/api/v2/sessions/{session_id}/timeline",
+                    headers=headers,
+                )
+                self.assertEqual(timeline.status_code, 200)
+                event_kinds = [event["kind"] for event in timeline.json()["events"]]
+                self.assertIn("workspace.created", event_kinds)
+                self.assertIn("workspace.updated", event_kinds)
+                self.assertIn("upload.created", event_kinds)
+                self.assertIn("run.queued", event_kinds)
+
+                blocked_delete = client.delete(
+                    f"/api/v2/sessions/{session_id}",
+                    headers=headers,
+                )
+                self.assertEqual(blocked_delete.status_code, 409)
+
+                empty = client.post(
+                    "/api/v2/sessions",
+                    headers=headers,
+                    json={"title": "empty draft"},
+                )
+                self.assertEqual(empty.status_code, 201)
+                empty_id = empty.json()["sessionId"]
+                deleted = client.delete(
+                    f"/api/v2/sessions/{empty_id}",
+                    headers=headers,
+                )
+                self.assertEqual(deleted.status_code, 200)
+                self.assertTrue(deleted.json()["deleted"])
+
+                listed = client.get("/api/v2/sessions", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(
+                    [item["sessionId"] for item in listed.json()["sessions"]],
+                    [session_id],
+                )
+
     def test_workspace_run_job_and_stub_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

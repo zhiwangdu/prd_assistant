@@ -14,6 +14,10 @@ slice provides the durable foundation for the V2 product model:
   schema foundations.
 - Workspace update and soft-delete lifecycle; deleted Workspaces are hidden from
   history lists but existing runs and artifacts remain readable by id.
+- Session-first HTTP aliases under `/api/v2/sessions`: V2 maps `sessionId`
+  to the Workspace id, maps `taskIds` to Run ids, exposes Session uploads,
+  restartable upload sessions, task creation/listing, and workspace-level
+  timeline events, and rejects Session deletion while any task is unfinished.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.

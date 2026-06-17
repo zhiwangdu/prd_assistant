@@ -18,6 +18,8 @@ auditable agent boundary.
 
 ## Product Model
 
+- `Session`: product-facing diagnosis container. In this slice it is an HTTP
+  alias over `Workspace`; `sessionId` equals the Workspace id.
 - `Workspace`: top-level diagnosis container.
 - `Run`: one Agent execution inside a Workspace.
 - `TimelineEvent`: append-only product event stream.
@@ -44,6 +46,11 @@ Implemented in this slice:
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted
   Workspaces are omitted from history lists while existing run/upload/artifact
   rows remain readable by id.
+- Session-first API aliases for create/list/read/update/delete, uploads,
+  restartable upload sessions, task creation/listing, and full Session
+  timeline. `taskId` equals the underlying Run id, `activeTaskId` is the newest
+  Run, and Session deletion is rejected while any Run is not `succeeded` or
+  `failed`.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
@@ -231,16 +238,29 @@ GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
 PATCH /api/v2/workspaces/:workspace_id
 DELETE /api/v2/workspaces/:workspace_id
+POST /api/v2/sessions
+GET  /api/v2/sessions
+GET  /api/v2/sessions/:session_id
+PATCH /api/v2/sessions/:session_id
+DELETE /api/v2/sessions/:session_id
 GET  /api/v2/workspaces/:workspace_id/uploads
 GET  /api/v2/workspaces/:workspace_id/upload-sessions
 GET  /api/v2/workspaces/:workspace_id/runs
+GET  /api/v2/sessions/:session_id/uploads
+GET  /api/v2/sessions/:session_id/upload-sessions
+GET  /api/v2/sessions/:session_id/tasks
+GET  /api/v2/sessions/:session_id/timeline
 POST /api/v2/workspaces/:workspace_id/uploads
 POST /api/v2/workspaces/:workspace_id/uploads/batch
 POST /api/v2/workspaces/:workspace_id/uploads/init
+POST /api/v2/sessions/:session_id/uploads
+POST /api/v2/sessions/:session_id/uploads/batch
+POST /api/v2/sessions/:session_id/uploads/init
 GET  /api/v2/uploads/:session_id
 POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
 POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
+POST /api/v2/sessions/:session_id/tasks
 GET  /api/v2/runs?workspaceId=<workspace_id>
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline

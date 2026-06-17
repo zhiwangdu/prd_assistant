@@ -104,6 +104,28 @@ class WorkspaceUpdate(BaseModel):
     skillIds: list[str] | None = Field(default=None, max_length=20)
 
 
+class SessionCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    question: str | None = Field(default=None, max_length=20000)
+    sourceUrl: str | None = Field(default=None, max_length=2000)
+    instanceId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    analysisLanguage: Literal["zh-CN", "en-US"] = "zh-CN"
+    systemContextIds: list[str] = Field(default_factory=list, max_length=20)
+    skillIds: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SessionUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    question: str | None = Field(default=None, min_length=1, max_length=20000)
+    sourceUrl: str | None = Field(default=None, max_length=2000)
+    instanceId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    analysisLanguage: Literal["zh-CN", "en-US"] | None = None
+    systemContextIds: list[str] | None = Field(default=None, max_length=20)
+    skillIds: list[str] | None = Field(default=None, max_length=20)
+
+
 class MessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     resumeMode: Literal["continue", "finalize"] = "continue"
@@ -357,6 +379,61 @@ class UploadSessionInit(BaseModel):
     sizeBytes: int | None = Field(default=None, ge=0)
 
 
+TERMINAL_RUN_STATUSES = {"succeeded", "failed"}
+
+
+def _session_title(workspace: dict, title: str | None = None) -> str:
+    explicit = (title or "").strip()
+    if explicit:
+        return explicit
+    question = str(workspace.get("question") or "").strip()
+    if not question:
+        return "Untitled session"
+    return question[:120]
+
+
+def _session_status(workspace: dict, runs: list[dict]) -> str:
+    if workspace.get("status") == "deleted":
+        return "deleted"
+    if not runs:
+        return "draft"
+    latest = runs[0]
+    status = str(latest.get("status") or "draft")
+    if status in {"queued", "running", "waiting_for_user", "waiting_for_approval"}:
+        return status
+    if status in TERMINAL_RUN_STATUSES:
+        return status
+    return "ready"
+
+
+def _session_record(store: Store, workspace: dict, title: str | None = None) -> dict:
+    uploads = store.list_uploads(workspace["id"])
+    runs = store.list_runs(workspace["id"])
+    active_task_id = runs[0]["id"] if runs else None
+    return {
+        "schemaVersion": 1,
+        "sessionId": workspace["id"],
+        "workspaceId": workspace["id"],
+        "title": _session_title(workspace, title),
+        "question": workspace.get("question"),
+        "sourceUrl": None,
+        "instanceId": None,
+        "nodeId": None,
+        "analysisLanguage": workspace.get("language"),
+        "systemContextIds": [],
+        "skillIds": workspace.get("skillIds", []),
+        "uploadIds": [upload["id"] for upload in uploads],
+        "taskIds": [run["id"] for run in runs],
+        "activeTaskId": active_task_id,
+        "status": _session_status(workspace, runs),
+        "uploadCount": len(uploads),
+        "taskCount": len(runs),
+        "createdAt": workspace.get("created_at"),
+        "updatedAt": workspace.get("updated_at"),
+        "workspace": workspace,
+    }
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.ensure_dirs()
@@ -425,6 +502,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/v2/sessions", status_code=201)
+    async def create_session(_: Auth, payload: SessionCreate) -> dict:
+        question = (payload.question or payload.title or "New log analysis session").strip()
+        if not question:
+            question = "New log analysis session"
+        workspace = store.create_workspace(
+            question,
+            "diagnose",
+            payload.analysisLanguage,
+            skill_ids=payload.skillIds,
+        )
+        return _session_record(store, workspace)
+
+    @app.get("/api/v2/sessions")
+    async def list_sessions(_: Auth) -> dict:
+        return {
+            "sessions": [
+                _session_record(store, workspace) for workspace in store.list_workspaces()
+            ]
+        }
+
+    @app.get("/api/v2/sessions/{session_id}")
+    async def get_session(_: Auth, session_id: str) -> dict:
+        try:
+            return _session_record(store, store.get_workspace(session_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.patch("/api/v2/sessions/{session_id}")
+    async def update_session(_: Auth, session_id: str, payload: SessionUpdate) -> dict:
+        try:
+            question = payload.question.strip() if payload.question is not None else None
+            if question is not None and not question:
+                raise ValueError("question cannot be empty")
+            workspace = store.update_workspace(
+                session_id,
+                question=question,
+                language=payload.analysisLanguage,
+                skill_ids=payload.skillIds,
+            )
+            return _session_record(store, workspace)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.delete("/api/v2/sessions/{session_id}")
+    async def delete_session(_: Auth, session_id: str) -> dict:
+        try:
+            runs = store.list_runs(session_id)
+            unfinished = [
+                run for run in runs if run["status"] not in TERMINAL_RUN_STATUSES
+            ]
+            if unfinished:
+                raise HTTPException(
+                    status_code=409,
+                    detail="session has unfinished tasks",
+                )
+            workspace = store.delete_workspace(session_id)
+            return {
+                "deleted": True,
+                "sessionId": session_id,
+                "workspaceId": session_id,
+                "session": _session_record(store, workspace),
+            }
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/v2/workspaces/{workspace_id}/uploads")
     async def list_workspace_uploads(_: Auth, workspace_id: str) -> dict:
         try:
@@ -444,6 +589,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def list_workspace_runs(_: Auth, workspace_id: str) -> dict:
         try:
             return {"runs": store.list_runs(workspace_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/sessions/{session_id}/uploads")
+    async def list_session_uploads(_: Auth, session_id: str) -> dict:
+        try:
+            store.get_workspace(session_id)
+            return {"uploads": store.list_uploads(session_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/sessions/{session_id}/upload-sessions")
+    async def list_session_upload_sessions(_: Auth, session_id: str) -> dict:
+        try:
+            return {"sessions": store.list_upload_sessions(session_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/sessions/{session_id}/tasks")
+    async def list_session_tasks(_: Auth, session_id: str) -> dict:
+        try:
+            runs = store.list_runs(session_id)
+            return {"tasks": runs, "runs": runs}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/sessions/{session_id}/timeline")
+    async def get_session_timeline(_: Auth, session_id: str) -> dict:
+        try:
+            return {"events": store.list_workspace_timeline(session_id)}
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -468,6 +643,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         upload = store.create_upload(workspace_id, file.filename or "upload.bin", artifact["id"])
         return {"upload": upload, "artifact": artifact}
+
+    @app.post("/api/v2/sessions/{session_id}/uploads")
+    async def upload_session_file(
+        _: Auth, session_id: str, file: UploadFile = File(...)
+    ) -> dict:
+        return await upload_file(None, session_id, file)
 
     @app.post("/api/v2/workspaces/{workspace_id}/uploads/batch")
     async def upload_files(
@@ -502,6 +683,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             results.append({"upload": upload, "artifact": artifact})
         return {"uploads": results}
 
+    @app.post("/api/v2/sessions/{session_id}/uploads/batch")
+    async def upload_session_files(
+        _: Auth,
+        session_id: str,
+        files: list[UploadFile] = File(...),
+    ) -> dict:
+        return await upload_files(None, session_id, files)
+
     @app.post("/api/v2/workspaces/{workspace_id}/uploads/init")
     async def init_upload_session(
         _: Auth,
@@ -527,6 +716,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             temp_relative_path=temp_relative_path,
         )
         return {"session": session}
+
+    @app.post("/api/v2/sessions/{session_id}/uploads/init")
+    async def init_session_upload_session(
+        _: Auth,
+        session_id: str,
+        payload: UploadSessionInit,
+    ) -> dict:
+        return await init_upload_session(None, session_id, payload)
 
     @app.get("/api/v2/uploads/{session_id}")
     async def get_upload_session(_: Auth, session_id: str) -> dict:
@@ -611,6 +808,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def create_run(_: Auth, workspace_id: str) -> dict:
         try:
             return store.create_run(workspace_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/v2/sessions/{session_id}/tasks", status_code=202)
+    async def create_session_task(_: Auth, session_id: str) -> dict:
+        try:
+            run = store.create_run(session_id)
+            return {
+                "sessionId": session_id,
+                "workspaceId": session_id,
+                "taskId": run["id"],
+                "runId": run["id"],
+                "task": run,
+                "run": run,
+            }
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
