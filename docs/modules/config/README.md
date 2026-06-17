@@ -227,6 +227,12 @@ environment_collector:
   connect_timeout_seconds: 10
   command_timeout_seconds: 30
   retries: 1
+  # Python V2 当前通过 LOGAGENT_V2_REMOTE_FILES_JSON 承载单文件 SCP 白名单。
+  remote_files:
+    tsdb_log:
+      display_name: "TSDB log"
+      remote_path: "/var/log/opengemini/tsdb.log"
+      max_bytes: 16777216
 
 metadata:
   store: "json"
@@ -283,10 +289,16 @@ metadata:
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
 - `remote_execution.enabled` 默认 true；`ssh_binary` 启用时必须是绝对路径。
+- `remote_execution.scp_binary` / V2 `LOGAGENT_V2_REMOTE_SCP_COMMAND` 启用时必须是绝对路径，默认 `/usr/bin/scp`。
 - `remote_execution.host_key_policy` 仅支持 `accept-new`、`strict` 和 `no`，分别映射到 OpenSSH `StrictHostKeyChecking`。
 - `remote_execution.commands.<id>` 的 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`。
 - `remote_execution.commands.<id>.argv` 是 WebUI 可选择的唯一远程命令来源；用户不能输入自由 shell 命令或扩展 argv。
 - `remote_execution.commands.<id>.argv` 加载时会逐项 trim 并丢弃空字符串，归一化后仍必须至少保留一个 argv 项。
+- V2 `LOGAGENT_V2_REMOTE_FILES_JSON` 配置 approved `collect_environment`
+  可拉取的单文件模板；`fileId` 复用 command id 安全规则，`remotePath` 必须是
+  绝对安全路径并拒绝 `..`、`.`、`//`、反斜杠、空格、glob 和非安全字符。
+- V2 `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES` 是没有模板级 `maxBytes` 时的默认
+  SCP 文件大小上限，默认 16MiB。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。
 - V2 `LOGAGENT_V2_CODE_REPOS_JSON` 支持 object keyed by product 或 descriptor array；每个 repo 必须提供绝对 `repoPath`，可配置 `defaultRef`、`versionRefs` 和安全相对 `searchRoots`。启用后 task MCP 和 provider prompt 才会广告 `logagent.search_code`。
 - `code_repos` 只能指向管理员预同步的本地 git repo；用户或模型不能覆盖 repo path、search roots，也不能传入未配置的 `gitRef`。

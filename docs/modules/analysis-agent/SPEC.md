@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。当前仍未接入真实 SSH/SCP 环境采集执行器。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。`collect_environment` 批准后已可接入 Remote Executor 白名单命令，或通过 V2 白名单 file template 拉取单个有大小上限的 SCP 文件；完整多节点 Environment Collector 仍未实现。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
 
 已落地：
 
@@ -38,7 +38,7 @@
 
 尚未实现：
 
-- 真实 Environment Collector 执行器
+- 完整多节点 Environment Collector 规划、批量采集和 Agent 自动选择 executor/template
 - token、运行时间和每轮追问预算
 
 ## 输入

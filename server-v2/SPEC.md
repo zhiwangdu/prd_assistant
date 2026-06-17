@@ -75,7 +75,7 @@ Implemented in this slice:
 - Run creation and queued `run_analysis` job.
 - Inline DB-backed worker.
 - Startup recovery for interrupted DB-backed jobs: non-terminal analysis and
-  remote command jobs are requeued immediately, while stale jobs for terminal or
+  remote jobs are requeued immediately, while stale jobs for terminal or
   waiting runs are completed without rerun.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - Node log package preprocessing for
@@ -243,10 +243,12 @@ Implemented in this slice:
   `manual_approval`. Approved
   `collect_environment` actions either record V1-compatible MOCK
   `environment_evidence` background artifacts or, when the action input targets
-  an enabled Remote Executor and whitelisted command, queue a remote command and
-  record the completed command output before resuming the analysis run. Remote
-  command `result`, `stdout`, and `stderr` files are copied into the analysis
-  workspace artifact registry and linked from the environment evidence payload.
+  an enabled Remote Executor plus exactly one whitelisted command or file
+  template, queue a remote command or bounded SCP file collection job before
+  resuming the analysis run. Remote command `result`, `stdout`, and `stderr`
+  files and remote file `collected_file` support artifacts are copied into the
+  analysis workspace artifact registry and linked from the environment evidence
+  payload.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   `session_text_input.json#question`, log search, log slice, Fetch response,
@@ -289,9 +291,10 @@ Implemented in this slice:
   built-in Domain Adapter summaries, and process-local LLM response-content
   debug logging.
 - Remote Executor foundation with SQLite-managed executor assets,
-  environment-configured whitelisted SSH command templates, DB-backed
-  `remote_command_run` jobs, controlled SSH argv construction, bounded
-  stdout/stderr capture, and result files under `remote_runs/<run_id>/`.
+  environment-configured whitelisted SSH command templates, whitelisted SCP
+  file templates, DB-backed remote command/file jobs, controlled SSH/SCP argv
+  construction, bounded stdout/stderr capture, and result files under
+  `remote_runs/<run_id>/`.
 - WebUI V2 cutover: the default React routes render V2 Analyze, Memory,
   System Context, Metadata, Tools, Fetch, Executors, and Settings surfaces
   directly against `/api/v2/*` instead of rendering the legacy Rust-compatible
@@ -1256,22 +1259,37 @@ remote command smoke runner. They are not a full Environment Collector.
   template argv. The API never accepts free-form shell input.
 - `LOGAGENT_V2_REMOTE_SSH_COMMAND` defaults to `/usr/bin/ssh`, expands
   environment variables and `~`, and must resolve to an absolute path when
-  remote execution is enabled. If remote execution is disabled, a relative
-  command may remain in configuration but cannot be executed.
+  remote execution is enabled. `LOGAGENT_V2_REMOTE_SCP_COMMAND` follows the
+  same rule and defaults to `/usr/bin/scp`.
 - `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` is normalized to lower-case at startup
   and must be one of `accept-new`, `strict`, or `no`, matching the Rust/V1
   `remote_execution.host_key_policy` validation. Unknown values fail settings
   loading instead of falling back to a default.
 - stdout and stderr are capped by `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES`, stored
   as files, and previewed in `result.json`.
+- File templates are loaded from `LOGAGENT_V2_REMOTE_FILES_JSON`. Each template
+  has a safe `id` / `fileId`, display metadata, absolute safe `remotePath`,
+  optional timeout, optional `maxBytes`, and enabled state. Remote paths must be
+  exact absolute paths with safe path segments; glob patterns, whitespace,
+  `.`/`..`, backslashes, repeated separators, and shell metacharacters are
+  rejected at settings load.
+- Approved `collect_environment` actions may provide `input.executorId` and
+  either `input.commandId` or `input.fileId`, but not both. Command targets use
+  fixed SSH argv. File targets enqueue a remote run with
+  `operation=file_collection`, construct fixed SCP argv with batch mode,
+  connect timeout, host-key policy, port, `user@host:<remotePath>`, and a
+  server-owned destination path, then verify the collected file exists and does
+  not exceed template/default max bytes.
 - `GET /api/v2/executor-runs/:run_id/files/:file_name` must require the same
-  API key as other V2 APIs, accept only `result`, `stdout`, or `stderr`, resolve
-  the stored relative path from the run result, and reject missing files or
-  paths escaping `LOGAGENT_V2_DATA_DIR`.
+  API key as other V2 APIs, accept only `result`, `stdout`, `stderr`, or
+  `collected`, resolve the stored relative path from the run result, and reject
+  missing files or paths escaping `LOGAGENT_V2_DATA_DIR`.
 - Non-zero exit code, timeout, and SSH start failure are recorded in
-  `result.status` as `FAILED` or `TIMED_OUT`. The remote run reaches
-  `SUCCEEDED` when controlled execution completed and result files were
-  persisted. System errors before result persistence mark the run `FAILED`.
+  `result.status` as `FAILED` or `TIMED_OUT`; SCP start failure, non-zero exit,
+  timeout, missing output file, or over-limit output file follows the same
+  status model. The remote run reaches `SUCCEEDED` when controlled execution
+  completed and result files were persisted. System errors before result
+  persistence mark the run `FAILED`.
 
 ## Final Answer Validation
 
@@ -1522,26 +1540,29 @@ containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has
 `actionType=collect_environment`, V2 checks the approved action input, including
-any decision-time override, for `executorId` and `commandId`. If present and
-valid, it queues a
-`remote_command_run` with idempotency key `environment:<action_id>`, keeps the
-analysis run waiting during collection, and writes
-`environment_evidence/<action_id>/result.json` with `status=COLLECTED` or
-`REMOTE_FAILED`, the approved input, remote run id, remote result paths, and
-bounded stdout/stderr previews. V2 also registers the remote command
-`remote_result.json`, `stdout.txt`, and `stderr.txt` as run support artifacts
-with logical paths under `environment_evidence/<action_id>/`. Invalid remote
-targets produce `status=REMOTE_REJECTED` background evidence. When no remote
-target is supplied, V2 records the V1-compatible `status=MOCK` artifact. The
-resource is available from `GET /api/v2/runs/:run_id/analysis` and task MCP
-`logagent://task/<run_id>/environment_evidence`, with the
+any decision-time override, for `executorId` plus exactly one of `commandId` or
+`fileId`. A valid command target queues a `remote_command_run` with
+`operation=command`; a valid file target queues the same DB-backed job with
+`operation=file_collection`, validates the template from
+`LOGAGENT_V2_REMOTE_FILES_JSON`, and fetches one bounded remote file through
+the configured SCP binary. The analysis run remains waiting during collection,
+then V2 writes `environment_evidence/<action_id>/result.json` with
+`status=COLLECTED` or `REMOTE_FAILED`, the approved input, remote run id,
+remote operation, remote result paths, bounded stdout/stderr previews, and file
+metadata when present. V2 also registers remote command `remote_result.json`,
+`stdout.txt`, `stderr.txt`, and remote file `collected_file.bin` as run support
+artifacts with logical paths under `environment_evidence/<action_id>/`.
+Invalid remote targets produce `status=REMOTE_REJECTED` background evidence.
+When no remote target is supplied, V2 records the V1-compatible `status=MOCK`
+artifact. The resource is available from `GET /api/v2/runs/:run_id/analysis`
+and task MCP `logagent://task/<run_id>/environment_evidence`, with the
 `logagent-v2://run/<run_id>/environment_evidence` alias retained. A bounded
 outline is included in the next `analysis_package` and Agent prompt. The copied
 remote output support files are available through
 `GET /api/v2/runs/:run_id/artifacts` and task MCP `artifact_index` with
-`source="support"`. The current runtime still does not implement full LangGraph
-resume planning, SCP file collection, or multi-node Environment Collector
-execution.
+`source="support"`. The current runtime still does not implement full
+multi-node Environment Collector planning, batch file collection, or Agent
+auto-selection of executor/template targets.
 
 ## Security
 

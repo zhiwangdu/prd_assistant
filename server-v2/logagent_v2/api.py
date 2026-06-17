@@ -62,7 +62,7 @@ from .mcp import readonly_mcp_response, task_mcp_response
 from .results import get_run_result
 from .security import auth_dependency
 from .llm import debug_log_responses, set_debug_log_responses
-from .remote_execution import command_template, command_templates
+from .remote_execution import command_template, command_templates, file_templates
 from .settings_api import (
     agent_backend_diagnostic,
     agent_backends_summary,
@@ -1370,6 +1370,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "commands": command_templates(settings),
         }
 
+    @app.get("/api/v2/executor-file-templates")
+    async def list_executor_file_templates(_: Auth) -> dict:
+        return {
+            "enabled": settings.remote_execution_enabled,
+            "files": file_templates(settings),
+        }
+
     @app.get("/api/v2/executor-runs")
     async def list_executor_runs(
         _: Auth,
@@ -2198,6 +2205,7 @@ def remote_run_summary(run: dict) -> dict:
         "taskId": run["taskId"],
         "alias": run.get("alias"),
         "taskKind": run["taskKind"],
+        "operation": run.get("operation", "command"),
         "status": run["status"],
         "phase": run.get("phase"),
         "createdAt": run["createdAt"],
@@ -2210,7 +2218,13 @@ def remote_run_detail(run: dict) -> dict:
         {
             "attempts": run.get("attempts", 0),
             "remoteExecutorId": run.get("remoteExecutorId"),
-            "remoteCommandId": run.get("remoteCommandId"),
+            "remoteCommandId": (
+                run.get("remoteCommandId") if run.get("operation") != "file_collection" else None
+            ),
+            "remoteFileId": (
+                run.get("remoteCommandId") if run.get("operation") == "file_collection" else None
+            ),
+            "input": run.get("input"),
             "error": run.get("error"),
             "updatedAt": run.get("updatedAt"),
         }
@@ -2234,8 +2248,11 @@ def remote_run_file(settings: Settings, run: dict, file_name: str) -> tuple[Path
     elif file_name == "stderr":
         relative = payload.get("stderrPath")
         media_type = "text/plain"
+    elif file_name in {"collected", "file"}:
+        relative = payload.get("collectedFilePath")
+        media_type = "application/octet-stream"
     else:
-        raise ValueError("remote run file must be one of result, stdout, stderr")
+        raise ValueError("remote run file must be one of result, stdout, stderr, collected")
     if not isinstance(relative, str) or not relative:
         raise ValueError(f"remote run {file_name} file is not available")
     data_dir = settings.data_dir.resolve()

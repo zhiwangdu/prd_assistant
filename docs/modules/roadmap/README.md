@@ -8,7 +8,7 @@
 | Server 持久化与可恢复状态机 | 4~6 天 |
 | Tool Runner MVP | 已完成 |
 | Code Evidence | 已完成 V2 只读 MVP |
-| Environment Collector | 4~6 天 |
+| Environment Collector | 已完成 V2 远程命令 + 单文件 SCP MVP |
 | Analysis Orchestrator | 4~6 天 |
 | Claude Code MCP Session Runner | 已完成 MVP |
 | Domain Adapters | 持续迭代 |
@@ -67,8 +67,8 @@
 ## 最后阶段：远程和代码证据
 
 - Code Evidence 已完成版本到配置 ref 的只读 `git grep` MVP；后续补独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
-- Environment Collector 完成白名单 SSH/SCP 采集。
-- 将审批后的 mock environment evidence 替换为真实 SSH/SCP Environment Collector。
+- Environment Collector 已完成审批后的白名单 SSH 命令和单文件 SCP 采集 MVP。
+- 后续补完整多节点批量采集、Agent 自动选择 executor/template 和更多环境模板。
 
 ## 后续质量提升
 

@@ -92,11 +92,11 @@ slice provides the durable foundation for the V2 product model:
   missing `actionType` to `manual_approval`.
   Approved `collect_environment` actions can either record V1-compatible mock
   `environment_evidence` background artifacts or, when given a Remote Executor
-  `executorId` and whitelisted `commandId`, queue a remote command and record
-  the completed command output as background environment evidence before
-  resuming the analysis run. Completed remote `result`, `stdout`, and `stderr`
-  files are also copied into the analysis workspace artifact registry and
-  linked from the environment evidence payload.
+  `executorId` plus exactly one whitelisted `commandId` or `fileId`, queue a
+  remote command or bounded SCP file collection job before resuming the
+  analysis run. Completed remote `result`, `stdout`, `stderr`, and collected
+  file support artifacts are copied into the analysis workspace artifact
+  registry and linked from the environment evidence payload.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`; the run question is persisted as
   `session_text_input.json` and can be cited as
@@ -172,8 +172,9 @@ slice provides the durable foundation for the V2 product model:
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
 - Remote Executor foundation with SQLite-managed executors, environment-driven
-  whitelisted SSH command templates, DB-backed remote command jobs, and
-  stdout/stderr/result files under the V2 data directory.
+  whitelisted SSH command templates, whitelisted SCP file templates, DB-backed
+  remote command/file jobs, and result/support files under the V2 data
+  directory.
 
 ## Local Run
 
@@ -309,11 +310,14 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
 | `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
 | `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `/usr/bin/ssh` | Absolute SSH executable used by Remote Executor jobs when remote execution is enabled |
+| `LOGAGENT_V2_REMOTE_SCP_COMMAND` | `/usr/bin/scp` | Absolute SCP executable used by approved Environment Collector file pulls when remote execution is enabled |
 | `LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS` | `10` | SSH connect timeout option |
 | `LOGAGENT_V2_REMOTE_COMMAND_TIMEOUT_SECONDS` | `30` | Default remote command timeout |
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
+| `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES` | `16777216` | Default max bytes accepted for each approved remote file collection |
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `no` host-key behavior |
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-`; argv entries are trimmed, empty entries are dropped, and the final argv must be non-empty |
+| `LOGAGENT_V2_REMOTE_FILES_JSON` | unset | JSON array of whitelisted remote file templates for approved `collect_environment` file pulls; each entry has safe `id`/`fileId`, absolute safe `remotePath`, optional timeout, and optional `maxBytes` |
 | `LOGAGENT_V2_CODE_REPOS_JSON` | unset | JSON object or array of configured read-only code repositories for `logagent.search_code`; each entry requires absolute `repoPath`, `defaultRef`, optional `versionRefs`, and relative `searchRoots` |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
@@ -534,10 +538,10 @@ available in V2.
 ## Remote Executors
 
 V2 Remote Executor APIs live under `/api/v2/executors`,
-`/api/v2/executor-command-templates`, and `/api/v2/executor-runs`. Executors are
-stored in SQLite with host, port, SSH user, tags, notes, enabled state, and
-timestamps. Deleting an executor disables it instead of removing historical run
-records.
+`/api/v2/executor-command-templates`, `/api/v2/executor-file-templates`, and
+`/api/v2/executor-runs`. Executors are stored in SQLite with host, port, SSH
+user, tags, notes, enabled state, and timestamps. Deleting an executor disables
+it instead of removing historical run records.
 
 Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
 V2 exposes the low-risk `smoke_ls_root` template. Template descriptors match
@@ -557,7 +561,22 @@ be `accept-new`, `strict`, or `no`:
 /usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -p <port> <user>@<host> <template argv...>
 ```
 
-The API never accepts free-form shell commands. Results are written under:
+The API never accepts free-form shell commands.
+
+File templates are loaded from `LOGAGENT_V2_REMOTE_FILES_JSON` and are used by
+approved `collect_environment` actions, not by the manual run creation API.
+Each descriptor provides a safe `id` / `fileId`, display metadata, absolute
+safe `remotePath`, optional timeout, and optional `maxBytes`. Remote paths must
+be absolute, cannot contain `..`, `.`, `//`, backslashes, whitespace, shell
+globs, or characters outside the safe path set. The worker invokes the
+configured SCP executable with fixed argv and deletes an over-limit file after
+download if it exceeds the template or global byte cap:
+
+```text
+/usr/bin/scp -B -o BatchMode=yes -o ConnectTimeout=<seconds> -o StrictHostKeyChecking=<policy> -P <port> <user>@<host>:<remotePath> <data_dir>/remote_runs/<run_id>/remote_file/<basename>
+```
+
+Command results are written under:
 
 ```text
 data_dir/
@@ -569,14 +588,27 @@ data_dir/
         stderr.txt
 ```
 
+File collection results are written under:
+
+```text
+data_dir/
+  remote_runs/
+    <run_id>/
+      remote_file/
+        result.json
+        stdout.txt
+        stderr.txt
+        <basename>
+```
+
 Non-zero exit, timeout, and start failures are recorded in `result.json`; the
 remote run itself reaches `SUCCEEDED` when the controlled execution completed
 and result files were persisted. System errors before result persistence mark
 the run `FAILED`. The protected
 `GET /api/v2/executor-runs/:run_id/files/:file_name` endpoint downloads only
-the persisted `result`, `stdout`, or `stderr` file names. The server resolves
-those logical names from the stored run result and rejects paths outside
-`LOGAGENT_V2_DATA_DIR`.
+the persisted `result`, `stdout`, `stderr`, or collected file (`collected` /
+`file`) logical names. The server resolves those logical names from the stored
+run result and rejects paths outside `LOGAGENT_V2_DATA_DIR`.
 
 ## Verification
 
@@ -1080,14 +1112,17 @@ advertises these waiting tools during normal analysis; when a provider requests
   waiting/approval tools. The approval decision body may include an `input`
   object; for approved actions V2 writes it back to the action payload before
   executing approval side effects. When an approved action payload has
-  `actionType=collect_environment`, V2 checks `input.executorId` and
-`input.commandId`. If both target an enabled Remote Executor and whitelisted
-command template, V2 queues a `remote_command_run`, keeps the analysis run
-waiting while collection runs, then writes
-`environment_evidence/<action_id>/result.json` with the remote status,
-stdout/stderr previews, result paths, and artifact ids for
-`environment_evidence/<action_id>/remote_result.json`, `stdout.txt`, and
-`stderr.txt` before requeueing the analysis run.
+  `actionType=collect_environment`, V2 checks `input.executorId` plus either
+  `input.commandId` or `input.fileId`. A valid command target queues a
+  `remote_command_run` using the whitelisted command template. A valid file
+  target queues the same DB-backed remote job with `operation=file_collection`
+  and uses the whitelisted `LOGAGENT_V2_REMOTE_FILES_JSON` template plus
+  `LOGAGENT_V2_REMOTE_SCP_COMMAND` to fetch one bounded file. The analysis run
+  remains waiting while collection runs, then V2 writes
+  `environment_evidence/<action_id>/result.json` with remote status, previews,
+  result paths, and artifact ids. Command collection exposes
+  `remote_result.json`, `stdout.txt`, and `stderr.txt`; file collection also
+  exposes `collected_file.bin` before requeueing the analysis run.
 Invalid remote targets produce `REMOTE_REJECTED` background evidence instead of
 leaving the approved action half-applied. If no remote target is supplied, V2
 preserves the V1-compatible MOCK evidence path. Environment evidence is exposed

@@ -38,11 +38,12 @@
 - Huawei package sync 只能引用 Server 已完成 upload 的一个 raw snapshot 文件，不能传入任意本地路径或远程 URL；运行时 `objectKey` 必须通过安全相对路径校验，OBS/GaussDB 凭据值不得进入 artifact、日志、导出包或 LLM prompt。
 - Code Evidence 只能访问管理员配置的本地 git repo、配置 version ref / default ref 和安全相对 search roots；当前 V2 只运行 `git rev-parse` 和 `git grep <commit>`，不 checkout、不 pull、不创建 worktree、不运行构建脚本。
 - `skills.zip` 不跟随 symlink，不允许路径逃逸；`tools.zip` 不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件，无法打包的 enabled 工具只能标记 skipped。
-- Environment Collector 只能访问配置节点和路径。
+- Environment Collector 只能访问配置节点、白名单命令和白名单文件路径。
 - LLM 不能直接执行命令。
 - Analysis Orchestrator 和 Claude Code 只能通过 structured outcome / MCP tools 表达意图，Server 是唯一领域执行者。
 - 远程采集默认需要显式批准。
-- 远程采集必须通过 approval gate；未批准前不执行。真实 SSH/SCP 接入时仍需配置节点、路径和命令白名单。
+- 远程采集必须通过 approval gate；未批准前不执行。V2 单文件 SCP 接入只接受配置中的 executor 和 file template，不接受自由路径或 glob。
+- 远程 SSH/SCP argv 由 Server 固定构造，不拼接 shell，不允许用户消息覆盖 SSH/SCP binary、host key policy、remote path 或 command argv。
 - 不持久化隐藏思维链。
 
 ## 密钥

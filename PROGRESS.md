@@ -2,6 +2,30 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment SCP File Collection
+
+- Added V2 approved `collect_environment` file collection through Remote
+  Executor `operation=file_collection`.
+- `LOGAGENT_V2_REMOTE_FILES_JSON` now defines whitelisted remote file
+  templates, `LOGAGENT_V2_REMOTE_SCP_COMMAND` controls the absolute SCP binary,
+  and `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES` provides the default collected-file
+  size cap.
+- Approved actions now accept `executorId` plus exactly one `commandId` or
+  `fileId`; command targets keep the existing SSH path, while file targets run
+  fixed-argv SCP, persist `remote_file/{result.json,stdout.txt,stderr.txt}`,
+  and register `environment_evidence/<action_id>/collected_file.bin` as a
+  background support artifact.
+- Added regression coverage for safe remote file template parsing and fake-SCP
+  approved environment collection, including artifact index visibility and
+  analysis-run resume.
+- Updated server-v2, Environment Collector, Config, Security, Analysis Agent,
+  Roadmap, and root docs. Full multi-node Environment Collector planning,
+  batch file collection, WebUI file-template selection, and Agent automatic
+  executor/template selection remain future work.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused `tests/test_store.py` remote environment collection pytest
+  selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Read-only MVP
 
 - Added V2 Code Evidence configuration via `LOGAGENT_V2_CODE_REPOS_JSON`,

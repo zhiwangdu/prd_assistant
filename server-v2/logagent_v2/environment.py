@@ -64,8 +64,14 @@ def persist_approved_environment_evidence(
             store=store,
             action=action,
             status="REMOTE_REJECTED",
-            summary="remote environment collection rejected: executorId and commandId are required",
-            result={"input": raw_input, "error": "executorId and commandId are required"},
+            summary=(
+                "remote environment collection rejected: executorId and commandId "
+                "or fileId are required"
+            ),
+            result={
+                "input": raw_input,
+                "error": "executorId and commandId or fileId are required",
+            },
         )
     if remote_target is not None:
         return schedule_remote_environment_collection(settings, store, action, remote_target)
@@ -108,6 +114,7 @@ def persist_remote_environment_evidence(
     command_result = remote_result.get("result") if isinstance(remote_result, dict) else None
     if not isinstance(command_result, dict):
         command_result = {}
+    remote_operation = str(command_result.get("operation") or remote_run.get("operation") or "command")
     remote_status = str(command_result.get("status") or remote_run.get("status") or "UNKNOWN")
     status = "COLLECTED" if remote_status == "OK" else "REMOTE_FAILED"
     summary = (
@@ -132,15 +139,22 @@ def persist_remote_environment_evidence(
 
     result: JsonObject = {
         "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        "remoteOperation": remote_operation,
         "remoteRunId": remote_run.get("taskId"),
         "remoteExecutorId": remote_run.get("remoteExecutorId"),
-        "remoteCommandId": remote_run.get("remoteCommandId"),
+        "remoteCommandId": (
+            remote_run.get("remoteCommandId") if remote_operation == "command" else None
+        ),
+        "remoteFileId": command_result.get("fileId"),
         "remoteStatus": remote_status,
         "remoteResultPath": remote_result.get("resultPath")
         if isinstance(remote_result, dict)
         else None,
         "stdoutPath": command_result.get("stdoutPath"),
         "stderrPath": command_result.get("stderrPath"),
+        "collectedFilePath": command_result.get("collectedFilePath"),
+        "fileSizeBytes": command_result.get("fileSizeBytes"),
+        "sha256": command_result.get("sha256"),
         "stdoutPreview": command_result.get("stdoutPreview"),
         "stderrPreview": command_result.get("stderrPreview"),
         "error": command_result.get("error") or remote_run.get("error"),
@@ -180,30 +194,56 @@ def remote_collection_target(
 ) -> JsonObject | None:
     executor_id = raw_input.get("executorId") or raw_input.get("remoteExecutorId")
     command_id = raw_input.get("commandId") or raw_input.get("remoteCommandId")
+    file_id = raw_input.get("fileId") or raw_input.get("remoteFileId")
     if not isinstance(executor_id, str) or not executor_id.strip():
         return None
-    if not isinstance(command_id, str) or not command_id.strip():
+    has_command = isinstance(command_id, str) and bool(command_id.strip())
+    has_file = isinstance(file_id, str) and bool(file_id.strip())
+    if has_command and has_file:
+        raise ValueError("collect_environment input must choose either commandId or fileId")
+    if not has_command and not has_file:
         return None
     executor = store.get_remote_executor(executor_id.strip())
     if not executor["enabled"]:
         raise ValueError(f"executor {executor_id} is disabled")
-    command = next(
+    if has_command:
+        command = next(
+            (
+                item
+                for item in settings.remote_commands
+                if item.command_id == command_id.strip()
+            ),
+            None,
+        )
+        if command is None:
+            raise ValueError(f"unknown commandId {command_id}")
+        if not command.enabled:
+            raise ValueError(f"remote command {command_id} is disabled")
+        return {
+            "operation": "command",
+            "executorId": executor["executorId"],
+            "executorName": executor["name"],
+            "commandId": command.command_id,
+            "commandDisplayName": command.display_name,
+        }
+    file_template = next(
         (
             item
-            for item in settings.remote_commands
-            if item.command_id == command_id.strip()
+            for item in settings.remote_files
+            if item.file_id == str(file_id).strip()
         ),
         None,
     )
-    if command is None:
-        raise ValueError(f"unknown commandId {command_id}")
-    if not command.enabled:
-        raise ValueError(f"remote command {command_id} is disabled")
+    if file_template is None:
+        raise ValueError(f"unknown fileId {file_id}")
+    if not file_template.enabled:
+        raise ValueError(f"remote file {file_id} is disabled")
     return {
+        "operation": "file_collection",
         "executorId": executor["executorId"],
         "executorName": executor["name"],
-        "commandId": command.command_id,
-        "commandDisplayName": command.display_name,
+        "fileId": file_template.file_id,
+        "fileDisplayName": file_template.display_name,
     }
 
 
@@ -215,7 +255,14 @@ def environment_action_input(payload: JsonObject) -> JsonObject:
 def remote_target_requested(raw_input: JsonObject) -> bool:
     return any(
         key in raw_input
-        for key in ("executorId", "remoteExecutorId", "commandId", "remoteCommandId")
+        for key in (
+            "executorId",
+            "remoteExecutorId",
+            "commandId",
+            "remoteCommandId",
+            "fileId",
+            "remoteFileId",
+        )
     )
 
 
@@ -253,6 +300,14 @@ def materialize_remote_environment_support_artifacts(
             command_result.get("stderrPath"),
             "stderr.txt",
             "text/plain; charset=utf-8",
+            None,
+        ),
+        (
+            "collected_file",
+            "collectedFilePath",
+            command_result.get("collectedFilePath"),
+            "collected_file.bin",
+            "application/octet-stream",
             None,
         ),
     ]
@@ -311,11 +366,20 @@ def schedule_remote_environment_collection(
     if existing is not None:
         return existing
     idempotency_key = f"{ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX}{action['id']}"
+    operation = str(target.get("operation") or "command")
+    command_id = str(target.get("commandId") or target.get("fileId") or "")
     remote_run = store.create_remote_run(
         executor_id=target["executorId"],
-        command_id=target["commandId"],
-        alias=f"Collect environment via {target['commandDisplayName']}",
+        command_id=command_id,
+        alias=f"Collect environment via {target.get('commandDisplayName') or target.get('fileDisplayName')}",
         idempotency_key=idempotency_key,
+        operation=operation,
+        input_payload={
+            "actionId": action["id"],
+            "operation": operation,
+            "commandId": target.get("commandId"),
+            "fileId": target.get("fileId"),
+        },
     )
     return {
         "kind": ENVIRONMENT_EVIDENCE_KIND,
@@ -324,9 +388,11 @@ def schedule_remote_environment_collection(
         "payload": {
             "actionId": action["id"],
             "status": "QUEUED",
+            "remoteOperation": operation,
             "remoteRunId": remote_run["taskId"],
             "remoteExecutorId": target["executorId"],
-            "remoteCommandId": target["commandId"],
+            "remoteCommandId": target.get("commandId"),
+            "remoteFileId": target.get("fileId"),
             "finalEvidenceAllowed": False,
         },
     }
@@ -381,8 +447,10 @@ def persist_environment_evidence_result(
         "actionId": action["id"],
         "status": status,
         "remoteRunId": result.get("remoteRunId"),
+        "remoteOperation": result.get("remoteOperation"),
         "remoteExecutorId": result.get("remoteExecutorId"),
         "remoteCommandId": result.get("remoteCommandId"),
+        "remoteFileId": result.get("remoteFileId"),
         "remoteStatus": result.get("remoteStatus"),
         "finalEvidenceAllowed": False,
     }

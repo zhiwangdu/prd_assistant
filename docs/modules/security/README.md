@@ -37,7 +37,7 @@
 - `logagent.query_metadata` 只能从当前 task workspace 的 `metadata_context.json` 生成 bounded slice，写入 `metadata_slices/<stable_id>.json` 并审计到 `mcp_calls.jsonl`；它不扩大 Claude native file `Read` 权限，slice 也不能作为最终 evidence ref。
 - task workspace 日志搜索、白名单工具和只读代码检索可自动执行。
 - SSH/SCP 环境采集默认需要用户批准。
-- 当前 `logagent.request_approval` 在批准前只写入 pending approval，不执行采集；真实 SSH/SCP 执行器后续仍必须受白名单约束。
+- 当前 `logagent.request_approval` 在批准前只写入 pending approval，不执行采集；批准后 V2 也只允许选择已配置 executor 加白名单 command/file 模板。
 - 用户消息、日志和 Case 内容都视为不可信输入，不能覆盖系统指令或安全策略。
 - 重复 MCP waiting request 或预算超限后终止或等待人工输入。
 - 达到预算时输出信息不足或低置信度结果，不能自动扩大权限。
@@ -70,3 +70,9 @@
 - SSH 诊断命令必须使用白名单 argv 数组。
 - 不允许拼接用户输入作为远程命令。
 - 采集文件路径必须在配置白名单内。
+- V2 单文件 SCP 只接受 `LOGAGENT_V2_REMOTE_FILES_JSON` 中的 file template，
+  不接受自由路径、glob 或用户消息临时扩展路径；最终 SCP argv 由 Server
+  固定构造并使用 `BatchMode=yes`。
+- 远程采集生成的 result/stdout/stderr/collected file 只能作为
+  background/support artifacts 进入下一轮分析和人工审计，不能绕过最终
+  evidence ref 校验。

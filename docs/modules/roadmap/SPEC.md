@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入、Code Evidence 只读 `git grep` MVP、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。真实 Environment Collector 尚未实现并延后。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令和 V2 审批后单文件 SCP 采集 MVP、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。完整多节点 Environment Collector 尚未实现。
 
 ## 下一阶段优先级
 
@@ -15,7 +15,7 @@
 3. 用真实生产 fixture 扩展 `flux_query_analyzer` 风险规则、`influxql_analyzer` compare mode delta 字段映射，以及 storage analyzer findings。
 4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。
 5. Code Evidence 后续 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
-6. Environment Collector，将当前 approval 后的 mock evidence 替换为真实 SSH/SCP 采集。
+6. Environment Collector，基于已落地的审批后 SSH 命令和单文件 SCP MVP，继续补多节点批量采集、Agent 自动选择和更多环境模板。
 
 ## 阶段门槛
 

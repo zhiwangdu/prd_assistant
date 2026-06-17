@@ -100,11 +100,19 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `remote_execution.connect_timeout_seconds`
 - `remote_execution.command_timeout_seconds`
 - `remote_execution.max_output_bytes`
+- `remote_execution.scp_binary` / V2 `LOGAGENT_V2_REMOTE_SCP_COMMAND`
+- `remote_execution.file_max_bytes` / V2 `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES`
 - `remote_execution.commands.<command_id>.display_name`
 - `remote_execution.commands.<command_id>.description`
 - `remote_execution.commands.<command_id>.enabled`
 - `remote_execution.commands.<command_id>.argv`
 - `remote_execution.commands.<command_id>.timeout_seconds`
+- `remote_execution.files.<file_id>.display_name` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].displayName`
+- `remote_execution.files.<file_id>.description` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].description`
+- `remote_execution.files.<file_id>.enabled` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].enabled`
+- `remote_execution.files.<file_id>.remote_path` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].remotePath`
+- `remote_execution.files.<file_id>.timeout_seconds` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].timeoutSeconds`
+- `remote_execution.files.<file_id>.max_bytes` / V2 `LOGAGENT_V2_REMOTE_FILES_JSON[].maxBytes`
 - `code_repos.<product>.repo_path` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].repoPath`
 - `code_repos.<product>.default_ref` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].defaultRef`
 - `code_repos.<product>.version_refs` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].versionRefs`
@@ -117,7 +125,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 待扩展：
 
 - Code Evidence 独立 worktree/cache、版本间 diff 和 fix mode 隔离修改配置；当前 V2 已支持 product/version 到本地 git ref 的只读映射和 `git grep`。
-- SSH/SCP 测试环境节点到 Environment Collector 的批量采集映射；当前 Remote Executor 已支持 WebUI 显式执行机和白名单 SSH 命令模板。
+- SSH/SCP 测试环境节点到 Environment Collector 的批量采集映射；当前 Remote Executor 已支持 WebUI 显式执行机、白名单 SSH 命令模板，以及 V2 审批后的单文件 SCP 模板。
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
 - LLM 多轮重试、用量和 request id 审计
 - Analysis Orchestrator 追问、运行时间和 approval 预算
@@ -226,9 +234,15 @@ tools:
 - `examples/server-flux-tool.yaml`、`examples/server-influxql-tool.yaml`、`examples/server-opengemini-storage-tool.yaml` 和 `examples/server-influxdb-storage-tool.yaml` 分别只启用一个真实工具，用于本地 smoke；真实工具由 `scripts/build-tools.sh` 从 `third_party/` submodules 构建，并通过对应 `LOGAGENT_TOOL_*` 环境变量指向产物。构建阶段支持 `LOGAGENT_SUBMODULE_BASE_URL` 和单仓库 `LOGAGENT_SUBMODULE_*_URL` 覆盖 submodule clone 地址，部署配置可以把这些变量放在 `.env`。
 - `examples/server-pprof-tool.yaml` 只启用 `pprof_analyzer`，通过 `LOGAGENT_TOOL_PPROF_GO` 指向 Go 可执行文件。V2 默认关闭 pprof；启用时 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO` 必须解析为绝对路径。
 - `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
+- `remote_execution.scp_binary` / V2 `LOGAGENT_V2_REMOTE_SCP_COMMAND` 启用时必须为绝对路径，默认 `/usr/bin/scp`。
 - `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。
 - `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。
 - `remote_execution.commands.<id>.argv` 加载时逐项 trim 并丢弃空字符串；归一化后为空时启动失败。
+- V2 `LOGAGENT_V2_REMOTE_FILES_JSON` 配置 approved `collect_environment`
+  可拉取的单文件模板；`fileId` 复用 command id 安全规则，`remotePath` 必须是
+  绝对安全路径并拒绝 `..`、`.`、`//`、反斜杠、空格、glob 和非安全字符。
+- V2 `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES` 是没有模板级 `maxBytes` 时的默认
+  SCP 文件大小上限，默认 16MiB。
 - WebUI Remote Executor 只能选择 `remote_execution.commands` 白名单模板，不能提交自由命令。
 - V2 `LOGAGENT_V2_CODE_REPOS_JSON` 支持 object keyed by product 或 descriptor array；repo path 必须是已存在绝对目录，`defaultRef` / `versionRefs` 必须是安全 git ref，`searchRoots` 必须是安全相对路径且会去重。
 - `logagent.search_code` 只能访问配置仓库、配置版本 ref 和配置 search roots；未配置仓库时不在 task MCP 或 provider prompt 中广告。

@@ -5,12 +5,14 @@ import json
 import urllib.parse
 import base64
 import binascii
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 LOGAGENT_MCP_ALLOWED_TOOL_GLOB = "mcp__logagent__*"
 ANALYSIS_MODES = ("diagnose", "code_investigation", "fix")
+REMOTE_FILE_PATH_RE = re.compile(r"^/[A-Za-z0-9._/@+=,-]+$")
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,42 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
             argv=("ls", "-la", "/root"),
         ),
     )
+
+
+@dataclass(frozen=True)
+class RemoteFileTemplate:
+    file_id: str
+    display_name: str
+    description: str
+    remote_path: str
+    enabled: bool = True
+    timeout_seconds: int | None = None
+    max_bytes: int | None = None
+
+    @classmethod
+    def from_json(cls, value: dict) -> "RemoteFileTemplate":
+        file_id = str(value.get("fileId") or value.get("file_id") or value["id"])
+        validate_remote_command_id(file_id)
+        remote_path = validate_remote_file_path(
+            str(value.get("remotePath") or value.get("remote_path") or "")
+        )
+        return cls(
+            file_id=file_id,
+            display_name=str(value.get("displayName") or value.get("display_name") or file_id),
+            description=str(value.get("description") or ""),
+            remote_path=remote_path,
+            enabled=bool(value.get("enabled", True)),
+            timeout_seconds=(
+                max(1, int(value["timeoutSeconds"]))
+                if value.get("timeoutSeconds") is not None
+                else None
+            ),
+            max_bytes=(
+                max(1, int(value["maxBytes"]))
+                if value.get("maxBytes") is not None
+                else None
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -311,11 +349,14 @@ class Settings:
     agent_max_output_tokens: int = 2048
     remote_execution_enabled: bool = True
     remote_ssh_command: str = "/usr/bin/ssh"
+    remote_scp_command: str = "/usr/bin/scp"
     remote_connect_timeout_seconds: int = 10
     remote_command_timeout_seconds: int = 30
     remote_max_output_bytes: int = 1024 * 1024
+    remote_file_max_bytes: int = 16 * 1024 * 1024
     remote_host_key_policy: str = "accept-new"
     remote_commands: tuple[RemoteCommandTemplate, ...] = field(default_factory=default_remote_commands)
+    remote_files: tuple[RemoteFileTemplate, ...] = ()
     code_repos: tuple[CodeRepoDefinition, ...] = ()
     webui_dir: Path = field(default_factory=default_webui_dir)
 
@@ -485,6 +526,14 @@ class Settings:
             remote_ssh_command,
             enabled=remote_execution_enabled,
         )
+        remote_scp_command = expand_tool_command(
+            os.environ.get("LOGAGENT_V2_REMOTE_SCP_COMMAND", "/usr/bin/scp")
+        )
+        validate_remote_ssh_command_path(
+            remote_scp_command,
+            enabled=remote_execution_enabled,
+            env_name="LOGAGENT_V2_REMOTE_SCP_COMMAND",
+        )
         remote_connect_timeout_seconds = int(
             os.environ.get("LOGAGENT_V2_REMOTE_CONNECT_TIMEOUT_SECONDS", "10")
         )
@@ -494,6 +543,9 @@ class Settings:
         remote_max_output_bytes = int(
             os.environ.get("LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES", str(1024 * 1024))
         )
+        remote_file_max_bytes = int(
+            os.environ.get("LOGAGENT_V2_REMOTE_FILE_MAX_BYTES", str(16 * 1024 * 1024))
+        )
         remote_host_key_policy = os.environ.get(
             "LOGAGENT_V2_REMOTE_HOST_KEY_POLICY", "accept-new"
         ).strip().lower()
@@ -501,6 +553,7 @@ class Settings:
         remote_commands = parse_remote_commands_env(
             os.environ.get("LOGAGENT_V2_REMOTE_COMMANDS_JSON")
         )
+        remote_files = parse_remote_files_env(os.environ.get("LOGAGENT_V2_REMOTE_FILES_JSON"))
         code_repos = parse_code_repos_env(os.environ.get("LOGAGENT_V2_CODE_REPOS_JSON"))
         raw_webui_dir = os.environ.get("LOGAGENT_V2_WEBUI_DIR")
         webui_dir = Path(raw_webui_dir).expanduser() if raw_webui_dir else default_webui_dir()
@@ -545,11 +598,14 @@ class Settings:
             agent_max_output_tokens=max(1, agent_max_output_tokens),
             remote_execution_enabled=remote_execution_enabled,
             remote_ssh_command=remote_ssh_command,
+            remote_scp_command=remote_scp_command,
             remote_connect_timeout_seconds=max(1, remote_connect_timeout_seconds),
             remote_command_timeout_seconds=max(1, remote_command_timeout_seconds),
             remote_max_output_bytes=max(1024, remote_max_output_bytes),
+            remote_file_max_bytes=max(1, remote_file_max_bytes),
             remote_host_key_policy=remote_host_key_policy,
             remote_commands=remote_commands,
+            remote_files=remote_files,
             code_repos=code_repos,
             webui_dir=webui_dir,
         )
@@ -840,13 +896,17 @@ def validate_tool_name(name: str) -> None:
         raise ValueError(f"invalid tool name {name}")
 
 
-def validate_remote_ssh_command_path(command: str, *, enabled: bool) -> None:
+def validate_remote_ssh_command_path(
+    command: str,
+    *,
+    enabled: bool,
+    env_name: str = "LOGAGENT_V2_REMOTE_SSH_COMMAND",
+) -> None:
     if not enabled:
         return
     if not command.strip() or not Path(command).is_absolute():
         raise ValueError(
-            "LOGAGENT_V2_REMOTE_SSH_COMMAND must resolve to an absolute path "
-            "when remote execution is enabled"
+            f"{env_name} must resolve to an absolute path when remote execution is enabled"
         )
 
 
@@ -864,6 +924,22 @@ def validate_remote_command_id(command_id: str) -> None:
     )
     if not valid:
         raise ValueError(f"invalid remote command id {command_id}")
+
+
+def validate_remote_file_path(value: str) -> str:
+    remote_path = value.strip()
+    if not remote_path:
+        raise ValueError("remote file template remotePath must not be empty")
+    normalized = remote_path.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part]
+    if (
+        normalized != remote_path
+        or not REMOTE_FILE_PATH_RE.match(remote_path)
+        or "//" in remote_path
+        or any(part in {".", ".."} for part in parts)
+    ):
+        raise ValueError(f"unsafe remote file path {value!r}")
+    return remote_path
 
 
 def env_first(*names: str) -> str | None:
@@ -1310,6 +1386,17 @@ def parse_remote_commands_env(raw: str | None) -> tuple[RemoteCommandTemplate, .
     if not isinstance(decoded, list):
         raise ValueError("LOGAGENT_V2_REMOTE_COMMANDS_JSON must be a JSON array")
     return tuple(RemoteCommandTemplate.from_json(item) for item in decoded)
+
+
+def parse_remote_files_env(raw: str | None) -> tuple[RemoteFileTemplate, ...]:
+    if not raw:
+        return ()
+    decoded = json.loads(raw)
+    if not isinstance(decoded, list):
+        raise ValueError("LOGAGENT_V2_REMOTE_FILES_JSON must be a JSON array")
+    if not all(isinstance(item, dict) for item in decoded):
+        raise ValueError("LOGAGENT_V2_REMOTE_FILES_JSON entries must be objects")
+    return tuple(RemoteFileTemplate.from_json(item) for item in decoded)
 
 
 def strings_from_list(value: Any) -> list[str]:

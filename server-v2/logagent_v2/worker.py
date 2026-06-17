@@ -88,7 +88,16 @@ class JobRunner:
                     pass
             elif job.get("kind") == "remote_command_run" and isinstance(run_id, str):
                 try:
-                    self.store.fail_remote_run(run_id, "EXECUTE_REMOTE_COMMAND", str(error))
+                    try:
+                        remote_run = self.store.get_remote_run(run_id)
+                        phase = (
+                            "COLLECT_REMOTE_FILE"
+                            if remote_run.get("operation") == "file_collection"
+                            else "EXECUTE_REMOTE_COMMAND"
+                        )
+                    except Exception:
+                        phase = "EXECUTE_REMOTE_COMMAND"
+                    self.store.fail_remote_run(run_id, phase, str(error))
                 except Exception:
                     pass
             self.store.fail_job(job, str(error))

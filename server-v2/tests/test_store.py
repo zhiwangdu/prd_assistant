@@ -39,10 +39,12 @@ from logagent_v2.config import (
     CodeRepoDefinition,
     HuaweiPackageSyncSettings,
     RemoteCommandTemplate,
+    RemoteFileTemplate,
     Settings,
     ToolDefinition,
     claude_code_profile_for_mode,
     parse_code_repos_env,
+    parse_remote_files_env,
     parse_remote_commands_env,
     parse_tools_env,
 )
@@ -4038,6 +4040,37 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "argv must not be empty"):
             parse_remote_commands_env(json.dumps([{"id": "empty", "argv": [" ", ""]}]))
 
+    def test_parse_remote_files_env_validates_safe_paths(self) -> None:
+        templates = parse_remote_files_env(
+            json.dumps(
+                [
+                    {
+                        "id": "tsdb_log",
+                        "displayName": "TSDB log",
+                        "remotePath": "/var/log/opengemini/tsdb.log",
+                        "timeoutSeconds": 7,
+                        "maxBytes": 4096,
+                    }
+                ]
+            )
+        )
+        self.assertEqual(templates[0].file_id, "tsdb_log")
+        self.assertEqual(templates[0].remote_path, "/var/log/opengemini/tsdb.log")
+        self.assertEqual(templates[0].timeout_seconds, 7)
+        self.assertEqual(templates[0].max_bytes, 4096)
+
+        for remote_path in [
+            "relative/log.txt",
+            "/var/log/../secret",
+            "/var/log/*.log",
+            "/var/log/bad path.log",
+            "/var//log/app.log",
+        ]:
+            with self.subTest(remote_path=remote_path):
+                raw = json.dumps([{"id": "bad_file", "remotePath": remote_path}])
+                with self.assertRaisesRegex(ValueError, "unsafe remote file path"):
+                    parse_remote_files_env(raw)
+
     def test_strict_host_key_checking_rejects_unknown_policy(self) -> None:
         self.assertEqual(strict_host_key_checking_value("strict"), "yes")
         self.assertEqual(strict_host_key_checking_value("no"), "no")
@@ -7763,6 +7796,151 @@ fi
             self.assertEqual(store.get_run(run["id"])["status"], "queued")
             resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
             self.assertEqual(resume_jobs[0]["kind"], "run_analysis")
+
+    def test_approved_collect_environment_can_collect_remote_file(self) -> None:
+        previous_remote_root = os.environ.get("LOGAGENT_TEST_REMOTE_ROOT")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                remote_root = root / "remote-root"
+                remote_file = remote_root / "var" / "log" / "opengemini" / "tsdb.log"
+                remote_file.parent.mkdir(parents=True)
+                remote_file.write_text("tsdb compaction backlog\n", encoding="utf-8")
+                os.environ["LOGAGENT_TEST_REMOTE_ROOT"] = remote_root.as_posix()
+                fake_scp = root / "fake-scp"
+                fake_scp.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import os, pathlib, shutil, sys\n"
+                    "source = sys.argv[-2]\n"
+                    "target = pathlib.Path(sys.argv[-1])\n"
+                    "remote = source.split(':', 1)[1]\n"
+                    "root = pathlib.Path(os.environ['LOGAGENT_TEST_REMOTE_ROOT'])\n"
+                    "source_path = root / remote.lstrip('/')\n"
+                    "target.parent.mkdir(parents=True, exist_ok=True)\n"
+                    "shutil.copyfile(source_path, target)\n"
+                    "print(f'copied {remote}')\n",
+                    encoding="utf-8",
+                )
+                fake_scp.chmod(0o755)
+                settings = Settings(
+                    data_dir=root / "data",
+                    api_key="test",
+                    remote_scp_command=fake_scp.as_posix(),
+                    remote_files=(
+                        RemoteFileTemplate(
+                            file_id="tsdb_log",
+                            display_name="TSDB log",
+                            description="collect one bounded tsdb log",
+                            remote_path="/var/log/opengemini/tsdb.log",
+                            timeout_seconds=5,
+                            max_bytes=4096,
+                        ),
+                    ),
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace(
+                    "need remote file evidence", "diagnose", "en-US"
+                )
+                run = store.create_run(workspace["id"])
+                initial_jobs = store.acquire_jobs("test-worker", limit=1)
+                self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+                store.complete_job(initial_jobs[0]["id"])
+                store.update_run_status(
+                    run["id"], "waiting_for_approval", "waiting_for_approval"
+                )
+                executor = store.create_remote_executor(
+                    {
+                        "name": "fake executor",
+                        "host": "127.0.0.1",
+                        "port": 2222,
+                        "user": "root",
+                        "enabled": True,
+                    }
+                )
+                action = store.create_action(
+                    run["id"],
+                    "approval",
+                    {
+                        "actionType": "collect_environment",
+                        "reason": "Need remote log file",
+                        "input": {
+                            "executorId": executor["executorId"],
+                            "fileId": "tsdb_log",
+                            "scope": "node_log",
+                        },
+                    },
+                )
+                decided = store.decide_action(action["id"], "approved", "ok")
+
+                pending = persist_approved_environment_evidence(settings, store, decided)
+
+                self.assertIsNotNone(pending)
+                assert pending is not None
+                self.assertEqual(pending["payload"]["status"], "QUEUED")
+                self.assertEqual(pending["payload"]["remoteOperation"], "file_collection")
+                self.assertEqual(pending["payload"]["remoteFileId"], "tsdb_log")
+                remote_jobs = store.acquire_jobs("remote-worker", limit=1)
+                self.assertEqual(remote_jobs[0]["kind"], "remote_command_run")
+
+                asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+
+                evidence_items = [
+                    item
+                    for item in store.list_evidence(run["id"])
+                    if item["kind"] == "environment_evidence"
+                ]
+                self.assertEqual(len(evidence_items), 1)
+                evidence = evidence_items[0]
+                self.assertEqual(evidence["payload"]["status"], "COLLECTED")
+                self.assertEqual(evidence["payload"]["remoteOperation"], "file_collection")
+                self.assertEqual(evidence["payload"]["remoteFileId"], "tsdb_log")
+                artifact = store.get_artifact(evidence["artifact_id"])
+                artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+                artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+                self.assertEqual(artifact_json["status"], "COLLECTED")
+                self.assertEqual(artifact_json["remoteStatus"], "OK")
+                self.assertEqual(artifact_json["remoteFileId"], "tsdb_log")
+                self.assertEqual(
+                    set(artifact_json["artifactIds"].keys()),
+                    {"result", "stdout", "stderr", "collected_file"},
+                )
+                self.assertEqual(
+                    artifact_json["artifactPaths"]["collectedFilePath"],
+                    f"environment_evidence/{action['id']}/collected_file.bin",
+                )
+                run_artifacts = get_run_artifacts(settings, store, run["id"])
+                support_by_role = {
+                    item["role"]: item for item in run_artifacts["supportArtifacts"]
+                }
+                self.assertEqual(
+                    set(support_by_role.keys()),
+                    {"result", "stdout", "stderr", "collected_file"},
+                )
+                collected_path = resolve_artifact_path(
+                    settings,
+                    support_by_role["collected_file"]["relative_path"],
+                )
+                self.assertEqual(
+                    collected_path.read_text(encoding="utf-8"),
+                    "tsdb compaction backlog\n",
+                )
+                artifact_index_paths = {
+                    item["path"] for item in run_artifacts["artifactIndex"]["artifacts"]
+                }
+                self.assertIn(
+                    f"environment_evidence/{action['id']}/collected_file.bin",
+                    artifact_index_paths,
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "queued")
+                resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
+                self.assertEqual(resume_jobs[0]["kind"], "run_analysis")
+        finally:
+            if previous_remote_root is None:
+                os.environ.pop("LOGAGENT_TEST_REMOTE_ROOT", None)
+            else:
+                os.environ["LOGAGENT_TEST_REMOTE_ROOT"] = previous_remote_root
 
     def test_collect_environment_invalid_remote_target_records_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

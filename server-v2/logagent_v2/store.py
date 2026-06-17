@@ -119,6 +119,7 @@ def support_path_for_role(
         "svg": "svgPath",
         "body": "bodyArtifactPath",
         "response_body": "bodyArtifactPath",
+        "collected_file": "collectedFilePath",
     }
     path_field = role_path_fields.get(role, f"{role}Path")
     path = artifact_paths.get(path_field)
@@ -444,6 +445,8 @@ class Store:
                   id TEXT PRIMARY KEY,
                   executor_id TEXT NOT NULL REFERENCES remote_executors(id),
                   command_id TEXT NOT NULL,
+                  operation TEXT NOT NULL DEFAULT 'command',
+                  input_json TEXT NOT NULL DEFAULT '{}',
                   idempotency_key TEXT UNIQUE,
                   status TEXT NOT NULL,
                   phase TEXT,
@@ -526,6 +529,12 @@ class Store:
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column_tx(
                 conn, "case_imports", "messages_json", "TEXT NOT NULL DEFAULT '[]'"
+            )
+            self._ensure_column_tx(
+                conn, "remote_runs", "operation", "TEXT NOT NULL DEFAULT 'command'"
+            )
+            self._ensure_column_tx(
+                conn, "remote_runs", "input_json", "TEXT NOT NULL DEFAULT '{}'"
             )
             self._ensure_case_fts_tx(conn)
             self._backfill_case_vectors_tx(conn)
@@ -1636,12 +1645,15 @@ class Store:
         command_id: str,
         alias: str,
         idempotency_key: str | None = None,
+        operation: str = "command",
+        input_payload: JsonObject | None = None,
     ) -> JsonObject:
         if idempotency_key:
             existing = self.find_remote_run_by_idempotency_key(idempotency_key)
             if existing is not None:
                 return existing
         self.get_remote_executor(executor_id)
+        normalized_operation = operation.strip() or "command"
         run_id = new_id("rrun")
         job_id = new_id("job")
         ts = now_iso()
@@ -1649,14 +1661,16 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO remote_runs(
-                  id, executor_id, command_id, idempotency_key, status, phase,
-                  alias, attempts, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  id, executor_id, command_id, operation, input_json, idempotency_key,
+                  status, phase, alias, attempts, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     executor_id,
                     command_id,
+                    normalized_operation,
+                    encode_json(input_payload or {}),
                     idempotency_key,
                     "QUEUED",
                     "QUEUED",
@@ -1781,6 +1795,8 @@ class Store:
             "attempts": item["attempts"],
             "remoteExecutorId": item["executor_id"],
             "remoteCommandId": item["command_id"],
+            "operation": item.get("operation") or "command",
+            "input": decode_json(item.get("input_json"), {}),
             "idempotencyKey": item.get("idempotency_key"),
             "result": decode_json(item.get("result_json"), None),
             "error": decode_json(item.get("error_json"), None),
