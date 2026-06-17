@@ -16,7 +16,7 @@ Server 还实现内置 Huawei package sync runnable tool `logagent.huawei_cloud_
 
 Server 还提供只读工具目录和工具包导出：
 
-- `POST /api/mcp/readonly` 中的 `logagent://tools/catalog` 和 `logagent.list_tools` 只返回工具目录、configured args、match rules 和内置 metadata 工具 descriptor，不执行工具；目录中也包含 `logagent.get_metadata_tag_fields`。
+- `POST /api/mcp/readonly` 中的 `logagent://tools/catalog` 和 `logagent.list_tools` 只返回工具目录、configured args、match rules 和内置 metadata 工具 descriptor，不执行工具；目录中也包含 `logagent.get_metadata_tag_fields`。V2 对应的 `logagent-v2://tools/catalog` 和 `logagent.list_tools` 返回 `schemaVersion`、完整 `tools` descriptors 和 V1-compatible `configuredTools` summary。
 - `GET /api/exports/tools.zip` 打包当前 enabled 且解析为普通可执行文件的 configured 工具二进制、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、无执行权限或读取失败的工具在 manifest 标记 skipped，内置工具不导出。
 - `logagent.fetch` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝 `tools/call logagent.fetch`。
 - `logagent.huawei_cloud_package_sync` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝执行任何非只读内置工具。
@@ -174,4 +174,5 @@ Huawei package sync 的 `result.json` 至少包含：
 - 重复 action id 幂等，结果可回填到同一分析 revision。
 - 未配置或未匹配工具时 `RUN_TOOL` 阶段直接跳过，不影响现有 Claude Code 分析结果。
 - `tools.zip` 覆盖 configured 可执行文件打包、wrapper/config 示例生成、缺失工具 skipped、sha256/size manifest，并验证内置工具不会进入 manifest。
+- 只读 MCP tool catalog resource 和 `logagent.list_tools` 必须返回同一份 V1-shaped catalog payload，包含 `schemaVersion`、`tools` 和 `configuredTools`。
 - README 和 SPEC 在工具协议或结果结构变更时同步更新。

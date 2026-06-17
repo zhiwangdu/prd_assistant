@@ -1436,6 +1436,62 @@ class StoreTests(unittest.TestCase):
             self.assertIn("pprof_analyzer", descriptors)
             self.assertIn("logagent.huawei_cloud_package_sync", descriptors)
 
+    def test_readonly_mcp_tools_catalog_matches_v1_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = ToolDefinition(
+                id="mock_tool",
+                display_name="Mock Tool",
+                command=sys.executable,
+                args=("-c", "print('ok')"),
+                timeout_seconds=7,
+                max_input_files=3,
+                match_file_patterns=("*.log",),
+                match_keywords=("timeout",),
+            )
+            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            resource = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 14,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent-v2://tools/catalog"},
+                },
+            )
+            catalog = json.loads(resource["result"]["contents"][0]["text"])
+            self.assertEqual(catalog["schemaVersion"], 1)
+            self.assertIn("tools", catalog)
+            self.assertIn("configuredTools", catalog)
+            configured = {
+                item["toolId"]: item for item in catalog["configuredTools"]
+            }
+            self.assertEqual(configured["mock_tool"]["configuredArgs"], ["-c", "print('ok')"])
+            self.assertEqual(configured["mock_tool"]["timeoutSeconds"], 7)
+            self.assertEqual(configured["mock_tool"]["maxInputFiles"], 3)
+            self.assertEqual(configured["mock_tool"]["match"]["filePatterns"], ["*.log"])
+            self.assertEqual(configured["mock_tool"]["match"]["keywords"], ["timeout"])
+            tools = {item["toolId"]: item for item in catalog["tools"]}
+            self.assertEqual(tools["mock_tool"]["source"], "configured")
+            self.assertEqual(tools["logagent.fetch"]["source"], "built_in")
+
+            tool_call = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 15,
+                    "method": "tools/call",
+                    "params": {"name": "logagent.list_tools", "arguments": {}},
+                },
+            )
+            called_catalog = json.loads(tool_call["result"]["content"][0]["text"])
+            self.assertEqual(called_catalog["configuredTools"], catalog["configuredTools"])
+
     def test_manual_tool_run_executes_metadata_builtin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

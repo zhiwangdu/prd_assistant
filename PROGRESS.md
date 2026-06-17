@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Readonly Tool Catalog Shape
+
+- Updated V2 readonly MCP `logagent-v2://tools/catalog` and
+  `logagent.list_tools` to return the Rust-compatible catalog payload shape:
+  `schemaVersion`, complete `tools` descriptors, and `configuredTools`
+  summaries.
+- `configuredTools` now includes configured args, timeout, `maxInputFiles`, and
+  match rules for each configured subprocess tool while the readonly MCP surface
+  remains catalog-only and cannot execute tools.
+- Replaced the placeholder tools catalog resource description with the concrete
+  configured/built-in catalog description.
+- Added regression coverage for resource read and tool call parity.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`, `python3 -m compileall -q server-v2/logagent_v2`,
+  and `git diff --check`.
+
 ## 2026-06-17 V2 Explicit Tool Inputs
 
 - Added V2 configured Tool Runner support for explicit current-Workspace input

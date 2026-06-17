@@ -23,8 +23,8 @@ slice provides the durable foundation for the V2 product model:
   InfluxQL query lines plus generic file-level InfluxQL and Flux query lines,
   with analyzer JSONL input artifacts.
 - `manifest.json` and `grep_results.json` artifact generation.
-- Read-only MCP endpoint with tool catalog, Metadata, Case Memory, Skill
-  registry, and Domain Adapter resources/tools.
+- Read-only MCP endpoint with V1-shaped tool catalog, Metadata, Case Memory,
+  Skill registry, and Domain Adapter resources/tools.
 - Task MCP endpoint with summary/evidence/manifest/grep/analysis_package plus
   Agent audit resources and `logagent.search_logs` follow-up search plus
   `logagent.get_log_slice`.
@@ -620,6 +620,12 @@ artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
 currently includes manual built-ins for metadata tools,
 `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
 default-off `logagent.huawei_cloud_package_sync`.
+
+Readonly MCP exposes the same tool registry as
+`logagent-v2://tools/catalog` and `logagent.list_tools`. Both return
+`schemaVersion`, full `tools` descriptors, and a V1-compatible
+`configuredTools` summary with configured args, timeout, match rules, and
+`maxInputFiles`. The readonly endpoint never runs tools.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools.
 The archive contains `README.md`, `tools-manifest.json`, executable files under

@@ -81,8 +81,8 @@ Implemented in this slice:
   artifacts, analysis resources, final result, and run alias for WebUI
   inspection.
 - Read-only MCP endpoint with `initialize`, `resources/list`, `resources/read`,
-  `tools/list`, and tools/resources for tool catalog, Metadata, Case Memory,
-  Skill registry, and Domain Adapter summaries.
+  `tools/list`, and tools/resources for V1-shaped tool catalog, Metadata,
+  Case Memory, Skill registry, and Domain Adapter summaries.
 - Task MCP endpoint with `summary`, `evidence`, `manifest`, `grep_results`,
   `system_context`, `metadata_context`, `analysis_package`, `analysis_state`,
   `agent_request`, `agent_response`, `result`, and `result_markdown`
@@ -527,6 +527,12 @@ validated `params`; results are stored as V2 artifacts/evidence and exposed
 through `/api/v2/tools/runs/:run_id/result`. Configured tools with
 `{input_file}` may pass reserved `params.inputFiles` to select existing
 Workspace inputs without re-uploading files.
+
+Readonly MCP `logagent-v2://tools/catalog` and `logagent.list_tools` expose the
+same catalog payload shape used by the Rust server: `schemaVersion`, complete
+`tools` descriptors, and `configuredTools` summaries containing configured
+args, timeout, match rules, and `maxInputFiles`. This readonly surface is
+catalog-only and cannot execute configured or built-in tools.
 
 Configured tools may declare `paramsSchema`. V2 validates a conservative object
 schema subset: required fields, `additionalProperties=false`, primitive

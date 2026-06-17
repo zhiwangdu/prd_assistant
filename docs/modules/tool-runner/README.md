@@ -117,7 +117,7 @@ tools:
 - 内置 metadata tools 当前包括 `logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields`。其中 tag fields 工具复用 field types 的 instance/database/measurement/RP 定位规则，但不提供 `field` 参数，只返回 Tag 类型字段。
 - 内置 Fetch tool 当前为 `logagent.fetch`，参数为 `fetchId`、可选 `variables`、可选临时 `headers` 和可选 body override。运行结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`，最终答案可引用 `tool_results/<action_id>/result.json#response`。
 - 内置 Huawei package sync tool 当前为 `logagent.huawei_cloud_package_sync`，参数为可选 `objectKey`、必填 `updateSql` 和必填 `querySql`。运行结果写入 `tool_results/<action_id>/result.json`，包含 OBS PUT/HEAD 状态、GaussDB affected rows、最多 200 行 query preview、失败步骤、耗时和凭据环境变量名；不保存原始 SQL 和密钥值。OBS/GaussDB 网络或 SQL 执行失败会写入 `status=FAILED` 的 result artifact，工具任务本身仍可成功完成以便 WebUI 展示错误细节。
-- 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、configured args、match rules 和内置 metadata 工具 descriptor；该入口不运行工具。
+- 只读 HTTP MCP 通过 `logagent://tools/catalog` 和 `logagent.list_tools` 暴露同一份工具目录、configured args、match rules 和内置 metadata 工具 descriptor；V2 对应 `logagent-v2://tools/catalog`，返回同样的 `schemaVersion`、完整 `tools` 和 V1-compatible `configuredTools` 形态；该入口不运行工具。
 - `GET /api/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；内置工具不进入导出包。
 
 ## 本地真实工具 smoke

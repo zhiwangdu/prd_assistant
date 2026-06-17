@@ -87,7 +87,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                     {
                         "uri": "logagent-v2://tools/catalog",
                         "name": "tools_catalog",
-                        "description": "V2 tool catalog placeholder",
+                        "description": "Configured and built-in V2 tool catalog.",
                         "mimeType": "application/json",
                     },
                     {
@@ -143,8 +143,9 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
                         {
                             "type": "text",
                             "text": json.dumps(
-                                tool_descriptors(settings),
+                                tool_catalog(settings),
                                 ensure_ascii=True,
+                                indent=2,
                             ),
                         }
                     ]
@@ -197,7 +198,7 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             if uri == "logagent-v2://tools/catalog":
-                value = tool_descriptors(settings)
+                value = tool_catalog(settings)
             elif uri == "logagent-v2://metadata/instances":
                 value = {"instances": store.list_metadata_instances()}
             elif uri == "logagent-v2://cases/recent":
@@ -236,6 +237,41 @@ def readonly_mcp_response(settings: Settings, store: Store, request: dict) -> di
             "id": request_id,
             "error": {"code": -32000, "message": str(error)},
         }
+
+
+def tool_catalog(settings: Settings) -> dict:
+    descriptors = tool_descriptors(settings)
+    configured_tools = [
+        {
+            "toolId": tool["toolId"],
+            "enabled": tool["enabled"],
+            "timeoutSeconds": find_configured_tool_timeout(settings, tool["toolId"]),
+            "maxInputFiles": tool.get("maxInputFiles", tool.get("maxFiles")),
+            "configuredArgs": list(find_configured_tool_args(settings, tool["toolId"])),
+            "match": tool.get("match", {"filePatterns": [], "keywords": []}),
+        }
+        for tool in descriptors
+        if tool.get("source") == "configured"
+    ]
+    return {
+        "schemaVersion": 1,
+        "tools": descriptors,
+        "configuredTools": configured_tools,
+    }
+
+
+def find_configured_tool_args(settings: Settings, tool_id: str) -> tuple[str, ...]:
+    for tool in settings.tools:
+        if tool.id == tool_id:
+            return tool.args
+    return ()
+
+
+def find_configured_tool_timeout(settings: Settings, tool_id: str) -> int | None:
+    for tool in settings.tools:
+        if tool.id == tool_id:
+            return tool.timeout_seconds
+    return None
 
 
 def task_resources(run: dict) -> list[dict]:
