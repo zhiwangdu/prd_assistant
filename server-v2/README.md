@@ -130,6 +130,11 @@ slice provides the durable foundation for the V2 product model:
   explicit Session `systemContextIds` materialized from legacy System Context
   resources, `system_context` run snapshot, readonly/task MCP reference
   reading, and `skills.zip` export.
+- Code Evidence MVP for configured local git repositories: `logagent.search_code`
+  uses version-bound `git grep` against administrator-defined repo/ref/search
+  roots, writes `code_evidence/<action_id>.json`, and exposes final-answer
+  refs as `code_evidence/<action_id>.json#matches/<index>` without modifying
+  the source worktree.
 - Legacy System Context resource compatibility APIs backed by SQLite for
   prompt packs, architecture docs, runbooks, glossaries, tool capability notes,
   knowledge notes, diagnostic-skill records, version activation, and prompt
@@ -309,6 +314,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `no` host-key behavior |
 | `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-`; argv entries are trimmed, empty entries are dropped, and the final argv must be non-empty |
+| `LOGAGENT_V2_CODE_REPOS_JSON` | unset | JSON object or array of configured read-only code repositories for `logagent.search_code`; each entry requires absolute `repoPath`, `defaultRef`, optional `versionRefs`, and relative `searchRoots` |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
 | `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint; when enabled must be `http/https` with no path/query/fragment |
@@ -667,8 +673,9 @@ node list so runtime artifacts prove which orchestration graph executed the
 run.
 
 The provider may return a `tool_calls` object for tools advertised in the
-prompt: log search/slice, Metadata, Case Memory, Skill references, Fetch
-catalog, configured domain tools, and Fetch execution when Fetch is enabled. V2
+prompt: log search/slice, Metadata, Case Memory, Skill references, Code
+Evidence when code repos are configured, Fetch catalog, configured domain
+tools, and Fetch execution when Fetch is enabled. V2
 validates the requested tool name against the advertised set, executes through
 the existing task MCP call path, feeds the observations into the next round, and
 stops after `LOGAGENT_V2_AGENT_MAX_ROUNDS`. Follow-up evidence refs returned by
@@ -1113,6 +1120,7 @@ log_slices/<slice_id>.json#lines
 case_context.json#cases/<index>
 tool_results/<tool_id>/result.json#findings/<index>
 tool_results/<fetch_action_id>/result.json#response
+code_evidence/<action_id>.json#matches/<index>
 ```
 
 Background resources such as `manifest.json` are readable over task MCP but

@@ -249,9 +249,9 @@ Implemented in this slice:
   workspace artifact registry and linked from the environment evidence payload.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
-  `session_text_input.json#question`, log search, log slice, Fetch response, or
-  tool finding evidence; recalled Case context is accepted through
-  `case_context.json#cases/<index>`.
+  `session_text_input.json#question`, log search, log slice, Fetch response,
+  tool finding, or Code Evidence match evidence; recalled Case context is
+  accepted through `case_context.json#cases/<index>`.
 - Final result persistence as `result.json` and `result.md` background
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
@@ -269,6 +269,10 @@ Implemented in this slice:
   `system_context` artifact, explicit Session `systemContextIds` materialized
   from legacy System Context resources, readonly MCP Skill tools, and task MCP
   reference artifacts.
+- Code Evidence MVP for configured local git repositories. `logagent.search_code`
+  maps product/version to configured refs, runs read-only `git grep` under
+  configured search roots, writes `code_evidence/<action_id>.json`, and exposes
+  final-answer refs as `code_evidence/<action_id>.json#matches/<index>`.
 - Legacy System Context resource compatibility APIs backed by SQLite. V2 can
   create, list, read, update, version, activate, and preview prompt packs,
   architecture docs, runbooks, glossaries, tool capability notes, knowledge
@@ -666,6 +670,17 @@ LOGAGENT_V2_TOOLS_JSON
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
+
+Code Evidence configuration is optional and loaded from
+`LOGAGENT_V2_CODE_REPOS_JSON`. It accepts either an object keyed by product or
+an array with explicit `product`. Each repo entry requires an absolute
+`repoPath`, a safe `defaultRef`, optional `versionRefs`, and relative
+`searchRoots`. Task MCP `logagent.search_code` is only advertised when at least
+one repo is configured. It accepts `product`, optional `version` or `gitRef`,
+`query`/`keywords`, and `maxMatchesPerKeyword`; `gitRef` must match the
+configured default ref or a configured version ref. The implementation uses
+`git rev-parse` and `git grep <commit>` only; it does not clone, pull, checkout,
+create worktrees, run build scripts, or modify the source repository.
 
 `LOGAGENT_V2_TOOLS_JSON` accepts either a descriptor array or a Rust/V1-style
 object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1
@@ -1283,6 +1298,7 @@ log_slices/<slice_id>.json#lines
 case_context.json#cases/<index>
 tool_results/<tool_id>/result.json#findings/<index>
 tool_results/<fetch_action_id>/result.json#response
+code_evidence/<action_id>.json#matches/<index>
 ```
 
 The referenced artifact must exist and the match/finding index must be in
@@ -1374,11 +1390,12 @@ and linked `agent_response` artifact id.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
-Skill references, Fetch catalog, configured domain tools when present, and
-Fetch execution when Fetch is enabled. `logagent.search_logs` must advertise
-the V1-compatible optional `maxMatches` cap, and `logagent.get_log_slice` must
-advertise the same center-line or V1-compatible `startLine`/`endLine` range
-schema as task MCP. Configured domain tools must use the same `toolId` or
+Skill references, Code Evidence when configured, Fetch catalog, configured
+domain tools when present, and Fetch execution when Fetch is enabled.
+`logagent.search_logs` must advertise the V1-compatible optional `maxMatches`
+cap, and `logagent.get_log_slice` must advertise the same center-line or
+V1-compatible `startLine`/`endLine` range schema as task MCP. Configured domain
+tools must use the same `toolId` or
 V1-compatible `tool + inputFile` schema exposed by task MCP `tools/list`, and
 manual-only tools are not advertised to the provider. Waiting/approval tools
 are advertised unless the run is resuming with `resumeMode=finalize`. V2
@@ -1416,9 +1433,10 @@ bounded tool input summaries, bounded artifact index outline, system/metadata
 context outlines, bounded `analysisState` resume context, allowed current-run
 evidence refs starting with `session_text_input.json#question`, and
 final-evidence policy including
-`case_context.json#cases/<index>`. Its resource index includes Agent audit
-resources and optional Rust/V1 Claude runtime compatibility resources
-`claude_mcp_config` and `claude_session`. It
+`case_context.json#cases/<index>` and
+`code_evidence/<action_id>.json#matches/<index>`. Its resource index includes
+Agent audit resources, Code Evidence, and optional Rust/V1 Claude runtime
+compatibility resources `claude_mcp_config` and `claude_session`. It
 intentionally omits full Skill content, full Metadata topology, and raw
 uploaded text. Task MCP exposes it at
 `logagent://task/<run_id>/analysis_package` and retains the

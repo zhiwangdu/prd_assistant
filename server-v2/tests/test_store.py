@@ -5,6 +5,7 @@ import gzip
 import io
 import json
 import os
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -35,11 +36,13 @@ from logagent_v2.case_memory import (
     update_case_import_draft,
 )
 from logagent_v2.config import (
+    CodeRepoDefinition,
     HuaweiPackageSyncSettings,
     RemoteCommandTemplate,
     Settings,
     ToolDefinition,
     claude_code_profile_for_mode,
+    parse_code_repos_env,
     parse_remote_commands_env,
     parse_tools_env,
 )
@@ -3533,6 +3536,73 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(tools["match_tool"].match_file_patterns, ("*.log", "*timeout*"))
         self.assertEqual(tools["match_tool"].match_keywords, ("error", "slow query"))
 
+    def test_parse_code_repos_env_accepts_maps_and_validates_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            raw = json.dumps(
+                {
+                    "opengemini": {
+                        "repoPath": repo.as_posix(),
+                        "defaultRef": " main ",
+                        "versionRefs": {"1.0.0": "v1.0.0"},
+                        "searchRoots": ["src", "src", "engine/planner"],
+                    }
+                }
+            )
+            repos = parse_code_repos_env(raw)
+            self.assertEqual(len(repos), 1)
+            self.assertEqual(repos[0].product, "opengemini")
+            self.assertEqual(repos[0].repo_path, repo)
+            self.assertEqual(repos[0].default_ref, "main")
+            self.assertEqual(repos[0].version_refs, {"1.0.0": "v1.0.0"})
+            self.assertEqual(repos[0].search_roots, ("src", "engine/planner"))
+
+            list_raw = json.dumps(
+                [
+                    {
+                        "product": "influxdb",
+                        "repo_path": repo.as_posix(),
+                        "default_ref": "HEAD",
+                    }
+                ]
+            )
+            self.assertEqual(parse_code_repos_env(list_raw)[0].product, "influxdb")
+
+            for bad_raw, message in [
+                (json.dumps({"": {"repoPath": repo.as_posix()}}), "product"),
+                (
+                    json.dumps({"bad": {"repoPath": "relative/repo", "defaultRef": "HEAD"}}),
+                    "absolute",
+                ),
+                (
+                    json.dumps(
+                        {
+                            "bad": {
+                                "repoPath": repo.as_posix(),
+                                "defaultRef": "../main",
+                            }
+                        }
+                    ),
+                    "unsafe git ref",
+                ),
+                (
+                    json.dumps(
+                        {
+                            "bad": {
+                                "repoPath": repo.as_posix(),
+                                "defaultRef": "HEAD",
+                                "searchRoots": ["src/"],
+                            }
+                        }
+                    ),
+                    "unsafe code repo search root",
+                ),
+            ]:
+                with self.subTest(bad_raw=bad_raw):
+                    with self.assertRaisesRegex(ValueError, message):
+                        parse_code_repos_env(bad_raw)
+
     def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
         env_values = {
             "LOGAGENT_V2_FETCH_ENABLED": "1",
@@ -6234,6 +6304,156 @@ fi
             background_ref = dict(answer, evidenceRefs=["manifest.json#files/0"])
             with self.assertRaises(FinalAnswerValidationError):
                 normalize_and_validate_final_answer(settings, store, run["id"], background_ref)
+
+    def test_task_mcp_search_code_creates_final_evidence_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+            (repo / "src").mkdir()
+            (repo / "src" / "planner.py").write_text(
+                "class PushDownFilterRule:\n"
+                "    def apply(self):\n"
+                "        return 'filter pushdown failed near shard planner'\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "user.name=Test User",
+                    "commit",
+                    "-m",
+                    "initial",
+                ],
+                cwd=repo,
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True)
+
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                code_repos=(
+                    CodeRepoDefinition(
+                        product="opengemini",
+                        repo_path=repo,
+                        default_ref="HEAD",
+                        version_refs={"1.0.0": "v1.0.0"},
+                        search_roots=("src",),
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "investigate filter pushdown",
+                "code_investigation",
+                "en-US",
+            )
+            run = store.create_run(workspace["id"])
+
+            tools_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            )
+            tool_names = {item["name"] for item in tools_response["result"]["tools"]}
+            self.assertIn("logagent.search_code", tool_names)
+            self.assertIn(
+                "logagent.search_code",
+                {item["name"] for item in agent_available_tools(settings)},
+            )
+
+            search_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "version": "1.0.0",
+                            "keywords": ["PushDownFilterRule"],
+                            "maxMatchesPerKeyword": 2,
+                        },
+                    },
+                },
+            )
+            payload = json.loads(search_response["result"]["content"][0]["text"])
+            self.assertTrue(payload["artifactPath"].startswith("code_evidence/code_"))
+            self.assertEqual(payload["matchCount"], 1)
+            self.assertEqual(payload["matches"][0]["file"], "src/planner.py")
+            self.assertEqual(payload["matches"][0]["lineNumber"], 1)
+            code_ref = payload["evidenceRefs"][0]
+            self.assertTrue(code_ref.endswith("#matches/0"))
+
+            duplicate_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "version": "1.0.0",
+                            "keywords": ["PushDownFilterRule"],
+                            "maxMatchesPerKeyword": 2,
+                        },
+                    },
+                },
+            )
+            duplicate = json.loads(duplicate_response["result"]["content"][0]["text"])
+            self.assertEqual(duplicate["artifactPath"], payload["artifactPath"])
+            self.assertEqual(
+                len([item for item in store.list_evidence(run["id"]) if item["kind"] == "code_evidence"]),
+                1,
+            )
+
+            resource_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/code_evidence"},
+                },
+            )
+            resource = json.loads(resource_response["result"]["contents"][0]["text"])
+            self.assertEqual(resource["matches"][0]["ref"], code_ref)
+
+            answer = {
+                "summary": "Code evidence is valid.",
+                "symptoms": [],
+                "likelyRootCauses": [{"cause": "Rule is present", "evidenceRefs": [code_ref]}],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": [code_ref],
+            }
+            normalize_and_validate_final_answer(settings, store, run["id"], answer)
+
+            bad_ref = dict(answer, evidenceRefs=[f"{payload['artifactPath']}#matches/99"])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], bad_ref)
 
     def test_fetch_endpoint_runs_through_task_mcp_and_final_refs(self) -> None:
         class FetchHandler(BaseHTTPRequestHandler):

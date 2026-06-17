@@ -58,10 +58,11 @@
 
 ## 代码仓
 
-- 只允许使用配置中的本地 repo 和 ref。
+- 只允许使用 `LOGAGENT_V2_CODE_REPOS_JSON` / 配置中的本地 repo、version ref 和 search roots。
 - 不允许用户传任意 repo URL。
-- 代码检索只读执行。
+- 代码检索只读执行；当前 V2 只运行 `git rev-parse` 和 `git grep <commit>`，不 checkout、不 pull、不创建 worktree。
 - 禁止任务流程中自动修改代码、提交代码或运行构建脚本。
+- 最终答案中的代码证据只接受当前任务实际生成的 `code_evidence/<action_id>.json#matches/<index>` ref。
 
 ## 测试环境采集
 

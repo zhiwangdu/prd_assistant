@@ -95,6 +95,7 @@ def build_analysis_package(
         "allowedEvidenceRefs": allowed_evidence_refs(
             matches,
             evidence_bundle.get("toolResults"),
+            code_evidence_refs(settings, store, run_id),
         ),
         "finalEvidencePolicy": {
             "allowed": [
@@ -105,6 +106,7 @@ def build_analysis_package(
                 "case_context.json#cases/<index>",
                 "tool_results/<action_id>/result.json#findings/<index>",
                 "tool_results/<action_id>/result.json#response",
+                "code_evidence/<action_id>.json#matches/<index>",
             ],
             "backgroundOnlyKinds": [
                 "manifest",
@@ -186,6 +188,7 @@ def task_resource_index(run_id: str) -> list[JsonObject]:
         "claude_mcp_config",
         "claude_session",
         "case_context",
+        "code_evidence",
         "tool_results",
         "mcp_calls",
         "result",
@@ -250,6 +253,7 @@ def artifact_index_outline(store: Store, run_id: str) -> JsonObject:
 def allowed_evidence_refs(
     matches: list[JsonObject],
     tool_results: object | None = None,
+    code_refs: list[str] | None = None,
 ) -> list[str]:
     refs = [
         match["ref"]
@@ -265,7 +269,30 @@ def allowed_evidence_refs(
             if not isinstance(final_refs, list):
                 continue
             tool_refs.extend(ref for ref in final_refs if isinstance(ref, str))
-    return list(dict.fromkeys([SESSION_TEXT_INPUT_REF, *refs, *tool_refs]))
+    return list(dict.fromkeys([SESSION_TEXT_INPUT_REF, *refs, *tool_refs, *(code_refs or [])]))
+
+
+def code_evidence_refs(settings: Settings, store: Store, run_id: str) -> list[str]:
+    refs: list[str] = []
+    for evidence in store.list_evidence(run_id):
+        if evidence.get("kind") != "code_evidence" or not evidence.get("final_allowed"):
+            continue
+        artifact_id = evidence.get("artifact_id")
+        if not isinstance(artifact_id, str):
+            continue
+        try:
+            artifact = store.get_artifact(artifact_id)
+            path = resolve_artifact_path(settings, artifact["relative_path"])
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        matches = value.get("matches") if isinstance(value, dict) else None
+        if not isinstance(matches, list):
+            continue
+        for match in matches:
+            if isinstance(match, dict) and isinstance(match.get("ref"), str):
+                refs.append(match["ref"])
+    return list(dict.fromkeys(refs))
 
 
 def manifest_outline(manifest: JsonObject) -> JsonObject:

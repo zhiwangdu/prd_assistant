@@ -2,6 +2,27 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Read-only MVP
+
+- Added V2 Code Evidence configuration via `LOGAGENT_V2_CODE_REPOS_JSON`,
+  supporting configured local git repos, default refs, version-to-ref maps, and
+  safe relative search roots.
+- Added task MCP / Agent provider `logagent.search_code` for configured repos.
+  It resolves refs to commits with `git rev-parse`, searches with read-only
+  `git grep <commit>`, persists `code_evidence/<action_id>.json`, and returns
+  final-answer refs as `code_evidence/<action_id>.json#matches/<index>`.
+- Final answer validation and analysis packages now accept current-run Code
+  Evidence match refs, include them in allowed evidence refs, and expose the
+  latest `code_evidence` task MCP resource.
+- Added regression coverage for Code Evidence config validation, task MCP
+  search idempotency/resource reads, provider tool advertisement, and final ref
+  validation.
+- Updated Code Evidence, Config, Analysis Agent, Interfaces, Security,
+  Roadmap, server-v2, and root docs. Full worktree/cache, version diff,
+  symbol-level parsing, and fix mode code edits remain future work.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Code Evidence pytest selection, and `git diff --check`.
+
 ## 2026-06-18 V2 Deployment Script Regression Tests
 
 - Added `server-v2/tests/test_deploy_scripts.py` with lightweight subprocess

@@ -105,6 +105,10 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `remote_execution.commands.<command_id>.enabled`
 - `remote_execution.commands.<command_id>.argv`
 - `remote_execution.commands.<command_id>.timeout_seconds`
+- `code_repos.<product>.repo_path` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].repoPath`
+- `code_repos.<product>.default_ref` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].defaultRef`
+- `code_repos.<product>.version_refs` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].versionRefs`
+- `code_repos.<product>.search_roots` / V2 `LOGAGENT_V2_CODE_REPOS_JSON[].searchRoots`
 - `analysis.max_rounds`
 - `analysis.max_llm_calls`
 - `analysis.max_actions`
@@ -112,7 +116,7 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 
 待扩展：
 
-- product/version 到代码仓 ref 映射
+- Code Evidence 独立 worktree/cache、版本间 diff 和 fix mode 隔离修改配置；当前 V2 已支持 product/version 到本地 git ref 的只读映射和 `git grep`。
 - SSH/SCP 测试环境节点到 Environment Collector 的批量采集映射；当前 Remote Executor 已支持 WebUI 显式执行机和白名单 SSH 命令模板。
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
 - LLM 多轮重试、用量和 request id 审计
@@ -226,6 +230,8 @@ tools:
 - `remote_execution.commands` 为空时内置 `smoke_ls_root`；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。
 - `remote_execution.commands.<id>.argv` 加载时逐项 trim 并丢弃空字符串；归一化后为空时启动失败。
 - WebUI Remote Executor 只能选择 `remote_execution.commands` 白名单模板，不能提交自由命令。
+- V2 `LOGAGENT_V2_CODE_REPOS_JSON` 支持 object keyed by product 或 descriptor array；repo path 必须是已存在绝对目录，`defaultRef` / `versionRefs` 必须是安全 git ref，`searchRoots` 必须是安全相对路径且会去重。
+- `logagent.search_code` 只能访问配置仓库、配置版本 ref 和配置 search roots；未配置仓库时不在 task MCP 或 provider prompt 中广告。
 - Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。

@@ -101,6 +101,79 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
 
 
 @dataclass(frozen=True)
+class CodeRepoDefinition:
+    product: str
+    repo_path: Path
+    default_ref: str
+    version_refs: dict[str, str] = field(default_factory=dict)
+    search_roots: tuple[str, ...] = ()
+
+    @classmethod
+    def from_json(cls, product: str, value: dict) -> "CodeRepoDefinition":
+        product = product.strip()
+        if not product:
+            raise ValueError("code repo product must not be empty")
+        repo_path_value = value.get("repoPath") or value.get("repo_path")
+        if not isinstance(repo_path_value, str) or not repo_path_value.strip():
+            raise ValueError(f"code repo {product} requires repoPath")
+        repo_path = Path(expand_tool_command(repo_path_value.strip()))
+        if not repo_path.is_absolute():
+            raise ValueError(f"code repo {product} repoPath must resolve to an absolute path")
+        if not repo_path.is_dir():
+            raise ValueError(f"code repo {product} repoPath is not a directory")
+        default_ref = validate_configured_git_ref(
+            product,
+            str(value.get("defaultRef") or value.get("default_ref") or "HEAD"),
+        )
+        raw_version_refs = value.get("versionRefs") or value.get("version_refs") or {}
+        if not isinstance(raw_version_refs, dict):
+            raise ValueError(f"code repo {product} versionRefs must be an object")
+        version_refs = {
+            str(version): validate_configured_git_ref(product, str(ref))
+            for version, ref in raw_version_refs.items()
+        }
+        return cls(
+            product=product,
+            repo_path=repo_path,
+            default_ref=default_ref,
+            version_refs=version_refs,
+            search_roots=normalize_code_search_roots(
+                value.get("searchRoots") or value.get("search_roots") or []
+            ),
+        )
+
+
+def normalize_code_search_roots(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("code repo searchRoots must be an array")
+    roots = []
+    for item in value:
+        root = str(item).strip().replace("\\", "/")
+        if not root:
+            continue
+        if root.startswith("/") or any(part in {"", ".", ".."} for part in root.split("/")):
+            raise ValueError(f"unsafe code repo search root {item!r}")
+        roots.append(root)
+    return tuple(dict.fromkeys(roots))
+
+
+def validate_configured_git_ref(product: str, ref: str) -> str:
+    ref = ref.strip()
+    if (
+        not ref
+        or ref.startswith("-")
+        or any(ord(char) < 32 or char.isspace() for char in ref)
+        or ".." in ref
+        or ref.endswith("/")
+        or ref.endswith(".lock")
+    ):
+        raise ValueError(f"code repo {product} has unsafe git ref {ref!r}")
+    return ref
+
+
+@dataclass(frozen=True)
 class HuaweiPackageSyncSettings:
     enabled: bool = False
     obs_endpoint: str | None = None
@@ -243,6 +316,7 @@ class Settings:
     remote_max_output_bytes: int = 1024 * 1024
     remote_host_key_policy: str = "accept-new"
     remote_commands: tuple[RemoteCommandTemplate, ...] = field(default_factory=default_remote_commands)
+    code_repos: tuple[CodeRepoDefinition, ...] = ()
     webui_dir: Path = field(default_factory=default_webui_dir)
 
     @property
@@ -427,6 +501,7 @@ class Settings:
         remote_commands = parse_remote_commands_env(
             os.environ.get("LOGAGENT_V2_REMOTE_COMMANDS_JSON")
         )
+        code_repos = parse_code_repos_env(os.environ.get("LOGAGENT_V2_CODE_REPOS_JSON"))
         raw_webui_dir = os.environ.get("LOGAGENT_V2_WEBUI_DIR")
         webui_dir = Path(raw_webui_dir).expanduser() if raw_webui_dir else default_webui_dir()
         return cls(
@@ -475,6 +550,7 @@ class Settings:
             remote_max_output_bytes=max(1024, remote_max_output_bytes),
             remote_host_key_policy=remote_host_key_policy,
             remote_commands=remote_commands,
+            code_repos=code_repos,
             webui_dir=webui_dir,
         )
 
@@ -506,6 +582,33 @@ def parse_tools_env(raw: str | None) -> tuple[ToolDefinition, ...]:
         seen.add(tool.id)
         deduped.append(tool)
     return tuple(deduped)
+
+
+def parse_code_repos_env(raw: str | None) -> tuple[CodeRepoDefinition, ...]:
+    value = non_empty_string(raw)
+    if not value:
+        return ()
+    decoded = json.loads(value)
+    if isinstance(decoded, dict):
+        repos = [
+            CodeRepoDefinition.from_json(str(product), descriptor)
+            for product, descriptor in decoded.items()
+            if isinstance(descriptor, dict)
+        ]
+        if len(repos) != len(decoded):
+            raise ValueError("LOGAGENT_V2_CODE_REPOS_JSON object values must be objects")
+        return tuple(repos)
+    if isinstance(decoded, list):
+        repos = []
+        for descriptor in decoded:
+            if not isinstance(descriptor, dict):
+                raise ValueError("LOGAGENT_V2_CODE_REPOS_JSON entries must be objects")
+            product = descriptor.get("product")
+            if not isinstance(product, str) or not product.strip():
+                raise ValueError("LOGAGENT_V2_CODE_REPOS_JSON entries require product")
+            repos.append(CodeRepoDefinition.from_json(product.strip(), descriptor))
+        return tuple(repos)
+    raise ValueError("LOGAGENT_V2_CODE_REPOS_JSON must be a JSON object or array")
 
 
 def tool_definitions_from_json(decoded: Any) -> list[ToolDefinition]:

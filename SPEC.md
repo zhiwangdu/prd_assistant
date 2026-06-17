@@ -203,9 +203,9 @@ flowchart TD
   Provider request id 与稳定结构化协议；V2 Agent provider 审计字段已先行落地。
 - Memory embedding/vector 召回和自动注入 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
-- 根据用户输入的软件版本切换代码仓分支并收集证据。
+- Code Evidence V2 只读 `git grep` MVP 已支持 product/version 到配置 ref 的映射和最终答案 code evidence ref；后续继续实现独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
 - 基于已落地的 Remote Executor，继续实现测试环境通过 SSH/SCP 采集日志和运行环境信息，并接入 Analysis Agent 审批动作。
-- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
+- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、Code Evidence 只读检索、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
 
 ## 全局验收
 

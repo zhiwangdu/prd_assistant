@@ -36,6 +36,7 @@
 - 只读 HTTP MCP 可以通过工具目录展示 `logagent.fetch` descriptor，但 `tools/call logagent.fetch` 必须拒绝；Fetch 执行范围仅限任务 MCP 和受保护 Server `tool_run` API。
 - 只读 HTTP MCP 可以通过工具目录展示 `logagent.huawei_cloud_package_sync` descriptor，但不得执行该非只读工具；首版执行范围仅限受保护 Server `tool_run` API。
 - Huawei package sync 只能引用 Server 已完成 upload 的一个 raw snapshot 文件，不能传入任意本地路径或远程 URL；运行时 `objectKey` 必须通过安全相对路径校验，OBS/GaussDB 凭据值不得进入 artifact、日志、导出包或 LLM prompt。
+- Code Evidence 只能访问管理员配置的本地 git repo、配置 version ref / default ref 和安全相对 search roots；当前 V2 只运行 `git rev-parse` 和 `git grep <commit>`，不 checkout、不 pull、不创建 worktree、不运行构建脚本。
 - `skills.zip` 不跟随 symlink，不允许路径逃逸；`tools.zip` 不包含 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件，无法打包的 enabled 工具只能标记 skipped。
 - Environment Collector 只能访问配置节点和路径。
 - LLM 不能直接执行命令。
@@ -68,5 +69,6 @@
 - Prompt injection 不能让日志包预处理保留三类日志目录之外的文件，也不能让 Tool Runner 使用 workspace 外的 `tool_inputs` 或 `extracted` 路径。
 - Prompt injection 不能要求 Server 把完整 Metadata 放入默认 prompt/package，或把 `metadata_slices/*` 升级为最终 evidence ref。
 - Fetch response evidence ref 只接受当前任务中真实存在且 `tool=logagent.fetch` 的 `tool_results/<action_id>/result.json#response`。
+- Code Evidence ref 只接受当前任务中真实存在且 `final_allowed=true` 的 `code_evidence/<action_id>.json#matches/<index>`，并且 artifact 中对应 match index 必须存在。
 - 导出下载不能泄露密钥、环境变量值、上传文件或 task workspace。
 - README 和 SPEC 在安全策略变更时同步更新。

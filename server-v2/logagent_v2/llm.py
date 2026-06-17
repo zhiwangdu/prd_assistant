@@ -19,6 +19,7 @@ from .claude_contracts import (
     build_claude_mcp_config,
     build_claude_prompt,
 )
+from .code_evidence import code_evidence_available, code_evidence_tool_descriptor
 from .config import ClaudeCodePermissionProfile, Settings, claude_code_profile_for_mode
 from .fetch import fetch_tool_descriptors
 from .metadata import task_metadata_tool_descriptors
@@ -1086,6 +1087,8 @@ def agent_available_tools(
         *task_case_tool_descriptors(),
         *skill_tool_descriptors(),
     ]
+    if code_evidence_available(settings):
+        tools.append(code_evidence_tool_descriptor())
     if not agent_resume_policy(interaction_context)["finalizeWithCurrentEvidence"]:
         tools.extend(
             [request_user_input_tool_descriptor(), request_approval_tool_descriptor()]

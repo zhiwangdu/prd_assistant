@@ -7,7 +7,7 @@
 | 已有上传、Metadata 和 WebUI 闭环 | 已完成 MVP |
 | Server 持久化与可恢复状态机 | 4~6 天 |
 | Tool Runner MVP | 已完成 |
-| Code Evidence | 4~6 天 |
+| Code Evidence | 已完成 V2 只读 MVP |
 | Environment Collector | 4~6 天 |
 | Analysis Orchestrator | 4~6 天 |
 | Claude Code MCP Session Runner | 已完成 MVP |
@@ -66,7 +66,7 @@
 
 ## 最后阶段：远程和代码证据
 
-- Code Evidence 完成版本到 ref 映射和只读 worktree 检索。
+- Code Evidence 已完成版本到配置 ref 的只读 `git grep` MVP；后续补独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
 - Environment Collector 完成白名单 SSH/SCP 采集。
 - 将审批后的 mock environment evidence 替换为真实 SSH/SCP Environment Collector。
 

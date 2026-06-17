@@ -22,6 +22,7 @@ ANALYSIS_RESOURCE_KINDS = (
     "claude_mcp_config",
     "claude_session",
     "case_context",
+    "code_evidence",
     "tool_results",
     "mcp_calls",
     "system_context",

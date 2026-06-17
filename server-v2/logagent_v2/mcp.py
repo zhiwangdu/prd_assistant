@@ -4,6 +4,11 @@ import json
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
+from .code_evidence import (
+    code_evidence_available,
+    code_evidence_tool_descriptor,
+    run_code_search,
+)
 from .config import Settings
 from .evidence import get_log_line_range, get_log_slice, run_log_search
 from .fetch import call_fetch_tool, fetch_tool_descriptors
@@ -81,6 +86,7 @@ def task_mcp_response(
                 "tools": [
                     search_logs_descriptor(),
                     get_log_slice_descriptor(),
+                    *code_evidence_task_tool_descriptors(settings),
                     run_domain_tool_descriptor(settings),
                     request_user_input_descriptor(),
                     request_approval_descriptor(),
@@ -371,6 +377,7 @@ def task_resources(run: dict) -> list[dict]:
         ("claude_mcp_config", "Claude MCP config artifact", "application/json"),
         ("claude_session", "Claude session artifact", "application/json"),
         ("case_context", "Latest Case background context", "application/json"),
+        ("code_evidence", "Latest Code Evidence search result", "application/json"),
         ("tool_results", "Tool result artifacts", "application/json"),
         ("mcp_calls", "Task MCP call audit log", "application/json"),
         ("result", "Final result JSON artifact", "application/json"),
@@ -439,6 +446,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
         value = read_latest_evidence_artifact(settings, store, run["id"], "claude_session")
     elif name == "case_context":
         value = read_task_case_context(settings, store, run)
+    elif name == "code_evidence":
+        value = read_latest_evidence_artifact(settings, store, run["id"], "code_evidence")
     elif name == "tool_results":
         value = read_task_tool_results(settings, store, run)
     elif name == "mcp_calls":
@@ -764,6 +773,12 @@ def search_logs_descriptor() -> dict:
     }
 
 
+def code_evidence_task_tool_descriptors(settings: Settings) -> list[dict]:
+    if not code_evidence_available(settings):
+        return []
+    return [code_evidence_tool_descriptor()]
+
+
 def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) -> dict:
     name = params.get("name")
     arguments = params.get("arguments") or {}
@@ -810,6 +825,16 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         }
     if name in FETCH_TOOL_NAMES:
         value = call_fetch_tool(settings, store, run, name, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
+    if name == "logagent.search_code":
+        value = run_code_search(settings, store, run, arguments)
         return {
             "content": [
                 {

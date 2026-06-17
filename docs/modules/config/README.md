@@ -203,6 +203,20 @@ log_analyzer:
     - denied
     - verify
 
+# Python V2 当前通过 LOGAGENT_V2_CODE_REPOS_JSON 承载同类配置。
+code_repos:
+  influxdb:
+    repo_path: "/data/repos/influxdb"
+    default_ref: "main"
+    version_refs:
+      "3.0.2": "v3.0.2"
+      "3.0.1": "v3.0.1"
+    search_roots:
+      - "query"
+      - "storage"
+      - "influxql"
+      - "flux"
+
 code_evidence:
   worktree_root: "/data/logagent/code_worktrees"
   max_worktrees_per_repo: 5
@@ -274,3 +288,5 @@ metadata:
 - `remote_execution.commands.<id>.argv` 是 WebUI 可选择的唯一远程命令来源；用户不能输入自由 shell 命令或扩展 argv。
 - `remote_execution.commands.<id>.argv` 加载时会逐项 trim 并丢弃空字符串，归一化后仍必须至少保留一个 argv 项。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。
+- V2 `LOGAGENT_V2_CODE_REPOS_JSON` 支持 object keyed by product 或 descriptor array；每个 repo 必须提供绝对 `repoPath`，可配置 `defaultRef`、`versionRefs` 和安全相对 `searchRoots`。启用后 task MCP 和 provider prompt 才会广告 `logagent.search_code`。
+- `code_repos` 只能指向管理员预同步的本地 git repo；用户或模型不能覆盖 repo path、search roots，也不能传入未配置的 `gitRef`。

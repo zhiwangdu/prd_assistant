@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Huawei package sync 已接入同一 `tool_run` / `tool_results` 产物面，首版只支持受保护 Tools API 手动运行，不新增最终答案 evidence ref 类型。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint 和 Huawei package sync。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Code Evidence 已通过任务 MCP 写入 `code_evidence/<action_id>.json#matches/<index>` 最终证据引用。Huawei package sync 已接入同一 `tool_run` / `tool_results` 产物面，首版只支持受保护 Tools API 手动运行，不新增最终答案 evidence ref 类型。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint 和 Huawei package sync。
 
 ## 公共产物
 
@@ -177,5 +177,6 @@ logical `case_recall/recall_<stable_id>.json` path on background
 - 只读 HTTP MCP 不能执行 Fetch endpoint；任务 MCP 才能调用 `logagent.list_fetch_endpoints` 和 `logagent.fetch`。
 - `logagent.list_fetch_endpoints` 在 Fetch 关闭时必须失败；开启时必须返回 Rust/V1 `schemaVersion=1`、enabled endpoint summaries 和 `finalEvidenceAllowed=false`。
 - Fetch response 的最终证据引用格式只接受 `tool_results/<action_id>/result.json#response`，且必须校验该 action 属于当前任务并且 `tool=logagent.fetch`。
+- Code Evidence 的最终证据引用格式只接受 `code_evidence/<action_id>.json#matches/<index>`，且必须校验该 evidence 属于当前任务、`final_allowed=true`、payload path 匹配并且 match index 存在。
 - Log Analysis 历史必须以 `/api/sessions` 为主入口；每次重新分析创建新的 task run。
 - README 和 SPEC 在接口、状态或 action 变更时同步更新。
