@@ -73,6 +73,8 @@ slice provides the durable foundation for the V2 product model:
   messages/action decisions are included in the next Agent request context.
   User message submission requires `waiting_for_user`, supports optional
   `questionId` validation, and de-duplicates retries with `idempotencyKey`.
+  Approval decisions require `waiting_for_approval`, target a pending approval
+  action, and also de-duplicate retries with `idempotencyKey`.
   Calls also persist a V1-compatible `mcp_waiting_request.json` background
   artifact and return `artifactPath`, `runtimeStatus`, and `evidenceRefs`;
   `request_approval` accepts the V1 shape with only `reason` and defaults
@@ -872,8 +874,10 @@ to a waiting run marks pending user-input actions as `answered` and requeues
 the run through the SQLite job queue. Message retries with the same
 `idempotencyKey` return the original timeline event without answering actions
 or enqueueing another job; optional `questionId` must match a pending
-`user_input` action id or payload question id. Approving/rejecting a pending
-action records the decision and requeues approval-waiting runs. The next Agent request
+`user_input` action id or payload question id. Approving/rejecting requires a
+`waiting_for_approval` run and pending approval action. Approval retries with
+the same `idempotencyKey` return the original timeline event without recording
+another decision or enqueueing another job. The next Agent request
 carries recent user messages, action results, and remaining pending actions in
 `interactionContext`. When an approved action payload has
 `actionType=collect_environment`, V2 checks `input.executorId` and

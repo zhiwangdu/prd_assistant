@@ -974,6 +974,94 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(len(message_events), 1)
                 self.assertEqual(message_events[0]["payload"]["questionId"], "q-version")
 
+    def test_action_decision_api_validates_waiting_status_and_idempotency(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("need approval", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "manual_approval",
+                    "reason": "Need operator confirmation",
+                    "input": {},
+                },
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                not_waiting = client.post(
+                    f"/api/v2/actions/{action['id']}/decisions",
+                    headers=headers,
+                    json={"decision": "approved", "reason": "ok"},
+                )
+                self.assertEqual(not_waiting.status_code, 409)
+
+                store.update_run_status(
+                    run["id"], "waiting_for_approval", "waiting_for_approval"
+                )
+                first = client.post(
+                    f"/api/v2/actions/{action['id']}/decisions",
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "ok",
+                        "idempotencyKey": "approval-1",
+                    },
+                )
+                self.assertEqual(first.status_code, 200)
+                first_body = first.json()
+                self.assertFalse(first_body["duplicate"])
+                self.assertEqual(first_body["action"]["status"], "approved")
+                self.assertEqual(
+                    first_body["action"]["result"]["idempotencyKey"],
+                    "approval-1",
+                )
+                self.assertEqual(first_body["job"]["runId"], run["id"])
+                self.assertEqual(store.get_run(run["id"])["status"], "queued")
+
+                duplicate = client.post(
+                    f"/api/v2/actions/{action['id']}/decisions",
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "ok",
+                        "idempotencyKey": "approval-1",
+                    },
+                )
+                self.assertEqual(duplicate.status_code, 200)
+                duplicate_body = duplicate.json()
+                self.assertTrue(duplicate_body["duplicate"])
+                self.assertEqual(
+                    duplicate_body["event"]["id"],
+                    next(
+                        event["id"]
+                        for event in store.list_timeline(run["id"])
+                        if event["kind"] == "action.approved"
+                    ),
+                )
+                self.assertIsNone(duplicate_body["job"])
+                decision_events = [
+                    event for event in store.list_timeline(run["id"])
+                    if event["kind"] == "action.approved"
+                ]
+                self.assertEqual(len(decision_events), 1)
+                self.assertEqual(
+                    decision_events[0]["payload"]["idempotencyKey"],
+                    "approval-1",
+                )
+
     def test_batch_and_chunked_upload_storage_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

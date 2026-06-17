@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Approval Decision Idempotency
+
+- `POST /api/v2/actions/:action_id/decisions` now rejects non-
+  `waiting_for_approval` runs with 409 and requires the target action to be a
+  pending approval action.
+- Approval decisions now persist optional `idempotencyKey` in the action result
+  and decision timeline event. Repeated submissions with the same key return
+  the original event without recording another decision or enqueueing another
+  job.
+- Added API regression coverage for non-waiting rejection, successful approval
+  requeue, and duplicate idempotency handling.
+- Verification passed: focused approval decision idempotency regressions, ruff
+  for `server-v2/logagent_v2` and `server-v2/tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (111 passed, 1 warning),
+  compileall for `server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 User Message Resume Idempotency
 
 - `POST /api/v2/runs/:run_id/messages` now matches Rust waiting semantics more

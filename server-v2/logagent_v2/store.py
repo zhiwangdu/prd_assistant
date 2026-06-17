@@ -1829,11 +1829,16 @@ class Store:
         action_id: str,
         decision: str,
         reason: str | None,
+        idempotency_key: str | None = None,
     ) -> JsonObject:
         action = self.get_action(action_id)
         run = self.get_run(action["run_id"])
         ts = now_iso()
-        result = {"decision": decision, "reason": reason}
+        result = {
+            "decision": decision,
+            "reason": reason,
+            "idempotencyKey": idempotency_key,
+        }
         with self.connect() as conn:
             conn.execute(
                 """
@@ -1848,7 +1853,12 @@ class Store:
                 run["workspace_id"],
                 run["id"],
                 f"action.{decision}",
-                {"actionId": action_id, "reason": reason},
+                {
+                    "actionId": action_id,
+                    "decision": decision,
+                    "reason": reason,
+                    "idempotencyKey": idempotency_key,
+                },
                 ts,
             )
         return self.get_action(action_id)

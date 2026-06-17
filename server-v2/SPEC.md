@@ -182,7 +182,9 @@ Implemented in this slice:
   answered, and user message/approval APIs requeue the run with bounded
   `interactionContext` in the next Agent request. User message submission
   requires `waiting_for_user`, validates optional `questionId`, and de-duplicates
-  retry requests by `idempotencyKey`. Calls also persist a
+  retry requests by `idempotencyKey`. Approval decisions require
+  `waiting_for_approval`, target a pending approval action, and also
+  de-duplicate retries by `idempotencyKey`. Calls also persist a
   V1-compatible `mcp_waiting_request.json` background artifact and return
   `artifactPath`, `runtimeStatus`, and `evidenceRefs`; `request_approval`
   accepts the V1 shape with only `reason` and defaults missing `actionType` to
@@ -1323,6 +1325,10 @@ returns 409 for other states, and optionally validates `questionId` against a
 pending `user_input` action id or payload question id. Repeated submissions
 with the same `idempotencyKey` return the original `user.message` timeline
 event without re-answering actions or creating another job.
+`POST /api/v2/actions/:action_id/decisions` accepts only
+`waiting_for_approval` runs with a pending approval action. Repeated approval
+submissions with the same `idempotencyKey` return the original decision event
+without updating the action or creating another job.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
 SQLite job queue. User messages also mark pending matching `user_input`

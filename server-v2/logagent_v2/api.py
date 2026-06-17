@@ -141,6 +141,7 @@ class MessageCreate(BaseModel):
 class DecisionCreate(BaseModel):
     decision: Literal["approved", "rejected"]
     reason: str | None = Field(default=None, max_length=2000)
+    idempotencyKey: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class MetadataImportCreate(BaseModel):
@@ -510,6 +511,24 @@ def find_idempotent_user_message(
 def user_action_matches_question(action: dict, question_id: str) -> bool:
     payload = action.get("payload") if isinstance(action.get("payload"), dict) else {}
     return action.get("id") == question_id or payload.get("questionId") == question_id
+
+
+def find_idempotent_action_decision(
+    store: Store,
+    run_id: str,
+    action_id: str,
+    idempotency_key: str,
+) -> dict | None:
+    for event in reversed(store.list_timeline(run_id)):
+        payload = event.get("payload")
+        if (
+            event.get("kind", "").startswith("action.")
+            and isinstance(payload, dict)
+            and payload.get("actionId") == action_id
+            and payload.get("idempotencyKey") == idempotency_key
+        ):
+            return event
+    return None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -1087,11 +1106,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v2/actions/{action_id}/decisions")
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
         try:
-            action = store.decide_action(action_id, payload.decision, payload.reason)
+            current_action = store.get_action(action_id)
+            run = store.get_run(current_action["run_id"])
+            idempotency_key = normalize_optional_message_id(payload.idempotencyKey)
+            if idempotency_key is not None:
+                existing = find_idempotent_action_decision(
+                    store,
+                    run["id"],
+                    action_id,
+                    idempotency_key,
+                )
+                if existing is not None:
+                    return {
+                        "action": store.get_action(action_id),
+                        "environmentEvidence": None,
+                        "job": None,
+                        "event": existing,
+                        "duplicate": True,
+                    }
+            if run["status"] != "waiting_for_approval":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "run is not waiting for approval",
+                        "status": run["status"],
+                    },
+                )
+            if (
+                current_action.get("kind") != "approval"
+                or current_action.get("status") != "pending"
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unknown pending actionId {action_id}",
+                )
+            action = store.decide_action(
+                action_id,
+                payload.decision,
+                payload.reason,
+                idempotency_key=idempotency_key,
+            )
             environment_evidence = persist_approved_environment_evidence(
                 settings, store, action
             )
-            run = store.get_run(action["run_id"])
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         job = None
@@ -1101,7 +1158,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 store.update_run_status(run["id"], "queued", "queued")
                 job = store.enqueue_run(run["id"])
-        return {"action": action, "environmentEvidence": environment_evidence, "job": job}
+        return {
+            "action": action,
+            "environmentEvidence": environment_evidence,
+            "job": job,
+            "duplicate": False,
+        }
 
     @app.get("/api/v2/evidence/{evidence_id}")
     async def get_evidence(_: Auth, evidence_id: str) -> dict:
