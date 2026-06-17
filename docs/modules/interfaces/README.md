@@ -153,7 +153,7 @@ logagent.request_user_input
 logagent.request_approval
 ```
 
-所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。`logagent.search_logs.maxMatches` 是 V1 兼容可选参数，按 1..200 裁剪；`logagent.get_log_slice` 同时支持中心行和 V1 range 形态，但不能混用。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。`logagent.get_metadata_topology` 是兼容 alias，只返回 outline；`logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json`，返回 background ref，不新增最终 evidence ref 类型。`logagent.fetch` 的 response ref 是最终证据，格式为 `tool_results/<action_id>/result.json#response`，且只允许当前任务真实 Fetch action。
+所有 MCP tool input 由 Server 检查 schema、预算、白名单、幂等和审批要求。`logagent.search_logs.maxMatches` 是 V1 兼容可选参数，按 1..200 裁剪；响应保留 V2 `search` 对象，同时补齐 Rust/V1 顶层 `artifactPath`、`totalMatches`、`keywordCounts`、`unmatchedKeywords`、`matches`、`evidenceRefs` 和 `note`。`logagent.get_log_slice` 同时支持中心行和 V1 range 形态，但不能混用；响应保留 V2 `slice` 对象，同时补齐 Rust/V1 顶层 `artifactPath`、`evidenceRefs` 和 `lines`。会产生证据的 tool 必须写入 workspace artifact 并返回 canonical evidence refs。`logagent.get_metadata_topology` 是兼容 alias，只返回 outline；`logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json`，返回 background ref，不新增最终 evidence ref 类型。`logagent.fetch` 的 response ref 是最终证据，格式为 `tool_results/<action_id>/result.json#response`，且只允许当前任务真实 Fetch action。
 
 只读 HTTP MCP tools：
 

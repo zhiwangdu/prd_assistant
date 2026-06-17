@@ -1397,6 +1397,15 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["search"]["totalMatches"], 1)
             self.assertTrue(payload["search"]["matches"][0]["ref"].startswith("log_searches/"))
             self.assertIn("#matches/0", payload["search"]["matches"][0]["ref"])
+            self.assertEqual(payload["artifactPath"], payload["search"]["path"])
+            self.assertEqual(payload["totalMatches"], 1)
+            self.assertEqual(payload["keywordCounts"]["cache"], 1)
+            self.assertEqual(payload["unmatchedKeywords"], [])
+            self.assertEqual(payload["matches"][0]["evidenceRef"], payload["search"]["matches"][0]["ref"])
+            self.assertEqual(payload["matches"][0]["file"], "query.log")
+            self.assertEqual(payload["matches"][0]["line"], payload["search"]["matches"][0]["lineNumber"])
+            self.assertEqual(payload["evidenceRefs"], [payload["search"]["matches"][0]["ref"]])
+            self.assertIn("matches[].text", payload["note"])
 
             slice_response = task_mcp_response(
                 settings,
@@ -1421,6 +1430,16 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(slice_payload["slice"]["startLine"], 1)
             self.assertEqual(slice_payload["slice"]["endLine"], 2)
             self.assertTrue(slice_payload["slice"]["ref"].startswith("log_slices/"))
+            self.assertEqual(
+                slice_payload["artifactPath"],
+                slice_payload["slice"]["ref"].split("#", 1)[0],
+            )
+            self.assertEqual(slice_payload["evidenceRefs"], [slice_payload["slice"]["ref"]])
+            self.assertEqual(slice_payload["lines"][0]["line"], 1)
+            self.assertEqual(
+                slice_payload["lines"][0]["lineNumber"],
+                slice_payload["slice"]["lines"][0]["lineNumber"],
+            )
 
             index_response = task_mcp_response(
                 settings,
@@ -1514,6 +1533,8 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["search"]["totalMatches"], 1)
             self.assertTrue(payload["search"]["truncated"])
             self.assertEqual(len(payload["search"]["matches"]), 1)
+            self.assertEqual(payload["totalMatches"], 1)
+            self.assertTrue(payload["search"]["matches"][0]["ref"] in payload["evidenceRefs"])
 
     def test_task_mcp_get_log_slice_accepts_start_end_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1559,6 +1580,9 @@ class StoreTests(unittest.TestCase):
                 ["two", "three"],
             )
             self.assertTrue(payload["slice"]["ref"].startswith("log_slices/"))
+            self.assertEqual(payload["artifactPath"], payload["slice"]["ref"].split("#", 1)[0])
+            self.assertEqual(payload["evidenceRefs"], [payload["slice"]["ref"]])
+            self.assertEqual([item["line"] for item in payload["lines"]], [2, 3])
 
             mixed = task_mcp_response(
                 settings,

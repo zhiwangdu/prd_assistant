@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Task MCP Log Result Aliases
+
+- Added Rust/V1-compatible top-level response fields to V2 task MCP
+  `logagent.search_logs`: `artifactPath`, `totalMatches`, `keywordCounts`,
+  `unmatchedKeywords`, `matches`, `evidenceRefs`, and `note`, while preserving
+  the existing nested V2 `search` object.
+- Added Rust/V1-compatible top-level response fields to V2 task MCP
+  `logagent.get_log_slice`: `artifactPath`, `evidenceRefs`, and `lines`, while
+  preserving the existing nested V2 `slice` object.
+- Follow-up log search results now include `unmatchedKeywords` in the canonical
+  search payload.
+- Updated V2 server, Interfaces, Analysis Agent, and Log Analyzer README/SPEC
+  docs.
+- Added regression coverage for the top-level MCP response aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest`,
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Log Slice Range Params
 
 - Added V1-compatible `startLine` / `endLine` input support to V2 task MCP

@@ -93,12 +93,17 @@ Implemented in this slice:
   `tool_results`, `mcp_calls`, `result`, and `result_markdown` resources.
 - Task MCP `logagent.search_logs`, which accepts V1-compatible optional
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
-  returns stable `log_searches/<search_id>.json#matches/<index>` refs.
+  returns stable `log_searches/<search_id>.json#matches/<index>` refs. The
+  response preserves the V2 nested `search` object and also exposes
+  Rust-compatible top-level `artifactPath`, `totalMatches`, `keywordCounts`,
+  `unmatchedKeywords`, `matches`, `evidenceRefs`, and `note` fields.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
   Workspace text path and persists `log_slice` evidence. It accepts the V2
   center-line form `lineNumber` plus optional `before`/`after`, and the
   V1-compatible range form `startLine`/`endLine`; the two forms must not be
-  mixed in one call.
+  mixed in one call. The response preserves the V2 nested `slice` object and
+  also exposes Rust-compatible top-level `artifactPath`, `evidenceRefs`, and
+  `lines` fields.
 - Tool Plugin registry. Configured subprocess tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON` or the V2 analyzer executable environment variables,
   listed through `/api/v2/tools`, runnable through manual tool-run APIs, and

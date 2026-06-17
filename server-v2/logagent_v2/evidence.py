@@ -1262,6 +1262,7 @@ def grep_text_files(
     lowered_keywords = [(keyword, keyword.lower()) for keyword in keywords]
     matches: list[JsonObject] = []
     keyword_counts = {keyword: 0 for keyword in keywords}
+    matched_keywords: set[str] = set()
     for text_file in text_files:
         for line_number, line in enumerate(text_file.text.splitlines(), start=1):
             lowered_line = line.lower()
@@ -1270,6 +1271,7 @@ def grep_text_files(
                     continue
                 index = len(matches)
                 keyword_counts[keyword] += 1
+                matched_keywords.add(lowered_keyword)
                 matches.append(
                     {
                         "index": index,
@@ -1290,6 +1292,9 @@ def grep_text_files(
         "schemaVersion": 1,
         "keywords": keywords,
         "keywordCounts": keyword_counts,
+        "unmatchedKeywords": [
+            keyword for keyword, lowered_keyword in lowered_keywords if lowered_keyword not in matched_keywords
+        ],
         "totalMatches": len(matches),
         "truncated": len(matches) >= max_matches,
         "matches": matches,

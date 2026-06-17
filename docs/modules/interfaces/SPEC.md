@@ -65,8 +65,8 @@ Claude Code structured outcome 支持：
 
 LogAgent MCP tools 支持：
 
-- `logagent.search_logs`，支持 `keywords` 和 V1 兼容可选 `maxMatches`，`maxMatches` 按 1..200 裁剪
-- `logagent.get_log_slice`，支持 `path + lineNumber + before?/after?` 和 V1 兼容的 `path + startLine/endLine`；两种形态不能混用
+- `logagent.search_logs`，支持 `keywords` 和 V1 兼容可选 `maxMatches`，`maxMatches` 按 1..200 裁剪；响应保留 V2 `search` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`totalMatches`、`keywordCounts`、`unmatchedKeywords`、`matches`、`evidenceRefs` 和 `note`
+- `logagent.get_log_slice`，支持 `path + lineNumber + before?/after?` 和 V1 兼容的 `path + startLine/endLine`；两种形态不能混用；响应保留 V2 `slice` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`evidenceRefs` 和 `lines`
 - `logagent.run_domain_tool`
 - `logagent.list_fetch_endpoints`
 - `logagent.fetch`

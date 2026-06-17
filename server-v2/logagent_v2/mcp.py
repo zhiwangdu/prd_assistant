@@ -428,6 +428,58 @@ def task_tool_result_value(result: dict) -> dict:
     return value if isinstance(value, dict) else {"value": value}
 
 
+def search_logs_tool_payload(result: JsonObject) -> JsonObject:
+    search = result["search"]
+    matches = []
+    evidence_refs = []
+    for item in search.get("matches", []):
+        match = dict(item)
+        ref = match.get("ref")
+        if isinstance(ref, str):
+            evidence_refs.append(ref)
+            match.setdefault("evidenceRef", ref)
+        if "lineNumber" in match:
+            match.setdefault("line", match["lineNumber"])
+        if "path" in match:
+            match.setdefault("file", match["path"])
+        matches.append(match)
+    return {
+        "search": search,
+        "evidence": result["evidence"],
+        "artifactPath": search.get("path"),
+        "totalMatches": search.get("totalMatches", len(matches)),
+        "keywordCounts": search.get("keywordCounts", {}),
+        "unmatchedKeywords": search.get("unmatchedKeywords", []),
+        "matches": matches,
+        "evidenceRefs": evidence_refs,
+        "note": (
+            "Use matches[].text to justify conclusions; totalMatches alone is not "
+            "evidence of a specific exception type or technology stack."
+        ),
+    }
+
+
+def log_slice_tool_payload(result: JsonObject) -> JsonObject:
+    slice_doc = result["slice"]
+    ref = slice_doc.get("ref")
+    artifact_path = ref.split("#", 1)[0] if isinstance(ref, str) else None
+    lines = []
+    for item in slice_doc.get("lines", []):
+        line = dict(item)
+        if "lineNumber" in line:
+            line.setdefault("line", line["lineNumber"])
+        if "line" in line:
+            line.setdefault("lineNumber", line["line"])
+        lines.append(line)
+    return {
+        "slice": slice_doc,
+        "evidence": result["evidence"],
+        "artifactPath": artifact_path,
+        "evidenceRefs": [ref] if isinstance(ref, str) else [],
+        "lines": lines,
+    }
+
+
 def build_task_artifact_index(store: Store, run: JsonObject) -> JsonObject:
     run_artifacts = store.list_run_artifacts(run["id"])
     artifacts_by_path: dict[str, JsonObject] = {}
@@ -701,10 +753,7 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         max_matches=max_matches,
     )
     text = json.dumps(
-        {
-            "search": result["search"],
-            "evidence": result["evidence"],
-        },
+        search_logs_tool_payload(result),
         ensure_ascii=True,
         indent=2,
     )
@@ -943,10 +992,7 @@ def call_get_log_slice(settings: Settings, store: Store, run: dict, arguments: d
             after=after,
         )
     text = json.dumps(
-        {
-            "slice": result["slice"],
-            "evidence": result["evidence"],
-        },
+        log_slice_tool_payload(result),
         ensure_ascii=True,
         indent=2,
     )
