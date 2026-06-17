@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Case Recall MCP Evidence Refs
+
+- Aligned V2 task MCP `logagent.recall_cases` with Rust/V1 response fields by
+  returning `artifactPath`, `caseCount`, and per-case `evidenceRefs`.
+- Recall Case background evidence now stores the logical
+  `case_recall/recall_<stable_id>.json` path and `backgroundRef` in its
+  evidence payload.
+- Updated Interfaces and Case Store README/SPEC docs.
+- Added regression coverage for recall evidence refs and persisted logical path.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Metadata Snapshot Envelope
 
 - Aligned V2 readonly MCP and manual tool-run `logagent.get_metadata_snapshot`

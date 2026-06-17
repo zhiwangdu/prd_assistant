@@ -473,6 +473,9 @@ def call_case_tool(
             artifact_path = f"case_recall/recall_{stable_case_digest(arguments)}.json"
             value["artifactPath"] = artifact_path
             value["backgroundRef"] = f"{artifact_path}#cases"
+            value["evidenceRefs"] = [
+                f"{artifact_path}#cases/{index}" for index, _ in enumerate(value["cases"])
+            ]
     elif name == "logagent.get_case":
         value = {"case": store.get_case(require_string(arguments, "caseId"))}
     else:
@@ -490,11 +493,14 @@ def persist_case_context(
     value: JsonObject,
 ) -> None:
     data = json.dumps(value, ensure_ascii=True, indent=2).encode("utf-8")
+    filename = str(value.get("artifactPath") or "").rsplit("/", 1)[-1]
+    if not filename:
+        filename = f"{tool_name.removeprefix('logagent.').replace('.', '_')}.json"
     artifact = write_artifact_bytes(
         settings=settings,
         store=store,
         workspace_id=run["workspace_id"],
-        filename=f"{tool_name.removeprefix('logagent.').replace('.', '_')}.json",
+        filename=filename,
         data=data,
         content_type="application/json",
         schema_name="logagent.v2.case_context.v1",
@@ -507,7 +513,12 @@ def persist_case_context(
         final_allowed=False,
         summary=f"Historical Case background from {tool_name}.",
         artifact_id=artifact["id"],
-        payload={"artifactId": artifact["id"], "tool": tool_name},
+        payload={
+            "artifactId": artifact["id"],
+            "tool": tool_name,
+            "path": value.get("artifactPath"),
+            "backgroundRef": value.get("backgroundRef"),
+        },
     )
 
 

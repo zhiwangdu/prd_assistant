@@ -89,7 +89,8 @@ workspaces/<task_id>/case_context.json
 
 只读 HTTP MCP 只允许读取 recent/search/get Case，不允许写入、确认、编辑或禁用 Case。
 Python V2 task MCP 额外提供 Rust V1 兼容 `logagent.recall_cases`，只召回 enabled
-Case，并把结果作为 `case_context` background evidence 持久化；该背景不能作为最终根因证据引用。
+Case，并把结果作为 `case_context` background evidence 持久化；响应返回
+`artifactPath`、`caseCount` 和逐 Case `evidenceRefs`；该背景不能作为最终根因证据引用。
 
 ## 存储
 

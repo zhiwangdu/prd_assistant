@@ -4401,7 +4401,22 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(recall_body["caseCount"], 1)
             self.assertEqual(recall_body["cases"][0]["caseId"], task_case["caseId"])
             self.assertTrue(recall_body["backgroundRef"].startswith("case_recall/recall_"))
+            self.assertEqual(
+                recall_body["evidenceRefs"],
+                [f"{recall_body['artifactPath']}#cases/0"],
+            )
             self.assertFalse(recall_body["finalEvidenceAllowed"])
+            recall_context = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "case_context"
+                and item["payload"].get("tool") == "logagent.recall_cases"
+            ]
+            self.assertEqual(recall_context[0]["payload"]["path"], recall_body["artifactPath"])
+            self.assertEqual(
+                recall_context[0]["payload"]["backgroundRef"],
+                recall_body["backgroundRef"],
+            )
 
     def test_case_import_preview_confirm_and_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
