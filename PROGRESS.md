@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Remote Output Artifacts
+
+- V2 `collect_environment` remote execution now copies the completed remote
+  command `result`, `stdout`, and `stderr` files into the current analysis
+  workspace artifact registry.
+- `environment_evidence/<action_id>/result.json` now links those files through
+  `artifactIds` / `artifactPaths`, so `GET /api/v2/runs/:run_id/artifacts` and
+  task MCP `artifact_index` expose them as background support artifacts.
+- Added fake-ssh regression coverage for environment evidence support artifact
+  registration and artifact-index visibility.
+- Updated server-v2 and Environment Collector README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused
+  `tests/test_store.py::StoreTests::test_approved_collect_environment_can_use_remote_executor`,
+  environment/remote pytest selection, and `git diff --check`.
+
 ## 2026-06-18 WebUI V2 Case Import Detail Restore
 
 - V2 Memory import history selection now calls

@@ -7245,6 +7245,45 @@ fi
             self.assertEqual(artifact_json["status"], "COLLECTED")
             self.assertEqual(artifact_json["remoteStatus"], "OK")
             self.assertIn("uname", artifact_json["stdoutPreview"])
+            self.assertEqual(
+                set(artifact_json["artifactIds"].keys()),
+                {"result", "stdout", "stderr"},
+            )
+            self.assertEqual(
+                artifact_json["artifactPaths"]["stdoutPath"],
+                f"environment_evidence/{action['id']}/stdout.txt",
+            )
+            run_artifacts = get_run_artifacts(settings, store, run["id"])
+            support_by_role = {
+                item["role"]: item for item in run_artifacts["supportArtifacts"]
+            }
+            self.assertEqual(
+                set(support_by_role.keys()),
+                {"result", "stdout", "stderr"},
+            )
+            self.assertEqual(
+                support_by_role["result"]["logical_path"],
+                f"environment_evidence/{action['id']}/remote_result.json",
+            )
+            stdout_path = resolve_artifact_path(
+                settings, support_by_role["stdout"]["relative_path"]
+            )
+            self.assertIn("uname", stdout_path.read_text(encoding="utf-8"))
+            artifact_index_paths = {
+                item["path"] for item in run_artifacts["artifactIndex"]["artifacts"]
+            }
+            self.assertIn(
+                f"environment_evidence/{action['id']}/remote_result.json",
+                artifact_index_paths,
+            )
+            self.assertIn(
+                f"environment_evidence/{action['id']}/stdout.txt",
+                artifact_index_paths,
+            )
+            self.assertIn(
+                f"environment_evidence/{action['id']}/stderr.txt",
+                artifact_index_paths,
+            )
             self.assertEqual(store.get_run(run["id"])["status"], "queued")
             resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
             self.assertEqual(resume_jobs[0]["kind"], "run_analysis")

@@ -232,7 +232,9 @@ Implemented in this slice:
   `collect_environment` actions either record V1-compatible MOCK
   `environment_evidence` background artifacts or, when the action input targets
   an enabled Remote Executor and whitelisted command, queue a remote command and
-  record the completed command output before resuming the analysis run.
+  record the completed command output before resuming the analysis run. Remote
+  command `result`, `stdout`, and `stderr` files are copied into the analysis
+  workspace artifact registry and linked from the environment evidence payload.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   `session_text_input.json#question`, log search, log slice, Fetch response, or
@@ -1484,15 +1486,20 @@ valid, it queues a
 analysis run waiting during collection, and writes
 `environment_evidence/<action_id>/result.json` with `status=COLLECTED` or
 `REMOTE_FAILED`, the approved input, remote run id, remote result paths, and
-bounded stdout/stderr previews. Invalid remote targets produce
-`status=REMOTE_REJECTED` background evidence. When no remote target is supplied,
-V2 records the V1-compatible `status=MOCK` artifact. The resource is available
-from `GET /api/v2/runs/:run_id/analysis` and task MCP
+bounded stdout/stderr previews. V2 also registers the remote command
+`remote_result.json`, `stdout.txt`, and `stderr.txt` as run support artifacts
+with logical paths under `environment_evidence/<action_id>/`. Invalid remote
+targets produce `status=REMOTE_REJECTED` background evidence. When no remote
+target is supplied, V2 records the V1-compatible `status=MOCK` artifact. The
+resource is available from `GET /api/v2/runs/:run_id/analysis` and task MCP
 `logagent://task/<run_id>/environment_evidence`, with the
 `logagent-v2://run/<run_id>/environment_evidence` alias retained. A bounded
-outline is included in the next `analysis_package` and Agent prompt. The current runtime
-still does not implement full LangGraph resume planning, SCP file collection,
-or multi-node Environment Collector execution.
+outline is included in the next `analysis_package` and Agent prompt. The copied
+remote output support files are available through
+`GET /api/v2/runs/:run_id/artifacts` and task MCP `artifact_index` with
+`source="support"`. The current runtime still does not implement full LangGraph
+resume planning, SCP file collection, or multi-node Environment Collector
+execution.
 
 ## Security
 

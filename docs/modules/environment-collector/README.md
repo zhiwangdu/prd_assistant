@@ -33,8 +33,11 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   含有效 `executorId` 和 `commandId`，Server 会通过 Remote Executor 执行该
   白名单命令，完成后写入 `environment_evidence/<action_id>/result.json`，
   状态为 `COLLECTED` 或 `REMOTE_FAILED`，并重新排队同一个 analysis run；
-  远程目标无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留
-  与 Rust Server 兼容的 `MOCK` evidence。
+  同时把远程 `remote_result.json`、`stdout.txt`、`stderr.txt` 复制为当前
+  analysis workspace 的 support artifacts，并通过
+  `/api/v2/runs/:run_id/artifacts` 和任务 MCP `artifact_index` 暴露；远程目标
+  无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留与 Rust
+  Server 兼容的 `MOCK` evidence。
 - V2 Analyze 审批卡片会在 `collect_environment` action 上加载已启用的
   Remote Executor 和白名单命令模板；用户批准时可把选择作为 decision
   `input` 提交，Server 会先写回 action payload 再调度采集。
@@ -94,7 +97,8 @@ environments:
 3. SCP 拉取白名单路径下的日志和配置。
 4. 执行白名单诊断命令；V2 当前已支持单个 Remote Executor command 模板。
 5. 保存到任务 workspace。
-6. 生成 `environment_evidence.json` 和 `manifest.json`。
+6. 生成 `environment_evidence.json` 和 `manifest.json`；V2 还会把远程命令
+   `result/stdout/stderr` 注册为当前 run 的 support artifacts。
 7. 采集证据回填 Analysis Orchestrator，继续同一任务。
 
 ## 连接管理
@@ -142,6 +146,8 @@ collected/
 - Remote command template argv 加载时会 trim 并丢弃空字符串，避免空白配置进入最终 SSH argv。
 - V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command id，
   不接受自由命令或由用户消息临时扩展白名单。
+- V2 远程命令输出 artifact 属于 background/support evidence，只能辅助下一轮
+  分析和人工审计，不能绕过 final evidence ref 校验。
 - WebUI 审批只能选择已启用 executor 和配置模板；不选择远程目标时 Server
   仍会保留兼容 MOCK evidence 路径。
 - SSH key 不进入 LLM Prompt。

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from .artifacts import resolve_artifact_path, write_artifact_file
 from .config import Settings
 from .evidence import write_json_artifact
 from .store import JsonObject, Store, now_iso
@@ -113,28 +116,47 @@ def persist_remote_environment_evidence(
         else f"remote environment collection finished with status {remote_status}"
     )
 
+    run = store.get_run(action["run_id"])
+    support_artifacts = materialize_remote_environment_support_artifacts(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        action_id=action["id"],
+        remote_result=remote_result if isinstance(remote_result, dict) else {},
+        command_result=command_result,
+    )
+    warnings = command_result.get("warnings", [])
+    if not isinstance(warnings, list):
+        warnings = []
+    warnings = [*warnings, *support_artifacts["warnings"]]
+
+    result: JsonObject = {
+        "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        "remoteRunId": remote_run.get("taskId"),
+        "remoteExecutorId": remote_run.get("remoteExecutorId"),
+        "remoteCommandId": remote_run.get("remoteCommandId"),
+        "remoteStatus": remote_status,
+        "remoteResultPath": remote_result.get("resultPath")
+        if isinstance(remote_result, dict)
+        else None,
+        "stdoutPath": command_result.get("stdoutPath"),
+        "stderrPath": command_result.get("stderrPath"),
+        "stdoutPreview": command_result.get("stdoutPreview"),
+        "stderrPreview": command_result.get("stderrPreview"),
+        "error": command_result.get("error") or remote_run.get("error"),
+        "warnings": warnings,
+    }
+    if support_artifacts["artifactIds"]:
+        result["artifactIds"] = support_artifacts["artifactIds"]
+        result["artifactPaths"] = support_artifacts["artifactPaths"]
+
     evidence = persist_environment_evidence_result(
         settings=settings,
         store=store,
         action=action,
         status=status,
         summary=summary,
-        result={
-            "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
-            "remoteRunId": remote_run.get("taskId"),
-            "remoteExecutorId": remote_run.get("remoteExecutorId"),
-            "remoteCommandId": remote_run.get("remoteCommandId"),
-            "remoteStatus": remote_status,
-            "remoteResultPath": remote_result.get("resultPath")
-            if isinstance(remote_result, dict)
-            else None,
-            "stdoutPath": command_result.get("stdoutPath"),
-            "stderrPath": command_result.get("stderrPath"),
-            "stdoutPreview": command_result.get("stdoutPreview"),
-            "stderrPreview": command_result.get("stderrPreview"),
-            "error": command_result.get("error") or remote_run.get("error"),
-            "warnings": command_result.get("warnings", []),
-        },
+        result=result,
     )
 
     analysis_run = store.get_run(action["run_id"])
@@ -195,6 +217,87 @@ def remote_target_requested(raw_input: JsonObject) -> bool:
         key in raw_input
         for key in ("executorId", "remoteExecutorId", "commandId", "remoteCommandId")
     )
+
+
+def materialize_remote_environment_support_artifacts(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    action_id: str,
+    remote_result: JsonObject,
+    command_result: JsonObject,
+) -> JsonObject:
+    artifact_ids: JsonObject = {}
+    artifact_paths: JsonObject = {}
+    warnings: list[str] = []
+    specs = [
+        (
+            "result",
+            "resultPath",
+            remote_result.get("resultPath"),
+            "remote_result.json",
+            "application/json",
+            "logagent.v2.remote_command_result.v1",
+        ),
+        (
+            "stdout",
+            "stdoutPath",
+            command_result.get("stdoutPath"),
+            "stdout.txt",
+            "text/plain; charset=utf-8",
+            None,
+        ),
+        (
+            "stderr",
+            "stderrPath",
+            command_result.get("stderrPath"),
+            "stderr.txt",
+            "text/plain; charset=utf-8",
+            None,
+        ),
+    ]
+    for role, path_field, source_relative, filename, content_type, schema_name in specs:
+        if not isinstance(source_relative, str) or not source_relative:
+            continue
+        logical_path = f"environment_evidence/{action_id}/{filename}"
+        source_path = resolve_remote_artifact_source(settings, source_relative, warnings, role)
+        if source_path is None:
+            continue
+        artifact = write_artifact_file(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=f"{action_id}_{filename}",
+            source_path=source_path,
+            content_type=content_type,
+            schema_name=schema_name,
+            preview={
+                "actionId": action_id,
+                "role": role,
+                "path": logical_path,
+                "sourcePath": source_relative,
+            },
+        )
+        artifact_ids[role] = artifact["id"]
+        artifact_paths[path_field] = logical_path
+    return {"artifactIds": artifact_ids, "artifactPaths": artifact_paths, "warnings": warnings}
+
+
+def resolve_remote_artifact_source(
+    settings: Settings,
+    source_relative: str,
+    warnings: list[str],
+    role: str,
+) -> Path | None:
+    try:
+        source_path = resolve_artifact_path(settings, source_relative)
+    except ValueError as error:
+        warnings.append(f"remote {role} artifact path rejected: {error}")
+        return None
+    if not source_path.is_file():
+        warnings.append(f"remote {role} artifact file is missing: {source_relative}")
+        return None
+    return source_path
 
 
 def schedule_remote_environment_collection(
@@ -272,6 +375,21 @@ def persist_environment_evidence_result(
         value=result,
         schema_name="logagent.v2.environment_evidence.v1",
     )
+    evidence_payload = {
+        "artifactId": artifact["id"],
+        "path": artifact_path,
+        "actionId": action["id"],
+        "status": status,
+        "remoteRunId": result.get("remoteRunId"),
+        "remoteExecutorId": result.get("remoteExecutorId"),
+        "remoteCommandId": result.get("remoteCommandId"),
+        "remoteStatus": result.get("remoteStatus"),
+        "finalEvidenceAllowed": False,
+    }
+    if isinstance(result.get("artifactIds"), dict):
+        evidence_payload["artifactIds"] = result["artifactIds"]
+    if isinstance(result.get("artifactPaths"), dict):
+        evidence_payload["artifactPaths"] = result["artifactPaths"]
     return store.create_evidence(
         workspace_id=run["workspace_id"],
         run_id=run["id"],
@@ -279,15 +397,5 @@ def persist_environment_evidence_result(
         final_allowed=False,
         summary=summary,
         artifact_id=artifact["id"],
-        payload={
-            "artifactId": artifact["id"],
-            "path": artifact_path,
-            "actionId": action["id"],
-            "status": status,
-            "remoteRunId": result.get("remoteRunId"),
-            "remoteExecutorId": result.get("remoteExecutorId"),
-            "remoteCommandId": result.get("remoteCommandId"),
-            "remoteStatus": result.get("remoteStatus"),
-            "finalEvidenceAllowed": False,
-        },
+        payload=evidence_payload,
     )
