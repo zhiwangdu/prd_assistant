@@ -3526,6 +3526,11 @@ class StoreTests(unittest.TestCase):
             prompt_payload = json.loads(prompt_response["result"]["content"][0]["text"])
             prompt_action = store.get_action(prompt_payload["action"]["id"])
             self.assertEqual(prompt_action["kind"], "user_input")
+            self.assertEqual(prompt_payload["runtimeStatus"], "waiting_for_user")
+            self.assertEqual(prompt_payload["artifactPath"], "mcp_waiting_request.json")
+            self.assertEqual(
+                prompt_payload["evidenceRefs"], ["mcp_waiting_request.json#request"]
+            )
             self.assertEqual(store.get_run(run["id"])["status"], "waiting_for_user")
 
             store.update_run_status(run["id"], "queued", "queued")
@@ -3553,11 +3558,51 @@ class StoreTests(unittest.TestCase):
             approval_payload = json.loads(approval_response["result"]["content"][0]["text"])
             approval = store.get_action(approval_payload["action"]["id"])
             self.assertEqual(approval["kind"], "approval")
+            self.assertEqual(approval_payload["runtimeStatus"], "waiting_for_approval")
+            self.assertEqual(approval_payload["artifactPath"], "mcp_waiting_request.json")
+            self.assertEqual(
+                approval_payload["evidenceRefs"], ["mcp_waiting_request.json#request"]
+            )
             self.assertEqual(store.get_run(run["id"])["status"], "waiting_for_approval")
 
             decided = store.decide_action(approval["id"], "approved", "ok")
             self.assertEqual(decided["status"], "approved")
             self.assertEqual(decided["result"]["decision"], "approved")
+
+            store.update_run_status(run["id"], "queued", "queued")
+            legacy_approval_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 8,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.request_approval",
+                        "arguments": {"reason": "Need operator confirmation"},
+                    },
+                },
+            )
+            legacy_payload = json.loads(
+                legacy_approval_response["result"]["content"][0]["text"]
+            )
+            legacy_action = store.get_action(legacy_payload["action"]["id"])
+            self.assertEqual(
+                legacy_action["payload"]["actionType"],
+                "manual_approval",
+            )
+            waiting_evidence = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "mcp_waiting_request"
+            ]
+            self.assertGreaterEqual(len(waiting_evidence), 3)
+            last_artifact = store.get_artifact(waiting_evidence[-1]["artifact_id"])
+            last_path = resolve_artifact_path(settings, last_artifact["relative_path"])
+            last_value = json.loads(last_path.read_text(encoding="utf-8"))
+            self.assertEqual(last_value["runtimeStatus"], "waiting_for_approval")
+            self.assertEqual(last_value["request"]["reason"], "Need operator confirmation")
 
     def test_approved_collect_environment_records_background_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

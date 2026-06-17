@@ -132,7 +132,11 @@ Implemented in this slice:
   `logagent.request_approval`; pending actions are persisted, exposed in run
   analysis summaries, user supplements mark pending user-input actions as
   answered, and user message/approval APIs requeue the run with bounded
-  `interactionContext` in the next Agent request. Approved
+  `interactionContext` in the next Agent request. Calls also persist a
+  V1-compatible `mcp_waiting_request.json` background artifact and return
+  `artifactPath`, `runtimeStatus`, and `evidenceRefs`; `request_approval`
+  accepts the V1 shape with only `reason` and defaults missing `actionType` to
+  `manual_approval`. Approved
   `collect_environment` actions either record V1-compatible MOCK
   `environment_evidence` background artifacts or, when the action input targets
   an enabled Remote Executor and whitelisted command, queue a remote command and
@@ -1088,6 +1092,8 @@ logagent.request_approval
 
 Both calls create an `actions` row and append timeline events. User input moves
 the run to `waiting_for_user`; approval moves it to `waiting_for_approval`.
+Both calls write `mcp_waiting_request.json` and return the V2 `action` plus
+Rust/V1 `artifactPath`, `runtimeStatus`, and `evidenceRefs`.
 `GET /api/v2/runs/:run_id/analysis` returns `actions` and `pendingActions` so
 WebUI can render the same recovery controls as the Rust task detail page.
 `POST /api/v2/runs/:run_id/messages` and

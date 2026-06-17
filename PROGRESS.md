@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Waiting Tool Marker Compatibility
+
+- Aligned V2 task MCP `logagent.request_user_input` and
+  `logagent.request_approval` with the Rust/V1 waiting marker envelope while
+  preserving V2 pending `actions`.
+- Waiting tool calls now persist a background `mcp_waiting_request.json`
+  artifact and return `artifactPath`, `runtimeStatus`, and
+  `mcp_waiting_request.json#request` in `evidenceRefs`.
+- `logagent.request_approval` now accepts the V1 shape where only `reason` is
+  required, defaulting a missing `actionType` to `manual_approval`; explicit
+  `evidenceRefs` are validated as a string array.
+- Updated V2 Server, Interfaces, and Analysis Agent docs/specs.
+- Verification passed: focused waiting-tool regression, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest` (70 passed, 1 warning),
+  `python3 -m compileall -q server-v2/logagent_v2`, and `git diff --check`.
+
 ## 2026-06-17 V2 Task MCP Tool Result Aliases
 
 - Aligned V2 task MCP `logagent.run_domain_tool` with the Rust/V1 response

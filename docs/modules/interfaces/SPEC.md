@@ -75,8 +75,8 @@ LogAgent MCP tools 支持：
 - `logagent.query_metadata`
 - `logagent.get_metadata_field_types`
 - `logagent.get_metadata_tag_fields`
-- `logagent.request_user_input`
-- `logagent.request_approval`
+- `logagent.request_user_input`，保留 V2 `action`，同时写入并返回 Rust/V1 `mcp_waiting_request.json`、`runtimeStatus` 和 `evidenceRefs`
+- `logagent.request_approval`，保留 V2 `action`，同时写入并返回 Rust/V1 `mcp_waiting_request.json`、`runtimeStatus` 和 `evidenceRefs`；可只传 V1 必填的 `reason`，缺省 `actionType` 为 `manual_approval`
 
 只读 HTTP MCP resources 支持：
 

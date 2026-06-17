@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from .artifacts import resolve_artifact_path
+from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
 from .config import Settings
 from .evidence import get_log_line_range, get_log_slice, run_log_search
@@ -24,7 +24,7 @@ from .skills import (
     read_task_skill_reference,
     skill_tool_descriptors,
 )
-from .store import JsonObject, Store
+from .store import JsonObject, Store, now_iso
 from .system_context import preview_system_context_resources
 from .tools import run_configured_tool, tool_descriptors
 
@@ -767,9 +767,9 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
     if name == "logagent.run_domain_tool":
         return call_run_domain_tool(settings, store, run, arguments)
     if name == "logagent.request_user_input":
-        return call_request_user_input(store, run, arguments)
+        return call_request_user_input(settings, store, run, arguments)
     if name == "logagent.request_approval":
-        return call_request_approval(store, run, arguments)
+        return call_request_approval(settings, store, run, arguments)
     if name != "logagent.search_logs":
         raise ValueError(f"unsupported task tool {name}")
     keywords = arguments.get("keywords")
@@ -828,14 +828,17 @@ def request_approval_descriptor() -> dict:
                 "actionType": {"type": "string", "minLength": 1},
                 "reason": {"type": "string", "minLength": 1},
                 "input": {"type": "object"},
+                "evidenceRefs": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["actionType", "reason"],
+            "required": ["reason"],
             "additionalProperties": False,
         },
     }
 
 
-def call_request_user_input(store: Store, run: dict, arguments: dict) -> dict:
+def call_request_user_input(
+    settings: Settings, store: Store, run: dict, arguments: dict
+) -> dict:
     question = arguments.get("question")
     if not isinstance(question, str) or not question.strip():
         raise ValueError("logagent.request_user_input requires question")
@@ -850,23 +853,37 @@ def call_request_user_input(store: Store, run: dict, arguments: dict) -> dict:
         },
     )
     store.update_run_status(run["id"], "waiting_for_user", "waiting_for_user")
+    compat = persist_waiting_marker(
+        settings, store, run, "waiting_for_user", arguments, action
+    )
     return {
         "content": [
             {
                 "type": "text",
-                "text": json.dumps({"action": action}, ensure_ascii=True, indent=2),
+                "text": json.dumps(
+                    {"action": action, **compat}, ensure_ascii=True, indent=2
+                ),
             }
         ]
     }
 
 
-def call_request_approval(store: Store, run: dict, arguments: dict) -> dict:
+def call_request_approval(settings: Settings, store: Store, run: dict, arguments: dict) -> dict:
     action_type = arguments.get("actionType")
     reason = arguments.get("reason")
-    if not isinstance(action_type, str) or not action_type.strip():
-        raise ValueError("logagent.request_approval requires actionType")
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("logagent.request_approval requires reason")
+    if action_type is None:
+        action_type = "manual_approval"
+    if not isinstance(action_type, str) or not action_type.strip():
+        raise ValueError("logagent.request_approval actionType must be a string")
+    evidence_refs = arguments.get("evidenceRefs")
+    if evidence_refs is None:
+        evidence_refs = []
+    if not isinstance(evidence_refs, list) or not all(
+        isinstance(item, str) for item in evidence_refs
+    ):
+        raise ValueError("logagent.request_approval evidenceRefs must be a string array")
     action = store.create_action(
         run["id"],
         "approval",
@@ -874,16 +891,75 @@ def call_request_approval(store: Store, run: dict, arguments: dict) -> dict:
             "actionType": action_type.strip(),
             "reason": reason.strip(),
             "input": arguments.get("input") if isinstance(arguments.get("input"), dict) else {},
+            "evidenceRefs": evidence_refs,
         },
     )
     store.update_run_status(run["id"], "waiting_for_approval", "waiting_for_approval")
+    compat = persist_waiting_marker(
+        settings, store, run, "waiting_for_approval", arguments, action
+    )
     return {
         "content": [
             {
                 "type": "text",
-                "text": json.dumps({"action": action}, ensure_ascii=True, indent=2),
+                "text": json.dumps(
+                    {"action": action, **compat}, ensure_ascii=True, indent=2
+                ),
             }
         ]
+    }
+
+
+def persist_waiting_marker(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    runtime_status: str,
+    arguments: JsonObject,
+    action: JsonObject,
+) -> JsonObject:
+    artifact_path = "mcp_waiting_request.json"
+    ref = f"{artifact_path}#request"
+    value = {
+        "schemaVersion": 1,
+        "runtimeStatus": runtime_status,
+        "request": arguments,
+        "actionId": action["id"],
+        "createdAt": now_iso(),
+    }
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        filename=artifact_path,
+        data=json.dumps(value, ensure_ascii=True, indent=2).encode("utf-8"),
+        content_type="application/json",
+        schema_name="logagent.v2.mcp_waiting_request.v1",
+        preview={
+            "path": artifact_path,
+            "runtimeStatus": runtime_status,
+            "actionId": action["id"],
+        },
+    )
+    store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="mcp_waiting_request",
+        final_allowed=False,
+        summary=f"MCP waiting request recorded for {runtime_status}.",
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": artifact_path,
+            "runtimeStatus": runtime_status,
+            "actionId": action["id"],
+            "ref": ref,
+        },
+    )
+    return {
+        "artifactPath": artifact_path,
+        "runtimeStatus": runtime_status,
+        "evidenceRefs": [ref],
     }
 
 
