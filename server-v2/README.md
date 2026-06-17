@@ -121,7 +121,8 @@ slice provides the durable foundation for the V2 product model:
   executables, shell wrappers, examples, and a manifest.
 - Agent runtime with default stub final answer plus optional bounded
   OpenAI-compatible or local binary provider/tool loop for evidence-validated
-  JSON final answers and per-round request/response/state audit artifacts.
+  JSON final answers, provider-requested waiting/approval pauses, and per-round
+  request/response/state audit artifacts.
 - Settings and diagnostics endpoints for the V2 Agent provider, backend dry-run
   summary, built-in Domain Adapters, and process-local LLM response-content
   debug logging.
@@ -882,7 +883,14 @@ or enqueueing another job; optional `questionId` must match a pending
 the same `idempotencyKey` return the original timeline event without recording
 another decision or enqueueing another job. The next Agent request
 carries recent user messages, action results, and remaining pending actions in
-`interactionContext`. When an approved action payload has
+`interactionContext`. The OpenAI-compatible and binary Agent provider loop also
+advertises these waiting tools during normal analysis; when a provider requests
+one, the current provider response is recorded as `paused`, `analysis_state`
+records the waiting status, the run keeps its waiting state, and no final
+result is written until the user resumes it. If the user resumes with
+`resumeMode=finalize`, the next provider prompt carries
+`resumePolicy.finalizeWithCurrentEvidence=true` and no longer advertises
+waiting/approval tools. When an approved action payload has
 `actionType=collect_environment`, V2 checks `input.executorId` and
 `input.commandId`. If both target an enabled Remote Executor and whitelisted
 command template, V2 queues a `remote_command_run`, keeps the analysis run

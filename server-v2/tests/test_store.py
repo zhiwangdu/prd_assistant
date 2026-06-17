@@ -887,6 +887,10 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(interaction["actionResults"][-1]["id"], action["id"])
             self.assertEqual(interaction["actionResults"][-1]["status"], "answered")
             self.assertEqual(interaction["pendingActions"], [])
+            self.assertFalse(prompt["resumePolicy"]["allowWaitingTools"])
+            available_tool_names = {tool["name"] for tool in prompt["availableTools"]}
+            self.assertNotIn("logagent.request_user_input", available_tool_names)
+            self.assertNotIn("logagent.request_approval", available_tool_names)
 
     def test_run_message_api_validates_waiting_question_and_idempotency(self) -> None:
         from fastapi.testclient import TestClient
@@ -1533,8 +1537,8 @@ class StoreTests(unittest.TestCase):
                 self.assertIn("logagent.list_skills", available_tool_names)
                 self.assertIn("logagent.list_fetch_endpoints", available_tool_names)
                 self.assertNotIn("logagent.fetch", available_tool_names)
-                self.assertNotIn("logagent.request_user_input", available_tool_names)
-                self.assertNotIn("logagent.request_approval", available_tool_names)
+                self.assertIn("logagent.request_user_input", available_tool_names)
+                self.assertIn("logagent.request_approval", available_tool_names)
                 self.assertEqual(
                     captured_prompts[1]["toolObservations"][0]["name"],
                     "logagent.search_logs",
@@ -1571,6 +1575,112 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(first_response["toolCalls"][0]["name"], "logagent.search_logs")
                 self.assertEqual(
                     first_response["validation"]["status"], "tool_calls_executed"
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_agent_provider_can_pause_for_user_input(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class WaitingProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                captured_prompts.append(prompt)
+                answer = {
+                    "type": "tool_calls",
+                    "toolCalls": [
+                        {
+                            "name": "logagent.request_user_input",
+                            "arguments": {
+                                "questionId": "q-version",
+                                "question": "Which product version is affected?",
+                                "reason": "version-specific logs need different checks",
+                            },
+                        }
+                    ],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), WaitingProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=3,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("need version-aware analysis", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+
+                result = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertEqual(result["status"], "waiting_for_user")
+                updated_run = store.get_run(run["id"])
+                self.assertEqual(updated_run["status"], "waiting_for_user")
+                self.assertEqual(updated_run["phase"], "waiting_for_user")
+                self.assertIsNone(updated_run["finalAnswer"])
+                self.assertEqual(len(captured_prompts), 1)
+                self.assertTrue(captured_prompts[0]["resumePolicy"]["allowWaitingTools"])
+                pending = [
+                    action for action in store.list_actions(run["id"])
+                    if action["status"] == "pending"
+                ]
+                self.assertEqual(len(pending), 1)
+                self.assertEqual(pending[0]["kind"], "user_input")
+                self.assertEqual(pending[0]["payload"]["questionId"], "q-version")
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 42,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(state["status"], "waiting_for_user")
+                self.assertEqual(state["finalAnswerStatus"], "waiting")
+                self.assertEqual(state["rounds"][0]["status"], "waiting_for_user")
+                response_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 43,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                    },
+                )
+                response_doc = json.loads(response_response["result"]["contents"][0]["text"])
+                self.assertEqual(response_doc["validation"]["status"], "paused")
+                self.assertEqual(
+                    response_doc["validation"]["runtimeStatus"], "waiting_for_user"
                 )
         finally:
             server.shutdown()

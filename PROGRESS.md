@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-17
 
+## 2026-06-17 V2 Provider Waiting Tool Loop
+
+- V2 OpenAI-compatible and binary Agent provider prompts now advertise
+  `logagent.request_user_input` and `logagent.request_approval` during normal
+  analysis, so real provider loops can enter the same waiting states exposed by
+  task MCP.
+- When a provider requests a waiting/approval tool, V2 now records the
+  provider response as `paused`, persists `analysis_state` with the matching
+  `waiting_for_user` or `waiting_for_approval` status, keeps the pending action,
+  and ends the current job without writing a final result.
+- Resume with `resumeMode=finalize` now removes waiting/approval tools from the
+  next provider prompt through `resumePolicy.finalizeWithCurrentEvidence`, so
+  the resumed run must answer with current evidence instead of asking again.
+- Added regressions for provider-requested user-input pause, normal provider
+  tool availability, and finalize prompt suppression of waiting tools.
+
 ## 2026-06-17 V2 WebUI Waiting Idempotency
 
 - V2 Analyze bridge now sends pending action `questionId` when answering

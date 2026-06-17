@@ -75,6 +75,19 @@ class AgentRuntime:
             analysis_package_artifact_id=analysis_package["artifact"]["id"],
             interaction_context=interaction_context,
         )
+        if final_answer is None:
+            run = self.store.get_run(run_id)
+            if run["status"] in {"waiting_for_user", "waiting_for_approval"}:
+                return {
+                    "status": run["status"],
+                    "phase": run["phase"],
+                    "pendingActions": [
+                        action
+                        for action in self.store.list_actions(run_id)
+                        if action.get("status") == "pending"
+                    ],
+                }
+            raise ValueError("agent paused without a waiting run state")
         persist_run_result(self.settings, self.store, workspace_id, run_id, final_answer)
         alias = fallback_run_alias(final_answer, workspace.get("question", ""))
         self.store.update_run_status(run_id, "succeeded", "finish", final_answer, alias=alias)
@@ -88,7 +101,7 @@ class AgentRuntime:
         evidence_bundle: JsonObject,
         analysis_package_artifact_id: str | None,
         interaction_context: JsonObject | None,
-    ) -> JsonObject:
+    ) -> JsonObject | None:
         tool_observations: list[JsonObject] = []
         rounds: list[JsonObject] = []
         last_provider_request: JsonObject | None = None
@@ -181,15 +194,25 @@ class AgentRuntime:
                 if is_tool_call_request(raw_final_answer):
                     tool_calls = normalize_tool_calls(
                         raw_final_answer,
-                        allowed_tool_names=agent_allowed_tool_names(self.settings),
+                        allowed_tool_names=agent_allowed_tool_names(
+                            self.settings, interaction_context
+                        ),
                     )
                     observations = self._execute_tool_calls(run_id, attempt, tool_calls)
+                    waiting_status = waiting_status_from_observations(observations)
                     tool_observations.extend(observations)
                     provider_response = {
                         **provider_response,
                         "toolCalls": tool_calls,
                         "toolObservations": observations,
-                        "validation": {"status": "tool_calls_executed"},
+                        "validation": (
+                            {
+                                "status": "paused",
+                                "runtimeStatus": waiting_status,
+                            }
+                            if waiting_status
+                            else {"status": "tool_calls_executed"}
+                        ),
                     }
                     response_audit = persist_agent_response(
                         settings=self.settings,
@@ -200,6 +223,26 @@ class AgentRuntime:
                         provider_response=provider_response,
                         request_artifact_id=request_artifact_id,
                     )
+                    if waiting_status:
+                        rounds[-1] = {
+                            **base_round,
+                            "status": waiting_status,
+                            "responseArtifactId": response_audit["artifact"]["id"],
+                            "toolCallCount": len(tool_calls),
+                            "validation": {
+                                "status": "paused",
+                                "runtimeStatus": waiting_status,
+                            },
+                        }
+                        self._persist_state(
+                            workspace_id,
+                            run_id,
+                            status=waiting_status,
+                            phase=waiting_status,
+                            rounds=rounds,
+                            final_answer_status="waiting",
+                        )
+                        return None
                     rounds[-1] = {
                         **base_round,
                         "status": "tool_calls_executed",
@@ -406,6 +449,8 @@ class AgentRuntime:
                     "result": parse_tool_result(result),
                 }
             )
+            if waiting_status_from_observations(observations):
+                break
         return observations
 
     def _interaction_context(self, run_id: str) -> JsonObject:
@@ -558,6 +603,17 @@ def normalize_tool_calls(
             raise ValueError(f"toolCalls[{index}].arguments must be an object")
         tool_calls.append({"name": name, "arguments": arguments})
     return tool_calls
+
+
+def waiting_status_from_observations(observations: list[JsonObject]) -> str | None:
+    for observation in observations:
+        result = observation.get("result")
+        if not isinstance(result, dict):
+            continue
+        runtime_status = result.get("runtimeStatus")
+        if runtime_status in {"waiting_for_user", "waiting_for_approval"}:
+            return str(runtime_status)
+    return None
 
 
 def parse_tool_result(result: JsonObject) -> JsonObject:

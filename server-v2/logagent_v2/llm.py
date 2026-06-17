@@ -441,7 +441,8 @@ def build_agent_prompt(
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
         "toolObservations": tool_observations or [],
         "interactionContext": interaction_context or {},
-        "availableTools": agent_available_tools(settings),
+        "availableTools": agent_available_tools(settings, interaction_context),
+        "resumePolicy": agent_resume_policy(interaction_context),
         "responseProtocol": {
             "finalAnswer": "Return the final answer JSON object directly.",
             "toolCalls": {
@@ -468,11 +469,15 @@ def build_agent_prompt(
     return json.dumps(prompt, ensure_ascii=True, indent=2)
 
 
-def agent_allowed_tool_names(settings: Settings) -> set[str]:
-    return {tool["name"] for tool in agent_available_tools(settings)}
+def agent_allowed_tool_names(
+    settings: Settings, interaction_context: JsonObject | None = None
+) -> set[str]:
+    return {tool["name"] for tool in agent_available_tools(settings, interaction_context)}
 
 
-def agent_available_tools(settings: Settings) -> list[JsonObject]:
+def agent_available_tools(
+    settings: Settings, interaction_context: JsonObject | None = None
+) -> list[JsonObject]:
     tools = [
         search_logs_tool_descriptor(),
         get_log_slice_tool_descriptor(),
@@ -480,6 +485,10 @@ def agent_available_tools(settings: Settings) -> list[JsonObject]:
         *task_case_tool_descriptors(),
         *skill_tool_descriptors(),
     ]
+    if not agent_resume_policy(interaction_context)["finalizeWithCurrentEvidence"]:
+        tools.extend(
+            [request_user_input_tool_descriptor(), request_approval_tool_descriptor()]
+        )
     if any(
         tool["enabled"] and tool.get("source") == "configured"
         for tool in tool_descriptors(settings)
@@ -490,6 +499,63 @@ def agent_available_tools(settings: Settings) -> list[JsonObject]:
     if settings.fetch_enabled:
         tools.append(fetch_tools[1])
     return tools
+
+
+def agent_resume_policy(interaction_context: JsonObject | None = None) -> JsonObject:
+    finalize = (
+        isinstance(interaction_context, dict)
+        and interaction_context.get("resumeDirective") == "finalize_with_current_evidence"
+    )
+    return {
+        "finalizeWithCurrentEvidence": finalize,
+        "allowWaitingTools": not finalize,
+        "instruction": (
+            "The user asked to finalize with current evidence. Do not request more "
+            "user input or approval-gated actions; return the final answer schema."
+            if finalize
+            else (
+                "If essential information is missing, use logagent.request_user_input. "
+                "If an approval-gated action is needed, use logagent.request_approval."
+            )
+        ),
+    }
+
+
+def request_user_input_tool_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.request_user_input",
+        "description": "Pause this run and ask the user for more information.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "questionId": {"type": "string", "minLength": 1},
+                "question": {"type": "string", "minLength": 1},
+                "reason": {"type": "string"},
+                "required": {"type": "boolean", "default": True},
+                "answerFormat": {"type": "string"},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def request_approval_tool_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.request_approval",
+        "description": "Pause this run and request approval for a gated action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "actionType": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+                "input": {"type": "object"},
+                "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+    }
 
 
 def search_logs_tool_descriptor() -> JsonObject:

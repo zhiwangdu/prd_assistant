@@ -85,10 +85,12 @@ Implemented in this slice:
   `session_text_input.json`, consumes the initial evidence pipeline, and either
   returns a deterministic stub summary or calls a bounded OpenAI-compatible or
   local binary provider loop for advertised Server-owned tools and an
-  evidence-validated JSON final answer. Each round persists
-  `agent_request.json`, `agent_response.json`, and `analysis_state.json` audit
-  artifacts before the run reaches a terminal state. Follow-up evidence refs
-  returned by tool observations are added to the next round's
+  evidence-validated JSON final answer. Provider-requested
+  `logagent.request_user_input` / `logagent.request_approval` calls pause the
+  run in the matching waiting state instead of writing a final result. Each
+  round persists `agent_request.json`, `agent_response.json`, and
+  `analysis_state.json` audit artifacts before the run reaches a terminal
+  state. Follow-up evidence refs returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. Successful analysis runs persist a deterministic
   fallback alias derived from the final summary or question for history/UI
   display.
@@ -1245,12 +1247,18 @@ evidence-ref failures as provider failures.
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,
 Skill references, Fetch catalog, configured domain tools when present, and
-Fetch execution when Fetch is enabled. Waiting/approval tools are not
-advertised. V2 validates the tool name and arguments as JSON objects, executes
-the Server-owned task MCP tool, records the resulting evidence/artifacts through
-the existing tool implementation, and feeds the structured observation into the
-next provider round. The loop is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with
-default 3. Evidence refs returned by tool observations, including
+Fetch execution when Fetch is enabled. Waiting/approval tools are advertised
+unless the run is resuming with `resumeMode=finalize`. V2 validates the tool
+name and arguments as JSON objects, executes the Server-owned task MCP tool,
+records the resulting evidence/artifacts through the existing tool
+implementation, and feeds ordinary structured observations into the next
+provider round. If a provider calls `logagent.request_user_input` or
+`logagent.request_approval`, the tool creates the pending action, writes the
+V1-compatible waiting marker, moves the run to `waiting_for_user` or
+`waiting_for_approval`, persists the provider response validation as
+`paused`, and stops the current job without writing `result.json`. The loop is
+bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3. Evidence refs returned
+by ordinary tool observations, including
 `evidenceRefs`, `finalEvidenceRefs`, match `ref`, and `evidenceRef` fields, are
 deduplicated into the next provider request and prompt `allowedEvidenceRefs` so
 the provider can cite follow-up evidence without violating final-answer
@@ -1259,9 +1267,13 @@ validation.
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
-tool requests, or max-round exhaustion fail the run. Approval/user waiting tools
-are still not advertised to the provider; full resume-aware LangGraph planning
-remains future work.
+tool requests, or max-round exhaustion fail the run. After a user message or
+approval decision requeues the run, the next provider request includes recent
+messages, action results, remaining pending actions, and `resumePolicy` in
+`interactionContext`. When the latest user message has `resumeMode=finalize`,
+`resumePolicy.finalizeWithCurrentEvidence=true`, waiting tools are removed from
+the advertised tool list, and the provider must return a final answer based on
+current evidence.
 
 Each run also writes `analysis_package.json` with schema version 1. It contains
 Workspace/run metadata, task MCP resource URIs, manifest and grep outlines,
