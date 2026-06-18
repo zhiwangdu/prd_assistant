@@ -15,6 +15,8 @@ Last updated: 2026-06-18
   configured subprocess tools that are actually runnable, so bad source-built
   analyzer paths are visible in catalog/status but not offered to the model as
   executable actions.
+- `llm.py` and task MCP now share the same runnable configured-tool id helper,
+  preventing provider `availableTools` and task MCP `tools/list` from drifting.
 - `scripts/v2-local.sh status` and `deploy/logagent-v2ctl.sh status` now print
   command existence, executability, and unavailable reasons when the V2 tools
   catalog provides them.
@@ -25,6 +27,8 @@ Last updated: 2026-06-18
   focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
   with 8 passed,
   focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_tool_registry_includes_configured_and_builtin_tools tests/test_store.py::StoreTests::test_unavailable_source_built_analyzer_is_not_advertised_to_agent`
+  with 2 passed,
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_unavailable_source_built_analyzer_is_not_advertised_to_agent tests/test_store.py::StoreTests::test_task_mcp_runs_configured_tool_by_id`
   with 2 passed,
   full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 172 passed
   and 1 Starlette warning,

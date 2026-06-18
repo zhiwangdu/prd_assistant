@@ -6333,6 +6333,26 @@ class StoreTests(unittest.TestCase):
             self.assertNotIn("flux_query_analyzer", tool_enum)
             self.assertIn("influxql_analyzer", tool_enum)
 
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("mcp runnable tools", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            tools_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 19, "method": "tools/list"},
+            )
+            mcp_domain_tool = next(
+                item
+                for item in tools_response["result"]["tools"]
+                if item["name"] == "logagent.run_domain_tool"
+            )
+            mcp_enum = mcp_domain_tool["inputSchema"]["properties"]["toolId"]["enum"]
+            self.assertNotIn("flux_query_analyzer", mcp_enum)
+            self.assertIn("influxql_analyzer", mcp_enum)
+
     def test_tool_run_route_rejects_upload_suffix_mismatch(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

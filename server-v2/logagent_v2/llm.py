@@ -29,7 +29,7 @@ from .fetch import fetch_tool_descriptors
 from .metadata import task_metadata_tool_descriptors
 from .skills import skill_tool_descriptors
 from .store import JsonObject
-from .tools import tool_descriptors
+from .tools import runnable_configured_tool_ids
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 MAX_PROVIDER_PREVIEW_CHARS = 20000
@@ -1238,14 +1238,7 @@ def run_domain_tool_descriptor(settings: Settings) -> JsonObject:
 
 
 def agent_domain_tool_ids(settings: Settings) -> list[str]:
-    return [
-        tool["toolId"]
-        for tool in tool_descriptors(settings)
-        if tool["enabled"]
-        and tool.get("runnable")
-        and tool.get("source") == "configured"
-        and not tool.get("manualOnly")
-    ]
+    return runnable_configured_tool_ids(settings)
 
 
 def allowed_evidence_refs(

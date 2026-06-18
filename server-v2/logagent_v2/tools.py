@@ -163,6 +163,17 @@ def configured_tool_summaries(
     ]
 
 
+def runnable_configured_tool_ids(settings: Settings) -> list[str]:
+    return [
+        tool["toolId"]
+        for tool in tool_descriptors(settings)
+        if tool["enabled"]
+        and tool.get("runnable")
+        and tool.get("source") == "configured"
+        and not tool.get("manualOnly")
+    ]
+
+
 def source_built_analyzer_summaries(
     settings: Settings,
     descriptors: list[JsonObject] | None = None,

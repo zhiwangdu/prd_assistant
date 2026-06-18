@@ -35,7 +35,12 @@ from .skills import (
 )
 from .store import JsonObject, Store, now_iso
 from .system_context import preview_system_context_resources
-from .tools import run_configured_tool, tool_catalog, tool_descriptors
+from .tools import (
+    run_configured_tool,
+    runnable_configured_tool_ids,
+    tool_catalog,
+    tool_descriptors,
+)
 
 
 METADATA_TOOL_NAMES = {tool["name"] for tool in metadata_tool_descriptors()}
@@ -1095,11 +1100,7 @@ def persist_waiting_marker(
 
 
 def run_domain_tool_descriptor(settings: Settings) -> dict:
-    configured_tool_ids = [
-        tool["toolId"]
-        for tool in tool_descriptors(settings)
-        if tool["enabled"] and tool.get("source") == "configured" and not tool.get("manualOnly")
-    ]
+    configured_tool_ids = runnable_configured_tool_ids(settings)
     return {
         "name": "logagent.run_domain_tool",
         "description": "Run a configured read-only diagnostic tool by toolId or legacy tool/inputFile.",
