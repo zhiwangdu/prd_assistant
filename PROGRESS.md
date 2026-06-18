@@ -2,6 +2,30 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Task Create Alias Parity
+
+- Added `POST /api/v2/tasks` as a Rust/V1-style task creation alias for V2.
+- The alias requires an existing `sessionId`, deduplicates `uploadId` /
+  `uploadIds`, rejects uploads outside the target Session, maps question,
+  source URL, mode/language, system context, and skill fields into the Session
+  snapshot, and creates the underlying V2 Run.
+- Added Metadata-aware compatibility for `clusterId`: when no explicit
+  `instanceId` is supplied, V2 resolves the cluster to an imported Metadata
+  instance and validates requested `nodeId` values against that snapshot.
+- Updated `GET /api/v2/tasks` and `GET /api/v2/tasks/:task_id` to expose
+  Rust/V1 TaskSummary-compatible top-level fields while retaining raw V2 Run
+  records under `runs` / `run`.
+- Added route-table coverage and a behavior regression covering Session update,
+  Run creation, cross-Session upload rejection, and unknown cluster rejection.
+- Updated V2 Server and Analysis Agent docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_task_alias_message_and_decision_routes_reuse_run_semantics tests/test_store.py::StoreTests::test_task_create_alias_updates_session_and_creates_run`
+  with 3 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 166 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Task Case Alias Parity
 
 - Added `POST /api/v2/tasks/:task_id/case` as a Rust/V1-style taskId alias for

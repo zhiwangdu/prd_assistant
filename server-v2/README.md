@@ -27,9 +27,16 @@ slice provides the durable foundation for the V2 product model:
   unfinished. Session task APIs return Rust-style TaskSummary fields including
   the persisted `analysisMode` while retaining raw V2 Run records under `runs`
   for diagnostics.
-- Task-scoped HTTP aliases under `/api/v2/tasks`: `taskId` maps to the
-  underlying Run id for list/read/timeline/evidence/artifacts/analysis/result,
-  user-message resume, and Rust/V1-style approval decisions at
+- Task-scoped HTTP aliases under `/api/v2/tasks`: `POST /api/v2/tasks`
+  accepts the Rust/V1-style `sessionId`, `uploadId` / `uploadIds`, `question`,
+  `sourceUrl`, metadata, mode/language, context, and skill fields, validates
+  uploads within the target Session, resolves `clusterId` to a V2 Metadata
+  instance when needed, updates the Session snapshot, and creates a Run.
+  `taskId` maps to the underlying Run id for
+  list/read/timeline/evidence/artifacts/analysis/result and user-message
+  resume; list/read responses expose TaskSummary-compatible top-level fields
+  and retain the raw V2 Run under `run` for diagnostics. Rust/V1-style
+  approval decisions use
   `/api/v2/tasks/:task_id/actions/:action_id/decision`.
 - Native Agent import compatibility through `native_agent.server_api: "v2"`:
   Chrome Extension still calls local `/imports`; Native Agent creates or reuses
@@ -478,6 +485,7 @@ GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
 GET  /api/v2/tasks?workspaceId=<workspace_id>
+POST /api/v2/tasks
 GET  /api/v2/tasks/:task_id
 GET  /api/v2/tasks/:task_id/timeline
 GET  /api/v2/tasks/:task_id/evidence

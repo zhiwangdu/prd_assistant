@@ -458,6 +458,7 @@ class StoreTests(unittest.TestCase):
                 ("POST", "/api/v2/sessions/{session_id}/tasks"),
                 ("GET", "/api/v2/runs"),
                 ("GET", "/api/v2/tasks"),
+                ("POST", "/api/v2/tasks"),
                 ("GET", "/api/v2/runs/{run_id}"),
                 ("GET", "/api/v2/tasks/{task_id}"),
                 ("GET", "/api/v2/runs/{run_id}/timeline"),
@@ -1516,7 +1517,11 @@ class StoreTests(unittest.TestCase):
                 tasks = client.get("/api/v2/tasks", headers=headers)
                 self.assertEqual(tasks.status_code, 200)
                 self.assertEqual(
-                    [item["id"] for item in tasks.json()["tasks"]],
+                    [item["taskId"] for item in tasks.json()["tasks"]],
+                    [approval_run["id"], user_run["id"]],
+                )
+                self.assertEqual(
+                    [item["id"] for item in tasks.json()["runs"]],
                     [approval_run["id"], user_run["id"]],
                 )
 
@@ -1525,7 +1530,8 @@ class StoreTests(unittest.TestCase):
                     headers=headers,
                 )
                 self.assertEqual(fetched_task.status_code, 200)
-                self.assertEqual(fetched_task.json()["id"], user_run["id"])
+                self.assertEqual(fetched_task.json()["taskId"], user_run["id"])
+                self.assertEqual(fetched_task.json()["run"]["id"], user_run["id"])
 
                 message = client.post(
                     f"/api/v2/tasks/{user_run['id']}/messages",
@@ -1565,6 +1571,117 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(decision.status_code, 200)
                 self.assertEqual(decision.json()["action"]["status"], "approved")
                 self.assertEqual(store.get_run(approval_run["id"])["status"], "queued")
+
+    def test_task_create_alias_updates_session_and_creates_run(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("old question", "diagnose", "zh-CN")
+            other_workspace = store.create_workspace("other", "diagnose", "zh-CN")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"fatal error on node-a\n",
+                "text/plain",
+            )
+            upload = store.create_upload(workspace["id"], "db.log", artifact["id"])
+            other_artifact = write_artifact_bytes(
+                settings,
+                store,
+                other_workspace["id"],
+                "other.log",
+                b"other\n",
+                "text/plain",
+            )
+            other_upload = store.create_upload(
+                other_workspace["id"],
+                "other.log",
+                other_artifact["id"],
+            )
+            import_metadata(
+                store,
+                instance_id="inst-route",
+                template_type="json",
+                content=json.dumps(
+                    {
+                        "cluster": {
+                            "clusterId": "cluster-route",
+                            "nodes": [{"nodeId": "node-a", "host": "127.0.0.1"}],
+                        }
+                    }
+                ),
+                remark="task create alias",
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                response = client.post(
+                    "/api/v2/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": workspace["id"],
+                        "uploadId": upload["id"],
+                        "uploadIds": [upload["id"], ""],
+                        "question": "new question",
+                        "sourceUrl": "https://example.invalid/logs.zip",
+                        "clusterId": "cluster-route",
+                        "nodeId": "node-a",
+                        "analysisMode": "fix",
+                        "analysisLanguage": "en-US",
+                        "systemContextIds": ["ctx-a"],
+                        "skillIds": ["skill-a"],
+                    },
+                )
+                self.assertEqual(response.status_code, 202)
+                body = response.json()
+                self.assertEqual(body["sessionId"], workspace["id"])
+                self.assertEqual(body["taskId"], body["runId"])
+                self.assertEqual(body["task"]["taskKind"], "log_analysis")
+                self.assertEqual(body["analysisMode"], "fix")
+                self.assertEqual(body["analysisLanguage"], "en-US")
+                self.assertEqual(body["uploadIds"], [upload["id"]])
+                self.assertEqual(store.list_runs(workspace["id"])[0]["id"], body["taskId"])
+
+                updated = store.get_workspace(workspace["id"])
+                self.assertEqual(updated["question"], "new question")
+                self.assertEqual(updated["sourceUrl"], "https://example.invalid/logs.zip")
+                self.assertEqual(updated["instanceId"], "inst-route")
+                self.assertEqual(updated["nodeId"], "node-a")
+                self.assertEqual(updated["mode"], "fix")
+                self.assertEqual(updated["language"], "en-US")
+                self.assertEqual(updated["systemContextIds"], ["ctx-a"])
+                self.assertEqual(updated["skillIds"], ["skill-a"])
+
+                wrong_upload = client.post(
+                    "/api/v2/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": workspace["id"],
+                        "uploadIds": [other_upload["id"]],
+                    },
+                )
+                self.assertEqual(wrong_upload.status_code, 400)
+
+                missing_cluster = client.post(
+                    "/api/v2/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": workspace["id"],
+                        "clusterId": "missing-cluster",
+                    },
+                )
+                self.assertEqual(missing_cluster.status_code, 400)
 
     def test_action_decision_api_can_override_collect_environment_input(self) -> None:
         from fastapi.testclient import TestClient

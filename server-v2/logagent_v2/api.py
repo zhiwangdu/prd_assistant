@@ -133,6 +133,21 @@ class AttachSessionUploads(BaseModel):
     uploadIds: list[str] = Field(min_length=1, max_length=100)
 
 
+class TaskCreate(BaseModel):
+    uploadId: str | None = Field(default=None, max_length=120)
+    uploadIds: list[str] = Field(default_factory=list, max_length=100)
+    sessionId: str = Field(min_length=1, max_length=120)
+    sourceUrl: str | None = Field(default=None, max_length=2000)
+    question: str | None = Field(default=None, max_length=20000)
+    instanceId: str | None = Field(default=None, max_length=200)
+    clusterId: str | None = Field(default=None, max_length=200)
+    nodeId: str | None = Field(default=None, max_length=200)
+    analysisMode: Literal["diagnose", "code_investigation", "fix"] | None = None
+    analysisLanguage: Literal["zh-CN", "en-US"] | None = None
+    systemContextIds: list[str] = Field(default_factory=list, max_length=20)
+    skillIds: list[str] = Field(default_factory=list, max_length=20)
+
+
 class MessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     questionId: str | None = Field(default=None, min_length=1, max_length=200)
@@ -489,6 +504,94 @@ def _task_summary(workspace: dict, run: dict) -> dict:
         "createdAt": run.get("created_at"),
         "updatedAt": run.get("updated_at"),
     }
+
+
+def _task_alias_response(store: Store, run: dict) -> dict:
+    workspace = store.get_workspace(run["workspace_id"])
+    task = _task_summary(workspace, run)
+    return {
+        **task,
+        "task": task,
+        "run": run,
+        "workspace": workspace,
+    }
+
+
+def _task_create_upload_ids(payload: TaskCreate) -> list[str]:
+    upload_ids: list[str] = []
+
+    def append(value: str | None) -> None:
+        value = _clean_optional(value)
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    append(payload.uploadId)
+    for upload_id in payload.uploadIds:
+        append(upload_id)
+    return upload_ids
+
+
+def _node_ids_from_snapshot(snapshot: dict) -> set[str]:
+    cluster = snapshot.get("cluster") if isinstance(snapshot.get("cluster"), dict) else {}
+    nodes = cluster.get("nodes") if isinstance(cluster.get("nodes"), list) else []
+    node_ids: set[str] = set()
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_id = node.get("nodeId")
+        if isinstance(node_id, str) and node_id:
+            node_ids.add(node_id)
+    return node_ids
+
+
+def _resolve_task_instance_id(
+    store: Store,
+    *,
+    instance_id: str | None,
+    cluster_id: str | None,
+    node_id: str | None,
+) -> str | None:
+    instance_id = _clean_optional(instance_id)
+    cluster_id = _clean_optional(cluster_id)
+    node_id = _clean_optional(node_id)
+    snapshot: dict | None = None
+    if instance_id:
+        try:
+            snapshot = store.get_metadata_snapshot(instance_id)
+        except KeyError as error:
+            raise ValueError(f"unknown instanceId {instance_id}") from error
+        if cluster_id:
+            cluster = snapshot.get("cluster") if isinstance(snapshot.get("cluster"), dict) else {}
+            actual_cluster_id = cluster.get("clusterId")
+            if actual_cluster_id != cluster_id:
+                raise ValueError(
+                    f"instanceId {instance_id} belongs to clusterId {actual_cluster_id}, "
+                    f"not {cluster_id}"
+                )
+    elif cluster_id:
+        matches: list[tuple[str, dict]] = []
+        for instance in store.list_metadata_instances():
+            candidate_id = instance.get("instanceId")
+            if not isinstance(candidate_id, str):
+                continue
+            candidate_snapshot = store.get_metadata_snapshot(candidate_id)
+            cluster = (
+                candidate_snapshot.get("cluster")
+                if isinstance(candidate_snapshot.get("cluster"), dict)
+                else {}
+            )
+            if cluster.get("clusterId") == cluster_id:
+                matches.append((candidate_id, candidate_snapshot))
+        if not matches:
+            raise ValueError(f"unknown clusterId {cluster_id}")
+        if len(matches) > 1:
+            raise ValueError(f"clusterId {cluster_id} maps to multiple instanceIds")
+        instance_id, snapshot = matches[0]
+    if node_id and snapshot is not None:
+        node_ids = _node_ids_from_snapshot(snapshot)
+        if node_id not in node_ids:
+            raise ValueError(f"unknown nodeId {node_id}")
+    return instance_id
 
 
 def normalize_optional_message_id(value: str | None) -> str | None:
@@ -995,6 +1098,95 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/v2/tasks", status_code=202)
+    async def create_task_alias(_: Auth, payload: TaskCreate) -> dict:
+        session_id = _clean_optional(payload.sessionId)
+        if session_id is None:
+            raise HTTPException(status_code=400, detail="sessionId is required")
+        try:
+            workspace = store.get_workspace(session_id)
+            fields_set = payload.model_fields_set
+            upload_ids = _task_create_upload_ids(payload)
+            if upload_ids:
+                store.list_uploads_by_ids(session_id, upload_ids)
+                workspace = store.attach_uploads(session_id, upload_ids)
+            question = _clean_optional(payload.question) if payload.question is not None else None
+            current_instance_id = workspace.get("instanceId")
+            metadata_fields_set = bool(
+                {"instanceId", "clusterId", "nodeId"} & fields_set
+            )
+            resolved_instance_id = current_instance_id
+            if metadata_fields_set:
+                requested_instance_id = (
+                    _clean_optional(payload.instanceId)
+                    if "instanceId" in fields_set
+                    else current_instance_id
+                )
+                requested_node_id = (
+                    _clean_optional(payload.nodeId)
+                    if "nodeId" in fields_set
+                    else workspace.get("nodeId")
+                )
+                resolved_instance_id = _resolve_task_instance_id(
+                    store,
+                    instance_id=requested_instance_id,
+                    cluster_id=payload.clusterId,
+                    node_id=requested_node_id,
+                )
+            should_update_workspace = (
+                question is not None
+                or "sourceUrl" in fields_set
+                or "instanceId" in fields_set
+                or "clusterId" in fields_set
+                or "nodeId" in fields_set
+                or payload.analysisMode is not None
+                or payload.analysisLanguage is not None
+                or "systemContextIds" in fields_set
+                or "skillIds" in fields_set
+            )
+            if should_update_workspace:
+                workspace = store.update_workspace(
+                    session_id,
+                    question=question,
+                    source_url=(
+                        _clean_optional(payload.sourceUrl)
+                        if "sourceUrl" in fields_set
+                        else UNSET
+                    ),
+                    instance_id=(
+                        resolved_instance_id
+                        if ("instanceId" in fields_set or "clusterId" in fields_set)
+                        else UNSET
+                    ),
+                    node_id=(
+                        _clean_optional(payload.nodeId) if "nodeId" in fields_set else UNSET
+                    ),
+                    mode=payload.analysisMode,
+                    language=payload.analysisLanguage,
+                    system_context_ids=(
+                        payload.systemContextIds
+                        if "systemContextIds" in fields_set
+                        else None
+                    ),
+                    skill_ids=payload.skillIds if "skillIds" in fields_set else None,
+                )
+            run = store.create_run(session_id)
+            task = _task_summary(workspace, run)
+            return {
+                **task,
+                "sessionId": session_id,
+                "workspaceId": session_id,
+                "taskId": run["id"],
+                "runId": run["id"],
+                "uploadIds": workspace.get("uploadIds", []),
+                "task": task,
+                "run": run,
+            }
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.get("/api/v2/runs")
     async def list_runs(_: Auth, workspaceId: str | None = None) -> dict:
         try:
@@ -1005,7 +1197,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/tasks")
     async def list_tasks_alias(_: Auth, workspaceId: str | None = None) -> dict:
         try:
-            return {"tasks": store.list_runs(workspaceId)}
+            runs = store.list_runs(workspaceId)
+            return {
+                "tasks": [_task_alias_response(store, run) for run in runs],
+                "runs": runs,
+            }
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -1018,7 +1214,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tasks/{task_id}")
     async def get_task_alias(_: Auth, task_id: str) -> dict:
-        return await get_run(_, task_id)
+        try:
+            return _task_alias_response(store, store.get_run(task_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.get("/api/v2/runs/{run_id}/timeline")
     async def get_timeline(_: Auth, run_id: str) -> dict:
