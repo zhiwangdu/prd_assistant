@@ -997,7 +997,9 @@ includes manual built-ins for metadata tools, `logagent.preprocess_log_package`,
 V1-style configured command adapter `pprof_analyzer`.
 Metadata built-in descriptors use the Rust/V1 catalog shape with
 `backend=builtin`, `read-only` / `manual-run` tags, and field/tag params
-templates that include `retentionPolicy` where supported.
+templates that include `retentionPolicy` where supported. Manual metadata
+tool results preserve the V2 `value` field and also expose Rust/V1-compatible
+`params`, `result`, `durationMs`, and `createdAt` fields.
 Manual tool run creation validates both upload count and uploaded filenames
 against the selected descriptor's `acceptedSuffixes`; `params.inputFiles` can
 still select existing workspace inputs without attaching uploads.

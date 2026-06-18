@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata Tool Result Field Parity
+
+- Extended V2 manual metadata built-in tool results with Rust/V1-compatible
+  `params`, `result`, `durationMs`, and `createdAt` fields while preserving the
+  existing V2 `value` field.
+- `logagent.get_metadata_snapshot` manual runs now expose the V1
+  `{ "snapshot": ... }` result wrapper in addition to the V2 expanded value.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused metadata/tool registry pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (130 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Preprocess Tool Result Field Parity
 
 - Extended V2 `logagent.preprocess_log_package` manual tool results with

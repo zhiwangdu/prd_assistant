@@ -1690,11 +1690,14 @@ def run_metadata_tool(
     tool_id: str,
     params: JsonObject,
 ) -> JsonObject:
+    started = time.monotonic()
     if tool_id == METADATA_LIST_INSTANCES_ID:
         value = {"instances": store.list_metadata_instances()}
+        v1_result = value
     elif tool_id == METADATA_GET_SNAPSHOT_ID:
         snapshot = store.get_metadata_snapshot(params["instanceId"])
         value = {**snapshot, "snapshot": snapshot}
+        v1_result = {"snapshot": snapshot}
     elif tool_id in {METADATA_GET_FIELD_TYPES_ID, METADATA_GET_TAG_FIELDS_ID}:
         value = query_field_types(
             store=store,
@@ -1705,6 +1708,7 @@ def run_metadata_tool(
             field=params.get("field"),
             tags_only=tool_id == METADATA_GET_TAG_FIELDS_ID,
         )
+        v1_result = {"result": value}
     else:
         raise ValueError(f"unsupported metadata tool {tool_id}")
     action_id = f"act_tool_{safe_action_segment(tool_id)}_{run['id']}"
@@ -1714,7 +1718,11 @@ def run_metadata_tool(
         "actionId": action_id,
         "status": "OK",
         "summary": f"Metadata tool {tool_id} completed.",
+        "params": params,
+        "result": v1_result,
         "value": value,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "createdAt": datetime.now(UTC).isoformat(),
     }
     artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
     evidence = store.create_evidence(

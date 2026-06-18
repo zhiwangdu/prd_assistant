@@ -726,8 +726,10 @@ dedicated task MCP tools where available, or the protected manual Tools API.
 The migrated built-ins are:
 
 - metadata catalog tools: instance list, snapshot, field types, tag fields,
-  using Rust/V1 `backend=builtin`, `read-only` / `manual-run` tags, and
-  params templates with `retentionPolicy` where supported;
+  using Rust/V1 `backend=builtin`, `read-only` / `manual-run` tags, params
+  templates with `retentionPolicy` where supported, and manual result wrappers
+  containing `params`, `result`, `durationMs`, and `createdAt` while preserving
+  the V2 `value` field;
 - `logagent.preprocess_log_package`, whose descriptor advertises rotated log
   normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
   results include V1-style `nodes` aggregation, `manifestPath`,

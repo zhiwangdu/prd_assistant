@@ -4936,7 +4936,11 @@ fi
             self.assertEqual(finished["toolResultArtifactId"], executed["artifact"]["id"])
             result_path = resolve_artifact_path(settings, executed["artifact"]["relative_path"])
             result = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(result["params"], {})
+            self.assertEqual(result["result"]["instances"][0]["instanceId"], "inst-manual")
             self.assertEqual(result["value"]["instances"][0]["instanceId"], "inst-manual")
+            self.assertIsInstance(result["durationMs"], int)
+            self.assertIsInstance(result["createdAt"], str)
             evidence = store.list_evidence(tool_run["id"])
             self.assertTrue(any(item["kind"] == "metadata_slice" for item in evidence))
 
@@ -4950,6 +4954,10 @@ fi
                 settings, executed_snapshot["artifact"]["relative_path"]
             )
             snapshot_result = json.loads(snapshot_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                snapshot_result["result"]["snapshot"]["instance"]["instanceId"],
+                "inst-manual",
+            )
             self.assertEqual(
                 snapshot_result["value"]["snapshot"]["instance"]["instanceId"],
                 "inst-manual",
