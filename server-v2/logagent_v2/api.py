@@ -517,6 +517,42 @@ def _task_alias_response(store: Store, run: dict) -> dict:
     }
 
 
+def _tool_run_summary(workspace: dict, run: dict) -> dict:
+    phase = run.get("phase")
+    mode = workspace.get("mode")
+    if mode not in {"diagnose", "code_investigation", "fix"}:
+        mode = "diagnose"
+    return {
+        "taskId": run["id"],
+        "runId": run["id"],
+        "alias": run.get("alias"),
+        "url": f"/api/v2/tools/runs/{run['id']}",
+        "taskKind": "tool_run",
+        "sessionId": None,
+        "workspaceId": workspace["id"],
+        "analysisMode": mode,
+        "analysisLanguage": workspace.get("language") or "zh-CN",
+        "status": str(run.get("status") or "").upper(),
+        "phase": str(phase).upper() if phase else None,
+        "toolId": run.get("toolId"),
+        "uploadIds": run.get("toolUploadIds", []),
+        "createdAt": run.get("created_at"),
+        "updatedAt": run.get("updated_at"),
+    }
+
+
+def _tool_run_response(store: Store, run: dict) -> dict:
+    workspace = store.get_workspace(run["workspace_id"])
+    task = _tool_run_summary(workspace, run)
+    return {
+        **run,
+        **task,
+        "task": task,
+        "run": run,
+        "workspace": workspace,
+    }
+
+
 def _task_create_upload_ids(payload: TaskCreate) -> list[str]:
     upload_ids: list[str] = []
 
@@ -1478,12 +1514,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 payload.params,
                 upload_filenames=[upload["filename"] for upload in uploads],
             )
-            return store.create_tool_run(
+            run = store.create_tool_run(
                 workspace_id=payload.workspaceId,
                 tool_id=tool_id,
                 params=params,
                 upload_ids=payload.uploadIds,
             )
+            return _tool_run_response(store, run)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
@@ -1497,12 +1534,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=50, ge=1, le=200),
     ) -> dict:
         try:
+            runs = store.list_tool_runs(
+                tool_id=toolId,
+                workspace_id=workspaceId,
+                limit=limit,
+            )
             return {
-                "runs": store.list_tool_runs(
-                    tool_id=toolId,
-                    workspace_id=workspaceId,
-                    limit=limit,
-                )
+                "runs": [_tool_run_response(store, run) for run in runs],
+                "rawRuns": runs,
             }
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -1513,7 +1552,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             run = store.get_run(run_id)
             if run.get("kind") != "tool_run":
                 raise ValueError(f"run {run_id} is not a tool run")
-            return run
+            return _tool_run_response(store, run)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

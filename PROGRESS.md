@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Run TaskSummary Parity
+
+- Updated V2 manual tool run create/list/get endpoints to expose
+  Rust/V1 TaskSummary-compatible top-level fields: `taskId`,
+  `taskKind=tool_run`, `status`, `phase`, `toolId`, `url`, and `runId`.
+- Preserved V2 diagnostics by keeping raw Run records under `run` and list
+  `rawRuns`; existing raw fields such as `kind`, `id`, `workspace_id`,
+  `toolParams`, and `toolUploadIds` remain available.
+- Added HTTP regression coverage for tool run creation, list filtering, and
+  single-run fetch through `/api/v2/tools/runs`.
+- Updated V2 Server and Tool Runner docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_tool_run_routes_expose_v1_task_summary_fields tests/test_store.py::StoreTests::test_fetch_endpoint_run_route_creates_tool_run tests/test_store.py::StoreTests::test_tool_run_result_route_returns_v1_compat_fields_after_success`
+  with 4 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 167 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Task Create Alias Parity
 
 - Added `POST /api/v2/tasks` as a Rust/V1-style task creation alias for V2.

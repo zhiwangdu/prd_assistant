@@ -1153,6 +1153,10 @@ POST /api/v2/tools/:tool_id/runs
 with `workspaceId`, optional `uploadIds`, and `params`. They create
 `kind=tool_run` Run rows and DB-backed `tool_run` jobs, so startup recovery and
 artifact/evidence tracking use the same SQLite foundation as analysis runs. V2
+create/list/get tool-run responses expose Rust/V1 TaskSummary-compatible
+top-level fields including `taskId`, `taskKind=tool_run`, `status`, `phase`,
+`toolId`, and `url`, while retaining the raw V2 Run under `run` and list
+`rawRuns` for diagnostics.
 configured subprocess descriptors use the Rust/V1 command shape:
 `source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from

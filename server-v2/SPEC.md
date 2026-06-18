@@ -919,7 +919,11 @@ waiting/approval parameters accidentally. Successful task and readonly MCP
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
 validated `params`; results are stored as V2 artifacts/evidence and exposed
-through `/api/v2/tools/runs/:run_id/result`. The result endpoint must return
+through `/api/v2/tools/runs/:run_id/result`. Create/list/get tool-run responses
+must expose Rust/V1 TaskSummary-compatible top-level fields including `taskId`,
+`taskKind=tool_run`, `status`, `phase`, `toolId`, and `url`, while retaining the
+raw V2 Run under `run` and list `rawRuns` for diagnostics. The result endpoint
+must return
 HTTP 409 until the run has a result artifact, and successful payloads must keep
 the V2 `run/artifact/result` objects while adding Rust/V1-compatible top-level
 `taskId`, `runId`, `toolId`, and `resultPath`; `taskId` equals `runId`.

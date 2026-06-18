@@ -6269,6 +6269,54 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("does not accept upload", response.json()["detail"])
 
+    def test_tool_run_routes_expose_v1_task_summary_fields(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual metadata", "tool_run", "en-US")
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    "/api/v2/tools/logagent.list_metadata_instances/runs",
+                    headers=headers,
+                    json={"workspaceId": workspace["id"], "params": {}},
+                )
+                self.assertEqual(created.status_code, 202)
+                created_body = created.json()
+                self.assertEqual(created_body["taskId"], created_body["id"])
+                self.assertEqual(created_body["runId"], created_body["id"])
+                self.assertEqual(created_body["taskKind"], "tool_run")
+                self.assertEqual(created_body["toolId"], "logagent.list_metadata_instances")
+                self.assertEqual(created_body["status"], "QUEUED")
+                self.assertEqual(created_body["analysisMode"], "diagnose")
+                self.assertEqual(created_body["run"]["kind"], "tool_run")
+
+                listed = client.get(
+                    "/api/v2/tools/runs?toolId=logagent.list_metadata_instances",
+                    headers=headers,
+                )
+                self.assertEqual(listed.status_code, 200)
+                listed_body = listed.json()
+                self.assertEqual(listed_body["runs"][0]["taskId"], created_body["taskId"])
+                self.assertEqual(listed_body["runs"][0]["taskKind"], "tool_run")
+                self.assertEqual(listed_body["rawRuns"][0]["id"], created_body["taskId"])
+
+                fetched = client.get(
+                    f"/api/v2/tools/runs/{created_body['taskId']}",
+                    headers=headers,
+                )
+                self.assertEqual(fetched.status_code, 200)
+                fetched_body = fetched.json()
+                self.assertEqual(fetched_body["taskId"], created_body["taskId"])
+                self.assertEqual(fetched_body["run"]["id"], created_body["taskId"])
+                self.assertEqual(fetched_body["task"]["taskKind"], "tool_run")
+
     def test_preprocess_tool_run_materializes_node_package_inputs(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)
