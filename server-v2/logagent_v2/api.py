@@ -1083,12 +1083,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def upload_files(
         _: Auth,
         workspace_id: str,
-        files: list[UploadFile] = File(...),
+        request: Request,
     ) -> dict:
         try:
             store.get_workspace(workspace_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+        content_type = request.headers.get("content-type", "").lower()
+        if not content_type.startswith("multipart/form-data"):
+            raise HTTPException(status_code=415, detail="unsupported upload content type")
+        try:
+            form = await request.form()
+        except Exception as error:
+            raise HTTPException(
+                status_code=400, detail=f"invalid multipart request: {error}"
+            ) from error
+        files = [
+            value
+            for key, value in form.multi_items()
+            if key in {"file", "files"} and hasattr(value, "read")
+        ]
+        if not files:
+            raise HTTPException(status_code=400, detail="missing file fields")
         results = []
         for file in files:
             data = await file.read(settings.max_upload_bytes + 1)
@@ -1116,9 +1132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def upload_session_files(
         _: Auth,
         session_id: str,
-        files: list[UploadFile] = File(...),
+        request: Request,
     ) -> dict:
-        return await upload_files(None, session_id, files)
+        return await upload_files(None, session_id, request)
 
     @app.post("/api/v2/workspaces/{workspace_id}/uploads/init")
     async def init_upload_session(

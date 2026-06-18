@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 Batch Upload Field Parity
+
+- V2 batch upload routes now parse multipart manually and accept repeated file
+  parts named either `file` or `files`, matching Rust/V1 batch upload clients.
+- Added HTTP regression coverage for a mixed `file` / `files` batch request and
+  workspace upload listing after the batch.
+- Updated Server V2 docs for the accepted multipart field names.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused upload pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-18 Server V2 Chunk Upload Limit Parity
 
 - Added `LOGAGENT_V2_MAX_CHUNK_BYTES` with the Rust/V1-aligned default of

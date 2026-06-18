@@ -1886,6 +1886,49 @@ class StoreTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in sessions], [session_id])
             self.assertEqual(store.list_upload_sessions()[0]["id"], session_id)
 
+    def test_batch_upload_accepts_v1_file_and_files_fields(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "batch upload",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+                batch = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads/batch",
+                    headers=headers,
+                    files=[
+                        ("file", ("one.log", b"one error\n", "text/plain")),
+                        ("files", ("two.log", b"two timeout\n", "text/plain")),
+                    ],
+                )
+                self.assertEqual(batch.status_code, 200, batch.text)
+                uploads = batch.json()["uploads"]
+                self.assertEqual(len(uploads), 2)
+                self.assertEqual(
+                    [item["upload"]["filename"] for item in uploads],
+                    ["one.log", "two.log"],
+                )
+                listed = client.get(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads",
+                    headers=headers,
+                )
+                self.assertEqual(listed.status_code, 200, listed.text)
+                self.assertEqual(len(listed.json()["uploads"]), 2)
+
     def test_chunked_upload_rejects_chunk_over_configured_limit(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

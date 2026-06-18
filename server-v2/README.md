@@ -964,7 +964,8 @@ V2 supports three upload paths:
 
 - `POST /api/v2/workspaces/<workspace_id>/uploads` for one multipart file.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/batch` for multiple
-  multipart files under one Workspace.
+  multipart files under one Workspace; repeated file parts may be named
+  `file` or `files`, matching Rust/V1 batch upload clients.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/init`, followed by
   `POST /api/v2/uploads/<session_id>/chunks?offset=<bytes>` and
   `POST /api/v2/uploads/<session_id>/complete`, for restartable chunked upload.

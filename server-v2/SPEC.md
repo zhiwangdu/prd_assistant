@@ -639,7 +639,8 @@ rejected.
 
 Single and batch upload endpoints create artifact rows directly from multipart
 files and then attach Upload rows to the Workspace. Each file is bounded by
-`LOGAGENT_V2_MAX_UPLOAD_BYTES`.
+`LOGAGENT_V2_MAX_UPLOAD_BYTES`. Batch uploads accept repeated multipart file
+parts named either `file` or `files`, matching Rust/V1 clients.
 
 Chunked uploads use a durable `upload_sessions` row:
 
