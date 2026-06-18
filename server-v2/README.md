@@ -350,6 +350,7 @@ Environment variables:
 | `LOGAGENT_V2_PORT` | `50993` | Server bind port |
 | `LOGAGENT_V2_APP_DIR` | unset | Runtime root used to auto-discover source-built analyzers under `bin/tools`; deploy control scripts export it |
 | `LOGAGENT_V2_MAX_UPLOAD_BYTES` | `536870912` | Per-upload limit |
+| `LOGAGENT_V2_MAX_CHUNK_BYTES` | `524288` | Per chunked-upload request limit, aligned with Rust/V1 defaults |
 | `LOGAGENT_V2_MAX_ARCHIVE_FILES` | `2000` | Maximum files scanned per archive |
 | `LOGAGENT_V2_MAX_ARCHIVE_BYTES` | `268435456` | Maximum aggregate extracted text bytes |
 | `LOGAGENT_V2_MAX_TEXT_FILE_BYTES` | `16777216` | Maximum single text file size |
@@ -975,12 +976,13 @@ Workspace uploads. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
 detaches an upload only before any task run exists; the Upload row and artifact
 remain stored. Native Agent V2 mode uses these Session-scoped upload APIs, so
 browser imports do not require Chrome Extension code changes.
-remain available for explicit tool runs.
 
 Chunked uploads persist session state in SQLite and temporary bytes under
-`data_dir/tmp/upload_sessions`. Completion validates received size, converts the
-temp file into a regular artifact, creates an Upload row, and marks the session
-completed.
+`data_dir/tmp/upload_sessions`. Each chunk request is bounded by
+`LOGAGENT_V2_MAX_CHUNK_BYTES`, total received bytes are bounded by
+`LOGAGENT_V2_MAX_UPLOAD_BYTES`, and completion validates received size, converts
+the temp file into a regular artifact, creates an Upload row, and marks the
+session completed.
 
 ## Initial Evidence Pipeline
 

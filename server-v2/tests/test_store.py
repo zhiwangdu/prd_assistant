@@ -1886,6 +1886,62 @@ class StoreTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in sessions], [session_id])
             self.assertEqual(store.list_upload_sessions()[0]["id"], session_id)
 
+    def test_chunked_upload_rejects_chunk_over_configured_limit(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                max_chunk_bytes=5,
+                max_upload_bytes=100,
+            )
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "chunk limit",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+                store = client.app.state.store
+                created = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads/init",
+                    headers=headers,
+                    json={
+                        "filename": "chunked.log",
+                        "contentType": "text/plain",
+                        "sizeBytes": 10,
+                    },
+                )
+                self.assertEqual(created.status_code, 200, created.text)
+                session_id = created.json()["session"]["id"]
+
+                too_large = client.post(
+                    f"/api/v2/uploads/{session_id}/chunks?offset=0",
+                    headers={**headers, "Content-Type": "application/octet-stream"},
+                    content=b"123456",
+                )
+                self.assertEqual(too_large.status_code, 413, too_large.text)
+                self.assertIn("max_chunk_bytes", too_large.json()["detail"])
+                self.assertEqual(store.get_upload_session(session_id)["received_bytes"], 0)
+
+                accepted = client.post(
+                    f"/api/v2/uploads/{session_id}/chunks?offset=0",
+                    headers={**headers, "Content-Type": "application/octet-stream"},
+                    content=b"12345",
+                )
+                self.assertEqual(accepted.status_code, 200, accepted.text)
+                self.assertEqual(accepted.json()["session"]["received_bytes"], 5)
+
     def test_agent_runtime_uses_openai_compatible_provider(self) -> None:
         captured: dict[str, object] = {"payloads": []}
 
@@ -5291,6 +5347,21 @@ class StoreTests(unittest.TestCase):
                     os.environ[key] = value
         self.assertEqual(settings.grep_keywords, ("error", "select", "slow query"))
         self.assertEqual(settings.max_grep_matches, 321)
+
+    def test_settings_max_chunk_bytes_defaults_to_v1_limit_and_env_clamps(self) -> None:
+        defaults = Settings(data_dir=Path("/tmp/logagent-v2-test"), api_key="test")
+        self.assertEqual(defaults.max_chunk_bytes, 512 * 1024)
+        previous = os.environ.get("LOGAGENT_V2_MAX_CHUNK_BYTES")
+        try:
+            os.environ["LOGAGENT_V2_MAX_CHUNK_BYTES"] = "1234"
+            self.assertEqual(Settings.from_env().max_chunk_bytes, 1234)
+            os.environ["LOGAGENT_V2_MAX_CHUNK_BYTES"] = "0"
+            self.assertEqual(Settings.from_env().max_chunk_bytes, 1)
+        finally:
+            if previous is None:
+                os.environ.pop("LOGAGENT_V2_MAX_CHUNK_BYTES", None)
+            else:
+                os.environ["LOGAGENT_V2_MAX_CHUNK_BYTES"] = previous
 
     def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
         env_values = {

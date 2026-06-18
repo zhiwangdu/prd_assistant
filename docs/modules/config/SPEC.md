@@ -203,6 +203,10 @@ tools:
 - 配置有默认值，但示例文件必须展示推荐值。
 - `native_agent.state_path` 默认 `~/.logagent/native-agent-state.json`，用于保存当前活动 `sessionId`。
 - `server.max_concurrent_tasks` 默认 2，并发下限为 1。
+- Python V2 `LOGAGENT_V2_MAX_UPLOAD_BYTES` 默认 512MiB，限制单个上传总大小；
+  `LOGAGENT_V2_MAX_CHUNK_BYTES` 默认 512KiB，与 Rust/V1
+  `storage.max_chunk_bytes` 对齐，限制每次 chunked-upload request；非正值按
+  1 byte 下限裁剪。
 - `llm.provider` 默认 `stub`；真实 Provider 缺少 URL、模型名、API Key 或 CLI 路径环境变量时启动失败。V2 `LOGAGENT_V2_AGENT_PROVIDER` 只允许 `stub`、`openai_compatible`、`binary` 或 `claude_code`。
 - `llm.provider` 支持 `stub`、`openai_compatible`、预留的 `binary` 和 Claude Code CLI provider。
 - `llm.model_env` 配置后优先于 `llm.model`；对应环境变量缺失或模型名为空时启动失败。

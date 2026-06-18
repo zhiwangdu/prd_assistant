@@ -46,6 +46,7 @@ auth:
 storage:
   data_dir: "${LOGAGENT_APP_DIR}/data"
   max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
   max_files_per_task: 20
 
 skills:

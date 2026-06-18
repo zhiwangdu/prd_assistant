@@ -650,9 +650,11 @@ complete -> validate size, copy temp file to artifact store, create upload
 ```
 
 Session state is stored in SQLite, while partial bytes live under
-`tmp/upload_sessions/<session_id>/`. Completion marks the session `completed`
-with the resulting `upload_id` and `artifact_id`; repeated complete calls can
-return the completed session.
+`tmp/upload_sessions/<session_id>/`. Each chunk request is bounded by
+`LOGAGENT_V2_MAX_CHUNK_BYTES` before it is written, total received bytes remain
+bounded by `LOGAGENT_V2_MAX_UPLOAD_BYTES`, and completion marks the session
+`completed` with the resulting `upload_id` and `artifact_id`; repeated complete
+calls can return the completed session.
 
 Native Agent V2 mode uses `POST /api/v2/sessions/:session_id/uploads` for small
 imports and `POST /api/v2/sessions/:session_id/uploads/init` plus the upload

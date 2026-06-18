@@ -1174,14 +1174,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
         if session["status"] != "active":
             raise HTTPException(status_code=409, detail="upload session is not active")
-        data = await request.body()
+        data = bytearray()
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            data.extend(chunk)
+            if len(data) > settings.max_chunk_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"chunk size {len(data)} exceeds max_chunk_bytes "
+                        f"{settings.max_chunk_bytes}"
+                    ),
+                )
         if offset != session["received_bytes"]:
             raise HTTPException(
                 status_code=409,
                 detail=f"chunk offset {offset} does not match received_bytes "
                 f"{session['received_bytes']}",
             )
-        next_offset = offset + len(data)
+        chunk_bytes = bytes(data)
+        next_offset = offset + len(chunk_bytes)
         expected_size = session.get("expected_size_bytes")
         if expected_size is not None and next_offset > expected_size:
             raise HTTPException(status_code=400, detail="chunk exceeds expected upload size")
@@ -1191,7 +1204,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("r+b" if path.exists() else "wb") as target:
             target.seek(offset)
-            target.write(data)
+            target.write(chunk_bytes)
         session = store.update_upload_session_progress(session_id, next_offset)
         return {"session": session}
 

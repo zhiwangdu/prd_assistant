@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 Chunk Upload Limit Parity
+
+- Added `LOGAGENT_V2_MAX_CHUNK_BYTES` with the Rust/V1-aligned default of
+  512KiB and a 1-byte lower clamp for invalid non-positive env values.
+- V2 chunked upload requests now reject oversized individual chunks with 413
+  before advancing upload-session `received_bytes`; the existing total
+  `LOGAGENT_V2_MAX_UPLOAD_BYTES` and expected-size checks remain in force.
+- Added HTTP regression coverage for oversized chunk rejection and config
+  coverage for default/env/clamp behavior.
+- Updated Server V2 and Config docs for the new per-chunk boundary.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py logagent_v2/config.py tests/test_store.py`, focused
+  chunk/config pytest, full `cd server-v2 && .venv/bin/python -m pytest -q`,
+  and `git diff --check`.
+
 ## 2026-06-18 Server V2 Case Legacy JSON Parity
 
 - V2 Case Memory now imports `LOGAGENT_V2_DATA_DIR/cases/*.json` schema v2
