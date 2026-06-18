@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Executor Route Aliases
+
+- Mounted Rust/V1-style `/api/executors`, `/api/executor-command-templates`,
+  `/api/executor-file-templates`, and `/api/executor-runs...` aliases in V2.
+- The aliases share the existing V2 Remote Executor handlers for executor
+  CRUD, command/file template listing, run create/list/detail, result reads,
+  and run file downloads.
+- Added HTTP regression coverage for legacy executor CRUD aliases, command/file
+  template aliases, executor-run create/list/detail/result aliases, and result
+  file aliases against the queued fake SSH runner.
+- Updated Server V2 README/SPEC for the Rust/V1-style Executor route aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused remote executor alias
+  pytest, full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Rust/V1 Fetch Route Aliases
 
 - Mounted Rust/V1-style `/api/fetch...` aliases in V2 for cURL import preview,

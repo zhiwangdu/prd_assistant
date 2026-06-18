@@ -1986,10 +1986,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def get_domain_adapters(_: Auth) -> dict:
         return {"domainAdapters": domain_adapter_summaries()}
 
+    @app.get("/api/executors")
     @app.get("/api/v2/executors")
     async def list_executors(_: Auth) -> dict:
         return {"executors": store.list_remote_executors()}
 
+    @app.post("/api/executors", status_code=201)
     @app.post("/api/v2/executors", status_code=201)
     async def create_executor(_: Auth, payload: RemoteExecutorCreate) -> dict:
         try:
@@ -1997,6 +1999,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/executors/{executor_id}")
     @app.get("/api/v2/executors/{executor_id}")
     async def get_executor(_: Auth, executor_id: str) -> dict:
         try:
@@ -2004,6 +2007,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.patch("/api/executors/{executor_id}")
     @app.patch("/api/v2/executors/{executor_id}")
     async def patch_executor(_: Auth, executor_id: str, payload: RemoteExecutorUpdate) -> dict:
         try:
@@ -2016,6 +2020,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.delete("/api/executors/{executor_id}")
     @app.delete("/api/v2/executors/{executor_id}")
     async def delete_executor(_: Auth, executor_id: str) -> dict:
         try:
@@ -2023,6 +2028,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/executor-command-templates")
     @app.get("/api/v2/executor-command-templates")
     async def list_executor_command_templates(_: Auth) -> dict:
         return {
@@ -2030,6 +2036,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "commands": command_templates(settings),
         }
 
+    @app.get("/api/executor-file-templates")
     @app.get("/api/v2/executor-file-templates")
     async def list_executor_file_templates(_: Auth) -> dict:
         return {
@@ -2037,6 +2044,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "files": file_templates(settings),
         }
 
+    @app.get("/api/executor-runs")
     @app.get("/api/v2/executor-runs")
     async def list_executor_runs(
         _: Auth,
@@ -2045,6 +2053,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict:
         return {"runs": compact_remote_runs(store.list_remote_runs(executorId, limit))}
 
+    @app.post("/api/executor-runs", status_code=202)
     @app.post("/api/v2/executor-runs", status_code=202)
     async def create_executor_run(_: Auth, payload: RemoteRunCreate) -> dict:
         if not settings.remote_execution_enabled:
@@ -2075,6 +2084,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
+    @app.get("/api/executor-runs/{run_id}")
     @app.get("/api/v2/executor-runs/{run_id}")
     async def get_executor_run(_: Auth, run_id: str) -> dict:
         try:
@@ -2082,6 +2092,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/executor-runs/{run_id}/result")
     @app.get("/api/v2/executor-runs/{run_id}/result")
     async def get_executor_run_result(_: Auth, run_id: str) -> dict:
         try:
@@ -2098,6 +2109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return run["result"]
 
+    @app.get("/api/executor-runs/{run_id}/files/{file_name}")
     @app.get("/api/v2/executor-runs/{run_id}/files/{file_name}")
     async def get_executor_run_file(_: Auth, run_id: str, file_name: str):
         try:

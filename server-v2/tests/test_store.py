@@ -15213,8 +15213,65 @@ grep_results.json#matches/0
 
             headers = {"Authorization": "Bearer test"}
             with TestClient(create_app(settings)) as client:
+                legacy_executors = client.get("/api/executors", headers=headers)
+                self.assertEqual(legacy_executors.status_code, 200)
+                self.assertEqual(
+                    legacy_executors.json()["executors"][0]["executorId"],
+                    executor["executorId"],
+                )
+
+                alias_executor = client.post(
+                    "/api/executors",
+                    headers=headers,
+                    json={
+                        "name": "api fake",
+                        "host": "127.0.0.2",
+                        "port": 2223,
+                        "user": "admin",
+                        "tags": ["alias"],
+                        "enabled": True,
+                    },
+                )
+                self.assertEqual(alias_executor.status_code, 201, alias_executor.text)
+                alias_executor_id = alias_executor.json()["executorId"]
+                alias_executor_detail = client.get(
+                    f"/api/executors/{alias_executor_id}",
+                    headers=headers,
+                )
+                self.assertEqual(alias_executor_detail.status_code, 200)
+                self.assertEqual(alias_executor_detail.json()["name"], "api fake")
+                alias_executor_patch = client.patch(
+                    f"/api/executors/{alias_executor_id}",
+                    headers=headers,
+                    json={"notes": "patched by alias"},
+                )
+                self.assertEqual(alias_executor_patch.status_code, 200)
+                self.assertEqual(alias_executor_patch.json()["notes"], "patched by alias")
+                alias_executor_delete = client.delete(
+                    f"/api/executors/{alias_executor_id}",
+                    headers=headers,
+                )
+                self.assertEqual(alias_executor_delete.status_code, 200)
+                self.assertFalse(alias_executor_delete.json()["enabled"])
+
+                command_templates_response = client.get(
+                    "/api/executor-command-templates",
+                    headers=headers,
+                )
+                self.assertEqual(command_templates_response.status_code, 200)
+                self.assertEqual(
+                    command_templates_response.json()["commands"][0]["commandId"],
+                    "smoke_ls_root",
+                )
+                file_templates_response = client.get(
+                    "/api/executor-file-templates",
+                    headers=headers,
+                )
+                self.assertEqual(file_templates_response.status_code, 200)
+                self.assertIn("files", file_templates_response.json())
+
                 created_again = client.post(
-                    "/api/v2/executor-runs",
+                    "/api/executor-runs",
                     headers=headers,
                     json={
                         "executorId": executor["executorId"],
@@ -15232,13 +15289,13 @@ grep_results.json#matches/0
                 self.assertEqual(created_body["analysisMode"], "diagnose")
                 self.assertEqual(created_body["analysisLanguage"], "zh-CN")
 
-                listed = client.get("/api/v2/executor-runs", headers=headers)
+                listed = client.get("/api/executor-runs", headers=headers)
                 self.assertEqual(listed.status_code, 200)
                 self.assertEqual(listed.json()["runs"][0]["taskId"], run["taskId"])
                 self.assertEqual(listed.json()["runs"][0]["runId"], run["taskId"])
 
                 detail = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}",
+                    f"/api/executor-runs/{run['taskId']}",
                     headers=headers,
                 )
                 self.assertEqual(detail.status_code, 200)
@@ -15247,7 +15304,7 @@ grep_results.json#matches/0
                 self.assertEqual(detail.json()["remoteExecutorId"], executor["executorId"])
 
                 pending_result = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/result",
+                    f"/api/executor-runs/{run['taskId']}/result",
                     headers=headers,
                 )
                 self.assertEqual(pending_result.status_code, 409)
@@ -15267,7 +15324,7 @@ grep_results.json#matches/0
 
             with TestClient(create_app(settings)) as client:
                 wrapped_result = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/result",
+                    f"/api/executor-runs/{run['taskId']}/result",
                     headers=headers,
                 )
                 self.assertEqual(wrapped_result.status_code, 200)
@@ -15279,25 +15336,25 @@ grep_results.json#matches/0
                 self.assertEqual(wrapped_body["result"]["status"], "OK")
 
                 result_response = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/files/result",
+                    f"/api/executor-runs/{run['taskId']}/files/result",
                     headers=headers,
                 )
                 self.assertEqual(result_response.status_code, 200)
                 self.assertEqual(result_response.json()["commandId"], "smoke_ls_root")
                 stdout_response = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/files/stdout",
+                    f"/api/executor-runs/{run['taskId']}/files/stdout",
                     headers=headers,
                 )
                 self.assertEqual(stdout_response.status_code, 200)
                 self.assertIn("root@127.0.0.1", stdout_response.text)
                 stderr_response = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/files/stderr",
+                    f"/api/executor-runs/{run['taskId']}/files/stderr",
                     headers=headers,
                 )
                 self.assertEqual(stderr_response.status_code, 200)
                 self.assertEqual(stderr_response.text, "")
                 bad_response = client.get(
-                    f"/api/v2/executor-runs/{run['taskId']}/files/secret",
+                    f"/api/executor-runs/{run['taskId']}/files/secret",
                     headers=headers,
                 )
                 self.assertEqual(bad_response.status_code, 404)

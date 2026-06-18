@@ -566,6 +566,18 @@ POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id
 GET  /api/v2/executor-runs/:run_id/result
 GET  /api/v2/executor-runs/:run_id/files/:file_name
+GET  /api/executors
+POST /api/executors
+GET  /api/executors/:executor_id
+PATCH /api/executors/:executor_id
+DELETE /api/executors/:executor_id
+GET  /api/executor-command-templates
+GET  /api/executor-file-templates
+GET  /api/executor-runs
+POST /api/executor-runs
+GET  /api/executor-runs/:run_id
+GET  /api/executor-runs/:run_id/result
+GET  /api/executor-runs/:run_id/files/:file_name
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -689,9 +701,12 @@ available in V2.
 
 V2 Remote Executor APIs live under `/api/v2/executors`,
 `/api/v2/executor-command-templates`, `/api/v2/executor-file-templates`, and
-`/api/v2/executor-runs`. Executors are stored in SQLite with host, port, SSH
-user, tags, notes, enabled state, and timestamps. Deleting an executor disables
-it instead of removing historical run records. Executor run create/list/get
+`/api/v2/executor-runs`. Rust/V1-style `/api/executors`,
+`/api/executor-command-templates`, `/api/executor-file-templates`, and
+`/api/executor-runs` aliases share the same handlers. Executors are stored in
+SQLite with host, port, SSH user, tags, notes, enabled state, and timestamps.
+Deleting an executor disables it instead of removing historical run records.
+Executor run create/list/get
 responses expose Rust/V1 TaskResponse-compatible summary fields including
 `taskId`, `runId`, `url`, `taskKind=remote_command_run`, `sessionId=null`,
 `analysisMode=diagnose`, `analysisLanguage=zh-CN`, `status`, `phase`, and

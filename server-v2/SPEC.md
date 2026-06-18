@@ -499,6 +499,18 @@ POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id
 GET  /api/v2/executor-runs/:run_id/result
 GET  /api/v2/executor-runs/:run_id/files/:file_name
+GET  /api/executors
+POST /api/executors
+GET  /api/executors/:executor_id
+PATCH /api/executors/:executor_id
+DELETE /api/executors/:executor_id
+GET  /api/executor-command-templates
+GET  /api/executor-file-templates
+GET  /api/executor-runs
+POST /api/executor-runs
+GET  /api/executor-runs/:run_id
+GET  /api/executor-runs/:run_id/result
+GET  /api/executor-runs/:run_id/files/:file_name
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
 GET  /api/v2/metadata/instances
@@ -1582,6 +1594,9 @@ remote command smoke runner. They are not a full Environment Collector.
 
 - Executors are stored in SQLite with `executorId`, name, host, port, SSH user,
   tags, notes, enabled state, and timestamps.
+- Rust/V1-style `/api/executors`, `/api/executor-command-templates`,
+  `/api/executor-file-templates`, and `/api/executor-runs` aliases share the
+  same V2 handlers as their `/api/v2/...` counterparts.
 - `DELETE /api/v2/executors/:executor_id` disables an executor; it does not
   delete historical run records.
 - Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`. If
