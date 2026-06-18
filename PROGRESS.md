@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Preprocess Tool Result View
+
+- V2 Tools Workbench now renders successful
+  `logagent.preprocess_log_package` manual `tool_run` results with a dedicated
+  structured view instead of only raw JSON.
+- The preprocess view shows status, summary, upload/file/node/tool input
+  counts, result/manifest/grep/tool_inputs logical paths, log group summary,
+  node aggregation, materialized tool input index, warnings, and raw JSON.
+- Updated WebUI README/SPEC so built-in preprocess result rendering is part of
+  the V2 Tools product contract.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI Source Analyzer Exists Badge
 
 - V2 Tools source-built analyzer cards now show command existence separately

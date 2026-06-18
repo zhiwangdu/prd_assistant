@@ -46,6 +46,49 @@ type V2PprofResult = {
   createdAt?: string | null;
 };
 
+type V2PreprocessLogGroupSummary = {
+  fileCount?: number | null;
+  compressedFileCount?: number | null;
+};
+
+type V2PreprocessNode = {
+  nodeId?: string | null;
+  packages?: number | null;
+  instanceIds?: unknown[];
+  timestamps?: unknown[];
+  logGroups?: Record<string, V2PreprocessLogGroupSummary>;
+  ignoredFileCount?: number | null;
+  warnings?: unknown[];
+};
+
+type V2PreprocessToolInput = {
+  path?: string | null;
+  inputKind?: string | null;
+  scope?: string | null;
+  recordCount?: number | null;
+  toolIds?: unknown[];
+};
+
+type V2PreprocessResult = {
+  schemaVersion?: number;
+  toolId: "logagent.preprocess_log_package";
+  actionId?: string;
+  status?: string | null;
+  summary?: string | null;
+  manifestPath?: string | null;
+  grepResultsPath?: string | null;
+  toolInputsPath?: string | null;
+  uploadCount?: number | null;
+  fileCount?: number | null;
+  nodes: V2PreprocessNode[];
+  logGroups?: Record<string, number>;
+  warnings?: unknown[];
+  toolInputs?: V2PreprocessToolInput[];
+  toolInputIndex?: V2PreprocessToolInput[];
+  durationMs?: number | null;
+  createdAt?: string | null;
+};
+
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
@@ -560,10 +603,133 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
 }
 
 function ManualToolResult({ result, resultPath, resultText, toolId }: { result: Record<string, unknown>; resultPath: string; resultText: string; toolId: string }) {
+  if (toolId === "logagent.preprocess_log_package" && isPreprocessResult(result)) {
+    return <V2PreprocessResultView result={result} resultPath={resultPath} />;
+  }
   if (toolId === "pprof_analyzer" && isPprofResult(result)) {
     return <V2PprofResultView result={result} resultPath={resultPath} />;
   }
   return <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre>;
+}
+
+function V2PreprocessResultView({ result, resultPath }: { result: V2PreprocessResult; resultPath: string }) {
+  const toolInputs = result.toolInputIndex ?? result.toolInputs ?? [];
+  const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
+  const nodeWarnings = result.nodes.flatMap((node) => (node.warnings ?? []).map((warning) => String(warning)).filter(Boolean));
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">preprocess result</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? "logagent.preprocess_log_package"}</p>
+          {result.summary ? <p className="mt-2 text-sm text-muted-foreground">{result.summary}</p> : null}
+        </div>
+        <Badge variant={result.status === "OK" ? "success" : result.status === "FAILED" ? "destructive" : "secondary"}>{result.status ?? "unknown"}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-5">
+        <Metric label="Uploads" value={String(result.uploadCount ?? 0)} />
+        <Metric label="Files" value={String(result.fileCount ?? 0)} />
+        <Metric label="Nodes" value={String(result.nodes.length)} />
+        <Metric label="Tool inputs" value={String(toolInputs.length)} />
+        <Metric label="Duration" value={typeof result.durationMs === "number" ? `${result.durationMs}ms` : "-"} />
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <ArtifactPath label="Result JSON" value={resultPath} />
+        <ArtifactPath label="Manifest" value={result.manifestPath} />
+        <ArtifactPath label="Grep results" value={result.grepResultsPath} />
+        <ArtifactPath label="Tool inputs" value={result.toolInputsPath} />
+      </div>
+      {warnings.length || nodeWarnings.length ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{[...warnings, ...nodeWarnings].join(" · ")}</div>
+      ) : null}
+      <PreprocessLogGroupSummary logGroups={result.logGroups ?? {}} />
+      <PreprocessNodeTable nodes={result.nodes} />
+      <PreprocessToolInputTable inputs={toolInputs} />
+      <JsonBlock title="raw result" value={result} />
+    </div>
+  );
+}
+
+function PreprocessLogGroupSummary({ logGroups }: { logGroups: Record<string, number> }) {
+  const entries = Object.entries(logGroups).sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return null;
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Log groups</p>
+        <Badge variant="secondary">{entries.length}</Badge>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {entries.map(([name, count]) => (
+          <span className="rounded-md border border-border bg-slate-50 px-2 py-1 font-mono text-xs" key={name}>{name}: {count}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PreprocessNodeTable({ nodes }: { nodes: V2PreprocessNode[] }) {
+  return (
+    <div className="max-h-[340px] overflow-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr>
+            <th className="px-3 py-2">Node</th>
+            <th className="px-3 py-2">Packages</th>
+            <th className="px-3 py-2">Instance</th>
+            <th className="px-3 py-2">Timestamp</th>
+            <th className="px-3 py-2">Ignored</th>
+            <th className="px-3 py-2">Log groups</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nodes.length ? nodes.map((node, index) => (
+            <tr className="border-t border-border" key={`${node.nodeId ?? "node"}:${index}`}>
+              <td className="px-3 py-2 font-mono text-xs">{node.nodeId ?? "-"}</td>
+              <td className="px-3 py-2">{node.packages ?? 0}</td>
+              <td className="px-3 py-2 font-mono text-xs">{stringList(node.instanceIds).join(", ") || "-"}</td>
+              <td className="px-3 py-2 font-mono text-xs">{stringList(node.timestamps).join(", ") || "-"}</td>
+              <td className="px-3 py-2">{node.ignoredFileCount ?? 0}</td>
+              <td className="px-3 py-2 text-xs">{formatNodeLogGroups(node.logGroups ?? {})}</td>
+            </tr>
+          )) : (
+            <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={6}>No node package summaries.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PreprocessToolInputTable({ inputs }: { inputs: V2PreprocessToolInput[] }) {
+  return (
+    <div className="max-h-[420px] overflow-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr>
+            <th className="px-3 py-2">Kind</th>
+            <th className="px-3 py-2">Scope</th>
+            <th className="px-3 py-2">Records</th>
+            <th className="px-3 py-2">Tool IDs</th>
+            <th className="px-3 py-2">Path</th>
+          </tr>
+        </thead>
+        <tbody>
+          {inputs.length ? inputs.map((input, index) => (
+            <tr className="border-t border-border" key={`${input.path ?? "input"}:${index}`}>
+              <td className="px-3 py-2 font-mono text-xs">{input.inputKind ?? "-"}</td>
+              <td className="px-3 py-2">{input.scope ?? "-"}</td>
+              <td className="px-3 py-2">{input.recordCount ?? 0}</td>
+              <td className="px-3 py-2 font-mono text-xs">{stringList(input.toolIds).join(", ") || "-"}</td>
+              <td className="px-3 py-2 break-all font-mono text-xs">{input.path ?? "-"}</td>
+            </tr>
+          )) : (
+            <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={5}>No materialized tool inputs.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function V2PprofResultView({ result, resultPath }: { result: V2PprofResult; resultPath: string }) {
@@ -744,6 +910,22 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 function isPprofResult(value: unknown): value is V2PprofResult {
   if (!isJsonObject(value)) return false;
   return value.toolId === "pprof_analyzer" && Array.isArray(value.top) && isJsonObject(value.artifacts);
+}
+
+function isPreprocessResult(value: unknown): value is V2PreprocessResult {
+  if (!isJsonObject(value)) return false;
+  return value.toolId === "logagent.preprocess_log_package" && Array.isArray(value.nodes);
+}
+
+function stringList(value: unknown[] | undefined) {
+  return (value ?? []).map((item) => String(item)).filter(Boolean);
+}
+
+function formatNodeLogGroups(value: Record<string, V2PreprocessLogGroupSummary>) {
+  return Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, group]) => `${name} ${group.fileCount ?? 0}/${group.compressedFileCount ?? 0}`)
+    .join(", ") || "-";
 }
 
 function formatPercent(value?: number | null) {
