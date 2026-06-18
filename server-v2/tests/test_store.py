@@ -3778,6 +3778,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["totalMatches"], 1)
             self.assertEqual(payload["keywordCounts"]["cache"], 1)
             self.assertEqual(payload["unmatchedKeywords"], [])
+            self.assertEqual(payload["matches"][0]["index"], 0)
             self.assertEqual(payload["matches"][0]["evidenceRef"], payload["search"]["matches"][0]["ref"])
             self.assertEqual(payload["matches"][0]["file"], "extracted/query/query.log")
             self.assertEqual(payload["matches"][0]["line"], payload["search"]["matches"][0]["lineNumber"])

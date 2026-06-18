@@ -172,7 +172,8 @@ Implemented in this slice:
   with V2 fields (`path`, `lineNumber`, `ref`) plus Rust/V1 aliases (`file`,
   `line`, `evidenceRef`). The response preserves the V2 nested `search` object and also exposes
   Rust-compatible top-level `artifactPath`, `totalMatches`, `keywordCounts`,
-  `unmatchedKeywords`, `matches`, `evidenceRefs`, and `note` fields.
+  `unmatchedKeywords`, `matches`, `evidenceRefs`, and `note` fields; top-level
+  `matches[]` includes the Rust/V1-compatible `index` field.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current
   Workspace text path and persists `log_slice` evidence. It accepts the V2
   center-line form `lineNumber` plus optional `before`/`after`, and the

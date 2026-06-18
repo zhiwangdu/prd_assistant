@@ -522,8 +522,9 @@ def search_logs_tool_payload(result: JsonObject) -> JsonObject:
     search = result["search"]
     matches = []
     evidence_refs = []
-    for item in search.get("matches", []):
+    for index, item in enumerate(search.get("matches", [])):
         match = dict(item)
+        match.setdefault("index", index)
         ref = match.get("ref")
         if isinstance(ref, str):
             evidence_refs.append(ref)

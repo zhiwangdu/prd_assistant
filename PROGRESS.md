@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Search Logs Match Index Parity
+
+- Added Rust/V1-compatible `index` to top-level
+  `logagent.search_logs` MCP response `matches[]` entries while leaving
+  persisted `log_searches/*.json` artifacts unchanged.
+- Extended task MCP regression coverage for the top-level match index.
+- Updated V2 Server and Log Analyzer docs.
+- Verification passed: focused search_logs pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Manifest Source URL and Tool Input Generator Parity
 
 - Added Rust/V1-compatible `sourceUrl` to V2 `manifest.json` artifacts for both

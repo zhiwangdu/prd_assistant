@@ -47,7 +47,7 @@ error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify
 
 Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 
-它同时是 Analysis Orchestrator 的日志证据提供方。除初始关键词扫描外，还支持 Server 根据 Claude MCP `logagent.search_logs` 发起受限的后续检索；检索范围只能位于当前 task workspace。后续检索不会覆盖初始 `grep_results.json`，而是写入稳定 `log_searches/logsearch_*.json` 并返回命中行正文、按关键词计数、未命中关键词和 Rust/V1 兼容的顶层 evidence refs，避免模型只根据计数误判异常类型。
+它同时是 Analysis Orchestrator 的日志证据提供方。除初始关键词扫描外，还支持 Server 根据 Claude MCP `logagent.search_logs` 发起受限的后续检索；检索范围只能位于当前 task workspace。后续检索不会覆盖初始 `grep_results.json`，而是写入稳定 `log_searches/logsearch_*.json` 并返回命中行正文、按关键词计数、未命中关键词、Rust/V1 兼容的顶层 `matches[].index` 和 evidence refs，避免模型只根据计数误判异常类型。
 
 核心产物：
 
