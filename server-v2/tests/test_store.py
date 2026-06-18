@@ -12157,7 +12157,7 @@ fi
             default_readonly_body = json.loads(
                 default_readonly_cases["result"]["content"][0]["text"]
             )
-            self.assertEqual(default_readonly_body["caseCount"], 20)
+            self.assertEqual(default_readonly_body["caseCount"], 5)
 
             readonly_cases = readonly_mcp_response(
                 settings,

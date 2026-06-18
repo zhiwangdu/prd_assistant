@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Readonly Case Search Default Correction
+
+- Corrected V2 readonly MCP `logagent.search_cases` default limit to the
+  Rust/V1 value of 5 while preserving the 1..50 clamp.
+- Kept `logagent://cases/recent` on the separate Rust/V1 default of 20 recent
+  enabled Cases and task MCP `logagent.recall_cases` on default 5 with a 1..20
+  clamp.
+- Updated Case MCP regression expectations and V2 Server / Case Store docs.
+- Verification passed: focused Case MCP limit pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 162 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Huawei OBS URL Parity
 
 - Aligned V2 Huawei package sync OBS object URL generation with Rust/V1
@@ -32,7 +45,7 @@ Last updated: 2026-06-18
 ## 2026-06-18 V2 Case MCP Default Limit Parity
 
 - Aligned V2 readonly MCP `logagent.search_cases` default limit with Rust/V1:
-  omitted `limit` now returns up to 20 Cases while preserving the 1..50 clamp.
+  omitted `limit` now returns up to 5 Cases while preserving the 1..50 clamp.
 - Kept task MCP `logagent.recall_cases` on the Rust/V1 task default of 5 and
   the 1..20 clamp.
 - Extended Case MCP limit regression coverage for omitted readonly search and

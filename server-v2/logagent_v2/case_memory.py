@@ -481,7 +481,7 @@ def call_case_tool(
         is_recall = name == "logagent.recall_cases"
         limit = case_tool_limit(
             arguments.get("limit"),
-            default=5 if is_recall else 20,
+            default=5,
             maximum=20 if is_recall else 50,
         )
         value = {
