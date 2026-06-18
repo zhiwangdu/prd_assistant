@@ -1125,8 +1125,9 @@ the endpoint and runtime params, reuses a provided `workspaceId`, or creates an
 isolated workspace when no workspace is provided.
 Task MCP `logagent.fetch` must derive a deterministic Rust/V1-style
 `act_fetch_<digest>` action id from normalized params so repeated identical MCP
-calls produce the same logical response evidence ref. API/manual Fetch tool
-runs may keep fresh action ids per execution. The task MCP response must keep
+calls produce the same logical response evidence ref. Queued API/manual Fetch
+`tool_run` executions must use the Rust/V1 `act_fetch_<run_id>` action id. The
+task MCP response must keep
 the V2 `result` / `artifact` / `evidence` objects and also expose the Rust/V1
 top-level `artifactPath`, `statusCode`, `httpOk`, `bodyPreview`, and
 `evidenceRefs` fields.

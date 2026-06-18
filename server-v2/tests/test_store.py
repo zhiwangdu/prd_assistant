@@ -8911,6 +8911,30 @@ fi
                     '"body": "password=runtime-secret&keep=override"',
                     body_path.read_text(encoding="utf-8"),
                 )
+
+                manual_run = store.create_tool_run(
+                    workspace_id=workspace["id"],
+                    tool_id="logagent.fetch",
+                    params={
+                        "endpointId": endpoint["id"],
+                        "variables": {
+                            "instance": "i002",
+                            "token": "manual-secret",
+                        },
+                    },
+                )
+                manual_executed = execute_tool_run(settings, store, manual_run["id"])
+                manual_result = manual_executed["result"]
+                manual_action_id = f"act_fetch_{manual_run['id']}"
+                self.assertEqual(manual_result["actionId"], manual_action_id)
+                self.assertEqual(
+                    manual_result["bodyArtifactPath"],
+                    f"tool_results/{manual_action_id}/response_body.bin",
+                )
+                self.assertEqual(
+                    manual_result["evidenceRefs"],
+                    [f"tool_results/{manual_action_id}/result.json#response"],
+                )
         finally:
             server.shutdown()
             server.server_close()

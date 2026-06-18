@@ -1211,8 +1211,8 @@ Task MCP `logagent.fetch` uses a deterministic Rust/V1-style
 same-parameter calls produce the same logical `result.json#response` evidence
 ref. Its response keeps the V2 `result` / `artifact` / `evidence` objects and
 also exposes the Rust/V1 top-level `artifactPath`, `statusCode`, `httpOk`,
-`bodyPreview`, and `evidenceRefs` fields. Protected API and manual tool runs
-still create a fresh action id per run.
+`bodyPreview`, and `evidenceRefs` fields. Queued API/manual Fetch `tool_run`
+executions use the Rust/V1 `act_fetch_<run_id>` action id.
 Saved endpoint bodies and runtime body overrides are rejected before the HTTP
 request when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.

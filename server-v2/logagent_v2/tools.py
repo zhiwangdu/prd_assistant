@@ -644,6 +644,7 @@ def execute_tool_by_id(
             run_id=run["id"],
             endpoint_id=run_params["endpointId"],
             run_params=run_params,
+            action_id=f"act_fetch_{run['id']}",
         )
     if tool_id == HUAWEI_PACKAGE_SYNC_TOOL_ID:
         return run_huawei_package_sync_tool(settings, store, run, params)

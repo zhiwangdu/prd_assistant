@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Manual Action ID Parity
+
+- Aligned queued/manual V2 Fetch `tool_run` execution with Rust/V1
+  `act_fetch_<run_id>` action ids.
+- Preserved Task MCP Fetch behavior: normalized params still produce stable
+  `act_fetch_<digest>` ids for repeated same-parameter calls inside one run.
+- Added regression assertions that manual Fetch result `bodyArtifactPath` and
+  `evidenceRefs` use the `act_fetch_<run_id>` logical path.
+- Updated V2 Server and Tool Runner docs.
+- Verification passed: focused Fetch runtime pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Metadata Tool Action ID Parity
 
 - Aligned V2 manual metadata tool action ids with Rust/V1:
