@@ -781,10 +781,12 @@ def materialize_node_package_influxql_inputs(
                 {
                     "query": query,
                     "sourcePath": text_file.path,
+                    "line": line_number,
                     "lineNumber": line_number,
                     "nodeId": node_id,
                     "instanceId": instance_id or None,
                     "packageTimestamp": timestamp,
+                    "logGroup": "tsdb",
                 }
             )
             grouped_sources[key].add(text_file.path)

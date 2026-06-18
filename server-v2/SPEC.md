@@ -650,8 +650,10 @@ tools unless a future tool explicitly declares that input kind.
 
 For node package `tsdb` logs, V2 extracts JSON lines with a string `query`,
 `sql`, or `statement` field and raw lines that look like InfluxQL statements.
-Those records are written to `influxql_analyzer` JSONL artifacts. The
-corresponding `tool_inputs/index.json` artifact uses entries like:
+Those records are written to `influxql_analyzer` JSONL artifacts. Each record
+keeps the Rust/V1 `line` and `logGroup` fields, while retaining V2's additive
+`lineNumber` alias for existing consumers. The corresponding
+`tool_inputs/index.json` artifact uses entries like:
 
 ```json
 {

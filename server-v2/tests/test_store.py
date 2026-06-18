@@ -6490,6 +6490,16 @@ fi
             self.assertEqual(entry["toolIds"], ["influxql_analyzer"])
             self.assertEqual(entry["recordCount"], 1)
             self.assertTrue(entry["path"].startswith("tool_inputs/influxql_analyzer/NodeB/"))
+            influx_input_artifact = store.get_artifact(entry["artifactId"])
+            influx_input_path = resolve_artifact_path(
+                settings, influx_input_artifact["relative_path"]
+            )
+            influx_record = json.loads(
+                influx_input_path.read_text(encoding="utf-8").splitlines()[0]
+            )
+            self.assertEqual(influx_record["line"], 1)
+            self.assertEqual(influx_record["lineNumber"], 1)
+            self.assertEqual(influx_record["logGroup"], "tsdb")
 
             tool_response = task_mcp_response(
                 settings,

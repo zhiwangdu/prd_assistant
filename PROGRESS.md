@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 InfluxQL Tool Input Record Parity
+
+- Aligned V2 node-package `influxql_analyzer` JSONL records with Rust/V1 by
+  adding `line` and `logGroup` while keeping the existing additive
+  `lineNumber` alias.
+- Added regression coverage that reads the materialized analyzer JSONL artifact
+  and validates the compatibility fields.
+- Updated V2 Server and Log Analyzer SPEC docs.
+- Verification passed: focused materialized tool input pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest`
+  with 154 passed and 1 Starlette warning.
+
 ## 2026-06-18 V2 Log Text Tool Input Parity
 
 - Added V2 materialization for Rust/V1-style node-package `log_text_jsonl`
