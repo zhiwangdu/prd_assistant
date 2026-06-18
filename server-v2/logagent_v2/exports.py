@@ -174,7 +174,7 @@ def tool_config_example(tool: ToolDefinition, binary_filename: object) -> str:
     if tool.id == PPROF_ANALYZER_ID:
         return pprof_config_example(binary_filename)
     packaged_path = (
-        f"./bin/{safe_zip_segment(tool.id)}/{binary_filename}"
+        f"/absolute/path/to/extracted/tools/bin/{safe_zip_segment(tool.id)}/{binary_filename}"
         if isinstance(binary_filename, str)
         else "<absolute path to executable>"
     )

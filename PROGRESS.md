@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tools Zip Configured Tool Absolute Examples
+
+- Updated generic configured tool examples in `tools.zip` to use absolute
+  command path placeholders instead of `./bin/...` relative paths.
+- This matches V2 startup validation for enabled `LOGAGENT_V2_TOOLS_JSON`
+  tools, which requires commands to resolve to absolute paths before registry
+  load, export, or execution.
+- Updated V2 Server and Tool Runner docs plus export-package regression
+  assertions.
+- Verification passed: focused `tools_zip` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Tools Zip Pprof Absolute Path Example
 
 - Updated `tools.zip` generated `config/examples/pprof_analyzer.yaml` to use

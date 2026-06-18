@@ -1158,13 +1158,14 @@ The archive contains `README.md`, `tools-manifest.json`, executable files under
 `config/examples/`. Missing, relative, non-file, or non-executable tool
 commands are kept in the manifest with `skipped=true`; disabled tools and
 built-in tools without standalone executables are omitted. Generic subprocess
-tool examples are `LOGAGENT_V2_TOOLS_JSON` snippets; the `pprof_analyzer`
-example instead documents `LOGAGENT_V2_PPROF_GO_COMMAND`, because V2 must
-invoke the packaged Go executable as `go tool pprof` rather than as a raw
-subprocess tool. The pprof example uses an absolute path placeholder because
-enabled V2 pprof configuration rejects relative Go command paths. The export
-does not include API keys, endpoint credentials, runtime environment values,
-uploads, artifacts, or workspace data.
+tool examples are `LOGAGENT_V2_TOOLS_JSON` snippets with absolute command path
+placeholders; the `pprof_analyzer` example instead documents
+`LOGAGENT_V2_PPROF_GO_COMMAND`, because V2 must invoke the packaged Go
+executable as `go tool pprof` rather than as a raw subprocess tool. The
+examples use absolute path placeholders because enabled V2 tool and pprof
+configuration rejects relative executable paths. The export does not include
+API keys, endpoint credentials, runtime environment values, uploads, artifacts,
+or workspace data.
 
 Fetch endpoints are configured through the protected HTTP API or imported from
 DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and

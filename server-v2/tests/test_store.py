@@ -12522,6 +12522,12 @@ grep_results.json#matches/0
                 self.assertIn("config/examples/missing_tool.yaml", names)
                 self.assertNotIn("bin/missing_tool/missing-tool", names)
                 self.assertNotIn("config/examples/disabled_tool.yaml", names)
+                fake_example = archive.read("config/examples/fake_tool.yaml").decode("utf-8")
+                self.assertIn(
+                    "/absolute/path/to/extracted/tools/bin/fake_tool/fake-tool",
+                    fake_example,
+                )
+                self.assertNotIn("./bin/fake_tool/fake-tool", fake_example)
                 manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))
 
             tools = {item["toolId"]: item for item in manifest["tools"]}

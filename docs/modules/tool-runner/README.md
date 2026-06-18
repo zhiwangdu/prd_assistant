@@ -177,7 +177,7 @@ tools:
   configured args、match rules 和内置 metadata 工具 descriptor，返回相同的
   `schemaVersion`、完整 `tools`、V1-compatible `configuredTools` 和
   `sourceBuiltAnalyzers` 形态；只读 MCP 入口不运行工具。
-- `GET /api/v2/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`，也会在启用时打包 `pprof_analyzer` 使用的 Go executable。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；Fetch、Metadata、preprocess 和 Huawei sync 等没有独立可执行文件的内置工具不进入导出包。普通 configured 工具示例是 `LOGAGENT_V2_TOOLS_JSON` 片段；`pprof_analyzer` 示例必须提示使用绝对路径形式的 `LOGAGENT_V2_PPROF_GO_COMMAND`，避免把 Go executable 当成空 args 的 generic subprocess，也避免复制相对路径后被 V2 启动校验拒绝。
+- `GET /api/v2/exports/tools.zip` 会对当前 enabled 且解析为普通可执行文件的 configured 工具生成 Server 平台二进制快照、wrapper、示例配置和 `tools-manifest.json`，也会在启用时打包 `pprof_analyzer` 使用的 Go executable。缺失、非普通文件、不可执行或读取失败的工具只在 manifest 中标记 skipped，不让下载失败；Fetch、Metadata、preprocess 和 Huawei sync 等没有独立可执行文件的内置工具不进入导出包。普通 configured 工具示例是 `LOGAGENT_V2_TOOLS_JSON` 片段，且 command 使用绝对路径占位；`pprof_analyzer` 示例必须提示使用绝对路径形式的 `LOGAGENT_V2_PPROF_GO_COMMAND`，避免把 Go executable 当成空 args 的 generic subprocess，也避免复制相对路径后被 V2 启动校验拒绝。
 
 ## 本地真实工具 smoke
 

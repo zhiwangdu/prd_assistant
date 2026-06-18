@@ -958,12 +958,14 @@ clamped to 1..200. The subprocess argv must match Rust/V1: top/tree/svg pass
 Manual pprof tool runs must use the Rust/V1 action id prefix
 `act_tool_pprof_analyzer_<run_id>` so result and support artifact paths stay
 under `tool_results/<action_id>/`.
-Its generated config example must document the dedicated
-`LOGAGENT_V2_PPROF_GO_COMMAND` path rather than a generic
-`LOGAGENT_V2_TOOLS_JSON` subprocess entry, and must use an absolute path
-placeholder because enabled pprof rejects relative Go command paths. Built-in
-tools without standalone executables, such as Fetch, Metadata, preprocess, and
-Huawei package sync, are not packaged. The
+Generated config examples for generic subprocess tools must use
+`LOGAGENT_V2_TOOLS_JSON` with absolute command path placeholders. The
+`pprof_analyzer` config example must document the dedicated
+`LOGAGENT_V2_PPROF_GO_COMMAND` path rather than a generic subprocess entry, and
+must also use an absolute path placeholder because enabled V2 tool and pprof
+configuration rejects relative executable paths. Built-in tools without
+standalone executables, such as Fetch, Metadata, preprocess, and Huawei package
+sync, are not packaged. The
 archive contains:
 
 ```text
