@@ -197,6 +197,88 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
                 "/var/chroot/gemini",
             ),
         ),
+        RemoteCommandTemplate(
+            command_id="cassandra_processes",
+            display_name="Cassandra: processes",
+            description="Read-only Cassandra process snapshot without command-line arguments.",
+            argv=(
+                "ps",
+                "-C",
+                "cassandra,java",
+                "-o",
+                "pid,ppid,stat,comm",
+                "--sort=comm",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="cassandra_config_dirs",
+            display_name="Cassandra: config directories",
+            description="Read-only listing of common Cassandra configuration directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/etc/cassandra",
+                "/etc/cassandra/conf",
+                "/opt/cassandra/conf",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="cassandra_log_dirs",
+            display_name="Cassandra: log directories",
+            description="Read-only listing of common Cassandra log directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/log/cassandra",
+                "/opt/cassandra/logs",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="cassandra_data_dirs",
+            display_name="Cassandra: data directories",
+            description="Read-only listing of common Cassandra data directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/lib/cassandra",
+                "/data/cassandra",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="rocksdb_data_dirs",
+            display_name="RocksDB: data directories",
+            description="Read-only listing of common RocksDB data directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/lib/rocksdb",
+                "/data/rocksdb",
+                "/var/lib/cassandra/data",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="rocksdb_wal_dirs",
+            display_name="RocksDB: WAL directories",
+            description="Read-only listing of common RocksDB WAL directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/lib/rocksdb/wal",
+                "/data/rocksdb/wal",
+                "/var/lib/cassandra/commitlog",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="rocksdb_log_dirs",
+            display_name="RocksDB: log directories",
+            description="Read-only listing of common RocksDB log directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/log/rocksdb",
+                "/tmp/rocksdb",
+            ),
+        ),
     )
 
 

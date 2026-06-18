@@ -1491,9 +1491,11 @@ remote command smoke runner. They are not a full Environment Collector.
   `system_uname`, `uptime_load`, `disk_usage`, `memory_usage`,
   `process_overview`, `network_listeners`, `opengemini_processes`,
   `opengemini_config_dirs`, `opengemini_log_dirs`, and
-  `opengemini_data_dirs`. The openGemini templates use fixed process-name and
-  common directory candidates only, with no shell pipes, redirects, or
-  user-provided argv.
+  `opengemini_data_dirs`, `cassandra_processes`, `cassandra_config_dirs`,
+  `cassandra_log_dirs`, `cassandra_data_dirs`, `rocksdb_data_dirs`,
+  `rocksdb_wal_dirs`, and `rocksdb_log_dirs`. The product templates use fixed
+  process-name and common directory candidates only, with no shell pipes,
+  redirects, glob expansion, or user-provided argv.
 - Command template descriptors must match the Rust/V1 behavior: `enabled`
   combines global remote execution state with template state, and
   `timeoutSeconds` is always the template override or default remote command

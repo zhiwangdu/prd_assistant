@@ -173,7 +173,7 @@ flowchart TD
 - Tools API MVP 支持 `tool_run` 任务、工具目录、手动创建工具运行、运行状态轮询、结果/artifact 查询；`/api/tasks` 默认只返回日志分析任务，工具运行通过 `/api/tools/runs` 查询。
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - `logagent.huawei_cloud_package_sync` 已作为默认关闭的内置 Tools runnable 接入：启用 `huawei_cloud.package_sync.enabled=true` 后，手动 `tool_run` 必须引用一个已上传包，Server 将包流式 PUT 到配置的 Huawei OBS，执行 GaussDB update SQL，再执行 OBS HEAD 和 GaussDB query SQL，结果写入 `tool_results/<action_id>/result.json`。OBS/GaussDB 密钥只来自环境变量，artifact 只记录环境变量名、对象 key、状态、耗时和 bounded 查询行。
-- Remote Executor MVP 支持 WebUI 纳管 ECS 执行机、读取白名单命令模板、创建 `remote_command_run` task、后台 `EXECUTE_REMOTE_COMMAND` phase 调用系统 `ssh` 执行模板 argv，并通过 `/api/executor-runs` 查询 stdout/stderr/result artifact；V2 默认内置 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`、`opengemini_processes`、`opengemini_config_dirs`、`opengemini_log_dirs` 和 `opengemini_data_dirs` 只读模板。V2 审批后的 `collect_environment` 可通过单目标、approved `targets[]` 批量目标或多 executor/template 唯一 hint 选型执行白名单命令 / SCP 拉取有大小上限的远程文件，并把 `remote_result`、`stdout`、`stderr` 和可选 `collected_file` 注册为 support artifact；hint 匹配不到或有歧义时写入 `REMOTE_REJECTED`，不执行 SSH/SCP。
+- Remote Executor MVP 支持 WebUI 纳管 ECS 执行机、读取白名单命令模板、创建 `remote_command_run` task、后台 `EXECUTE_REMOTE_COMMAND` phase 调用系统 `ssh` 执行模板 argv，并通过 `/api/executor-runs` 查询 stdout/stderr/result artifact；V2 默认内置 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`，以及 openGemini、Cassandra、RocksDB 基础只读进程/目录候选模板。V2 审批后的 `collect_environment` 可通过单目标、approved `targets[]` 批量目标或多 executor/template 唯一 hint 选型执行白名单命令 / SCP 拉取有大小上限的远程文件，并把 `remote_result`、`stdout`、`stderr` 和可选 `collected_file` 注册为 support artifact；hint 匹配不到或有歧义时写入 `REMOTE_REJECTED`，不执行 SSH/SCP。
 - 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - `scripts/v2-local.sh` 提供 V2 本地快速 build/start/stop/restart/status/logs，默认复用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口 `50993` 和 `target/tools`，显式 `--with-tools` / `--only-tool` 时才构建 source-built analyzers；本地和 runtime `status` 会在服务可达时用 API Key 查询 `/api/v2/tools` 并打印 source-built analyzer 注册状态。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 的 Claude Code session 调用会记录 callId、attempt、session artifact 和完成事件。
@@ -205,9 +205,6 @@ flowchart TD
 - Memory 外部 embedding provider、可选 sqlite-vec/pgvector 召回增强，以及更正式的 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - Code Evidence V2 只读 worktree 检索和文件级 diff MVP 已支持 product/version 到配置 ref 的映射、detached worktree cache、per-product LRU 清理、orphan cache 扫描记录、受控 base/target `git diff --numstat` 比较和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version，diff target 继承该版本而 base 可指向更早的配置版本/ref；后续继续实现符号级解析、patch hunk / AST diff 和 fix mode 隔离修改。
-- 基于已落地的 Remote Executor 命令、V2 SCP 文件采集、approved `targets[]`
-  批量采集、Agent 可见候选摘要、单 executor 自动补齐、多 executor/template
-  唯一 hint 选型和 openGemini 基础环境模板，继续实现 Cassandra/RocksDB 环境模板。
 - V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、Environment Collector 单目标和批量采集、Code Evidence 只读 worktree 检索和文件级 diff、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
 
 ## 全局验收

@@ -242,7 +242,7 @@ tools:
 - `remote_execution.ssh_binary` 启用时必须为绝对路径，默认 `/usr/bin/ssh`。
 - `remote_execution.scp_binary` / V2 `LOGAGENT_V2_REMOTE_SCP_COMMAND` 启用时必须为绝对路径，默认 `/usr/bin/scp`。
 - `remote_execution.host_key_policy` 只允许 `accept-new`、`strict` 或 `no`。
-- `remote_execution.commands` 为空时 V2 内置 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`、`opengemini_processes`、`opengemini_config_dirs`、`opengemini_log_dirs` 和 `opengemini_data_dirs` 只读模板；openGemini 模板只使用固定进程名和常见目录候选，不允许 shell 管道、重定向或用户输入 argv；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。V2 `LOGAGENT_V2_REMOTE_COMMANDS_JSON` 会替换整套默认模板。
+- `remote_execution.commands` 为空时 V2 内置 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`、`opengemini_processes`、`opengemini_config_dirs`、`opengemini_log_dirs`、`opengemini_data_dirs`、`cassandra_processes`、`cassandra_config_dirs`、`cassandra_log_dirs`、`cassandra_data_dirs`、`rocksdb_data_dirs`、`rocksdb_wal_dirs` 和 `rocksdb_log_dirs` 只读模板；产品模板只使用固定进程名和常见目录候选，不允许 shell 管道、重定向、glob 或用户输入 argv；自定义命令模板 ID 只允许非空 ASCII 字母、数字、`_` 和 `-`，并且必须有非空 argv。V2 `LOGAGENT_V2_REMOTE_COMMANDS_JSON` 会替换整套默认模板。
 - `remote_execution.commands.<id>.argv` 加载时逐项 trim 并丢弃空字符串；归一化后为空时启动失败。
 - V2 `LOGAGENT_V2_REMOTE_FILES_JSON` 配置 approved `collect_environment`
   可拉取的单文件模板；`fileId` 复用 command id 安全规则，`remotePath` 必须是

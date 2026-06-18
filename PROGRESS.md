@@ -2,6 +2,27 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Cassandra/RocksDB Environment Templates
+
+- Added default read-only Remote Executor command templates for Cassandra and
+  RocksDB alongside the existing system and openGemini templates.
+- New templates cover Cassandra process/config/log/data candidates and RocksDB
+  data/WAL/log directory candidates with fixed argv only; no shell, redirects,
+  glob expansion, or user-provided argv are introduced.
+- Updated the default-template regression to lock the new command IDs and key
+  fixed paths.
+- Updated root, V2 Server, Config, and Environment Collector docs/specs, and
+  removed the Cassandra/RocksDB environment-template TODO from the top-level
+  plan.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_default_remote_commands_include_readonly_environment_templates`
+  with 1 passed,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/config.py tests/test_store.py`,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 171 passed
+  and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Analyzer Status Visibility
 
 - Extended `scripts/v2-local.sh status` and `deploy/logagent-v2ctl.sh status`

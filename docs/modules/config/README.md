@@ -302,7 +302,7 @@ metadata:
 - `pprof_analyzer` 推荐使用 `examples/server-pprof-tool.yaml` 验证；`path` / `path_env` 指向 Go 可执行文件，Server 固定调用 `go tool pprof` 并生成 top/tree/raw 产物。V2 默认关闭 pprof；启用时 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO` 必须解析为绝对路径。
 - 禁用工具不读取 `path_env`，便于在模板配置中保留未安装工具。
 - 未配置 `tools` 时 `RUN_TOOL` 阶段无副作用跳过。
-- Python V2 未设置 `LOGAGENT_V2_REMOTE_COMMANDS_JSON` 时默认暴露 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`、`opengemini_processes`、`opengemini_config_dirs`、`opengemini_log_dirs` 和 `opengemini_data_dirs` 只读命令模板；openGemini 模板只使用固定进程名和常见目录候选，不允许 shell 管道、重定向或用户输入 argv；设置该环境变量会替换整套默认模板。
+- Python V2 未设置 `LOGAGENT_V2_REMOTE_COMMANDS_JSON` 时默认暴露 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`、`opengemini_processes`、`opengemini_config_dirs`、`opengemini_log_dirs`、`opengemini_data_dirs`、`cassandra_processes`、`cassandra_config_dirs`、`cassandra_log_dirs`、`cassandra_data_dirs`、`rocksdb_data_dirs`、`rocksdb_wal_dirs` 和 `rocksdb_log_dirs` 只读命令模板；产品模板只使用固定进程名和常见目录候选，不允许 shell 管道、重定向、glob 或用户输入 argv；设置该环境变量会替换整套默认模板。
 - `remote_execution.enabled` 默认 true；`ssh_binary` 启用时必须是绝对路径。
 - `remote_execution.scp_binary` / V2 `LOGAGENT_V2_REMOTE_SCP_COMMAND` 启用时必须是绝对路径，默认 `/usr/bin/scp`。
 - `remote_execution.host_key_policy` 仅支持 `accept-new`、`strict` 和 `no`，分别映射到 OpenSSH `StrictHostKeyChecking`。

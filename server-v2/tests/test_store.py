@@ -5717,6 +5717,13 @@ class StoreTests(unittest.TestCase):
                 "opengemini_config_dirs",
                 "opengemini_log_dirs",
                 "opengemini_data_dirs",
+                "cassandra_processes",
+                "cassandra_config_dirs",
+                "cassandra_log_dirs",
+                "cassandra_data_dirs",
+                "rocksdb_data_dirs",
+                "rocksdb_wal_dirs",
+                "rocksdb_log_dirs",
             },
         )
         self.assertEqual(by_id["system_uname"].argv, ("uname", "-a"))
@@ -5736,6 +5743,23 @@ class StoreTests(unittest.TestCase):
         self.assertIn("/etc/opengemini", by_id["opengemini_config_dirs"].argv)
         self.assertIn("/var/log/opengemini", by_id["opengemini_log_dirs"].argv)
         self.assertIn("/var/chroot/gemini", by_id["opengemini_data_dirs"].argv)
+        self.assertEqual(
+            by_id["cassandra_processes"].argv,
+            (
+                "ps",
+                "-C",
+                "cassandra,java",
+                "-o",
+                "pid,ppid,stat,comm",
+                "--sort=comm",
+            ),
+        )
+        self.assertIn("/etc/cassandra", by_id["cassandra_config_dirs"].argv)
+        self.assertIn("/var/log/cassandra", by_id["cassandra_log_dirs"].argv)
+        self.assertIn("/var/lib/cassandra", by_id["cassandra_data_dirs"].argv)
+        self.assertIn("/var/lib/rocksdb", by_id["rocksdb_data_dirs"].argv)
+        self.assertIn("/var/lib/cassandra/commitlog", by_id["rocksdb_wal_dirs"].argv)
+        self.assertIn("/var/log/rocksdb", by_id["rocksdb_log_dirs"].argv)
         self.assertEqual(
             [template.command_id for template in parse_remote_commands_env(None)],
             [template.command_id for template in templates],

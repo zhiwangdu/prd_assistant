@@ -22,7 +22,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 
 - WebUI `Tools / Executors` 可纳管 ECS 执行机，资产持久化在 `storage.data_dir/executors`。
 - Server 支持 `remote_command_run` task 和 `EXECUTE_REMOTE_COMMAND` phase，通过系统 `ssh` 二进制执行 `remote_execution.commands` 白名单模板。
-- V2 默认内置一组只读环境模板：`smoke_ls_root` 用于低风险 SSH smoke，`system_uname` 采集 kernel/OS，`uptime_load` 采集 uptime/load，`disk_usage` 采集 filesystem 容量，`memory_usage` 采集内存，`process_overview` 采集不含命令行参数的进程概览，`network_listeners` 采集 TCP 监听端口，`opengemini_processes` 采集 openGemini 进程名快照，`opengemini_config_dirs` / `opengemini_log_dirs` / `opengemini_data_dirs` 列出常见配置、日志和数据目录候选。
+- V2 默认内置一组只读环境模板：`smoke_ls_root` 用于低风险 SSH smoke，`system_uname` 采集 kernel/OS，`uptime_load` 采集 uptime/load，`disk_usage` 采集 filesystem 容量，`memory_usage` 采集内存，`process_overview` 采集不含命令行参数的进程概览，`network_listeners` 采集 TCP 监听端口，`opengemini_processes` 采集 openGemini 进程名快照，`opengemini_config_dirs` / `opengemini_log_dirs` / `opengemini_data_dirs` 列出 openGemini 常见配置、日志和数据目录候选，`cassandra_processes` / `cassandra_config_dirs` / `cassandra_log_dirs` / `cassandra_data_dirs` 覆盖 Cassandra 进程和目录候选，`rocksdb_data_dirs` / `rocksdb_wal_dirs` / `rocksdb_log_dirs` 覆盖 RocksDB 数据、WAL 和日志目录候选。
 - V2 clean-room Server 已提供同类 Remote Executor 基础能力：`/api/v2/executors` 管理 SQLite executor，`/api/v2/executor-command-templates` 暴露环境配置的白名单命令模板，`/api/v2/executor-file-templates` 暴露环境配置的白名单文件模板，`/api/v2/executor-runs` 创建 DB-backed remote command job，create/list/get 响应补齐 Rust/V1 TaskResponse-compatible 顶层 `taskId`、`runId`、`url`、`taskKind=remote_command_run`、`sessionId=null`、`analysisMode=diagnose` 和 `analysisLanguage=zh-CN`，并把命令 `result.json`、`stdout.txt`、`stderr.txt` 写入 `LOGAGENT_V2_DATA_DIR/remote_runs/<run_id>/remote_command/`；结果文件可通过受保护的 `/api/v2/executor-runs/:run_id/files/result|stdout|stderr` 下载。
 - V2 command template descriptor 与 Rust/V1 对齐：`enabled` 同时反映全局 remote execution 开关和模板自身开关，`timeoutSeconds` 总是模板覆盖值或默认远程命令 timeout。
 - V2 command template id 与 Rust/V1 对齐：只允许非空 ASCII 字母、数字、`_` 和 `-`。
@@ -60,8 +60,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   `collect_environment` 审批请求。多 executor 场景可用 `target` /
   `executor` / `node` / `host` 等提示和 `template` / `command` / `file`
   等提示做确定性唯一匹配；匹配不到或有歧义时写入 `REMOTE_REJECTED`，
-  不会执行 SSH/SCP。openGemini 基础只读模板已内置；更多 Cassandra/RocksDB
-  产品专用模板仍在后续。
+  不会执行 SSH/SCP。openGemini、Cassandra 和 RocksDB 基础只读模板已内置。
 
 ## 适用场景
 

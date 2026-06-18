@@ -221,8 +221,9 @@ slice provides the durable foundation for the V2 product model:
   debug logging.
 - Remote Executor foundation with SQLite-managed executors, environment-driven
   whitelisted SSH command templates, whitelisted SCP file templates, DB-backed
-  remote command/file jobs, built-in system and openGemini read-only command
-  templates, and result/support files under the V2 data directory.
+  remote command/file jobs, built-in system, openGemini, Cassandra, and RocksDB
+  read-only command templates, and result/support files under the V2 data
+  directory.
 
 ## Local Run
 
@@ -657,10 +658,13 @@ Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
 V2 exposes built-in read-only templates for `smoke_ls_root`, `system_uname`,
 `uptime_load`, `disk_usage`, `memory_usage`, `process_overview`,
 `network_listeners`, `opengemini_processes`, `opengemini_config_dirs`,
-`opengemini_log_dirs`, and `opengemini_data_dirs`. The openGemini defaults use
-fixed process names and common directory candidates; they do not allow shell
-pipes, redirects, or user-provided argv. Template descriptors match the Rust/V1
-behavior: `enabled` also reflects global remote execution state, and
+`opengemini_log_dirs`, `opengemini_data_dirs`, `cassandra_processes`,
+`cassandra_config_dirs`, `cassandra_log_dirs`, `cassandra_data_dirs`,
+`rocksdb_data_dirs`, `rocksdb_wal_dirs`, and `rocksdb_log_dirs`. The product
+defaults use fixed process names and common directory candidates; they do not
+allow shell pipes, redirects, glob expansion, or user-provided argv. Template
+descriptors match the Rust/V1 behavior: `enabled` also reflects global remote
+execution state, and
 `timeoutSeconds` is always
 filled with the template override or default remote command timeout. Template
 IDs are validated with the Rust/V1 safe pattern: non-empty ASCII letters,
