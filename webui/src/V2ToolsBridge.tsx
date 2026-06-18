@@ -13,6 +13,7 @@ import {
   listV2ToolRuns,
   listV2Tools,
   uploadV2Files,
+  type V2SourceBuiltAnalyzerStatus,
   type V2ToolDescriptor,
   type V2ToolRun,
   type V2ToolRunArtifacts
@@ -20,6 +21,7 @@ import {
 
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
+  const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
   const [selectedToolId, setSelectedToolId] = useState("");
   const [runId, setRunId] = useState("");
   const [manualWorkspaceId, setManualWorkspaceId] = useState("");
@@ -40,6 +42,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const refreshTools = useCallback(async () => {
     if (!apiKey.trim()) {
       setTools([]);
+      setSourceBuiltAnalyzers([]);
       setStatus("API Key required");
       return;
     }
@@ -47,10 +50,11 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     try {
       const response = await listV2Tools(apiKey);
       setTools(response.tools);
+      setSourceBuiltAnalyzers(response.sourceBuiltAnalyzers ?? []);
       if (!response.tools.some((tool) => tool.toolId === selectedToolId) && response.tools.length) {
         setSelectedToolId(response.tools[0].toolId);
       }
-      setStatus(`V2 loaded ${response.tools.length} tools`);
+      setStatus(`V2 loaded ${response.tools.length} tools and ${(response.sourceBuiltAnalyzers ?? []).length} source analyzers`);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -300,6 +304,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <SourceBuiltAnalyzerPanel analyzers={sourceBuiltAnalyzers} />
         <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)_460px]">
           <div className="rounded-lg border border-border p-3">
             <h3 className="mb-3 text-sm font-semibold">V2 catalog</h3>
@@ -453,6 +458,46 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   );
 }
 
+function SourceBuiltAnalyzerPanel({ analyzers }: { analyzers: V2SourceBuiltAnalyzerStatus[] }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Source-built analyzers</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Submodule analyzer registration and command availability from `/api/v2/tools`.</p>
+        </div>
+        <Badge variant="secondary">{analyzers.length}</Badge>
+      </div>
+      {analyzers.length ? (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {analyzers.map((analyzer) => (
+            <div className="rounded-md border border-border p-3" key={analyzer.toolId}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{analyzer.displayName}</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{analyzer.toolId}</p>
+                </div>
+                <Badge variant={analyzerStatusVariant(analyzer.status)}>{analyzer.status}</Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <Badge variant={analyzer.registered ? "success" : "secondary"}>{analyzer.registered ? "registered" : "missing"}</Badge>
+                <Badge variant={analyzer.enabled ? "success" : "secondary"}>{analyzer.enabled ? "enabled" : "disabled"}</Badge>
+                <Badge variant={analyzer.runnable ? "success" : "secondary"}>{analyzer.runnable ? "runnable" : "not runnable"}</Badge>
+                <Badge variant={analyzer.commandExecutable ? "success" : "secondary"}>{analyzer.commandExecutable ? "exec" : "no exec"}</Badge>
+              </div>
+              <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{analyzer.commandPath || "no command path"}</p>
+              {analyzer.statusReason ? <p className="mt-1 text-xs text-destructive">{analyzer.statusReason}</p> : null}
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                timeout {analyzer.timeoutSeconds ?? "-"}s · max files {analyzer.maxInputFiles ?? "-"}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : <EmptyState>No source-built analyzer status returned.</EmptyState>}
+    </div>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value}</p></div>;
 }
@@ -577,6 +622,13 @@ function runStatusVariant(status: V2ToolRun["status"]) {
   if (status === "failed") return "destructive";
   if (status.startsWith("waiting")) return "warning";
   return "secondary";
+}
+
+function analyzerStatusVariant(status: V2SourceBuiltAnalyzerStatus["status"]) {
+  if (status === "registered") return "success";
+  if (status === "unavailable") return "warning";
+  if (status === "disabled" || status === "missing") return "secondary";
+  return "outline";
 }
 
 function artifactCount(artifacts: V2ToolRunArtifacts | null) {

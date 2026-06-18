@@ -243,6 +243,28 @@ export type V2ToolDescriptor = {
   allowedHosts?: string[];
 };
 
+export type V2SourceBuiltAnalyzerStatus = {
+  toolId: string;
+  displayName: string;
+  registered: boolean;
+  enabled: boolean;
+  runnable: boolean;
+  status: "registered" | "disabled" | "missing" | "unavailable" | string;
+  statusReason?: string | null;
+  commandPath?: string | null;
+  commandExists: boolean;
+  commandExecutable: boolean;
+  timeoutSeconds?: number | null;
+  maxInputFiles?: number | null;
+};
+
+export type V2ToolCatalog = {
+  schemaVersion?: number;
+  tools: V2ToolDescriptor[];
+  configuredTools?: Record<string, unknown>[];
+  sourceBuiltAnalyzers?: V2SourceBuiltAnalyzerStatus[];
+};
+
 export type V2ToolRun = Omit<V2Run, "finalAnswer"> & {
   kind: "tool_run";
   toolId?: string | null;
@@ -852,7 +874,7 @@ export async function updateV2Case(apiKey: string, caseId: string, updates: V2Ca
 }
 
 export async function listV2Tools(apiKey: string) {
-  return fetchJson<{ tools: V2ToolDescriptor[] }>("/api/v2/tools", { headers: authHeaders(apiKey) });
+  return fetchJson<V2ToolCatalog>("/api/v2/tools", { headers: authHeaders(apiKey) });
 }
 
 export async function createV2ToolRun(apiKey: string, toolId: string, input: { workspaceId: string; uploadIds?: string[]; params?: Record<string, unknown> }) {

@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI Source-Built Analyzer Status
+
+- V2 Tools Workbench now reads the complete `/api/v2/tools` catalog envelope,
+  not just the `tools` array.
+- Added a source-built analyzer status panel showing the four submodule
+  analyzer IDs, registered/enabled/runnable state, command path, command
+  existence/executability, timeout, max input files, and unavailable reason.
+- Updated WebUI README/SPEC so the V2 Tools product contract includes
+  `sourceBuiltAnalyzers` visibility alongside tools.zip download and tool run
+  execution.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 V2 Tools Export Source-Built Analyzer Status
 
 - `GET /api/v2/exports/tools.zip` now writes the fixed
