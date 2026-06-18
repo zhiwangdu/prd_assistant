@@ -49,7 +49,7 @@ V2 草稿、校验错误和消息历史都持久化在 SQLite `case_imports` 表
 
 新任务创建时会按用户问题召回最多 5 个启用 Case，并把结果固化到 workspace 的 `case_context.json`。Artifacts API 返回 `caseContext`，Claude Code 会通过 `analysis_package.json` 和 MCP resource 读取“历史 Case 参考”，并明确要求历史 Case 只能作为参考，最终结论仍必须引用当前任务证据。
 
-只读 HTTP MCP 通过 `logagent://cases/recent`、`logagent.search_cases` 和 `logagent.get_case` 暴露已确认 Case，供个人本地 Claude Code 读取；该入口不能创建、编辑、禁用或确认 Case。`logagent.search_cases` 保持 Rust/V1 只读入口的 `limit=1..50` 上限。
+只读 HTTP MCP 通过 `logagent://cases/recent`、`logagent.search_cases` 和 `logagent.get_case` 暴露已确认 Case，供个人本地 Claude Code 读取；该入口不能创建、编辑、禁用或确认 Case。`logagent://cases/recent` 返回 Rust/V1 默认的最近 20 个 enabled Case；`logagent.search_cases` 保持 Rust/V1 只读入口的 `limit=1..50` 上限。
 
 Python V2 clean-room Server 的 task MCP 额外暴露 Rust V1 兼容
 `logagent.recall_cases`，只返回 enabled Case，并把召回结果写入

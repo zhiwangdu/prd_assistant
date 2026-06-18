@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Readonly Case Recent Limit Parity
+
+- Aligned V2 readonly MCP `logagent://cases/recent` with the Rust/V1 default
+  of 20 recent enabled Cases.
+- Extended the Case MCP limit regression to cover readonly resource reads in
+  addition to `logagent.search_cases` and task MCP `logagent.recall_cases`.
+- Updated V2 Server and Case Store README/SPEC docs.
+- Verification passed: focused Case MCP/resource limit pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with
+  154 passed and 1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 openGemini Remote Templates
 
 - Added V2 built-in Remote Executor templates for openGemini process-name

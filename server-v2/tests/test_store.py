@@ -11330,6 +11330,20 @@ fi
             readonly_body = json.loads(readonly_cases["result"]["content"][0]["text"])
             self.assertEqual(readonly_body["caseCount"], 50)
 
+            recent_cases = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 505,
+                    "method": "resources/read",
+                    "params": {"uri": "logagent://cases/recent"},
+                },
+            )
+            recent_body = json.loads(recent_cases["result"]["contents"][0]["text"])
+            self.assertEqual(recent_body["schemaVersion"], 1)
+            self.assertEqual(len(recent_body["cases"]), 20)
+
             workspace = store.create_workspace("case recall limits", "diagnose", "en-US")
             run = store.create_run(workspace["id"])
             recall_response = task_mcp_response(

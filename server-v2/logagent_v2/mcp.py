@@ -240,7 +240,7 @@ def readonly_mcp_response(
             elif canonical_uri == "logagent-v2://cases/recent":
                 value = {
                     "schemaVersion": 1,
-                    "cases": store.search_cases(query=None, limit=10),
+                    "cases": store.search_cases(query=None, limit=20),
                 }
             elif canonical_uri == "logagent-v2://skills":
                 value = {

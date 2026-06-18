@@ -1230,8 +1230,10 @@ return vector-only hits when exact tokens do not match. If FTS5 is unavailable,
 V2 falls back to token-overlap scoring plus vector recall. Disabled cases are
 excluded by default and can be included with `includeDisabled=true`.
 
-Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`.
-`logagent.search_cases` accepts the Rust/V1 readonly `limit` range 1..50. Task
+Readonly MCP exposes `logagent://cases/recent`, `logagent.search_cases`, and
+`logagent.get_case`. `logagent://cases/recent` returns the Rust/V1 default of
+20 recent enabled Cases. `logagent.search_cases` accepts the Rust/V1 readonly
+`limit` range 1..50. Task
 MCP exposes the same tools plus V1-compatible `logagent.recall_cases`, which
 only returns enabled Cases and clamps `limit` to 1..20. Task MCP Case calls
 write results as `case_context` evidence with `final_allowed=false`. Historical
