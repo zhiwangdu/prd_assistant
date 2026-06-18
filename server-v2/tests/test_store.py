@@ -5900,6 +5900,7 @@ fi
             result = executed["result"]
             action_id = result["actionId"]
 
+            self.assertEqual(action_id, f"act_tool_pprof_analyzer_{tool_run['id']}")
             self.assertEqual(result["profileType"], "samples")
             self.assertEqual(result["total"], "100ms")
             self.assertIsNone(result["error"])

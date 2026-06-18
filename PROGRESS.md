@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Pprof Tool Result Path Parity
+
+- Aligned V2 `pprof_analyzer` manual tool-run action ids with Rust/V1:
+  `act_tool_pprof_analyzer_<run_id>` instead of the previous shortened
+  `act_tool_pprof_<run_id>`.
+- This keeps pprof result and support artifact logical paths under the
+  Rust/V1-compatible `tool_results/<action_id>/...` prefix.
+- Updated pprof regression coverage and V2 Server / Tool Runner docs.
+- Verification passed: focused `pprof` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Tools Zip Pprof Export Parity
 
 - Corrected V2 `tools.zip` package README to match the actual Rust/V1-style

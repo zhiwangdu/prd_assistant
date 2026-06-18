@@ -1889,7 +1889,7 @@ def run_pprof_tool(
     profile_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
     if not profile_path.is_file():
         raise ValueError("uploaded pprof profile is missing")
-    action_id = f"act_tool_pprof_{run['id']}"
+    action_id = f"act_tool_pprof_analyzer_{run['id']}"
     started = time.monotonic()
     node_count = int(params["nodeCount"])
     sample_index = str(params["sampleIndex"])

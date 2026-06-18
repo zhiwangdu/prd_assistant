@@ -952,6 +952,9 @@ used with an absolute Go command path. Its descriptor must expose V1 top-level
 digits, `_`, or `-`; `generateSvg` must be a JSON boolean; `nodeCount` is
 clamped to 1..200. The subprocess argv must match Rust/V1: top/tree/svg pass
 `-nodecount=<nodeCount>`, and top/tree/raw/svg all pass `-symbolize=none`.
+Manual pprof tool runs must use the Rust/V1 action id prefix
+`act_tool_pprof_analyzer_<run_id>` so result and support artifact paths stay
+under `tool_results/<action_id>/`.
 Its generated config example must document the dedicated
 `LOGAGENT_V2_PPROF_GO_COMMAND` path rather than a generic
 `LOGAGENT_V2_TOOLS_JSON` subprocess entry. Built-in tools without standalone
