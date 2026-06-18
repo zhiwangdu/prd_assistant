@@ -1068,6 +1068,8 @@ as `preRunToolResults`. Task MCP `logagent.run_domain_tool` reuses an existing
 calls do not duplicate the same result inside one run. Legacy Rust/V1
 `{tool,inputFile}` calls use an `act_mcp_tool_<stable_digest>` action id, while
 the V2 `toolId` protocol keeps the tool/input/params-derived action id.
+Configured tool-derived action ids use the Rust/V1 `act_tool_<tool_id>` prefix;
+input-file runs append a stable input hash.
 
 Configured subprocess `result.json` uses the Rust/V1 `ToolRunRecord` shape:
 `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`, `durationMs`,

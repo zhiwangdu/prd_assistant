@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Configured Tool Action ID Prefix Parity
+
+- Aligned default configured subprocess action ids with the Rust/V1
+  `act_tool_<tool_id>` prefix.
+- Input-file configured tool runs now append the Rust/V1 FNV stable input hash
+  when no runtime params are present; V2 paramized runs retain a stable params
+  digest after the same prefix.
+- Kept the legacy MCP `act_mcp_tool_<stable_digest>` override from the previous
+  slice.
+- Updated configured tool path assertions and V2 Server / Tool Runner docs.
+- Verification passed: focused configured-tool pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Legacy Domain Tool Action ID Parity
 
 - Aligned legacy task MCP `logagent.run_domain_tool` calls using

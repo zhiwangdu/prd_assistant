@@ -4169,13 +4169,17 @@ class StoreTests(unittest.TestCase):
                     "stderr": payload["result"]["stderrArtifactId"],
                 },
             )
-            self.assertEqual(payload["artifactPath"], "tool_results/mock_tool/result.json")
+            self.assertEqual(payload["result"]["actionId"], "act_tool_mock_tool")
+            self.assertEqual(
+                payload["artifactPath"],
+                f"tool_results/{payload['result']['actionId']}/result.json",
+            )
             self.assertEqual(payload["artifactPaths"], [payload["artifactPath"]])
             self.assertEqual(payload["summary"], "mock ok")
             self.assertEqual(payload["evidenceRefs"], [payload["artifactPath"]])
             self.assertEqual(
                 payload["finalEvidenceRefs"],
-                ["tool_results/mock_tool/result.json#findings/0"],
+                [f"tool_results/{payload['result']['actionId']}/result.json#findings/0"],
             )
             evidence = store.list_evidence(run["id"])
             self.assertTrue(any(item["kind"] == "tool_result" for item in evidence))
@@ -4211,22 +4215,22 @@ class StoreTests(unittest.TestCase):
                 item["logical_path"]: item for item in artifacts["supportArtifacts"]
             }
             self.assertEqual(
-                support_by_path["tool_results/mock_tool/stdout.txt"]["artifact_id"],
+                support_by_path["tool_results/act_tool_mock_tool/stdout.txt"]["artifact_id"],
                 payload["result"]["stdoutArtifactId"],
             )
             self.assertEqual(
-                support_by_path["tool_results/mock_tool/stderr.txt"]["artifact_id"],
+                support_by_path["tool_results/act_tool_mock_tool/stderr.txt"]["artifact_id"],
                 payload["result"]["stderrArtifactId"],
             )
             index_by_path = {
                 item["path"]: item for item in artifacts["artifactIndex"]["artifacts"]
             }
             self.assertEqual(
-                index_by_path["tool_results/mock_tool/stdout.txt"]["source"],
+                index_by_path["tool_results/act_tool_mock_tool/stdout.txt"]["source"],
                 "support",
             )
             self.assertEqual(
-                index_by_path["tool_results/mock_tool/stderr.txt"]["source"],
+                index_by_path["tool_results/act_tool_mock_tool/stderr.txt"]["source"],
                 "support",
             )
 
@@ -6588,8 +6592,15 @@ fi
             self.assertEqual(result["exitCode"], 2)
             self.assertIsInstance(result["durationMs"], int)
             self.assertEqual(result["command"], result["argv"])
-            self.assertEqual(result["stdoutPath"], "tool_results/failing_tool/stdout.txt")
-            self.assertEqual(result["stderrPath"], "tool_results/failing_tool/stderr.txt")
+            self.assertEqual(result["actionId"], "act_tool_failing_tool")
+            self.assertEqual(
+                result["stdoutPath"],
+                "tool_results/act_tool_failing_tool/stdout.txt",
+            )
+            self.assertEqual(
+                result["stderrPath"],
+                "tool_results/act_tool_failing_tool/stderr.txt",
+            )
             self.assertEqual(
                 result["summary"],
                 "tool failing_tool exited with non-zero status",
@@ -7314,7 +7325,7 @@ fi
             ]
             self.assertEqual(len(tool_evidence), 1)
             ref = f"{tool_evidence[0]['payload']['evidenceRefPrefix']}0"
-            self.assertTrue(ref.startswith("tool_results/auto_tool_"))
+            self.assertTrue(ref.startswith("tool_results/act_tool_auto_tool_"))
 
             artifacts = get_run_artifacts(settings, store, run["id"])
             self.assertEqual(artifacts["toolResultCount"], 1)
@@ -7899,7 +7910,8 @@ fi
                 },
             )
             self.assertIn("result", tool_response)
-            tool_ref = "tool_results/mock_tool/result.json#findings/0"
+            tool_payload = json.loads(tool_response["result"]["content"][0]["text"])
+            tool_ref = f"tool_results/{tool_payload['result']['actionId']}/result.json#findings/0"
 
             refs = [
                 "grep_results.json#matches/0",

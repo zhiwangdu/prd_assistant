@@ -1646,18 +1646,20 @@ def tool_requires_input(tool: ToolDefinition) -> bool:
 
 
 def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None, params: JsonObject) -> str:
+    prefix = f"act_tool_{safe_action_segment(tool.id)}"
     params_digest = ""
     if params:
         params_digest = ":" + json.dumps(params, ensure_ascii=True, sort_keys=True)
     if input_entry is None:
         if not params:
-            return tool.id
+            return prefix
         digest = sha256(params_digest.encode("utf-8")).hexdigest()[:12]
-        return f"{safe_action_segment(tool.id)}_{digest}"
-    digest = sha256(
-        (str(input_entry.get("path", "")) + params_digest).encode("utf-8")
-    ).hexdigest()[:12]
-    return f"{safe_action_segment(tool.id)}_{digest}"
+        return f"{prefix}_{digest}"
+    input_path = str(input_entry.get("path", ""))
+    if not params:
+        return f"{prefix}_{stable_input_hash(input_path)}"
+    digest = sha256((input_path + params_digest).encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}_{digest}"
 
 
 def safe_action_segment(value: str) -> str:
@@ -1666,6 +1668,14 @@ def safe_action_segment(value: str) -> str:
         for char in value
     )
     return result[:80] or "tool"
+
+
+def stable_input_hash(value: str) -> str:
+    hash_value = 0xCBF29CE484222325
+    for byte in value.encode("utf-8"):
+        hash_value ^= byte
+        hash_value = (hash_value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"{hash_value:016x}"
 
 
 def run_preprocess_tool(

@@ -831,7 +831,9 @@ configured subprocess tools. Its `tools/list` descriptor input schema must
 advertise both the V2 `toolId` call shape and the Rust/V1 `tool + inputFile`
 call shape with `anyOf`. Legacy `tool + inputFile` calls must use an
 `act_mcp_tool_<stable_digest>` action id and reuse the same result for repeated
-same-argument calls inside one run. The OpenAI-compatible and binary Agent provider
+same-argument calls inside one run. Configured tool-derived action ids must use
+the Rust/V1 `act_tool_<tool_id>` prefix and append a stable input hash for
+input-file runs. The OpenAI-compatible and binary Agent provider
 `availableTools` prompt must advertise the same schema and configured-tool enum,
 and must exclude manual-only tools such as `pprof_analyzer`. Built-ins use
 dedicated task MCP tools where available, or the protected manual Tools API.
