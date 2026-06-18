@@ -636,7 +636,11 @@ V2 Remote Executor APIs live under `/api/v2/executors`,
 `/api/v2/executor-command-templates`, `/api/v2/executor-file-templates`, and
 `/api/v2/executor-runs`. Executors are stored in SQLite with host, port, SSH
 user, tags, notes, enabled state, and timestamps. Deleting an executor disables
-it instead of removing historical run records.
+it instead of removing historical run records. Executor run create/list/get
+responses expose Rust/V1 TaskResponse-compatible summary fields including
+`taskId`, `runId`, `url`, `taskKind=remote_command_run`, `sessionId=null`,
+`analysisMode=diagnose`, `analysisLanguage=zh-CN`, `status`, `phase`, and
+`createdAt`.
 
 Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
 V2 exposes built-in read-only templates for `smoke_ls_root`, `system_uname`,

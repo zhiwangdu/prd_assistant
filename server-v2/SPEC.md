@@ -1493,6 +1493,10 @@ remote command smoke runner. They are not a full Environment Collector.
   empty items are dropped, and the final argv must still be non-empty.
 - Creating a run validates that remote execution is enabled, the executor is
   enabled, and the command template exists and is enabled.
+- Executor run create/list/get responses must expose Rust/V1
+  TaskResponse-compatible summary fields: `taskId`, `runId`, `url`,
+  `taskKind=remote_command_run`, `sessionId=null`, `analysisMode=diagnose`,
+  `analysisLanguage=zh-CN`, `status`, `phase`, and `createdAt`.
 - The worker constructs a fixed SSH argv using the configured SSH executable,
   batch mode, connect timeout, host key policy, port, `user@host`, and the
   template argv. The API never accepts free-form shell input.

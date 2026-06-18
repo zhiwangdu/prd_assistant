@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Remote Run TaskResponse Parity
+
+- Extended V2 Remote Executor run create/list/get summaries with Rust/V1
+  TaskResponse-compatible fields: `taskId`, `runId`, `url`,
+  `taskKind=remote_command_run`, `sessionId=null`, `analysisMode=diagnose`,
+  `analysisLanguage=zh-CN`, `status`, `phase`, and `createdAt`.
+- Stabilized the fake SSH API regression by disabling inline worker startup in
+  that test and asserting create/list/get response fields before manually
+  processing the queued job.
+- Updated V2 Server and Environment Collector docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_v2_remote_executor_run_uses_queued_fake_ssh`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 167 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Tool Run TaskSummary Parity
 
 - Updated V2 manual tool run create/list/get endpoints to expose

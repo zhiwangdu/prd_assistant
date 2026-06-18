@@ -13758,6 +13758,7 @@ grep_results.json#matches/0
             settings = Settings(
                 data_dir=root / "data",
                 api_key="test",
+                inline_worker=False,
                 remote_ssh_command=fake_ssh.as_posix(),
                 remote_commands=(
                     RemoteCommandTemplate(
@@ -13811,6 +13812,39 @@ grep_results.json#matches/0
 
             headers = {"Authorization": "Bearer test"}
             with TestClient(create_app(settings)) as client:
+                created_again = client.post(
+                    "/api/v2/executor-runs",
+                    headers=headers,
+                    json={
+                        "executorId": executor["executorId"],
+                        "commandId": "smoke_ls_root",
+                        "idempotencyKey": "remote-idem-1",
+                    },
+                )
+                self.assertEqual(created_again.status_code, 202)
+                created_body = created_again.json()
+                self.assertEqual(created_body["taskId"], run["taskId"])
+                self.assertEqual(created_body["runId"], run["taskId"])
+                self.assertEqual(created_body["taskKind"], "remote_command_run")
+                self.assertEqual(created_body["url"], f"/api/v2/executor-runs/{run['taskId']}")
+                self.assertIsNone(created_body["sessionId"])
+                self.assertEqual(created_body["analysisMode"], "diagnose")
+                self.assertEqual(created_body["analysisLanguage"], "zh-CN")
+
+                listed = client.get("/api/v2/executor-runs", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(listed.json()["runs"][0]["taskId"], run["taskId"])
+                self.assertEqual(listed.json()["runs"][0]["runId"], run["taskId"])
+
+                detail = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}",
+                    headers=headers,
+                )
+                self.assertEqual(detail.status_code, 200)
+                self.assertEqual(detail.json()["taskId"], run["taskId"])
+                self.assertEqual(detail.json()["runId"], run["taskId"])
+                self.assertEqual(detail.json()["remoteExecutorId"], executor["executorId"])
+
                 pending_result = client.get(
                     f"/api/v2/executor-runs/{run['taskId']}/result",
                     headers=headers,

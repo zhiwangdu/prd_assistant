@@ -2549,8 +2549,13 @@ def compact_remote_runs(runs: list[dict]) -> list[dict]:
 def remote_run_summary(run: dict) -> dict:
     return {
         "taskId": run["taskId"],
+        "runId": run["taskId"],
         "alias": run.get("alias"),
+        "url": f"/api/v2/executor-runs/{run['taskId']}",
         "taskKind": run["taskKind"],
+        "sessionId": None,
+        "analysisMode": "diagnose",
+        "analysisLanguage": "zh-CN",
         "operation": run.get("operation", "command"),
         "status": run["status"],
         "phase": run.get("phase"),
