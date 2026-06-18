@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Claude Runtime Session Failure Audit
+
+- V2 now writes a fresh `claude_session.json` runtime artifact for every
+  Claude Code provider response that carries response metadata, even when the
+  response failed and does not include a Claude session id.
+- The runtime session audit now records `runtimeStatus`, `providerStatus`,
+  linked `agent_response` artifact id, and any provider `error` /
+  `validation` status, so failed Claude Code runs replace the initial
+  `contract_ready` session artifact with an executable audit state.
+- Added regression coverage for a non-zero-exit Claude Code provider inside
+  `AgentRuntime`, including the latest task MCP `claude_session` resource.
+- Updated root, V2 Server, and Agent Backend docs, and removed the stale root
+  pending item for Claude usage/cost, failure classification, resume, and mode
+  permission coverage.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Claude Code provider pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (131 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 InfluxQL Compare Smoke Coverage
 
 - Extended `scripts/smoke-influxql-analyzer.sh` so the real source-built

@@ -251,14 +251,18 @@ def persist_claude_runtime_session(
         return None
     session_id = response.get("sessionId")
     resumed_session_id = response.get("resumedSessionId")
-    if not isinstance(session_id, str) and not isinstance(resumed_session_id, str):
-        return None
+    runtime_status = response.get("runtimeStatus")
+    if not isinstance(runtime_status, str) or not runtime_status:
+        runtime_status = provider_response.get("status")
+    if not isinstance(runtime_status, str) or not runtime_status:
+        runtime_status = "unknown"
     session = {
         "schemaVersion": 1,
-        "runtimeStatus": response.get("runtimeStatus"),
+        "runtimeStatus": runtime_status,
         "runId": run_id,
         "attempt": attempt,
         "providerRuntime": "claude_code",
+        "providerStatus": provider_response.get("status"),
         "createdAt": now_iso(),
         "analysisMode": response.get("analysisMode"),
         "permissionProfile": response.get("permissionProfile"),
@@ -276,6 +280,8 @@ def persist_claude_runtime_session(
         },
         "usage": response.get("usage"),
         "cost": response.get("cost"),
+        "error": provider_response.get("error"),
+        "validation": provider_response.get("validation"),
         "note": "V2 Claude Code CLI runtime session captured after provider execution.",
     }
     data = json.dumps(without_none(session), ensure_ascii=True, indent=2).encode("utf-8")
@@ -290,7 +296,7 @@ def persist_claude_runtime_session(
         preview={
             "path": CLAUDE_SESSION_PATH,
             "runId": run_id,
-            "runtimeStatus": response.get("runtimeStatus"),
+            "runtimeStatus": runtime_status,
             "providerRuntime": "claude_code",
             "responseArtifactId": response_artifact_id,
         },
@@ -304,7 +310,7 @@ def persist_claude_runtime_session(
         payload={
             "artifactId": artifact["id"],
             "path": CLAUDE_SESSION_PATH,
-            "runtimeStatus": response.get("runtimeStatus"),
+            "runtimeStatus": runtime_status,
             "responseArtifactId": response_artifact_id,
         },
         artifact_id=artifact["id"],

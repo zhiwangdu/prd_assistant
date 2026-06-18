@@ -684,10 +684,12 @@ Claude envelope `usage` and `total_cost_usd` / `totalCostUsd` are preserved as
 responses preserve `response.providerRequestId`,
 `response.providerResponseId`, `response.responseModel`,
 `response.finishReason`, `response.usage`, and an allowlisted
-`response.providerRequestHeaders` map. After each Claude Code provider response
-with session metadata, V2 also writes a fresh `claude_session.json` runtime
-artifact with `claudeSessionId`, `resumedSessionId`, usage/cost, prompt
-delivery, and the linked `agent_response` artifact id.
+`response.providerRequestHeaders` map. After each Claude Code provider response,
+V2 also writes a fresh `claude_session.json` runtime artifact with
+runtime/provider status, optional `claudeSessionId` / `resumedSessionId`,
+usage/cost, prompt delivery, error/validation status, and the linked
+`agent_response` artifact id; failed responses without a session id still
+replace the initial contract artifact as the latest session audit.
 
 The CLI permission policy is selected from the Workspace `mode` using the V1
 profile names: `diagnose` disables native tools and disallows

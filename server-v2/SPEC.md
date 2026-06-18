@@ -1425,10 +1425,12 @@ allowlisted response headers when present, fall back to the response body `id`
 when no request header is available, and also expose
 `response.providerResponseId`, `response.responseModel`,
 `response.finishReason`, `response.usage`, and
-`response.providerRequestHeaders`. When the response contains session metadata,
-V2 must write a fresh `claude_session.json` runtime artifact with the latest
-`claudeSessionId`, optional `resumedSessionId`, usage/cost, prompt delivery,
-and linked `agent_response` artifact id.
+`response.providerRequestHeaders`. After each Claude Code provider response, V2
+must write a fresh `claude_session.json` runtime artifact with runtime/provider
+status, optional `claudeSessionId` / `resumedSessionId`, usage/cost, prompt
+delivery, error/validation status, and linked `agent_response` artifact id;
+failed responses without a session id still replace the initial contract
+artifact as the latest session audit.
 
 The provider may return a `tool_calls` object requesting a tool advertised in
 the prompt. Advertised tools include log search/slice, Metadata, Case Memory,

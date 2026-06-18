@@ -23,7 +23,7 @@
 - Python V2 `claude_code` provider 接受 `completed` / `succeeded` / `final_answer` + `finalAnswer`，`waiting_for_user` + `pendingPrompt`，以及 `waiting_for_approval` + `pendingApproval`；等待 outcome 会转成 V2 现有的 `logagent.request_user_input` / `logagent.request_approval` task MCP tool call。
 - Python V2 在等待态恢复后必须从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并把它作为下一轮 Claude Code CLI 的 `--resume <session_id>` 参数。
 - Python V2 必须保留 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd`，并写入 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
-- Python V2 必须在 Claude Code 响应后写入新的 `claude_session.json` runtime artifact，记录 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery 和对应 `agent_response` artifact id。
+- Python V2 必须在 Claude Code provider 响应后写入新的 `claude_session.json` runtime artifact，记录 runtime/provider status、可选 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery、错误/校验状态和对应 `agent_response` artifact id；失败响应即使没有 session id，也必须覆盖初始 contract 形成可审计运行态。
 - Python V2 OpenAI-compatible Agent provider 必须在 `agent_response.json`
   的 `response` 字段保存稳定审计元数据：allowlist header
   `providerRequestId`、响应体 `providerResponseId`、response model、finish
@@ -97,6 +97,9 @@ agent_response.json
 - `durationMs`
 - `error`
 - `rawStdoutPreview`
+- Claude Code runtime session artifact 的 `runtimeStatus`、
+  `providerStatus`、可选 `claudeSessionId` / `resumedSessionId`、
+  `responseArtifactId`、`error` 和 `validation`
 - OpenAI-compatible provider 的 `response.providerRequestId`、
   `response.providerResponseId`、`response.responseModel`、
   `response.finishReason`、`response.usage` 和

@@ -1707,6 +1707,70 @@ class StoreTests(unittest.TestCase):
             )
             self.assertNotIn(claude.as_posix(), json.dumps(claude_failure))
 
+    def test_agent_runtime_persists_failed_claude_runtime_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            claude = root / "failing-claude"
+            claude.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "print('claude failed', file=sys.stderr)\n"
+                "raise SystemExit(4)\n",
+                encoding="utf-8",
+            )
+            claude.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                agent_provider="claude_code",
+                claude_code_path=claude,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("why did analysis fail?", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            with self.assertRaisesRegex(ValueError, "Claude Code provider exited"):
+                AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+
+            response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 40,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                },
+            )
+            response_doc = json.loads(response["result"]["contents"][0]["text"])
+            self.assertEqual(response_doc["status"], "failed")
+            self.assertEqual(response_doc["error"]["classification"], "provider_process_error")
+
+            session = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 41,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/claude_session"},
+                },
+            )
+            session_doc = json.loads(session["result"]["contents"][0]["text"])
+            response_evidence = [
+                item for item in store.list_evidence(run["id"])
+                if item["kind"] == "agent_response"
+            ][-1]
+            self.assertEqual(session_doc["runtimeStatus"], "failed")
+            self.assertEqual(session_doc["providerStatus"], "failed")
+            self.assertEqual(session_doc["responseArtifactId"], response_evidence["artifact_id"])
+            self.assertEqual(session_doc["error"]["classification"], "provider_process_error")
+            self.assertNotIn("claudeSessionId", session_doc)
+
     def test_agent_runtime_uses_claude_code_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

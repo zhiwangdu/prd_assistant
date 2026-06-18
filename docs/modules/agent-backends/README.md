@@ -34,7 +34,7 @@ LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapte
 - Python V2 迁移路径已支持 `LOGAGENT_V2_AGENT_PROVIDER=claude_code`：V2 的 LangGraph runtime 在每个 provider round 生成同类 `claude_prompt.md` / `claude_mcp_config.json`，启动配置的 Claude Code CLI，通过 HTTP task MCP 读取 `analysis_package`，并把 `waiting_for_user` / `waiting_for_approval` structured output 转换为现有 task MCP 等待工具。
 - Python V2 恢复等待任务时会从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并在下一次 Claude Code CLI 调用追加 `--resume <session_id>`。
 - Python V2 会把 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd` 保存到 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
-- Python V2 会在 Claude Code 响应后写入新的 `claude_session.json` runtime artifact，记录 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery 和对应 `agent_response` artifact id。
+- Python V2 会在 Claude Code provider 响应后写入新的 `claude_session.json` runtime artifact，记录 runtime/provider status、可选 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery、错误/校验状态和对应 `agent_response` artifact id；即使失败响应没有 session id，也会覆盖初始 contract 形成可审计运行态。
 - Python V2 现在也按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
   `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/Bash，
   `fix` 允许 Read/Grep/Bash/Edit/Write；每个 profile 都自动允许
