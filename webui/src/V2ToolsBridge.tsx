@@ -119,6 +119,55 @@ type V2ConfiguredToolResult = {
   error?: string | null;
 };
 
+type V2HuaweiPackageSyncResult = {
+  schemaVersion?: number;
+  toolId: "logagent.huawei_cloud_package_sync";
+  tool?: string | null;
+  actionId?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  warnings?: unknown[];
+  objectKey?: string | null;
+  objectUrl?: string | null;
+  input?: {
+    uploadId?: string | null;
+    filename?: string | null;
+    size?: number | null;
+    rawPath?: string | null;
+  };
+  obs?: {
+    endpoint?: string | null;
+    bucket?: string | null;
+    objectKey?: string | null;
+    url?: string | null;
+    put?: Record<string, unknown> | null;
+    head?: Record<string, unknown> | null;
+  };
+  gaussdb?: {
+    host?: string | null;
+    port?: number | null;
+    database?: string | null;
+    user?: string | null;
+    sslmode?: string | null;
+    updateAffectedRows?: number | null;
+    queryRowCount?: number | null;
+    queryRows?: unknown[];
+    queryRowsTruncated?: boolean | null;
+  };
+  sql?: {
+    updateSqlLength?: number | null;
+    querySqlLength?: number | null;
+  };
+  timings?: Record<string, unknown>;
+  failedStep?: string | null;
+  error?: string | null;
+  durationMs?: number | null;
+  credentialMetadata?: Record<string, unknown>;
+  credentialEnv?: Record<string, unknown>;
+  evidenceRefs?: unknown[];
+  createdAt?: string | null;
+};
+
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
@@ -639,6 +688,9 @@ function ManualToolResult({ result, resultPath, resultText, toolId }: { result: 
   if (toolId === "pprof_analyzer" && isPprofResult(result)) {
     return <V2PprofResultView result={result} resultPath={resultPath} />;
   }
+  if (toolId === "logagent.huawei_cloud_package_sync" && isHuaweiPackageSyncResult(result)) {
+    return <V2HuaweiPackageSyncResultView result={result} resultPath={resultPath} />;
+  }
   if (isConfiguredToolResult(result)) {
     return <V2ConfiguredToolResultView result={result} resultPath={resultPath} />;
   }
@@ -846,6 +898,90 @@ function TextPreview({ title, value }: { title: string; value?: string }) {
   );
 }
 
+function V2HuaweiPackageSyncResultView({ result, resultPath }: { result: V2HuaweiPackageSyncResult; resultPath: string }) {
+  const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
+  const obsPut = result.obs?.put ?? {};
+  const obsHead = result.obs?.head ?? {};
+  const queryRows = result.gaussdb?.queryRows ?? [];
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Huawei package sync result</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? "logagent.huawei_cloud_package_sync"}</p>
+          {result.summary ? <p className="mt-2 text-sm text-muted-foreground">{result.summary}</p> : null}
+        </div>
+        <Badge variant={result.status === "OK" ? "success" : result.status === "FAILED" ? "destructive" : "secondary"}>{result.status ?? "unknown"}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-6">
+        <Metric label="Upload bytes" value={formatUnknown(result.input?.size)} />
+        <Metric label="OBS PUT" value={formatUnknown(obsPut.statusCode)} />
+        <Metric label="OBS HEAD" value={formatUnknown(obsHead.statusCode)} />
+        <Metric label="Updated rows" value={formatUnknown(result.gaussdb?.updateAffectedRows)} />
+        <Metric label="Query rows" value={formatUnknown(result.gaussdb?.queryRowCount)} />
+        <Metric label="Duration" value={typeof result.durationMs === "number" ? `${result.durationMs}ms` : "-"} />
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <ArtifactPath label="Result JSON" value={resultPath} />
+        <ArtifactPath label="Object URL" value={result.objectUrl} />
+        <ArtifactPath label="Object key" value={result.objectKey} />
+        <ArtifactPath label="Raw upload" value={result.input?.rawPath} />
+      </div>
+      {result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.failedStep ? `${result.failedStep}: ` : ""}{result.error}</div> : null}
+      {warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{warnings.join(" · ")}</div> : null}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <JsonBlock title="OBS" value={result.obs ?? {}} />
+        <JsonBlock title="GaussDB" value={result.gaussdb ?? {}} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <JsonBlock title="SQL metadata" value={result.sql ?? {}} />
+        <JsonBlock title="timings" value={result.timings ?? {}} />
+      </div>
+      <HuaweiQueryRowsTable rows={queryRows} truncated={Boolean(result.gaussdb?.queryRowsTruncated)} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <JsonBlock title="credential metadata" value={result.credentialMetadata ?? result.credentialEnv ?? {}} />
+        <JsonBlock title="raw result" value={result} />
+      </div>
+    </div>
+  );
+}
+
+function HuaweiQueryRowsTable({ rows, truncated }: { rows: unknown[]; truncated: boolean }) {
+  const objectRows = rows.filter(isJsonObject);
+  const columns = Array.from(new Set(objectRows.flatMap((row) => Object.keys(row)))).slice(0, 8);
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">GaussDB query rows</p>
+        <div className="flex gap-2">
+          {truncated ? <Badge variant="warning">truncated</Badge> : null}
+          <Badge variant="secondary">{rows.length}</Badge>
+        </div>
+      </div>
+      {objectRows.length && columns.length ? (
+        <div className="max-h-[340px] overflow-auto rounded-lg border border-border">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+              <tr>
+                {columns.map((column) => <th className="px-3 py-2" key={column}>{column}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {objectRows.map((row, index) => (
+                <tr className="border-t border-border" key={index}>
+                  {columns.map((column) => <td className="px-3 py-2 break-all font-mono text-xs" key={column}>{formatUnknown(row[column])}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <JsonBlock title="rows" value={rows} />
+      )}
+    </div>
+  );
+}
+
 function V2PprofResultView({ result, resultPath }: { result: V2PprofResult; resultPath: string }) {
   const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
   const artifactPaths = isJsonObject(result.artifactPaths) ? result.artifactPaths : result.artifacts;
@@ -1036,6 +1172,11 @@ function isConfiguredToolResult(value: unknown): value is V2ConfiguredToolResult
   return value.schemaVersion === 2 && typeof value.toolId === "string" && Array.isArray(value.findings);
 }
 
+function isHuaweiPackageSyncResult(value: unknown): value is V2HuaweiPackageSyncResult {
+  if (!isJsonObject(value)) return false;
+  return value.toolId === "logagent.huawei_cloud_package_sync";
+}
+
 function stringList(value: unknown[] | undefined) {
   return (value ?? []).map((item) => String(item)).filter(Boolean);
 }
@@ -1070,6 +1211,16 @@ function findingMessage(finding: V2ConfiguredToolFinding) {
     return JSON.stringify(finding);
   } catch {
     return String(finding);
+  }
+}
+
+function formatUnknown(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
 }
 

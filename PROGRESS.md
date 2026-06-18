@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Huawei Package Sync Result View
+
+- V2 Tools Workbench now renders successful
+  `logagent.huawei_cloud_package_sync` manual `tool_run` results with a
+  dedicated structured view instead of raw JSON only.
+- The Huawei view shows OBS PUT/HEAD status, object key/url, upload metadata,
+  GaussDB update/query counts, bounded query rows, SQL metadata, timings,
+  warnings/errors, credential environment metadata, and raw JSON.
+- Updated WebUI README/SPEC so the built-in Huawei package sync tool has a
+  productized result display.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Configured Tool Result View
 
 - V2 Tools Workbench now renders `schemaVersion=2` configured command tool
