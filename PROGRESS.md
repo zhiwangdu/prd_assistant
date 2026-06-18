@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Session Context And Skill ID Normalization
+
+- Workspace, Session, and Rust/V1-style Task create/update paths now normalize
+  `systemContextIds` and `skillIds` before persistence: trim entries, skip
+  empty entries, collapse duplicates, enforce Rust/V1 id character rules, and
+  return HTTP 400 for invalid ids.
+- The V2 API model limits for Session/Task context and skill selections now
+  match the Rust/V1 limit of 32 IDs instead of rejecting after 20 entries.
+- Added HTTP regression coverage for Session create/patch and Task create alias
+  normalization, plus invalid context/skill id rejection.
+- Updated Server V2 README/SPEC for persisted context/skill id boundaries.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused Session/Task alias pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Session Upload Attach Normalization
 
 - Session JSON upload attach now matches Rust/V1 upload id normalization:

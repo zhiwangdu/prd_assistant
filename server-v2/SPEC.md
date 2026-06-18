@@ -82,7 +82,10 @@ Implemented in this slice:
   analysis mode/language, system context ids, and skill ids, validates that
   uploads belong to the target Session, resolves `clusterId` to a Metadata
   `instanceId` when no explicit `instanceId` is supplied, updates the Session
-  snapshot, and creates a Run. Read/resume aliases map `taskId` to the
+  snapshot, and creates a Run. Session and task `systemContextIds` / `skillIds`
+  must be trimmed, skip empty entries, collapse duplicates, enforce the Rust/V1
+  id character rules, and reject invalid ids with HTTP 400 before persistence.
+  Read/resume aliases map `taskId` to the
   underlying Run id for list/read/timeline/evidence/artifacts/analysis/result,
   user-message resume, and Rust/V1-style approval decisions. List/read
   responses expose TaskSummary-compatible top-level fields and retain the raw

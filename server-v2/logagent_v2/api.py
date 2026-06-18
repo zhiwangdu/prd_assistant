@@ -85,6 +85,7 @@ from .system_context import (
     patch_system_context_resource,
     patch_system_context_version,
     preview_system_context_resources,
+    validate_context_id,
 )
 from .tools import get_tool_descriptor, tool_catalog, validate_manual_tool_run
 from .webui_static import WebuiStaticNotFound, resolve_webui_asset
@@ -95,14 +96,14 @@ class WorkspaceCreate(BaseModel):
     question: str = Field(min_length=1, max_length=20000)
     mode: Literal["diagnose", "code_investigation", "fix"] = "diagnose"
     language: Literal["zh-CN", "en-US"] = "zh-CN"
-    skillIds: list[str] = Field(default_factory=list, max_length=20)
+    skillIds: list[str] = Field(default_factory=list, max_length=32)
 
 
 class WorkspaceUpdate(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=20000)
     mode: Literal["diagnose", "code_investigation", "fix"] | None = None
     language: Literal["zh-CN", "en-US"] | None = None
-    skillIds: list[str] | None = Field(default=None, max_length=20)
+    skillIds: list[str] | None = Field(default=None, max_length=32)
 
 
 class SessionCreate(BaseModel):
@@ -113,8 +114,8 @@ class SessionCreate(BaseModel):
     nodeId: str | None = Field(default=None, max_length=200)
     analysisMode: Literal["diagnose", "code_investigation", "fix"] = "diagnose"
     analysisLanguage: Literal["zh-CN", "en-US"] = "zh-CN"
-    systemContextIds: list[str] = Field(default_factory=list, max_length=20)
-    skillIds: list[str] = Field(default_factory=list, max_length=20)
+    systemContextIds: list[str] = Field(default_factory=list, max_length=32)
+    skillIds: list[str] = Field(default_factory=list, max_length=32)
 
 
 class SessionUpdate(BaseModel):
@@ -125,8 +126,8 @@ class SessionUpdate(BaseModel):
     nodeId: str | None = Field(default=None, max_length=200)
     analysisMode: Literal["diagnose", "code_investigation", "fix"] | None = None
     analysisLanguage: Literal["zh-CN", "en-US"] | None = None
-    systemContextIds: list[str] | None = Field(default=None, max_length=20)
-    skillIds: list[str] | None = Field(default=None, max_length=20)
+    systemContextIds: list[str] | None = Field(default=None, max_length=32)
+    skillIds: list[str] | None = Field(default=None, max_length=32)
     status: Literal["draft", "ready"] | None = None
 
 
@@ -145,8 +146,8 @@ class TaskCreate(BaseModel):
     nodeId: str | None = Field(default=None, max_length=200)
     analysisMode: Literal["diagnose", "code_investigation", "fix"] | None = None
     analysisLanguage: Literal["zh-CN", "en-US"] | None = None
-    systemContextIds: list[str] = Field(default_factory=list, max_length=20)
-    skillIds: list[str] = Field(default_factory=list, max_length=20)
+    systemContextIds: list[str] = Field(default_factory=list, max_length=32)
+    skillIds: list[str] = Field(default_factory=list, max_length=32)
 
 
 class MessageCreate(BaseModel):
@@ -475,6 +476,39 @@ def _session_upload_ids(values: list[str]) -> list[str]:
     if not upload_ids:
         raise ValueError("missing uploadIds")
     return upload_ids
+
+
+def _system_context_ids(values: list[str] | None) -> list[str]:
+    context_ids: list[str] = []
+    for value in values or []:
+        context_id = value.strip()
+        if not context_id:
+            continue
+        validate_context_id(context_id)
+        if context_id not in context_ids:
+            context_ids.append(context_id)
+    if len(context_ids) > 32:
+        raise ValueError("too many systemContextIds")
+    return context_ids
+
+
+def _skill_ids(values: list[str] | None) -> list[str]:
+    skill_ids: list[str] = []
+    for value in values or []:
+        skill_id = value.strip()
+        if not skill_id:
+            continue
+        valid = len(skill_id) <= 120 and all(
+            ch.isascii() and (ch.isalnum() or ch in {"_", "-", "."})
+            for ch in skill_id
+        )
+        if not valid:
+            raise ValueError("invalid skillId")
+        if skill_id not in skill_ids:
+            skill_ids.append(skill_id)
+    if len(skill_ids) > 32:
+        raise ValueError("too many skillIds")
+    return skill_ids
 
 
 def _session_title(workspace: dict) -> str:
@@ -902,12 +936,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/workspaces")
     async def create_workspace(_: Auth, payload: WorkspaceCreate) -> dict:
-        return store.create_workspace(
-            payload.question,
-            payload.mode,
-            payload.language,
-            skill_ids=payload.skillIds,
-        )
+        try:
+            return store.create_workspace(
+                payload.question,
+                payload.mode,
+                payload.language,
+                skill_ids=_skill_ids(payload.skillIds),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/workspaces")
     async def list_workspaces(_: Auth) -> dict:
@@ -928,7 +965,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 question=payload.question.strip() if payload.question is not None else None,
                 mode=payload.mode,
                 language=payload.language,
-                skill_ids=payload.skillIds,
+                skill_ids=(
+                    _skill_ids(payload.skillIds)
+                    if payload.skillIds is not None
+                    else None
+                ),
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -945,19 +986,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/sessions", status_code=201)
     async def create_session(_: Auth, payload: SessionCreate) -> dict:
-        question = _session_create_question(payload.question)
-        workspace = store.create_workspace(
-            question,
-            payload.analysisMode,
-            payload.analysisLanguage,
-            skill_ids=payload.skillIds,
-            title=_session_create_title(payload.title, question),
-            source_url=_clean_optional(payload.sourceUrl),
-            instance_id=_clean_optional(payload.instanceId),
-            node_id=_clean_optional(payload.nodeId),
-            system_context_ids=payload.systemContextIds,
-        )
-        return _session_record(store, workspace)
+        try:
+            question = _session_create_question(payload.question)
+            workspace = store.create_workspace(
+                question,
+                payload.analysisMode,
+                payload.analysisLanguage,
+                skill_ids=_skill_ids(payload.skillIds),
+                title=_session_create_title(payload.title, question),
+                source_url=_clean_optional(payload.sourceUrl),
+                instance_id=_clean_optional(payload.instanceId),
+                node_id=_clean_optional(payload.nodeId),
+                system_context_ids=_system_context_ids(payload.systemContextIds),
+            )
+            return _session_record(store, workspace)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/v2/sessions")
     async def list_sessions(_: Auth) -> dict:
@@ -1000,8 +1044,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 mode=payload.analysisMode,
                 language=payload.analysisLanguage,
-                system_context_ids=payload.systemContextIds,
-                skill_ids=payload.skillIds,
+                system_context_ids=(
+                    _system_context_ids(payload.systemContextIds)
+                    if payload.systemContextIds is not None
+                    else None
+                ),
+                skill_ids=(
+                    _skill_ids(payload.skillIds)
+                    if payload.skillIds is not None
+                    else None
+                ),
                 session_status=payload.status,
             )
             return _session_record(store, workspace)
@@ -1461,11 +1513,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     mode=payload.analysisMode,
                     language=payload.analysisLanguage,
                     system_context_ids=(
-                        payload.systemContextIds
+                        _system_context_ids(payload.systemContextIds)
                         if "systemContextIds" in fields_set
                         else None
                     ),
-                    skill_ids=payload.skillIds if "skillIds" in fields_set else None,
+                    skill_ids=(
+                        _skill_ids(payload.skillIds) if "skillIds" in fields_set else None
+                    ),
                 )
             run = store.create_run(session_id)
             task = _task_summary(workspace, run)

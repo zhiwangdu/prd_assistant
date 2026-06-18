@@ -226,8 +226,8 @@ class StoreTests(unittest.TestCase):
                         "nodeId": "node-a",
                         "analysisMode": "code_investigation",
                         "analysisLanguage": "en-US",
-                        "systemContextIds": ["ctx-a"],
-                        "skillIds": ["skill-a"],
+                        "systemContextIds": [" ctx_a ", "", "ctx_a"],
+                        "skillIds": [" skill-a ", "", "skill-a"],
                     },
                 )
                 self.assertEqual(created.status_code, 201)
@@ -242,7 +242,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(session["nodeId"], "node-a")
                 self.assertEqual(session["analysisMode"], "code_investigation")
                 self.assertEqual(session["analysisLanguage"], "en-US")
-                self.assertEqual(session["systemContextIds"], ["ctx-a"])
+                self.assertEqual(session["systemContextIds"], ["ctx_a"])
                 self.assertEqual(session["skillIds"], ["skill-a"])
                 self.assertEqual(session["workspace"]["mode"], "code_investigation")
                 self.assertEqual(session["status"], "draft")
@@ -258,7 +258,8 @@ class StoreTests(unittest.TestCase):
                         "nodeId": None,
                         "analysisMode": "fix",
                         "analysisLanguage": "zh-CN",
-                        "systemContextIds": ["ctx-b"],
+                        "systemContextIds": [" ctx_b ", "", "ctx_b"],
+                        "skillIds": [" skill-b ", "", "skill-b"],
                         "status": "ready",
                     },
                 )
@@ -271,7 +272,8 @@ class StoreTests(unittest.TestCase):
                 self.assertIsNone(patched_body["nodeId"])
                 self.assertEqual(patched_body["analysisMode"], "fix")
                 self.assertEqual(patched_body["analysisLanguage"], "zh-CN")
-                self.assertEqual(patched_body["systemContextIds"], ["ctx-b"])
+                self.assertEqual(patched_body["systemContextIds"], ["ctx_b"])
+                self.assertEqual(patched_body["skillIds"], ["skill-b"])
                 self.assertEqual(patched_body["workspace"]["mode"], "fix")
                 self.assertEqual(patched_body["status"], "ready")
 
@@ -284,6 +286,26 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(fetched.json()["instanceId"], "inst-b")
                 self.assertIsNone(fetched.json()["sourceUrl"])
                 self.assertEqual(fetched.json()["analysisMode"], "fix")
+                self.assertEqual(fetched.json()["skillIds"], ["skill-b"])
+
+                invalid_context_session = client.post(
+                    "/api/v2/sessions",
+                    headers=headers,
+                    json={"systemContextIds": ["bad-context"]},
+                )
+                self.assertEqual(invalid_context_session.status_code, 400)
+                self.assertIn(
+                    "invalid contextId",
+                    invalid_context_session.json()["detail"],
+                )
+
+                invalid_skill_session = client.post(
+                    "/api/v2/sessions",
+                    headers=headers,
+                    json={"skillIds": ["bad/skill"]},
+                )
+                self.assertEqual(invalid_skill_session.status_code, 400)
+                self.assertIn("invalid skillId", invalid_skill_session.json()["detail"])
 
                 uploaded = client.post(
                     f"/api/v2/sessions/{session_id}/uploads",
@@ -1669,8 +1691,8 @@ class StoreTests(unittest.TestCase):
                         "nodeId": "node-a",
                         "analysisMode": "fix",
                         "analysisLanguage": "en-US",
-                        "systemContextIds": ["ctx-a"],
-                        "skillIds": ["skill-a"],
+                        "systemContextIds": [" ctx_a ", "", "ctx_a"],
+                        "skillIds": [" skill-a ", "", "skill-a"],
                     },
                 )
                 self.assertEqual(response.status_code, 202)
@@ -1690,7 +1712,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(updated["nodeId"], "node-a")
                 self.assertEqual(updated["mode"], "fix")
                 self.assertEqual(updated["language"], "en-US")
-                self.assertEqual(updated["systemContextIds"], ["ctx-a"])
+                self.assertEqual(updated["systemContextIds"], ["ctx_a"])
                 self.assertEqual(updated["skillIds"], ["skill-a"])
 
                 wrong_upload = client.post(
@@ -1712,6 +1734,28 @@ class StoreTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(missing_cluster.status_code, 400)
+
+                invalid_context = client.post(
+                    "/api/v2/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": workspace["id"],
+                        "systemContextIds": ["bad-context"],
+                    },
+                )
+                self.assertEqual(invalid_context.status_code, 400)
+                self.assertIn("invalid contextId", invalid_context.json()["detail"])
+
+                invalid_skill = client.post(
+                    "/api/v2/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": workspace["id"],
+                        "skillIds": ["bad/skill"],
+                    },
+                )
+                self.assertEqual(invalid_skill.status_code, 400)
+                self.assertIn("invalid skillId", invalid_skill.json()["detail"])
 
     def test_action_decision_api_can_override_collect_environment_input(self) -> None:
         from fastapi.testclient import TestClient

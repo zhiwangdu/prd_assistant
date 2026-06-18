@@ -26,7 +26,9 @@ slice provides the durable foundation for the V2 product model:
   to Session `ready`, and rejects Session deletion while any task is
   unfinished. Session task APIs return Rust-style TaskSummary fields including
   the persisted `analysisMode` while retaining raw V2 Run records under `runs`
-  for diagnostics.
+  for diagnostics. Session and task `systemContextIds` / `skillIds` are
+  trimmed, empty entries are ignored, duplicates are collapsed, and invalid ids
+  return HTTP 400 before being persisted.
 - Task-scoped HTTP aliases under `/api/v2/tasks`: `POST /api/v2/tasks`
   accepts the Rust/V1-style `sessionId`, `uploadId` / `uploadIds`, `question`,
   `sourceUrl`, metadata, mode/language, context, and skill fields, validates
