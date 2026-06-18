@@ -1073,6 +1073,10 @@ JSON-RPC error instead of listing endpoints.
 executing network requests. `POST /api/v2/fetch/endpoints/:endpoint_id/runs`
 queues a Fetch `tool_run`; callers may provide `workspaceId`, otherwise V2
 creates an isolated workspace for the run.
+Task MCP `logagent.fetch` uses a deterministic Rust/V1-style
+`act_fetch_<digest>` action id derived from normalized Fetch params, so repeated
+same-parameter calls produce the same logical `result.json#response` evidence
+ref. Protected API and manual tool runs still create a fresh action id per run.
 Saved endpoint bodies and runtime body overrides are rejected before the HTTP
 request when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.

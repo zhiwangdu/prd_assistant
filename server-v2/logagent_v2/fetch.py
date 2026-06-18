@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from hashlib import sha256
 from typing import Any
 
 from .artifacts import write_artifact_bytes
@@ -560,6 +561,7 @@ def call_fetch_tool(
             run["id"],
             run_params["endpointId"],
             run_params=run_params,
+            action_id=stable_fetch_action_id(run_params),
         )
     raise ValueError(f"unsupported fetch tool {name}")
 
@@ -571,6 +573,7 @@ def execute_fetch_endpoint(
     run_id: str,
     endpoint_id: str,
     run_params: JsonObject | None = None,
+    action_id: str | None = None,
 ) -> JsonObject:
     if not settings.fetch_enabled:
         raise ValueError("fetch is disabled")
@@ -585,7 +588,7 @@ def execute_fetch_endpoint(
     endpoint = prepare_fetch_endpoint(endpoint, run_params)
     validate_url_allowed(settings, endpoint["url"])
     validate_fetch_request_size(settings, endpoint)
-    action_id = new_id("fetchact")
+    action_id = action_id or new_id("fetchact")
     started = time.monotonic()
     status = "OK"
     error = None
@@ -700,6 +703,12 @@ def execute_fetch_endpoint(
         },
     )
     return {"result": result, "artifact": artifact, "evidence": evidence}
+
+
+def stable_fetch_action_id(run_params: JsonObject) -> str:
+    encoded = json.dumps(run_params, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    digest = sha256(encoded.encode("utf-8")).hexdigest()[:16]
+    return f"act_fetch_{digest}"
 
 
 def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject:

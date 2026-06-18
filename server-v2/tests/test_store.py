@@ -6669,6 +6669,28 @@ fi
                 self.assertTrue(payload["evidence"]["final_allowed"])
 
                 ref = payload["result"]["evidenceRef"]
+                repeated_fetch_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 211,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.fetch",
+                            "arguments": {"endpointId": endpoint["id"]},
+                        },
+                    },
+                )
+                repeated_payload = json.loads(
+                    repeated_fetch_response["result"]["content"][0]["text"]
+                )
+                self.assertEqual(
+                    repeated_payload["result"]["actionId"],
+                    payload["result"]["actionId"],
+                )
+                self.assertEqual(repeated_payload["result"]["evidenceRef"], ref)
                 answer = {
                     "summary": "Fetch-backed answer.",
                     "symptoms": [],

@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Task MCP Stable Action IDs
+
+- Aligned V2 task MCP `logagent.fetch` with Rust/V1 behavior by deriving a
+  deterministic `act_fetch_<digest>` action id from normalized Fetch params.
+- Repeated same-parameter task MCP Fetch calls now return the same logical
+  `tool_results/<action_id>/result.json#response` evidence ref, while protected
+  API/manual Fetch tool runs still create a fresh action id per execution.
+- Updated root, V2 Server, and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Fetch pytest selection, full `PYTHONPATH=. uv run --extra
+  dev pytest` (130 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Tool Result Field Parity
 
 - Extended V2 `logagent.fetch` results to use the Rust/V1

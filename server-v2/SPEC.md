@@ -984,6 +984,10 @@ request and supports `endpointId`, `fetchId`, V1-style `fetch_id`,
 /api/v2/fetch/endpoints/:endpoint_id/runs` queues a Fetch `tool_run`, validates
 the endpoint and runtime params, reuses a provided `workspaceId`, or creates an
 isolated workspace when no workspace is provided.
+Task MCP `logagent.fetch` must derive a deterministic Rust/V1-style
+`act_fetch_<digest>` action id from normalized params so repeated identical MCP
+calls produce the same logical response evidence ref. API/manual Fetch tool
+runs may keep fresh action ids per execution.
 Result artifacts include redacted request metadata, top-level `httpOk`,
 `statusCode`, `redirectCount`, `finalUrl`, `truncated`, `credentialVersion`,
 the Rust/V1 `schemaVersion=3` tool result envelope (`exitCode=null`,
