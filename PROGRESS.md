@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Tool Result Path Typing
+
+- Extended the WebUI V2 tool run result type with the V1-compatible
+  `runId`, `taskId`, `toolId`, and `resultPath` fields returned by
+  `/api/v2/tools/runs/:run_id/result`.
+- V2 pprof manual run results now show the result JSON logical path alongside
+  top/tree/raw/stderr/SVG paths.
+- Updated WebUI README/SPEC so the pprof-specific result display includes the
+  result artifact path.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 pprof Tool Result View
 
 - V2 Tools Workbench now keeps the structured manual `tool_run` result in

@@ -57,6 +57,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [selectedManualRunId, setSelectedManualRunId] = useState("");
   const [manualResultText, setManualResultText] = useState("");
   const [manualResult, setManualResult] = useState<Record<string, unknown> | null>(null);
+  const [manualResultPath, setManualResultPath] = useState("");
   const [manualArtifacts, setManualArtifacts] = useState<V2ToolRunArtifacts | null>(null);
   const [manualUploadProgress, setManualUploadProgress] = useState(0);
   const [paramsText, setParamsText] = useState("{}");
@@ -99,9 +100,11 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     if (run.status === "succeeded") {
       const result = await getV2ToolRunResult(apiKey, targetRunId);
       setManualResult(result.result);
+      setManualResultPath(result.resultPath);
       setManualResultText(JSON.stringify(result.result, null, 2));
     } else {
       setManualResult(null);
+      setManualResultPath("");
       setManualResultText(JSON.stringify(run, null, 2));
     }
     return run;
@@ -126,6 +129,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
       } else {
         setManualArtifacts(null);
         setManualResult(null);
+        setManualResultPath("");
         setManualResultText("");
       }
     }
@@ -151,6 +155,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     setParamsText(JSON.stringify(selectedTool?.paramsTemplate ?? {}, null, 2));
     setResultText("");
     setManualResult(null);
+    setManualResultPath("");
     setManualResultText("");
     setManualArtifacts(null);
     setManualFiles([]);
@@ -243,6 +248,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
     setLoading(true);
     setManualResult(null);
+    setManualResultPath("");
     setManualResultText("");
     setManualArtifacts(null);
     try {
@@ -270,6 +276,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
       setSelectedManualRunId(run.id);
       setManualRuns((current) => upsertRun(current, run));
       setManualResult(null);
+      setManualResultPath("");
       setManualResultText(JSON.stringify(run, null, 2));
       setStatus(`Created V2 tool_run ${run.id}`);
       await loadManualRun(run.id);
@@ -283,6 +290,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   async function selectManualRun(runId: string) {
     setSelectedManualRunId(runId);
     setManualResult(null);
+    setManualResultPath("");
     setManualResultText("");
     setManualArtifacts(null);
     setLoading(true);
@@ -485,7 +493,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
                 <ToolRunArtifactList artifacts={manualArtifacts} onDownload={(artifactId, relativePath) => void downloadManualArtifact(artifactId, relativePath)} />
               ) : null}
               {manualResult ? (
-                <ManualToolResult result={manualResult} resultText={manualResultText} toolId={selectedManualRun?.toolId ?? selectedTool?.toolId ?? ""} />
+                <ManualToolResult result={manualResult} resultPath={manualResultPath} resultText={manualResultText} toolId={selectedManualRun?.toolId ?? selectedTool?.toolId ?? ""} />
               ) : manualResultText ? (
                 <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{manualResultText}</pre>
               ) : null}
@@ -550,14 +558,14 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function ManualToolResult({ result, resultText, toolId }: { result: Record<string, unknown>; resultText: string; toolId: string }) {
+function ManualToolResult({ result, resultPath, resultText, toolId }: { result: Record<string, unknown>; resultPath: string; resultText: string; toolId: string }) {
   if (toolId === "pprof_analyzer" && isPprofResult(result)) {
-    return <V2PprofResultView result={result} />;
+    return <V2PprofResultView result={result} resultPath={resultPath} />;
   }
   return <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre>;
 }
 
-function V2PprofResultView({ result }: { result: V2PprofResult }) {
+function V2PprofResultView({ result, resultPath }: { result: V2PprofResult; resultPath: string }) {
   const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
   const artifactPaths = isJsonObject(result.artifactPaths) ? result.artifactPaths : result.artifacts;
   return (
@@ -606,6 +614,7 @@ function V2PprofResultView({ result }: { result: V2PprofResult }) {
         </table>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
+        <ArtifactPath label="Result JSON" value={resultPath} />
         <ArtifactPath label="Top text" value={artifactPaths["topTextPath"]} />
         <ArtifactPath label="Tree text" value={artifactPaths["treeTextPath"]} />
         <ArtifactPath label="Raw text" value={artifactPaths["rawTextPath"]} />

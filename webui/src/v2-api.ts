@@ -275,6 +275,10 @@ export type V2ToolRun = Omit<V2Run, "finalAnswer"> & {
 };
 
 export type V2ToolRunResult = {
+  runId: string;
+  taskId: string;
+  toolId: string;
+  resultPath: string;
   run: V2ToolRun;
   artifact: V2Artifact;
   result: Record<string, unknown>;
