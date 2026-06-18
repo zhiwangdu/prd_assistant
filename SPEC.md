@@ -199,7 +199,7 @@ flowchart TD
 - Analysis Orchestrator 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。
 - LLM Gateway 继续收敛 Rust V1 辅助路径和 alias/Case import 的用量审计、
   Provider request id 与稳定结构化协议；V2 Agent provider 审计字段已先行落地。
-- Memory embedding/vector 召回和自动注入 analysis evidence bundle。
+- Memory 外部 embedding provider、可选 sqlite-vec/pgvector 召回增强，以及更正式的 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
 - Code Evidence V2 只读 `git grep` MVP 已支持 product/version 到配置 ref 的映射和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version；后续继续实现独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
 - 基于已落地的 Remote Executor 命令和 V2 单文件 SCP 采集，继续实现测试环境多节点批量 SSH/SCP 采集、Agent 自动选择 executor/template 和更多环境模板。

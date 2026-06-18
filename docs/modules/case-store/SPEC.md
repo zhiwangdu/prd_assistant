@@ -19,11 +19,12 @@ Memory 保存已确认故障 Case，并支持后续任务相似召回。现有 C
 - `PATCH /api/cases/:case_id` 支持编辑文本、元信息、证据引用和禁用 Case。
 - WebUI 在成功任务最终结果下方提供确认表单、相似 Case 列表和禁用操作。
 - WebUI 顶部 `Memory` 页面支持搜索、LLM-assisted 文本导入、缺失信息追问、确认保存、详情编辑和启用/禁用。
+- Python V2 clean-room Server 已实现本地 hash-vector recall：Case 主表保存 `vector_json`，搜索合并 SQLite FTS5/BM25、关键词 fallback 和 vector 相似度，必要时返回 vector-only 近似召回。
 
 未实现：
 
-- embedding 生成。
-- embedding / vector 召回。
+- 外部 embedding provider 生成。
+- sqlite-vec、pgvector 等外部 vector index。
 - 将 Case 引用升级为更正式的 analysis evidence bundle。
 - Case 合并和批量管理。
 
@@ -103,6 +104,7 @@ SQLite 表：
 - `memory_items`：Memory item 元数据和完整 `CaseRecord` JSON，第一阶段 `memoryType=case`。
 - `memory_chunks`：用于检索的文本 chunk，Case 当前写入单 chunk。
 - `memory_chunks_fts`：FTS5 索引。创建或查询失败时不阻断 Case API，Server fallback 到关键词重叠评分。
+- V2 `cases.vector_json`：由 searchable text 生成的本地 hash-vector，用于轻量相似召回和 FTS 结果重排；不需要外部服务。
 
 建议字段：
 
@@ -132,6 +134,7 @@ SQLite 表：
 - 先过滤 `memoryType=case`、`status=active`、`enabled`。
 - 查询文本按空白、逗号和分号切分用于关键词 fallback；FTS 查询会进一步拆分 hyphen 等符号。
 - SQLite FTS/BM25 分数和关键词重叠分数合并排序。
+- V2 同时计算本地 hash-vector 相似度，并把 vector 结果与 FTS/关键词结果合并；FTS 命中可返回 `searchBackend=hybrid` 和 `vectorScore`，纯向量召回返回 `searchBackend=vector`。
 - 检索字段包括 title、symptom、rootCause、solution、product、version、environment、instanceId、nodeId 和 evidenceRefs。
 - 未提供 query 时按创建时间返回最近启用 Case。
 - 禁用 Case 默认不返回，除非 `includeDisabled=true`。
@@ -143,6 +146,7 @@ SQLite 表：
 - 文本导入或直接 API 手工录入可保存为 `sourceType=manual` Case，且不需要任务 ID。
 - Case import 缺少必填字段时必须阻止确认保存，并提供可继续回答的问题。
 - 新任务可按产品、关键词和 FTS 相似度召回 Case。
+- V2 新任务可通过本地 hash-vector recall 召回语义相近但精确 token 不完全一致的 Case。
 - Case 可禁用而不是硬删除。
 - 未完成、未确认或仅包含中间假设的分析不可保存为 Case。
 - 重复确认同一 task 时返回已有 Case，不创建重复记录。

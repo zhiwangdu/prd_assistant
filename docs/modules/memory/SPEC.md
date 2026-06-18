@@ -19,6 +19,7 @@ SQLite 表：
 - `memory_items(memory_id, memory_type, status, enabled, source_id, record_json, searchable_text, created_at, updated_at)`
 - `memory_chunks(chunk_id, item_id, chunk_index, content)`
 - `memory_chunks_fts(item_id, chunk_id, content)`
+- Python V2 clean-room Server 的 Case 表额外保存 `vector_json`，作为由 searchable text 生成的本地 hash-vector。
 
 第一阶段：
 
@@ -38,12 +39,13 @@ SQLite 表：
 
 - 默认只返回 `enabled=true`、`status=active`、`memoryType=case`。
 - FTS/BM25 命中与关键词重叠分数合并排序。
+- V2 合并本地 hash-vector 相似度；FTS 命中可升级为 `searchBackend=hybrid`，也可返回 `searchBackend=vector` 的近似召回。
 - FTS 不可用时 fallback 到关键词重叠。
 - 未提供 query 时按创建时间返回最近 Case。
 
 ## 配置
 
-Embedding 配置已预留但默认关闭：
+外部 embedding 配置已预留但默认关闭：
 
 ```yaml
 embedding:
@@ -54,7 +56,7 @@ embedding:
   store: "sqlite"
 ```
 
-Phase 1 不要求生成 embedding，也不要求安装 sqlite-vec。
+当前不要求外部 embedding，也不要求安装 sqlite-vec；V2 已内置 dependency-light hash-vector recall 作为轻量召回能力。
 
 ## 验收
 
@@ -63,3 +65,4 @@ Phase 1 不要求生成 embedding，也不要求安装 sqlite-vec。
 - 创建、更新、禁用 Case 通过现有 API 继续工作。
 - 新任务仍写入兼容的 `case_context.json`。
 - FTS 查询可召回简单关键词重叠不易命中的 Case；FTS 失败时服务保持可用。
+- V2 本地 vector recall 可召回精确 token 不完全一致的相似 Case，并在 Case 编辑后刷新向量。

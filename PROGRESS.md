@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Memory Vector Recall Documentation
+
+- Reconciled Memory / Case Store docs with the current V2 implementation:
+  local hash-vector recall is already implemented in SQLite through
+  `vector_json`, merged with FTS/BM25 and keyword fallback.
+- Updated Case Store and Memory README/SPEC files to distinguish implemented
+  dependency-light local vector recall from future external embedding providers
+  and optional sqlite-vec/pgvector backends.
+- Narrowed the root pending item to external embedding/vector-index
+  enhancement and a more formal analysis evidence bundle.
+- Verification passed: `git diff --check`.
+
 ## 2026-06-18 V2 Fetch cURL Import Dialects
 
 - Extended the V2 Fetch cURL importer with safe common flags:
