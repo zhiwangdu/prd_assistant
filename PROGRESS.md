@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Knowledge Route Aliases
+
+- Mounted Rust/V1-style `/api/debug/llm`, `/api/settings/*`,
+  `/api/exports/skills.zip`, `/api/exports/tools.zip`, `/api/skills/*`,
+  `/api/system-context/*`, and `/api/mcp/readonly` aliases in V2.
+- The aliases share the existing V2 settings diagnostics, LLM model/chat test,
+  Agent backend diagnostics, Domain Adapter registry, Skill registry/import/
+  preview, export zip, System Context resource/version/preview, and readonly
+  MCP handlers.
+- Fixed HTTP MCP JSON-RPC body binding so readonly and task MCP POST requests
+  parse the request object from the body consistently.
+- Added HTTP regression coverage for legacy settings/debug, exports, Skills,
+  System Context resource/version/preview, and readonly MCP aliases.
+- Updated Server V2 README/SPEC for the Rust/V1-style knowledge/settings route
+  aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Rust/V1 Executor Route Aliases
 
 - Mounted Rust/V1-style `/api/executors`, `/api/executor-command-templates`,

@@ -617,6 +617,200 @@ class StoreTests(unittest.TestCase):
         }
         self.assertFalse(expected - actual, sorted(expected - actual))
 
+    def test_v1_knowledge_and_settings_aliases_share_v2_handlers(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            Store(settings.sqlite_path).initialize()
+            headers = {"Authorization": "Bearer test"}
+
+            try:
+                with TestClient(create_app(settings)) as client:
+                    initial_debug = client.get("/api/debug/llm", headers=headers)
+                    self.assertEqual(initial_debug.status_code, 200)
+                    self.assertFalse(initial_debug.json()["llmOutputLogging"])
+
+                    enabled_debug = client.put(
+                        "/api/debug/llm",
+                        headers=headers,
+                        json={"llmOutputLogging": True},
+                    )
+                    self.assertEqual(enabled_debug.status_code, 200)
+                    self.assertTrue(enabled_debug.json()["llmOutputLogging"])
+                    self.assertTrue(debug_log_responses())
+
+                    llm_settings = client.get("/api/settings/llm", headers=headers)
+                    self.assertEqual(llm_settings.status_code, 200)
+                    self.assertEqual(llm_settings.json()["llm"]["provider"], "stub")
+
+                    llm_models = client.get("/api/settings/llm/models", headers=headers)
+                    self.assertEqual(llm_models.status_code, 200)
+                    self.assertEqual(llm_models.json()["result"]["provider"], "stub")
+
+                    llm_chat = client.post(
+                        "/api/settings/llm/chat",
+                        headers=headers,
+                        json={"message": "hello"},
+                    )
+                    self.assertEqual(llm_chat.status_code, 200)
+                    self.assertIn("hello", llm_chat.json()["result"]["response"])
+
+                    backends = client.get("/api/settings/agent-backends", headers=headers)
+                    self.assertEqual(backends.status_code, 200)
+                    self.assertEqual(
+                        backends.json()["agentBackends"]["defaultBackend"],
+                        "logagent_v2_agent",
+                    )
+
+                    backend_test = client.post(
+                        "/api/settings/agent-backends/logagent_v2_agent/test",
+                        headers=headers,
+                    )
+                    self.assertEqual(backend_test.status_code, 200)
+                    self.assertEqual(backend_test.json()["result"]["status"], "configured")
+
+                    adapters = client.get("/api/settings/domain-adapters", headers=headers)
+                    self.assertEqual(adapters.status_code, 200)
+                    self.assertEqual(
+                        adapters.json()["domainAdapters"][0]["id"],
+                        "opengemini_influxdb",
+                    )
+
+                    imported_skill = client.post(
+                        "/api/skills/imports",
+                        headers=headers,
+                        json={
+                            "skillId": "alias-skill",
+                            "name": "Alias Skill",
+                            "description": "Alias route skill.",
+                            "markdown": "Use explicit evidence.",
+                        },
+                    )
+                    self.assertEqual(imported_skill.status_code, 200, imported_skill.text)
+                    self.assertEqual(imported_skill.json()["skillId"], "alias-skill")
+
+                    skills = client.get("/api/skills", headers=headers)
+                    self.assertEqual(skills.status_code, 200)
+                    self.assertEqual(skills.json()["skills"][0]["skillId"], "alias-skill")
+
+                    skill = client.get("/api/skills/alias-skill", headers=headers)
+                    self.assertEqual(skill.status_code, 200)
+                    self.assertEqual(skill.json()["skillId"], "alias-skill")
+
+                    skill_preview = client.post(
+                        "/api/skills/preview",
+                        headers=headers,
+                        json={"skillIds": [" alias-skill ", "", "alias-skill"]},
+                    )
+                    self.assertEqual(skill_preview.status_code, 200)
+                    self.assertEqual(
+                        [item["skillId"] for item in skill_preview.json()["resources"]],
+                        ["alias-skill"],
+                    )
+
+                    skills_zip = client.get("/api/exports/skills.zip", headers=headers)
+                    self.assertEqual(skills_zip.status_code, 200)
+                    self.assertEqual(skills_zip.headers["content-type"], "application/zip")
+
+                    tools_zip = client.get("/api/exports/tools.zip", headers=headers)
+                    self.assertEqual(tools_zip.status_code, 200)
+                    self.assertEqual(tools_zip.headers["content-type"], "application/zip")
+
+                    created_resource = client.post(
+                        "/api/system-context/resources",
+                        headers=headers,
+                        json={
+                            "kind": "runbook",
+                            "title": "Alias runbook",
+                            "scope": "log_analysis",
+                            "contentType": "markdown",
+                            "content": "Check alias route context.",
+                            "summary": "Alias context",
+                            "promptPolicy": {"includeByDefault": False},
+                        },
+                    )
+                    self.assertEqual(created_resource.status_code, 201, created_resource.text)
+                    context_id = created_resource.json()["contextId"]
+                    first_version_id = created_resource.json()["activeVersionId"]
+
+                    resources = client.get("/api/system-context/resources", headers=headers)
+                    self.assertEqual(resources.status_code, 200)
+                    self.assertEqual(resources.json()["resources"][0]["contextId"], context_id)
+
+                    fetched_resource = client.get(
+                        f"/api/system-context/resources/{context_id}",
+                        headers=headers,
+                    )
+                    self.assertEqual(fetched_resource.status_code, 200)
+                    self.assertEqual(fetched_resource.json()["contextId"], context_id)
+
+                    patched_resource = client.patch(
+                        f"/api/system-context/resources/{context_id}",
+                        headers=headers,
+                        json={"title": "Patched alias runbook"},
+                    )
+                    self.assertEqual(patched_resource.status_code, 200)
+                    self.assertEqual(patched_resource.json()["title"], "Patched alias runbook")
+
+                    version = client.post(
+                        f"/api/system-context/resources/{context_id}/versions",
+                        headers=headers,
+                        json={
+                            "contentType": "markdown",
+                            "content": "Updated alias context.",
+                            "summary": "Updated alias",
+                            "activate": False,
+                        },
+                    )
+                    self.assertEqual(version.status_code, 201, version.text)
+                    second_version_id = version.json()["versions"][-1]["versionId"]
+                    self.assertEqual(version.json()["activeVersionId"], first_version_id)
+
+                    patched_version = client.patch(
+                        f"/api/system-context/resources/{context_id}/versions/{second_version_id}",
+                        headers=headers,
+                        json={"summary": "Patched version summary"},
+                    )
+                    self.assertEqual(patched_version.status_code, 200)
+                    self.assertEqual(
+                        patched_version.json()["versions"][-1]["summary"],
+                        "Patched version summary",
+                    )
+
+                    activated = client.post(
+                        f"/api/system-context/resources/{context_id}/versions/{second_version_id}/activate",
+                        headers=headers,
+                    )
+                    self.assertEqual(activated.status_code, 200)
+                    self.assertEqual(activated.json()["activeVersionId"], second_version_id)
+
+                    context_preview = client.post(
+                        "/api/system-context/preview",
+                        headers=headers,
+                        json={"contextIds": [f" {context_id} ", "", context_id]},
+                    )
+                    self.assertEqual(context_preview.status_code, 200)
+                    self.assertEqual(
+                        [item["contextId"] for item in context_preview.json()["resources"]],
+                        [context_id],
+                    )
+
+                    mcp_initialize = client.post(
+                        "/api/mcp/readonly",
+                        headers=headers,
+                        json={"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+                    )
+                    self.assertEqual(mcp_initialize.status_code, 200)
+                    self.assertEqual(
+                        mcp_initialize.json()["result"]["serverInfo"]["name"],
+                        "logagent-v2-readonly",
+                    )
+            finally:
+                set_debug_log_responses(False)
+
     def test_run_result_route_returns_conflict_until_result_exists(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

@@ -487,6 +487,14 @@ POST /api/v2/settings/llm/chat
 GET  /api/v2/settings/agent-backends
 POST /api/v2/settings/agent-backends/:backend_id/test
 GET  /api/v2/settings/domain-adapters
+GET  /api/debug/llm
+PUT  /api/debug/llm
+GET  /api/settings/llm
+GET  /api/settings/llm/models
+POST /api/settings/llm/chat
+GET  /api/settings/agent-backends
+POST /api/settings/agent-backends/:backend_id/test
+GET  /api/settings/domain-adapters
 GET  /api/v2/executors
 POST /api/v2/executors
 GET  /api/v2/executors/:executor_id
@@ -513,6 +521,8 @@ GET  /api/executor-runs/:run_id/result
 GET  /api/executor-runs/:run_id/files/:file_name
 GET  /api/v2/exports/skills.zip
 GET  /api/v2/exports/tools.zip
+GET  /api/exports/skills.zip
+GET  /api/exports/tools.zip
 GET  /api/v2/metadata/instances
 GET  /api/v2/metadata/instances/:instance_id
 GET  /api/v2/metadata/instances/:instance_id/snapshot
@@ -548,6 +558,10 @@ GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
 POST /api/v2/skills/preview
+GET  /api/skills
+GET  /api/skills/:skill_id
+POST /api/skills/imports
+POST /api/skills/preview
 GET  /api/v2/system-context/resources
 POST /api/v2/system-context/resources
 GET  /api/v2/system-context/resources/:context_id
@@ -556,6 +570,14 @@ POST /api/v2/system-context/resources/:context_id/versions
 PATCH /api/v2/system-context/resources/:context_id/versions/:version_id
 POST /api/v2/system-context/resources/:context_id/versions/:version_id/activate
 POST /api/v2/system-context/preview
+GET  /api/system-context/resources
+POST /api/system-context/resources
+GET  /api/system-context/resources/:context_id
+PATCH /api/system-context/resources/:context_id
+POST /api/system-context/resources/:context_id/versions
+PATCH /api/system-context/resources/:context_id/versions/:version_id
+POST /api/system-context/resources/:context_id/versions/:version_id/activate
+POST /api/system-context/preview
 POST /api/v2/fetch/imports/preview
 POST /api/v2/fetch/imports
 GET  /api/v2/fetch/endpoints
@@ -574,6 +596,7 @@ DELETE /api/fetch/endpoints/:endpoint_id
 POST /api/fetch/endpoints/:endpoint_id/runs
 GET  /api/fetch/runs
 POST /api/v2/runs/:run_id/fetch/:endpoint_id
+POST /api/mcp/readonly
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
 ```
@@ -591,6 +614,8 @@ in SQLite, support draft/active/archived versions, and can be previewed with
 task kind, product, version, environment, and metadata instance filters. They
 are not automatically injected into new analysis runs in this slice;
 productized run-time knowledge should continue to be represented as Skills.
+Rust/V1-style `/api/system-context/*` aliases share the same compatibility
+handlers.
 Preview `contextIds` are normalized before resolution: trim whitespace, drop
 empty entries, collapse duplicates, reject invalid ids, and cap explicit
 selection at 32 ids.
@@ -1540,6 +1565,10 @@ Rust/V1-compatible background artifact envelope: stable `artifactPath`,
 `backgroundRef`, `canonicalRef`, `evidenceRefs`, `skillRevision`, reference
 metadata, `truncated`, and `finalEvidenceAllowed=false`.
 
+Rust/V1-style `/api/skills/*`, `/api/exports/skills.zip`,
+`/api/exports/tools.zip`, and `/api/mcp/readonly` aliases share the V2 Skill
+registry, export, and readonly MCP handlers.
+
 `GET /api/v2/exports/skills.zip` builds a current registry snapshot. The archive
 contains each Skill directory's regular files under `<skillId>/...` plus a root
 `manifest.json` with `schemaVersion`, `generatedAt`, Skill ids, display names,
@@ -1580,6 +1609,8 @@ rather than compatibility routes for the Rust Server:
 
 Readonly MCP must expose the same Domain Adapter summaries through
 `logagent-v2://domain-adapters` and `logagent.list_domain_adapters`.
+Rust/V1-style `/api/settings/*` and `/api/debug/llm` aliases share these
+settings, diagnostics, and adapter handlers.
 
 `GET/PUT /api/v2/debug/llm` controls process-local model response-content
 logging. It is off by default, resets on restart, and may only log response

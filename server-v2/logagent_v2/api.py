@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -1950,22 +1950,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/debug/llm")
     @app.get("/api/v2/debug/llm")
     async def get_llm_debug(_: Auth) -> dict:
         return {"llmOutputLogging": debug_log_responses()}
 
+    @app.put("/api/debug/llm")
     @app.put("/api/v2/debug/llm")
     async def update_llm_debug(_: Auth, payload: LlmDebugUpdate) -> dict:
         return {"llmOutputLogging": set_debug_log_responses(payload.llmOutputLogging)}
 
+    @app.get("/api/settings/llm")
     @app.get("/api/v2/settings/llm")
     async def get_llm_settings(_: Auth) -> dict:
         return {"llm": llm_settings_summary(settings)}
 
+    @app.get("/api/settings/llm/models")
     @app.get("/api/v2/settings/llm/models")
     async def test_llm_models(_: Auth) -> dict:
         return test_response(lambda: list_agent_models(settings))
 
+    @app.post("/api/settings/llm/chat")
     @app.post("/api/v2/settings/llm/chat")
     async def test_llm_chat(_: Auth, payload: LlmChatTestCreate) -> dict:
         try:
@@ -1974,14 +1979,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return test_response(lambda: test_agent_chat(settings, message))
 
+    @app.get("/api/settings/agent-backends")
     @app.get("/api/v2/settings/agent-backends")
     async def get_agent_backends(_: Auth) -> dict:
         return {"agentBackends": agent_backends_summary(settings)}
 
+    @app.post("/api/settings/agent-backends/{backend_id}/test")
     @app.post("/api/v2/settings/agent-backends/{backend_id}/test")
     async def test_agent_backend(_: Auth, backend_id: str) -> dict:
         return test_response(lambda: agent_backend_diagnostic(settings, backend_id))
 
+    @app.get("/api/settings/domain-adapters")
     @app.get("/api/v2/settings/domain-adapters")
     async def get_domain_adapters(_: Auth) -> dict:
         return {"domainAdapters": domain_adapter_summaries()}
@@ -2123,6 +2131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="remote run file is missing")
         return FileResponse(path, media_type=media_type, filename=path.name)
 
+    @app.get("/api/exports/skills.zip")
     @app.get("/api/v2/exports/skills.zip")
     async def export_skills(_: Auth) -> Response:
         try:
@@ -2135,6 +2144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers={"Content-Disposition": 'attachment; filename="skills.zip"'},
         )
 
+    @app.get("/api/exports/tools.zip")
     @app.get("/api/v2/exports/tools.zip")
     async def export_tools(_: Auth) -> Response:
         try:
@@ -2147,6 +2157,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers={"Content-Disposition": 'attachment; filename="tools.zip"'},
         )
 
+    @app.get("/api/skills")
     @app.get("/api/v2/skills")
     async def list_diagnostic_skills(_: Auth) -> dict:
         try:
@@ -2154,15 +2165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.get("/api/v2/skills/{skill_id}")
-    async def get_diagnostic_skill(_: Auth, skill_id: str) -> dict:
-        try:
-            return get_skill(settings, skill_id)
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-
+    @app.post("/api/skills/imports")
     @app.post("/api/v2/skills/imports")
     async def create_skill_import(_: Auth, payload: SkillImportCreate) -> dict:
         try:
@@ -2177,6 +2180,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/skills/preview")
     @app.post("/api/v2/skills/preview")
     async def preview_skills(_: Auth, payload: SkillPreviewCreate) -> dict:
         try:
@@ -2184,10 +2188,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/skills/{skill_id}")
+    @app.get("/api/v2/skills/{skill_id}")
+    async def get_diagnostic_skill(_: Auth, skill_id: str) -> dict:
+        try:
+            return get_skill(settings, skill_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/system-context/resources")
     @app.get("/api/v2/system-context/resources")
     async def list_system_context_resources(_: Auth) -> dict:
         return {"resources": list_system_context_resource_summaries(store)}
 
+    @app.post("/api/system-context/resources", status_code=201)
     @app.post("/api/v2/system-context/resources", status_code=201)
     async def create_system_context_resource_api(
         _: Auth, payload: SystemContextResourceCreate
@@ -2197,6 +2213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/system-context/resources/{context_id}")
     @app.get("/api/v2/system-context/resources/{context_id}")
     async def get_system_context_resource_api(_: Auth, context_id: str) -> dict:
         try:
@@ -2206,6 +2223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.patch("/api/system-context/resources/{context_id}")
     @app.patch("/api/v2/system-context/resources/{context_id}")
     async def patch_system_context_resource_api(
         _: Auth,
@@ -2223,6 +2241,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/system-context/resources/{context_id}/versions", status_code=201)
     @app.post("/api/v2/system-context/resources/{context_id}/versions", status_code=201)
     async def create_system_context_version_api(
         _: Auth,
@@ -2236,6 +2255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.patch("/api/system-context/resources/{context_id}/versions/{version_id}")
     @app.patch("/api/v2/system-context/resources/{context_id}/versions/{version_id}")
     async def patch_system_context_version_api(
         _: Auth,
@@ -2256,6 +2276,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post(
+        "/api/system-context/resources/{context_id}/versions/{version_id}/activate"
+    )
+    @app.post(
         "/api/v2/system-context/resources/{context_id}/versions/{version_id}/activate"
     )
     async def activate_system_context_version_api(
@@ -2270,6 +2293,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/system-context/preview")
     @app.post("/api/v2/system-context/preview")
     async def preview_system_context_resources_api(
         _: Auth, payload: SystemContextPreviewCreate
@@ -2821,12 +2845,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/mcp/readonly")
     @app.post("/api/v2/mcp/readonly")
-    async def readonly_mcp(_: Auth, request: Any) -> Any:
+    async def readonly_mcp(_: Auth, request: Any = Body(...)) -> Any:
         return readonly_mcp_response(settings, store, request)
 
     @app.post("/api/v2/mcp/task/{run_id}")
-    async def task_mcp(_: Auth, run_id: str, request: Any) -> Any:
+    async def task_mcp(_: Auth, run_id: str, request: Any = Body(...)) -> Any:
         return task_mcp_response(settings, store, run_id, request)
 
     @app.get("/", include_in_schema=False)
