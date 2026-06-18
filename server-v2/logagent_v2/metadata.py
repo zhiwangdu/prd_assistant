@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from hashlib import sha256
@@ -242,6 +244,8 @@ def parse_metadata_content(template_type: str, content: str) -> JsonObject:
         value = json.loads(content)
     elif template_type == "yaml":
         value = parse_yaml(content)
+    elif template_type == "csv":
+        value = parse_csv_metadata(content)
     else:
         raise ValueError(f"unsupported metadata templateType {template_type}")
     if not isinstance(value, dict):
@@ -258,6 +262,349 @@ def parse_yaml(content: str) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError("YAML metadata content must decode to an object")
     return value
+
+
+def parse_csv_metadata(content: str) -> JsonObject:
+    reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")))
+    if not reader.fieldnames:
+        raise ValueError("CSV metadata content must include a header row")
+    normalized_fieldnames = [normalize_csv_key(field) for field in reader.fieldnames]
+    if not any(normalized_fieldnames):
+        raise ValueError("CSV metadata header must contain at least one column")
+
+    instance: JsonObject = {}
+    cluster: JsonObject = {}
+    nodes: list[JsonObject] = []
+    partition_views: list[JsonObject] = []
+    databases: dict[str, JsonObject] = {}
+    recognized_rows = 0
+
+    for row_number, raw_row in enumerate(reader, start=2):
+        row = normalize_csv_row(raw_row)
+        if not any(value for value in row.values()):
+            continue
+        section = csv_section(row)
+        if section == "instance":
+            merge_csv_instance(instance, cluster, row)
+        elif section == "node":
+            nodes.append(csv_node(row, row_number))
+        elif section == "database":
+            csv_database(databases, row, row_number)
+        elif section == "retention_policy":
+            csv_retention_policy(databases, row, row_number)
+        elif section == "measurement":
+            csv_measurement(databases, row, row_number)
+        elif section == "field":
+            csv_field(databases, row, row_number)
+        elif section == "partition_view":
+            partition_views.append(csv_partition_view(row, row_number))
+        else:
+            raise ValueError(f"unsupported CSV metadata section {section} at row {row_number}")
+        recognized_rows += 1
+
+    if recognized_rows == 0:
+        raise ValueError("CSV metadata content did not contain any recognized rows")
+
+    cluster.setdefault("nodes", nodes)
+    cluster.setdefault("databases", list(databases.values()))
+    cluster.setdefault("partitionViews", partition_views)
+    return {"instance": instance, "cluster": cluster}
+
+
+def normalize_csv_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").strip().lower())
+
+
+def normalize_csv_row(raw_row: dict[str, Any]) -> dict[str, str]:
+    row: dict[str, str] = {}
+    for key, value in raw_row.items():
+        normalized_key = normalize_csv_key(key)
+        if not normalized_key:
+            continue
+        row[normalized_key] = str(value or "").strip()
+    return row
+
+
+def csv_value(row: dict[str, str], *names: str) -> str | None:
+    for name in names:
+        value = row.get(normalize_csv_key(name))
+        if value:
+            return value
+    return None
+
+
+def csv_section(row: dict[str, str]) -> str:
+    raw = csv_value(row, "section", "type", "kind", "rowType")
+    if raw:
+        section = normalize_csv_key(raw)
+        aliases = {
+            "instance": "instance",
+            "cluster": "instance",
+            "node": "node",
+            "nodes": "node",
+            "database": "database",
+            "db": "database",
+            "retentionpolicy": "retention_policy",
+            "rp": "retention_policy",
+            "measurement": "measurement",
+            "measurements": "measurement",
+            "table": "measurement",
+            "field": "field",
+            "fields": "field",
+            "schema": "field",
+            "partitionview": "partition_view",
+            "ptview": "partition_view",
+        }
+        return aliases.get(section, section)
+    if csv_value(row, "field", "fieldName") and csv_value(
+        row, "database", "db", "databaseName"
+    ) and csv_value(row, "measurement", "table"):
+        return "field"
+    if csv_value(row, "measurement", "table") and csv_value(
+        row, "database", "db", "databaseName"
+    ):
+        return "measurement"
+    if csv_value(row, "retentionPolicy", "rp") and csv_value(
+        row, "database", "db", "databaseName"
+    ):
+        return "retention_policy"
+    if csv_value(row, "database", "db", "databaseName"):
+        return "database"
+    if csv_value(row, "nodeId", "node", "host", "hostname", "role"):
+        return "node"
+    return "instance"
+
+
+def merge_csv_instance(
+    instance: JsonObject, cluster: JsonObject, row: dict[str, str]
+) -> None:
+    for target, names in {
+        "clusterId": ("clusterId", "cluster", "clusterName"),
+        "product": ("product",),
+        "version": ("version",),
+        "environment": ("environment", "env"),
+        "region": ("region",),
+        "owner": ("owner",),
+    }.items():
+        value = csv_value(row, *names)
+        if value:
+            instance[target] = value
+    cluster_name = csv_value(row, "name", "clusterName")
+    if cluster_name:
+        cluster["name"] = cluster_name
+    for target in ("clusterId", "product", "version", "environment"):
+        if target in instance:
+            cluster[target] = instance[target]
+    tags = csv_map(row, "tag", "tags")
+    if tags:
+        instance["tags"] = {**instance.get("tags", {}), **tags}
+
+
+def csv_node(row: dict[str, str], row_number: int) -> JsonObject:
+    node_id = csv_value(row, "nodeId", "node", "id")
+    host = csv_value(row, "host", "ip", "address")
+    hostname = csv_value(row, "hostname", "hostName")
+    if not any((node_id, host, hostname)):
+        raise ValueError(f"CSV metadata node row {row_number} requires nodeId or host")
+    return {
+        "nodeId": node_id or hostname or host,
+        "hostname": hostname or host,
+        "host": host or hostname,
+        "role": csv_value(row, "role"),
+        "zone": csv_value(row, "zone", "az"),
+        "status": csv_value(row, "status"),
+        "labels": csv_map(row, "label", "labels", "tag", "tags"),
+    }
+
+
+def csv_database(
+    databases: dict[str, JsonObject], row: dict[str, str], row_number: int
+) -> JsonObject:
+    database = csv_value(row, "database", "db", "databaseName")
+    if not database and csv_section(row) == "database":
+        database = csv_value(row, "name")
+    if not database:
+        raise ValueError(f"CSV metadata database row {row_number} requires database")
+    db = databases.setdefault(
+        database,
+        {
+            "name": database,
+            "retentionPolicies": [],
+        },
+    )
+    default_rp = csv_value(row, "defaultRetentionPolicy", "defaultRp")
+    if default_rp:
+        db["defaultRetentionPolicy"] = default_rp
+    replica_n = csv_value(row, "replicaN", "replicas")
+    if replica_n:
+        db["replicaN"] = csv_scalar(replica_n)
+    return db
+
+
+def csv_retention_policy(
+    databases: dict[str, JsonObject], row: dict[str, str], row_number: int
+) -> JsonObject:
+    db = csv_database(databases, row, row_number)
+    rp_name = csv_value(row, "retentionPolicy", "rp", "retentionPolicyName")
+    if not rp_name:
+        rp_name = str(db.get("defaultRetentionPolicy") or "autogen")
+    if "defaultRetentionPolicy" not in db:
+        db["defaultRetentionPolicy"] = rp_name
+    policies = db.setdefault("retentionPolicies", [])
+    existing = next(
+        (item for item in policies if isinstance(item, dict) and item.get("name") == rp_name),
+        None,
+    )
+    if existing is None:
+        existing = {"name": rp_name, "measurements": []}
+        policies.append(existing)
+    for target, names in {
+        "replicaN": ("replicaN", "replicas"),
+        "duration": ("duration",),
+        "shardGroupDuration": ("shardGroupDuration",),
+    }.items():
+        value = csv_value(row, *names)
+        if value:
+            existing[target] = csv_scalar(value)
+    return existing
+
+
+def csv_measurement(
+    databases: dict[str, JsonObject], row: dict[str, str], row_number: int
+) -> JsonObject:
+    rp = csv_retention_policy(databases, row, row_number)
+    measurement = csv_value(row, "measurement", "table", "measurementName")
+    if not measurement and csv_section(row) == "measurement":
+        measurement = csv_value(row, "name")
+    if not measurement:
+        raise ValueError(f"CSV metadata measurement row {row_number} requires measurement")
+    measurements = rp.setdefault("measurements", [])
+    existing = next(
+        (
+            item
+            for item in measurements
+            if isinstance(item, dict) and item.get("name") == measurement
+        ),
+        None,
+    )
+    if existing is None:
+        existing = {"name": measurement, "schema": []}
+        measurements.append(existing)
+    for target, names in {
+        "versionName": ("versionName",),
+        "shardKeyType": ("shardKeyType",),
+        "engineType": ("engineType",),
+    }.items():
+        value = csv_value(row, *names)
+        if value:
+            existing[target] = value
+    return existing
+
+
+def csv_field(databases: dict[str, JsonObject], row: dict[str, str], row_number: int) -> None:
+    measurement = csv_measurement(databases, row, row_number)
+    field = csv_value(row, "field", "fieldName", "name")
+    if not field:
+        raise ValueError(f"CSV metadata field row {row_number} requires field")
+    schema = measurement.setdefault("schema", [])
+    field_entry: JsonObject = {"name": field}
+    typ = csv_field_type(csv_value(row, "typ", "type", "fieldType", "typeCode"))
+    if typ is not None:
+        field_entry["typ"] = typ
+    end_time = csv_value(row, "endTime")
+    if end_time:
+        field_entry["endTime"] = csv_scalar(end_time)
+    schema.append(field_entry)
+
+
+def csv_partition_view(row: dict[str, str], row_number: int) -> JsonObject:
+    database = csv_value(row, "database", "db", "databaseName")
+    if not database:
+        raise ValueError(f"CSV metadata partition_view row {row_number} requires database")
+    return {
+        "database": database,
+        "ptId": csv_scalar_or_none(csv_value(row, "ptId", "partitionId")),
+        "ownerNodeId": csv_value(row, "ownerNodeId", "owner", "nodeId"),
+        "status": csv_scalar_or_none(csv_value(row, "status")),
+        "statusText": csv_value(row, "statusText"),
+        "version": csv_scalar_or_none(csv_value(row, "version")),
+        "replicaGroupId": csv_scalar_or_none(csv_value(row, "replicaGroupId")),
+    }
+
+
+def csv_field_type(value: str | None) -> int | None:
+    if value is None:
+        return None
+    parsed = coerce_int(value)
+    if parsed is not None:
+        return parsed
+    labels = {
+        "unknown": 0,
+        "integer": 1,
+        "int": 1,
+        "unsigned": 2,
+        "uint": 2,
+        "float": 3,
+        "double": 3,
+        "string": 4,
+        "str": 4,
+        "boolean": 5,
+        "bool": 5,
+        "tag": 6,
+    }
+    normalized = normalize_csv_key(value)
+    return labels.get(normalized)
+
+
+def csv_map(row: dict[str, str], *prefixes: str) -> JsonObject:
+    result: JsonObject = {}
+    normalized_prefixes = tuple(normalize_csv_key(prefix) for prefix in prefixes)
+    for key, value in row.items():
+        if not value:
+            continue
+        if key in normalized_prefixes:
+            result.update(parse_csv_map_value(value))
+            continue
+        for prefix in normalized_prefixes:
+            if key.startswith(prefix) and len(key) > len(prefix):
+                result[key[len(prefix) :]] = value
+    return result
+
+
+def parse_csv_map_value(value: str) -> JsonObject:
+    result: JsonObject = {}
+    for part in re.split(r"[;,]", value):
+        item = part.strip()
+        if not item:
+            continue
+        if "=" in item:
+            key, map_value = item.split("=", 1)
+        elif ":" in item:
+            key, map_value = item.split(":", 1)
+        else:
+            continue
+        key = key.strip()
+        if key:
+            result[key] = map_value.strip()
+    return result
+
+
+def csv_scalar(value: str) -> object:
+    parsed = coerce_int(value)
+    if parsed is not None:
+        return parsed
+    lowered = value.strip().lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    return value
+
+
+def csv_scalar_or_none(value: str | None) -> object:
+    if value is None:
+        return None
+    return csv_scalar(value)
 
 
 def normalize_metadata_snapshot(

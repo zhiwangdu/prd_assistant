@@ -157,7 +157,7 @@ flowchart TD
 - Log Analysis task schema 强制带 `sessionId`；旧的无 Session task 不再兼容展示。
 - Server 持久化任务并在后台执行，支持重启恢复。
 - Upload session 持久化并支持重启续传。
-- Metadata 接入 task context，完整写入 workspace `metadata_context.json`；Claude Code 初始 `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 按 section/filter/分页读取。
+- Metadata 支持 JSON/YAML/CSV/openGemini 导入并接入 task context，完整写入 workspace `metadata_context.json`；Claude Code 初始 `analysis_package.json` 和任务 MCP 默认 `metadata_context` resource 只暴露 `metadataContextOutline`，细节通过 `logagent.query_metadata` 按 section/filter/分页读取。
 - Skill-backed System Context 接入 task context，支持 Codex-compatible Diagnostic Skills、`logagent.json` 匹配 manifest、Markdown Skill 导入、按需 MCP reference 读取和 Metadata adapter；创建 Log Analysis run 时写入 `system_context.json` 并进入 Claude Code 背景区。
 - Server 新增受保护只读 HTTP MCP：`POST /api/mcp/readonly`，支持 `initialize`、`resources/list`、`resources/read`、`tools/list` 和 `tools/call`，只暴露 Skills、Metadata、Case、工具目录和 Domain Adapter 等共享知识。
 - Server 新增受保护导出下载：`GET /api/exports/skills.zip` 和 `GET /api/exports/tools.zip`。`skills.zip` 打包当前索引 Skill 普通文件并跳过 symlink；`tools.zip` 对 enabled 且可执行的工具做平台二进制快照，缺失或不可执行工具只在 manifest 标记 skipped。

@@ -10419,6 +10419,72 @@ fi
             self.assertEqual(instances[0]["instanceId"], "inst-preview")
             self.assertEqual(instances[0]["nodeCount"], 1)
 
+    def test_metadata_csv_import_builds_queryable_schema(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        csv_content = "\n".join(
+            [
+                (
+                    "section,clusterId,product,version,environment,nodeId,host,role,"
+                    "database,defaultRetentionPolicy,retentionPolicy,measurement,field,typ"
+                ),
+                "instance,cluster-csv,opengemini,1.2.3,prod,,,,,,,,,",
+                "node,,,,,node-a,10.0.0.1,data,,,,,,",
+                "database,,,,,,,,metrics,autogen,,,,",
+                "field,,,,,,,,metrics,,autogen,cpu,host,tag",
+                "field,,,,,,,,metrics,,autogen,cpu,value,float",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            preview = preview_metadata_import(
+                store,
+                instance_id="inst-csv",
+                template_type="csv",
+                content=csv_content,
+                remark="csv import",
+            )
+            self.assertEqual(preview["import"]["nodeCount"], 1)
+            self.assertEqual(preview["import"]["databaseCount"], 1)
+            self.assertEqual(
+                preview["snapshot"]["cluster"]["databases"][0]["defaultRetentionPolicy"],
+                "autogen",
+            )
+            self.assertEqual(store.list_metadata_instances(), [])
+
+            confirmed = confirm_metadata_import(store, preview["import"]["importId"])
+            self.assertEqual(confirmed["instance"]["templateType"], "csv")
+            self.assertEqual(confirmed["snapshot"]["cluster"]["product"], "opengemini")
+            fields = query_field_types(
+                store,
+                instance_id="inst-csv",
+                database="metrics",
+                measurement="cpu",
+            )
+            by_name = {item["name"]: item for item in fields["fields"]}
+            self.assertEqual(by_name["host"]["typeLabel"], "Tag")
+            self.assertEqual(by_name["value"]["typeLabel"], "Float")
+            self.assertTrue(fields["defaultRetentionPolicyUsed"])
+
+            with TestClient(create_app(settings)) as client:
+                response = client.post(
+                    "/api/v2/metadata/imports/preview",
+                    headers={"Authorization": "Bearer test"},
+                    json={
+                        "instanceId": "inst-csv-api",
+                        "templateType": "csv",
+                        "content": csv_content,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["import"]["templateType"], "csv")
+
     def test_metadata_cluster_routes_derive_from_snapshots(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

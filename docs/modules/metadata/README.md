@@ -12,7 +12,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 - 本地 JSON 文件存储。
 - `instance` / `cluster` / `node` 查询。
-- JSON/YAML 模板导入预览。
+- JSON/YAML/CSV 模板导入预览。
 - openGemini `/getdata` 真实元数据解析。
 - openGemini `PtView` 分区视图解析。
 - openGemini `Databases` 库、保留策略、表结构和 shard group 摘要解析。
@@ -32,10 +32,6 @@ Metadata 模块已完成基础 Rust Server 实现。
 - Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array；字符串会 trim，空字符串等同省略，数组项必须是 trim 后非空字符串。
 - Python V2 的 Tools catalog metadata built-ins 使用 Rust/V1 descriptor 形状：`backend=builtin`，tag 包含 `read-only` / `manual-run`，field types 模板包含 `retentionPolicy` 和 `field=[]`，tag fields 模板包含 `retentionPolicy` 且不包含 `field`。
 - 只读 HTTP MCP 通过 `logagent://metadata/instances`、`logagent://metadata/instances/{instance_id}/snapshot`、`logagent.list_metadata_instances`、`logagent.get_metadata_snapshot`、`logagent.get_metadata_field_types` 和 `logagent.get_metadata_tag_fields` 暴露已导入 Metadata，供个人本地 Claude Code 读取；`logagent.get_metadata_snapshot` 响应保留 V2 顶层 snapshot 字段并补齐 Rust/V1 `snapshot` 包装。Python V2 同时接受 `logagent-v2://...` 旧 alias，该入口不导入或修改 Metadata。
-
-暂未实现：
-
-- CSV 模板解析。
 
 ## 职责
 
@@ -132,11 +128,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 - YAML
 - JSON
-- openGemini `/getdata` JSON，`templateType` 使用 `opengemini`
-
-预留但暂未实现：
-
 - CSV
+- openGemini `/getdata` JSON，`templateType` 使用 `opengemini`
 
 导入方式：
 
@@ -147,6 +140,15 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 校验字段和重复项。
 - 生成导入预览。
 - 用户确认后写入 Metadata Store。
+
+CSV 面向小团队人工维护的拓扑表。推荐提供 `section` 列，取值为
+`instance`、`node`、`database`、`retention_policy`、`measurement`、`field`
+或 `partition_view`；省略时服务端会按列名推断常见 node / database /
+measurement / field 行。常用列包括 `clusterId`、`product`、`version`、
+`environment`、`nodeId`、`host`、`role`、`database`、
+`defaultRetentionPolicy`、`retentionPolicy`、`measurement`、`field`、`typ`
+和 `endTime`。`typ` 支持 openGemini 数字类型码，也支持 `tag`、`float`、
+`string`、`boolean` 等标签。
 
 确认导入时以 `instanceId` 作为覆盖边界。重复导入同一个 Instance 会先清理该实例旧的 cluster/node 快照，再写入本次导入结果，v1 不保留历史版本。
 

@@ -327,7 +327,7 @@ Implemented in this slice:
   `grep_results.json#matches/<index>` refs before validation.
 - Final result persistence as `result.json` and `result.md` background
   artifacts, exposed through HTTP and task MCP resources.
-- Metadata foundation with direct JSON/YAML/openGemini content import,
+- Metadata foundation with direct JSON/YAML/CSV/openGemini content import,
   allowlisted URL fetch, preview/confirm draft workflow, SQLite snapshot
   storage, saved raw snapshot refresh, field/tag type query APIs, explicit
   Session `instanceId` / `nodeId` binding for per-run `metadata_context`,
@@ -1290,10 +1290,18 @@ Current direct import request:
 ```
 
 `templateType=json` normalizes generic `instance` / `cluster` / `nodes` /
-`databases` content. `templateType=yaml` uses PyYAML. `templateType=opengemini`
-normalizes `MetaNodes`, `DataNodes`, `SqlNodes`, `Databases`, retention
-policies, measurements, and schema field types. Field type mapping follows the
-existing openGemini labels:
+`databases` content. `templateType=yaml` uses PyYAML. `templateType=csv` uses
+the Python standard library CSV parser and accepts a header row plus optional
+`section` values: `instance`, `node`, `database`, `retention_policy`,
+`measurement`, `field`, and `partition_view`; when `section` is omitted, V2
+infers common node/database/measurement/field rows from column names. Supported
+CSV columns include `clusterId`, `product`, `version`, `environment`,
+`nodeId`, `host`, `role`, `database`, `defaultRetentionPolicy`,
+`retentionPolicy`, `measurement`, `field`, `typ`, and `endTime`; `typ` accepts
+either numeric openGemini type codes or labels such as `tag`, `float`,
+`string`, and `boolean`. `templateType=opengemini` normalizes `MetaNodes`,
+`DataNodes`, `SqlNodes`, `Databases`, retention policies, measurements, and
+schema field types. Field type mapping follows the existing openGemini labels:
 
 ```text
 0 Unknown

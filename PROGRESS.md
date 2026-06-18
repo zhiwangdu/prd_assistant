@@ -2,6 +2,29 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata CSV Import
+
+- Added dependency-free V2 Metadata CSV import support for
+  `templateType=csv` across preview, confirm, direct import, and URL fetch
+  request models.
+- CSV imports accept a header row plus optional `section` values for
+  `instance`, `node`, `database`, `retention_policy`, `measurement`, `field`,
+  and `partition_view`; common node/schema rows can also be inferred from
+  column names when `section` is omitted.
+- Field `typ` values now accept openGemini numeric type codes or labels such as
+  `tag`, `float`, `string`, and `boolean`, and the normalized snapshot feeds the
+  existing field/tag Metadata query tools.
+- Updated root, V2 Server, Config, and Metadata docs/specs to remove the
+  previous CSV-reserved wording and document the supported CSV columns.
+- Verification passed:
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_metadata_csv_import_builds_queryable_schema tests/test_store.py::StoreTests::test_metadata_preview_confirm_import_workflow tests/test_store.py::StoreTests::test_metadata_import_query_and_mcp_background_slice`
+  with 3 passed and 1 Starlette warning, and
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/metadata.py logagent_v2/api.py tests/test_store.py`.
+  Full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` passed with
+  173 tests and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`
+  passed, and `git diff --check` passed.
+
 ## 2026-06-18 V2 Analyzer Command Availability Status
 
 - Tightened configured command tool descriptors so `runnable=true` now requires

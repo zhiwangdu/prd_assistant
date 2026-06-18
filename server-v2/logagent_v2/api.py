@@ -165,7 +165,7 @@ class DecisionCreate(BaseModel):
 
 class MetadataImportCreate(BaseModel):
     instanceId: str = Field(min_length=1, max_length=200)
-    templateType: Literal["json", "yaml", "opengemini"] = "json"
+    templateType: Literal["json", "yaml", "csv", "opengemini"] = "json"
     content: str = Field(min_length=1)
     filename: str | None = Field(default=None, max_length=300)
     remark: str | None = Field(default=None, max_length=120)
@@ -173,7 +173,7 @@ class MetadataImportCreate(BaseModel):
 
 class MetadataImportFetchCreate(BaseModel):
     instanceId: str = Field(min_length=1, max_length=200)
-    templateType: Literal["json", "yaml", "opengemini"] = "opengemini"
+    templateType: Literal["json", "yaml", "csv", "opengemini"] = "opengemini"
     url: str = Field(min_length=1, max_length=2000)
     remark: str | None = Field(default=None, max_length=120)
 

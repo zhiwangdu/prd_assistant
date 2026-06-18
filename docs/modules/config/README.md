@@ -245,7 +245,7 @@ metadata:
     - "yaml"
     - "json"
     - "opengemini"
-    - "csv" # reserved, not implemented yet
+    - "csv"
 ```
 
 ## 原则

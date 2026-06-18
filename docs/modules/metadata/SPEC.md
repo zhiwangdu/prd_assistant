@@ -12,7 +12,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 
 - 本地 JSON 文件存储。
 - 实例、集群和集群节点查询 API。
-- JSON/YAML 模板导入预览。
+- JSON/YAML/CSV 模板导入预览。
 - openGemini `/getdata` snapshot 解析。
 - openGemini `PtView` 和 `Databases` 重点字段解析。
 - Server 侧按 URL 拉取真实元数据并生成导入预览。
@@ -31,10 +31,6 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - Python V2 的 Tools catalog、只读 MCP 和 task MCP 均使用 Rust/V1 兼容的 field 过滤参数 schema：`field` 可以是单个 string，也可以是非空 string array；字符串会 trim，空字符串等同省略，数组项必须是 trim 后非空字符串。
 - Python V2 的 Tools catalog metadata built-ins 必须使用 Rust/V1 descriptor 形状：`backend=builtin`，tag 包含 `read-only` / `manual-run`，field types 模板包含 `retentionPolicy` 和 `field=[]`，tag fields 模板包含 `retentionPolicy` 且不包含 `field`。
 - 只读 HTTP MCP Metadata 资源和 tools，可读取已导入 instance 列表、snapshot、field type 和 tag fields，不写入 Metadata Store；resource 支持 V1 `logagent://metadata/...` URI，并保留 `logagent-v2://metadata/...` alias；`logagent.get_metadata_snapshot` 响应保留 V2 顶层 snapshot 字段并补齐 Rust/V1 `snapshot` 包装。
-
-仍待实现：
-
-- CSV 模板解析。
 
 ## 职责边界
 
@@ -161,7 +157,7 @@ Node:
 
 ## 模板导入
 
-当前模板支持 JSON/YAML/openGemini `/getdata` JSON，CSV 预留但暂未实现。导入流程：
+当前模板支持 JSON/YAML/CSV/openGemini `/getdata` JSON。导入流程：
 
 ```text
 upload template
@@ -180,6 +176,15 @@ upload template
 - JSON：适合程序导出。
 
 API 层保留 `templateType` 字段。
+
+CSV 必须包含 header。推荐使用 `section` 列，取值为 `instance`、`node`、
+`database`、`retention_policy`、`measurement`、`field` 或
+`partition_view`；省略时按列名推断常见 node / database / measurement /
+field 行。常用列包括 `clusterId`、`product`、`version`、`environment`、
+`nodeId`、`host`、`role`、`database`、`defaultRetentionPolicy`、
+`retentionPolicy`、`measurement`、`field`、`typ` 和 `endTime`。`typ`
+接受 openGemini 数字类型码或 `tag`、`float`、`string`、`boolean` 等标签，
+归一化后继续复用现有字段类型查询和 Tag 字段查询能力。
 
 确认导入写入 store 时，`instanceId` 是覆盖边界。若 store 中已存在同名 Instance，Server 先移除该 Instance 关联的旧 cluster 和 node 记录，再写入本次导入的新 instance/cluster/node。该行为用于支持重复导入同一集群的最新 `/getdata` 或模板快照，v1 不保留历史版本。
 

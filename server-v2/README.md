@@ -154,8 +154,8 @@ slice provides the durable foundation for the V2 product model:
   and remote environment command result/stdout/stderr files, are returned under
   `supportArtifacts` and are also included in the task MCP `artifact_index`
   with `source="support"`.
-- Metadata foundation with JSON/YAML/openGemini content import, allowlisted URL
-  fetch, SQLite snapshot storage, saved raw snapshot refresh,
+- Metadata foundation with JSON/YAML/CSV/openGemini content import, allowlisted
+  URL fetch, SQLite snapshot storage, saved raw snapshot refresh,
   preview/confirm drafts, field/tag type queries, per-run `metadata_context`
   auto-selection, explicit Session `instanceId` / `nodeId` binding, HTTP API,
   readonly MCP tools, and task MCP `logagent.get_metadata_topology` /
@@ -1458,6 +1458,15 @@ and returns node/database counts without changing `metadata_instances`.
 preview summary, while `GET /api/v2/metadata/imports/:import_id` also includes
 the normalized snapshot for inspection. Confirm upserts the normalized snapshot
 and marks the draft `confirmed`.
+
+`templateType=csv` is dependency-free and intended for small-team maintained
+tables. A `section` column may be set to `instance`, `node`, `database`,
+`retention_policy`, `measurement`, `field`, or `partition_view`; when omitted,
+V2 infers common node/database/measurement/field rows from column names. Common
+columns include `clusterId`, `product`, `version`, `environment`, `nodeId`,
+`host`, `role`, `database`, `defaultRetentionPolicy`, `retentionPolicy`,
+`measurement`, `field`, `typ`, and `endTime`. Field `typ` accepts openGemini
+type codes or labels such as `tag`, `float`, `string`, and `boolean`.
 
 `POST /api/v2/metadata/instances/<instance_id>/refresh` rebuilds the normalized
 snapshot from the raw JSON already saved with the instance and upserts the
