@@ -12107,6 +12107,24 @@ fi
                 50,
             )
 
+            default_readonly_cases = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 506,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_cases",
+                        "arguments": {"query": "limit-marker"},
+                    },
+                },
+            )
+            default_readonly_body = json.loads(
+                default_readonly_cases["result"]["content"][0]["text"]
+            )
+            self.assertEqual(default_readonly_body["caseCount"], 20)
+
             readonly_cases = readonly_mcp_response(
                 settings,
                 store,
@@ -12139,6 +12157,25 @@ fi
 
             workspace = store.create_workspace("case recall limits", "diagnose", "en-US")
             run = store.create_run(workspace["id"])
+            default_recall_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 507,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.recall_cases",
+                        "arguments": {"query": "limit-marker"},
+                    },
+                },
+            )
+            default_recall_body = json.loads(
+                default_recall_response["result"]["content"][0]["text"]
+            )
+            self.assertEqual(default_recall_body["caseCount"], 5)
+
             recall_response = task_mcp_response(
                 settings,
                 store,

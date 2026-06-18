@@ -90,10 +90,10 @@ workspaces/<task_id>/case_context.json
 
 `GET /api/tasks/:task_id/artifacts` 返回 `caseContextPath` 和 `caseContext`。LLM Gateway 会读取该上下文并加入 prompt，但历史 Case 只作为参考，不替代当前任务证据。
 
-只读 HTTP MCP 只允许读取 recent/search/get Case，不允许写入、确认、编辑或禁用 Case。`logagent://cases/recent` 返回 Rust/V1 默认的最近 20 个 enabled Case；`logagent.search_cases` 使用 Rust/V1 只读入口的 `limit=1..50` 上限。
+只读 HTTP MCP 只允许读取 recent/search/get Case，不允许写入、确认、编辑或禁用 Case。`logagent://cases/recent` 返回 Rust/V1 默认的最近 20 个 enabled Case；`logagent.search_cases` 使用 Rust/V1 只读入口的默认 `limit=20` 和 `limit=1..50` 上限。
 Python V2 task MCP 额外提供 Rust V1 兼容 `logagent.recall_cases`，只召回 enabled
 Case，并把结果作为 `case_context` background evidence 持久化；响应返回
-`artifactPath`、`caseCount` 和逐 Case `evidenceRefs`，`limit` 按 1..20 裁剪；该背景不能作为最终根因证据引用。
+`artifactPath`、`caseCount` 和逐 Case `evidenceRefs`，默认 `limit=5` 且按 1..20 裁剪；该背景不能作为最终根因证据引用。
 
 ## 存储
 

@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Case MCP Default Limit Parity
+
+- Aligned V2 readonly MCP `logagent.search_cases` default limit with Rust/V1:
+  omitted `limit` now returns up to 20 Cases while preserving the 1..50 clamp.
+- Kept task MCP `logagent.recall_cases` on the Rust/V1 task default of 5 and
+  the 1..20 clamp.
+- Extended Case MCP limit regression coverage for omitted readonly search and
+  task recall limits, and updated V2 Server and Case Store docs.
+- Verification passed: focused Case MCP limit pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 161 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Metadata Field Type Extension Label Parity
 
 - Aligned V2 Metadata field type labels with Rust/V1 openGemini mapping.

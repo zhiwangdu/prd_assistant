@@ -478,22 +478,24 @@ def call_case_tool(
         query = optional_string(arguments.get("query"))
         if name == "logagent.recall_cases" and query is None:
             raise ValueError("query is required")
+        is_recall = name == "logagent.recall_cases"
         limit = case_tool_limit(
             arguments.get("limit"),
-            maximum=20 if name == "logagent.recall_cases" else 50,
+            default=5 if is_recall else 20,
+            maximum=20 if is_recall else 50,
         )
         value = {
             "cases": store.search_cases(
                 query=query,
                 limit=limit,
                 include_disabled=False
-                if name == "logagent.recall_cases"
+                if is_recall
                 else bool(arguments.get("includeDisabled", False)),
             ),
             "finalEvidenceAllowed": False,
         }
         value["caseCount"] = len(value["cases"])
-        if name == "logagent.recall_cases":
+        if is_recall:
             artifact_path = f"case_recall/recall_{stable_case_digest(arguments)}.json"
             value["artifactPath"] = artifact_path
             value["backgroundRef"] = f"{artifact_path}#cases"
@@ -509,9 +511,9 @@ def call_case_tool(
     return value
 
 
-def case_tool_limit(value: object, *, maximum: int) -> int:
+def case_tool_limit(value: object, *, default: int, maximum: int) -> int:
     if value is None:
-        return 5
+        return default
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError("case search limit must be an integer")
     return max(1, min(value, maximum))
