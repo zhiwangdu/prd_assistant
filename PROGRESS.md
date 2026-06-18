@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Token Runtime Prompt Budgets
+
+- Added V2 Agent budget settings for cumulative provider usage tokens,
+  per-invocation runtime seconds, and persisted user-input prompt count:
+  `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS`,
+  `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS`, and
+  `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`.
+- Provider response usage is now recorded on `analysis_state.json` rounds as
+  `tokenUsage`; when token, runtime, or user prompt budgets are exhausted,
+  V2 reuses the existing guarded `budgetLimited=true` low-confidence final
+  answer path and marks the run `succeeded`.
+- Settings summaries and Agent backend diagnostics now expose all active
+  budget values.
+- Added regression coverage for token budget exhaustion, user prompt budget
+  exhaustion after resume, and settings budget visibility.
+- Updated root, V2 Server, Analysis Agent, and Config README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused budget/settings pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (150 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Environment Collector Hint Selection
 
 - Approved V2 `collect_environment` inputs can now resolve multi-executor and

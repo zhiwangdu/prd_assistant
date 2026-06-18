@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from hashlib import sha256
 from typing import TypedDict
 
@@ -50,6 +51,7 @@ class AgentGraphState(TypedDict, total=False):
     providerResponse: JsonObject
     requestArtifactId: str
     responseArtifactId: str
+    startedAtMonotonic: float
     baseRound: JsonObject
     toolCalls: list[JsonObject]
     waitingStatus: str
@@ -168,6 +170,7 @@ class AgentRuntime:
             "toolObservations": [],
             "rounds": [],
             "attempt": 0,
+            "startedAtMonotonic": time.monotonic(),
             "runtimeStatus": "prepare_agent_request",
         }
 
@@ -180,7 +183,13 @@ class AgentRuntime:
         rounds = list(state.get("rounds") or [])
         interaction_context = self._interaction_context(run_id)
         tool_observations = list(state.get("toolObservations") or [])
-        budget_reason = self._analysis_budget_exhausted(current_attempt, tool_observations)
+        budget_reason = self._analysis_budget_exhausted(
+            run_id=run_id,
+            completed_attempts=current_attempt,
+            tool_observations=tool_observations,
+            rounds=rounds,
+            started_at_monotonic=state.get("startedAtMonotonic"),
+        )
         if budget_reason:
             return self._prepare_budget_limited_result(
                 workspace_id=workspace_id,
@@ -477,6 +486,7 @@ class AgentRuntime:
                 else validation
             ),
         }
+        token_usage = provider_token_usage(provider_response)
         response_audit = persist_agent_response(
             settings=self.settings,
             store=self.store,
@@ -490,7 +500,7 @@ class AgentRuntime:
             workspace_id, run_id, attempt, provider_response, response_audit
         )
         if waiting_status:
-            rounds[-1] = {
+            round_update = {
                 **base_round,
                 "status": waiting_status,
                 "responseArtifactId": response_audit["artifact"]["id"],
@@ -500,6 +510,9 @@ class AgentRuntime:
                     "runtimeStatus": waiting_status,
                 },
             }
+            if token_usage:
+                round_update["tokenUsage"] = token_usage
+            rounds[-1] = round_update
             self._persist_state(
                 workspace_id,
                 run_id,
@@ -525,13 +538,16 @@ class AgentRuntime:
                     ],
                 },
             }
-        rounds[-1] = {
+        round_update = {
             **base_round,
             "status": validation["status"],
             "responseArtifactId": response_audit["artifact"]["id"],
             "toolCallCount": len(tool_calls),
             "validation": validation,
         }
+        if token_usage:
+            round_update["tokenUsage"] = token_usage
+        rounds[-1] = round_update
         self._persist_state(
             workspace_id,
             run_id,
@@ -544,6 +560,7 @@ class AgentRuntime:
             "toolObservations": tool_observations,
             "rounds": rounds,
             "responseArtifactId": response_audit["artifact"]["id"],
+            "startedAtMonotonic": state.get("startedAtMonotonic"),
             "runtimeStatus": "prepare_agent_request",
         }
 
@@ -610,6 +627,7 @@ class AgentRuntime:
                 else {"status": "passed"}
             ),
         }
+        token_usage = provider_token_usage(provider_response)
         response_audit = persist_agent_response(
             settings=self.settings,
             store=self.store,
@@ -622,12 +640,15 @@ class AgentRuntime:
         self._persist_claude_runtime_session(
             workspace_id, run_id, attempt, provider_response, response_audit
         )
-        rounds[-1] = {
+        round_update = {
             **base_round,
             "status": "budget_limited" if base_round.get("budgetLimited") else "completed",
             "responseArtifactId": response_audit["artifact"]["id"],
             "validation": provider_response["validation"],
         }
+        if token_usage:
+            round_update["tokenUsage"] = token_usage
+        rounds[-1] = round_update
         self._persist_state(
             workspace_id,
             run_id,
@@ -776,9 +797,19 @@ class AgentRuntime:
 
     def _analysis_budget_exhausted(
         self,
+        run_id: str,
         completed_attempts: int,
         tool_observations: list[JsonObject],
+        rounds: list[JsonObject],
+        started_at_monotonic: object,
     ) -> str | None:
+        if isinstance(started_at_monotonic, (int, float)):
+            elapsed_seconds = int(max(0, time.monotonic() - started_at_monotonic))
+            if elapsed_seconds >= self.settings.agent_max_runtime_seconds:
+                return (
+                    "analysis runtime budget exhausted: "
+                    f"{elapsed_seconds}/{self.settings.agent_max_runtime_seconds} seconds"
+                )
         if completed_attempts >= self.settings.agent_max_rounds:
             return (
                 "analysis round budget exhausted: "
@@ -788,6 +819,18 @@ class AgentRuntime:
             return (
                 "LLM call budget exhausted: "
                 f"{completed_attempts}/{self.settings.agent_max_llm_calls}"
+            )
+        token_count = total_token_usage(rounds)
+        if token_count >= self.settings.agent_max_total_tokens:
+            return (
+                "token budget exhausted: "
+                f"{token_count}/{self.settings.agent_max_total_tokens}"
+            )
+        user_prompt_count = user_input_action_count(self.store, run_id)
+        if user_prompt_count >= self.settings.agent_max_user_prompts:
+            return (
+                "user prompt budget exhausted: "
+                f"{user_prompt_count}/{self.settings.agent_max_user_prompts}"
             )
         action_count = executed_tool_action_count(tool_observations)
         if action_count >= self.settings.agent_max_actions:
@@ -838,13 +881,17 @@ class AgentRuntime:
         provider_response: JsonObject,
     ) -> None:
         if rounds:
-            rounds[-1] = {
+            round_update = {
                 **base_round,
                 "status": "failed",
                 "responseArtifactId": response_artifact_id,
                 "error": provider_response.get("error"),
                 "validation": provider_response.get("validation"),
             }
+            token_usage = provider_token_usage(provider_response)
+            if token_usage:
+                round_update["tokenUsage"] = token_usage
+            rounds[-1] = round_update
         self._persist_state(
             workspace_id,
             run_id,
@@ -1114,6 +1161,58 @@ class AgentRuntime:
 
 def is_tool_call_request(value: JsonObject) -> bool:
     return value.get("type") == "tool_calls" or isinstance(value.get("toolCalls"), list)
+
+
+def provider_token_usage(provider_response: JsonObject) -> JsonObject:
+    usage = provider_response.get("usage")
+    response = provider_response.get("response")
+    if not isinstance(usage, dict) and isinstance(response, dict):
+        usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    total = token_count_from_usage(usage)
+    if total <= 0:
+        return {}
+    return {"totalTokens": total, "raw": usage}
+
+
+def token_count_from_usage(usage: JsonObject) -> int:
+    for key in ("total_tokens", "totalTokens", "total"):
+        value = usage.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    input_tokens = int_token_value(
+        usage.get("input_tokens")
+        or usage.get("prompt_tokens")
+        or usage.get("inputTokens")
+        or usage.get("promptTokens")
+    )
+    output_tokens = int_token_value(
+        usage.get("output_tokens")
+        or usage.get("completion_tokens")
+        or usage.get("outputTokens")
+        or usage.get("completionTokens")
+    )
+    return input_tokens + output_tokens
+
+
+def int_token_value(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return 0
+
+
+def total_token_usage(rounds: list[JsonObject]) -> int:
+    total = 0
+    for round_item in rounds:
+        usage = round_item.get("tokenUsage")
+        if isinstance(usage, dict):
+            total += int_token_value(usage.get("totalTokens"))
+    return total
+
+
+def user_input_action_count(store: Store, run_id: str) -> int:
+    return sum(1 for action in store.list_actions(run_id) if action.get("kind") == "user_input")
 
 
 def normalize_tool_calls(

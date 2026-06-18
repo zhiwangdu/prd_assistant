@@ -123,14 +123,17 @@ Server 和 Native Agent 已读取部分配置。示例文件：
 - `analysis.max_llm_calls`
 - `analysis.max_actions`
 - `analysis.max_repeated_action_fingerprints`
+- `analysis.max_total_tokens`
+- `analysis.max_runtime_seconds`
+- `analysis.max_user_prompts`
 
 待扩展：
 
 - Code Evidence 启动孤儿 worktree 扫描、版本间 diff 和 fix mode 隔离修改配置；当前 V2 已支持 product/version 到本地 git ref 的只读映射、detached worktree cache 和 LRU 清理。
 - SSH/SCP 测试环境节点到 Environment Collector 的批量采集映射；当前 Remote Executor 已支持 WebUI 显式执行机、白名单 SSH 命令模板，以及 V2 审批后的单文件 SCP 模板。
 - metadata store 路径和模板导入限制；当前 store 使用 `storage.data_dir/metadata`，模板支持 YAML/JSON/openGemini `/getdata`
-- LLM 多轮重试、用量和 request id 审计
-- Analysis Orchestrator 追问、运行时间和 approval 预算
+- LLM 多轮重试、外部用量汇总和 request id 审计
+- Analysis Orchestrator approval 预算
 - action 审批策略
 - Case Store 存储路径
 
@@ -253,7 +256,10 @@ tools:
   时 Code Evidence search 必须按 least-recently-used 清理同 product 的旧 `wt_*`
   worktree。
 - `logagent.search_code` 只能访问配置仓库、配置版本 ref 和配置 search roots；未配置仓库时不在 task MCP 或 provider prompt 中广告。
-- Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、`max_actions=6`、`max_repeated_action_fingerprints=1`，非正值按 1 处理。
+- Analysis 预算字段默认值为 `max_rounds=4`、`max_llm_calls=4`、
+  `max_actions=6`、`max_repeated_action_fingerprints=1`、
+  `max_total_tokens=200000`、`max_runtime_seconds=300`、
+  `max_user_prompts=3`，非正值按 1 处理。
 - 用户输入不能扩展当前允许的 action 类型；未知 action 类型在 LLM schema 校验阶段失败。
 - 用户输入不能修改预算、白名单和审批策略。
 - README 和 SPEC 在配置字段变更时同步更新。

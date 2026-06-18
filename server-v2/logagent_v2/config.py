@@ -350,6 +350,9 @@ class Settings:
     agent_max_actions: int = 6
     agent_max_repeated_action_fingerprints: int = 1
     agent_max_output_tokens: int = 2048
+    agent_max_total_tokens: int = 200_000
+    agent_max_runtime_seconds: int = 300
+    agent_max_user_prompts: int = 3
     remote_execution_enabled: bool = True
     remote_ssh_command: str = "/usr/bin/ssh"
     remote_scp_command: str = "/usr/bin/scp"
@@ -533,6 +536,15 @@ class Settings:
         agent_max_output_tokens = int(
             os.environ.get("LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS", "2048")
         )
+        agent_max_total_tokens = int(
+            os.environ.get("LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS", "200000")
+        )
+        agent_max_runtime_seconds = int(
+            os.environ.get("LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS", "300")
+        )
+        agent_max_user_prompts = int(
+            os.environ.get("LOGAGENT_V2_AGENT_MAX_USER_PROMPTS", "3")
+        )
         remote_execution_enabled = os.environ.get("LOGAGENT_V2_REMOTE_EXECUTION_ENABLED", "1") != "0"
         remote_ssh_command = expand_tool_command(
             os.environ.get("LOGAGENT_V2_REMOTE_SSH_COMMAND", "/usr/bin/ssh")
@@ -627,6 +639,9 @@ class Settings:
                 1, agent_max_repeated_action_fingerprints
             ),
             agent_max_output_tokens=max(1, agent_max_output_tokens),
+            agent_max_total_tokens=max(1, agent_max_total_tokens),
+            agent_max_runtime_seconds=max(1, agent_max_runtime_seconds),
+            agent_max_user_prompts=max(1, agent_max_user_prompts),
             remote_execution_enabled=remote_execution_enabled,
             remote_ssh_command=remote_ssh_command,
             remote_scp_command=remote_scp_command,

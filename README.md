@@ -24,7 +24,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 已有 C/C++ 工具可直接复用，通过 Tool Runner 统一调用。
 - Python/Go/Java 主要作为已有生态或历史工具的兼容选项，不作为新模块首选。
 
-V2 重构分支 `rewrite/logagent-v2` 是一个明确例外：为评估小团队内部使用的主流 Agent 技术栈，新增 `server-v2/` clean-room Python 实现。V2 首版采用 FastAPI、LangGraph-oriented Agent runtime、SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL 或 Redis，且不要求兼容当前 Rust Server API。V2 Agent runtime 已按 V1 默认值实现轮次、LLM 调用、动作预算和重复工具 fingerprint 终止；预算耗尽会生成带 `budgetLimited=true` 的低置信度结果，而不是把任务标记为系统失败。
+V2 重构分支 `rewrite/logagent-v2` 是一个明确例外：为评估小团队内部使用的主流 Agent 技术栈，新增 `server-v2/` clean-room Python 实现。V2 首版采用 FastAPI、LangGraph-oriented Agent runtime、SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL 或 Redis，且不要求兼容当前 Rust Server API。V2 Agent runtime 已按 V1 默认值实现轮次、LLM 调用、动作、重复工具 fingerprint、总 token、单次运行时间和用户追问预算终止；预算耗尽会生成带 `budgetLimited=true` 的低置信度结果，而不是把任务标记为系统失败。
 
 核心链路：
 

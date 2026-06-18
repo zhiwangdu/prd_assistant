@@ -2601,6 +2601,213 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_agent_token_budget_returns_budget_limited_result(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class TokenBudgetProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "Token budget limited"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                captured_prompts.append(prompt)
+                answer = {
+                    "type": "tool_calls",
+                    "toolCalls": [
+                        {
+                            "name": "logagent.search_logs",
+                            "arguments": {"keywords": ["panic"]},
+                        }
+                    ],
+                }
+                body = json.dumps(
+                    {
+                        "choices": [{"message": {"content": json.dumps(answer)}}],
+                        "usage": {"prompt_tokens": 7, "completion_tokens": 5},
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), TokenBudgetProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=4,
+                    agent_max_llm_calls=4,
+                    agent_max_actions=6,
+                    agent_max_total_tokens=10,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("find panic root cause", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"normal startup\npanic: shard crashed\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertTrue(final_answer["budgetLimited"])
+                self.assertEqual(
+                    final_answer["terminationReason"],
+                    "token budget exhausted: 12/10",
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "succeeded")
+                self.assertEqual(len(captured_prompts), 1)
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 50,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(
+                    state["rounds"][0]["tokenUsage"]["totalTokens"],
+                    12,
+                )
+                self.assertEqual(state["rounds"][-1]["status"], "budget_limited")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_agent_user_prompt_budget_returns_budget_limited_result(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class UserPromptBudgetProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "User prompt budget limited"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                captured_prompts.append(prompt)
+                answer = {
+                    "type": "tool_calls",
+                    "toolCalls": [
+                        {
+                            "name": "logagent.request_user_input",
+                            "arguments": {
+                                "questionId": "q-version",
+                                "question": "Which product version is affected?",
+                            },
+                        }
+                    ],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), UserPromptBudgetProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=4,
+                    agent_max_user_prompts=1,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("need version-aware analysis", "diagnose", "en-US")
+                run = store.create_run(workspace["id"])
+
+                waiting_result = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+                self.assertEqual(waiting_result["status"], "waiting_for_user")
+                store.append_event(
+                    workspace["id"],
+                    run["id"],
+                    "user.message",
+                    {
+                        "message": "version 1.2.3",
+                        "questionId": "q-version",
+                        "resumeMode": "continue",
+                    },
+                )
+                answered = store.answer_user_input_actions(
+                    run["id"],
+                    "version 1.2.3",
+                    "continue",
+                    question_id="q-version",
+                )
+                self.assertEqual(len(answered), 1)
+                store.update_run_status(run["id"], "queued", "queued")
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertTrue(final_answer["budgetLimited"])
+                self.assertEqual(
+                    final_answer["terminationReason"],
+                    "user prompt budget exhausted: 1/1",
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "succeeded")
+                self.assertEqual(len(captured_prompts), 1)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_agent_repeated_tool_fingerprint_returns_budget_limited_result(self) -> None:
         captured_prompts: list[dict] = []
 
@@ -11705,6 +11912,9 @@ grep_results.json#matches/0
             self.assertEqual(summary["maxLlmCalls"], 4)
             self.assertEqual(summary["maxActions"], 6)
             self.assertEqual(summary["maxRepeatedActionFingerprints"], 1)
+            self.assertEqual(summary["maxTotalTokens"], 200000)
+            self.assertEqual(summary["maxRuntimeSeconds"], 300)
+            self.assertEqual(summary["maxUserPrompts"], 3)
             self.assertFalse(summary["baseUrlConfigured"])
 
             models = list_agent_models(settings)
@@ -11724,6 +11934,9 @@ grep_results.json#matches/0
                     "maxLlmCalls": 4,
                     "maxActions": 6,
                     "maxRepeatedActionFingerprints": 1,
+                    "maxTotalTokens": 200000,
+                    "maxRuntimeSeconds": 300,
+                    "maxUserPrompts": 3,
                 },
             )
             self.assertEqual(
@@ -11734,6 +11947,7 @@ grep_results.json#matches/0
             self.assertEqual(diagnostic["status"], "configured")
             self.assertEqual(diagnostic["graphRuntime"]["graph"], "logagent_v2_analysis")
             self.assertTrue(any("llmCalls:4" in item for item in diagnostic["details"]))
+            self.assertTrue(any("totalTokens:200000" in item for item in diagnostic["details"]))
             self.assertTrue(diagnostic["details"])
 
             self.assertFalse(debug_log_responses())

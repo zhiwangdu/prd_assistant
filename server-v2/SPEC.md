@@ -1305,7 +1305,8 @@ rather than compatibility routes for the Rust Server:
   runtime as `logagent_v2_agent` and returns `graphRuntime` metadata for the
   LangGraph engine, graph name, and node list used by analysis runs. It also
   returns the active Agent budget summary: `maxRounds`, `maxLlmCalls`,
-  `maxActions`, and `maxRepeatedActionFingerprints`.
+  `maxActions`, `maxRepeatedActionFingerprints`, `maxTotalTokens`,
+  `maxRuntimeSeconds`, and `maxUserPrompts`.
 - `POST /api/v2/settings/agent-backends/:backend_id/test` performs a dry-run
   configuration diagnostic only. It must not execute shell commands. For
   `binary`, it validates that the configured path is absolute, regular, and
@@ -1536,11 +1537,16 @@ job without writing `result.json`. The loop is bounded by
 `LOGAGENT_V2_AGENT_MAX_LLM_CALLS` (default 4), and
 `LOGAGENT_V2_AGENT_MAX_ACTIONS` (default 6). Identical successful task MCP tool
 fingerprints are also bounded by
-`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` (default 1). When one of
+`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` (default 1). Provider
+usage tokens are bounded by `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS` (default
+200000), one graph invocation is bounded by
+`LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` (default 300), and resumed user prompts
+are bounded by `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS` (default 3). When one of
 these budgets is exhausted, V2 stops calling the provider or skips the duplicate
 tool call, routes through a guarded low-confidence final answer with
 `budgetLimited=true`, marks the run `succeeded`, and records the last
-`analysis_state.json` round as `budget_limited`. Evidence refs returned by
+`analysis_state.json` round as `budget_limited`; rounds include `tokenUsage`
+when the provider returns OpenAI/Claude-style usage. Evidence refs returned by
 ordinary tool observations, including
 `evidenceRefs`, `finalEvidenceRefs`, match `ref`, and `evidenceRef` fields, are
 deduplicated into the next provider request and prompt `allowedEvidenceRefs` so
@@ -1551,8 +1557,9 @@ The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
 tool requests, or system/provider failures fail the run; round, LLM-call,
-action budget, and repeated action fingerprint exhaustion are controlled
-analysis terminations and produce a budget-limited result instead of `FAILED`.
+action, token, runtime, user-prompt, and repeated action fingerprint exhaustion
+are controlled analysis terminations and produce a budget-limited result
+instead of `FAILED`.
 After a user message or approval decision requeues the run, the next provider
 request includes recent messages, action results, remaining pending actions, and `resumePolicy` in
 `interactionContext`. When the latest user message has `resumeMode=finalize`,

@@ -37,14 +37,16 @@
 - Rust/V1 `analysis.max_rounds`、`analysis.max_llm_calls`
 - V2 `LOGAGENT_V2_AGENT_MAX_ROUNDS`、`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`、
   `LOGAGENT_V2_AGENT_MAX_ACTIONS`、
-  `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`，默认分别为 4、4、6、1；
+  `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`、
+  `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS`、
+  `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` 和
+  `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`，默认分别为 4、4、6、1、200000、300、3；
   预算或重复 tool fingerprint 耗尽时写入 `budgetLimited=true` 低置信度最终
   结果，任务进入 `SUCCEEDED` 而不是 `FAILED`
 
 尚未实现：
 
 - 更多内置环境模板
-- token、运行时间和每轮追问预算
 
 ## 输入
 

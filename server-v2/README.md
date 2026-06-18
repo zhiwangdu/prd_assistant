@@ -335,6 +335,9 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MAX_ACTIONS` | `6` | Maximum provider-directed task MCP tool calls per run before a budget-limited result |
 | `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` | `1` | Maximum successful identical task MCP tool fingerprint count before a budget-limited result |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
+| `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS` | `200000` | Maximum cumulative provider usage tokens before the next round becomes budget-limited |
+| `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` | `300` | Maximum Agent runtime seconds for one graph invocation before the next round becomes budget-limited |
+| `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS` | `3` | Maximum persisted `request_user_input` prompts per run before resumed analysis becomes budget-limited |
 | `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
 | `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `/usr/bin/ssh` | Absolute SSH executable used by Remote Executor jobs when remote execution is enabled |
 | `LOGAGENT_V2_REMOTE_SCP_COMMAND` | `/usr/bin/scp` | Absolute SCP executable used by approved Environment Collector file pulls when remote execution is enabled |
@@ -763,8 +766,11 @@ Provider-visible `logagent.search_logs` also exposes the V1-compatible
 `maxMatches` cap.
 
 Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS`,
-`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`, `LOGAGENT_V2_AGENT_MAX_ACTIONS`, and
-`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`, and
+`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`, `LOGAGENT_V2_AGENT_MAX_ACTIONS`,
+`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`,
+`LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS`,
+`LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS`, and
+`LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`, and
 implemented as explicit graph transitions: provider tool-call responses route
 through `execute_tool_calls`, normal answers route through
 `validate_final_answer`, waiting/approval tools end the current graph invocation
@@ -775,7 +781,8 @@ that cites current evidence, records `analysis_state.json` status
 `budget_limited`, and finalizes successfully. If the provider asks for a task
 MCP tool fingerprint that has already succeeded the configured number of times,
 the current round is also finalized as `budget_limited` without executing the
-duplicate call. Resumed runs include a bounded `interactionContext` with recent
+duplicate call. Provider usage is recorded on each round as `tokenUsage` when
+the backend returns OpenAI/Claude-style usage fields. Resumed runs include a bounded `interactionContext` with recent
 user messages, answered/approved/rejected actions, pending actions, and a
 finalize-with-current-evidence directive when the user requests it.
 
