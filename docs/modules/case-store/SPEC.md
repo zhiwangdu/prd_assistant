@@ -62,6 +62,9 @@ POST /api/mcp/readonly
 Python V2 clean-room Server 使用 `/api/v2/cases*` 命名空间提供等价能力：
 
 ```http
+POST /api/v2/tasks/:task_id/case
+POST /api/v2/runs/:run_id/case
+POST /api/v2/cases
 POST /api/v2/cases/imports/preview
 POST /api/v2/cases/imports/:import_id/messages
 PATCH /api/v2/cases/imports/:import_id
@@ -71,7 +74,7 @@ GET /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
 ```
 
-`POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。生成记录为 `sourceType=task`，必须包含 `taskId` 和 `sourceResultPath`。
+`POST /api/tasks/:task_id/case` 只接受 `SUCCEEDED` 任务。请求可覆盖 `title`、`symptom`、`rootCause`、`solution`、`evidenceRefs`、`product`、`version` 和 `environment`；未提供字段从最终 `AnalysisResult` 和 `metadata_context.json` 派生。生成记录为 `sourceType=task`，必须包含 `taskId` 和 `sourceResultPath`。Python V2 保留原生 `POST /api/v2/runs/:run_id/case`，并提供 Rust/V1-style `POST /api/v2/tasks/:task_id/case` alias；两者共享同一任务确认和重复确认幂等逻辑。
 
 `POST /api/cases` 创建 `sourceType=manual` 记录。请求必须包含 `title`、`symptom`、`rootCause` 和 `solution`；可选 `product`、`version`、`environment`、`instanceId`、`nodeId`、`evidenceRefs` 和 `enabled`。手工 Case 不包含 `taskId` 和 `sourceResultPath`。
 

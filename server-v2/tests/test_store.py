@@ -557,6 +557,7 @@ class StoreTests(unittest.TestCase):
                 ("POST", "/api/v2/metadata/tag-fields"),
                 ("POST", "/api/v2/cases"),
                 ("POST", "/api/v2/runs/{run_id}/case"),
+                ("POST", "/api/v2/tasks/{task_id}/case"),
                 ("GET", "/api/v2/cases"),
                 ("GET", "/api/v2/cases/imports"),
                 ("GET", "/api/v2/cases/imports/{import_id}"),
@@ -12159,11 +12160,17 @@ fi
             store.create_upload(workspace["id"], "db.log", artifact["id"])
             run = store.create_run(workspace["id"])
             AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
-            task_case = create_task_case(
-                store,
-                run["id"],
-                {"solution": "inspect shard load and compaction queue"},
-            )
+            from fastapi.testclient import TestClient
+            from logagent_v2.api import create_app
+
+            with TestClient(create_app(settings)) as client:
+                task_case_response = client.post(
+                    f"/api/v2/tasks/{run['id']}/case",
+                    headers={"Authorization": "Bearer test"},
+                    json={"solution": "inspect shard load and compaction queue"},
+                )
+                self.assertEqual(task_case_response.status_code, 200)
+                task_case = task_case_response.json()
             self.assertEqual(task_case["sourceType"], "task")
             self.assertEqual(create_task_case(store, run["id"], {})["caseId"], task_case["caseId"])
 

@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Task Case Alias Parity
+
+- Added `POST /api/v2/tasks/:task_id/case` as a Rust/V1-style taskId alias for
+  confirming a succeeded V2 analysis run into a Case.
+- Reused the existing `/api/v2/runs/:run_id/case` implementation so task Case
+  confirmation preserves succeeded-run validation, override handling, and
+  duplicate confirmation idempotency.
+- Added route-table coverage and updated the Case Memory regression to create
+  the task Case through the new HTTP alias.
+- Updated V2 Server and Case Store docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_case_memory_manual_task_and_mcp_background_context`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 165 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/api.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Task Alias Resume Route Parity
 
 - Added V2 task-scoped aliases under `/api/v2/tasks` for analysis run

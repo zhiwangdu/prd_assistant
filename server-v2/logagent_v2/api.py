@@ -2104,6 +2104,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/v2/tasks/{task_id}/case")
+    async def create_task_case_alias(
+        _: Auth, task_id: str, payload: CaseUpdate | None = None
+    ) -> dict:
+        return await create_run_case(_, task_id, payload)
+
     @app.get("/api/v2/cases")
     async def search_cases(
         _: Auth,

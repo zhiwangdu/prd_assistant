@@ -476,6 +476,7 @@ POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
+POST /api/v2/tasks/:task_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
@@ -1317,9 +1318,10 @@ Supported sources:
 
 - `manual`: created through `POST /api/v2/cases`; requires `title`, `symptom`,
   `rootCause`, and `solution`.
-- `task`: created through `POST /api/v2/runs/:run_id/case`; the run must be
-  `succeeded` and have a final answer. Repeated confirmation of one run returns
-  the existing task Case instead of creating duplicates.
+- `task`: created through `POST /api/v2/runs/:run_id/case` or the Rust/V1-style
+  task alias `POST /api/v2/tasks/:task_id/case`; the run must be `succeeded`
+  and have a final answer. Repeated confirmation of one run returns the existing
+  task Case instead of creating duplicates.
 
 Case import drafts live in `case_imports` and are created through
 `POST /api/v2/cases/imports/preview`. Preview accepts JSON Case fields or plain

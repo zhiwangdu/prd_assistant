@@ -537,6 +537,7 @@ POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
+POST /api/v2/tasks/:task_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
@@ -1517,8 +1518,9 @@ V2 stores confirmed cases in SQLite table `cases` using Case schema v2:
 ```
 
 Manual cases are created through `POST /api/v2/cases`. Succeeded runs can be
-confirmed through `POST /api/v2/runs/:run_id/case`; repeated confirmation of the
-same run returns the existing task case. Cases can be searched with keyword
+confirmed through `POST /api/v2/runs/:run_id/case` or the Rust/V1-style task
+alias `POST /api/v2/tasks/:task_id/case`; repeated confirmation of the same run
+returns the existing task case. Cases can be searched with keyword
 queries, read by ID, edited, or disabled. Query search uses local SQLite
 FTS5/BM25 over title, symptom, root cause, solution, product/version/
 environment, instance/node, and evidence refs, plus a dependency-light local
