@@ -6721,6 +6721,7 @@ fi
             self.assertEqual(result.status_code, 200)
             body = result.json()
             self.assertEqual(body["runId"], tool_run["id"])
+            self.assertEqual(body["taskId"], tool_run["id"])
             self.assertEqual(body["toolId"], "logagent.list_metadata_instances")
             self.assertEqual(body["resultPath"], executed["artifact"]["relative_path"])
             self.assertEqual(body["artifact"]["id"], executed["artifact"]["id"])

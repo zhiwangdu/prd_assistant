@@ -1153,7 +1153,8 @@ still select existing workspace inputs without attaching uploads.
 `GET /api/v2/tools/runs/:run_id/result` returns HTTP 409 until the tool run
 succeeds, with the current run status in the response detail. After success the
 payload keeps the V2 `run/artifact/result` objects and also exposes
-Rust/V1-compatible top-level `runId`, `toolId`, and `resultPath` fields.
+Rust/V1-compatible top-level `taskId`, `runId`, `toolId`, and `resultPath`
+fields; `taskId` is the same value as `runId` in the V2 data model.
 Huawei package sync matches the Rust/V1 catalog behavior by using the
 `Huawei OBS + GaussDB Package Sync` display name, `huawei-cloud` tag,
 `outputViews=["summary","obs","gaussdb","json"]`, accepting any single

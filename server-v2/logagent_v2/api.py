@@ -1283,6 +1283,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result = json_load_file(path)
             return {
                 "runId": run["id"],
+                "taskId": run["id"],
                 "toolId": run.get("toolId"),
                 "resultPath": artifact["relative_path"],
                 "run": run,
