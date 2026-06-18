@@ -141,11 +141,12 @@ def environment_collection_outline(settings: Settings, store: Store) -> JsonObje
         item for item in command_templates(settings) if item.get("enabled")
     ]
     enabled_files = [item for item in file_templates(settings) if item.get("enabled")]
-    executor_selection = (
-        "omittable_when_single_enabled_executor"
-        if len(enabled_executors) == 1
-        else "required"
-    )
+    if len(enabled_executors) == 1:
+        executor_selection = "omittable_when_single_enabled_executor"
+    elif enabled_executors:
+        executor_selection = "required_or_unique_hint"
+    else:
+        executor_selection = "unavailable"
     return {
         "remoteExecutionEnabled": settings.remote_execution_enabled,
         "executorSelection": executor_selection,
@@ -156,10 +157,16 @@ def environment_collection_outline(settings: Settings, store: Store) -> JsonObje
             "actionType": "collect_environment",
             "singleCommandShape": {"commandId": "<commandId>", "executorId": "<executorId>"},
             "singleFileShape": {"fileId": "<fileId>", "executorId": "<executorId>"},
+            "hintedShape": {
+                "target": "<executor name, host, tag, or node hint>",
+                "template": "<command or file template name, id, or description hint>",
+            },
             "batchShape": {"targets": [{"executorId": "<executorId>", "commandId": "<commandId>"}]},
             "notes": [
                 "Use either commandId or fileId per target, never both.",
                 "executorId may be omitted only when executorSelection is omittable_when_single_enabled_executor.",
+                "When executorSelection is required_or_unique_hint, executorId may be replaced by target/executor/node/host hints only if exactly one enabled executor matches.",
+                "commandId or fileId may be replaced by command/file/template hints only if exactly one enabled template matches.",
             ],
         },
     }

@@ -255,9 +255,15 @@ Implemented in this slice:
   exactly one executor is enabled, single-target approval input may omit
   `executorId` and provide only `commandId` or `fileId`. Provider-normalized
   actions may also carry target fields at the payload top level or inside
-  `environmentInput` / `remoteInput`. The batch shape accepts `targets[]` with
-  up to 20 such entries. Batch collection waits for every remote run to finish
-  and then writes one aggregate evidence
+  `environmentInput` / `remoteInput`. When multiple executors or templates are
+  configured, approved input may use `target` / `executor` / `node` / `host`
+  hints plus `template` / `command` / `file` hints; V2 resolves them only when
+  the normalized hints uniquely match one enabled executor and one enabled
+  command/file template. Missing or ambiguous matches write `REMOTE_REJECTED`
+  evidence and do not start SSH/SCP. The batch shape accepts `targets[]` with
+  up to 20 such entries, including unique hints inherited from the parent input
+  where applicable. Batch collection waits for every remote run to finish and
+  then writes one aggregate evidence
   artifact with `COLLECTED`, `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Remote
   command `result`, `stdout`, and `stderr` files and remote file
   `collected_file` support artifacts are copied into the analysis workspace
@@ -1363,11 +1369,15 @@ remote command smoke runner. They are not a full Environment Collector.
   both; if exactly one executor is enabled, `executorId` may be inferred for a
   single-target command/file approval. Target fields may also be accepted from
   the action payload top level or nested `environmentInput` / `remoteInput`
-  object. They may provide `input.targets[]` / `input.remoteTargets[]` with up
-  to 20 target objects; each target must name an enabled executor, inherit one
-  from the parent input, or resolve through the single-executor rule, and must
-  choose exactly one whitelisted command/file template. Command targets use
-  fixed SSH argv. File targets enqueue a remote run with
+  object. If IDs are omitted, V2 may resolve `target` / `executor` / `node` /
+  `host` hints and `template` / `command` / `file` hints, but only when they
+  uniquely match enabled executor and command/file template descriptors. They
+  may provide `input.targets[]` / `input.remoteTargets[]` with up to 20 target
+  objects; each target must name an enabled executor, inherit one from the
+  parent input, resolve through the single-executor rule, or resolve through a
+  unique hint, and must choose or uniquely hint exactly one whitelisted
+  command/file template. Command targets use fixed SSH argv. File targets
+  enqueue a remote run with
   `operation=file_collection`, construct fixed SCP argv with batch mode,
   connect timeout, host-key policy, port, `user@host:<remotePath>`, and a
   server-owned destination path, then verify the collected file exists and does
@@ -1650,13 +1660,18 @@ user chooses finalization. If an approved action has
 `actionType=collect_environment`, V2 checks the approved action input, including
 any decision-time override, by merging `input`, target fields on the payload
 top level, and `environmentInput` / `remoteInput`. The merged input must contain
-either `executorId` plus exactly one of `commandId` / `fileId`, or a batch
-`targets[]` / `remoteTargets[]` array. When a single-target input names only
-`commandId` or `fileId` and exactly one enabled executor exists, V2 infers that
-executor. Batch actions accept up to 20 target objects; each target is
-independently validated against the enabled Remote Executor table and
-command/file template allowlists, with parent executor inheritance and the same
-single-executor inference available. A valid command target queues a
+either `executorId` plus exactly one of `commandId` / `fileId`, a unique
+executor/template hint pair, or a batch `targets[]` / `remoteTargets[]` array.
+When a single-target input names only `commandId` or `fileId` and exactly one
+enabled executor exists, V2 infers that executor. When multiple executors or
+templates exist, V2 resolves `target` / `executor` / `node` / `host` and
+`template` / `command` / `file` hints only if the normalized strings uniquely
+match enabled descriptors; ambiguous or missing matches are rejected before
+SSH/SCP scheduling. Batch actions accept up to 20 target objects; each target
+is independently validated against the enabled Remote Executor table and
+command/file template allowlists, with parent executor inheritance, parent
+hints, single-executor inference, and unique hint matching available. A valid
+command target queues a
 `remote_command_run` with `operation=command`; a valid file target queues the
 same DB-backed job with `operation=file_collection`, validates the template
 from `LOGAGENT_V2_REMOTE_FILES_JSON`, and fetches one bounded remote file
@@ -1685,9 +1700,8 @@ remote output support files are available through
 `environmentCollection` outline with enabled executors, command templates, file
 templates, and the executor inference rule, so the Agent can generate a
 structured `collect_environment` approval request from current configured
-candidates. Multi-executor semantic auto-selection and richer environment
-templates remain follow-up work; batch collection is still driven by approved
-structured input.
+candidates. Richer built-in environment templates remain follow-up work; batch
+collection is still driven by approved structured input.
 
 ## Security
 

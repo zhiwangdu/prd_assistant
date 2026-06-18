@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
 from .artifacts import resolve_artifact_path, write_artifact_file
 from .config import Settings
@@ -22,12 +24,92 @@ ENVIRONMENT_TARGET_INPUT_KEYS = (
     "fileId",
     "remoteFileId",
 )
+ENVIRONMENT_TARGET_HINT_KEYS = (
+    "executor",
+    "remoteExecutor",
+    "executorName",
+    "remoteExecutorName",
+    "executorHint",
+    "remoteExecutorHint",
+    "target",
+    "remoteTarget",
+    "targetName",
+    "remoteTargetName",
+    "targetHint",
+    "remoteTargetHint",
+    "node",
+    "nodeName",
+    "host",
+    "hostHint",
+    "template",
+    "templateName",
+    "templateHint",
+    "collector",
+    "collectorHint",
+    "command",
+    "commandName",
+    "commandHint",
+    "file",
+    "fileName",
+    "fileHint",
+)
+ENVIRONMENT_TARGET_INHERITED_KEYS = (
+    "executorId",
+    "remoteExecutorId",
+    "executor",
+    "remoteExecutor",
+    "executorName",
+    "remoteExecutorName",
+    "executorHint",
+    "remoteExecutorHint",
+    "remoteTarget",
+    "remoteTargetName",
+    "remoteTargetHint",
+    "commandId",
+    "remoteCommandId",
+    "fileId",
+    "remoteFileId",
+    "template",
+    "templateName",
+    "templateHint",
+    "collector",
+    "collectorHint",
+    "command",
+    "commandName",
+    "commandHint",
+    "file",
+    "fileName",
+    "fileHint",
+    "operation",
+    "remoteOperation",
+    "targetType",
+)
 ENVIRONMENT_NESTED_INPUT_KEYS = (
     "environmentInput",
     "remoteInput",
     "target",
     "remoteTarget",
 )
+ENVIRONMENT_MATCH_STOPWORDS = {
+    "collect",
+    "collector",
+    "command",
+    "diagnostic",
+    "diagnostics",
+    "environment",
+    "executor",
+    "file",
+    "host",
+    "log",
+    "logs",
+    "node",
+    "remote",
+    "run",
+    "snapshot",
+    "status",
+    "target",
+    "template",
+}
 
 
 def persist_approved_environment_evidence(
@@ -367,9 +449,19 @@ def remote_collection_target(
     if has_command and has_file:
         raise ValueError("collect_environment input must choose either commandId or fileId")
     if not has_command and not has_file:
+        inferred_template = infer_remote_template(settings, raw_input)
+        if inferred_template is not None:
+            operation, template_id = inferred_template
+            if operation == "command":
+                command_id = template_id
+                has_command = True
+            else:
+                file_id = template_id
+                has_file = True
+    if not has_command and not has_file:
         return None
     if not isinstance(executor_id, str) or not executor_id.strip():
-        executor_id = single_enabled_remote_executor_id(store)
+        executor_id = infer_remote_executor_id(store, raw_input)
     if not isinstance(executor_id, str) or not executor_id.strip():
         return None
     executor = store.get_remote_executor(executor_id.strip())
@@ -438,7 +530,7 @@ def remote_collection_targets(
             if not isinstance(item, dict):
                 raise ValueError(f"collect_environment target {index} must be an object")
             target_input = dict(item)
-            for key in ("executorId", "remoteExecutorId"):
+            for key in ENVIRONMENT_TARGET_INHERITED_KEYS:
                 if key not in target_input and key in raw_input:
                     target_input[key] = raw_input[key]
             target = remote_collection_target(settings, store, target_input)
@@ -460,15 +552,28 @@ def environment_action_input(payload: JsonObject) -> JsonObject:
     raw_input = payload.get("input")
     if isinstance(raw_input, dict):
         merged.update(raw_input)
+        merge_nested_environment_target(merged, raw_input)
     for key in ENVIRONMENT_TARGET_INPUT_KEYS:
         if key not in merged and key in payload:
             merged[key] = payload[key]
     for nested_key in ENVIRONMENT_NESTED_INPUT_KEYS:
         nested = payload.get(nested_key)
         if isinstance(nested, dict):
+            merge_nested_environment_target(merged, nested)
+    return merged
+
+
+def merge_nested_environment_target(
+    merged: JsonObject,
+    source: JsonObject,
+) -> None:
+    for key, value in source.items():
+        merged.setdefault(key, value)
+    for nested_key in ("target", "remoteTarget"):
+        nested = source.get(nested_key)
+        if isinstance(nested, dict):
             for key, value in nested.items():
                 merged.setdefault(key, value)
-    return merged
 
 
 def explicit_environment_targets(raw_input: JsonObject) -> bool:
@@ -476,7 +581,9 @@ def explicit_environment_targets(raw_input: JsonObject) -> bool:
 
 
 def remote_target_requested(raw_input: JsonObject) -> bool:
-    return any(key in raw_input for key in ENVIRONMENT_TARGET_INPUT_KEYS)
+    return any(key in raw_input for key in ENVIRONMENT_TARGET_INPUT_KEYS) or any(
+        key in raw_input for key in ENVIRONMENT_TARGET_HINT_KEYS
+    )
 
 
 def single_enabled_remote_executor_id(store: Store) -> str | None:
@@ -486,6 +593,248 @@ def single_enabled_remote_executor_id(store: Store) -> str | None:
     if len(enabled_executors) != 1:
         return None
     return str(enabled_executors[0]["executorId"])
+
+
+def infer_remote_executor_id(store: Store, raw_input: JsonObject) -> str | None:
+    single_executor = single_enabled_remote_executor_id(store)
+    if single_executor is not None:
+        return single_executor
+    hints = collect_hint_values(
+        raw_input,
+        (
+            "executor",
+            "remoteExecutor",
+            "executorName",
+            "remoteExecutorName",
+            "executorHint",
+            "remoteExecutorHint",
+            "target",
+            "remoteTarget",
+            "targetName",
+            "remoteTargetName",
+            "targetHint",
+            "remoteTargetHint",
+            "node",
+            "nodeName",
+            "host",
+            "hostHint",
+        ),
+    )
+    if not hints:
+        return None
+    candidates = [
+        {
+            "id": str(item["executorId"]),
+            "fields": executor_match_fields(item),
+        }
+        for item in store.list_remote_executors()
+        if bool(item.get("enabled"))
+    ]
+    return unique_hint_match(candidates, hints, "executor")
+
+
+def infer_remote_template(
+    settings: Settings,
+    raw_input: JsonObject,
+) -> tuple[str, str] | None:
+    hints = collect_hint_values(
+        raw_input,
+        (
+            "template",
+            "templateName",
+            "templateHint",
+            "collector",
+            "collectorHint",
+            "command",
+            "commandName",
+            "commandHint",
+            "file",
+            "fileName",
+            "fileHint",
+            "target",
+            "remoteTarget",
+            "targetName",
+            "remoteTargetName",
+            "targetHint",
+            "remoteTargetHint",
+        ),
+    )
+    if not hints:
+        return None
+
+    operation_hint = template_operation_hint(raw_input)
+    candidates: list[JsonObject] = []
+    if operation_hint in {None, "command"}:
+        candidates.extend(
+            {
+                "id": item.command_id,
+                "operation": "command",
+                "fields": template_match_fields(
+                    item.command_id,
+                    item.display_name,
+                    item.description,
+                    item.argv,
+                ),
+            }
+            for item in settings.remote_commands
+            if item.enabled
+        )
+    if operation_hint in {None, "file_collection"}:
+        candidates.extend(
+            {
+                "id": item.file_id,
+                "operation": "file_collection",
+                "fields": template_match_fields(
+                    item.file_id,
+                    item.display_name,
+                    item.description,
+                    (item.remote_path,),
+                ),
+            }
+            for item in settings.remote_files
+            if item.enabled
+        )
+    matched_id = unique_hint_match(candidates, hints, "template")
+    if matched_id is None:
+        return None
+    for candidate in candidates:
+        if candidate["id"] == matched_id:
+            return str(candidate["operation"]), matched_id
+    return None
+
+
+def template_operation_hint(raw_input: JsonObject) -> str | None:
+    direct_file_hints = collect_hint_values(
+        raw_input, ("file", "fileName", "fileHint")
+    )
+    direct_command_hints = collect_hint_values(
+        raw_input, ("command", "commandName", "commandHint")
+    )
+    if direct_file_hints and not direct_command_hints:
+        return "file_collection"
+    if direct_command_hints and not direct_file_hints:
+        return "command"
+    for key in ("operation", "remoteOperation", "targetType"):
+        value = raw_input.get(key)
+        if not isinstance(value, str):
+            continue
+        normalized = normalize_match_text(value)
+        if normalized in {"file", "files", "file collection", "file_collection", "scp"}:
+            return "file_collection"
+        if normalized in {"command", "commands", "ssh"}:
+            return "command"
+    return None
+
+
+def executor_match_fields(executor: JsonObject) -> list[str]:
+    fields = [
+        str(executor.get("executorId") or ""),
+        str(executor.get("name") or ""),
+        str(executor.get("host") or ""),
+        f"{executor.get('user') or ''}@{executor.get('host') or ''}",
+        str(executor.get("notes") or ""),
+    ]
+    tags = executor.get("tags")
+    if isinstance(tags, list):
+        fields.extend(str(item) for item in tags if isinstance(item, str))
+    return fields
+
+
+def template_match_fields(
+    template_id: str,
+    display_name: str,
+    description: str,
+    extra_fields: tuple[str, ...],
+) -> list[str]:
+    return [template_id, display_name, description, *extra_fields]
+
+
+def collect_hint_values(raw_input: JsonObject, keys: tuple[str, ...]) -> list[str]:
+    hints: list[str] = []
+    for key in keys:
+        collect_text_values(raw_input.get(key), hints)
+    return [item for item in hints if normalize_match_text(item)]
+
+
+def collect_text_values(value: Any, output: list[str]) -> None:
+    if isinstance(value, str):
+        output.append(value)
+        return
+    if isinstance(value, list):
+        for item in value:
+            collect_text_values(item, output)
+
+
+def unique_hint_match(
+    candidates: list[JsonObject],
+    hints: list[str],
+    label: str,
+) -> str | None:
+    scored: list[tuple[int, str]] = []
+    for candidate in candidates:
+        score = hint_match_score(hints, candidate.get("fields", []))
+        if score > 0:
+            scored.append((score, str(candidate["id"])))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    best_score, best_id = scored[0]
+    tied = [item_id for score, item_id in scored if score == best_score]
+    if len(tied) > 1:
+        raise ValueError(f"ambiguous {label} selector: {', '.join(tied)}")
+    return best_id
+
+
+def hint_match_score(hints: list[str], fields: Any) -> int:
+    field_values = [item for item in fields if isinstance(item, str) and item.strip()]
+    if not field_values:
+        return 0
+    score = 0
+    field_tokens: set[str] = set()
+    for field in field_values:
+        field_normalized = normalize_match_text(field)
+        field_compact = compact_match_text(field)
+        field_tokens.update(match_tokens(field))
+        for hint in hints:
+            hint_normalized = normalize_match_text(hint)
+            hint_compact = compact_match_text(hint)
+            if not hint_normalized:
+                continue
+            if field_normalized and hint_normalized == field_normalized:
+                score = max(score, 100)
+            elif field_compact and hint_compact == field_compact:
+                score = max(score, 90)
+            elif (
+                len(field_normalized) >= 4
+                and field_normalized in hint_normalized
+            ) or (
+                len(hint_normalized) >= 4
+                and hint_normalized in field_normalized
+            ):
+                score = max(score, 40)
+    hint_tokens: set[str] = set()
+    for hint in hints:
+        hint_tokens.update(match_tokens(hint))
+    overlap = len(field_tokens & hint_tokens)
+    if overlap:
+        score = max(score, overlap)
+    return score
+
+
+def normalize_match_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def compact_match_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.strip().lower())
+
+
+def match_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", value.strip().lower())
+        if len(token) >= 3 and token not in ENVIRONMENT_MATCH_STOPWORDS
+    }
 
 
 def materialize_remote_environment_support_artifacts(

@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Collector Hint Selection
+
+- Approved V2 `collect_environment` inputs can now resolve multi-executor and
+  multi-template targets from deterministic hints such as `target`, `executor`,
+  `node`, `host`, `template`, `command`, and `file`.
+- Hint selection only schedules SSH/SCP when exactly one enabled executor and
+  exactly one enabled command/file template match; missing or ambiguous matches
+  write `REMOTE_REJECTED` evidence and create no remote run.
+- `analysis_package.environmentCollection` now advertises the
+  `required_or_unique_hint` executor selection rule and a hinted approval input
+  shape for Agent-generated approval requests.
+- Added Environment Collector regression coverage for successful hinted target
+  collection and ambiguous hint rejection.
+- Updated root, V2 Server, Environment Collector, and Analysis Agent
+  README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused `collect_environment` / `environment_collection` pytest
+  selection, full `PYTHONPATH=. uv run --extra dev pytest` (148 passed, 1
+  warning), and `git diff --check`.
+
 ## 2026-06-18 Analysis Agent Environment Batch Documentation
 
 - Updated Analysis Agent README/SPEC status to reflect the already implemented

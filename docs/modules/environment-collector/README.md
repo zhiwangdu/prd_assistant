@@ -57,8 +57,10 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   作为 decision `input` 提交，Server 会先写回 action payload 再调度采集。
 - `analysis_package.environmentCollection` 会把已启用 executor、command/file
   模板和单 executor 推断规则暴露给 Agent，使 Agent 可以生成结构化
-  `collect_environment` 审批请求。当前批量采集仍需要审批输入显式提供
-  `targets[]`；多 executor 语义自动选择和更多环境模板仍未实现。
+  `collect_environment` 审批请求。多 executor 场景可用 `target` /
+  `executor` / `node` / `host` 等提示和 `template` / `command` / `file`
+  等提示做确定性唯一匹配；匹配不到或有歧义时写入 `REMOTE_REJECTED`，
+  不会执行 SSH/SCP。更多内置环境模板仍未实现。
 
 ## 适用场景
 
@@ -109,7 +111,8 @@ environments:
 
 1. 用户选择测试环境和目标节点范围，或 Agent 请求 `collect_environment`
    审批；审批时可补齐已配置的 `executorId` 加 `commandId` / `fileId`，也可
-   在只有一个启用 executor 时只传 `commandId` / `fileId`，或传入多个
+   在只有一个启用 executor 时只传 `commandId` / `fileId`，也可用唯一
+   executor/template hint 让 Server 从启用候选中确定性解析，或传入多个
    `targets[]`。
 2. 服务端根据配置建立 SSH 连接。
 3. 如果批准的是文件模板，V2 通过 SCP 拉取白名单路径下的单个有大小上限文件。
@@ -167,8 +170,8 @@ collected/
 - Remote file template id 复用 command id 安全规则，`remotePath` 必须是配置中的
   绝对安全路径，拒绝 `..`、`.`、`//`、反斜杠、空格、glob 和非安全字符。
 - V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command/file
-  id；批量 `targets[]` 中每个目标都必须满足同一约束。不接受自由命令、自由
-  路径或由用户消息临时扩展白名单。
+  id，或能唯一匹配已启用 executor/template 的 hint；批量 `targets[]` 中每个
+  目标都必须满足同一约束。不接受自由命令、自由路径或由用户消息临时扩展白名单。
 - V2 远程命令和文件输出 artifact 属于 background/support evidence，只能辅助下一轮
   分析和人工审计，不能绕过 final evidence ref 校验。
 - WebUI 审批只能选择已启用 executor 和配置模板；不选择远程目标时 Server

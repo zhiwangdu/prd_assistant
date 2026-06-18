@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。`collect_environment` 批准后已可接入 Remote Executor 白名单命令、通过 V2 白名单 file template 拉取单个有大小上限的 SCP 文件，或通过审批输入中的 `targets[]` / `remoteTargets[]` 批量采集多个远程目标；多 executor 语义自动选择和更多内置环境模板仍未实现。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。`collect_environment` 批准后已可接入 Remote Executor 白名单命令、通过 V2 白名单 file template 拉取单个有大小上限的 SCP 文件，或通过审批输入中的 `targets[]` / `remoteTargets[]` 批量采集多个远程目标；多 executor / 多模板场景已支持基于 `target` / `executor` / `node` / `host` 和 `template` / `command` / `file` hint 的确定性唯一匹配，匹配不到或有歧义时写入 `REMOTE_REJECTED` 并拒绝执行 SSH/SCP。更多内置环境模板仍未实现。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
 
 已落地：
 
@@ -43,7 +43,7 @@
 
 尚未实现：
 
-- 多 executor 环境下的 Agent 自动语义选择 executor/template，以及更多内置环境模板
+- 更多内置环境模板
 - token、运行时间和每轮追问预算
 
 ## 输入

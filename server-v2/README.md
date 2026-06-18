@@ -101,8 +101,13 @@ slice provides the durable foundation for the V2 product model:
   `fileId`; if exactly one enabled executor exists, the Agent may omit
   `executorId` and provide only `commandId` or `fileId`. The approval payload
   may also carry target fields at the top level or inside `environmentInput` /
-  `remoteInput` for provider-normalized actions. The batch shape accepts
-  `targets[]`, each with an executor and one command/file template. Batch
+  `remoteInput` for provider-normalized actions. In multi-executor setups,
+  V2 can resolve approved `target` / `executor` / `node` / `host` hints and
+  `template` / `command` / `file` hints to exactly one enabled executor and
+  one enabled command/file template; no match or ambiguous matches are rejected
+  as `REMOTE_REJECTED` without starting SSH/SCP. The batch shape accepts
+  `targets[]`, each with an executor or unique executor hint and one
+  command/file template or unique template hint. Batch
   collection waits for every remote run to finish before writing one aggregate
   evidence artifact with `COLLECTED`,
   `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Completed remote `result`,

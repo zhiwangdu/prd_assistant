@@ -8986,7 +8986,12 @@ fi
                 {
                     "actionType": "collect_environment",
                     "reason": "Need node status",
-                    "input": {"scope": "node", "commands": ["uptime"], "nodeId": "n1"},
+                    "input": {
+                        "scope": "node",
+                        "commands": ["uptime"],
+                        "nodeId": "n1",
+                        "operation": "inspect",
+                    },
                 },
             )
 
@@ -9294,6 +9299,180 @@ fi
             self.assertEqual(artifact_json["status"], "COLLECTED")
             self.assertEqual(artifact_json["input"]["commandId"], "env_snapshot")
             self.assertEqual(artifact_json["remoteExecutorId"], executor["executorId"])
+
+    def test_approved_collect_environment_selects_remote_target_from_hints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps({'argv': sys.argv[1:]}))\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                    RemoteCommandTemplate(
+                        command_id="disk_usage",
+                        display_name="Disk diagnostics",
+                        description="collect filesystem capacity and inode usage",
+                        argv=("df", "-h"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "need hinted environment evidence", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(
+                run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            meta_executor = store.create_remote_executor(
+                {
+                    "name": "meta node",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "tags": ["meta"],
+                    "enabled": True,
+                }
+            )
+            store.create_remote_executor(
+                {
+                    "name": "data node",
+                    "host": "127.0.0.2",
+                    "port": 2222,
+                    "user": "root",
+                    "tags": ["data"],
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote disk state",
+                    "input": {
+                        "target": "meta node",
+                        "template": "disk diagnostics",
+                    },
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            pending = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(pending)
+            assert pending is not None
+            self.assertEqual(pending["payload"]["status"], "QUEUED")
+            self.assertEqual(pending["payload"]["remoteExecutorId"], meta_executor["executorId"])
+            self.assertEqual(pending["payload"]["remoteCommandId"], "disk_usage")
+            remote_jobs = store.acquire_jobs("remote-worker", limit=1)
+            self.assertEqual(remote_jobs[0]["kind"], "remote_command_run")
+
+            asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+
+            evidence_items = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "environment_evidence"
+            ]
+            self.assertEqual(len(evidence_items), 1)
+            artifact = store.get_artifact(evidence_items[0]["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "COLLECTED")
+            self.assertEqual(artifact_json["remoteCommandId"], "disk_usage")
+            self.assertEqual(artifact_json["remoteExecutorId"], meta_executor["executorId"])
+            self.assertIn("df", artifact_json["stdoutPreview"])
+
+    def test_collect_environment_rejects_ambiguous_remote_target_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="disk_usage",
+                        display_name="Disk diagnostics",
+                        description="collect filesystem capacity",
+                        argv=("df", "-h"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "ambiguous environment hint", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(
+                run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            store.create_remote_executor(
+                {
+                    "name": "data node a",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            store.create_remote_executor(
+                {
+                    "name": "data node b",
+                    "host": "127.0.0.2",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote disk state",
+                    "input": {"target": "data node", "template": "disk diagnostics"},
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            evidence = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(evidence)
+            assert evidence is not None
+            self.assertEqual(evidence["payload"]["status"], "REMOTE_REJECTED")
+            self.assertEqual(store.acquire_jobs("remote-worker", limit=1), [])
+            artifact = store.get_artifact(evidence["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "REMOTE_REJECTED")
+            self.assertIn("ambiguous executor selector", artifact_json["error"])
 
     def test_approved_collect_environment_can_collect_remote_file(self) -> None:
         previous_remote_root = os.environ.get("LOGAGENT_TEST_REMOTE_ROOT")
