@@ -1680,6 +1680,7 @@ def run_preprocess_tool(
         text_files,
     )
     manifest = build_manifest(
+        settings,
         run["workspace_id"],
         run["id"],
         uploads,

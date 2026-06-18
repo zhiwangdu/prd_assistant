@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Manifest Upload Summary Parity
+
+- Aligned V2 manifest artifacts with Rust/V1 node-package summary shape while
+  preserving existing V2 fields.
+- Manifest top-level data now includes V1 aliases such as `taskId`,
+  `uploadId`, `uploadIds`, `source`, and `filename`; `uploads[]` now includes
+  `size`, `rawPath`, `extractedDir`, package metadata, `nodeDir`, sorted
+  `logGroups`, ignored file counts/samples, and warnings when present.
+- Manifest file entries now expose V1 aliases and package metadata including
+  `size`, `uploadId`, `instanceId`, `nodeId`, `packageTimestamp`,
+  `compressed`, and `compression`; gzip compression is detected by magic bytes
+  so rotated files without `.gz` suffix still get counted.
+- Updated root, V2 Server, and Log Analyzer docs.
+- Verification passed: focused node-package/preprocess/tool-input pytest
+  selection, `cd server-v2 && uv run --extra dev ruff check logagent_v2
+  tests`, full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest`
+  with 156 passed and 1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 InfluxQL Query Extraction Parity
 
 - Aligned V2 InfluxQL query extraction with Rust/V1 by recognizing JSON and

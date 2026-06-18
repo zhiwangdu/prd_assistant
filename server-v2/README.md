@@ -39,7 +39,11 @@ slice provides the durable foundation for the V2 product model:
   inputs such as `.tssp`,
   `.tssp.init`, `.tsm`, `.tsi`, TSI/mergeset trees, and `_series` trees from
   direct uploads or supported archives.
-- `manifest.json` and `grep_results.json` artifact generation.
+- `manifest.json` and `grep_results.json` artifact generation; manifests keep
+  existing V2 upload/file fields and also expose Rust/V1-compatible
+  upload/package summaries, `size` / `uploadId` aliases, node package
+  metadata, log group counts, gzip compression counts, ignored path samples,
+  and file-level compression metadata.
 - Read-only MCP endpoint with V1-shaped tool catalog, Metadata, Case Memory,
   Skill registry, and Domain Adapter resources/tools. `resources/list`
   advertises both static collection resources and dynamic per-Skill /
@@ -892,7 +896,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
   `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`;
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
-- writes bounded `manifest.json` and `grep_results.json` artifacts;
+- writes bounded `manifest.json` and `grep_results.json` artifacts, including
+  V1-style manifest upload summaries for node packages;
 - writes `tool_inputs/index.json`, node-package `log_text` JSONL artifacts,
   `influxql_analyzer` JSONL artifacts, and `flux_query_analyzer` JSONL
   artifacts when logs contain supported query lines;
@@ -916,8 +921,13 @@ extracted/<nodeId>/<timestamp>/agent/<relative-file>
 ```
 
 Rotated files are accepted by directory membership rather than filename suffix,
-and gzip content is decoded by magic bytes before grep indexing. A node package
-with no supported log directory fails instead of producing an empty manifest.
+and gzip content is decoded by magic bytes before grep indexing. Manifest upload
+summaries include `packageId`, `instanceId`, `nodeId`, `packageTimestamp`,
+`nodeDir`, sorted `logGroups`, `ignoredFileCount`, and `ignoredPathSamples`;
+manifest file entries include V1 aliases such as `size`, `uploadId`,
+`instanceId`, `nodeId`, `packageTimestamp`, `compressed`, and `compression`.
+A node package with no supported log directory fails instead of producing an
+empty manifest.
 
 ## MCP
 

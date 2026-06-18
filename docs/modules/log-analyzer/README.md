@@ -108,14 +108,42 @@ tool_inputs/influxql_analyzer/<nodeId>/<timestamp>.jsonl
 
 ```json
 {
+  "taskId": "task_xxx",
+  "uploadIds": ["upl_xxx"],
+  "uploads": [
+    {
+      "uploadId": "upl_xxx",
+      "filename": "pkg_instance_node_2026_06_16_09_58_02_561564_logs.tar.gz",
+      "size": 4096,
+      "rawPath": "artifacts/ws_xxx/artfile_xxx/pkg_instance_node_2026_06_16_09_58_02_561564_logs.tar.gz",
+      "extractedDir": "extracted/node/2026_06_16_09_58_02_561564",
+      "packageId": "pkg",
+      "instanceId": "instance",
+      "nodeId": "node",
+      "packageTimestamp": "2026_06_16_09_58_02_561564",
+      "nodeDir": "extracted/node/2026_06_16_09_58_02_561564",
+      "logGroups": [{ "name": "tsdb", "fileCount": 2, "compressedFileCount": 1 }],
+      "ignoredFileCount": 1,
+      "ignoredPathSamples": ["wrapper/tmp/ignored.log"]
+    }
+  ],
   "files": [
     {
-      "path": "redis.log",
-      "size": 2147483648
+      "path": "extracted/node/2026_06_16_09_58_02_561564/tsdb/influxdb.log",
+      "size": 2147483648,
+      "uploadId": "upl_xxx",
+      "instanceId": "instance",
+      "nodeId": "node",
+      "packageTimestamp": "2026_06_16_09_58_02_561564",
+      "logGroup": "tsdb",
+      "originalPath": "wrapper/var/chroot/gemini/log/tsdb/influxdb.log",
+      "compressed": false
     }
   ]
 }
 ```
+
+V2 manifest 保留已有 `sizeBytes`、`sourceUploadId`、`artifactId` 等扩展字段，同时补齐 Rust/V1 的 upload summary、file-level package metadata 和 gzip 统计，便于 Agent 不读取完整文件也能判断节点包结构。
 
 ## rg 检索
 

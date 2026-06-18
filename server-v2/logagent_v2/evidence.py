@@ -131,6 +131,7 @@ def build_initial_evidence(
         text_files,
     )
     manifest = build_manifest(
+        settings,
         workspace_id,
         run_id,
         uploads,
@@ -1491,6 +1492,7 @@ def grep_text_files(
 
 
 def build_manifest(
+    settings: Settings,
     workspace_id: str,
     run_id: str,
     uploads: list[JsonObject],
@@ -1498,11 +1500,18 @@ def build_manifest(
     tool_inputs_path: str | None = None,
     tool_input_count: int = 0,
 ) -> JsonObject:
+    upload_summaries, file_metadata = build_upload_manifest_summaries(
+        settings,
+        uploads,
+        text_files,
+    )
     files = []
     for text_file in text_files:
         item = {
             "path": text_file.path,
+            "size": text_file.size_bytes,
             "sourceUploadId": text_file.source_upload_id,
+            "uploadId": text_file.source_upload_id,
             "sourceFilename": text_file.source_filename,
             "sizeBytes": text_file.size_bytes,
             "sha256": text_file.sha256,
@@ -1513,29 +1522,183 @@ def build_manifest(
             item["logGroup"] = text_file.log_group
         if text_file.node_package:
             item["nodePackage"] = text_file.node_package
+            item["instanceId"] = text_file.node_package.get("instanceId")
+            item["nodeId"] = text_file.node_package.get("nodeId")
+            item["packageTimestamp"] = text_file.node_package.get("timestamp")
+        if metadata := file_metadata.get((text_file.source_upload_id, text_file.path)):
+            item.update(metadata)
         files.append(item)
+    first_upload = uploads[0] if uploads else None
     manifest = {
         "schemaVersion": 1,
         "workspaceId": workspace_id,
         "runId": run_id,
+        "taskId": run_id,
+        "uploadId": first_upload["id"] if first_upload else "",
+        "uploadIds": [upload["id"] for upload in uploads],
+        "source": "upload",
+        "filename": first_upload["filename"] if first_upload else "session_text_input",
         "uploadCount": len(uploads),
         "fileCount": len(text_files),
-        "uploads": [
-            {
-                "uploadId": upload["id"],
-                "filename": upload["filename"],
-                "artifactId": upload["artifact_id"],
-                "sizeBytes": upload["artifact_size_bytes"],
-                "sha256": upload["artifact_sha256"],
-            }
-            for upload in uploads
-        ],
+        "uploads": upload_summaries,
         "files": files,
     }
     if tool_inputs_path:
         manifest["toolInputsPath"] = tool_inputs_path
         manifest["toolInputCount"] = tool_input_count
     return manifest
+
+
+def build_upload_manifest_summaries(
+    settings: Settings,
+    uploads: list[JsonObject],
+    text_files: list[TextFile],
+) -> tuple[list[JsonObject], dict[tuple[str, str], JsonObject]]:
+    package_files_by_upload: dict[str, list[TextFile]] = defaultdict(list)
+    for text_file in text_files:
+        if text_file.node_package:
+            package_files_by_upload[text_file.source_upload_id].append(text_file)
+
+    used_extracted_dirs: list[str] = []
+    file_metadata: dict[tuple[str, str], JsonObject] = {}
+    summaries: list[JsonObject] = []
+    for upload in uploads:
+        node_package = parse_node_log_package(upload["filename"])
+        extracted_dir = generic_extracted_dir(upload["filename"], used_extracted_dirs)
+        package_summary: JsonObject = {}
+        if node_package is not None:
+            extracted_dir = f"extracted/{node_package.node_id}/{node_package.timestamp}"
+            package_summary, package_file_metadata = summarize_node_package_upload(
+                settings,
+                upload,
+                node_package,
+                package_files_by_upload.get(upload["id"], []),
+            )
+            file_metadata.update(package_file_metadata)
+        summary = {
+            "uploadId": upload["id"],
+            "filename": upload["filename"],
+            "artifactId": upload["artifact_id"],
+            "size": upload["artifact_size_bytes"],
+            "sizeBytes": upload["artifact_size_bytes"],
+            "sha256": upload["artifact_sha256"],
+            "rawPath": upload["artifact_relative_path"],
+            "extractedDir": extracted_dir,
+        }
+        summary.update(package_summary)
+        summaries.append(summary)
+    return summaries, file_metadata
+
+
+def summarize_node_package_upload(
+    settings: Settings,
+    upload: JsonObject,
+    node_package: NodeLogPackage,
+    text_files: list[TextFile],
+) -> tuple[JsonObject, dict[tuple[str, str], JsonObject]]:
+    log_groups: dict[str, JsonObject] = {}
+    ignored_count = 0
+    ignored_samples: list[str] = []
+    warnings: list[str] = []
+    file_metadata: dict[tuple[str, str], JsonObject] = {}
+    artifact_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
+    try:
+        with tarfile.open(fileobj=io.BytesIO(artifact_path.read_bytes()), mode="r:*") as archive:
+            for index, member in enumerate(archive):
+                if index >= settings.max_archive_files:
+                    warnings.append("archive file count exceeds LOGAGENT_V2_MAX_ARCHIVE_FILES")
+                    break
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    continue
+                original_path = member.name.replace("\\", "/")
+                path = safe_archive_path(member.name)
+                classified = classify_node_log_member(path, node_package)
+                if classified is None:
+                    ignored_count += 1
+                    if len(ignored_samples) < 20:
+                        ignored_samples.append(original_path)
+                    continue
+                logical_path, log_group = classified
+                group = log_groups.setdefault(
+                    log_group,
+                    {"name": log_group, "fileCount": 0, "compressedFileCount": 0},
+                )
+                group["fileCount"] += 1
+                compressed = node_package_member_has_gzip_magic(archive, member)
+                if compressed:
+                    group["compressedFileCount"] += 1
+                metadata: JsonObject = {"compressed": compressed}
+                if compressed:
+                    metadata["compression"] = "gzip"
+                file_metadata[(upload["id"], logical_path)] = metadata
+    except (OSError, tarfile.TarError, ValueError) as exc:
+        warnings.append(f"failed to summarize node log package: {exc}")
+
+    if not log_groups:
+        log_groups = derive_log_group_summaries_from_text_files(text_files)
+    summary = {
+        "packageId": node_package.package_id,
+        "instanceId": node_package.instance_id,
+        "nodeId": node_package.node_id,
+        "packageTimestamp": node_package.timestamp,
+        "nodeDir": f"extracted/{node_package.node_id}/{node_package.timestamp}",
+        "logGroups": [log_groups[name] for name in sorted(log_groups)],
+    }
+    if ignored_count:
+        summary["ignoredFileCount"] = ignored_count
+    if ignored_samples:
+        summary["ignoredPathSamples"] = ignored_samples
+    if warnings:
+        summary["warnings"] = warnings[:50]
+    return summary, file_metadata
+
+
+def derive_log_group_summaries_from_text_files(text_files: list[TextFile]) -> dict[str, JsonObject]:
+    groups: dict[str, JsonObject] = {}
+    for text_file in text_files:
+        if not text_file.log_group:
+            continue
+        group = groups.setdefault(
+            text_file.log_group,
+            {"name": text_file.log_group, "fileCount": 0, "compressedFileCount": 0},
+        )
+        group["fileCount"] += 1
+    return groups
+
+
+def node_package_member_has_gzip_magic(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bool:
+    extracted = archive.extractfile(member)
+    if extracted is None:
+        return False
+    return extracted.read(2) == b"\x1f\x8b"
+
+
+def generic_extracted_dir(filename: str, used: list[str]) -> str:
+    base = upload_dir_name(filename)
+    candidate = base
+    index = 2
+    while candidate in used:
+        candidate = f"{base}_{index}"
+        index += 1
+    used.append(candidate)
+    return f"extracted/{candidate}"
+
+
+def upload_dir_name(filename: str) -> str:
+    lower = filename.lower()
+    suffixes = (".tar.gz", ".tgz", ".zip", ".tar", ".log", ".txt")
+    without_suffix = filename
+    for suffix in suffixes:
+        if lower.endswith(suffix):
+            without_suffix = filename[: -len(suffix)]
+            break
+    safe = "".join(
+        char if char.isascii() and (char.isalnum() or char in "-_.") else "_"
+        for char in without_suffix
+    ).strip(".")
+    return safe or "upload"
 
 
 def write_json_artifact(

@@ -91,7 +91,11 @@ Implemented in this slice:
   direct uploads or supported archives. Generated entries are compatible with
   the V1 `ToolInputEntry` shape and include V2 artifact ids for local
   execution.
-- `manifest.json` and `grep_results.json` artifact generation.
+- `manifest.json` and `grep_results.json` artifact generation. Manifest
+  artifacts preserve existing V2 upload/file fields and add Rust/V1-compatible
+  top-level `taskId` / `uploadIds`, upload summaries with `size`, `rawPath`,
+  `extractedDir`, node package metadata, log group counts, ignored path
+  samples, and file-level `size` / `uploadId` / package / compression aliases.
 - Agent runtime that executes the run lifecycle through a LangGraph state graph
   with `collect_initial_evidence`, `prepare_agent_request`,
   `call_agent_provider`, `execute_tool_calls`, `validate_final_answer`, and
@@ -639,9 +643,13 @@ extracted/<nodeId>/<timestamp>/stream/<relative-file>
 extracted/<nodeId>/<timestamp>/agent/<relative-file>
 ```
 
-Each manifest file entry records `originalPath`, `logGroup`, and `nodePackage`
-metadata. A matching node package with no supported log directories is rejected
-with a clear error so an empty manifest is not treated as a successful import.
+Each manifest upload entry records V1-compatible package metadata, `nodeDir`,
+sorted `logGroups`, `ignoredFileCount`, and `ignoredPathSamples`. Each manifest
+file entry records `originalPath`, `logGroup`, `nodePackage`, V1 aliases
+(`size`, `uploadId`, `instanceId`, `nodeId`, `packageTimestamp`), and gzip
+metadata (`compressed`, `compression`) when detected from magic bytes. A
+matching node package with no supported log directories is rejected with a clear
+error so an empty manifest is not treated as a successful import.
 
 For every node package log group, V2 also writes V1-style generic log text
 JSONL entries under `tool_inputs/log_text/<node>/<timestamp>/<logGroup>.jsonl`.

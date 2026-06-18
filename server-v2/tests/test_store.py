@@ -3476,6 +3476,11 @@ class StoreTests(unittest.TestCase):
                     "wrapper/home/Ruby/log/agent-current",
                     b"agent error line\n",
                 )
+                add_file(
+                    archive,
+                    "wrapper/tmp/ignored.log",
+                    b"ignored error outside supported dirs\n",
+                )
             artifact = write_artifact_bytes(
                 settings,
                 store,
@@ -3509,6 +3514,33 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(
                 groups[f"extracted/NodeA/{timestamp}/stream/stream.rotate.1"], "stream"
             )
+            stream_file = next(
+                item
+                for item in manifest["files"]
+                if item["path"] == f"extracted/NodeA/{timestamp}/stream/stream.rotate.1"
+            )
+            self.assertTrue(stream_file["compressed"])
+            self.assertEqual(stream_file["compression"], "gzip")
+            self.assertEqual(stream_file["uploadId"], manifest["uploadId"])
+            self.assertEqual(stream_file["instanceId"], "Inst")
+            self.assertEqual(stream_file["nodeId"], "NodeA")
+            self.assertEqual(stream_file["packageTimestamp"], timestamp)
+            upload_summary = manifest["uploads"][0]
+            self.assertEqual(upload_summary["packageId"], "Pkg")
+            self.assertEqual(upload_summary["instanceId"], "Inst")
+            self.assertEqual(upload_summary["nodeId"], "NodeA")
+            self.assertEqual(upload_summary["packageTimestamp"], timestamp)
+            self.assertEqual(
+                upload_summary["extractedDir"],
+                f"extracted/NodeA/{timestamp}",
+            )
+            self.assertEqual(upload_summary["nodeDir"], f"extracted/NodeA/{timestamp}")
+            self.assertEqual(upload_summary["ignoredFileCount"], 1)
+            self.assertEqual(upload_summary["ignoredPathSamples"], ["wrapper/tmp/ignored.log"])
+            log_groups = {item["name"]: item for item in upload_summary["logGroups"]}
+            self.assertEqual(log_groups["agent"]["fileCount"], 1)
+            self.assertEqual(log_groups["stream"]["compressedFileCount"], 1)
+            self.assertEqual(log_groups["tsdb"]["compressedFileCount"], 0)
 
             grep_response = task_mcp_response(
                 settings,
