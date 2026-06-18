@@ -305,6 +305,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_ARCHIVE_BYTES` | `268435456` | Maximum aggregate extracted text bytes |
 | `LOGAGENT_V2_MAX_TEXT_FILE_BYTES` | `16777216` | Maximum single text file size |
 | `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
+| `LOGAGENT_V2_GREP_KEYWORDS` | `error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify` | Comma-separated initial grep keywords, aligned with Rust/V1 defaults |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency; non-positive values clamp to 1 |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array or object map of fixed whitelist tool descriptors; supports V2 `command` plus V1 `path` / `path_env`, camelCase or snake_case limits; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
@@ -904,6 +905,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - writes bounded `manifest.json` and `grep_results.json` artifacts, including
   V1-style manifest upload summaries for node packages and grep match aliases
   (`file`, `line`, `evidenceRef`) alongside V2 fields;
+- uses `LOGAGENT_V2_GREP_KEYWORDS` for initial grep, defaulting to the
+  Rust/V1 keyword set instead of deriving keywords from the user question;
 - writes `tool_inputs/index.json`, node-package `log_text` JSONL artifacts,
   `influxql_analyzer` JSONL artifacts, and `flux_query_analyzer` JSONL
   artifacts when logs contain supported query lines;

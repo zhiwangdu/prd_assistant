@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Configured Grep Keyword Parity
+
+- Added `Settings.grep_keywords` and `LOGAGENT_V2_GREP_KEYWORDS` for
+  configuration-driven initial grep keywords.
+- Changed V2 initial `grep_results.json` generation to use configured keywords
+  instead of automatically tokenizing the user question, aligning the default
+  behavior with Rust/V1 `log_analyzer.keywords`.
+- The V2 default keyword set is now
+  `error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify`.
+- Updated Tool Runner fallback regression coverage to configure `select`
+  explicitly when it relies on initial grep keyword fallback.
+- Updated root, V2 Server, Log Analyzer, and Config docs.
+- Verification passed: focused grep keyword pytest selection,
+  `cd server-v2 && uv run --extra dev ruff check logagent_v2 tests`, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Grep Match Alias Parity
 
 - Aligned V2 initial `grep_results.json` and follow-up `log_searches` match

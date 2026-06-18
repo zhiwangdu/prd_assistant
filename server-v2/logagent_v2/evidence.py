@@ -15,7 +15,7 @@ from pathlib import PurePosixPath
 from typing import Iterable
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes, write_artifact_directory
-from .config import Settings
+from .config import DEFAULT_GREP_KEYWORDS, Settings
 from .ids import new_id
 from .store import JsonObject, Store
 
@@ -34,7 +34,6 @@ TEXT_SUFFIXES = {
     ".cfg",
 }
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
-BASE_KEYWORDS = ["error", "fail", "fatal", "panic", "exception", "timeout", "warn", "slow"]
 BACKGROUND_EVIDENCE_KINDS = {"environment_evidence"}
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 NODE_LOG_PACKAGE_SUFFIXES = ("_logs.tar.gz", "_logs.tgz")
@@ -122,7 +121,7 @@ def build_initial_evidence(
     workspace = store.get_workspace(workspace_id)
     uploads = store.list_uploads(workspace_id)
     text_files = collect_text_files(settings, uploads)
-    keywords = search_keywords(workspace["question"])
+    keywords = search_keywords(workspace["question"], settings.grep_keywords)
     tool_input_bundle = materialize_tool_inputs(
         settings,
         store,
@@ -1509,13 +1508,17 @@ def safe_segment(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")[:80] or "unknown"
 
 
-def search_keywords(question: str) -> list[str]:
-    tokens = [
-        token.lower()
-        for token in re.findall(r"[A-Za-z0-9_./:-]{3,}", question)
-        if not token.isdigit()
+def search_keywords(
+    question: str = "",
+    configured_keywords: Iterable[str] | None = None,
+) -> list[str]:
+    del question
+    keywords = [
+        keyword.strip()
+        for keyword in (configured_keywords or DEFAULT_GREP_KEYWORDS)
+        if keyword.strip()
     ]
-    keywords = list(dict.fromkeys(BASE_KEYWORDS + tokens))
+    keywords = list(dict.fromkeys(keywords))
     return keywords[:32]
 
 

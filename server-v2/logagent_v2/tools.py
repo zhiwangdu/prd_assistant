@@ -1688,7 +1688,7 @@ def run_preprocess_tool(
     )
     grep_results = grep_text_files(
         text_files,
-        search_keywords(""),
+        search_keywords("", settings.grep_keywords),
         settings.max_grep_matches,
         ref_base="grep_results.json#matches/",
     )

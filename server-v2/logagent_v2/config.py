@@ -13,6 +13,18 @@ from typing import Any
 LOGAGENT_MCP_ALLOWED_TOOL_GLOB = "mcp__logagent__*"
 ANALYSIS_MODES = ("diagnose", "code_investigation", "fix")
 REMOTE_FILE_PATH_RE = re.compile(r"^/[A-Za-z0-9._/@+=,-]+$")
+DEFAULT_GREP_KEYWORDS = (
+    "error",
+    "exception",
+    "timeout",
+    "fail",
+    "failed",
+    "panic",
+    "fatal",
+    "refused",
+    "denied",
+    "verify",
+)
 
 
 @dataclass(frozen=True)
@@ -393,6 +405,7 @@ class Settings:
     max_archive_bytes: int = 256 * 1024 * 1024
     max_text_file_bytes: int = 16 * 1024 * 1024
     max_grep_matches: int = 500
+    grep_keywords: tuple[str, ...] = DEFAULT_GREP_KEYWORDS
     max_concurrent_jobs: int = 2
     job_poll_seconds: float = 1.0
     inline_worker: bool = True
@@ -499,6 +512,10 @@ class Settings:
             os.environ.get("LOGAGENT_V2_MAX_TEXT_FILE_BYTES", str(16 * 1024 * 1024))
         )
         max_grep_matches = int(os.environ.get("LOGAGENT_V2_MAX_GREP_MATCHES", "500"))
+        grep_keywords = parse_csv_env(
+            os.environ.get("LOGAGENT_V2_GREP_KEYWORDS"),
+            default=DEFAULT_GREP_KEYWORDS,
+        )
         max_concurrent_jobs = int(os.environ.get("LOGAGENT_V2_MAX_CONCURRENT_JOBS", "2"))
         inline_worker = os.environ.get("LOGAGENT_V2_INLINE_WORKER", "1") != "0"
         tools = parse_tools_env(os.environ.get("LOGAGENT_V2_TOOLS_JSON"))
@@ -695,6 +712,7 @@ class Settings:
             max_archive_bytes=max_archive_bytes,
             max_text_file_bytes=max_text_file_bytes,
             max_grep_matches=max_grep_matches,
+            grep_keywords=grep_keywords,
             max_concurrent_jobs=max(1, max_concurrent_jobs),
             inline_worker=inline_worker,
             tools=tools,

@@ -3557,7 +3557,7 @@ class StoreTests(unittest.TestCase):
                 add_file(
                     archive,
                     "wrapper/var/chroot/gemini/log/stream/stream.rotate.1",
-                    gzip.compress(b"stream warning from rotated gzip\n"),
+                    gzip.compress(b"stream timeout from rotated gzip\n"),
                 )
                 add_file(
                     archive,
@@ -4633,6 +4633,37 @@ class StoreTests(unittest.TestCase):
                     os.environ.pop("LOGAGENT_V2_CODE_WORKTREE_ROOT", None)
                 else:
                     os.environ["LOGAGENT_V2_CODE_WORKTREE_ROOT"] = previous_value
+
+    def test_settings_grep_keywords_env_defaults_to_v1_keywords(self) -> None:
+        self.assertEqual(
+            Settings(data_dir=Path("/tmp/logagent-v2-test"), api_key="test").grep_keywords,
+            (
+                "error",
+                "exception",
+                "timeout",
+                "fail",
+                "failed",
+                "panic",
+                "fatal",
+                "refused",
+                "denied",
+                "verify",
+            ),
+        )
+        env_values = {
+            "LOGAGENT_V2_GREP_KEYWORDS": "error,select, slow query ",
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            os.environ.update(env_values)
+            settings = Settings.from_env()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        self.assertEqual(settings.grep_keywords, ("error", "select", "slow query"))
 
     def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
         env_values = {
@@ -7083,7 +7114,12 @@ fi
                 match_file_patterns=("*.log",),
                 match_keywords=("select",),
             )
-            settings = Settings(data_dir=Path(tmp), api_key="test", tools=(tool,))
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                grep_keywords=("error", "select"),
+                tools=(tool,),
+            )
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()

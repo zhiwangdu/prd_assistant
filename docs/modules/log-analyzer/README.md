@@ -35,6 +35,14 @@ log_analyzer:
 
 关键词必须配置化，不能写死在代码里。
 
+Python V2 使用 `LOGAGENT_V2_GREP_KEYWORDS` 配置初始 grep 关键词，默认值与 Rust/V1 对齐：
+
+```text
+error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify
+```
+
+用户问题不会自动拆词进入初始 grep；需要追加关键词时由后续 `logagent.search_logs` 调用完成。
+
 ## 职责
 
 Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。

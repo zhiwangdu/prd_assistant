@@ -620,7 +620,10 @@ absolute paths, `..` traversal, empty paths, and other unsafe names. Non-file
 members and symlinks are skipped. Text files are bounded by
 `LOGAGENT_V2_MAX_TEXT_FILE_BYTES`, aggregate scanned bytes by
 `LOGAGENT_V2_MAX_ARCHIVE_BYTES`, and initial matches by
-`LOGAGENT_V2_MAX_GREP_MATCHES`.
+`LOGAGENT_V2_MAX_GREP_MATCHES`. Initial grep keywords come from
+`LOGAGENT_V2_GREP_KEYWORDS`, a comma-separated list that defaults to the
+Rust/V1 keyword set `error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify`;
+the user question is not automatically tokenized into the initial grep query.
 
 Initial grep refs use:
 
