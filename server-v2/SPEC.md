@@ -171,7 +171,9 @@ Implemented in this slice:
   V1-compatible range form `startLine`/`endLine`; the two forms must not be
   mixed in one call. The response preserves the V2 nested `slice` object and
   also exposes Rust-compatible top-level `artifactPath`, `evidenceRefs`, and
-  `lines` fields.
+  `lines` fields. Logical slice paths must use stable
+  `log_slices/slice_<digest>.json#lines` refs derived from the requested path
+  and resolved line range.
 - Tool Plugin registry. Configured subprocess tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, explicit V2 analyzer executable environment
   variables, or standard source-built analyzer filenames auto-discovered under

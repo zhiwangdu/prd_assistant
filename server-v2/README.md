@@ -877,7 +877,8 @@ It currently supports:
 - `tools/call logagent.get_log_slice` with either `lineNumber` plus
   `before`/`after`, or V1-compatible `startLine`/`endLine`; responses keep the
   nested V2 `slice` object and expose Rust-compatible top-level `artifactPath`,
-  `evidenceRefs`, and `lines`
+  `evidenceRefs`, and `lines`; logical slice paths use stable
+  `log_slices/slice_<digest>.json#lines` refs
 - `tools/call logagent.run_domain_tool`
 - `tools/call logagent.list_fetch_endpoints`
 - `tools/call logagent.fetch`

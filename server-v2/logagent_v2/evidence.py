@@ -332,7 +332,12 @@ def get_log_line_range(
     lines = selected.text.splitlines()
     start = start_line
     end = min(end_line, len(lines))
-    slice_id = new_id("logslice")
+    slice_id = stable_log_slice_id(
+        path=path,
+        line_number=line_number,
+        start_line=start,
+        end_line=end,
+    )
     slice_path = f"log_slices/{slice_id}.json"
     result = {
         "schemaVersion": 1,
@@ -375,6 +380,28 @@ def get_log_line_range(
         },
     )
     return {"slice": result, "artifact": artifact, "evidence": evidence}
+
+
+def stable_log_slice_id(
+    *,
+    path: str,
+    line_number: int | None,
+    start_line: int,
+    end_line: int,
+) -> str:
+    payload = json.dumps(
+        {
+            "path": path,
+            "lineNumber": line_number,
+            "startLine": start_line,
+            "endLine": end_line,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return f"slice_{digest}"
 
 
 def collect_text_files(settings: Settings, uploads: list[JsonObject]) -> list[TextFile]:

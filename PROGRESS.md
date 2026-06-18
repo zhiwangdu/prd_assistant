@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Log Slice Stable Evidence Refs
+
+- Aligned V2 task MCP `logagent.get_log_slice` with Rust/V1 stable logical
+  artifact behavior by deriving `log_slices/slice_<digest>.json#lines` from the
+  requested path and resolved line range.
+- Repeated same-parameter log slice calls now return the same top-level
+  `artifactPath`, nested `slice.ref`, and `evidenceRefs` while preserving the V2
+  DB artifact/evidence records.
+- Updated root, V2 Server, and Analysis Agent README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused log-slice pytest selection, full `PYTHONPATH=. uv run --extra
+  dev pytest` (130 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Task MCP Stable Action IDs
 
 - Aligned V2 task MCP `logagent.fetch` with Rust/V1 behavior by deriving a

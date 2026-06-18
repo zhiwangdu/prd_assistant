@@ -3047,9 +3047,32 @@ class StoreTests(unittest.TestCase):
                 ["two", "three"],
             )
             self.assertTrue(payload["slice"]["ref"].startswith("log_slices/"))
+            self.assertTrue(payload["slice"]["sliceId"].startswith("slice_"))
             self.assertEqual(payload["artifactPath"], payload["slice"]["ref"].split("#", 1)[0])
             self.assertEqual(payload["evidenceRefs"], [payload["slice"]["ref"]])
             self.assertEqual([item["line"] for item in payload["lines"]], [2, 3])
+
+            repeated = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 321,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "range.log",
+                            "startLine": 2,
+                            "endLine": 3,
+                        },
+                    },
+                },
+            )
+            repeated_payload = json.loads(repeated["result"]["content"][0]["text"])
+            self.assertEqual(repeated_payload["artifactPath"], payload["artifactPath"])
+            self.assertEqual(repeated_payload["slice"]["ref"], payload["slice"]["ref"])
 
             mixed = task_mcp_response(
                 settings,
