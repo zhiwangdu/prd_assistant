@@ -172,7 +172,7 @@ slice provides the durable foundation for the V2 product model:
   `Type <code>`.
 - Case Memory foundation with manual cases, succeeded-run case confirmation,
   text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 plus local vector recall,
-  edit/disable API, readonly MCP search, and task MCP
+  edit/disable API, legacy JSON import/writeback, readonly MCP search, and task MCP
   V1-compatible `logagent.recall_cases`.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection,
@@ -1569,7 +1569,9 @@ through Metadata MCP tools.
 
 ## Case Memory
 
-V2 stores confirmed cases in SQLite table `cases` using Case schema v2:
+V2 stores confirmed cases in SQLite table `cases` using Case schema v2, and
+keeps Rust/V1-compatible JSON files under `LOGAGENT_V2_DATA_DIR/cases/` as a
+local migration and rollback layer:
 
 ```json
 {
@@ -1591,6 +1593,11 @@ FTS5/BM25 over title, symptom, root cause, solution, product/version/
 environment, instance/node, and evidence refs, plus a dependency-light local
 hash-vector recall column stored in SQLite. Disabled cases are hidden unless
 the caller sets `includeDisabled=true`.
+
+On startup, V2 imports `cases/*.json` schema v2 files by `caseId` using
+idempotent upsert semantics. Creating or editing a Case first updates SQLite,
+FTS, and the local vector column, then atomically writes
+`cases/<caseId>.json`.
 
 Case import drafts support text or JSON capture before a Case is confirmed:
 

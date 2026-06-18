@@ -244,6 +244,7 @@ class Store:
     def __init__(self, sqlite_path: Path):
         self.sqlite_path = sqlite_path
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        self.legacy_cases_dir = self.sqlite_path.parent / "cases"
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -577,6 +578,7 @@ class Store:
             self._ensure_case_fts_tx(conn)
             self._backfill_case_vectors_tx(conn)
             self._backfill_workspace_upload_ids_tx(conn)
+        self.import_legacy_cases()
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str
@@ -2551,6 +2553,7 @@ class Store:
         return item
 
     def create_case(self, record: JsonObject, searchable_text: str) -> JsonObject:
+        self._validate_case_record(record, source="case record")
         case_id = record["caseId"]
         ts = record["createdAt"]
         with self.connect() as conn:
@@ -2574,7 +2577,71 @@ class Store:
                 ),
             )
             self._upsert_case_fts_tx(conn, case_id, searchable_text)
-        return self.get_case(case_id)
+        created = self.get_case(case_id)
+        self._persist_legacy_case(created)
+        return created
+
+    def import_legacy_cases(self) -> int:
+        self.legacy_cases_dir.mkdir(parents=True, exist_ok=True)
+        imported = 0
+        seen: set[str] = set()
+        for path in sorted(self.legacy_cases_dir.glob("*.json")):
+            raw = path.read_text(encoding="utf-8")
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"invalid legacy case JSON {path}: {error}") from error
+            if not isinstance(record, dict):
+                raise ValueError(f"invalid legacy case JSON {path}: root must be an object")
+            self._validate_case_record(record, source=str(path))
+            case_id = str(record["caseId"])
+            if case_id in seen:
+                raise ValueError(f"duplicate legacy case id {case_id} in {path}")
+            seen.add(case_id)
+            self.upsert_case(record)
+            imported += 1
+        return imported
+
+    def upsert_case(self, record: JsonObject) -> JsonObject:
+        self._validate_case_record(record, source="case record")
+        searchable_text = case_searchable_text(record)
+        with self.connect() as conn:
+            self._upsert_case_tx(conn, record, searchable_text)
+        return self.get_case(record["caseId"])
+
+    def _upsert_case_tx(
+        self, conn: sqlite3.Connection, record: JsonObject, searchable_text: str
+    ) -> None:
+        case_id = record["caseId"]
+        conn.execute(
+            """
+            INSERT INTO cases(
+              case_id, source_type, task_id, enabled, record_json, searchable_text,
+              vector_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(case_id) DO UPDATE SET
+              source_type = excluded.source_type,
+              task_id = excluded.task_id,
+              enabled = excluded.enabled,
+              record_json = excluded.record_json,
+              searchable_text = excluded.searchable_text,
+              vector_json = excluded.vector_json,
+              created_at = excluded.created_at,
+              updated_at = excluded.updated_at
+            """,
+            (
+                case_id,
+                record["sourceType"],
+                record.get("taskId"),
+                1 if record.get("enabled", True) else 0,
+                encode_json(record),
+                searchable_text,
+                encode_json(case_vector(searchable_text)),
+                record["createdAt"],
+                record["updatedAt"],
+            ),
+        )
+        self._upsert_case_fts_tx(conn, case_id, searchable_text)
 
     def get_case(self, case_id: str) -> JsonObject:
         with self.connect() as conn:
@@ -2614,7 +2681,53 @@ class Store:
                 ),
             )
             self._upsert_case_fts_tx(conn, case_id, searchable_text)
-        return self.get_case(case_id)
+        updated = self.get_case(case_id)
+        self._persist_legacy_case(updated)
+        return updated
+
+    def _persist_legacy_case(self, record: JsonObject) -> None:
+        self._validate_case_record(record, source="case record")
+        self.legacy_cases_dir.mkdir(parents=True, exist_ok=True)
+        case_id = record["caseId"]
+        path = self.legacy_cases_dir / f"{case_id}.json"
+        temp_path = self.legacy_cases_dir / f".{case_id}.json.tmp"
+        temp_path.write_text(
+            json.dumps(record, ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(path)
+
+    def _validate_case_record(self, record: JsonObject, *, source: str) -> None:
+        if record.get("schemaVersion") != 2:
+            raise ValueError(f"{source} has unsupported case schemaVersion")
+        case_id = record.get("caseId")
+        if not isinstance(case_id, str) or not re.fullmatch(r"case_[A-Za-z0-9_-]+", case_id):
+            raise ValueError(f"{source} has invalid caseId")
+        source_type = record.get("sourceType")
+        if source_type not in {"task", "manual"}:
+            raise ValueError(f"{source} has invalid sourceType")
+        task_id = record.get("taskId")
+        source_result_path = record.get("sourceResultPath")
+        if source_type == "task":
+            if not isinstance(task_id, str) or not task_id.strip():
+                raise ValueError(f"{source} task case requires taskId")
+            if not isinstance(source_result_path, str) or not source_result_path.strip():
+                raise ValueError(f"{source} task case requires sourceResultPath")
+        else:
+            if task_id is not None:
+                raise ValueError(f"{source} manual case must not have taskId")
+            if source_result_path is not None:
+                raise ValueError(f"{source} manual case must not have sourceResultPath")
+        for field in ("title", "symptom", "rootCause", "solution", "createdAt", "updatedAt"):
+            if not isinstance(record.get(field), str) or not record[field].strip():
+                raise ValueError(f"{source} requires non-empty {field}")
+        evidence_refs = record.get("evidenceRefs")
+        if not isinstance(evidence_refs, list) or not all(
+            isinstance(item, str) for item in evidence_refs
+        ):
+            raise ValueError(f"{source} evidenceRefs must be an array of strings")
+        if not isinstance(record.get("enabled"), bool):
+            raise ValueError(f"{source} enabled must be boolean")
 
     def search_cases(
         self,

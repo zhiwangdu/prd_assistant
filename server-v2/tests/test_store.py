@@ -12842,6 +12842,88 @@ fi
                 recall_body["backgroundRef"],
             )
 
+    def test_case_store_imports_and_persists_legacy_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cases_dir = root / "cases"
+            cases_dir.mkdir()
+            legacy_case = {
+                "schemaVersion": 2,
+                "caseId": "case_legacy_v2",
+                "sourceType": "manual",
+                "taskId": None,
+                "product": "opengemini",
+                "version": "1.3.0",
+                "environment": "staging",
+                "instanceId": "inst-legacy",
+                "nodeId": "node-a",
+                "title": "Legacy compaction timeout",
+                "symptom": "query timeout during compaction",
+                "rootCause": "compaction backlog",
+                "solution": "reduce compaction pressure",
+                "evidenceRefs": ["grep_results.json#matches/0"],
+                "sourceResultPath": None,
+                "enabled": True,
+                "createdAt": "2026-06-18T00:00:00+00:00",
+                "updatedAt": "2026-06-18T00:00:00+00:00",
+            }
+            (cases_dir / "legacy.json").write_text(
+                json.dumps(legacy_case), encoding="utf-8"
+            )
+
+            store = Store(root / "logagent.sqlite")
+            store.initialize()
+            self.assertEqual(
+                store.search_cases("legacy compaction", limit=5)[0]["caseId"],
+                "case_legacy_v2",
+            )
+
+            # Reinitializing imports the same JSON idempotently instead of
+            # duplicating rows or FTS entries.
+            Store(root / "logagent.sqlite").initialize()
+            self.assertEqual(
+                [item["caseId"] for item in store.search_cases("legacy compaction", limit=5)],
+                ["case_legacy_v2"],
+            )
+
+            created = create_manual_case(
+                store,
+                {
+                    "title": "Manual WAL timeout",
+                    "symptom": "writes time out",
+                    "rootCause": "WAL fsync latency",
+                    "solution": "move WAL to faster disk",
+                    "enabled": True,
+                },
+            )
+            created_path = cases_dir / f"{created['caseId']}.json"
+            self.assertTrue(created_path.exists())
+            persisted = json.loads(created_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["caseId"], created["caseId"])
+            self.assertEqual(persisted["rootCause"], "WAL fsync latency")
+
+            updated = update_case_record(
+                store,
+                created["caseId"],
+                {
+                    "enabled": False,
+                    "solution": "move WAL and cap write concurrency",
+                },
+            )
+            updated_json = json.loads(created_path.read_text(encoding="utf-8"))
+            self.assertFalse(updated_json["enabled"])
+            self.assertEqual(updated_json["solution"], updated["solution"])
+
+            reloaded = Store(root / "logagent.sqlite")
+            reloaded.initialize()
+            self.assertEqual(
+                reloaded.search_cases(
+                    "WAL fsync latency", limit=5, include_disabled=True
+                )[0]["caseId"],
+                created["caseId"],
+            )
+            self.assertEqual(reloaded.search_cases("WAL fsync latency", limit=5), [])
+
     def test_case_mcp_limits_match_v1_readonly_and_task_recall_bounds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

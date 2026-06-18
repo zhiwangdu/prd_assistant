@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 Case Legacy JSON Parity
+
+- V2 Case Memory now imports `LOGAGENT_V2_DATA_DIR/cases/*.json` schema v2
+  records during Store initialization using idempotent `caseId` upsert
+  semantics.
+- Creating or editing a V2 Case now updates SQLite, FTS, and the local
+  hash-vector column, then atomically writes `cases/<caseId>.json` for Rust/V1
+  migration and rollback parity.
+- Added regression coverage for legacy JSON startup import, repeated
+  initialization idempotency, create/update writeback, and disabled Case state
+  surviving reload.
+- Updated Server V2 and Case Store docs for the implemented legacy JSON layer.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/store.py tests/test_store.py`, focused Case/Memory pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-18 V2 Deploy Control Help
 
 - Added explicit `help`, `--help`, and `-h` support to

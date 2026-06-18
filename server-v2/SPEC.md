@@ -349,8 +349,9 @@ Implemented in this slice:
   `Type <code>`.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
-  local hash-vector recall, edit/disable API, readonly MCP search, and task MCP
-  V1-compatible Case recall background context.
+  local hash-vector recall, edit/disable API, legacy JSON import/writeback,
+  readonly MCP search, and task MCP V1-compatible Case recall background
+  context.
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, explicit Session `systemContextIds` materialized
@@ -1370,6 +1371,11 @@ V2 Case Memory stores confirmed Case schema v2 records in SQLite table `cases`.
 Each row contains `source_type`, optional `task_id`, `enabled`, full
 `record_json`, a denormalized `searchable_text` field for local keyword recall,
 and a local hash-vector `vector_json` for dependency-light approximate recall.
+For Rust/V1 migration and rollback parity, V2 also uses
+`LOGAGENT_V2_DATA_DIR/cases/*.json` as a legacy Case layer: store
+initialization imports those schema v2 JSON files by `caseId` with idempotent
+upsert semantics, and Case create/update writes the same JSON files atomically
+after the SQLite row and FTS/vector index are updated.
 
 Supported sources:
 

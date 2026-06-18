@@ -50,7 +50,7 @@ alias 接受 JSON `text`/`content`、multipart `text`/`content` 或 UTF-8 文本
 `POST /api/v2/cases/imports/:import_id/confirm` 在必填字段完整后保存为 `manual` Case。
 V2 草稿、校验错误和消息历史都持久化在 SQLite `case_imports` 表中；已确认草稿不再允许 PATCH。V2 Case 搜索会合并 SQLite FTS5/BM25、关键词 fallback 和本地 hash-vector 相似度；搜索结果可返回 `searchBackend=fts5|keyword|recent|hybrid|vector`，并在命中向量召回时带 `vectorScore`。
 
-主存储为 `storage.data_dir/memory/memory.sqlite`，包含 `memory_items`、`memory_chunks` 和 `memory_chunks_fts`。Server 启动时会把 `storage.data_dir/cases/*.json` 按 `caseId` idempotent 导入 SQLite；旧 JSON 文件不删除，新增和更新 Case 也会同步写 JSON。当前开发阶段使用 Case schema v2，不做 v1 旧数据兼容。
+Rust V1 主存储为 `storage.data_dir/memory/memory.sqlite`，包含 `memory_items`、`memory_chunks` 和 `memory_chunks_fts`。Server 启动时会把 `storage.data_dir/cases/*.json` 按 `caseId` idempotent 导入 SQLite；旧 JSON 文件不删除，新增和更新 Case 也会同步写 JSON。Python V2 使用 `LOGAGENT_V2_DATA_DIR/logagent.sqlite` 的 `cases` 表作为主索引，同时保留同级 `cases/*.json` legacy 层：初始化时按 `caseId` 幂等 upsert schema v2 JSON，创建或编辑 Case 后先更新 SQLite、FTS 和本地 vector，再原子写回 `cases/<caseId>.json`。当前开发阶段使用 Case schema v2，不做 v1 旧数据兼容。
 
 新任务创建时会按用户问题召回最多 5 个启用 Case，并把结果固化到 workspace 的 `case_context.json`。Artifacts API 返回 `caseContext`，Claude Code 会通过 `analysis_package.json` 和 MCP resource 读取“历史 Case 参考”，并明确要求历史 Case 只能作为参考，最终结论仍必须引用当前任务证据。
 
