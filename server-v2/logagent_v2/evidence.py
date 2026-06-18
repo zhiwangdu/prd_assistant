@@ -627,6 +627,7 @@ def materialize_tool_inputs(
     text_files: list[TextFile],
 ) -> JsonObject:
     inputs = [
+        *materialize_node_package_log_text_inputs(settings, store, workspace_id, text_files),
         *materialize_influxql_inputs(settings, store, workspace_id, text_files),
         *materialize_flux_inputs(settings, store, workspace_id, text_files),
         *materialize_storage_inputs(settings, store, workspace_id, uploads),
@@ -651,6 +652,80 @@ def materialize_tool_inputs(
         "inputs": index["inputs"],
         "artifact": artifact,
     }
+
+
+def materialize_node_package_log_text_inputs(
+    settings: Settings,
+    store: Store,
+    workspace_id: str,
+    text_files: list[TextFile],
+) -> list[MaterializedToolInput]:
+    grouped_records: dict[tuple[str, str, str, str], list[JsonObject]] = defaultdict(list)
+    grouped_sources: dict[tuple[str, str, str, str], set[str]] = defaultdict(set)
+    for text_file in text_files:
+        package = text_file.node_package
+        log_group = text_file.log_group
+        if not package or not log_group:
+            continue
+        node_id = str(package.get("nodeId") or "unknown")
+        timestamp = str(package.get("timestamp") or "unknown")
+        instance_id = str(package.get("instanceId") or "")
+        key = (node_id, timestamp, instance_id, log_group)
+        for line_number, line in enumerate(text_file.text.splitlines(), start=1):
+            grouped_records[key].append(
+                {
+                    "schemaVersion": 1,
+                    "nodeId": node_id,
+                    "instanceId": instance_id,
+                    "packageTimestamp": timestamp,
+                    "logGroup": log_group,
+                    "sourcePath": text_file.path,
+                    "originalPath": text_file.original_path or text_file.path,
+                    "line": line_number,
+                    "message": line,
+                }
+            )
+            grouped_sources[key].add(text_file.path)
+
+    results: list[MaterializedToolInput] = []
+    for key, records in grouped_records.items():
+        node_id, timestamp, instance_id, log_group = key
+        if not records:
+            continue
+        clean_node = safe_segment(node_id)
+        clean_timestamp = safe_segment(timestamp)
+        clean_group = safe_segment(log_group)
+        virtual_path = f"tool_inputs/log_text/{clean_node}/{clean_timestamp}/{clean_group}.jsonl"
+        data = "\n".join(json.dumps(record, ensure_ascii=True) for record in records) + "\n"
+        artifact = write_artifact_bytes(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=f"log_text_{clean_node}_{clean_timestamp}_{clean_group}.jsonl",
+            data=data.encode("utf-8"),
+            content_type="application/x-ndjson",
+            schema_name="logagent.v2.tool_input.log_text_jsonl.v1",
+            preview={
+                "path": virtual_path,
+                "recordCount": len(records),
+                "logGroup": log_group,
+            },
+        )
+        entry = {
+            "path": virtual_path,
+            "inputKind": "log_text_jsonl",
+            "scope": "log_group",
+            "nodeId": node_id,
+            "instanceId": instance_id or None,
+            "packageTimestamp": timestamp,
+            "logGroup": log_group,
+            "sourceFiles": sorted(grouped_sources[key]),
+            "recordCount": len(records),
+            "artifactId": artifact["id"],
+            "artifactRelativePath": artifact["relative_path"],
+        }
+        results.append(MaterializedToolInput(entry=entry, artifact=artifact))
+    return results
 
 
 def materialize_influxql_inputs(

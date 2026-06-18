@@ -82,9 +82,10 @@ Implemented in this slice:
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`; supported log
   directories are classified into stable `extracted/<node>/<timestamp>/<group>`
   paths, and gzip-rotated files are decoded by magic bytes.
-- Materialized `tool_inputs/index.json` generation for node package tsdb
-  InfluxQL query lines, generic file-level InfluxQL query lines, Flux query
-  lines, and enabled storage analyzer file or directory inputs such as `.tssp`,
+- Materialized `tool_inputs/index.json` generation for node-package generic
+  `log_text` JSONL, node-package tsdb InfluxQL query lines, generic file-level
+  InfluxQL query lines, Flux query lines, and enabled storage analyzer file or
+  directory inputs such as `.tssp`,
   `.tssp.init`, `.tsm`, `.tsi`, TSI/mergeset trees, and `_series` trees from
   direct uploads or supported archives. Generated entries are compatible with
   the V1 `ToolInputEntry` shape and include V2 artifact ids for local
@@ -638,6 +639,14 @@ extracted/<nodeId>/<timestamp>/agent/<relative-file>
 Each manifest file entry records `originalPath`, `logGroup`, and `nodePackage`
 metadata. A matching node package with no supported log directories is rejected
 with a clear error so an empty manifest is not treated as a successful import.
+
+For every node package log group, V2 also writes V1-style generic log text
+JSONL entries under `tool_inputs/log_text/<node>/<timestamp>/<logGroup>.jsonl`.
+These entries use `inputKind=log_text_jsonl`, `scope=log_group`, omit
+`toolIds`, and preserve per-line `schemaVersion`, node/package metadata,
+`sourcePath`, `originalPath`, `line`, and `message` fields. They are indexed
+for explicit follow-up use but are not auto-selected for configured analyzer
+tools unless a future tool explicitly declares that input kind.
 
 For node package `tsdb` logs, V2 extracts JSON lines with a string `query`,
 `sql`, or `statement` field and raw lines that look like InfluxQL statements.

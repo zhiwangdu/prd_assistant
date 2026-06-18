@@ -32,9 +32,10 @@ slice provides the durable foundation for the V2 product model:
 - Initial evidence pipeline for uploaded text files and supported archives.
 - V1-style node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
-- Materialized `tool_inputs/index.json` generation for node-package tsdb
-  InfluxQL query lines, generic file-level InfluxQL/Flux query lines, and
-  enabled storage analyzer file or directory inputs such as `.tssp`,
+- Materialized `tool_inputs/index.json` generation for node-package generic
+  `log_text` JSONL, node-package tsdb InfluxQL query lines, generic file-level
+  InfluxQL/Flux query lines, and enabled storage analyzer file or directory
+  inputs such as `.tssp`,
   `.tssp.init`, `.tsm`, `.tsi`, TSI/mergeset trees, and `_series` trees from
   direct uploads or supported archives.
 - `manifest.json` and `grep_results.json` artifact generation.
@@ -891,9 +892,9 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts;
-- writes `tool_inputs/index.json`, `influxql_analyzer` JSONL artifacts, and
-  `flux_query_analyzer` JSONL artifacts when logs contain supported query
-  lines;
+- writes `tool_inputs/index.json`, node-package `log_text` JSONL artifacts,
+  `influxql_analyzer` JSONL artifacts, and `flux_query_analyzer` JSONL
+  artifacts when logs contain supported query lines;
 - exposes the manual `logagent.preprocess_log_package` result with V1-style
   `nodes` aggregation, `manifestPath` / `grepResultsPath` /
   `toolInputsPath`, `toolInputs`, timing metadata, V2 `nodePackages` details,

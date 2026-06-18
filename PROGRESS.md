@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Log Text Tool Input Parity
+
+- Added V2 materialization for Rust/V1-style node-package `log_text_jsonl`
+  inputs under `tool_inputs/log_text/<node>/<timestamp>/<logGroup>.jsonl`.
+- The generated entries use `scope=log_group`, omit `toolIds`, preserve
+  per-line node/package/source metadata, and remain explicit-use inputs rather
+  than auto-selected configured analyzer inputs.
+- Updated preprocess and configured Tool Runner regression coverage so
+  `logagent.preprocess_log_package` reports the extra V1-compatible inputs
+  while `influxql_analyzer` still consumes only matching `toolIds` entries.
+- Updated root, V2 Server, Log Analyzer, and Tool Runner docs.
+- Verification passed: focused node-package preprocess/tool-input pytest
+  selection, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, and full `cd server-v2 && PYTHONPATH=. uv run --extra
+  dev pytest` with 154 passed and 1 Starlette warning.
+
 ## 2026-06-18 V2 Readonly Case Recent Limit Parity
 
 - Aligned V2 readonly MCP `logagent://cases/recent` with the Rust/V1 default

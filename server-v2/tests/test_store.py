@@ -5527,6 +5527,26 @@ class StoreTests(unittest.TestCase):
                 },
             )
             self.assertEqual(result["warnings"], [])
+            log_text_paths = {
+                item["path"]
+                for item in result["toolInputIndex"]
+                if item["inputKind"] == "log_text_jsonl"
+            }
+            self.assertEqual(
+                log_text_paths,
+                {
+                    "tool_inputs/log_text/NodeA/20260617120000/stream.jsonl",
+                    "tool_inputs/log_text/NodeA/20260617120000/tsdb.jsonl",
+                },
+            )
+            log_text_entry = next(
+                item
+                for item in result["toolInputIndex"]
+                if item["path"] == "tool_inputs/log_text/NodeA/20260617120000/tsdb.jsonl"
+            )
+            self.assertNotIn("toolIds", log_text_entry)
+            self.assertEqual(log_text_entry["scope"], "log_group")
+            self.assertEqual(log_text_entry["recordCount"], 1)
             self.assertTrue(
                 any(
                     item["path"] == "tool_inputs/influxql_analyzer/NodeA/20260617120000.jsonl"
@@ -5546,7 +5566,7 @@ class StoreTests(unittest.TestCase):
                 if item["payload"].get("toolId") == "logagent.preprocess_log_package"
             )
             self.assertFalse(preprocess_evidence["final_allowed"])
-            self.assertEqual(preprocess_evidence["payload"]["toolInputCount"], 1)
+            self.assertEqual(preprocess_evidence["payload"]["toolInputCount"], 3)
 
     def test_pprof_tool_result_includes_v1_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6443,7 +6463,7 @@ fi
             )
             manifest = json.loads(manifest_response["result"]["contents"][0]["text"])
             self.assertEqual(manifest["toolInputsPath"], "tool_inputs/index.json")
-            self.assertEqual(manifest["toolInputCount"], 1)
+            self.assertEqual(manifest["toolInputCount"], 2)
 
             index_evidence = next(
                 item
@@ -6453,7 +6473,20 @@ fi
             index_artifact = store.get_artifact(index_evidence["artifact_id"])
             index_path = resolve_artifact_path(settings, index_artifact["relative_path"])
             index = json.loads(index_path.read_text(encoding="utf-8"))
-            entry = index["inputs"][0]
+            log_text_entry = next(
+                item for item in index["inputs"] if item["inputKind"] == "log_text_jsonl"
+            )
+            self.assertNotIn("toolIds", log_text_entry)
+            self.assertEqual(
+                log_text_entry["path"],
+                "tool_inputs/log_text/NodeB/20260617130000/tsdb.jsonl",
+            )
+            self.assertEqual(log_text_entry["recordCount"], 2)
+            entry = next(
+                item
+                for item in index["inputs"]
+                if item.get("toolIds") == ["influxql_analyzer"]
+            )
             self.assertEqual(entry["toolIds"], ["influxql_analyzer"])
             self.assertEqual(entry["recordCount"], 1)
             self.assertTrue(entry["path"].startswith("tool_inputs/influxql_analyzer/NodeB/"))
