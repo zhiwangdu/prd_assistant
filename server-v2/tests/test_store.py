@@ -5724,6 +5724,7 @@ class StoreTests(unittest.TestCase):
                     "wrapper/var/chroot/gemini/log/stream/stream.log",
                     b"stream timeout warning\n",
                 )
+                add_file(archive, "wrapper/tmp/ignored.log", b"not a supported log path\n")
             artifact = write_artifact_bytes(
                 settings,
                 store,
@@ -5770,8 +5771,14 @@ class StoreTests(unittest.TestCase):
             )
             self.assertEqual(result["logGroups"], {"tsdb": 1, "stream": 1})
             self.assertEqual(result["nodePackages"][0]["nodeId"], "NodeA")
+            self.assertEqual(result["nodePackages"][0]["ignoredFileCount"], 1)
+            self.assertEqual(
+                result["nodePackages"][0]["ignoredPathSamples"],
+                ["wrapper/tmp/ignored.log"],
+            )
             self.assertEqual(result["nodes"][0]["nodeId"], "NodeA")
             self.assertEqual(result["nodes"][0]["packages"], 1)
+            self.assertEqual(result["nodes"][0]["ignoredFileCount"], 1)
             self.assertEqual(result["nodes"][0]["instanceIds"], ["Inst"])
             self.assertEqual(result["nodes"][0]["timestamps"], ["20260617120000"])
             self.assertEqual(

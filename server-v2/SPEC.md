@@ -842,7 +842,9 @@ The migrated built-ins are:
   normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
   results include V1-style `nodes` aggregation, `manifestPath`,
   `grepResultsPath`, `toolInputsPath`, `toolInputs`, timing metadata, plus the
-  V2 `nodePackages` detail list and artifact id/path fields;
+  V2 `nodePackages` detail list and artifact id/path fields. `nodes[]` must be
+  aggregated from manifest upload summaries so ignored file counts, package
+  warnings, and compressed log group counts match Rust/V1;
 - `logagent.fetch`, whose catalog descriptor keeps the Rust/V1 manual-run
   shape: `readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
   `outputViews=["summary","request","response","body_artifact"]` while runtime

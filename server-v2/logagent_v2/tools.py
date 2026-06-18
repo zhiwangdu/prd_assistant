@@ -1711,15 +1711,20 @@ def run_preprocess_tool(
         schema_name="logagent.v2.grep_results.v1",
     )
     log_groups: dict[str, int] = {}
-    node_packages: dict[str, JsonObject] = {}
     for text_file in text_files:
         if text_file.log_group:
             log_groups[text_file.log_group] = log_groups.get(text_file.log_group, 0) + 1
-        if text_file.node_package:
-            node_packages[
-                f"{text_file.node_package.get('nodeId')}:{text_file.node_package.get('timestamp')}"
-            ] = text_file.node_package
-    nodes = preprocess_node_summaries(text_files)
+    manifest_uploads = manifest.get("uploads", [])
+    nodes = preprocess_node_summaries(manifest_uploads if isinstance(manifest_uploads, list) else [])
+    node_packages = [
+        upload for upload in manifest_uploads if isinstance(upload, dict) and upload.get("nodeId")
+    ]
+    warnings = [
+        warning
+        for node in nodes
+        for warning in node.get("warnings", [])
+        if isinstance(warning, str)
+    ]
     action_id = f"act_tool_preprocess_{run['id']}"
     tool_inputs = tool_input_bundle.get("inputs", [])
     result = {
@@ -1738,9 +1743,9 @@ def run_preprocess_tool(
         "uploadCount": len(uploads),
         "fileCount": len(text_files),
         "nodes": nodes,
-        "nodePackages": list(node_packages.values()),
+        "nodePackages": node_packages,
         "logGroups": log_groups,
-        "warnings": [],
+        "warnings": list(dict.fromkeys(warnings)),
         "manifestArtifactId": manifest_artifact["id"],
         "manifestArtifactPath": manifest_artifact["relative_path"],
         "grepArtifactId": grep_artifact["id"],
@@ -1770,14 +1775,12 @@ def run_preprocess_tool(
     return {"result": result, "artifact": artifact, "evidence": evidence}
 
 
-def preprocess_node_summaries(text_files: list[TextFile]) -> list[JsonObject]:
+def preprocess_node_summaries(upload_summaries: list[JsonObject]) -> list[JsonObject]:
     nodes: dict[str, JsonObject] = {}
-    package_keys: dict[str, set[str]] = {}
-    for text_file in text_files:
-        package = text_file.node_package
-        if not package:
+    for upload in upload_summaries:
+        if not isinstance(upload, dict):
             continue
-        node_id = str(package.get("nodeId") or "")
+        node_id = str(upload.get("nodeId") or "")
         if not node_id:
             continue
         entry = nodes.setdefault(
@@ -1792,24 +1795,33 @@ def preprocess_node_summaries(text_files: list[TextFile]) -> list[JsonObject]:
                 "warnings": [],
             },
         )
-        seen = package_keys.setdefault(node_id, set())
-        package_key = f"{text_file.source_upload_id}:{package.get('timestamp', '')}"
-        if package_key not in seen:
-            seen.add(package_key)
-            entry["packages"] = len(seen)
-        append_unique_string(entry["instanceIds"], package.get("instanceId"))
-        append_unique_string(entry["timestamps"], package.get("timestamp"))
-        if text_file.log_group:
+        entry["packages"] += 1
+        append_unique_string(entry["instanceIds"], upload.get("instanceId"))
+        append_unique_string(entry["timestamps"], upload.get("packageTimestamp"))
+        entry["ignoredFileCount"] += non_negative_int(upload.get("ignoredFileCount"))
+        for warning in upload.get("warnings") or []:
+            append_unique_string(entry["warnings"], warning)
+        for group_summary in upload.get("logGroups") or []:
+            if not isinstance(group_summary, dict):
+                continue
+            group_name = group_summary.get("name")
+            if not isinstance(group_name, str) or not group_name:
+                continue
             groups = entry["logGroups"]
-            group = groups.setdefault(
-                text_file.log_group,
-                {"fileCount": 0, "compressedFileCount": 0},
+            group = groups.setdefault(group_name, {"fileCount": 0, "compressedFileCount": 0})
+            group["fileCount"] += non_negative_int(group_summary.get("fileCount"))
+            group["compressedFileCount"] += non_negative_int(
+                group_summary.get("compressedFileCount")
             )
-            group["fileCount"] += 1
-            source_path = text_file.original_path or text_file.path
-            if source_path.lower().endswith(".gz"):
-                group["compressedFileCount"] += 1
     return [nodes[node_id] for node_id in sorted(nodes)]
+
+
+def non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
 
 
 def append_unique_string(values: list[str], value: object) -> None:

@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Preprocess Node Summary Parity
+
+- Aligned manual `logagent.preprocess_log_package` node aggregation with
+  Rust/V1 by deriving `nodes[]` from `manifest.uploads` package summaries
+  instead of only extracted text files.
+- `nodes[]` now carries package-level `ignoredFileCount`, package warnings,
+  and compressed log group counts from the manifest summary while preserving
+  V2 `nodePackages` details and artifact id/path extensions.
+- Extended preprocess regression coverage for ignored archive members and
+  updated V2 Server / Tool Runner docs.
+- Verification passed: focused `preprocess` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Pprof Artifact Field Parity
 
 - Restored Rust/V1 pprof result semantics by making `result.artifacts` a
