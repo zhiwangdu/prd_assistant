@@ -455,11 +455,19 @@ def normalize_schema(schema: Any) -> list[JsonObject]:
             {
                 "name": str(field_name),
                 "typ": typ,
-                "typeLabel": FIELD_TYPE_LABELS.get(typ, "Unknown"),
+                "typeLabel": metadata_field_type_label(typ),
                 "endTime": end_time,
             }
         )
     return fields
+
+
+def metadata_field_type_label(typ: int | None) -> str:
+    if typ is None:
+        return "Unknown"
+    if typ in FIELD_TYPE_LABELS:
+        return FIELD_TYPE_LABELS[typ]
+    return f"Type {typ}"
 
 
 def parse_field_type(value: Any) -> tuple[int, Any]:

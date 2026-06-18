@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata Field Type Extension Label Parity
+
+- Aligned V2 Metadata field type labels with Rust/V1 openGemini mapping.
+- Unknown extension type codes now preserve the numeric code as `Type <code>`
+  instead of collapsing to `Unknown`; `0`, missing values, and `7` still map
+  to `Unknown`.
+- Added regression coverage through the Metadata import/query/MCP fixture and
+  updated V2 Server docs.
+- Verification passed: focused Metadata pytest, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 161 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Final Answer Legacy Grep Ref Parity
 
 - Added V1-compatible final-answer evidence ref normalization for legacy grep

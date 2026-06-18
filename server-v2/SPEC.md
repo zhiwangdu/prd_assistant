@@ -306,7 +306,9 @@ Implemented in this slice:
   storage, saved raw snapshot refresh, field/tag type query APIs, explicit
   Session `instanceId` / `nodeId` binding for per-run `metadata_context`,
   auto-selection fallback, readonly MCP tools, and task MCP V1-compatible
-  topology alias plus bounded background slices.
+  topology alias plus bounded background slices. Field type labels follow the
+  Rust/V1 openGemini mapping and preserve unknown extension codes as
+  `Type <code>`.
 - Case Memory foundation with manual Case creation, succeeded-run Case
   confirmation, text/JSON import drafts, follow-up import messages, SQLite FTS5/BM25 recall,
   local hash-vector recall, edit/disable API, readonly MCP search, and task MCP

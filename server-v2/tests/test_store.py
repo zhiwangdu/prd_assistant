@@ -11321,6 +11321,7 @@ fi
                                         "Schema": {
                                             "host": 6,
                                             "value": {"Typ": 3, "EndTime": 123},
+                                            "custom": 99,
                                         }
                                     }
                                 }
@@ -11364,11 +11365,12 @@ fi
                 instance_id="inst1",
                 database="db0",
                 measurement="cpu",
-                field=["host", "value", "missing"],
+                field=["host", "value", "custom", "missing"],
             )
             by_name = {item["name"]: item for item in fields["fields"]}
             self.assertEqual(by_name["host"]["typeLabel"], "Tag")
             self.assertEqual(by_name["value"]["typeLabel"], "Float")
+            self.assertEqual(by_name["custom"]["typeLabel"], "Type 99")
             self.assertEqual(fields["missingFields"], ["missing"])
             self.assertTrue(fields["defaultRetentionPolicyUsed"])
             unfiltered_fields = query_field_types(
@@ -11380,7 +11382,7 @@ fi
             )
             self.assertEqual(
                 [item["name"] for item in unfiltered_fields["fields"]],
-                ["host", "value"],
+                ["host", "value", "custom"],
             )
             with self.assertRaisesRegex(ValueError, "field entries must be non-empty strings"):
                 query_field_types(
