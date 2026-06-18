@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Collector Target Inference
+
+- `analysis_package.json` now includes `environmentCollection` with enabled
+  Remote Executors, enabled command templates, enabled file templates, and the
+  current executor selection rule for `collect_environment` approvals.
+- Approved `collect_environment` side effects now merge target fields from
+  `payload.input`, payload top-level fields, and `environmentInput` /
+  `remoteInput` so provider-normalized actions can carry remote targets without
+  relying on decision-time WebUI input.
+- Single-target approvals that provide only `commandId` or `fileId` now infer
+  `executorId` when exactly one Remote Executor is enabled; multi-executor
+  semantic selection remains explicit/future work.
+- Added regression coverage for action-payload target inference and analysis
+  package environment candidate exposure.
+- Updated root, V2 Server, and Environment Collector README/SPEC docs.
+- Verification passed: focused Environment Collector pytest selection and
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (139 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Tool Finding Path Normalization
 
 - V2 configured subprocess Tool Runner results now normalize

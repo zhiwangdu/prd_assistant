@@ -98,9 +98,13 @@ slice provides the durable foundation for the V2 product model:
   `environment_evidence` background artifacts or queue Remote Executor
   collection targets before resuming the analysis run. The legacy single-target
   shape accepts `executorId` plus exactly one whitelisted `commandId` or
-  `fileId`; the batch shape accepts `targets[]`, each with an executor and one
-  command/file template. Batch collection waits for every remote run to finish
-  before writing one aggregate evidence artifact with `COLLECTED`,
+  `fileId`; if exactly one enabled executor exists, the Agent may omit
+  `executorId` and provide only `commandId` or `fileId`. The approval payload
+  may also carry target fields at the top level or inside `environmentInput` /
+  `remoteInput` for provider-normalized actions. The batch shape accepts
+  `targets[]`, each with an executor and one command/file template. Batch
+  collection waits for every remote run to finish before writing one aggregate
+  evidence artifact with `COLLECTED`,
   `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Completed remote `result`,
   `stdout`, `stderr`, and collected file support artifacts are copied into the
   analysis workspace artifact registry and linked from the environment evidence
@@ -750,7 +754,8 @@ and a finalize-with-current-evidence directive when the user requests it.
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
 resource URIs, manifest outline, grep match preview, analyzer tool input
-outline, bounded artifact index outline, system/metadata context outlines,
+outline, bounded artifact index outline, enabled Environment Collector executor
+and template candidates, system/metadata context outlines,
 bounded resume `analysisState`
 (recent user messages, action results, pending actions, and
 `finalizeRequested`), and the current allowed evidence refs, including
@@ -1153,13 +1158,17 @@ advertises these waiting tools during normal analysis; when a provider requests
   waiting/approval tools. The approval decision body may include an `input`
   object; for approved actions V2 writes it back to the action payload before
   executing approval side effects. When an approved action payload has
-  `actionType=collect_environment`, V2 checks either the legacy
-  `input.executorId` plus exactly one of `input.commandId` / `input.fileId`, or
-  a batch `input.targets[]` array. Each batch target must name an enabled
-  executor and exactly one whitelisted command/file template; up to 20 targets
-  are accepted. A valid command target queues a `remote_command_run` using the
-  whitelisted command template. A valid file target queues the same DB-backed
-  remote job with `operation=file_collection` and uses the whitelisted
+  `actionType=collect_environment`, V2 first merges `input`, top-level target
+  fields, and `environmentInput` / `remoteInput`, then checks either
+  `executorId` plus exactly one of `commandId` / `fileId`, or a batch
+  `targets[]` array. If the merged single-target input names only `commandId`
+  or `fileId` and there is exactly one enabled executor, V2 infers that
+  executor. Each batch target must name an enabled executor, inherit one from
+  the parent input, or be resolvable through the same single-executor rule; up
+  to 20 targets are accepted. A valid command target queues a
+  `remote_command_run` using the whitelisted command template. A valid file
+  target queues the same DB-backed remote job with `operation=file_collection`
+  and uses the whitelisted
   `LOGAGENT_V2_REMOTE_FILES_JSON` template plus `LOGAGENT_V2_REMOTE_SCP_COMMAND`
   to fetch one bounded file. The analysis run remains waiting while collection
   runs. Single-target collection writes

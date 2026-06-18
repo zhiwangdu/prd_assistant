@@ -32,9 +32,13 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - V2 已接入 `collect_environment` 审批后的 evidence 闭环：如果 action input
   含有效 `executorId` 且只选择 `commandId` 或 `fileId` 之一，Server 会通过
   Remote Executor 执行白名单命令，或通过 `LOGAGENT_V2_REMOTE_SCP_COMMAND`
-  按白名单文件模板 SCP 拉取单个有大小上限的远程文件。action input 也可以
-  携带最多 20 个 `targets[]` / `remoteTargets[]` 批量目标；每个目标都必须
-  指向已启用 executor 和一个白名单 command/file 模板。单目标完成后写入
+  按白名单文件模板 SCP 拉取单个有大小上限的远程文件。如果只有一个已启用
+  executor，Agent/审批输入可只给 `commandId` 或 `fileId`，Server 会自动补齐
+  executor；provider-normalized action 也可以把目标字段放在 payload 顶层或
+  `environmentInput` / `remoteInput` 中。action input 也可以携带最多 20 个
+  `targets[]` / `remoteTargets[]` 批量目标；每个目标都必须指向已启用 executor
+  或可通过唯一 executor 规则补齐，并选择一个白名单 command/file 模板。
+  单目标完成后写入
   `environment_evidence/<action_id>/result.json`；批量模式使用
   `environment:<action_id>:<index>` 幂等键排队多个 remote run，等待全部完成后
   写入一个聚合 result，状态为 `COLLECTED`、`PARTIALLY_COLLECTED` 或
@@ -51,8 +55,10 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
   Remote Executor、白名单命令模板和白名单文件模板；用户选择 executor 后可在
   command/file 目标类型之间二选一，批准时把互斥的 `commandId` 或 `fileId`
   作为 decision `input` 提交，Server 会先写回 action payload 再调度采集。
-- 当前批量采集需要审批输入显式提供 `targets[]`；仍不支持由 Agent 自动选择
-  executor/command/file，也未内置更多环境模板。
+- `analysis_package.environmentCollection` 会把已启用 executor、command/file
+  模板和单 executor 推断规则暴露给 Agent，使 Agent 可以生成结构化
+  `collect_environment` 审批请求。当前批量采集仍需要审批输入显式提供
+  `targets[]`；多 executor 语义自动选择和更多环境模板仍未实现。
 
 ## 适用场景
 
@@ -103,7 +109,8 @@ environments:
 
 1. 用户选择测试环境和目标节点范围，或 Agent 请求 `collect_environment`
    审批；审批时可补齐已配置的 `executorId` 加 `commandId` / `fileId`，也可
-   传入多个 `targets[]`。
+   在只有一个启用 executor 时只传 `commandId` / `fileId`，或传入多个
+   `targets[]`。
 2. 服务端根据配置建立 SSH 连接。
 3. 如果批准的是文件模板，V2 通过 SCP 拉取白名单路径下的单个有大小上限文件。
 4. 如果批准的是命令模板，V2 执行 Remote Executor command 模板。

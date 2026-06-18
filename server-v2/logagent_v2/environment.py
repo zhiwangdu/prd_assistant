@@ -12,6 +12,22 @@ ENVIRONMENT_ACTION_TYPE = "collect_environment"
 ENVIRONMENT_EVIDENCE_KIND = "environment_evidence"
 ENVIRONMENT_REMOTE_IDEMPOTENCY_PREFIX = "environment:"
 ENVIRONMENT_MAX_BATCH_TARGETS = 20
+ENVIRONMENT_TARGET_INPUT_KEYS = (
+    "targets",
+    "remoteTargets",
+    "executorId",
+    "remoteExecutorId",
+    "commandId",
+    "remoteCommandId",
+    "fileId",
+    "remoteFileId",
+)
+ENVIRONMENT_NESTED_INPUT_KEYS = (
+    "environmentInput",
+    "remoteInput",
+    "target",
+    "remoteTarget",
+)
 
 
 def persist_approved_environment_evidence(
@@ -129,7 +145,7 @@ def persist_remote_environment_evidence(
         remote_run=remote_run,
     )
     result = {
-        "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        "input": environment_action_input(payload),
         **target_result["result"],
     }
     if target_result["artifactIds"]:
@@ -232,7 +248,7 @@ def persist_batch_remote_environment_evidence(
         else f"remote environment batch finished with {collected}/{batch_size} successful targets"
     )
     result: JsonObject = {
-        "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        "input": environment_action_input(payload),
         "remoteOperation": "batch",
         "targetCount": batch_size,
         "completedTargetCount": len(remote_runs),
@@ -346,13 +362,15 @@ def remote_collection_target(
     executor_id = raw_input.get("executorId") or raw_input.get("remoteExecutorId")
     command_id = raw_input.get("commandId") or raw_input.get("remoteCommandId")
     file_id = raw_input.get("fileId") or raw_input.get("remoteFileId")
-    if not isinstance(executor_id, str) or not executor_id.strip():
-        return None
     has_command = isinstance(command_id, str) and bool(command_id.strip())
     has_file = isinstance(file_id, str) and bool(file_id.strip())
     if has_command and has_file:
         raise ValueError("collect_environment input must choose either commandId or fileId")
     if not has_command and not has_file:
+        return None
+    if not isinstance(executor_id, str) or not executor_id.strip():
+        executor_id = single_enabled_remote_executor_id(store)
+    if not isinstance(executor_id, str) or not executor_id.strip():
         return None
     executor = store.get_remote_executor(executor_id.strip())
     if not executor["enabled"]:
@@ -438,8 +456,19 @@ def remote_collection_targets(
 
 
 def environment_action_input(payload: JsonObject) -> JsonObject:
+    merged: JsonObject = {}
     raw_input = payload.get("input")
-    return raw_input if isinstance(raw_input, dict) else {}
+    if isinstance(raw_input, dict):
+        merged.update(raw_input)
+    for key in ENVIRONMENT_TARGET_INPUT_KEYS:
+        if key not in merged and key in payload:
+            merged[key] = payload[key]
+    for nested_key in ENVIRONMENT_NESTED_INPUT_KEYS:
+        nested = payload.get(nested_key)
+        if isinstance(nested, dict):
+            for key, value in nested.items():
+                merged.setdefault(key, value)
+    return merged
 
 
 def explicit_environment_targets(raw_input: JsonObject) -> bool:
@@ -447,19 +476,16 @@ def explicit_environment_targets(raw_input: JsonObject) -> bool:
 
 
 def remote_target_requested(raw_input: JsonObject) -> bool:
-    return any(
-        key in raw_input
-        for key in (
-            "targets",
-            "remoteTargets",
-            "executorId",
-            "remoteExecutorId",
-            "commandId",
-            "remoteCommandId",
-            "fileId",
-            "remoteFileId",
-        )
-    )
+    return any(key in raw_input for key in ENVIRONMENT_TARGET_INPUT_KEYS)
+
+
+def single_enabled_remote_executor_id(store: Store) -> str | None:
+    enabled_executors = [
+        item for item in store.list_remote_executors() if bool(item.get("enabled"))
+    ]
+    if len(enabled_executors) != 1:
+        return None
+    return str(enabled_executors[0]["executorId"])
 
 
 def materialize_remote_environment_support_artifacts(
@@ -748,7 +774,7 @@ def persist_environment_evidence_result(
         "actionId": action["id"],
         "status": status,
         "summary": summary,
-        "input": payload.get("input") if isinstance(payload.get("input"), dict) else {},
+        "input": environment_action_input(payload),
         **result,
         "createdAt": now_iso(),
         "finalEvidenceAllowed": False,

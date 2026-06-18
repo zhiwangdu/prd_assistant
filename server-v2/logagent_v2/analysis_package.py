@@ -4,6 +4,7 @@ import json
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .config import Settings
+from .remote_execution import command_templates, file_templates
 from .store import JsonObject, Store
 
 
@@ -89,6 +90,7 @@ def build_analysis_package(
         "grepResults": grep_outline(grep_results, matches),
         "toolInputIndex": tool_input_outline(evidence_bundle.get("toolInputIndex")),
         "toolResults": evidence_bundle.get("toolResults", []),
+        "environmentCollection": environment_collection_outline(settings, store),
         "systemContext": context_outline(settings, store, run_id, "system_context"),
         "metadataContext": context_outline(settings, store, run_id, "metadata_context"),
         "backgroundEvidence": evidence_bundle.get("backgroundEvidence", []),
@@ -116,6 +118,47 @@ def build_analysis_package(
                 "environment_evidence",
                 "metadata_slice",
                 "skill_reference",
+            ],
+        },
+    }
+
+
+def environment_collection_outline(settings: Settings, store: Store) -> JsonObject:
+    enabled_executors = [
+        {
+            "executorId": item["executorId"],
+            "name": item.get("name"),
+            "host": item.get("host"),
+            "port": item.get("port"),
+            "user": item.get("user"),
+            "tags": item.get("tags", []),
+        }
+        for item in store.list_remote_executors()
+        if item.get("enabled")
+    ]
+    enabled_commands = [
+        item for item in command_templates(settings) if item.get("enabled")
+    ]
+    enabled_files = [item for item in file_templates(settings) if item.get("enabled")]
+    executor_selection = (
+        "omittable_when_single_enabled_executor"
+        if len(enabled_executors) == 1
+        else "required"
+    )
+    return {
+        "remoteExecutionEnabled": settings.remote_execution_enabled,
+        "executorSelection": executor_selection,
+        "enabledExecutors": enabled_executors,
+        "commandTemplates": enabled_commands,
+        "fileTemplates": enabled_files,
+        "approvalInput": {
+            "actionType": "collect_environment",
+            "singleCommandShape": {"commandId": "<commandId>", "executorId": "<executorId>"},
+            "singleFileShape": {"fileId": "<fileId>", "executorId": "<executorId>"},
+            "batchShape": {"targets": [{"executorId": "<executorId>", "commandId": "<commandId>"}]},
+            "notes": [
+                "Use either commandId or fileId per target, never both.",
+                "executorId may be omitted only when executorSelection is omittable_when_single_enabled_executor.",
             ],
         },
     }

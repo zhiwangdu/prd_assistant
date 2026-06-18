@@ -251,9 +251,13 @@ Implemented in this slice:
   `collect_environment` actions either record V1-compatible MOCK
   `environment_evidence` background artifacts or queue approved Remote Executor
   targets before resuming the analysis run. The legacy input shape accepts one
-  enabled executor plus exactly one whitelisted command/file template; the
-  batch shape accepts `targets[]` with up to 20 such entries. Batch collection
-  waits for every remote run to finish and then writes one aggregate evidence
+  enabled executor plus exactly one whitelisted command/file template; when
+  exactly one executor is enabled, single-target approval input may omit
+  `executorId` and provide only `commandId` or `fileId`. Provider-normalized
+  actions may also carry target fields at the payload top level or inside
+  `environmentInput` / `remoteInput`. The batch shape accepts `targets[]` with
+  up to 20 such entries. Batch collection waits for every remote run to finish
+  and then writes one aggregate evidence
   artifact with `COLLECTED`, `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Remote
   command `result`, `stdout`, and `stderr` files and remote file
   `collected_file` support artifacts are copied into the analysis workspace
@@ -1320,13 +1324,18 @@ remote command smoke runner. They are not a full Environment Collector.
   rejected at settings load.
 - Approved `collect_environment` actions may provide the legacy
   `input.executorId` plus either `input.commandId` or `input.fileId`, but not
-  both. They may also provide `input.targets[]` / `input.remoteTargets[]` with
-  up to 20 target objects; each target must name an enabled executor and exactly
-  one whitelisted command/file template. Command targets use fixed SSH argv.
-  File targets enqueue a remote run with `operation=file_collection`, construct
-  fixed SCP argv with batch mode, connect timeout, host-key policy, port,
-  `user@host:<remotePath>`, and a server-owned destination path, then verify the
-  collected file exists and does not exceed template/default max bytes.
+  both; if exactly one executor is enabled, `executorId` may be inferred for a
+  single-target command/file approval. Target fields may also be accepted from
+  the action payload top level or nested `environmentInput` / `remoteInput`
+  object. They may provide `input.targets[]` / `input.remoteTargets[]` with up
+  to 20 target objects; each target must name an enabled executor, inherit one
+  from the parent input, or resolve through the single-executor rule, and must
+  choose exactly one whitelisted command/file template. Command targets use
+  fixed SSH argv. File targets enqueue a remote run with
+  `operation=file_collection`, construct fixed SCP argv with batch mode,
+  connect timeout, host-key policy, port, `user@host:<remotePath>`, and a
+  server-owned destination path, then verify the collected file exists and does
+  not exceed template/default max bytes.
 - `GET /api/v2/executor-runs/:run_id/files/:file_name` must require the same
   API key as other V2 APIs, accept only `result`, `stdout`, `stderr`, or
   `collected`, resolve the stored relative path from the run result, and reject
@@ -1589,16 +1598,20 @@ containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has
 `actionType=collect_environment`, V2 checks the approved action input, including
-any decision-time override, for either a legacy `executorId` plus exactly one of
-`commandId` / `fileId`, or a batch `targets[]` / `remoteTargets[]` array. Batch
-actions accept up to 20 target objects; each target is independently validated
-against the enabled Remote Executor table and command/file template allowlists.
-A valid command target queues a `remote_command_run` with `operation=command`;
-a valid file target queues the same DB-backed job with
-`operation=file_collection`, validates the template from
-`LOGAGENT_V2_REMOTE_FILES_JSON`, and fetches one bounded remote file through
-the configured SCP binary. Single-target collection uses the idempotency key
-`environment:<action_id>`; batch targets use
+any decision-time override, by merging `input`, target fields on the payload
+top level, and `environmentInput` / `remoteInput`. The merged input must contain
+either `executorId` plus exactly one of `commandId` / `fileId`, or a batch
+`targets[]` / `remoteTargets[]` array. When a single-target input names only
+`commandId` or `fileId` and exactly one enabled executor exists, V2 infers that
+executor. Batch actions accept up to 20 target objects; each target is
+independently validated against the enabled Remote Executor table and
+command/file template allowlists, with parent executor inheritance and the same
+single-executor inference available. A valid command target queues a
+`remote_command_run` with `operation=command`; a valid file target queues the
+same DB-backed job with `operation=file_collection`, validates the template
+from `LOGAGENT_V2_REMOTE_FILES_JSON`, and fetches one bounded remote file
+through the configured SCP binary. Single-target collection uses the
+idempotency key `environment:<action_id>`; batch targets use
 `environment:<action_id>:<index>`. The analysis run remains waiting during
 collection, and batch mode does not write final environment evidence until all
 remote runs are terminal. V2 then writes
@@ -1618,9 +1631,13 @@ and task MCP `logagent://task/<run_id>/environment_evidence`, with the
 outline is included in the next `analysis_package` and Agent prompt. The copied
 remote output support files are available through
 `GET /api/v2/runs/:run_id/artifacts` and task MCP `artifact_index` with
-`source="support"`. The current runtime still does not implement Agent
-auto-selection of executor/template targets or richer environment templates;
-batch collection is driven by approved structured input.
+`source="support"`. The next `analysis_package` includes an
+`environmentCollection` outline with enabled executors, command templates, file
+templates, and the executor inference rule, so the Agent can generate a
+structured `collect_environment` approval request from current configured
+candidates. Multi-executor semantic auto-selection and richer environment
+templates remain follow-up work; batch collection is still driven by approved
+structured input.
 
 ## Security
 

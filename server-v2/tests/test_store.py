@@ -20,6 +20,7 @@ from logagent_v2.agent import AgentRuntime
 from logagent_v2.agent_graph import AGENT_GRAPH_NODES
 from logagent_v2.alias import fallback_run_alias, normalize_run_alias
 from logagent_v2.analysis import get_run_analysis, get_run_artifacts
+from logagent_v2.analysis_package import build_analysis_package
 from logagent_v2.artifacts import (
     resolve_artifact_path,
     safe_filename,
@@ -8360,6 +8361,91 @@ fi
             resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
             self.assertEqual(resume_jobs[0]["kind"], "run_analysis")
 
+    def test_approved_collect_environment_infers_single_executor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps({'argv': sys.argv[1:]}))\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "need inferred environment evidence", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(
+                run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            executor = store.create_remote_executor(
+                {
+                    "name": "only executor",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need remote node status",
+                    "commandId": "env_snapshot",
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            pending = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(pending)
+            assert pending is not None
+            self.assertEqual(pending["payload"]["status"], "QUEUED")
+            self.assertEqual(pending["payload"]["remoteCommandId"], "env_snapshot")
+            self.assertEqual(
+                pending["payload"]["remoteExecutorId"], executor["executorId"]
+            )
+            remote_jobs = store.acquire_jobs("remote-worker", limit=1)
+            self.assertEqual(remote_jobs[0]["kind"], "remote_command_run")
+
+            asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+
+            evidence_items = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "environment_evidence"
+            ]
+            self.assertEqual(len(evidence_items), 1)
+            artifact = store.get_artifact(evidence_items[0]["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "COLLECTED")
+            self.assertEqual(artifact_json["input"]["commandId"], "env_snapshot")
+            self.assertEqual(artifact_json["remoteExecutorId"], executor["executorId"])
+
     def test_approved_collect_environment_can_collect_remote_file(self) -> None:
         previous_remote_root = os.environ.get("LOGAGENT_TEST_REMOTE_ROOT")
         try:
@@ -8847,6 +8933,106 @@ fi
             artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
             self.assertEqual(artifact_json["status"], "REMOTE_REJECTED")
             self.assertIn("executorId", artifact_json["error"])
+
+    def test_analysis_package_exposes_environment_collection_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "print('ok')\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                ),
+                remote_files=(
+                    RemoteFileTemplate(
+                        file_id="tsdb_log",
+                        display_name="TSDB log",
+                        description="collect one bounded tsdb log",
+                        remote_path="/var/log/opengemini/tsdb.log",
+                        timeout_seconds=5,
+                        max_bytes=4096,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            enabled_executor = store.create_remote_executor(
+                {
+                    "name": "primary node",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            disabled_executor = store.create_remote_executor(
+                {
+                    "name": "disabled node",
+                    "host": "127.0.0.2",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": False,
+                }
+            )
+            workspace = store.create_workspace("package env targets", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"query timeout\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            evidence_bundle = build_initial_evidence(
+                settings, store, workspace["id"], run["id"]
+            )
+
+            package = build_analysis_package(
+                settings, store, workspace["id"], run["id"], evidence_bundle
+            )
+
+            collection = package["environmentCollection"]
+            self.assertTrue(collection["remoteExecutionEnabled"])
+            self.assertEqual(
+                collection["executorSelection"],
+                "omittable_when_single_enabled_executor",
+            )
+            self.assertEqual(
+                [item["executorId"] for item in collection["enabledExecutors"]],
+                [enabled_executor["executorId"]],
+            )
+            self.assertNotIn(
+                disabled_executor["executorId"],
+                [item["executorId"] for item in collection["enabledExecutors"]],
+            )
+            self.assertEqual(
+                [item["commandId"] for item in collection["commandTemplates"]],
+                ["env_snapshot"],
+            )
+            self.assertEqual(
+                [item["fileId"] for item in collection["fileTemplates"]],
+                ["tsdb_log"],
+            )
+            self.assertEqual(
+                collection["approvalInput"]["actionType"], "collect_environment"
+            )
 
     def test_metadata_import_query_and_mcp_background_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
