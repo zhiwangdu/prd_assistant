@@ -168,6 +168,23 @@ type V2HuaweiPackageSyncResult = {
   createdAt?: string | null;
 };
 
+type V2MetadataToolResult = {
+  schemaVersion?: number;
+  toolId:
+    | "logagent.list_metadata_instances"
+    | "logagent.get_metadata_snapshot"
+    | "logagent.get_metadata_field_types"
+    | "logagent.get_metadata_tag_fields";
+  actionId?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  params?: Record<string, unknown>;
+  result?: unknown;
+  value?: unknown;
+  durationMs?: number | null;
+  createdAt?: string | null;
+};
+
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
@@ -691,6 +708,9 @@ function ManualToolResult({ result, resultPath, resultText, toolId }: { result: 
   if (toolId === "logagent.huawei_cloud_package_sync" && isHuaweiPackageSyncResult(result)) {
     return <V2HuaweiPackageSyncResultView result={result} resultPath={resultPath} />;
   }
+  if (isMetadataToolResult(result)) {
+    return <V2MetadataToolResultView result={result} resultPath={resultPath} />;
+  }
   if (isConfiguredToolResult(result)) {
     return <V2ConfiguredToolResultView result={result} resultPath={resultPath} />;
   }
@@ -982,6 +1002,133 @@ function HuaweiQueryRowsTable({ rows, truncated }: { rows: unknown[]; truncated:
   );
 }
 
+function V2MetadataToolResultView({ result, resultPath }: { result: V2MetadataToolResult; resultPath: string }) {
+  const value = metadataToolValue(result);
+  const instances = metadataInstances(value);
+  const fieldQuery = metadataFieldQuery(value);
+  const snapshot = metadataSnapshot(value);
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">metadata result</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? result.toolId}</p>
+          {result.summary ? <p className="mt-2 text-sm text-muted-foreground">{result.summary}</p> : null}
+        </div>
+        <Badge variant={result.status === "OK" ? "success" : "secondary"}>{result.status ?? "unknown"}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Tool" value={result.toolId} />
+        <Metric label="Duration" value={typeof result.durationMs === "number" ? `${result.durationMs}ms` : "-"} />
+        <Metric label="Result JSON" value={resultPath || "-"} />
+        <Metric label="Params" value={Object.keys(result.params ?? {}).length ? "provided" : "none"} />
+      </div>
+      {instances.length ? <MetadataInstancesTable instances={instances} /> : null}
+      {fieldQuery ? <MetadataFieldsView query={fieldQuery} /> : null}
+      {snapshot ? <MetadataSnapshotSummary snapshot={snapshot} /> : null}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <JsonBlock title="params" value={result.params ?? {}} />
+        <JsonBlock title="raw result" value={result} />
+      </div>
+    </div>
+  );
+}
+
+function MetadataInstancesTable({ instances }: { instances: Record<string, unknown>[] }) {
+  return (
+    <div className="max-h-[360px] overflow-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr>
+            <th className="px-3 py-2">Instance</th>
+            <th className="px-3 py-2">Remark</th>
+            <th className="px-3 py-2">Template</th>
+            <th className="px-3 py-2">Nodes</th>
+            <th className="px-3 py-2">Databases</th>
+            <th className="px-3 py-2">PT views</th>
+            <th className="px-3 py-2">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {instances.map((instance, index) => (
+            <tr className="border-t border-border" key={`${formatUnknown(instance.instanceId)}:${index}`}>
+              <td className="px-3 py-2 font-mono text-xs">{formatUnknown(instance.instanceId)}</td>
+              <td className="px-3 py-2">{formatUnknown(instance.remark)}</td>
+              <td className="px-3 py-2">{formatUnknown(instance.templateType)}</td>
+              <td className="px-3 py-2">{formatUnknown(instance.nodeCount)}</td>
+              <td className="px-3 py-2">{formatUnknown(instance.databaseCount)}</td>
+              <td className="px-3 py-2">{formatUnknown(instance.partitionViewCount)}</td>
+              <td className="px-3 py-2 font-mono text-xs">{formatUnknown(instance.updatedAt ?? instance.updated_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MetadataFieldsView({ query }: { query: Record<string, unknown> }) {
+  const fields = Array.isArray(query.fields) ? query.fields.filter(isJsonObject) : [];
+  const missingFields = Array.isArray(query.missingFields) ? query.missingFields.map((field) => String(field)).filter(Boolean) : [];
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-6">
+        <Metric label="Instance" value={formatUnknown(query.instanceId)} />
+        <Metric label="Database" value={formatUnknown(query.database)} />
+        <Metric label="RP" value={formatUnknown(query.retentionPolicy)} />
+        <Metric label="Measurement" value={formatUnknown(query.measurement)} />
+        <Metric label="Fields" value={String(fields.length)} />
+        <Metric label="Tags only" value={formatUnknown(query.tagsOnly)} />
+      </div>
+      {missingFields.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Missing fields: {missingFields.join(", ")}</div> : null}
+      <div className="max-h-[360px] overflow-auto rounded-lg border border-border">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+            <tr>
+              <th className="px-3 py-2">Field</th>
+              <th className="px-3 py-2">Type</th>
+              <th className="px-3 py-2">Type code</th>
+              <th className="px-3 py-2">Raw</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fields.length ? fields.map((field, index) => (
+              <tr className="border-t border-border" key={`${formatUnknown(field.name)}:${index}`}>
+                <td className="px-3 py-2 font-mono text-xs">{formatUnknown(field.name)}</td>
+                <td className="px-3 py-2">{formatUnknown(field.typeLabel)}</td>
+                <td className="px-3 py-2">{formatUnknown(field.typ)}</td>
+                <td className="px-3 py-2 break-all font-mono text-xs">{JSON.stringify(field)}</td>
+              </tr>
+            )) : (
+              <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={4}>No fields returned.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MetadataSnapshotSummary({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const instance = isJsonObject(snapshot.instance) ? snapshot.instance : {};
+  const cluster = isJsonObject(snapshot.cluster) ? snapshot.cluster : {};
+  const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : Array.isArray(cluster.nodes) ? cluster.nodes : [];
+  const databases = Array.isArray(cluster.databases) ? cluster.databases : [];
+  const partitionViews = Array.isArray(snapshot.partitionViews) ? snapshot.partitionViews : [];
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-5">
+        <Metric label="Instance" value={formatUnknown(instance.instanceId)} />
+        <Metric label="Cluster" value={formatUnknown(cluster.clusterId)} />
+        <Metric label="Nodes" value={String(nodes.length)} />
+        <Metric label="Databases" value={String(databases.length)} />
+        <Metric label="PT views" value={String(partitionViews.length)} />
+      </div>
+      <JsonBlock title="snapshot summary" value={{ instance, cluster: { clusterId: cluster.clusterId, term: cluster.term, index: cluster.index }, nodeCount: nodes.length, databaseCount: databases.length, partitionViewCount: partitionViews.length }} />
+    </div>
+  );
+}
+
 function V2PprofResultView({ result, resultPath }: { result: V2PprofResult; resultPath: string }) {
   const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
   const artifactPaths = isJsonObject(result.artifactPaths) ? result.artifactPaths : result.artifacts;
@@ -1175,6 +1322,38 @@ function isConfiguredToolResult(value: unknown): value is V2ConfiguredToolResult
 function isHuaweiPackageSyncResult(value: unknown): value is V2HuaweiPackageSyncResult {
   if (!isJsonObject(value)) return false;
   return value.toolId === "logagent.huawei_cloud_package_sync";
+}
+
+function isMetadataToolResult(value: unknown): value is V2MetadataToolResult {
+  if (!isJsonObject(value)) return false;
+  return typeof value.toolId === "string" && [
+    "logagent.list_metadata_instances",
+    "logagent.get_metadata_snapshot",
+    "logagent.get_metadata_field_types",
+    "logagent.get_metadata_tag_fields"
+  ].includes(value.toolId);
+}
+
+function metadataToolValue(result: V2MetadataToolResult) {
+  if (isJsonObject(result.value)) return result.value;
+  if (isJsonObject(result.result)) return result.result;
+  return {};
+}
+
+function metadataInstances(value: Record<string, unknown>) {
+  return Array.isArray(value.instances) ? value.instances.filter(isJsonObject) : [];
+}
+
+function metadataFieldQuery(value: Record<string, unknown>) {
+  if (Array.isArray(value.fields)) return value;
+  const nested = value.result;
+  return isJsonObject(nested) && Array.isArray(nested.fields) ? nested : null;
+}
+
+function metadataSnapshot(value: Record<string, unknown>) {
+  if (isJsonObject(value.snapshot)) return value.snapshot;
+  if (isJsonObject(value.instance) && isJsonObject(value.cluster)) return value;
+  return null;
 }
 
 function stringList(value: unknown[] | undefined) {

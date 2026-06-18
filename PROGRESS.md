@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Metadata Tool Result View
+
+- V2 Tools Workbench now renders metadata built-in manual `tool_run` results
+  with a dedicated structured view.
+- The metadata view covers `logagent.list_metadata_instances`,
+  `logagent.get_metadata_snapshot`, `logagent.get_metadata_field_types`, and
+  `logagent.get_metadata_tag_fields`, showing instance tables, snapshot
+  summaries, field/tag field tables, params, and raw JSON.
+- Updated WebUI README/SPEC so metadata built-ins are no longer raw-JSON-only
+  tool results.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Huawei Package Sync Result View
 
 - V2 Tools Workbench now renders successful
