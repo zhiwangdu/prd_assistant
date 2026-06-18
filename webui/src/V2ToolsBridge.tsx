@@ -384,6 +384,14 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
         setStatus(`Params inputFiles must contain ${minFiles}..${maxFiles} path(s)`);
         return;
       }
+      if (!manualWorkspaceId.trim()) {
+        setStatus("Workspace id is required when params.inputFiles reuses existing files");
+        return;
+      }
+      if (manualFiles.length > 0) {
+        setStatus("Clear selected uploads when params.inputFiles is set");
+        return;
+      }
     } else if (manualFiles.length < minFiles || manualFiles.length > maxFiles) {
       setStatus(`Choose ${minFiles}..${maxFiles} file(s) for manual tool_run`);
       return;
@@ -568,7 +576,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
             <div className="space-y-4 rounded-lg border border-border p-4">
               <div>
                 <h3 className="text-sm font-semibold">Manual tool_run</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Upload files to a V2 Workspace and queue `/api/v2/tools/:tool_id/runs`.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Upload files to a V2 Workspace, or set `params.inputFiles` with an existing Workspace id, then queue `/api/v2/tools/:tool_id/runs`.</p>
               </div>
               <Input value={manualWorkspaceId} onChange={(event) => setManualWorkspaceId(event.target.value)} placeholder="Workspace id; blank creates one" />
               {selectedTool && toolMaxFiles(selectedTool) > 0 ? (

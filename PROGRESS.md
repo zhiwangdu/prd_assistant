@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Manual Tool Input Files Guard
+
+- Tightened V2 Tools Workbench Manual `tool_run` behavior for
+  `params.inputFiles`.
+- When `params.inputFiles` is provided, the UI now requires an existing
+  Workspace id and rejects simultaneous new file uploads, so configured
+  command/source-built analyzer runs reuse known Workspace logical paths instead
+  of creating an empty Workspace that cannot resolve those paths.
+- Updated WebUI README/SPEC for the explicit `inputFiles` Workspace boundary.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Task MCP Tool Routing
 
 - Fixed V2 Tools Workbench run-scoped task MCP routing.
