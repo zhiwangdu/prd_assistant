@@ -11,9 +11,9 @@ Last updated: 2026-06-18
   glob expansion, or user-provided argv are introduced.
 - Updated the default-template regression to lock the new command IDs and key
   fixed paths.
-- Updated root, V2 Server, Config, and Environment Collector docs/specs, and
-  removed the Cassandra/RocksDB environment-template TODO from the top-level
-  plan.
+- Updated root, V2 Server, Config, Environment Collector, Analysis Agent, and
+  Roadmap docs/specs, and removed the Cassandra/RocksDB environment-template
+  TODO from the top-level plan.
 - Verification passed: focused
   `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_default_remote_commands_include_readonly_environment_templates`
   with 1 passed,

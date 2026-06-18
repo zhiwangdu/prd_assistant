@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是产品专用模板和真实环境 smoke。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用/openGemini/Cassandra/RocksDB 只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是真实环境 smoke 和生产 fixture 验证。
 
 ## 下一阶段优先级
 
