@@ -211,9 +211,7 @@ def preview_system_context_resources(
     instance_id: str | None = None,
 ) -> JsonObject:
     task_kind = require_choice(task_kind, {"log_analysis", "tool_run"}, "taskKind")
-    context_ids = list(dict.fromkeys(context_ids or []))
-    for context_id in context_ids:
-        validate_context_id(context_id)
+    context_ids = normalize_context_ids(context_ids)
     resources = resolve_resource_items(
         store,
         context_ids,
@@ -408,6 +406,22 @@ def validate_context_id(context_id: str) -> None:
         context_id, "meta_"
     ):
         raise ValueError("invalid contextId")
+
+
+def normalize_context_ids(context_ids: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for value in context_ids or []:
+        if not isinstance(value, str):
+            raise ValueError("invalid contextId")
+        context_id = value.strip()
+        if not context_id:
+            continue
+        validate_context_id(context_id)
+        if context_id not in normalized:
+            normalized.append(context_id)
+    if len(normalized) > 32:
+        raise ValueError("too many systemContextIds")
+    return normalized
 
 
 def validate_version_id(version_id: str) -> None:

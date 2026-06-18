@@ -362,8 +362,8 @@ Implemented in this slice:
 - Skill-backed System Context foundation with filesystem Skill registry,
   Markdown import, explicit or auto-matched Workspace skill selection, per-run
   `system_context` artifact, explicit Session `systemContextIds` materialized
-  from legacy System Context resources, readonly MCP Skill tools, and task MCP
-  reference artifacts.
+  from legacy System Context resources, normalized preview ids, readonly MCP
+  Skill tools, and task MCP reference artifacts.
 - Code Evidence MVP for configured local git repositories. `logagent.search_code`
   maps product/version to configured refs, resolves a commit, creates or
   reuses a detached worktree cache, prunes least-recently-used cached
@@ -564,6 +564,9 @@ in SQLite, support draft/active/archived versions, and can be previewed with
 task kind, product, version, environment, and metadata instance filters. They
 are not automatically injected into new analysis runs in this slice;
 productized run-time knowledge should continue to be represented as Skills.
+Preview `contextIds` are normalized before resolution: trim whitespace, drop
+empty entries, collapse duplicates, reject invalid ids, and cap explicit
+selection at 32 ids.
 
 ## Storage
 
@@ -1488,7 +1491,10 @@ Readonly MCP exposes `logagent.list_skills`, `logagent.get_skill`,
 the current registry. Readonly `preview_system_context` accepts `skillIds`,
 `product`, `version`, `environment`, and `instanceId`, returning combined
 `resources`, separated `skillResources` / `systemResources`, and a `prompt`
-preview without writing a run. Task MCP exposes the same tools, but
+preview without writing a run. Preview `skillIds` are normalized before
+resolution: trim whitespace, drop empty entries, collapse duplicates, reject
+invalid ids, and cap explicit selection at 32 ids. Task MCP exposes the same
+tools, but
 `logagent.get_skill_reference` is constrained to Skills and references captured
 in the current run's `system_context` snapshot and persists `skill_reference`
 evidence with `final_allowed=false`. Task responses must include the

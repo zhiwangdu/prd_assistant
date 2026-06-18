@@ -102,7 +102,7 @@ from logagent_v2.settings_api import (
     test_agent_chat,
     test_response,
 )
-from logagent_v2.skills import import_skill, list_skills
+from logagent_v2.skills import import_skill, list_skills, preview_system_context
 from logagent_v2.store import Store
 from logagent_v2.system_context import (
     activate_system_context_version,
@@ -14090,6 +14090,89 @@ grep_results.json#matches/0
                 "opengemini-diagnosis",
             )
 
+    def test_skill_preview_normalizes_ids_across_http_and_mcp(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            import_skill(
+                settings=settings,
+                skill_id="skill-a",
+                name="Skill A",
+                description="Explicit preview skill.",
+                markdown="Use only explicit evidence.",
+            )
+
+            direct_preview = preview_system_context(
+                settings,
+                [" skill-a ", "", "skill-a"],
+            )
+            self.assertEqual(
+                [item["skillId"] for item in direct_preview["resources"]],
+                ["skill-a"],
+            )
+            with self.assertRaisesRegex(ValueError, "invalid skillId"):
+                preview_system_context(settings, ["bad/skill"])
+
+            headers = {"Authorization": "Bearer test"}
+            with TestClient(create_app(settings)) as client:
+                response = client.post(
+                    "/api/v2/skills/preview",
+                    headers=headers,
+                    json={"skillIds": [" skill-a ", "", "skill-a"]},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    [item["skillId"] for item in response.json()["resources"]],
+                    ["skill-a"],
+                )
+
+                invalid = client.post(
+                    "/api/v2/skills/preview",
+                    headers=headers,
+                    json={"skillIds": ["bad/skill"]},
+                )
+                self.assertEqual(invalid.status_code, 400)
+                self.assertIn("invalid skillId", invalid.json()["detail"])
+
+            readonly = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 20,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.preview_system_context",
+                        "arguments": {"skillIds": [" skill-a ", "", "skill-a"]},
+                    },
+                },
+            )
+            payload = json.loads(readonly["result"]["content"][0]["text"])
+            self.assertEqual(
+                [item["skillId"] for item in payload["skillResources"]],
+                ["skill-a"],
+            )
+
+            invalid_readonly = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 21,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.preview_system_context",
+                        "arguments": {"skillIds": ["bad/skill"]},
+                    },
+                },
+            )
+            self.assertIn("invalid skillId", invalid_readonly["error"]["message"])
+
     def test_system_context_auto_matches_skills_from_question(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
@@ -14186,11 +14269,18 @@ grep_results.json#matches/0
 
             explicit_preview = preview_system_context_resources(
                 store,
-                context_ids=[context_id],
+                context_ids=[f" {context_id} ", "", context_id],
                 product="openGemini",
             )
             self.assertEqual(explicit_preview["resources"][0]["contextId"], context_id)
             self.assertIn("Check compaction backlog", explicit_preview["prompt"])
+            with self.assertRaisesRegex(ValueError, "invalid contextId"):
+                preview_system_context_resources(store, context_ids=["bad-context"])
+            with self.assertRaisesRegex(ValueError, "too many systemContextIds"):
+                preview_system_context_resources(
+                    store,
+                    context_ids=[f"ctx_{index}" for index in range(33)],
+                )
 
             with_draft = create_system_context_version(
                 store,
@@ -14241,6 +14331,9 @@ grep_results.json#matches/0
             self.assertIn("Metadata adapter", metadata_preview["prompt"])
 
     def test_readonly_mcp_preview_system_context_accepts_metadata_filters(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")
             settings.ensure_dirs()
@@ -14279,6 +14372,33 @@ grep_results.json#matches/0
                 ),
                 remark="production",
             )
+            headers = {"Authorization": "Bearer test"}
+            with TestClient(create_app(settings)) as client:
+                preview = client.post(
+                    "/api/v2/system-context/preview",
+                    headers=headers,
+                    json={
+                        "contextIds": [
+                            f" {resource['contextId']} ",
+                            "",
+                            resource["contextId"],
+                        ],
+                        "product": "openGemini",
+                    },
+                )
+                self.assertEqual(preview.status_code, 200)
+                self.assertEqual(
+                    [item["contextId"] for item in preview.json()["resources"]],
+                    [resource["contextId"]],
+                )
+
+                invalid_preview = client.post(
+                    "/api/v2/system-context/preview",
+                    headers=headers,
+                    json={"contextIds": ["bad-context"]},
+                )
+                self.assertEqual(invalid_preview.status_code, 400)
+                self.assertIn("invalid contextId", invalid_preview.json()["detail"])
 
             tools = readonly_mcp_response(
                 settings,

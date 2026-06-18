@@ -182,7 +182,7 @@ slice provides the durable foundation for the V2 product model:
   Markdown import, explicit or auto-matched Workspace skill selection,
   explicit Session `systemContextIds` materialized from legacy System Context
   resources, `system_context` run snapshot, readonly/task MCP reference
-  reading, and `skills.zip` export.
+  reading, preview ID normalization, and `skills.zip` export.
 - Code Evidence MVP for configured local git repositories: `logagent.search_code`
   resolves administrator-defined repo/ref/search roots to a commit, creates or
   reuses a detached worktree cache, prunes least-recently-used cached
@@ -632,6 +632,9 @@ management/preview inputs only; new analysis runs continue to use the
 Skill-backed System Context path unless later product work explicitly maps
 those resources into Skills. Metadata instances appear as read-only
 `meta_<instanceId>` adapter resources and can be included in preview requests.
+Preview `contextIds` are trimmed, empty entries are ignored, duplicates are
+collapsed, invalid ids return HTTP 400, and at most 32 explicit ids are
+accepted.
 
 ## Settings And Diagnostics
 
@@ -1702,7 +1705,9 @@ logagent.preview_system_context
 Readonly `logagent.preview_system_context` accepts `skillIds`, `product`,
 `version`, `environment`, and `instanceId`. It returns the combined `resources`
 plus separated `skillResources`, `systemResources`, and a `prompt` preview; it
-does not create a run or write `system_context.json`.
+does not create a run or write `system_context.json`. Skill preview `skillIds`
+are trimmed, empty entries are ignored, duplicates are collapsed, invalid ids
+return HTTP 400 or a JSON-RPC error, and at most 32 explicit ids are accepted.
 
 Task MCP `logagent.get_skill_reference` only reads references declared in the
 run's `system_context` snapshot and persists a `skill_reference` background

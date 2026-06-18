@@ -242,7 +242,7 @@ def preview_system_context(settings: Settings, skill_ids: list[str] | None = Non
         "schemaVersion": 2,
         "workspaceId": None,
         "runId": None,
-        "resources": skill_resources(settings, list(dict.fromkeys(skill_ids or []))),
+        "resources": skill_resources(settings, normalize_skill_ids(skill_ids)),
     }
 
 
@@ -512,6 +512,27 @@ def stable_skill_reference_path(skill_id: str, revision: str, path: str) -> str:
 def validate_skill_id(skill_id: str) -> None:
     if not SKILL_ID_RE.fullmatch(skill_id) or not any(ch.isalnum() for ch in skill_id):
         raise ValueError(f"invalid skillId {skill_id!r}")
+
+
+def normalize_skill_ids(skill_ids: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for value in skill_ids or []:
+        if not isinstance(value, str):
+            raise ValueError("invalid skillId")
+        skill_id = value.strip()
+        if not skill_id:
+            continue
+        valid = len(skill_id) <= 120 and all(
+            char.isascii() and (char.isalnum() or char in {"_", "-", "."})
+            for char in skill_id
+        )
+        if not valid:
+            raise ValueError("invalid skillId")
+        if skill_id not in normalized:
+            normalized.append(skill_id)
+    if len(normalized) > 32:
+        raise ValueError("too many skillIds")
+    return normalized
 
 
 def list_of_strings(value: Any) -> list[str]:

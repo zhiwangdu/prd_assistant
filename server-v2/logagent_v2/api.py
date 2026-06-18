@@ -268,7 +268,7 @@ class SkillImportCreate(BaseModel):
 
 
 class SkillPreviewCreate(BaseModel):
-    skillIds: list[str] = Field(default_factory=list, max_length=20)
+    skillIds: list[str] = Field(default_factory=list, max_length=32)
 
 
 class SystemContextPromptPolicy(BaseModel):
@@ -337,7 +337,7 @@ class SystemContextVersionUpdate(BaseModel):
 
 
 class SystemContextPreviewCreate(BaseModel):
-    contextIds: list[str] = Field(default_factory=list, max_length=50)
+    contextIds: list[str] = Field(default_factory=list, max_length=32)
     taskKind: Literal["log_analysis", "tool_run"] = "log_analysis"
     product: str | None = Field(default=None, max_length=120)
     version: str | None = Field(default=None, max_length=120)

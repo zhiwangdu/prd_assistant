@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Preview ID Normalization
+
+- Skills preview now normalizes `skillIds` in the shared preview path used by
+  HTTP, readonly MCP, and task MCP: trim entries, skip empty entries, collapse
+  duplicates, reject invalid ids, and cap explicit selections at 32 IDs.
+- Legacy System Context preview now applies the same normalization contract to
+  `contextIds` before resource resolution, including HTTP 400 handling for
+  invalid ids and too many explicit selections.
+- Added regression coverage for direct Skill preview, `/api/v2/skills/preview`,
+  readonly MCP `logagent.preview_system_context`, direct System Context
+  preview, and `/api/v2/system-context/preview`.
+- Updated Server V2 README/SPEC for preview id boundaries.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/skills.py logagent_v2/system_context.py logagent_v2/api.py
+  tests/test_store.py`, focused preview normalization pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Session Context And Skill ID Normalization
 
 - Workspace, Session, and Rust/V1-style Task create/update paths now normalize
