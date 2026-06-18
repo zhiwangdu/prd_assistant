@@ -245,6 +245,11 @@ Implemented in this slice:
   `inputFile` logical paths. Repeated task
   MCP calls for an existing `toolId + actionId` reuse the current run's
   persisted result evidence to keep Agent retries idempotent.
+  Standalone Manual `tool_run` executions for configured tools must write a
+  Rust/V1-style aggregate result artifact when multiple inputs are selected;
+  the aggregate result keeps `schemaVersion=1`, `inputFiles`,
+  per-input `results[]`, per-input logical `artifactPath`, and `artifactPaths`
+  while preserving each single-input result/evidence artifact.
 - Source-built analyzer env vars or runtime `bin/tools` auto-discovery create
   default configured descriptors aligned with `examples/server-tools.yaml`:
   Flux and InfluxQL use the V1 query analyzer args with `timeoutSeconds=30`
@@ -1032,6 +1037,13 @@ clamped to 1..200. The subprocess argv must match Rust/V1: top/tree/svg pass
 Manual pprof tool runs must use the Rust/V1 action id prefix
 `act_tool_pprof_analyzer_<run_id>` so result and support artifact paths stay
 under `tool_results/<action_id>/`.
+Manual configured tool runs with more than one selected input must bind the
+tool_run to an aggregate result artifact instead of the first single-input
+result artifact. The aggregate action id uses
+`act_tool_manual_<tool_id>_<run_id>`, includes `inputFiles`, per-input
+`results[]`, per-input logical `artifactPath`, and `artifactPaths`, and leaves
+the individual configured tool `tool_result` evidence artifacts available for
+task evidence navigation.
 Generated config examples for generic subprocess tools must use
 `LOGAGENT_V2_TOOLS_JSON` with absolute command path placeholders. The
 `pprof_analyzer` config example must document the dedicated

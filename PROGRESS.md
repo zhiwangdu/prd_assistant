@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 Manual Configured Tool Aggregates
+
+- V2 standalone Manual `tool_run` executions for configured command tools now
+  write a Rust/V1-style aggregate result artifact when multiple inputs are
+  selected.
+- The aggregate result uses `schemaVersion=1`,
+  `act_tool_manual_<tool_id>_<run_id>`, `inputFiles`, per-input `results[]`,
+  per-input logical `artifactPath`, and `artifactPaths`, while preserving each
+  single-input configured tool evidence artifact.
+- V2 Tools Workbench now renders the aggregate result with status, input count,
+  per-input results, logical artifact paths, params, and raw JSON instead of
+  falling back to a plain JSON block.
+- Updated Server V2 README/SPEC, WebUI README/SPEC, and Tool Runner SPEC for
+  the aggregate result contract.
+- Verification passed: targeted `server-v2` pytest for manual configured
+  tool-run aggregation and related configured tool result routes, plus
+  `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Manual Tool Input Files Guard
 
 - Tightened V2 Tools Workbench Manual `tool_run` behavior for

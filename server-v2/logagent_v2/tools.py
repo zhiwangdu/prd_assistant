@@ -668,12 +668,111 @@ def execute_tool_run(settings: Settings, store: Store, run_id: str) -> JsonObjec
     store.mark_tool_run_running(run_id)
     try:
         result = execute_tool_by_id(settings, store, run, tool_id, run.get("toolParams") or {})
-        artifact_id = result["artifact"]["id"]
-        store.complete_tool_run(run_id, artifact_id, result["result"])
-        return result
+        completion = tool_run_completion_result(settings, store, run, tool_id, result)
+        artifact_id = completion["artifact"]["id"]
+        store.complete_tool_run(run_id, artifact_id, completion["result"])
+        return completion
     except Exception as error:
         store.fail_tool_run(run_id, str(error))
         raise
+
+
+def tool_run_completion_result(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    tool_id: str,
+    result: JsonObject,
+) -> JsonObject:
+    if tool_id not in {tool.id for tool in settings.tools}:
+        return result
+    results = result.get("results")
+    artifacts = result.get("artifacts")
+    evidence_items = result.get("evidenceItems")
+    if not (
+        isinstance(results, list)
+        and isinstance(artifacts, list)
+        and isinstance(evidence_items, list)
+        and len(results) > 1
+    ):
+        return result
+    aggregate = aggregate_configured_tool_run_result(run, tool_id, result)
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        filename=f"{aggregate['actionId']}_result.json",
+        data=json.dumps(aggregate, ensure_ascii=True, indent=2).encode("utf-8"),
+        content_type="application/json",
+        schema_name="logagent.v2.tool_result.aggregate.v1",
+        preview={
+            "toolId": tool_id,
+            "actionId": aggregate["actionId"],
+            "status": aggregate["status"],
+            "inputFileCount": len(aggregate["inputFiles"]),
+        },
+    )
+    return {
+        **result,
+        "result": aggregate,
+        "artifact": artifact,
+        "aggregateArtifact": artifact,
+    }
+
+
+def aggregate_configured_tool_run_result(
+    run: JsonObject,
+    tool_id: str,
+    result: JsonObject,
+) -> JsonObject:
+    result_items = result["results"]
+    artifact_items = result["artifacts"]
+    wrappers = []
+    for item, artifact in zip(result_items, artifact_items, strict=False):
+        action_id = item.get("actionId") if isinstance(item, dict) else None
+        artifact_path = f"tool_results/{action_id}/result.json" if action_id else None
+        input_file = item.get("inputFile") if isinstance(item, dict) else None
+        wrappers.append(
+            {
+                "actionId": action_id,
+                "inputFile": input_file,
+                "artifactPath": artifact_path,
+                "artifactId": artifact.get("id") if isinstance(artifact, dict) else None,
+                "summary": item.get("summary") if isinstance(item, dict) else None,
+                "result": item,
+            }
+        )
+    action_id = f"act_tool_manual_{safe_action_segment(tool_id)}_{run['id']}"
+    return {
+        "schemaVersion": 1,
+        "toolId": tool_id,
+        "actionId": action_id,
+        "status": aggregate_configured_status(result_items),
+        "params": run.get("toolParams") or {},
+        "inputFiles": [
+            item["inputFile"]
+            for item in wrappers
+            if isinstance(item.get("inputFile"), str) and item["inputFile"]
+        ],
+        "artifactPaths": [
+            item["artifactPath"]
+            for item in wrappers
+            if isinstance(item.get("artifactPath"), str) and item["artifactPath"]
+        ],
+        "results": wrappers,
+        "createdAt": datetime.now(UTC).replace(microsecond=0).isoformat(),
+    }
+
+
+def aggregate_configured_status(results: Sequence[object]) -> str:
+    failed = False
+    for item in results:
+        status = item.get("status") if isinstance(item, dict) else None
+        if status == "TIMED_OUT":
+            return "TIMED_OUT"
+        if status == "FAILED":
+            failed = True
+    return "FAILED" if failed else "OK"
 
 
 def execute_tool_by_id(

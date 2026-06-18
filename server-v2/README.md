@@ -91,7 +91,11 @@ slice provides the durable foundation for the V2 product model:
   During analysis, V2 now runs matching input-based configured subprocess tools after
   initial manifest/grep evidence and before the first Agent provider request;
   these pre-run tool summaries are included in `analysis_package.json`,
-  `agent_request.json`, and the prompt as `preRunToolResults`.
+  `agent_request.json`, and the prompt as `preRunToolResults`. Standalone
+  Manual `tool_run` executions for configured tools now write a Rust/V1-style
+  aggregate result artifact when multiple inputs are selected, preserving
+  `inputFiles`, per-input `results[]`, and each single-input logical
+  `artifactPath` while keeping per-input evidence artifacts available.
 - V1 built-in tool migration for metadata catalog tools,
   `logagent.preprocess_log_package`, `logagent.fetch`, `pprof_analyzer`, and
   default-off `logagent.huawei_cloud_package_sync`; metadata field filters use

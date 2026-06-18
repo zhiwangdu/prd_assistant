@@ -7145,6 +7145,96 @@ fi
                 "inst-route",
             )
 
+    def test_manual_configured_tool_run_result_aggregates_multiple_inputs(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = (
+                "import json,pathlib,sys;"
+                "p=pathlib.Path(sys.argv[1]);"
+                "print(json.dumps({'summary':p.read_text().strip(),"
+                "'findings':[{'message':p.name}]}))"
+            )
+            tool = ToolDefinition(
+                id="multi_tool",
+                display_name="Multi Tool",
+                command=sys.executable,
+                args=("-c", script, "{input_file}"),
+                timeout_seconds=5,
+                max_input_files=2,
+                match_file_patterns=("*.log",),
+            )
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                inline_worker=False,
+                tools=(tool,),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual multi tool", "tool_run", "en-US")
+            uploads = []
+            for filename, content in [("one.log", b"first"), ("two.log", b"second")]:
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    filename,
+                    content,
+                    "text/plain",
+                )
+                uploads.append(store.create_upload(workspace["id"], filename, artifact["id"]))
+
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    "/api/v2/tools/multi_tool/runs",
+                    headers={"Authorization": "Bearer test"},
+                    json={
+                        "workspaceId": workspace["id"],
+                        "uploadIds": [upload["id"] for upload in uploads],
+                        "params": {},
+                    },
+                )
+                self.assertEqual(created.status_code, 202)
+                run_id = created.json()["taskId"]
+
+                executed = execute_tool_run(settings, store, run_id)
+                result = client.get(
+                    f"/api/v2/tools/runs/{run_id}/result",
+                    headers={"Authorization": "Bearer test"},
+                )
+
+            self.assertEqual(result.status_code, 200)
+            body = result.json()
+            aggregate = body["result"]
+            self.assertEqual(aggregate["schemaVersion"], 1)
+            self.assertEqual(aggregate["toolId"], "multi_tool")
+            self.assertEqual(aggregate["status"], "OK")
+            self.assertEqual(aggregate["actionId"], f"act_tool_manual_multi_tool_{run_id}")
+            self.assertEqual(len(aggregate["inputFiles"]), 2)
+            self.assertEqual(len(aggregate["results"]), 2)
+            self.assertEqual(
+                [item["summary"] for item in aggregate["results"]],
+                ["first", "second"],
+            )
+            self.assertEqual(
+                aggregate["artifactPaths"],
+                [item["artifactPath"] for item in aggregate["results"]],
+            )
+            self.assertTrue(
+                all(
+                    path.startswith("tool_results/act_tool_multi_tool_")
+                    for path in aggregate["artifactPaths"]
+                )
+            )
+            self.assertEqual(body["artifact"]["id"], executed["artifact"]["id"])
+            self.assertEqual(
+                store.get_run(run_id)["toolResultArtifactId"],
+                executed["artifact"]["id"],
+            )
+
     def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (

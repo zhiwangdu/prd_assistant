@@ -119,6 +119,27 @@ type V2ConfiguredToolResult = {
   error?: string | null;
 };
 
+type V2ConfiguredToolAggregateItem = {
+  actionId?: string | null;
+  inputFile?: string | null;
+  artifactPath?: string | null;
+  artifactId?: string | null;
+  summary?: string | null;
+  result?: V2ConfiguredToolResult | Record<string, unknown>;
+};
+
+type V2ConfiguredToolAggregateResult = {
+  schemaVersion: 1;
+  toolId: string;
+  actionId?: string | null;
+  status?: string | null;
+  params?: Record<string, unknown>;
+  inputFiles?: unknown[];
+  artifactPaths?: unknown[];
+  results: V2ConfiguredToolAggregateItem[];
+  createdAt?: string | null;
+};
+
 type V2HuaweiPackageSyncResult = {
   schemaVersion?: number;
   toolId: "logagent.huawei_cloud_package_sync";
@@ -722,6 +743,9 @@ function ManualToolResult({ result, resultPath, resultText, toolId }: { result: 
   if (isMetadataToolResult(result)) {
     return <V2MetadataToolResultView result={result} resultPath={resultPath} />;
   }
+  if (isConfiguredToolAggregateResult(result)) {
+    return <V2ConfiguredToolAggregateResultView result={result} resultPath={resultPath} />;
+  }
   if (isConfiguredToolResult(result)) {
     return <V2ConfiguredToolResultView result={result} resultPath={resultPath} />;
   }
@@ -841,6 +865,71 @@ function PreprocessToolInputTable({ inputs }: { inputs: V2PreprocessToolInput[] 
             </tr>
           )) : (
             <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={5}>No materialized tool inputs.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function V2ConfiguredToolAggregateResultView({ result, resultPath }: { result: V2ConfiguredToolAggregateResult; resultPath: string }) {
+  const status = result.status ?? "unknown";
+  const inputFiles = stringList(result.inputFiles);
+  const artifactPaths = stringList(result.artifactPaths);
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{result.toolId}</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? result.toolId}</p>
+        </div>
+        <Badge variant={toolResultStatusVariant(status)}>{status}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Inputs" value={String(inputFiles.length)} />
+        <Metric label="Results" value={String(result.results.length)} />
+        <Metric label="Artifacts" value={String(artifactPaths.length)} />
+        <Metric label="Created" value={result.createdAt ?? "-"} />
+      </div>
+      <ArtifactPath label="Aggregate result JSON" value={resultPath} />
+      <ConfiguredToolAggregateTable results={result.results} />
+      {inputFiles.length ? <JsonBlock title="inputFiles" value={inputFiles} /> : null}
+      {artifactPaths.length ? <JsonBlock title="artifactPaths" value={artifactPaths} /> : null}
+      {result.params ? <JsonBlock title="params" value={result.params} /> : null}
+      <JsonBlock title="raw result" value={result} />
+    </div>
+  );
+}
+
+function ConfiguredToolAggregateTable({ results }: { results: V2ConfiguredToolAggregateItem[] }) {
+  return (
+    <div className="max-h-[420px] overflow-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr>
+            <th className="px-3 py-2">Input</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Findings</th>
+            <th className="px-3 py-2">Summary</th>
+            <th className="px-3 py-2">Artifact</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.length ? results.map((item, index) => {
+            const nested = isConfiguredToolResult(item.result) ? item.result : null;
+            const status = nested?.status ?? "unknown";
+            const findings = nested?.findings.length ?? 0;
+            return (
+              <tr className="border-t border-border" key={`${item.actionId ?? "result"}:${index}`}>
+                <td className="px-3 py-2 break-all font-mono text-xs">{item.inputFile ?? nested?.inputFile ?? "-"}</td>
+                <td className="px-3 py-2"><Badge variant={toolResultStatusVariant(status)}>{status}</Badge></td>
+                <td className="px-3 py-2">{findings}</td>
+                <td className="px-3 py-2 break-words">{item.summary ?? nested?.summary ?? "-"}</td>
+                <td className="px-3 py-2 break-all font-mono text-xs">{item.artifactPath ?? "-"}</td>
+              </tr>
+            );
+          }) : (
+            <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={5}>No per-input results.</td></tr>
           )}
         </tbody>
       </table>
@@ -1350,6 +1439,11 @@ function isPreprocessResult(value: unknown): value is V2PreprocessResult {
 function isConfiguredToolResult(value: unknown): value is V2ConfiguredToolResult {
   if (!isJsonObject(value)) return false;
   return value.schemaVersion === 2 && typeof value.toolId === "string" && Array.isArray(value.findings);
+}
+
+function isConfiguredToolAggregateResult(value: unknown): value is V2ConfiguredToolAggregateResult {
+  if (!isJsonObject(value)) return false;
+  return value.schemaVersion === 1 && typeof value.toolId === "string" && Array.isArray(value.results);
 }
 
 function isHuaweiPackageSyncResult(value: unknown): value is V2HuaweiPackageSyncResult {
