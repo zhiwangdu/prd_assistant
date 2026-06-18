@@ -34,7 +34,11 @@
   `artifactPath`、`runtimeStatus` 和 `evidenceRefs`；`request_approval` 可只传
   V1 必填的 `reason`，缺省 `actionType` 为 `manual_approval`
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
-- `analysis.max_rounds`、`analysis.max_llm_calls`
+- Rust/V1 `analysis.max_rounds`、`analysis.max_llm_calls`
+- V2 `LOGAGENT_V2_AGENT_MAX_ROUNDS`、`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`、
+  `LOGAGENT_V2_AGENT_MAX_ACTIONS`，默认分别为 4、4、6；预算耗尽时写入
+  `budget_guard` 响应和 `budgetLimited=true` 低置信度最终结果，任务进入
+  `SUCCEEDED` 而不是 `FAILED`
 
 尚未实现：
 

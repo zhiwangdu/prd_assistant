@@ -1513,7 +1513,13 @@ V1-compatible waiting marker, moves the run to `waiting_for_user` or
 `waiting_for_approval`, persists the provider response validation as
 `paused`, writes the waiting call to `mcp_calls.jsonl`, and stops the current
 job without writing `result.json`. The loop is bounded by
-`LOGAGENT_V2_AGENT_MAX_ROUNDS` with default 3. Evidence refs returned by
+`LOGAGENT_V2_AGENT_MAX_ROUNDS` (default 4),
+`LOGAGENT_V2_AGENT_MAX_LLM_CALLS` (default 4), and
+`LOGAGENT_V2_AGENT_MAX_ACTIONS` (default 6). When one of these budgets is
+exhausted, V2 stops calling the provider, routes through an internal
+`budget_guard` response, validates a low-confidence final answer with
+`budgetLimited=true`, marks the run `succeeded`, and records the last
+`analysis_state.json` round as `budget_limited`. Evidence refs returned by
 ordinary tool observations, including
 `evidenceRefs`, `finalEvidenceRefs`, match `ref`, and `evidenceRef` fields, are
 deduplicated into the next provider request and prompt `allowedEvidenceRefs` so
@@ -1523,9 +1529,11 @@ validation.
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
-tool requests, or max-round exhaustion fail the run. After a user message or
-approval decision requeues the run, the next provider request includes recent
-messages, action results, remaining pending actions, and `resumePolicy` in
+tool requests, or system/provider failures fail the run; round, LLM-call, and
+action budget exhaustion is controlled analysis termination and produces a
+budget-limited result instead of `FAILED`. After a user message or approval
+decision requeues the run, the next provider request includes recent messages,
+action results, remaining pending actions, and `resumePolicy` in
 `interactionContext`. When the latest user message has `resumeMode=finalize`,
 `resumePolicy.finalizeWithCurrentEvidence=true`, waiting tools are removed from
 the advertised tool list, and the provider must return a final answer based on

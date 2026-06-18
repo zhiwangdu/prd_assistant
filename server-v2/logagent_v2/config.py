@@ -345,7 +345,9 @@ class Settings:
         default_factory=default_claude_code_permission_profiles
     )
     agent_timeout_seconds: int = 60
-    agent_max_rounds: int = 3
+    agent_max_rounds: int = 4
+    agent_max_llm_calls: int = 4
+    agent_max_actions: int = 6
     agent_max_output_tokens: int = 2048
     remote_execution_enabled: bool = True
     remote_ssh_command: str = "/usr/bin/ssh"
@@ -521,7 +523,9 @@ class Settings:
         claude_code_allowed_tools = diagnose_profile.allowed_tools
         claude_code_disallowed_tools = diagnose_profile.disallowed_tools
         agent_timeout_seconds = int(os.environ.get("LOGAGENT_V2_AGENT_TIMEOUT_SECONDS", "60"))
-        agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "3"))
+        agent_max_rounds = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ROUNDS", "4"))
+        agent_max_llm_calls = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_LLM_CALLS", "4"))
+        agent_max_actions = int(os.environ.get("LOGAGENT_V2_AGENT_MAX_ACTIONS", "6"))
         agent_max_output_tokens = int(
             os.environ.get("LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS", "2048")
         )
@@ -613,6 +617,8 @@ class Settings:
             claude_code_permission_profiles=claude_code_permission_profiles,
             agent_timeout_seconds=max(1, agent_timeout_seconds),
             agent_max_rounds=max(1, agent_max_rounds),
+            agent_max_llm_calls=max(1, agent_max_llm_calls),
+            agent_max_actions=max(1, agent_max_actions),
             agent_max_output_tokens=max(1, agent_max_output_tokens),
             remote_execution_enabled=remote_execution_enabled,
             remote_ssh_command=remote_ssh_command,

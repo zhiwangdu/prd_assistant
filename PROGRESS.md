@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Budget-Limited Termination
+
+- V2 Agent runtime now matches the Rust/V1 core budget defaults for provider
+  rounds, LLM calls, and provider-directed actions: 4 / 4 / 6.
+- Added `LOGAGENT_V2_AGENT_MAX_LLM_CALLS` and
+  `LOGAGENT_V2_AGENT_MAX_ACTIONS` alongside
+  `LOGAGENT_V2_AGENT_MAX_ROUNDS`; non-positive values are clamped to 1.
+- Budget exhaustion no longer fails a run. The LangGraph `prepare_agent_request`
+  node routes to an internal `budget_guard` response, validates a
+  low-confidence final answer with `budgetLimited=true` and
+  `terminationReason`, records the last analysis round as `budget_limited`, and
+  finalizes the run as `succeeded`.
+- Provider-directed task MCP calls are capped by the remaining action budget;
+  excess requested tool calls are not executed.
+- Updated root, V2 Server, and Analysis Agent README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Agent budget/tool-loop pytest selection, full `PYTHONPATH=.
+  uv run --extra dev pytest` (143 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Readonly MCP Tool Execution Boundary
 
 - Readonly MCP now returns an explicit error when `tools/call` targets a tool

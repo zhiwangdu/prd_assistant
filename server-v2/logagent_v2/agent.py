@@ -88,7 +88,14 @@ class AgentRuntime:
         graph.add_node("finalize_result", self._graph_finalize_result)
         graph.add_edge(START, "collect_initial_evidence")
         graph.add_edge("collect_initial_evidence", "prepare_agent_request")
-        graph.add_edge("prepare_agent_request", "call_agent_provider")
+        graph.add_conditional_edges(
+            "prepare_agent_request",
+            self._graph_after_prepare_agent_request,
+            {
+                "call_agent_provider": "call_agent_provider",
+                "validate_final_answer": "validate_final_answer",
+            },
+        )
         graph.add_conditional_edges(
             "call_agent_provider",
             self._graph_after_provider_call,
@@ -168,43 +175,25 @@ class AgentRuntime:
         run_id = state["runId"]
         workspace = state["workspace"]
         evidence_bundle = state["evidenceBundle"]
-        attempt = int(state.get("attempt", 0)) + 1
+        current_attempt = int(state.get("attempt", 0))
         rounds = list(state.get("rounds") or [])
-        if attempt > self.settings.agent_max_rounds:
-            error = ValueError(
-                f"agent reached LOGAGENT_V2_AGENT_MAX_ROUNDS={self.settings.agent_max_rounds}"
-            )
-            provider_response = {
-                **failed_agent_response(state.get("providerRequest") or {}, error),
-                "validation": {"status": "not_run"},
-            }
-            response_audit = persist_agent_response(
-                settings=self.settings,
-                store=self.store,
-                workspace_id=workspace_id,
-                run_id=run_id,
-                attempt=self.settings.agent_max_rounds,
-                provider_response=provider_response,
-                request_artifact_id=state.get("requestArtifactId"),
-            )
-            self._persist_claude_runtime_session(
-                workspace_id,
-                run_id,
-                self.settings.agent_max_rounds,
-                provider_response,
-                response_audit,
-            )
-            self._persist_failed_state(
-                workspace_id,
-                run_id,
-                rounds,
-                state.get("baseRound") or {},
-                response_audit["artifact"]["id"],
-                provider_response,
-            )
-            raise error
         interaction_context = self._interaction_context(run_id)
         tool_observations = list(state.get("toolObservations") or [])
+        budget_reason = self._analysis_budget_exhausted(current_attempt, tool_observations)
+        if budget_reason:
+            return self._prepare_budget_limited_result(
+                workspace_id=workspace_id,
+                run_id=run_id,
+                workspace=workspace,
+                evidence_bundle=evidence_bundle,
+                interaction_context=interaction_context,
+                tool_observations=tool_observations,
+                rounds=rounds,
+                attempt=max(1, current_attempt),
+                reason=budget_reason,
+                analysis_package_artifact_id=state.get("analysisPackageArtifactId"),
+            )
+        attempt = current_attempt + 1
         provider_request = build_agent_provider_request(
             self.settings,
             workspace,
@@ -248,6 +237,11 @@ class AgentRuntime:
             "rounds": rounds,
             "runtimeStatus": "call_agent_provider",
         }
+
+    def _graph_after_prepare_agent_request(self, state: AgentGraphState) -> str:
+        if state.get("runtimeStatus") == "validate_final_answer":
+            return "validate_final_answer"
+        return "call_agent_provider"
 
     def _graph_call_agent_provider(self, state: AgentGraphState) -> AgentGraphState:
         workspace_id = state["workspaceId"]
@@ -416,9 +410,30 @@ class AgentRuntime:
         rounds = list(state.get("rounds") or [])
         base_round = state.get("baseRound") or {}
         tool_calls = list(state.get("toolCalls") or [])
-        observations = self._execute_tool_calls(run_id, attempt, tool_calls)
+        existing_action_count = executed_tool_action_count(state.get("toolObservations") or [])
+        remaining_actions = max(0, self.settings.agent_max_actions - existing_action_count)
+        observations = self._execute_tool_calls(
+            run_id,
+            attempt,
+            tool_calls,
+            remaining_actions=remaining_actions,
+        )
         waiting_status = waiting_status_from_observations(observations)
         tool_observations = [*(state.get("toolObservations") or []), *observations]
+        executed_action_count = executed_tool_action_count(observations)
+        action_budget_exhausted = (
+            not waiting_status
+            and len(tool_calls) > executed_action_count
+            and existing_action_count + executed_action_count >= self.settings.agent_max_actions
+        )
+        validation = {"status": "tool_calls_executed"}
+        if action_budget_exhausted:
+            validation = {
+                "status": "action_budget_exhausted",
+                "reason": self._action_budget_reason(
+                    existing_action_count + executed_action_count
+                ),
+            }
         provider_response = {
             **state["providerResponse"],
             "toolCalls": tool_calls,
@@ -429,7 +444,7 @@ class AgentRuntime:
                     "runtimeStatus": waiting_status,
                 }
                 if waiting_status
-                else {"status": "tool_calls_executed"}
+                else validation
             ),
         }
         response_audit = persist_agent_response(
@@ -482,10 +497,10 @@ class AgentRuntime:
             }
         rounds[-1] = {
             **base_round,
-            "status": "tool_calls_executed",
+            "status": validation["status"],
             "responseArtifactId": response_audit["artifact"]["id"],
             "toolCallCount": len(tool_calls),
-            "validation": {"status": "tool_calls_executed"},
+            "validation": validation,
         }
         self._persist_state(
             workspace_id,
@@ -555,7 +570,15 @@ class AgentRuntime:
         provider_response = {
             **provider_response,
             "validatedFinalAnswer": final_answer,
-            "validation": {"status": "passed"},
+            "validation": (
+                {
+                    "status": "passed",
+                    "budgetLimited": True,
+                    "reason": base_round.get("reason"),
+                }
+                if base_round.get("budgetLimited")
+                else {"status": "passed"}
+            ),
         }
         response_audit = persist_agent_response(
             settings=self.settings,
@@ -571,9 +594,9 @@ class AgentRuntime:
         )
         rounds[-1] = {
             **base_round,
-            "status": "completed",
+            "status": "budget_limited" if base_round.get("budgetLimited") else "completed",
             "responseArtifactId": response_audit["artifact"]["id"],
-            "validation": {"status": "passed"},
+            "validation": provider_response["validation"],
         }
         self._persist_state(
             workspace_id,
@@ -634,6 +657,119 @@ class AgentRuntime:
             state=state,
         )
 
+    def _prepare_budget_limited_result(
+        self,
+        workspace_id: str,
+        run_id: str,
+        workspace: JsonObject,
+        evidence_bundle: JsonObject,
+        interaction_context: JsonObject,
+        tool_observations: list[JsonObject],
+        rounds: list[JsonObject],
+        attempt: int,
+        reason: str,
+        analysis_package_artifact_id: str | None,
+    ) -> AgentGraphState:
+        provider_request = build_agent_provider_request(
+            self.settings,
+            workspace,
+            evidence_bundle,
+            tool_observations,
+            interaction_context,
+        )
+        provider_request = {
+            **provider_request,
+            "provider": "budget_guard",
+            "model": "logagent-v2-budget-guard",
+            "transport": {"type": "internal"},
+            "payload": {
+                **provider_request.get("payload", {}),
+                "budgetLimited": True,
+                "reason": reason,
+            },
+        }
+        request_audit = persist_agent_request(
+            settings=self.settings,
+            store=self.store,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            attempt=attempt,
+            provider_request=provider_request,
+            analysis_package_artifact_id=analysis_package_artifact_id,
+        )
+        request_artifact_id = request_audit["artifact"]["id"]
+        base_round = {
+            "attempt": attempt,
+            "provider": provider_request.get("provider"),
+            "model": provider_request.get("model"),
+            "requestArtifactId": request_artifact_id,
+            "allowedEvidenceRefCount": len(provider_request.get("allowedEvidenceRefs", [])),
+            "toolObservationCount": len(tool_observations),
+            "budgetLimited": True,
+            "reason": reason,
+        }
+        rounds.append({**base_round, "status": "budget_limited"})
+        self._persist_state(
+            workspace_id,
+            run_id,
+            status="running",
+            phase="agent_round",
+            rounds=rounds,
+            final_answer_status="pending",
+        )
+        return {
+            "attempt": attempt,
+            "interactionContext": interaction_context,
+            "toolObservations": tool_observations,
+            "providerRequest": provider_request,
+            "providerResponse": {
+                "provider": provider_request["provider"],
+                "model": provider_request["model"],
+                "status": "completed",
+                "reason": reason,
+                "response": {
+                    "type": "budget_limited",
+                    "reason": reason,
+                },
+                "finalAnswer": self._budget_limited_final_answer(
+                    workspace,
+                    evidence_bundle,
+                    interaction_context,
+                    reason,
+                ),
+            },
+            "requestArtifactId": request_artifact_id,
+            "baseRound": base_round,
+            "rounds": rounds,
+            "runtimeStatus": "validate_final_answer",
+        }
+
+    def _analysis_budget_exhausted(
+        self,
+        completed_attempts: int,
+        tool_observations: list[JsonObject],
+    ) -> str | None:
+        if completed_attempts >= self.settings.agent_max_rounds:
+            return (
+                "analysis round budget exhausted: "
+                f"{completed_attempts}/{self.settings.agent_max_rounds}"
+            )
+        if completed_attempts >= self.settings.agent_max_llm_calls:
+            return (
+                "LLM call budget exhausted: "
+                f"{completed_attempts}/{self.settings.agent_max_llm_calls}"
+            )
+        action_count = executed_tool_action_count(tool_observations)
+        if action_count >= self.settings.agent_max_actions:
+            return self._action_budget_reason(action_count)
+        return None
+
+    def _action_budget_reason(self, action_count: int) -> str:
+        return (
+            "analysis action budget exhausted: "
+            f"{action_count}/{self.settings.agent_max_actions}"
+        )
+
     def _persist_failed_state(
         self,
         workspace_id: str,
@@ -687,10 +823,12 @@ class AgentRuntime:
         run_id: str,
         attempt: int,
         tool_calls: list[JsonObject],
+        *,
+        remaining_actions: int,
     ) -> list[JsonObject]:
         run = self.store.get_run(run_id)
         observations = []
-        for index, tool_call in enumerate(tool_calls):
+        for index, tool_call in enumerate(tool_calls[:remaining_actions]):
             name = tool_call["name"]
             arguments = tool_call["arguments"]
             result = call_task_tool(
@@ -719,6 +857,23 @@ class AgentRuntime:
             )
             if waiting_status_from_observations(observations):
                 break
+        if not observations and tool_calls and remaining_actions <= 0:
+            first_call = tool_calls[0]
+            observations.append(
+                {
+                    "toolCallId": f"round_{attempt}_call_0",
+                    "name": first_call["name"],
+                    "arguments": first_call["arguments"],
+                    "result": {
+                        "error": {
+                            "type": "budget_exhausted",
+                            "message": self._action_budget_reason(
+                                self.settings.agent_max_actions
+                            ),
+                        }
+                    },
+                }
+            )
         return observations
 
     def _interaction_context(self, run_id: str) -> JsonObject:
@@ -864,6 +1019,40 @@ class AgentRuntime:
             "question": workspace["question"],
         }
 
+    def _budget_limited_final_answer(
+        self,
+        workspace: JsonObject,
+        evidence_bundle: JsonObject,
+        interaction_context: JsonObject,
+        reason: str,
+    ) -> JsonObject:
+        base = self._stub_final_answer(workspace, evidence_bundle, interaction_context)
+        missing_information = [
+            reason,
+            *[
+                item
+                for item in base.get("missingInformation", [])
+                if isinstance(item, str) and item.strip()
+            ],
+        ]
+        next_checks = [
+            "Resume the run with a higher Agent budget if deeper investigation is required.",
+            *[
+                item
+                for item in base.get("nextChecks", [])
+                if isinstance(item, str) and item.strip()
+            ],
+        ]
+        return {
+            **base,
+            "summary": f"Analysis stopped because {reason}. {base['summary']}",
+            "nextChecks": list(dict.fromkeys(next_checks)),
+            "missingInformation": list(dict.fromkeys(missing_information)),
+            "confidence": "low",
+            "budgetLimited": True,
+            "terminationReason": reason,
+        }
+
 
 def is_tool_call_request(value: JsonObject) -> bool:
     return value.get("type") == "tool_calls" or isinstance(value.get("toolCalls"), list)
@@ -903,6 +1092,18 @@ def waiting_status_from_observations(observations: list[JsonObject]) -> str | No
         if runtime_status in {"waiting_for_user", "waiting_for_approval"}:
             return str(runtime_status)
     return None
+
+
+def executed_tool_action_count(observations: list[JsonObject]) -> int:
+    count = 0
+    for observation in observations:
+        result = observation.get("result")
+        if isinstance(result, dict):
+            error = result.get("error")
+            if isinstance(error, dict) and error.get("type") == "budget_exhausted":
+                continue
+        count += 1
+    return count
 
 
 def parse_tool_result(result: JsonObject) -> JsonObject:

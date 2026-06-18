@@ -2355,6 +2355,231 @@ class StoreTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_agent_action_budget_returns_budget_limited_result(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class ActionBudgetProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "Budget limited"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                captured_prompts.append(prompt)
+                answer = {
+                    "type": "tool_calls",
+                    "toolCalls": [
+                        {
+                            "name": "logagent.search_logs",
+                            "arguments": {"keywords": ["panic"]},
+                        },
+                        {
+                            "name": "logagent.search_logs",
+                            "arguments": {"keywords": ["timeout"]},
+                        },
+                    ],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), ActionBudgetProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=4,
+                    agent_max_llm_calls=4,
+                    agent_max_actions=1,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("find panic root cause", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"normal startup\npanic: shard crashed\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertTrue(final_answer["budgetLimited"])
+                self.assertEqual(final_answer["confidence"], "low")
+                self.assertEqual(
+                    final_answer["terminationReason"],
+                    "analysis action budget exhausted: 1/1",
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "succeeded")
+                self.assertEqual(len(captured_prompts), 1)
+                state_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 45,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/analysis_state"},
+                    },
+                )
+                state = json.loads(state_response["result"]["contents"][0]["text"])
+                self.assertEqual(state["status"], "succeeded")
+                self.assertEqual(state["rounds"][0]["status"], "action_budget_exhausted")
+                self.assertEqual(state["rounds"][-1]["status"], "budget_limited")
+                self.assertTrue(state["rounds"][-1]["budgetLimited"])
+                mcp_calls_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 46,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/mcp_calls"},
+                    },
+                )
+                mcp_calls = json.loads(mcp_calls_response["result"]["contents"][0]["text"])
+                search_calls = [
+                    call for call in mcp_calls["calls"]
+                    if call["name"] == "logagent.search_logs"
+                ]
+                self.assertEqual(len(search_calls), 1)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_agent_llm_budget_returns_budget_limited_result(self) -> None:
+        captured_prompts: list[dict] = []
+
+        class LlmBudgetProviderHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                prompt = json.loads(payload["messages"][1]["content"])
+                if prompt.get("task") == "run_alias":
+                    answer = {"alias": "LLM budget limited"}
+                    body = json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                captured_prompts.append(prompt)
+                answer = {
+                    "type": "tool_calls",
+                    "toolCalls": [
+                        {
+                            "name": "logagent.search_logs",
+                            "arguments": {"keywords": ["panic"]},
+                        }
+                    ],
+                }
+                body = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(answer)}}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), LlmBudgetProviderHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    api_key="test",
+                    agent_provider="openai_compatible",
+                    agent_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    agent_model="mock-model",
+                    agent_max_rounds=4,
+                    agent_max_llm_calls=1,
+                    agent_max_actions=6,
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace("find panic root cause", "diagnose", "en-US")
+                artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "db.log",
+                    b"normal startup\npanic: shard crashed\n",
+                    "text/plain",
+                )
+                store.create_upload(workspace["id"], "db.log", artifact["id"])
+                run = store.create_run(workspace["id"])
+
+                final_answer = AgentRuntime(settings, store).run_analysis(
+                    workspace["id"], run["id"]
+                )
+
+                self.assertTrue(final_answer["budgetLimited"])
+                self.assertEqual(
+                    final_answer["terminationReason"],
+                    "LLM call budget exhausted: 1/1",
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "succeeded")
+                self.assertEqual(len(captured_prompts), 1)
+                response_response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 47,
+                        "method": "resources/read",
+                        "params": {"uri": f"logagent-v2://run/{run['id']}/agent_response"},
+                    },
+                )
+                response_doc = json.loads(response_response["result"]["contents"][0]["text"])
+                self.assertTrue(response_doc["validation"]["budgetLimited"])
+                self.assertEqual(
+                    response_doc["validation"]["reason"],
+                    "LLM call budget exhausted: 1/1",
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_agent_provider_can_pause_for_user_input(self) -> None:
         captured_prompts: list[dict] = []
 
