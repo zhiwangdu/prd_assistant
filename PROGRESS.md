@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Deploy Tool Rebuild Regression Coverage
+
+- Added isolated regression coverage for `deploy/rebuild-v2-install.sh` help
+  output and missing `LOGAGENT_SRC_DIR` validation before any install work.
+- Added a fake-source `--tools-only --only-tool flux --no-restart` regression
+  that verifies the script delegates `--output-dir <runtime>/bin/tools --only
+  flux` to `scripts/build-tools.sh` without creating a V2 virtualenv or syncing
+  WebUI.
+- Updated V2 Server and Deployment docs to describe the expanded deploy script
+  coverage.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
+  with 5 passed, full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest`
+  with 164 passed and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check tests/test_deploy_scripts.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 MCP Tool Call Envelope Parity
 
 - Aligned successful V2 task and readonly MCP `tools/call` responses with

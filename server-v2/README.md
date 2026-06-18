@@ -290,7 +290,11 @@ tool-only rebuild. When explicit analyzer env vars are unset, V2 auto-registers
 the standard analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
 `$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when
 present so rustup-managed `cargo` is available for Flux analyzer builds in
-non-interactive SSH shells. `logagent-v2ctl.sh start` and `restart` export
+non-interactive SSH shells. Deploy regression coverage verifies `--help`,
+missing `LOGAGENT_SRC_DIR` validation, pid-file-scoped controls, installed
+runtime checks, and `--tools-only --only-tool <name>` delegation to
+`scripts/build-tools.sh` without creating a V2 virtualenv or syncing WebUI.
+`logagent-v2ctl.sh start` and `restart` export
 `LOGAGENT_V2_APP_DIR`, wait for `/health` until
 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` expires, and clean stale pid files when
 startup fails. The control script is pid-file scoped by default so separate

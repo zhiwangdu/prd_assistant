@@ -1860,5 +1860,9 @@ The current slice is accepted when:
   `server-v2`, initialize SQLite, sync WebUI static files, load
   `$HOME/.cargo/env` for source-built analyzer rebuilds when present, and
   preserve existing `data-v2`.
+- `deploy/rebuild-v2-install.sh --tools-only --only-tool <name>` can rebuild a
+  single source-built analyzer through `scripts/build-tools.sh` without
+  creating the V2 virtualenv, initializing SQLite, syncing WebUI, or starting
+  the server.
 - `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
   V2 logs using the same `.env` loading pattern as the Rust deploy controls.
