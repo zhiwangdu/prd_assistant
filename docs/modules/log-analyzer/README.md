@@ -72,6 +72,8 @@ extracted/<文件基名>/
 <packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz
 ```
 
+`packageId`、`instanceId`、`nodeId` 使用 Rust/V1 的 ASCII 字母数字安全规则；时间戳 7 个分段必须满足 `4-2-2-2-2-2-6` 位数字宽度。
+
 这类包按节点和采集时间展开，不再套文件基名目录：
 
 ```text

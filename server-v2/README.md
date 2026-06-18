@@ -31,7 +31,8 @@ slice provides the durable foundation for the V2 product model:
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - V1-style node log package preprocessing for
-  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` uploads.
+  `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`
+  uploads.
 - Materialized `tool_inputs/index.json` generation for node-package generic
   `log_text` JSONL, node-package tsdb InfluxQL query lines, generic file-level
   InfluxQL/Flux query lines, and enabled storage analyzer file or directory
@@ -888,7 +889,7 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - scans `.zip`, `.tar`, `.tar.gz`, and `.tgz` packages without writing archive
   members to arbitrary filesystem paths;
 - recognizes openGemini-style node log packages named
-  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`;
+  `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`;
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts;

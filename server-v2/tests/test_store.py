@@ -51,7 +51,7 @@ from logagent_v2.config import (
     parse_tools_env,
 )
 from logagent_v2.environment import persist_approved_environment_evidence
-from logagent_v2.evidence import build_initial_evidence
+from logagent_v2.evidence import build_initial_evidence, parse_node_log_package
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
     endpoint_for_storage,
@@ -3396,6 +3396,34 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 AgentRuntime(settings, store).run_analysis(bad_workspace["id"], bad_run["id"])
 
+    def test_parse_node_log_package_accepts_v1_timestamp_shape(self) -> None:
+        package = parse_node_log_package(
+            "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz"
+        )
+
+        self.assertIsNotNone(package)
+        assert package is not None
+        self.assertEqual(package.package_id, "pkg123")
+        self.assertEqual(package.instance_id, "instance123")
+        self.assertEqual(package.node_id, "node123")
+        self.assertEqual(package.timestamp, "2026_06_16_09_58_02_561564")
+        self.assertEqual(
+            parse_node_log_package(
+                "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tgz"
+            ),
+            package,
+        )
+        self.assertIsNone(
+            parse_node_log_package(
+                "pkg123_instance123_node123_2026_6_16_09_58_02_561564_logs.tar.gz"
+            )
+        )
+        self.assertIsNone(
+            parse_node_log_package(
+                "pkg-123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz"
+            )
+        )
+
     def test_node_log_package_is_classified_and_gzip_rotation_is_read(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)
@@ -3409,7 +3437,8 @@ class StoreTests(unittest.TestCase):
             store.initialize()
             workspace = store.create_workspace("stream timeout warning", "diagnose", "en-US")
 
-            tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617120000_logs.tar.gz"
+            timestamp = "2026_06_17_12_00_00_000001"
+            tar_path = Path(tmp) / f"Pkg_Inst_NodeA_{timestamp}_logs.tar.gz"
             with tarfile.open(tar_path, "w:gz") as archive:
                 add_file(
                     archive,
@@ -3452,12 +3481,12 @@ class StoreTests(unittest.TestCase):
             manifest = json.loads(manifest_response["result"]["contents"][0]["text"])
             paths = {item["path"] for item in manifest["files"]}
             self.assertEqual(manifest["fileCount"], 3)
-            self.assertIn("extracted/NodeA/20260617120000/tsdb/query.log", paths)
-            self.assertIn("extracted/NodeA/20260617120000/stream/stream.rotate.1", paths)
-            self.assertIn("extracted/NodeA/20260617120000/agent/agent-current", paths)
+            self.assertIn(f"extracted/NodeA/{timestamp}/tsdb/query.log", paths)
+            self.assertIn(f"extracted/NodeA/{timestamp}/stream/stream.rotate.1", paths)
+            self.assertIn(f"extracted/NodeA/{timestamp}/agent/agent-current", paths)
             groups = {item["path"]: item["logGroup"] for item in manifest["files"]}
             self.assertEqual(
-                groups["extracted/NodeA/20260617120000/stream/stream.rotate.1"], "stream"
+                groups[f"extracted/NodeA/{timestamp}/stream/stream.rotate.1"], "stream"
             )
 
             grep_response = task_mcp_response(
@@ -3477,7 +3506,7 @@ class StoreTests(unittest.TestCase):
             )
 
             bad_workspace = store.create_workspace("bad node package", "diagnose", "en-US")
-            bad_tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617130000_logs.tar.gz"
+            bad_tar_path = Path(tmp) / "Pkg_Inst_NodeA_2026_06_17_13_00_00_000001_logs.tar.gz"
             with tarfile.open(bad_tar_path, "w:gz") as archive:
                 add_file(archive, "wrapper/other.log", b"error outside supported dirs\n")
             bad_artifact = write_artifact_bytes(

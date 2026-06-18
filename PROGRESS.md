@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Node Package Filename Parity
+
+- Aligned V2 node log package parsing with Rust/V1 filename semantics for
+  `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`.
+- The parser now validates package/instance/node ids with the V1 ASCII
+  alphanumeric rule and validates timestamp segment widths before entering the
+  dedicated node-package preprocessing path; `.tgz` remains accepted by V2.
+- Added regression coverage for direct parsing plus full node-package
+  extraction/manifest generation using a V1 timestamped filename.
+- Updated root, V2 Server, and Log Analyzer docs.
+- Verification passed: focused node-package pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest`
+  with 155 passed and 1 Starlette warning.
+
 ## 2026-06-18 V2 InfluxQL Tool Input Record Parity
 
 - Aligned V2 node-package `influxql_analyzer` JSONL records with Rust/V1 by

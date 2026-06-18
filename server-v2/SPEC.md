@@ -79,7 +79,8 @@ Implemented in this slice:
   waiting runs are completed without rerun.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - Node log package preprocessing for
-  `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`; supported log
+  `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`;
+  supported log
   directories are classified into stable `extracted/<node>/<timestamp>/<group>`
   paths, and gzip-rotated files are decoded by magic bytes.
 - Materialized `tool_inputs/index.json` generation for node-package generic
@@ -617,9 +618,11 @@ final evidence. Approved `environment_evidence` is also background-only and is
 not accepted as a final evidence ref.
 
 Node log packages named
-`<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` or `.tgz` are a
-special tar scan mode. Archive members can live below a wrapper directory; V2
-searches normalized path components for supported log roots:
+`<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`
+or `.tgz` are a special tar scan mode. The package, instance, and node id
+segments follow the Rust/V1 ASCII alphanumeric safety rule, and timestamp
+segments must match the V1 widths. Archive members can live below a wrapper
+directory; V2 searches normalized path components for supported log roots:
 
 ```text
 var/chroot/gemini/log/tsdb

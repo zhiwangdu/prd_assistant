@@ -37,11 +37,8 @@ ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 BASE_KEYWORDS = ["error", "fail", "fatal", "panic", "exception", "timeout", "warn", "slow"]
 BACKGROUND_EVIDENCE_KINDS = {"environment_evidence"}
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
-NODE_LOG_PACKAGE_RE = re.compile(
-    r"^(?P<package_id>[^_]+)_(?P<instance_id>[^_]+)_(?P<node_id>[^_]+)_"
-    r"(?P<timestamp>[^_]+)_logs\.(?:tar\.gz|tgz)$",
-    re.IGNORECASE,
-)
+NODE_LOG_PACKAGE_SUFFIXES = ("_logs.tar.gz", "_logs.tgz")
+NODE_LOG_PACKAGE_TIMESTAMP_WIDTHS = (4, 2, 2, 2, 2, 2, 6)
 
 
 @dataclass(frozen=True)
@@ -551,14 +548,57 @@ def text_file_from_bytes(
 
 
 def parse_node_log_package(filename: str) -> NodeLogPackage | None:
-    match = NODE_LOG_PACKAGE_RE.match(filename)
-    if match is None:
+    stem = node_log_package_stem(filename)
+    if stem is None:
         return None
-    return NodeLogPackage(
-        package_id=match.group("package_id"),
-        instance_id=match.group("instance_id"),
-        node_id=match.group("node_id"),
-        timestamp=match.group("timestamp"),
+    parts = stem.split("_")
+    if len(parts) == 10:
+        package_id, instance_id, node_id, *timestamp_parts = parts
+        if not all(is_safe_log_package_id(item) for item in (package_id, instance_id, node_id)):
+            return None
+        if not v1_timestamp_parts_are_valid(timestamp_parts):
+            return None
+        return NodeLogPackage(
+            package_id=package_id,
+            instance_id=instance_id,
+            node_id=node_id,
+            timestamp="_".join(timestamp_parts),
+        )
+    if len(parts) == 4:
+        package_id, instance_id, node_id, timestamp = parts
+        if not all(is_safe_log_package_id(item) for item in (package_id, instance_id, node_id)):
+            return None
+        if not timestamp or not all(char.isascii() and char.isalnum() for char in timestamp):
+            return None
+        return NodeLogPackage(
+            package_id=package_id,
+            instance_id=instance_id,
+            node_id=node_id,
+            timestamp=timestamp,
+        )
+    return None
+
+
+def node_log_package_stem(filename: str) -> str | None:
+    lowered = filename.lower()
+    for suffix in NODE_LOG_PACKAGE_SUFFIXES:
+        if lowered.endswith(suffix):
+            return filename[: -len(suffix)]
+    return None
+
+
+def is_safe_log_package_id(value: str) -> bool:
+    return bool(value) and len(value) <= 128 and all(
+        char.isascii() and char.isalnum() for char in value
+    )
+
+
+def v1_timestamp_parts_are_valid(parts: list[str]) -> bool:
+    if len(parts) != len(NODE_LOG_PACKAGE_TIMESTAMP_WIDTHS):
+        return False
+    return all(
+        len(value) == width and value.isascii() and value.isdigit()
+        for value, width in zip(parts, NODE_LOG_PACKAGE_TIMESTAMP_WIDTHS, strict=True)
     )
 
 
