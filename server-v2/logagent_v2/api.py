@@ -1038,7 +1038,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v2/runs/{run_id}/result")
     async def get_result(_: Auth, run_id: str) -> dict:
         try:
+            run = store.get_run(run_id)
+            if not run.get("finalAnswer"):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "run result is only available after success",
+                        "status": run.get("status"),
+                    },
+                )
             return get_run_result(settings, store, run_id)
+        except HTTPException:
+            raise
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

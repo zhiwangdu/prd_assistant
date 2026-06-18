@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Analysis Result Availability Status
+
+- `/api/v2/runs/:run_id/result` now returns HTTP 409 with the current run
+  status until a final answer/result artifact exists, instead of treating a
+  queued run as a missing result.
+- Added route regression coverage for queued analysis runs.
+- Updated V2 Server and Interfaces specs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2/api.py tests/test_store.py`, focused run-result route pytest
+  selection, full `PYTHONPATH=. uv run --extra dev pytest` (146 passed, 1
+  warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Tool Run Result Compatibility
 
 - `/api/v2/tools/runs/:run_id/result` now returns HTTP 409 with the current

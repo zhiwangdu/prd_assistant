@@ -401,6 +401,27 @@ class StoreTests(unittest.TestCase):
                     [session_id],
                 )
 
+    def test_run_result_route_returns_conflict_until_result_exists(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("queued analysis", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+
+            with TestClient(create_app(settings)) as client:
+                response = client.get(
+                    f"/api/v2/runs/{run['id']}/result",
+                    headers={"Authorization": "Bearer test"},
+                )
+
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()["detail"]["status"], "queued")
+
     def test_workspace_run_job_and_stub_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

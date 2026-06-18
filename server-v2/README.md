@@ -827,7 +827,9 @@ alias. OpenAI-compatible and binary Agent providers receive a separate
 `claude_code` modes, plus any alias provider failure, fall back to the final
 summary or question. `GET
 /api/v2/runs/<run_id>/result` returns the stored final answer plus artifact and
-evidence metadata, while task MCP exposes `result` and `result_markdown`. The
+evidence metadata after success; before a final answer exists it returns HTTP
+409 with the current run status. Task MCP exposes `result` and
+`result_markdown`. The
 alias is stored on the Run record for history/UI display; it is not model
 evidence and does not affect final-answer validation.
 

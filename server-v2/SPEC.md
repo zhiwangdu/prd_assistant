@@ -1609,7 +1609,9 @@ After final-answer validation succeeds, V2 writes `result.json` with schema
 version 1 and `result.md` as a Markdown rendering of the same final answer.
 Both are background evidence rows (`result` and `result_markdown`) and can be
 read through `GET /api/v2/runs/<run_id>/result` or task MCP resources
-`result` and `result_markdown`.
+`result` and `result_markdown`. The HTTP result endpoint must return HTTP 409
+with the current run status until a final result exists; missing run ids remain
+404.
 
 ## Waiting States
 
