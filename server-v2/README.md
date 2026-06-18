@@ -539,6 +539,13 @@ GET  /api/v2/tools/runs
 GET  /api/v2/tools/runs/:run_id
 GET  /api/v2/tools/runs/:run_id/result
 GET  /api/v2/tools/runs/:run_id/artifacts
+GET  /api/tools
+GET  /api/tools/:tool_id
+POST /api/tools/:tool_id/runs
+GET  /api/tools/runs
+GET  /api/tools/runs/:run_id
+GET  /api/tools/runs/:run_id/result
+GET  /api/tools/runs/:run_id/artifacts
 GET  /api/v2/debug/llm
 PUT  /api/v2/debug/llm
 GET  /api/v2/settings/llm
@@ -1221,6 +1228,12 @@ foundation as analysis runs. V2 create/list/get tool-run responses expose
 Rust/V1 TaskSummary-compatible top-level fields including `taskId`,
 `taskKind=tool_run`, `status`, `phase`, `toolId`, and `url`, while retaining
 the raw V2 Run under `run` and list `rawRuns` for diagnostics.
+Rust/V1-style `/api/tools...` aliases are also mounted for list, get, create,
+list-runs, get-run, result, and artifacts. The legacy artifacts alias returns
+the same result envelope as `/api/tools/runs/:run_id/result`, matching Rust/V1;
+the `/api/v2/tools/runs/:run_id/artifacts` route keeps the V2 artifact-list
+response.
+
 configured subprocess descriptors use the Rust/V1 command shape:
 `source=configured`, `backend=command`, `readOnly=false`, `editable=true`,
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from

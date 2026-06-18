@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Tool Route Aliases
+
+- Mounted Rust/V1-style `/api/tools...` aliases in V2 for tool catalog, tool
+  descriptor, manual tool-run create/list/get, result, and artifacts reads.
+- Kept `/api/v2/tools/runs/:run_id/artifacts` as the V2 artifact-list response
+  while making legacy `/api/tools/runs/:run_id/artifacts` return the same
+  result envelope as `/api/tools/runs/:run_id/result`, matching Rust/V1.
+- Added HTTP regression coverage for legacy tool catalog/detail aliases,
+  zero-upload metadata tool-run creation, list/get aliases, and legacy
+  result/artifacts aliases.
+- Updated Server V2 README/SPEC for the Rust/V1-style tool route aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused tool route alias pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Preview ID Normalization
 
 - Skills preview now normalizes `skillIds` in the shared preview path used by

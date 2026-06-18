@@ -6831,6 +6831,23 @@ class StoreTests(unittest.TestCase):
             headers = {"Authorization": "Bearer test"}
 
             with TestClient(create_app(settings)) as client:
+                legacy_catalog = client.get("/api/tools", headers=headers)
+                self.assertEqual(legacy_catalog.status_code, 200)
+                legacy_tools = {
+                    item["toolId"]: item for item in legacy_catalog.json()["tools"]
+                }
+                self.assertIn("logagent.list_metadata_instances", legacy_tools)
+
+                legacy_descriptor = client.get(
+                    "/api/tools/logagent.list_metadata_instances",
+                    headers=headers,
+                )
+                self.assertEqual(legacy_descriptor.status_code, 200)
+                self.assertEqual(
+                    legacy_descriptor.json()["toolId"],
+                    "logagent.list_metadata_instances",
+                )
+
                 created = client.post(
                     "/api/v2/tools/logagent.list_metadata_instances/runs",
                     headers=headers,
@@ -6867,7 +6884,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(fetched_body["task"]["taskKind"], "tool_run")
 
                 legacy_created = client.post(
-                    "/api/v2/tools/logagent.list_metadata_instances/runs",
+                    "/api/tools/logagent.list_metadata_instances/runs",
                     headers=headers,
                     json={"params": {}, "idempotencyKey": "legacy-key"},
                 )
@@ -6880,6 +6897,27 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(legacy_body["analysisLanguage"], "zh-CN")
                 self.assertEqual(legacy_body["toolId"], "logagent.list_metadata_instances")
                 self.assertEqual(legacy_body["uploadIds"], [])
+
+                legacy_listed = client.get(
+                    "/api/tools/runs?toolId=logagent.list_metadata_instances",
+                    headers=headers,
+                )
+                self.assertEqual(legacy_listed.status_code, 200)
+                legacy_run_ids = {
+                    item["taskId"] for item in legacy_listed.json()["runs"]
+                }
+                self.assertIn(created_body["taskId"], legacy_run_ids)
+                self.assertIn(legacy_body["taskId"], legacy_run_ids)
+
+                legacy_fetched = client.get(
+                    f"/api/tools/runs/{legacy_body['taskId']}",
+                    headers=headers,
+                )
+                self.assertEqual(legacy_fetched.status_code, 200)
+                self.assertEqual(
+                    legacy_fetched.json()["taskId"],
+                    legacy_body["taskId"],
+                )
 
     def test_task_result_and_artifacts_aliases_reject_tool_runs(self) -> None:
         from fastapi.testclient import TestClient
@@ -6947,6 +6985,24 @@ class StoreTests(unittest.TestCase):
                 )
                 self.assertEqual(tool_result.status_code, 200, tool_result.text)
                 self.assertEqual(tool_result.json()["result"]["status"], "OK")
+
+                legacy_tool_result = client.get(
+                    f"/api/tools/runs/{run_id}/result",
+                    headers=headers,
+                )
+                self.assertEqual(legacy_tool_result.status_code, 200)
+                self.assertEqual(legacy_tool_result.json()["result"]["status"], "OK")
+
+                legacy_tool_artifacts = client.get(
+                    f"/api/tools/runs/{run_id}/artifacts",
+                    headers=headers,
+                )
+                self.assertEqual(legacy_tool_artifacts.status_code, 200)
+                self.assertEqual(legacy_tool_artifacts.json()["result"]["status"], "OK")
+                self.assertEqual(
+                    legacy_tool_artifacts.json()["resultPath"],
+                    legacy_tool_result.json()["resultPath"],
+                )
 
     def test_preprocess_tool_run_materializes_node_package_inputs(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:

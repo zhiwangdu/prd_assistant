@@ -472,6 +472,13 @@ GET  /api/v2/tools/runs
 GET  /api/v2/tools/runs/:run_id
 GET  /api/v2/tools/runs/:run_id/result
 GET  /api/v2/tools/runs/:run_id/artifacts
+GET  /api/tools
+GET  /api/tools/:tool_id
+POST /api/tools/:tool_id/runs
+GET  /api/tools/runs
+GET  /api/tools/runs/:run_id
+GET  /api/tools/runs/:run_id/result
+GET  /api/tools/runs/:run_id/artifacts
 GET  /api/v2/debug/llm
 PUT  /api/v2/debug/llm
 GET  /api/v2/settings/llm
@@ -832,6 +839,13 @@ LOGAGENT_V2_TOOLS_JSON
   -> expanded fixed absolute command + fixed args with V1 placeholder substitution
   -> tool_result artifact/evidence
 ```
+
+V2 also mounts Rust/V1-style `/api/tools...` aliases for the same manual tool
+surfaces: list/get tools, create/list/get tool runs, and result/artifacts
+reads. `/api/tools/runs/:run_id/artifacts` returns the same result envelope as
+`/api/tools/runs/:run_id/result`, matching Rust/V1; the V2 namespaced
+`/api/v2/tools/runs/:run_id/artifacts` endpoint keeps the artifact-list
+response.
 
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.

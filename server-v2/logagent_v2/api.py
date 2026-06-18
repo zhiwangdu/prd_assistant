@@ -1825,10 +1825,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="artifact file is missing")
         return FileResponse(path, media_type=artifact["content_type"])
 
+    @app.get("/api/tools")
     @app.get("/api/v2/tools")
     async def list_tools(_: Auth) -> dict:
         return tool_catalog(settings)
 
+    @app.post("/api/tools/{tool_id}/runs", status_code=202)
     @app.post("/api/v2/tools/{tool_id}/runs", status_code=202)
     async def create_tool_run(_: Auth, tool_id: str, payload: ToolRunCreate) -> dict:
         try:
@@ -1858,6 +1860,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/tools/runs")
     @app.get("/api/v2/tools/runs")
     async def list_tool_runs(
         _: Auth,
@@ -1878,6 +1881,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tools/runs/{run_id}")
     @app.get("/api/v2/tools/runs/{run_id}")
     async def get_tool_run(_: Auth, run_id: str) -> dict:
         try:
@@ -1890,6 +1894,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/tools/runs/{run_id}/artifacts")
+    @app.get("/api/tools/runs/{run_id}/result")
     @app.get("/api/v2/tools/runs/{run_id}/result")
     async def get_tool_run_result(_: Auth, run_id: str) -> dict:
         try:
@@ -1936,6 +1942,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/tools/{tool_id}")
     @app.get("/api/v2/tools/{tool_id}")
     async def get_tool(_: Auth, tool_id: str) -> dict:
         try:
