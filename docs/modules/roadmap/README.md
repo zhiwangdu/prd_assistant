@@ -69,8 +69,8 @@
 - Code Evidence 已完成版本到配置 ref 的只读 `git grep` MVP；后续补独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
 - Environment Collector 已完成审批后的白名单 SSH 命令、单文件 SCP、最多
   20 个 approved `targets[]` 批量采集，以及多 executor/template 的唯一 hint
-  选型。
-- 后续补更多内置环境模板和真实环境 smoke。
+  选型，并已内置通用只读环境模板。
+- 后续补产品专用环境模板和真实环境 smoke。
 
 ## 后续质量提升
 

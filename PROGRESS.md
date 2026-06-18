@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Default Templates
+
+- Expanded V2 default Remote Executor command templates beyond `smoke_ls_root`
+  to include read-only `system_uname`, `uptime_load`, `disk_usage`,
+  `memory_usage`, `process_overview`, and `network_listeners`.
+- The templates remain fixed argv, non-shell, approval-gated remote commands;
+  setting `LOGAGENT_V2_REMOTE_COMMANDS_JSON` still replaces the built-in list.
+- Added regression coverage for the default template IDs, key argv values, and
+  `parse_remote_commands_env(None)` fallback behavior.
+- Updated root, V2 Server, Environment Collector, Analysis Agent, Config,
+  Roadmap, and deploy environment docs.
+- Verification passed: focused remote command template pytest selection,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (152 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Agent Approval Budget
 
 - Added `LOGAGENT_V2_AGENT_MAX_APPROVALS` / `agent_max_approvals` with default

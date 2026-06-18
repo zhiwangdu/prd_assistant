@@ -99,6 +99,42 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
             description="Low-risk SSH smoke command for managed executors.",
             argv=("ls", "-la", "/root"),
         ),
+        RemoteCommandTemplate(
+            command_id="system_uname",
+            display_name="System: kernel and OS",
+            description="Read-only kernel and operating system summary.",
+            argv=("uname", "-a"),
+        ),
+        RemoteCommandTemplate(
+            command_id="uptime_load",
+            display_name="System: uptime and load",
+            description="Read-only uptime and load-average snapshot.",
+            argv=("uptime",),
+        ),
+        RemoteCommandTemplate(
+            command_id="disk_usage",
+            display_name="System: disk usage",
+            description="Read-only filesystem capacity snapshot.",
+            argv=("df", "-h"),
+        ),
+        RemoteCommandTemplate(
+            command_id="memory_usage",
+            display_name="System: memory usage",
+            description="Read-only memory usage snapshot.",
+            argv=("free", "-m"),
+        ),
+        RemoteCommandTemplate(
+            command_id="process_overview",
+            display_name="System: process overview",
+            description="Read-only process list without command-line arguments.",
+            argv=("ps", "-eo", "pid,ppid,stat,comm", "--sort=comm"),
+        ),
+        RemoteCommandTemplate(
+            command_id="network_listeners",
+            display_name="System: network listeners",
+            description="Read-only TCP listener snapshot.",
+            argv=("ss", "-lntp"),
+        ),
     )
 
 

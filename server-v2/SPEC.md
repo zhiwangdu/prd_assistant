@@ -1334,8 +1334,9 @@ remote command smoke runner. They are not a full Environment Collector.
 - `DELETE /api/v2/executors/:executor_id` disables an executor; it does not
   delete historical run records.
 - Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`. If
-  unset, V2 exposes a default `smoke_ls_root` template with argv
-  `["ls", "-la", "/root"]`.
+  unset, V2 exposes built-in read-only templates: `smoke_ls_root`,
+  `system_uname`, `uptime_load`, `disk_usage`, `memory_usage`,
+  `process_overview`, and `network_listeners`.
 - Command template descriptors must match the Rust/V1 behavior: `enabled`
   combines global remote execution state with template state, and
   `timeoutSeconds` is always the template override or default remote command

@@ -44,6 +44,7 @@ from logagent_v2.config import (
     Settings,
     ToolDefinition,
     claude_code_profile_for_mode,
+    default_remote_commands,
     parse_code_repos_env,
     parse_remote_files_env,
     parse_remote_commands_env,
@@ -4880,6 +4881,30 @@ class StoreTests(unittest.TestCase):
                 raw = json.dumps([{"id": command_id, "argv": ["true"]}])
                 with self.assertRaisesRegex(ValueError, "invalid remote command id"):
                     parse_remote_commands_env(raw)
+
+    def test_default_remote_commands_include_readonly_environment_templates(self) -> None:
+        templates = default_remote_commands()
+        self.assertEqual(templates[0].command_id, "smoke_ls_root")
+        by_id = {template.command_id: template for template in templates}
+        self.assertEqual(
+            set(by_id),
+            {
+                "smoke_ls_root",
+                "system_uname",
+                "uptime_load",
+                "disk_usage",
+                "memory_usage",
+                "process_overview",
+                "network_listeners",
+            },
+        )
+        self.assertEqual(by_id["system_uname"].argv, ("uname", "-a"))
+        self.assertEqual(by_id["disk_usage"].argv, ("df", "-h"))
+        self.assertEqual(by_id["process_overview"].argv[-1], "--sort=comm")
+        self.assertEqual(
+            [template.command_id for template in parse_remote_commands_env(None)],
+            [template.command_id for template in templates],
+        )
 
     def test_parse_remote_commands_env_normalizes_argv(self) -> None:
         templates = parse_remote_commands_env(

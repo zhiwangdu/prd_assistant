@@ -347,7 +347,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_MAX_OUTPUT_BYTES` | `1048576` | Maximum stored stdout/stderr bytes per stream |
 | `LOGAGENT_V2_REMOTE_FILE_MAX_BYTES` | `16777216` | Default max bytes accepted for each approved remote file collection |
 | `LOGAGENT_V2_REMOTE_HOST_KEY_POLICY` | `accept-new` | `strict`, `accept-new`, or `no` host-key behavior |
-| `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | default smoke | JSON array of whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-`; argv entries are trimmed, empty entries are dropped, and the final argv must be non-empty |
+| `LOGAGENT_V2_REMOTE_COMMANDS_JSON` | built-in read-only templates | JSON array that replaces the default whitelisted remote command templates; IDs allow only ASCII letters, digits, `_`, and `-`; argv entries are trimmed, empty entries are dropped, and the final argv must be non-empty |
 | `LOGAGENT_V2_REMOTE_FILES_JSON` | unset | JSON array of whitelisted remote file templates for approved `collect_environment` file pulls; each entry has safe `id`/`fileId`, absolute safe `remotePath`, optional timeout, and optional `maxBytes` |
 | `LOGAGENT_V2_CODE_REPOS_JSON` | unset | JSON object or array of configured read-only code repositories for `logagent.search_code` and `logagent.diff_code`; each entry requires absolute `repoPath`, `defaultRef`, optional `versionRefs`, and relative `searchRoots` |
 | `LOGAGENT_V2_CODE_WORKTREE_ROOT` | `data_dir/code_worktrees` | Absolute cache root for detached Code Evidence worktrees; V2 creates/reuses paths under this root and rejects relative values |
@@ -580,13 +580,15 @@ user, tags, notes, enabled state, and timestamps. Deleting an executor disables
 it instead of removing historical run records.
 
 Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`; if unset,
-V2 exposes the low-risk `smoke_ls_root` template. Template descriptors match
-the Rust/V1 behavior: `enabled` also reflects global remote execution state,
-and `timeoutSeconds` is always filled with the template override or default
-remote command timeout. Template IDs are validated with the Rust/V1 safe
-pattern: non-empty ASCII letters, digits, `_`, and `-` only. Template argv is
-normalized like Rust/V1 by trimming entries, dropping empty entries, and
-requiring at least one remaining argv item. Runs are DB-backed jobs. The worker invokes the
+V2 exposes built-in read-only templates for `smoke_ls_root`, `system_uname`,
+`uptime_load`, `disk_usage`, `memory_usage`, `process_overview`, and
+`network_listeners`. Template descriptors match the Rust/V1 behavior: `enabled`
+also reflects global remote execution state, and `timeoutSeconds` is always
+filled with the template override or default remote command timeout. Template
+IDs are validated with the Rust/V1 safe pattern: non-empty ASCII letters,
+digits, `_`, and `-` only. Template argv is normalized like Rust/V1 by trimming
+entries, dropping empty entries, and requiring at least one remaining argv item.
+Runs are DB-backed jobs. The worker invokes the
 configured SSH executable with fixed argv. `LOGAGENT_V2_REMOTE_SSH_COMMAND`
 expands environment variables and `~`; when remote execution is enabled it must
 resolve to an absolute path, matching the Rust/V1 `remote_execution.ssh_binary`
