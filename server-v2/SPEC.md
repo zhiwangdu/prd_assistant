@@ -986,7 +986,11 @@ the endpoint and runtime params, reuses a provided `workspaceId`, or creates an
 isolated workspace when no workspace is provided.
 Result artifacts include redacted request metadata, top-level `httpOk`,
 `statusCode`, `redirectCount`, `finalUrl`, `truncated`, `credentialVersion`,
-and a separate bounded response body artifact referenced by both logical
+the Rust/V1 `schemaVersion=3` tool result envelope (`exitCode=null`,
+`command=[]`, `inputFile=null`, empty `stdoutPath` / `stderrPath`,
+`findings=[]`, and `evidenceRefs` pointing at
+`tool_results/<action_id>/result.json#response`), and a separate bounded
+response body artifact referenced by both logical
 `tool_results/<action_id>/response_body.bin` and actual V2 artifact id/path
 fields.
 

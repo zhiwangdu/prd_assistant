@@ -607,7 +607,8 @@ def execute_fetch_endpoint(
             "bodyTruncated": False,
         }
     duration_ms = int((time.monotonic() - started) * 1000)
-    ref = f"tool_results/{action_id}/result.json#response"
+    result_path = f"tool_results/{action_id}/result.json"
+    ref = f"{result_path}#response"
     logical_body_path = f"tool_results/{action_id}/response_body.bin"
     body_artifact = write_artifact_bytes(
         settings=settings,
@@ -630,14 +631,20 @@ def execute_fetch_endpoint(
     response["bodyArtifactRelativePath"] = body_artifact["relative_path"]
     response["truncated"] = bool(response.get("bodyTruncated", False))
     result = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "tool": "logagent.fetch",
         "toolId": "logagent.fetch",
         "actionId": action_id,
         "endpointId": endpoint_id,
         "fetchId": endpoint_id,
         "status": status,
+        "exitCode": None,
+        "command": [],
+        "inputFile": None,
+        "stdoutPath": "",
+        "stderrPath": "",
         "summary": fetch_summary(endpoint, response, status, error),
+        "findings": [],
         "httpOk": bool(response.get("httpOk", False)),
         "statusCode": response.get("statusCode"),
         "redirectCount": response.get("redirectCount", 0),
@@ -659,6 +666,7 @@ def execute_fetch_endpoint(
         "durationMs": duration_ms,
         "error": error,
         "evidenceRef": ref,
+        "evidenceRefs": [ref],
     }
     artifact = write_artifact_bytes(
         settings=settings,
@@ -667,7 +675,7 @@ def execute_fetch_endpoint(
         filename=f"{action_id}_fetch_result.json",
         data=json.dumps(result, ensure_ascii=True, indent=2).encode("utf-8"),
         content_type="application/json",
-        schema_name="logagent.v2.fetch_result.v2",
+        schema_name="logagent.v2.fetch_result.v3",
         preview={
             "tool": "logagent.fetch",
             "endpointId": endpoint_id,

@@ -1083,8 +1083,12 @@ manually up to
 allowlist, and sensitive headers are stripped when redirecting across origin.
 Fetch stores bounded response previews as `fetch_result` evidence and stores
 the bounded raw response body as a separate body artifact. Results include the
-logical V1-style `tool_results/<action_id>/response_body.bin` path plus the
-actual V2 artifact id and relative path.
+Rust/V1 `schemaVersion=3` tool result envelope with `exitCode=null`,
+`command=[]`, `inputFile=null`, empty stdout/stderr logical paths,
+`findings=[]`, and `evidenceRefs=["tool_results/<action_id>/result.json#response"]`.
+They also include the logical V1-style
+`tool_results/<action_id>/response_body.bin` path plus the actual V2 artifact id
+and relative path.
 
 Sensitive Fetch endpoint material is split into an encrypted credential set.
 When Fetch execution is enabled, `LOGAGENT_V2_FETCH_SECRET_KEY` is validated at

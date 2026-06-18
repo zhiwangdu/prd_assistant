@@ -6932,7 +6932,13 @@ fi
                 self.assertEqual(captured["body"], "password=runtime-secret&keep=override")
 
                 result = payload["result"]
-                self.assertEqual(result["schemaVersion"], 2)
+                self.assertEqual(result["schemaVersion"], 3)
+                self.assertIsNone(result["exitCode"])
+                self.assertEqual(result["command"], [])
+                self.assertIsNone(result["inputFile"])
+                self.assertEqual(result["stdoutPath"], "")
+                self.assertEqual(result["stderrPath"], "")
+                self.assertEqual(result["findings"], [])
                 self.assertTrue(result["httpOk"])
                 self.assertEqual(result["statusCode"], 200)
                 self.assertEqual(result["fetchId"], endpoint["id"])
@@ -6949,6 +6955,11 @@ fi
                     result["bodyArtifactPath"],
                     f"tool_results/{result['actionId']}/response_body.bin",
                 )
+                self.assertEqual(
+                    result["evidenceRefs"],
+                    [f"tool_results/{result['actionId']}/result.json#response"],
+                )
+                self.assertEqual(result["evidenceRef"], result["evidenceRefs"][0])
                 self.assertEqual(result["response"]["bodyArtifactId"], result["bodyArtifactId"])
                 body_artifact = store.get_artifact(result["bodyArtifactId"])
                 body_path = resolve_artifact_path(settings, body_artifact["relative_path"])

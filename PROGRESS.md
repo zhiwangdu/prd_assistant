@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Tool Result Field Parity
+
+- Extended V2 `logagent.fetch` results to use the Rust/V1
+  `schemaVersion=3` tool result envelope: `exitCode=null`, `command=[]`,
+  `inputFile=null`, empty `stdoutPath` / `stderrPath`, `findings=[]`, and
+  `evidenceRefs=["tool_results/<action_id>/result.json#response"]`.
+- Kept existing V2 Fetch fields, including `toolId`, redacted request/response
+  metadata, response-body artifact id/path, `evidenceRef`, and the final
+  `fetch_result` evidence record.
+- Updated root, V2 Server, and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Fetch pytest selection, full `PYTHONPATH=. uv run --extra
+  dev pytest` (130 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Pprof Tool Result Field Parity
 
 - Extended V2 `pprof_analyzer` manual tool results with Rust/V1-compatible
