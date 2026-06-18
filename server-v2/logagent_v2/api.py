@@ -218,6 +218,12 @@ class CaseImportPreviewCreate(BaseModel):
     filename: str | None = Field(default=None, max_length=300)
 
 
+class CaseImportCreate(BaseModel):
+    content: str | None = Field(default=None, max_length=200000)
+    text: str | None = Field(default=None, max_length=200000)
+    filename: str | None = Field(default=None, max_length=300)
+
+
 class CaseImportMessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
 
@@ -628,6 +634,13 @@ def _resolve_task_instance_id(
         if node_id not in node_ids:
             raise ValueError(f"unknown nodeId {node_id}")
     return instance_id
+
+
+def _case_import_create_content(payload: CaseImportCreate) -> str:
+    content = payload.content if payload.content is not None else payload.text
+    if content is None or not content.strip():
+        raise ValueError("case import text must not be empty")
+    return content
 
 
 def normalize_optional_message_id(value: str | None) -> str | None:
@@ -2380,6 +2393,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"import": case_import_preview(store.get_case_import(import_id))}
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/v2/cases/imports", status_code=201)
+    async def create_case_import_api(_: Auth, payload: CaseImportCreate) -> dict:
+        try:
+            result = preview_case_import(
+                store=store,
+                content=_case_import_create_content(payload),
+                filename=payload.filename,
+            )
+            return {**result, "draft": result["import"]}
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/api/v2/cases/imports/preview")
     async def preview_case_import_api(_: Auth, payload: CaseImportPreviewCreate) -> dict:

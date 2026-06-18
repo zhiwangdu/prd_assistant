@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Case Import Create Alias Parity
+
+- Added `POST /api/v2/cases/imports` as the Rust/V1-style Case import create
+  endpoint.
+- The new endpoint accepts V1 `text` or V2 `content`, persists the same draft
+  as the existing preview path, returns HTTP 201, and includes both V2
+  `import` and Rust/V1-style `draft` aliases.
+- Added route-table coverage and an HTTP regression for text-based Case import
+  creation with filename preservation.
+- Updated V2 Server and Case Store docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_case_import_patch_route_updates_draft`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 167 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Remote Run TaskResponse Parity
 
 - Extended V2 Remote Executor run create/list/get summaries with Rust/V1

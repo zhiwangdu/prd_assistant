@@ -489,6 +489,7 @@ POST /api/v2/tasks/:task_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports
 POST /api/v2/cases/imports/preview
 POST /api/v2/cases/imports/:import_id/messages
 PATCH /api/v2/cases/imports/:import_id
@@ -1337,11 +1338,14 @@ Supported sources:
   task Case instead of creating duplicates.
 
 Case import drafts live in `case_imports` and are created through
-`POST /api/v2/cases/imports/preview`. Preview accepts JSON Case fields or plain
-text sections such as `Title`, `Symptom`, `Root Cause`, `Solution`, `Product`,
-`Version`, `Environment`, `Instance ID`, `Node ID`, and `Evidence Refs`. It
-stores the source text, parsed draft, validation errors, and follow-up message
-history without mutating `cases`. `POST
+`POST /api/v2/cases/imports/preview` or the Rust/V1-style create alias
+`POST /api/v2/cases/imports`. The create alias accepts either V2 `content` or
+V1 `text`, returns HTTP 201, and exposes both V2 `import` and Rust/V1-style
+`draft` fields. Preview/create accept JSON Case fields or plain text sections
+such as `Title`, `Symptom`, `Root Cause`, `Solution`, `Product`, `Version`,
+`Environment`, `Instance ID`, `Node ID`, and `Evidence Refs`. They store the
+source text, parsed draft, validation errors, and follow-up message history
+without mutating `cases`. `POST
 /api/v2/cases/imports/:import_id/messages` appends a user supplement, combines
 all messages with the original source text, reparses the draft, and adds an
 assistant question when required fields are still missing. `PATCH

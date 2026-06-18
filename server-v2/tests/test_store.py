@@ -562,6 +562,7 @@ class StoreTests(unittest.TestCase):
                 ("GET", "/api/v2/cases"),
                 ("GET", "/api/v2/cases/imports"),
                 ("GET", "/api/v2/cases/imports/{import_id}"),
+                ("POST", "/api/v2/cases/imports"),
                 ("POST", "/api/v2/cases/imports/preview"),
                 ("POST", "/api/v2/cases/imports/{import_id}/messages"),
                 ("PATCH", "/api/v2/cases/imports/{import_id}"),
@@ -12725,6 +12726,26 @@ grep_results.json#matches/0
             headers = {"Authorization": "Bearer test"}
 
             with TestClient(create_app(settings)) as client:
+                create_response = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    json={
+                        "text": "Title: V1 imported case\nSymptom: Shard timeout",
+                        "filename": "case.txt",
+                    },
+                )
+                self.assertEqual(create_response.status_code, 201)
+                created_body = create_response.json()
+                self.assertEqual(
+                    created_body["draft"]["importId"],
+                    created_body["import"]["importId"],
+                )
+                self.assertEqual(created_body["import"]["filename"], "case.txt")
+                self.assertEqual(
+                    created_body["import"]["draft"]["title"],
+                    "V1 imported case",
+                )
+
                 preview_response = client.post(
                     "/api/v2/cases/imports/preview",
                     headers=headers,

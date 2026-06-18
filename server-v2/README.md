@@ -549,6 +549,7 @@ POST /api/v2/tasks/:task_id/case
 GET  /api/v2/cases
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
+POST /api/v2/cases/imports
 POST /api/v2/cases/imports/preview
 POST /api/v2/cases/imports/:import_id/messages
 PATCH /api/v2/cases/imports/:import_id
@@ -1546,6 +1547,7 @@ the caller sets `includeDisabled=true`.
 Case import drafts support text or JSON capture before a Case is confirmed:
 
 ```text
+POST /api/v2/cases/imports
 POST /api/v2/cases/imports/preview
 GET  /api/v2/cases/imports
 GET  /api/v2/cases/imports/:import_id
@@ -1553,6 +1555,10 @@ POST /api/v2/cases/imports/:import_id/messages
 PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 ```
+
+`POST /api/v2/cases/imports` is the Rust/V1-style create endpoint. It accepts
+either V2 `content` or V1 `text`, persists the same draft as preview, returns
+HTTP 201, and includes both V2 `import` and Rust/V1-style `draft` aliases.
 
 Preview parses JSON Case fields or plain text sections such as `Title`,
 `Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and
