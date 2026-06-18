@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Preprocess Tool Result Field Parity
+
+- Extended V2 `logagent.preprocess_log_package` manual tool results with
+  Rust/V1-compatible `manifestPath`, `grepResultsPath`, `toolInputsPath`,
+  `toolInputs`, `durationMs`, and `createdAt` fields.
+- Kept existing V2 artifact metadata by also exposing manifest/grep artifact
+  ids and relative artifact paths in the same result.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused preprocess/tool registry pytest selection,
+  full `PYTHONPATH=. uv run --extra dev pytest` (130 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 WebUI Remote File Approval Selection
 
 - Extended the V2 Analyze `collect_environment` approval card to load

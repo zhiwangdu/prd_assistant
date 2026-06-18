@@ -730,8 +730,9 @@ The migrated built-ins are:
   params templates with `retentionPolicy` where supported;
 - `logagent.preprocess_log_package`, whose descriptor advertises rotated log
   normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
-  results include V1-style `nodes` aggregation plus the V2 `nodePackages`
-  detail list;
+  results include V1-style `nodes` aggregation, `manifestPath`,
+  `grepResultsPath`, `toolInputsPath`, `toolInputs`, timing metadata, plus the
+  V2 `nodePackages` detail list and artifact id/path fields;
 - `logagent.fetch`, whose catalog descriptor keeps the Rust/V1 manual-run
   shape: `readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
   `outputViews=["summary","request","response","body_artifact"]` while runtime

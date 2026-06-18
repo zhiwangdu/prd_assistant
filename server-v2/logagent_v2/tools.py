@@ -1535,6 +1535,7 @@ def run_preprocess_tool(
 ) -> JsonObject:
     if params:
         raise ValueError("preprocess tool does not accept params")
+    started = time.monotonic()
     uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
     text_files = collect_text_files(settings, uploads)
     tool_input_bundle = materialize_tool_inputs(
@@ -1585,6 +1586,7 @@ def run_preprocess_tool(
             ] = text_file.node_package
     nodes = preprocess_node_summaries(text_files)
     action_id = f"act_tool_preprocess_{run['id']}"
+    tool_inputs = tool_input_bundle.get("inputs", [])
     result = {
         "schemaVersion": 1,
         "toolId": PREPROCESS_LOG_PACKAGE_ID,
@@ -1593,8 +1595,11 @@ def run_preprocess_tool(
         "summary": (
             f"preprocessed {len(uploads)} upload(s), {len(nodes)} node(s), "
             f"{len(text_files)} extracted file(s), "
-            f"{len(tool_input_bundle.get('inputs', []))} materialized tool input(s)"
+            f"{len(tool_inputs)} materialized tool input(s)"
         ),
+        "manifestPath": "manifest.json",
+        "grepResultsPath": "grep_results.json",
+        "toolInputsPath": tool_input_bundle.get("path"),
         "uploadCount": len(uploads),
         "fileCount": len(text_files),
         "nodes": nodes,
@@ -1602,8 +1607,13 @@ def run_preprocess_tool(
         "logGroups": log_groups,
         "warnings": [],
         "manifestArtifactId": manifest_artifact["id"],
+        "manifestArtifactPath": manifest_artifact["relative_path"],
         "grepArtifactId": grep_artifact["id"],
-        "toolInputIndex": tool_input_bundle.get("inputs", []),
+        "grepArtifactPath": grep_artifact["relative_path"],
+        "toolInputs": tool_inputs,
+        "toolInputIndex": tool_inputs,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "createdAt": datetime.now(UTC).isoformat(),
     }
     artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
     evidence = store.create_evidence(
