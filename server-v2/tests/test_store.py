@@ -1079,6 +1079,226 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(task_case.status_code, 200, task_case.text)
                 self.assertEqual(task_case.json()["sourceType"], "task")
 
+    def test_v1_session_upload_and_task_aliases_share_v2_handlers(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                created_session = client.post(
+                    "/api/sessions",
+                    headers=headers,
+                    json={
+                        "title": "Legacy session",
+                        "question": "Why did legacy upload fail?",
+                        "analysisLanguage": "en-US",
+                    },
+                )
+                self.assertEqual(created_session.status_code, 201, created_session.text)
+                session_id = created_session.json()["sessionId"]
+
+                listed_sessions = client.get("/api/sessions", headers=headers)
+                self.assertEqual(listed_sessions.status_code, 200)
+                self.assertEqual(
+                    listed_sessions.json()["sessions"][0]["sessionId"],
+                    session_id,
+                )
+
+                patched_session = client.patch(
+                    f"/api/sessions/{session_id}",
+                    headers=headers,
+                    json={"sourceUrl": "https://example.invalid/log.tar.gz"},
+                )
+                self.assertEqual(patched_session.status_code, 200)
+                self.assertEqual(
+                    patched_session.json()["sourceUrl"],
+                    "https://example.invalid/log.tar.gz",
+                )
+
+                legacy_upload = client.post(
+                    "/api/uploads",
+                    headers=headers,
+                    files={"file": ("legacy.log", b"legacy error\n", "text/plain")},
+                )
+                self.assertEqual(legacy_upload.status_code, 200, legacy_upload.text)
+                legacy_upload_body = legacy_upload.json()
+                legacy_upload_id = legacy_upload_body["uploadId"]
+                self.assertEqual(legacy_upload_body["filename"], "legacy.log")
+                self.assertEqual(legacy_upload_body["size"], len(b"legacy error\n"))
+                self.assertEqual(
+                    store.get_upload(legacy_upload_id)["workspace_id"],
+                    store.get_upload(legacy_upload_body["upload"]["id"])["workspace_id"],
+                )
+
+                attached = client.post(
+                    f"/api/sessions/{session_id}/uploads",
+                    headers=headers,
+                    json={"uploadIds": [legacy_upload_id]},
+                )
+                self.assertEqual(attached.status_code, 200, attached.text)
+                attached_upload_ids = attached.json()["uploadIds"]
+                self.assertEqual(len(attached_upload_ids), 1)
+                self.assertNotEqual(attached_upload_ids[0], legacy_upload_id)
+                self.assertEqual(
+                    store.get_upload(attached_upload_ids[0])["workspace_id"],
+                    session_id,
+                )
+
+                batch = client.post(
+                    "/api/uploads/batch",
+                    headers=headers,
+                    files=[
+                        ("files", ("a.log", b"a\n", "text/plain")),
+                        ("files", ("b.log", b"bb\n", "text/plain")),
+                    ],
+                )
+                self.assertEqual(batch.status_code, 200, batch.text)
+                self.assertEqual(len(batch.json()["uploads"]), 2)
+                self.assertEqual(batch.json()["totalSize"], 5)
+
+                init = client.post(
+                    "/api/uploads/init",
+                    headers=headers,
+                    json={"filename": "chunk.log", "size": 5},
+                )
+                self.assertEqual(init.status_code, 200, init.text)
+                upload_session_id = init.json()["uploadId"]
+
+                chunk = client.post(
+                    f"/api/uploads/{upload_session_id}/chunks?offset=0",
+                    headers={**headers, "Content-Type": "application/octet-stream"},
+                    content=b"chunk",
+                )
+                self.assertEqual(chunk.status_code, 200, chunk.text)
+
+                completed = client.post(
+                    f"/api/uploads/{upload_session_id}/complete",
+                    headers=headers,
+                )
+                self.assertEqual(completed.status_code, 200, completed.text)
+                completed_upload_id = completed.json()["uploadId"]
+                self.assertNotEqual(completed_upload_id, upload_session_id)
+                self.assertEqual(completed.json()["size"], 5)
+
+                task_from_session = client.post(
+                    "/api/tasks",
+                    headers=headers,
+                    json={
+                        "sessionId": session_id,
+                        "uploadId": legacy_upload_id,
+                        "question": "Investigate legacy session upload",
+                    },
+                )
+                self.assertEqual(task_from_session.status_code, 202, task_from_session.text)
+                task_id = task_from_session.json()["taskId"]
+                self.assertEqual(task_from_session.json()["sessionId"], session_id)
+                self.assertIn(
+                    task_id,
+                    [item["id"] for item in store.list_runs(session_id)],
+                )
+
+                task_from_upload = client.post(
+                    "/api/tasks",
+                    headers=headers,
+                    json={
+                        "uploadId": completed_upload_id,
+                        "question": "Investigate default legacy upload",
+                    },
+                )
+                self.assertEqual(task_from_upload.status_code, 202, task_from_upload.text)
+                self.assertEqual(
+                    task_from_upload.json()["sessionId"],
+                    store.get_upload(completed_upload_id)["workspace_id"],
+                )
+
+                tasks = client.get("/api/tasks", headers=headers)
+                self.assertEqual(tasks.status_code, 200)
+                self.assertGreaterEqual(len(tasks.json()["tasks"]), 2)
+
+                task_detail = client.get(f"/api/tasks/{task_id}", headers=headers)
+                self.assertEqual(task_detail.status_code, 200)
+                self.assertEqual(task_detail.json()["taskId"], task_id)
+
+                timeline = client.get(f"/api/sessions/{session_id}/timeline", headers=headers)
+                self.assertEqual(timeline.status_code, 200)
+                self.assertTrue(timeline.json()["events"])
+
+                user_workspace = store.create_workspace(
+                    "legacy waiting user",
+                    "diagnose",
+                    "en-US",
+                )
+                user_run = store.create_run(user_workspace["id"])
+                user_action = store.create_action(
+                    user_run["id"],
+                    "user_input",
+                    {
+                        "questionId": "q-legacy",
+                        "question": "Which version?",
+                        "required": True,
+                    },
+                )
+                store.update_run_status(
+                    user_run["id"],
+                    "waiting_for_user",
+                    "waiting_for_user",
+                )
+                message = client.post(
+                    f"/api/tasks/{user_run['id']}/messages",
+                    headers=headers,
+                    json={
+                        "questionId": "q-legacy",
+                        "message": "version 1.0.0",
+                        "idempotencyKey": "legacy-message",
+                    },
+                )
+                self.assertEqual(message.status_code, 200, message.text)
+                self.assertEqual(
+                    message.json()["answeredActions"][0]["id"],
+                    user_action["id"],
+                )
+
+                approval_workspace = store.create_workspace(
+                    "legacy waiting approval",
+                    "diagnose",
+                    "en-US",
+                )
+                approval_run = store.create_run(approval_workspace["id"])
+                approval_action = store.create_action(
+                    approval_run["id"],
+                    "approval",
+                    {
+                        "actionType": "manual_approval",
+                        "reason": "Need approval",
+                        "input": {},
+                    },
+                )
+                store.update_run_status(
+                    approval_run["id"],
+                    "waiting_for_approval",
+                    "waiting_for_approval",
+                )
+                decision = client.post(
+                    (
+                        f"/api/tasks/{approval_run['id']}/actions/"
+                        f"{approval_action['id']}/decision"
+                    ),
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "ok",
+                        "idempotencyKey": "legacy-decision",
+                    },
+                )
+                self.assertEqual(decision.status_code, 200, decision.text)
+                self.assertEqual(decision.json()["action"]["status"], "approved")
+
     def test_run_result_route_returns_conflict_until_result_exists(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

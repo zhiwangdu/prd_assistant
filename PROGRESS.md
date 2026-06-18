@@ -2,6 +2,33 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Session Upload Task Route Aliases
+
+- Mounted Rust/V1-style `/api/sessions/*`, `/api/uploads/*`, and
+  `/api/tasks/*` aliases in V2 for Session lifecycle, Session upload attach/
+  detach, Session task creation, global small/batch/chunked uploads, Task
+  create/list/detail/timeline/evidence/artifacts/analysis/result, user
+  messages, and approval decisions.
+- Added a `Legacy uploads` Session for global Rust/V1 uploads. Legacy global
+  upload responses include top-level `uploadId`, `filename`, and `size` fields
+  plus the V2 `upload` / `artifact` objects.
+- Legacy Session attach and legacy `POST /api/tasks` clone uploads from the
+  `Legacy uploads` Session into the requested target Session before creating a
+  Run, preserving the Rust/V1 Native Agent flow of global upload followed by
+  Session attach.
+- Legacy chunked upload init now accepts the Rust/V1 `size` field as an alias
+  for V2 `sizeBytes`, while returning the final `upl_...` upload id on
+  complete.
+- Added HTTP regression coverage for legacy Session create/list/patch/timeline,
+  global small/batch/chunked uploads, legacy upload attach cloning, Task create
+  with and without `sessionId`, Task list/detail, user message resume, and
+  approval decision aliases.
+- Updated Server V2 README/SPEC for the Rust/V1-style Session, Upload, and Task
+  route aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Rust/V1 Metadata And Case Route Aliases
 
 - Mounted Rust/V1-style `/api/metadata/*`, `/api/cases/*`,

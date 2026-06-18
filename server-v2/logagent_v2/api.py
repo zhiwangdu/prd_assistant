@@ -138,7 +138,7 @@ class AttachSessionUploads(BaseModel):
 class TaskCreate(BaseModel):
     uploadId: str | None = Field(default=None, max_length=120)
     uploadIds: list[str] = Field(default_factory=list, max_length=100)
-    sessionId: str = Field(min_length=1, max_length=120)
+    sessionId: str | None = Field(default=None, min_length=1, max_length=120)
     sourceUrl: str | None = Field(default=None, max_length=2000)
     question: str | None = Field(default=None, max_length=20000)
     instanceId: str | None = Field(default=None, max_length=200)
@@ -429,10 +429,13 @@ class UploadSessionInit(BaseModel):
     filename: str = Field(min_length=1, max_length=300)
     contentType: str | None = Field(default=None, max_length=200)
     sizeBytes: int | None = Field(default=None, ge=0)
+    size: int | None = Field(default=None, ge=0)
 
 
 TERMINAL_RUN_STATUSES = {"succeeded", "failed"}
 DEFAULT_SESSION_QUESTION = "分析日志中的主要异常、可能原因和建议检查项。"
+LEGACY_UPLOAD_SESSION_TITLE = "Legacy uploads"
+LEGACY_UPLOAD_SESSION_QUESTION = "Legacy uploads awaiting task question."
 
 
 def _clean_optional(value: str | None) -> str | None:
@@ -958,6 +961,99 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     require_auth = auth_dependency(settings)
     Auth = Annotated[None, Depends(require_auth)]
 
+    def ensure_legacy_upload_workspace() -> dict:
+        for workspace in store.list_workspaces():
+            if (
+                workspace.get("title") == LEGACY_UPLOAD_SESSION_TITLE
+                and workspace.get("status") != "deleted"
+            ):
+                return workspace
+        return store.create_workspace(
+            LEGACY_UPLOAD_SESSION_QUESTION,
+            "diagnose",
+            "zh-CN",
+            title=LEGACY_UPLOAD_SESSION_TITLE,
+        )
+
+    def is_legacy_upload_workspace(workspace_id: str) -> bool:
+        try:
+            workspace = store.get_workspace(workspace_id)
+        except KeyError:
+            return False
+        return workspace.get("title") == LEGACY_UPLOAD_SESSION_TITLE
+
+    def clone_legacy_upload_to_workspace(upload_id: str, workspace_id: str) -> str:
+        upload = store.get_upload_with_artifact(upload_id)
+        if upload["workspace_id"] == workspace_id:
+            return upload_id
+        if not is_legacy_upload_workspace(upload["workspace_id"]):
+            raise ValueError(f"upload {upload_id} does not belong to workspace {workspace_id}")
+        source_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
+        artifact = write_artifact_file(
+            settings=settings,
+            store=store,
+            workspace_id=workspace_id,
+            filename=upload["filename"],
+            source_path=source_path,
+            content_type=upload["artifact_content_type"],
+            schema_name=None,
+            preview={
+                "filename": upload["filename"],
+                "sizeBytes": upload["artifact_size_bytes"],
+                "legacyUploadId": upload_id,
+            },
+        )
+        cloned = store.create_upload(workspace_id, upload["filename"], artifact["id"])
+        return cloned["id"]
+
+    def legacy_upload_ids_for_session(session_id: str, upload_ids: list[str]) -> list[str]:
+        cloned_ids = []
+        for upload_id in upload_ids:
+            cloned_id = clone_legacy_upload_to_workspace(upload_id, session_id)
+            if cloned_id not in cloned_ids:
+                cloned_ids.append(cloned_id)
+        return cloned_ids
+
+    def legacy_task_session_id(payload: TaskCreate, upload_ids: list[str]) -> str:
+        session_id = _clean_optional(payload.sessionId)
+        if session_id is not None:
+            return session_id
+        if upload_ids:
+            first_upload = store.get_upload(upload_ids[0])
+            workspace_id = first_upload["workspace_id"]
+            for upload_id in upload_ids[1:]:
+                upload = store.get_upload(upload_id)
+                if upload["workspace_id"] != workspace_id:
+                    raise ValueError("legacy task uploads must belong to one session")
+            return workspace_id
+        return ensure_legacy_upload_workspace()["id"]
+
+    def legacy_upload_response(result: dict) -> dict:
+        upload = result["upload"]
+        artifact = result["artifact"]
+        size = artifact.get("size_bytes")
+        return {
+            **result,
+            "id": upload["id"],
+            "uploadId": upload["id"],
+            "filename": upload["filename"],
+            "size": size,
+            "sizeBytes": size,
+        }
+
+    def legacy_upload_session_response(result: dict) -> dict:
+        session = result["session"]
+        return {
+            **result,
+            "id": session["id"],
+            "uploadId": session["id"],
+            "filename": session["filename"],
+            "size": session["received_bytes"],
+            "sizeBytes": session["received_bytes"],
+            "expectedSize": session.get("expectedSizeBytes"),
+            "expectedSizeBytes": session.get("expectedSizeBytes"),
+        }
+
     @app.get("/health")
     async def health() -> dict:
         return {"ok": True, "service": "logagent-v2"}
@@ -1012,6 +1108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/sessions", status_code=201)
     @app.post("/api/v2/sessions", status_code=201)
     async def create_session(_: Auth, payload: SessionCreate) -> dict:
         try:
@@ -1031,6 +1128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/sessions")
     @app.get("/api/v2/sessions")
     async def list_sessions(_: Auth) -> dict:
         return {
@@ -1039,6 +1137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ]
         }
 
+    @app.get("/api/sessions/{session_id}")
     @app.get("/api/v2/sessions/{session_id}")
     async def get_session(_: Auth, session_id: str) -> dict:
         try:
@@ -1046,6 +1145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.patch("/api/sessions/{session_id}")
     @app.patch("/api/v2/sessions/{session_id}")
     async def update_session(_: Auth, session_id: str, payload: SessionUpdate) -> dict:
         try:
@@ -1090,6 +1190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.delete("/api/sessions/{session_id}")
     @app.delete("/api/v2/sessions/{session_id}")
     async def delete_session(_: Auth, session_id: str) -> dict:
         try:
@@ -1162,6 +1263,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/sessions/{session_id}/timeline")
     @app.get("/api/v2/sessions/{session_id}/timeline")
     async def get_session_timeline(_: Auth, session_id: str) -> dict:
         try:
@@ -1224,6 +1326,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def upload_file(_: Auth, workspace_id: str, request: Request) -> dict:
         return await receive_single_upload_request(workspace_id, request)
 
+    @app.post("/api/uploads")
+    async def upload_file_legacy(_: Auth, request: Request) -> dict:
+        result = await receive_single_upload_request(
+            ensure_legacy_upload_workspace()["id"],
+            request,
+        )
+        return legacy_upload_response(result)
+
     @app.post("/api/v2/sessions/{session_id}/uploads")
     async def upload_or_attach_session_uploads(
         _: Auth, session_id: str, request: Request
@@ -1251,6 +1361,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await receive_single_upload_request(session_id, request)
         raise HTTPException(status_code=415, detail="unsupported upload content type")
 
+    @app.post("/api/sessions/{session_id}/uploads")
+    async def upload_or_attach_session_uploads_legacy(
+        _: Auth, session_id: str, request: Request
+    ) -> dict:
+        content_type = request.headers.get("content-type", "").lower()
+        if content_type.startswith("application/json"):
+            try:
+                store.get_workspace(session_id)
+                payload = AttachSessionUploads.model_validate(await request.json())
+                upload_ids = legacy_upload_ids_for_session(
+                    session_id,
+                    _session_upload_ids(payload.uploadIds),
+                )
+                workspace = store.attach_uploads(session_id, upload_ids)
+                return _session_record(store, workspace)
+            except ValidationError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except KeyError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+        if content_type.startswith("multipart/form-data"):
+            return await receive_single_upload_request(session_id, request)
+        raise HTTPException(status_code=415, detail="unsupported upload content type")
+
+    @app.delete("/api/sessions/{session_id}/uploads/{upload_id}")
     @app.delete("/api/v2/sessions/{session_id}/uploads/{upload_id}")
     async def detach_session_upload(_: Auth, session_id: str, upload_id: str) -> dict:
         try:
@@ -1313,6 +1449,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             results.append({"upload": upload, "artifact": artifact})
         return {"uploads": results}
 
+    @app.post("/api/uploads/batch")
+    async def upload_files_legacy(_: Auth, request: Request) -> dict:
+        result = await upload_files(None, ensure_legacy_upload_workspace()["id"], request)
+        uploads = [legacy_upload_response(item) for item in result["uploads"]]
+        return {
+            "uploads": uploads,
+            "totalSize": sum(item["size"] or 0 for item in uploads),
+            "totalSizeBytes": sum(item["sizeBytes"] or 0 for item in uploads),
+        }
+
     @app.post("/api/v2/sessions/{session_id}/uploads/batch")
     async def upload_session_files(
         _: Auth,
@@ -1331,7 +1477,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store.get_workspace(workspace_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
-        if payload.sizeBytes is not None and payload.sizeBytes > settings.max_upload_bytes:
+        expected_size_bytes = payload.sizeBytes if payload.sizeBytes is not None else payload.size
+        if expected_size_bytes is not None and expected_size_bytes > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
         session_id = new_id("ups")
         filename = _upload_filename(payload.filename)
@@ -1341,10 +1488,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             workspace_id=workspace_id,
             filename=filename,
             content_type=payload.contentType or "application/octet-stream",
-            expected_size_bytes=payload.sizeBytes,
+            expected_size_bytes=expected_size_bytes,
             temp_relative_path=temp_relative_path,
         )
         return {"session": session}
+
+    @app.post("/api/uploads/init")
+    async def init_upload_session_legacy(_: Auth, payload: UploadSessionInit) -> dict:
+        result = await init_upload_session(
+            None,
+            ensure_legacy_upload_workspace()["id"],
+            payload,
+        )
+        return legacy_upload_session_response(result)
 
     @app.post("/api/v2/sessions/{session_id}/uploads/init")
     async def init_session_upload_session(
@@ -1361,6 +1517,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/uploads/{session_id}/chunks")
     @app.post("/api/v2/uploads/{session_id}/chunks")
     async def upload_chunk(
         _: Auth,
@@ -1407,6 +1564,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             target.write(chunk_bytes)
         session = store.update_upload_session_progress(session_id, next_offset)
         return {"session": session}
+
+    @app.post("/api/uploads/{session_id}/complete")
+    async def complete_upload_session_legacy(_: Auth, session_id: str) -> dict:
+        result = await complete_upload_session(_, session_id)
+        return legacy_upload_response(result)
 
     @app.post("/api/v2/uploads/{session_id}/complete")
     async def complete_upload_session(_: Auth, session_id: str) -> dict:
@@ -1455,6 +1617,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/sessions/{session_id}/tasks", status_code=202)
     @app.post("/api/v2/sessions/{session_id}/tasks", status_code=202)
     async def create_session_task(_: Auth, session_id: str) -> dict:
         try:
@@ -1566,6 +1729,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/tasks", status_code=202)
+    async def create_task_legacy(_: Auth, payload: TaskCreate) -> dict:
+        try:
+            upload_ids = _task_create_upload_ids(payload)
+            session_id = legacy_task_session_id(payload, upload_ids)
+            if payload.sessionId is not None and upload_ids:
+                upload_ids = legacy_upload_ids_for_session(session_id, upload_ids)
+            payload = payload.model_copy(
+                update={
+                    "sessionId": session_id,
+                    "uploadId": upload_ids[0] if upload_ids else None,
+                    "uploadIds": upload_ids[1:] if len(upload_ids) > 1 else [],
+                }
+            )
+            return await create_task_alias(_, payload)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.get("/api/v2/runs")
     async def list_runs(_: Auth, workspaceId: str | None = None) -> dict:
         try:
@@ -1573,6 +1756,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks")
     @app.get("/api/v2/tasks")
     async def list_tasks_alias(_: Auth, workspaceId: str | None = None) -> dict:
         try:
@@ -1591,6 +1775,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}")
     @app.get("/api/v2/tasks/{task_id}")
     async def get_task_alias(_: Auth, task_id: str) -> dict:
         try:
@@ -1605,6 +1790,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}/timeline")
     @app.get("/api/v2/tasks/{task_id}/timeline")
     async def get_task_timeline_alias(_: Auth, task_id: str) -> dict:
         return await get_timeline(_, task_id)
@@ -1616,6 +1802,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}/evidence")
     @app.get("/api/v2/tasks/{task_id}/evidence")
     async def list_task_evidence_alias(_: Auth, task_id: str) -> dict:
         return await list_evidence(_, task_id)
@@ -1627,6 +1814,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}/artifacts")
     @app.get("/api/v2/tasks/{task_id}/artifacts")
     async def list_task_artifacts_alias(_: Auth, task_id: str) -> dict:
         try:
@@ -1645,6 +1833,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}/analysis")
     @app.get("/api/v2/tasks/{task_id}/analysis")
     async def get_task_analysis_alias(_: Auth, task_id: str) -> dict:
         return await get_analysis(_, task_id)
@@ -1669,6 +1858,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/tasks/{task_id}/result")
     @app.get("/api/v2/tasks/{task_id}/result")
     async def get_task_result_alias(_: Auth, task_id: str) -> dict:
         try:
@@ -1749,6 +1939,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def post_message(_: Auth, run_id: str, payload: MessageCreate) -> dict:
         return await submit_run_message(run_id, payload)
 
+    @app.post("/api/tasks/{task_id}/messages")
     @app.post("/api/v2/tasks/{task_id}/messages")
     async def post_task_message_alias(_: Auth, task_id: str, payload: MessageCreate) -> dict:
         return await submit_run_message(task_id, payload)
@@ -1829,6 +2020,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
         return await submit_action_decision(action_id, payload)
 
+    @app.post("/api/tasks/{task_id}/actions/{action_id}/decision")
     @app.post("/api/v2/tasks/{task_id}/actions/{action_id}/decision")
     async def decide_task_action_alias(
         _: Auth, task_id: str, action_id: str, payload: DecisionCreate

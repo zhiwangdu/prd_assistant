@@ -1,8 +1,10 @@
 # LogAgent V2 Server
 
 `server-v2` is a clean-room Python implementation branch for the small-team
-LogAgent redesign. It does not preserve the Rust Server API surface. The first
-slice provides the durable foundation for the V2 product model:
+LogAgent redesign. The canonical product API lives under `/api/v2`, and V2 now
+also exposes Rust/V1-style `/api/*` compatibility aliases for migrated
+internal tools and Native Agent flows. The current slice provides the durable
+foundation for the V2 product model:
 
 - FastAPI HTTP service.
 - Static WebUI hosting from `webui/out` with SPA fallback for non-API routes.
@@ -17,23 +19,25 @@ slice provides the durable foundation for the V2 product model:
   schema foundations.
 - Workspace update and soft-delete lifecycle; deleted Workspaces are hidden from
   history lists but existing runs and artifacts remain readable by id.
-- Session-first HTTP aliases under `/api/v2/sessions`: V2 maps `sessionId`
-  to the Workspace id, maps `taskIds` to Run ids, persists Rust-style Session
-  fields (`title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
-  `skillIds`, `analysisMode`, and language), exposes Session uploads,
-  restartable upload sessions, JSON upload attachment, pre-run upload detach,
-  task creation/listing, and workspace-level timeline events, maps queued tasks
-  to Session `ready`, and rejects Session deletion while any task is
-  unfinished. Session task APIs return Rust-style TaskSummary fields including
-  the persisted `analysisMode` while retaining raw V2 Run records under `runs`
-  for diagnostics. Session and task `systemContextIds` / `skillIds` are
-  trimmed, empty entries are ignored, duplicates are collapsed, and invalid ids
-  return HTTP 400 before being persisted.
-- Task-scoped HTTP aliases under `/api/v2/tasks`: `POST /api/v2/tasks`
-  accepts the Rust/V1-style `sessionId`, `uploadId` / `uploadIds`, `question`,
-  `sourceUrl`, metadata, mode/language, context, and skill fields, validates
-  uploads within the target Session, resolves `clusterId` to a V2 Metadata
-  instance when needed, updates the Session snapshot, and creates a Run.
+- Session-first HTTP aliases under `/api/v2/sessions` and `/api/sessions`: V2
+  maps `sessionId` to the Workspace id, maps `taskIds` to Run ids, persists
+  Rust-style Session fields (`title`, `sourceUrl`, `instanceId`, `nodeId`,
+  `systemContextIds`, `skillIds`, `analysisMode`, and language), exposes
+  Session uploads, restartable upload sessions, JSON upload attachment, pre-run
+  upload detach, task creation/listing, and workspace-level timeline events,
+  maps queued tasks to Session `ready`, and rejects Session deletion while any
+  task is unfinished. Session task APIs return Rust-style TaskSummary fields
+  including the persisted `analysisMode` while retaining raw V2 Run records
+  under `runs` for diagnostics. Session and task `systemContextIds` /
+  `skillIds` are trimmed, empty entries are ignored, duplicates are collapsed,
+  and invalid ids return HTTP 400 before being persisted.
+- Task-scoped HTTP aliases under `/api/v2/tasks` and `/api/tasks`: task
+  creation accepts the Rust/V1-style `sessionId`, `uploadId` / `uploadIds`,
+  `question`, `sourceUrl`, metadata, mode/language, context, and skill fields,
+  validates uploads within the target Session, resolves `clusterId` to a V2
+  Metadata instance when needed, updates the Session snapshot, and creates a
+  Run. Legacy `POST /api/tasks` can derive the Session from legacy uploads when
+  `sessionId` is omitted.
   `taskId` maps to the underlying Run id for
   list/read/timeline/evidence/artifacts/analysis/result and user-message
   resume; list/read responses expose TaskSummary-compatible top-level fields
@@ -45,6 +49,11 @@ slice provides the durable foundation for the V2 product model:
 - Native Agent import compatibility through `native_agent.server_api: "v2"`:
   Chrome Extension still calls local `/imports`; Native Agent creates or reuses
   a V2 `ws_...` Session and uploads through Session-scoped V2 APIs.
+- Rust/V1 Native Agent import compatibility through `/api/sessions`,
+  `/api/uploads`, and `/api/tasks` aliases. Global legacy uploads are stored in
+  a `Legacy uploads` Session; attaching or tasking those uploads for another
+  Session clones the underlying artifact into that target Session before Run
+  creation.
 - Single, batch, and restartable chunked upload foundations backed by SQLite
   upload sessions and local temp files.
 - Initial evidence pipeline for uploaded text files and supported archives.
@@ -530,6 +539,30 @@ GET  /api/v2/tasks/:task_id/analysis
 GET  /api/v2/tasks/:task_id/result
 POST /api/v2/tasks/:task_id/messages
 POST /api/v2/tasks/:task_id/actions/:action_id/decision
+POST /api/sessions
+GET  /api/sessions
+GET  /api/sessions/:session_id
+PATCH /api/sessions/:session_id
+DELETE /api/sessions/:session_id
+POST /api/sessions/:session_id/uploads
+DELETE /api/sessions/:session_id/uploads/:upload_id
+POST /api/sessions/:session_id/tasks
+GET  /api/sessions/:session_id/timeline
+POST /api/uploads
+POST /api/uploads/batch
+POST /api/uploads/init
+POST /api/uploads/:session_id/chunks?offset=<bytes>
+POST /api/uploads/:session_id/complete
+GET  /api/tasks?workspaceId=<workspace_id>
+POST /api/tasks
+GET  /api/tasks/:task_id
+GET  /api/tasks/:task_id/timeline
+GET  /api/tasks/:task_id/evidence
+GET  /api/tasks/:task_id/artifacts
+GET  /api/tasks/:task_id/analysis
+GET  /api/tasks/:task_id/result
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
@@ -1083,6 +1116,15 @@ valid id is required. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
 detaches an upload only before any task run exists; the Upload row and artifact
 remain stored. Native Agent V2 mode uses these Session-scoped upload APIs, so
 browser imports do not require Chrome Extension code changes.
+
+Rust/V1-style global upload aliases are also available: `POST /api/uploads`,
+`/api/uploads/batch`, `/api/uploads/init`, `/api/uploads/<session_id>/chunks`,
+and `/api/uploads/<session_id>/complete`. They use a `Legacy uploads` Session
+when no target Session exists and return top-level `uploadId`, `filename`, and
+`size` fields in addition to the V2 `upload` / `artifact` objects. Legacy JSON
+attach and legacy `POST /api/tasks` clone uploads from the `Legacy uploads`
+Session into the requested Session before creating the Run, preserving the
+Rust/V1 Native Agent flow of global upload followed by Session attach.
 
 Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Each chunk request is bounded by

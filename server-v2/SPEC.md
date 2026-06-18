@@ -13,7 +13,10 @@ single-machine deployment over distributed infrastructure:
 - DB-backed jobs instead of Redis.
 - Static WebUI build hosting from local filesystem.
 
-V2 does not need to be compatible with the current Rust Server API or artifact
+V2's canonical API lives under `/api/v2`, while migrated Rust/V1 internal
+tools and Native Agent flows are served through explicit `/api/*`
+compatibility aliases. V2 does not need to be byte-for-byte compatible with the
+current Rust Server implementation or artifact
 layout. The stable product goal remains evidence-backed diagnosis with an
 auditable agent boundary.
 
@@ -61,8 +64,9 @@ Implemented in this slice:
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted
   Workspaces are omitted from history lists while existing run/upload/artifact
   rows remain readable by id.
-- Session-first API aliases for create/list/read/update/delete, uploads,
-  restartable upload sessions, task creation/listing, and full Session
+- Session-first API aliases under `/api/v2/sessions` and `/api/sessions` for
+  create/list/read/update/delete, uploads, restartable upload sessions, task
+  creation/listing, and full Session
   timeline. `title`, `sourceUrl`, `instanceId`, `nodeId`, `systemContextIds`,
   `skillIds`, `analysisMode`, and language are persisted. `taskId` equals the
   underlying Run id, `activeTaskId` is the newest Run, queued Runs map to
@@ -76,9 +80,11 @@ Implemented in this slice:
   create/list responses return Rust-style TaskSummary objects with `taskId`,
   `taskKind`, `sessionId`, `analysisMode`, `analysisLanguage`, `status`,
   `phase`, and `url`, while retaining raw Run records under `runs`.
-- Task-scoped API aliases under `/api/v2/tasks`. `POST /api/v2/tasks` is the
-  Rust/V1-style creation alias: it requires an existing `sessionId`, accepts
-  `uploadId` / `uploadIds`, `question`, `sourceUrl`, metadata selectors,
+- Task-scoped API aliases under `/api/v2/tasks` and `/api/tasks`.
+  `POST /api/v2/tasks` requires an existing `sessionId`; legacy
+  `POST /api/tasks` may derive the Session from legacy uploads when
+  `sessionId` is omitted. Both accept `uploadId` / `uploadIds`, `question`,
+  `sourceUrl`, metadata selectors,
   analysis mode/language, system context ids, and skill ids, validates that
   uploads belong to the target Session, resolves `clusterId` to a Metadata
   `instanceId` when no explicit `instanceId` is supplied, updates the Session
@@ -97,6 +103,10 @@ Implemented in this slice:
 - Native Agent V2 target support: browser imports still enter the local Native
   Agent `/imports` endpoint, and `native_agent.server_api=v2` maps them to
   `POST /api/v2/sessions` plus Session-scoped upload APIs.
+- Rust/V1 Native Agent compatibility aliases under `/api/sessions`,
+  `/api/uploads`, and `/api/tasks`. Global legacy uploads use a `Legacy uploads`
+  Session; attaching or tasking those uploads for another Session clones the
+  underlying artifact into that target Session before Run creation.
 - Workspace-scoped upload, upload session, and run listing plus global run
   listing for WebUI history views.
 - Single multipart upload, batch multipart upload, and restartable chunked
@@ -463,6 +473,30 @@ GET  /api/v2/tasks/:task_id/analysis
 GET  /api/v2/tasks/:task_id/result
 POST /api/v2/tasks/:task_id/messages
 POST /api/v2/tasks/:task_id/actions/:action_id/decision
+POST /api/sessions
+GET  /api/sessions
+GET  /api/sessions/:session_id
+PATCH /api/sessions/:session_id
+DELETE /api/sessions/:session_id
+POST /api/sessions/:session_id/uploads
+DELETE /api/sessions/:session_id/uploads/:upload_id
+POST /api/sessions/:session_id/tasks
+GET  /api/sessions/:session_id/timeline
+POST /api/uploads
+POST /api/uploads/batch
+POST /api/uploads/init
+POST /api/uploads/:session_id/chunks?offset=<bytes>
+POST /api/uploads/:session_id/complete
+GET  /api/tasks?workspaceId=<workspace_id>
+POST /api/tasks
+GET  /api/tasks/:task_id
+GET  /api/tasks/:task_id/timeline
+GET  /api/tasks/:task_id/evidence
+GET  /api/tasks/:task_id/artifacts
+GET  /api/tasks/:task_id/analysis
+GET  /api/tasks/:task_id/result
+POST /api/tasks/:task_id/messages
+POST /api/tasks/:task_id/actions/:action_id/decision
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
@@ -739,6 +773,16 @@ Batch uploads accept repeated multipart file parts named either `file` or
 `files`, matching Rust/V1 clients, and store each batch filename after the same
 basename and character filtering. Filenames whose basename resolves to `.` or
 `..` are rejected with HTTP 400 before upload/session state is created.
+
+Rust/V1-style global upload aliases are available at `/api/uploads`,
+`/api/uploads/batch`, `/api/uploads/init`,
+`/api/uploads/:session_id/chunks`, and `/api/uploads/:session_id/complete`.
+They use a `Legacy uploads` Session when no target Session exists and include
+top-level `uploadId`, `filename`, and `size` fields in addition to the V2
+`upload` / `artifact` objects. Legacy Session attach and legacy
+`POST /api/tasks` clone uploads from the `Legacy uploads` Session into the
+requested Session before Run creation, matching the Rust/V1 Native Agent flow
+of global upload followed by Session attach.
 
 Chunked uploads use a durable `upload_sessions` row:
 
