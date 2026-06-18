@@ -132,6 +132,22 @@ Python V2 对应环境变量为 `LOGAGENT_V2_GREP_KEYWORDS` 和 `LOGAGENT_V2_MAX
 }
 ```
 
+`log_slices/<slice_id>.json`：
+
+```json
+{
+  "schemaVersion": 1,
+  "sourcePath": "extracted/app/app.log",
+  "requestedPath": "app.log",
+  "startLine": 10,
+  "endLine": 11,
+  "lines": [
+    { "line": 10, "lineNumber": 10, "text": "ERROR compaction failed" }
+  ],
+  "ref": "log_slices/slice_xxx.json#lines"
+}
+```
+
 ## 安全约束
 
 - 通用压缩包路径必须通过 safe join，禁止 `../` 或绝对路径逃逸；节点日志包允许 archive 内绝对路径但会先规范化并拒绝 `..`、Windows drive、symlink/hardlink 和特殊文件。

@@ -3958,10 +3958,13 @@ class StoreTests(unittest.TestCase):
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertEqual(payload["slice"]["startLine"], 2)
             self.assertEqual(payload["slice"]["endLine"], 3)
+            self.assertEqual(payload["slice"]["sourcePath"], "extracted/range/range.log")
+            self.assertEqual(payload["slice"]["requestedPath"], "range.log")
             self.assertEqual(
                 [item["text"] for item in payload["slice"]["lines"]],
                 ["two", "three"],
             )
+            self.assertEqual([item["line"] for item in payload["slice"]["lines"]], [2, 3])
             self.assertTrue(payload["slice"]["ref"].startswith("log_slices/"))
             self.assertTrue(payload["slice"]["sliceId"].startswith("slice_"))
             self.assertEqual(payload["artifactPath"], payload["slice"]["ref"].split("#", 1)[0])

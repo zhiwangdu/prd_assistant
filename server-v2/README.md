@@ -55,7 +55,8 @@ slice provides the durable foundation for the V2 product model:
   `prompts/list`.
 - Task MCP endpoint with summary/evidence/artifact_index/manifest/grep,
   analysis_package, case_context, tool_results, Agent audit resources, and
-  `logagent.search_logs` follow-up search plus `logagent.get_log_slice`.
+  `logagent.search_logs` follow-up search plus `logagent.get_log_slice`; log
+  slice artifacts expose V1-style `sourcePath` and `lines[].line` aliases.
 - Tool Plugin registry exposed through `/api/v2/tools`, readonly MCP tool
   catalog, manual tool-run APIs, and task MCP `logagent.run_domain_tool`.
   Configured subprocess tools with `{input_file}` accept explicit

@@ -340,6 +340,7 @@ def get_log_line_range(
         "schemaVersion": 1,
         "sliceId": slice_id,
         "path": path,
+        "sourcePath": selected.path,
         "sourceUploadId": selected.source_upload_id,
         "lineNumber": line_number or start_line,
         "startLine": start,
@@ -347,12 +348,15 @@ def get_log_line_range(
         "lines": [
             {
                 "lineNumber": current,
+                "line": current,
                 "text": lines[current - 1][:4000],
             }
             for current in range(start, end + 1)
         ],
         "ref": f"{slice_path}#lines",
     }
+    if path != selected.path:
+        result["requestedPath"] = path
     artifact = write_json_artifact(
         settings,
         store,

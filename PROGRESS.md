@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Log Slice Artifact Alias Parity
+
+- Added Rust/V1-compatible `sourcePath` and `lines[].line` aliases directly to
+  V2 `log_slices/*.json` artifacts.
+- Preserved the original selector as `requestedPath` when a legacy bare filename
+  or archive-member selector resolves to a canonical `extracted/...` path.
+- Extended task MCP `logagent.get_log_slice` regression coverage for the
+  persisted slice payload aliases.
+- Updated V2 Server and Log Analyzer docs.
+- Verification passed: focused log-slice pytest selection,
+  `cd server-v2 && uv run --extra dev ruff check logagent_v2 tests`, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Grep Match Limit Default Parity
 
 - Aligned V2 `max_grep_matches` / `LOGAGENT_V2_MAX_GREP_MATCHES` default with
