@@ -698,10 +698,11 @@ Metadata, Tools, Fetch, Executors, and Settings. Regression coverage now locks
 the V1 built-in tool names and key task MCP input schemas across task MCP,
 readonly MCP, and the manual Tools catalog, including legacy `tool/inputFile`,
 `fetchId`, `startLine`/`endLine`, metadata field/tag, and waiting/approval
-parameters. Readonly MCP still exposes the catalog for discovery, but any
-`tools/call` targeting catalog configured/manual built-in tools is rejected
-with an explicit readonly error. Full LangGraph planning remains a separate
-product step.
+parameters. Successful task and readonly MCP `tools/call` responses include the
+Rust/V1-compatible `isError=false` envelope flag. Readonly MCP still exposes the
+catalog for discovery, but any `tools/call` targeting catalog
+configured/manual built-in tools is rejected with an explicit readonly error.
+Full LangGraph planning remains a separate product step.
 
 ## Job Recovery
 

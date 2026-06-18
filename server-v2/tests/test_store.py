@@ -1082,6 +1082,22 @@ class StoreTests(unittest.TestCase):
             approval_schema = task_tools["logagent.request_approval"]["inputSchema"]
             self.assertEqual(["reason"], approval_schema["required"])
             self.assertIn("evidenceRefs", approval_schema["properties"])
+            task_call = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 411,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.list_skills",
+                        "arguments": {},
+                    },
+                },
+            )
+            self.assertFalse(task_call["result"]["isError"])
+            self.assertIn("content", task_call["result"])
 
             readonly_list = readonly_mcp_response(
                 settings,
@@ -1107,6 +1123,21 @@ class StoreTests(unittest.TestCase):
                     "logagent.preview_system_context",
                 }.issubset(readonly_tool_names)
             )
+            readonly_call = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 421,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.list_tools",
+                        "arguments": {},
+                    },
+                },
+            )
+            self.assertFalse(readonly_call["result"]["isError"])
+            self.assertIn("content", readonly_call["result"])
 
             catalog_tool_ids = {item["toolId"] for item in tool_descriptors(settings)}
             self.assertTrue(

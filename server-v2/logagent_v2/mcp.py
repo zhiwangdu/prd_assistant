@@ -102,7 +102,7 @@ def task_mcp_response(
             }
         elif method == "tools/call":
             params = request.get("params", {})
-            result = call_task_tool(settings, store, run, params)
+            result = successful_tool_call_result(call_task_tool(settings, store, run, params))
             value = task_tool_result_value(result)
             persist_mcp_call(
                 settings,
@@ -229,6 +229,7 @@ def readonly_mcp_response(
                 raise ValueError(f"readonly MCP cannot execute catalog tool {name}")
             else:
                 raise ValueError(f"unsupported readonly tool {name}")
+            result = successful_tool_call_result(result)
         elif method == "resources/read":
             uri = request.get("params", {}).get("uri")
             canonical_uri = canonical_readonly_uri(uri)
@@ -292,6 +293,12 @@ def json_rpc_error(request_id: object, message: str, code: int = -32000) -> Json
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
+
+def successful_tool_call_result(result: JsonObject) -> JsonObject:
+    if "isError" in result:
+        return result
+    return {**result, "isError": False}
 
 
 def canonical_readonly_uri(uri: object) -> object:

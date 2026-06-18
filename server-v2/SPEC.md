@@ -888,7 +888,8 @@ Regression coverage must lock the V1 built-in tool names and key task MCP
 input schemas across task MCP, readonly MCP, and the manual Tools catalog, so
 future refactors cannot drop a migrated built-in or break legacy
 `tool/inputFile`, `fetchId`, `startLine`/`endLine`, metadata field/tag, or
-waiting/approval parameters accidentally.
+waiting/approval parameters accidentally. Successful task and readonly MCP
+`tools/call` responses must keep the Rust/V1 `isError=false` envelope flag.
 
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and

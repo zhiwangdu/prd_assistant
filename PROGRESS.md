@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 MCP Tool Call Envelope Parity
+
+- Aligned successful V2 task and readonly MCP `tools/call` responses with
+  Rust/V1 by adding the `isError=false` envelope flag while leaving
+  resources/list/read responses unchanged.
+- Added regression coverage for task MCP and readonly MCP successful tool call
+  responses, and updated V2 Server / Interface docs.
+- Verification passed: focused MCP tool coverage pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 162 passed and
+  1 Starlette warning, and `cd server-v2 && PYTHONPATH=. uv run --extra dev
+  ruff check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Metadata Context Resource Parity
 
 - Aligned V2 task MCP `metadata_context` resource with Rust/V1 behavior: the
