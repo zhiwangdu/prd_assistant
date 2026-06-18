@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Worktree LRU
+
+- Added `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` / `code_worktree_max_per_repo`
+  for V2 Code Evidence detached worktree cache retention; default is 5 and
+  non-positive values are clamped to 1.
+- `logagent.search_code` now touches the selected detached worktree as the
+  usage marker and prunes least-recently-used same-product `wt_*` worktrees
+  after each search while preserving the current worktree.
+- Code Evidence artifacts now include `worktree.maxPerRepo` and
+  `worktree.cleanup` audit metadata with removed path/name summaries and
+  remaining counts.
+- Added regression coverage for env parsing/defaults and LRU pruning across
+  three tagged commits with a two-worktree limit.
+- Updated root, V2 Server, Code Evidence, and Config README/SPEC docs.
+- Verification passed: focused Code Evidence pytest selection and
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (140 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Environment Collector Target Inference
 
 - `analysis_package.json` now includes `environmentCollection` with enabled

@@ -144,11 +144,12 @@ slice provides the durable foundation for the V2 product model:
   reading, and `skills.zip` export.
 - Code Evidence MVP for configured local git repositories: `logagent.search_code`
   resolves administrator-defined repo/ref/search roots to a commit, creates or
-  reuses a detached worktree cache, runs read-only `git grep` inside that
-  worktree, writes `code_evidence/<action_id>.json`, and exposes final-answer
-  refs as `code_evidence/<action_id>.json#matches/<index>` without modifying
-  the source repository. Runs bound to a Metadata instance inherit and enforce
-  that instance's product/version before resolving refs.
+  reuses a detached worktree cache, prunes least-recently-used cached
+  worktrees per product, runs read-only `git grep` inside that worktree, writes
+  `code_evidence/<action_id>.json`, and exposes final-answer refs as
+  `code_evidence/<action_id>.json#matches/<index>` without modifying the source
+  repository. Runs bound to a Metadata instance inherit and enforce that
+  instance's product/version before resolving refs.
 - Legacy System Context resource compatibility APIs backed by SQLite for
   prompt packs, architecture docs, runbooks, glossaries, tool capability notes,
   knowledge notes, diagnostic-skill records, version activation, and prompt
@@ -335,6 +336,7 @@ Environment variables:
 | `LOGAGENT_V2_REMOTE_FILES_JSON` | unset | JSON array of whitelisted remote file templates for approved `collect_environment` file pulls; each entry has safe `id`/`fileId`, absolute safe `remotePath`, optional timeout, and optional `maxBytes` |
 | `LOGAGENT_V2_CODE_REPOS_JSON` | unset | JSON object or array of configured read-only code repositories for `logagent.search_code`; each entry requires absolute `repoPath`, `defaultRef`, optional `versionRefs`, and relative `searchRoots` |
 | `LOGAGENT_V2_CODE_WORKTREE_ROOT` | `data_dir/code_worktrees` | Absolute cache root for detached Code Evidence worktrees; V2 creates/reuses paths under this root and rejects relative values |
+| `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` | `5` | Maximum detached Code Evidence worktrees retained per product cache before least-recently-used cleanup removes older `wt_*` directories |
 | `LOGAGENT_V2_WEBUI_DIR` | repo `webui/out` | Static WebUI build directory served by `GET /` |
 | `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED` | `0` | Enable Huawei OBS + GaussDB package sync |
 | `LOGAGENT_V2_HUAWEI_OBS_ENDPOINT` | unset | Huawei OBS endpoint; when enabled must be `http/https` with no path/query/fragment |

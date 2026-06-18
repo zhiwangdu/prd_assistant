@@ -301,4 +301,9 @@ metadata:
   SCP 文件大小上限，默认 16MiB。
 - 等待用户和等待审批时间不计入 `max_running_seconds`。
 - V2 `LOGAGENT_V2_CODE_REPOS_JSON` 支持 object keyed by product 或 descriptor array；每个 repo 必须提供绝对 `repoPath`，可配置 `defaultRef`、`versionRefs` 和安全相对 `searchRoots`。启用后 task MCP 和 provider prompt 才会广告 `logagent.search_code`。
+- V2 `LOGAGENT_V2_CODE_WORKTREE_ROOT` 对应 `code_evidence.worktree_root`；
+  未设置时使用 `storage.data_dir/code_worktrees`。
+- V2 `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` 对应
+  `code_evidence.max_worktrees_per_repo`，默认 5，非正值按 1 处理；超过上限时按
+  least-recently-used 清理同 product 的旧 detached worktree。
 - `code_repos` 只能指向管理员预同步的本地 git repo；用户或模型不能覆盖 repo path、search roots，也不能传入未配置的 `gitRef`。

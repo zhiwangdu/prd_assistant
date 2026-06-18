@@ -382,12 +382,21 @@ def prepare_code_worktree(
         actual_commit = git_output(worktree_path, "rev-parse", "HEAD")
         if actual_commit != commit:
             raise ValueError("git worktree resolved to an unexpected commit")
+    touch_code_worktree_usage(worktree_path)
+    cleanup = cleanup_code_worktrees(
+        settings=settings,
+        repo=repo,
+        root=root,
+        current_path=worktree_path,
+    )
     return {
         "mode": "git_worktree",
         "root": root.as_posix(),
         "path": worktree_path.as_posix(),
         "commit": commit,
         "reused": reused,
+        "maxPerRepo": cleanup["maxPerRepo"],
+        "cleanup": cleanup,
     }
 
 
@@ -433,6 +442,59 @@ def git_worktree_head(path: Path) -> str | None:
     if completed.returncode != 0:
         return None
     return completed.stdout.strip() or None
+
+
+def touch_code_worktree_usage(worktree_path: Path) -> None:
+    worktree_path.touch(exist_ok=True)
+
+
+def cleanup_code_worktrees(
+    settings: Settings,
+    repo: CodeRepoDefinition,
+    root: Path,
+    current_path: Path,
+) -> JsonObject:
+    limit = max(1, int(settings.code_worktree_max_per_repo))
+    repo_root = ensure_child_path(root, root / safe_worktree_segment(repo.product))
+    if not repo_root.is_dir():
+        return {
+            "policy": "least_recently_used",
+            "maxPerRepo": limit,
+            "removedCount": 0,
+            "removed": [],
+            "remainingCount": 0,
+        }
+    current = ensure_child_path(root, current_path)
+    entries: list[tuple[float, Path]] = []
+    for item in repo_root.iterdir():
+        if item.name.startswith("wt_") and item.is_dir():
+            safe_item = ensure_child_path(root, item)
+            entries.append((safe_item.stat().st_mtime, safe_item))
+    if len(entries) <= limit:
+        return {
+            "policy": "least_recently_used",
+            "maxPerRepo": limit,
+            "removedCount": 0,
+            "removed": [],
+            "remainingCount": len(entries),
+        }
+    removed: list[JsonObject] = []
+    remaining_count = len(entries)
+    for _, path in sorted(entries, key=lambda item: (item[0], item[1].name)):
+        if remaining_count <= limit:
+            break
+        if path == current:
+            continue
+        remove_cached_worktree(repo.repo_path, root, path)
+        remaining_count -= 1
+        removed.append({"path": path.as_posix(), "name": path.name})
+    return {
+        "policy": "least_recently_used",
+        "maxPerRepo": limit,
+        "removedCount": len(removed),
+        "removed": removed,
+        "remainingCount": remaining_count,
+    }
 
 
 def remove_cached_worktree(repo_path: Path, root: Path, worktree_path: Path) -> None:

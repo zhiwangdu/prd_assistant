@@ -359,6 +359,7 @@ class Settings:
     remote_files: tuple[RemoteFileTemplate, ...] = ()
     code_repos: tuple[CodeRepoDefinition, ...] = ()
     code_worktree_root: Path | None = None
+    code_worktree_max_per_repo: int = 5
     webui_dir: Path = field(default_factory=default_webui_dir)
 
     @property
@@ -569,6 +570,9 @@ class Settings:
         )
         if code_worktree_root is not None and not code_worktree_root.is_absolute():
             raise ValueError("LOGAGENT_V2_CODE_WORKTREE_ROOT must resolve to an absolute path")
+        code_worktree_max_per_repo = int(
+            os.environ.get("LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO", "5")
+        )
         raw_webui_dir = os.environ.get("LOGAGENT_V2_WEBUI_DIR")
         webui_dir = Path(raw_webui_dir).expanduser() if raw_webui_dir else default_webui_dir()
         return cls(
@@ -622,6 +626,7 @@ class Settings:
             remote_files=remote_files,
             code_repos=code_repos,
             code_worktree_root=code_worktree_root,
+            code_worktree_max_per_repo=max(1, code_worktree_max_per_repo),
             webui_dir=webui_dir,
         )
 

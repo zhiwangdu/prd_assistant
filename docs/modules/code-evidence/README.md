@@ -22,6 +22,8 @@ Python V2 已实现只读 worktree 检索 MVP：
 
 - 管理员通过 `LOGAGENT_V2_CODE_REPOS_JSON` 配置本地 git repo、默认 ref、版本到 ref 映射和相对 search roots。
 - 管理员可通过 `LOGAGENT_V2_CODE_WORKTREE_ROOT` 配置代码 worktree cache 根目录；未配置时默认使用 `data_dir/code_worktrees`。
+- 管理员可通过 `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` 控制每个 product
+  保留的 detached worktree 数量；默认 5，非正值按 1 处理。
 - Task MCP / Agent provider prompt 在存在配置仓库时广告 `logagent.search_code`。
 - `logagent.search_code` 只接受配置内的 `product`、`version` 或受控 `gitRef`，用 `git rev-parse` 锁定 commit，再在 cache 根目录下创建或复用 detached `git worktree`，最后在该 worktree 内执行 `git grep` 做只读检索。
 - 若当前 run 的 Session 绑定了 Metadata `instanceId`，且该 instance snapshot 带有
@@ -30,8 +32,12 @@ Python V2 已实现只读 worktree 检索 MVP：
   `gitRef` 也必须等于该 version 映射到的配置 ref。
 - 结果写入当前 run 的 `code_evidence/<action_id>.json` evidence artifact，并记录 `repo.repoPath`、`worktree.path`、`worktree.commit` 和是否复用缓存；匹配行可作为最终答案 ref：`code_evidence/<action_id>.json#matches/<index>`。
 - 同一 run 内相同 product/ref/keywords/maxMatches 请求会复用已有 artifact，不重复写入。
+- 每次 search 创建或复用 worktree 后，V2 会更新该 worktree 目录 mtime 作为
+  使用标记，并按 least-recently-used 清理同 product 下超过上限的旧 `wt_*`
+  目录；当前 search 正在使用的 worktree 不会被删除，清理结果写入
+  `worktree.cleanup` 供审计。
 
-尚未实现 worktree LRU 清理、启动孤儿 worktree 扫描、版本间 diff、commit 对比、函数级符号解析或 fix mode 代码修改。
+尚未实现启动孤儿 worktree 扫描、版本间 diff、commit 对比、函数级符号解析或 fix mode 代码修改。
 
 ## 输入示例
 
@@ -62,6 +68,7 @@ export LOGAGENT_V2_CODE_REPOS_JSON='{
   }
 }'
 export LOGAGENT_V2_CODE_WORKTREE_ROOT=/data/logagent/code_worktrees
+export LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO=5
 ```
 
 规划中的统一 YAML 形态仍保留 `code_repos` 概念，字段语义与环境变量一致。
@@ -104,7 +111,7 @@ MVP 使用规则优先的关键词提取，不依赖 LLM 生成检索词。
 - 如果缓存路径存在且 `HEAD` 等于目标 commit，则复用。
 - 如果缓存路径存在但不是目标 commit 或不是有效 worktree，则在确认路径没有逃出 cache root 后删除并重建。
 
-以下是后续 LRU 清理和孤儿扫描的规划配置，当前尚未实现：
+V2 已实现每个 product 的 LRU 清理：
 
 ```yaml
 code_evidence:
@@ -116,9 +123,10 @@ code_evidence:
 清理策略：
 
 - worktree 按 repo + ref 复用。
-- 超过上限时删除最近最少使用的 worktree。
-- 正在被任务使用的 worktree 不删除。
-- 启动时扫描孤儿 worktree 并记录告警。
+- 每次 search 会 touch 当前 worktree 目录作为最近使用标记。
+- 超过上限时删除最近最少使用的同 product `wt_*` worktree。
+- 当前 search 正在使用的 worktree 不删除。
+- 启动时扫描孤儿 worktree 并记录告警仍是后续工作。
 
 ## 输出结构
 
@@ -139,7 +147,13 @@ code_evidence:
     "root": "/data/logagent/code_worktrees",
     "path": "/data/logagent/code_worktrees/influxdb/wt_abc123",
     "commit": "6f2a...",
-    "reused": true
+    "reused": true,
+    "maxPerRepo": 5,
+    "cleanup": {
+      "policy": "least_recently_used",
+      "removedCount": 0,
+      "remainingCount": 1
+    }
   },
   "taskContext": {
     "instanceId": "inst-prod-1",

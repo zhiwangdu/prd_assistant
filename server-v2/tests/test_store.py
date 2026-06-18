@@ -3747,6 +3747,7 @@ class StoreTests(unittest.TestCase):
             env_values = {
                 "LOGAGENT_V2_DATA_DIR": (root / "data").as_posix(),
                 "LOGAGENT_V2_CODE_WORKTREE_ROOT": (root / "code-cache").as_posix(),
+                "LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO": "7",
             }
             previous = {key: os.environ.get(key) for key in env_values}
             try:
@@ -3756,6 +3757,7 @@ class StoreTests(unittest.TestCase):
                     settings.effective_code_worktree_root,
                     root / "code-cache",
                 )
+                self.assertEqual(settings.code_worktree_max_per_repo, 7)
                 settings.ensure_dirs()
                 self.assertTrue((root / "code-cache").is_dir())
             finally:
@@ -3768,6 +3770,7 @@ class StoreTests(unittest.TestCase):
             settings = Settings(data_dir=root / "default-data", api_key="test")
             settings.ensure_dirs()
             self.assertTrue((root / "default-data" / "code_worktrees").is_dir())
+            self.assertEqual(settings.code_worktree_max_per_repo, 5)
 
             previous_value = os.environ.get("LOGAGENT_V2_CODE_WORKTREE_ROOT")
             try:
@@ -6912,6 +6915,111 @@ fi
             bad_ref = dict(answer, evidenceRefs=[f"{payload['artifactPath']}#matches/99"])
             with self.assertRaises(FinalAnswerValidationError):
                 normalize_and_validate_final_answer(settings, store, run["id"], bad_ref)
+
+    def test_task_mcp_search_code_prunes_lru_worktrees(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+            (repo / "src").mkdir()
+
+            def commit_version(version: str, symbol: str) -> None:
+                (repo / "src" / "planner.py").write_text(
+                    f"class {symbol}:\n"
+                    "    def apply(self):\n"
+                    f"        return '{symbol}'\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(["git", "add", "."], cwd=repo, check=True)
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "user.email=test@example.com",
+                        "-c",
+                        "user.name=Test User",
+                        "commit",
+                        "-m",
+                        version,
+                    ],
+                    cwd=repo,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                )
+                subprocess.run(["git", "tag", f"v{version}"], cwd=repo, check=True)
+
+            commit_version("1.0.0", "RuleV1")
+            commit_version("2.0.0", "RuleV2")
+            commit_version("3.0.0", "RuleV3")
+
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                code_worktree_root=root / "worktrees",
+                code_worktree_max_per_repo=2,
+                code_repos=(
+                    CodeRepoDefinition(
+                        product="opengemini",
+                        repo_path=repo,
+                        default_ref="HEAD",
+                        version_refs={
+                            "1.0.0": "v1.0.0",
+                            "2.0.0": "v2.0.0",
+                            "3.0.0": "v3.0.0",
+                        },
+                        search_roots=("src",),
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "investigate code cache pruning", "code_investigation", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+
+            def search(version: str, symbol: str, request_id: int) -> dict:
+                response = task_mcp_response(
+                    settings,
+                    store,
+                    run["id"],
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "logagent.search_code",
+                            "arguments": {
+                                "product": "opengemini",
+                                "version": version,
+                                "keywords": [symbol],
+                                "maxMatchesPerKeyword": 1,
+                            },
+                        },
+                    },
+                )
+                return json.loads(response["result"]["content"][0]["text"])
+
+            first = search("1.0.0", "RuleV1", 11)
+            first_path = Path(first["worktree"]["path"])
+            os.utime(first_path, (100, 100))
+            second = search("2.0.0", "RuleV2", 12)
+            second_path = Path(second["worktree"]["path"])
+            os.utime(second_path, (200, 200))
+            third = search("3.0.0", "RuleV3", 13)
+            third_path = Path(third["worktree"]["path"])
+
+            self.assertFalse(first_path.exists())
+            self.assertTrue(second_path.is_dir())
+            self.assertTrue(third_path.is_dir())
+            cleanup = third["worktree"]["cleanup"]
+            self.assertEqual(cleanup["policy"], "least_recently_used")
+            self.assertEqual(cleanup["maxPerRepo"], 2)
+            self.assertEqual(cleanup["removedCount"], 1)
+            self.assertEqual(cleanup["remainingCount"], 2)
+            self.assertEqual(cleanup["removed"][0]["path"], first_path.as_posix())
 
     def test_fetch_endpoint_runs_through_task_mcp_and_final_refs(self) -> None:
         class FetchHandler(BaseHTTPRequestHandler):
