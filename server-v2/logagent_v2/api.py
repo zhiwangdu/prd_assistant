@@ -575,6 +575,19 @@ def _tool_run_response(store: Store, run: dict) -> dict:
     }
 
 
+def _require_succeeded_log_analysis_task(run: dict, noun: str) -> None:
+    if run.get("status") != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"{noun} is only available after success",
+                "status": run.get("status"),
+            },
+        )
+    if run.get("kind", "analysis") != "analysis":
+        raise HTTPException(status_code=400, detail="task is not a log analysis task")
+
+
 def _task_create_upload_ids(payload: TaskCreate) -> list[str]:
     upload_ids: list[str] = []
 
@@ -1443,7 +1456,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tasks/{task_id}/artifacts")
     async def list_task_artifacts_alias(_: Auth, task_id: str) -> dict:
-        return await list_run_artifacts(_, task_id)
+        try:
+            run = store.get_run(task_id)
+            _require_succeeded_log_analysis_task(run, "task artifacts")
+            return get_run_artifacts(settings, store, task_id)
+        except HTTPException:
+            raise
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.get("/api/v2/runs/{run_id}/analysis")
     async def get_analysis(_: Auth, run_id: str) -> dict:
@@ -1478,7 +1498,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/tasks/{task_id}/result")
     async def get_task_result_alias(_: Auth, task_id: str) -> dict:
-        return await get_result(_, task_id)
+        try:
+            run = store.get_run(task_id)
+            _require_succeeded_log_analysis_task(run, "task result")
+            return get_run_result(settings, store, task_id)
+        except HTTPException:
+            raise
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     async def submit_run_message(run_id: str, payload: MessageCreate) -> dict:
         try:

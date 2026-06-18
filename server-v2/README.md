@@ -36,7 +36,9 @@ slice provides the durable foundation for the V2 product model:
   list/read/timeline/evidence/artifacts/analysis/result and user-message
   resume; list/read responses expose TaskSummary-compatible top-level fields
   and retain the raw V2 Run under `run` for diagnostics. Rust/V1-style
-  approval decisions use
+  task result/artifact aliases reject non-analysis tool runs; tool-run
+  artifacts and results remain available through `/api/v2/tools/runs/...`.
+  Rust/V1-style approval decisions use
   `/api/v2/tasks/:task_id/actions/:action_id/decision`.
 - Native Agent import compatibility through `native_agent.server_api: "v2"`:
   Chrome Extension still calls local `/imports`; Native Agent creates or reuses

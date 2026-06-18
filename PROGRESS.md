@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 Task Alias Kind Guard
+
+- V2 `/api/v2/tasks/:task_id/result` and `/api/v2/tasks/:task_id/artifacts`
+  now keep the Rust/V1 log-analysis boundary by rejecting successful `tool_run`
+  ids with `task is not a log analysis task`.
+- The generic V2 run route and dedicated `/api/v2/tools/runs/:run_id/...`
+  routes remain available for tool-run results and artifacts.
+- Added HTTP regression coverage for a successful tool run rejected by task
+  aliases while still readable through tool-run routes.
+- Updated Server V2 docs for the task alias/tool-run route boundary.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused task/tool-run alias pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-18 Server V2 Batch Upload Field Parity
 
 - V2 batch upload routes now parse multipart manually and accept repeated file

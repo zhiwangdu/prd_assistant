@@ -6561,6 +6561,73 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(fetched_body["run"]["id"], created_body["taskId"])
                 self.assertEqual(fetched_body["task"]["taskKind"], "tool_run")
 
+    def test_task_result_and_artifacts_aliases_reject_tool_runs(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "manual metadata",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+                created = client.post(
+                    "/api/v2/tools/logagent.list_metadata_instances/runs",
+                    headers=headers,
+                    json={"workspaceId": workspace["id"], "params": {}},
+                )
+                self.assertEqual(created.status_code, 202, created.text)
+                run_id = created.json()["taskId"]
+                store = client.app.state.store
+                result_artifact = write_artifact_bytes(
+                    settings,
+                    store,
+                    workspace["id"],
+                    "result.json",
+                    json.dumps({"status": "OK"}).encode("utf-8"),
+                    "application/json",
+                )
+                store.complete_tool_run(run_id, result_artifact["id"], {"status": "OK"})
+
+                task_artifacts = client.get(
+                    f"/api/v2/tasks/{run_id}/artifacts",
+                    headers=headers,
+                )
+                self.assertEqual(task_artifacts.status_code, 400, task_artifacts.text)
+                self.assertIn("not a log analysis task", task_artifacts.json()["detail"])
+
+                task_result = client.get(
+                    f"/api/v2/tasks/{run_id}/result",
+                    headers=headers,
+                )
+                self.assertEqual(task_result.status_code, 400, task_result.text)
+                self.assertIn("not a log analysis task", task_result.json()["detail"])
+
+                tool_artifacts = client.get(
+                    f"/api/v2/tools/runs/{run_id}/artifacts",
+                    headers=headers,
+                )
+                self.assertEqual(tool_artifacts.status_code, 200, tool_artifacts.text)
+                self.assertEqual(tool_artifacts.json()["run"]["kind"], "tool_run")
+
+                tool_result = client.get(
+                    f"/api/v2/tools/runs/{run_id}/result",
+                    headers=headers,
+                )
+                self.assertEqual(tool_result.status_code, 200, tool_result.text)
+                self.assertEqual(tool_result.json()["result"]["status"], "OK")
+
     def test_preprocess_tool_run_materializes_node_package_inputs(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)

@@ -86,7 +86,9 @@ Implemented in this slice:
   responses expose TaskSummary-compatible top-level fields and retain the raw
   V2 Run under `run` for diagnostics. The approval alias at
   `/api/v2/tasks/:task_id/actions/:action_id/decision` rejects action ids that
-  belong to a different task.
+  belong to a different task. Rust/V1-style task result/artifact aliases reject
+  non-analysis tool runs; manual tool-run results and artifacts are served from
+  `/api/v2/tools/runs/:run_id/result` and `/api/v2/tools/runs/:run_id/artifacts`.
 - Native Agent V2 target support: browser imports still enter the local Native
   Agent `/imports` endpoint, and `native_agent.server_api=v2` maps them to
   `POST /api/v2/sessions` plus Session-scoped upload APIs.
