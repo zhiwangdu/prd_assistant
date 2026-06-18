@@ -2,6 +2,29 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Case Import Multipart Parity
+
+- Extended `POST /api/v2/cases/imports` beyond JSON create payloads to also
+  accept Rust/V1-style multipart imports.
+- Multipart create now accepts `text` or `content` form fields, or one UTF-8
+  text file field named `file`; supported file inputs are text/json/yaml
+  content types or `.txt`, `.text`, `.md`, `.markdown`, `.log`, `.json`,
+  `.yaml`, `.yml`, and `.csv` filenames.
+- File imports sanitize stored filenames, reject unsupported binary-looking
+  file types, cap input size, decode as UTF-8, and continue to return HTTP 201
+  with both `import` and `draft` aliases.
+- Added HTTP regression coverage for multipart file import, multipart text
+  import, and unsupported file-type rejection.
+- Updated V2 Server and Case Store docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_case_import_patch_route_updates_draft`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 167 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/api.py tests/test_store.py`,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Case Import Create Alias Parity
 
 - Added `POST /api/v2/cases/imports` as the Rust/V1-style Case import create

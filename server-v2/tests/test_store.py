@@ -12746,6 +12746,61 @@ grep_results.json#matches/0
                     "V1 imported case",
                 )
 
+                multipart_file_response = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    files={
+                        "file": (
+                            "uploaded-case.md",
+                            b"Title: Multipart file case\nSymptom: Disk full",
+                            "text/markdown",
+                        )
+                    },
+                )
+                self.assertEqual(multipart_file_response.status_code, 201)
+                multipart_file = multipart_file_response.json()["import"]
+                self.assertEqual(multipart_file["filename"], "uploaded-case.md")
+                self.assertEqual(
+                    multipart_file["draft"]["title"],
+                    "Multipart file case",
+                )
+
+                multipart_text_response = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    files={
+                        "content": (
+                            None,
+                            "Title: Multipart text case\nSymptom: CPU spike",
+                        ),
+                        "filename": (None, "pasted/case.log"),
+                    },
+                )
+                self.assertEqual(multipart_text_response.status_code, 201)
+                multipart_text = multipart_text_response.json()["import"]
+                self.assertEqual(multipart_text["filename"], "case.log")
+                self.assertEqual(
+                    multipart_text["draft"]["title"],
+                    "Multipart text case",
+                )
+
+                unsupported_response = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    files={
+                        "file": (
+                            "case.png",
+                            b"\x89PNG\r\n",
+                            "image/png",
+                        )
+                    },
+                )
+                self.assertEqual(unsupported_response.status_code, 400)
+                self.assertIn(
+                    "unsupported case import file type",
+                    unsupported_response.json()["detail"],
+                )
+
                 preview_response = client.post(
                     "/api/v2/cases/imports/preview",
                     headers=headers,

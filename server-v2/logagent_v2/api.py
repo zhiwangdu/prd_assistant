@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, ValidationError
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from .analysis import get_run_analysis, get_run_artifacts
 from .artifacts import (
@@ -222,6 +223,21 @@ class CaseImportCreate(BaseModel):
     content: str | None = Field(default=None, max_length=200000)
     text: str | None = Field(default=None, max_length=200000)
     filename: str | None = Field(default=None, max_length=300)
+
+
+CASE_IMPORT_MAX_CHARS = 200000
+CASE_IMPORT_MAX_BYTES = CASE_IMPORT_MAX_CHARS * 4
+CASE_IMPORT_TEXT_SUFFIXES = {
+    ".txt",
+    ".text",
+    ".md",
+    ".markdown",
+    ".log",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".csv",
+}
 
 
 class CaseImportMessageCreate(BaseModel):
@@ -636,11 +652,110 @@ def _resolve_task_instance_id(
     return instance_id
 
 
+def _case_import_normalize_text(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("case import text must not be empty")
+    chars = len(value)
+    if chars > CASE_IMPORT_MAX_CHARS:
+        raise ValueError(
+            f"case import text contains {chars} chars and exceeds "
+            f"max input chars {CASE_IMPORT_MAX_CHARS}"
+        )
+    return value
+
+
+def _case_import_optional_filename(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    return safe_filename(value)
+
+
+def _case_import_supported_text_file(
+    filename: str,
+    content_type: str | None,
+) -> bool:
+    suffix_supported = Path(filename).suffix.lower() in CASE_IMPORT_TEXT_SUFFIXES
+    if suffix_supported:
+        return True
+    if content_type is None:
+        return False
+    content_type = content_type.lower()
+    return (
+        content_type.startswith("text/")
+        or "json" in content_type
+        or "yaml" in content_type
+    )
+
+
+def _case_import_form_string(value: object | None) -> str | None:
+    if value is None or isinstance(value, StarletteUploadFile):
+        return None
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 def _case_import_create_content(payload: CaseImportCreate) -> str:
     content = payload.content if payload.content is not None else payload.text
-    if content is None or not content.strip():
+    if content is None:
         raise ValueError("case import text must not be empty")
-    return content
+    return _case_import_normalize_text(content)
+
+
+async def _case_import_create_input(request: Request) -> tuple[str, str | None]:
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("multipart/form-data"):
+        return await _case_import_create_input_from_multipart(request)
+    try:
+        payload_json = await request.json()
+        payload = CaseImportCreate.model_validate(payload_json)
+    except (json.JSONDecodeError, ValidationError) as error:
+        raise ValueError(f"invalid case import JSON: {error}") from error
+    return (
+        _case_import_create_content(payload),
+        _case_import_optional_filename(payload.filename),
+    )
+
+
+async def _case_import_create_input_from_multipart(
+    request: Request,
+) -> tuple[str, str | None]:
+    try:
+        form = await request.form()
+    except Exception as error:
+        raise ValueError(f"invalid multipart request: {error}") from error
+    file_value = form.get("file")
+    if isinstance(file_value, StarletteUploadFile):
+        filename = _case_import_optional_filename(file_value.filename) or "case.txt"
+        if not _case_import_supported_text_file(filename, file_value.content_type):
+            raise ValueError(
+                "unsupported case import file type; use UTF-8 "
+                ".txt/.md/.log/.json/.yaml/.yml/.csv or paste text"
+            )
+        file_bytes = await file_value.read(CASE_IMPORT_MAX_BYTES + 1)
+        if len(file_bytes) > CASE_IMPORT_MAX_BYTES:
+            raise ValueError(
+                f"case import file exceeds {CASE_IMPORT_MAX_BYTES} bytes"
+            )
+        try:
+            return _case_import_normalize_text(file_bytes.decode("utf-8")), filename
+        except UnicodeDecodeError as error:
+            raise ValueError("case import file must be UTF-8 text") from error
+    if file_value is not None:
+        raise ValueError("invalid file field")
+    text = _case_import_form_string(form.get("text"))
+    if text is None:
+        text = _case_import_form_string(form.get("content"))
+    if text is None:
+        raise ValueError("missing text or file field")
+    filename = _case_import_optional_filename(
+        _case_import_form_string(form.get("filename"))
+    )
+    return _case_import_normalize_text(text), filename
 
 
 def normalize_optional_message_id(value: str | None) -> str | None:
@@ -2395,12 +2510,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/api/v2/cases/imports", status_code=201)
-    async def create_case_import_api(_: Auth, payload: CaseImportCreate) -> dict:
+    async def create_case_import_api(_: Auth, request: Request) -> dict:
         try:
+            content, filename = await _case_import_create_input(request)
             result = preview_case_import(
                 store=store,
-                content=_case_import_create_content(payload),
-                filename=payload.filename,
+                content=content,
+                filename=filename,
             )
             return {**result, "draft": result["import"]}
         except ValueError as error:

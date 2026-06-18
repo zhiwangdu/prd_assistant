@@ -82,8 +82,11 @@ PATCH /api/v2/cases/:case_id
 Case import API 创建未确认草稿，不直接写入 Case Store。`POST /api/cases/imports` 支持 JSON 文本和 multipart UTF-8 文本类文件；PDF/DOCX 暂不解析。LLM Gateway 将原始材料整理为 `structuredCase`，如果缺少 `title`、`symptom`、`rootCause` 或 `solution`，返回 `missingFields` 和 `assistantQuestion`。`POST /api/cases/imports/:draft_id/messages` 追加用户补充并重新整理，`PATCH /api/cases/imports/:draft_id` 保存手工修正，`POST /api/cases/imports/:draft_id/confirm` 只有在必填字段完整时才创建 `sourceType=manual` Case。
 
 V2 Case import 使用同样的产品语义：`POST /api/v2/cases/imports` 是 Rust/V1-style
-create alias，接受 V1 `text` 或 V2 `content`，返回 HTTP 201 并同时提供 `import`
-和 `draft` 字段；preview 持久化 source text、draft、validation errors 和 messages；
+create alias，接受 JSON V1 `text` / V2 `content`、multipart `text`/`content`
+字段或 UTF-8 文本文件 `file`，返回 HTTP 201 并同时提供 `import` 和 `draft`
+字段；文件导入只接受文本/json/yaml content type 或 `.txt`、`.text`、`.md`、
+`.markdown`、`.log`、`.json`、`.yaml`、`.yml`、`.csv` 文件名；preview 持久化
+source text、draft、validation errors 和 messages；
 messages endpoint 追加用户补充，合并原文与消息重新解析，并在仍缺字段时生成下一轮
 assistant question；PATCH 保存未确认草稿的人工修正并重算 validation errors；confirm 仍只在
 必填字段完整时创建 `manual` Case，已确认草稿拒绝继续修改。
