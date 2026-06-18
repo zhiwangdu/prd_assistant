@@ -1929,6 +1929,88 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(listed.status_code, 200, listed.text)
                 self.assertEqual(len(listed.json()["uploads"]), 2)
 
+    def test_single_upload_accepts_v1_filename_field_override(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "single upload",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+                expected_filename = safe_filename("../renamed log.txt")
+
+                uploaded = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads",
+                    headers=headers,
+                    files=[
+                        ("filename", (None, "../renamed log.txt")),
+                        ("file", ("original.log", b"alpha\n", "text/plain")),
+                    ],
+                )
+                self.assertEqual(uploaded.status_code, 200, uploaded.text)
+                uploaded_body = uploaded.json()
+                self.assertEqual(uploaded_body["upload"]["filename"], expected_filename)
+                self.assertEqual(
+                    uploaded_body["artifact"]["preview"]["filename"],
+                    expected_filename,
+                )
+                self.assertTrue(
+                    uploaded_body["artifact"]["relative_path"].endswith(
+                        f"/{expected_filename}"
+                    )
+                )
+
+                listed = client.get(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads",
+                    headers=headers,
+                )
+                self.assertEqual(listed.status_code, 200, listed.text)
+                self.assertEqual(
+                    [item["filename"] for item in listed.json()["uploads"]],
+                    [expected_filename],
+                )
+
+                session_response = client.post(
+                    "/api/v2/sessions",
+                    headers=headers,
+                    json={
+                        "title": "Upload session",
+                        "question": "session upload",
+                        "analysisMode": "diagnose",
+                        "analysisLanguage": "en-US",
+                    },
+                )
+                self.assertEqual(session_response.status_code, 201, session_response.text)
+                session_id = session_response.json()["sessionId"]
+                session_filename = safe_filename("session/renamed.log")
+
+                session_upload = client.post(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                    files=[
+                        ("file", ("session-original.log", b"beta\n", "text/plain")),
+                        ("filename", (None, "session/renamed.log")),
+                    ],
+                )
+                self.assertEqual(session_upload.status_code, 200, session_upload.text)
+                self.assertEqual(
+                    session_upload.json()["upload"]["filename"],
+                    session_filename,
+                )
+
     def test_chunked_upload_rejects_chunk_over_configured_limit(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

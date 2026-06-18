@@ -964,7 +964,9 @@ evidence and does not affect final-answer validation.
 
 V2 supports three upload paths:
 
-- `POST /api/v2/workspaces/<workspace_id>/uploads` for one multipart file.
+- `POST /api/v2/workspaces/<workspace_id>/uploads` for one multipart `file`.
+  The request may also include a text `filename` field; V2 uses it as the
+  stored filename after the same basename and character filtering as Rust/V1.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/batch` for multiple
   multipart files under one Workspace; repeated file parts may be named
   `file` or `files`, matching Rust/V1 batch upload clients.
@@ -974,11 +976,12 @@ V2 supports three upload paths:
 
 Session APIs expose the same stored uploads through an attachment set:
 `POST /api/v2/sessions/<session_id>/uploads` accepts either one multipart
-`file` for direct upload or JSON `{"uploadIds":[...]}` to attach existing
-Workspace uploads. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
-detaches an upload only before any task run exists; the Upload row and artifact
-remain stored. Native Agent V2 mode uses these Session-scoped upload APIs, so
-browser imports do not require Chrome Extension code changes.
+`file` for direct upload, with the same optional text `filename` override, or
+JSON `{"uploadIds":[...]}` to attach existing Workspace uploads. `DELETE
+/api/v2/sessions/<session_id>/uploads/<upload_id>` detaches an upload only
+before any task run exists; the Upload row and artifact remain stored. Native
+Agent V2 mode uses these Session-scoped upload APIs, so browser imports do not
+require Chrome Extension code changes.
 
 Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Each chunk request is bounded by

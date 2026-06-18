@@ -1,6 +1,22 @@
 # Development Progress
 
-Last updated: 2026-06-18
+Last updated: 2026-06-19
+
+## 2026-06-19 Server V2 Single Upload Filename Field Parity
+
+- V2 workspace and session single multipart upload routes now accept the
+  Rust/V1-compatible text `filename` field and use it to override the uploaded
+  file part name after basename and character filtering.
+- The shared single-upload receiver now persists the sanitized filename in both
+  the Upload row and artifact preview/path, while preserving JSON attach
+  behavior on Session uploads.
+- Added HTTP regression coverage for Workspace and Session direct uploads using
+  the V1 `filename` multipart field.
+- Updated Server V2 README/SPEC for the single-upload filename override
+  contract.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused upload pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
 
 ## 2026-06-18 Server V2 Task Alias Kind Guard
 

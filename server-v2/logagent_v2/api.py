@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -1031,12 +1031,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
-    @app.post("/api/v2/workspaces/{workspace_id}/uploads")
-    async def upload_file(_: Auth, workspace_id: str, file: UploadFile = File(...)) -> dict:
+    async def receive_single_upload_request(workspace_id: str, request: Request) -> dict:
         try:
             store.get_workspace(workspace_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+        content_type = request.headers.get("content-type", "").lower()
+        if not content_type.startswith("multipart/form-data"):
+            raise HTTPException(status_code=415, detail="unsupported upload content type")
+        try:
+            form = await request.form()
+        except Exception as error:
+            raise HTTPException(
+                status_code=400, detail=f"invalid multipart request: {error}"
+            ) from error
+
+        files = [
+            value
+            for key, value in form.multi_items()
+            if key == "file" and isinstance(value, StarletteUploadFile)
+        ]
+        if len(files) != 1:
+            raise HTTPException(status_code=400, detail="expected exactly one file field")
+
+        filename_override: str | None = None
+        for key, value in form.multi_items():
+            if key == "filename":
+                if isinstance(value, StarletteUploadFile):
+                    raise HTTPException(status_code=400, detail="invalid filename field")
+                filename_override = str(value)
+
+        file = files[0]
+        filename = safe_filename(filename_override or file.filename or "upload.bin")
         data = await file.read(settings.max_upload_bytes + 1)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
@@ -1044,14 +1071,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=settings,
             store=store,
             workspace_id=workspace_id,
-            filename=file.filename or "upload.bin",
+            filename=filename,
             data=data,
             content_type=file.content_type or "application/octet-stream",
             schema_name=None,
-            preview={"filename": file.filename or "upload.bin", "sizeBytes": len(data)},
+            preview={"filename": filename, "sizeBytes": len(data)},
         )
-        upload = store.create_upload(workspace_id, file.filename or "upload.bin", artifact["id"])
+        upload = store.create_upload(workspace_id, filename, artifact["id"])
         return {"upload": upload, "artifact": artifact}
+
+    @app.post("/api/v2/workspaces/{workspace_id}/uploads")
+    async def upload_file(_: Auth, workspace_id: str, request: Request) -> dict:
+        return await receive_single_upload_request(workspace_id, request)
 
     @app.post("/api/v2/sessions/{session_id}/uploads")
     async def upload_or_attach_session_uploads(
@@ -1074,11 +1105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except ValueError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
         if content_type.startswith("multipart/form-data"):
-            form = await request.form()
-            files = form.getlist("file")
-            if len(files) != 1 or not hasattr(files[0], "read"):
-                raise HTTPException(status_code=400, detail="expected exactly one file field")
-            return await upload_file(None, session_id, files[0])
+            return await receive_single_upload_request(session_id, request)
         raise HTTPException(status_code=415, detail="unsupported upload content type")
 
     @app.delete("/api/v2/sessions/{session_id}/uploads/{upload_id}")
