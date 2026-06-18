@@ -184,7 +184,9 @@ Implemented in this slice:
   `lines[].line` aliases, plus `requestedPath` when a legacy selector resolved
   to a canonical Workspace path. Logical slice paths must use stable
   `log_slices/slice_<digest>.json#lines` refs derived from the requested path
-  and resolved line range.
+  and requested line range. Persisted `startLine`/`endLine` keep the requested
+  range even when the file is shorter, while `lines[]` only contains actually
+  readable lines.
 - Tool Plugin registry. Configured subprocess tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, explicit V2 analyzer executable environment
   variables, or standard source-built analyzer filenames auto-discovered under

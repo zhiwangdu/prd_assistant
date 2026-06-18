@@ -168,7 +168,7 @@ rg -i "error|exception|timeout|fail|failed|panic|fatal|refused|denied|verify" ex
 
 `grep_results.json` 和后续 `log_searches/*.json` 的每条 match 同时写入 V2 字段 `path` / `lineNumber` / `ref` 和 Rust/V1 兼容字段 `file` / `line` / `evidenceRef`。
 
-`log_slices/*.json` 同样直接写入 Rust/V1 兼容的 `sourcePath` 和 `lines[].line`，并在旧 selector 被解析到 canonical path 时保留 `requestedPath`。
+`log_slices/*.json` 同样直接写入 Rust/V1 兼容的 `sourcePath` 和 `lines[].line`，并在旧 selector 被解析到 canonical path 时保留 `requestedPath`。`startLine` / `endLine` 保留用户请求范围；如果文件短于请求范围，`lines[]` 只包含实际存在的行。
 
 上下文提取：
 

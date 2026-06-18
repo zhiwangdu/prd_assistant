@@ -967,7 +967,9 @@ It currently supports:
   `before`/`after`, or V1-compatible `startLine`/`endLine`; responses keep the
   nested V2 `slice` object and expose Rust-compatible top-level `artifactPath`,
   `evidenceRefs`, and `lines`; logical slice paths use stable
-  `log_slices/slice_<digest>.json#lines` refs
+  `log_slices/slice_<digest>.json#lines` refs. The persisted `startLine` and
+  `endLine` keep the requested range, while `lines[]` only includes lines that
+  exist in the file.
 - `tools/call logagent.run_domain_tool`
 - `tools/call logagent.list_fetch_endpoints`
 - `tools/call logagent.fetch`

@@ -4041,7 +4041,7 @@ class StoreTests(unittest.TestCase):
             )
             eof_payload = json.loads(eof["result"]["content"][0]["text"])
             self.assertEqual(eof_payload["slice"]["startLine"], 10)
-            self.assertEqual(eof_payload["slice"]["endLine"], 4)
+            self.assertEqual(eof_payload["slice"]["endLine"], 12)
             self.assertEqual(eof_payload["slice"]["lines"], [])
 
     def test_task_mcp_runs_configured_tool_by_id(self) -> None:

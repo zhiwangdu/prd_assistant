@@ -170,6 +170,7 @@ Python V2 对应环境变量为 `LOGAGENT_V2_GREP_KEYWORDS` 和 `LOGAGENT_V2_MAX
 - 路径逃逸压缩包被拒绝。
 - manifest 路径使用 `/` 分隔。
 - 普通多上传场景下，同名上传和同名 archive 成员必须产生唯一 `extracted/<uploadDir>/...` 路径；`logagent.get_log_slice` 和 Tool Runner fallback 必须能按该路径精确选中文件。
+- `logagent.get_log_slice` 的 `startLine` / `endLine` 必须保留请求范围；当文件短于请求范围时，`lines[]` 为空或只包含实际存在的行，不能把 `endLine` 截断成小于 `startLine` 的反向范围。
 - 无上传文本问题分析生成空 manifest 和 `totalMatches=0` 的 grep 结果。
 - README 和 SPEC 在支持格式或产物结构变更时同步更新。
 - 相同 action id 重试不会生成不一致结果。

@@ -329,7 +329,8 @@ def get_log_line_range(
         raise ValueError(f"log path {path!r} is not available in this workspace")
     lines = selected.text.splitlines()
     start = start_line
-    end = min(end_line, len(lines))
+    end = end_line
+    readable_end = min(end_line, len(lines))
     slice_id = stable_log_slice_id(
         path=path,
         line_number=line_number,
@@ -352,7 +353,7 @@ def get_log_line_range(
                 "line": current,
                 "text": lines[current - 1][:4000],
             }
-            for current in range(start, end + 1)
+            for current in range(start, readable_end + 1)
         ],
         "ref": f"{slice_path}#lines",
     }
