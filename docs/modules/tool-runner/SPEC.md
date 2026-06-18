@@ -48,6 +48,7 @@ Server 还提供只读工具目录和工具包导出：
   `configuredArgs` / `match` 只读项和 V2 `properties` 镜像。
 - `GET /api/exports/tools.zip` 打包当前 enabled 且解析为普通可执行文件的 configured 工具二进制、enabled `pprof_analyzer` 的 Go executable、wrapper、示例配置和 `tools-manifest.json`；缺失、非普通文件、无执行权限或读取失败的工具在 manifest 标记 skipped，内置工具不导出。
 - `logagent.fetch` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝 `tools/call logagent.fetch`。V2 `POST /api/v2/fetch/endpoints/:endpoint_id/runs` 排队 Fetch `tool_run`，可复用传入的 `workspaceId`，未传时自动创建隔离 workspace；`GET /api/v2/fetch/runs` 只读列出 `toolId=logagent.fetch` 的持久化 tool runs，并支持 `endpointId`、`fetchId`、V1 风格 `fetch_id`、`workspaceId` 和 `limit` 过滤。
+- `PATCH /api/v2/fetch/endpoints/:endpoint_id` 必须基于 hydrate 后的完整 endpoint 合并 partial update，只把脱敏 URL/header/body 写入 `fetch_endpoints`，并刷新或删除 `fetch_credential_sets` 以匹配合并结果。
 - `logagent.huawei_cloud_package_sync` descriptor 可通过 `/api/tools`、`logagent://tools/catalog` 和 `logagent.list_tools` 看到；只读 HTTP MCP 必须拒绝执行任何非只读内置工具。
 
 ## 首批工具
@@ -207,6 +208,7 @@ Huawei package sync 的 `result.json` 至少包含：
 - Claude Code 只能通过 `logagent.run_domain_tool` 选择允许的工具、受控 workspace-relative 输入和结构化参数，不能传入任意命令、本地路径或环境变量。
 - 只读 HTTP MCP 和 `tools.zip` 导出不能运行 Tool Runner，不能导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件；内置工具必须标记为只读、不可编辑、不可导出，是否可手动运行由 descriptor 的 `runnable` 决定。
 - Fetch endpoint 默认关闭；启用后 `LOGAGENT_V2_FETCH_SECRET_KEY` 必须是有效 Fernet 32-byte base64 key，`fetch.allowed_hosts` / `LOGAGENT_V2_FETCH_ALLOWED_HOSTS` 必须非空，只允许访问 allowlist 中的 `http/https` 目标。条目支持 `host`、`host:port` 和 scheme-specific `http(s)://host[:port]`；URL 形式会固定 scheme 和端口，省略端口时使用默认端口。默认不跟随 redirect，只有 endpoint `followRedirects=true` 时才按上限逐跳跟随；每个 redirect hop 重新校验 allowlist，跨 host 不转发 Authorization/Cookie，所有 sensitive header/query/body 值必须脱敏展示并加密持久化。
+- 更新 sensitive endpoint 时必须先 hydrate 原 credential set，再合并 PATCH 字段；缺少有效 `LOGAGENT_V2_FETCH_SECRET_KEY` 时不得写入更新后的 endpoint row。
 - V2 Fetch cURL import accepts copied bash commands with an optional leading
   `$` shell prompt, matching the Rust/V1 import tolerance, while still rejecting
   unsupported flags instead of broadening the network or filesystem boundary.

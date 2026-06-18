@@ -7357,6 +7357,89 @@ fi
             server.server_close()
             thread.join(timeout=2)
 
+    def test_fetch_endpoint_patch_updates_storage_and_credentials(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            key = base64.urlsafe_b64encode(b"2" * 32).decode("ascii")
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                fetch_enabled=True,
+                fetch_allowed_hosts=("127.0.0.1",),
+                fetch_secret_key=key,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                created = client.post(
+                    "/api/v2/fetch/endpoints",
+                    headers=headers,
+                    json={
+                        "name": "secret endpoint",
+                        "method": "GET",
+                        "url": "http://127.0.0.1/data?api_key=old-secret",
+                        "headers": {
+                            "Authorization": "Bearer old-header",
+                            "X-Trace": "old",
+                        },
+                        "body": "password=old-body&keep=1",
+                        "enabled": True,
+                    },
+                )
+                self.assertEqual(created.status_code, 200, created.text)
+                endpoint_id = created.json()["id"]
+
+                patched = client.patch(
+                    f"/api/v2/fetch/endpoints/{endpoint_id}",
+                    headers=headers,
+                    json={
+                        "name": "updated secret endpoint",
+                        "method": "POST",
+                        "url": "http://127.0.0.1/data?api_key=new-secret",
+                        "headers": {
+                            "Authorization": "Bearer new-header",
+                            "X-Trace": "new",
+                        },
+                        "body": "password=new-body&keep=2",
+                        "enabled": False,
+                        "followRedirects": True,
+                    },
+                )
+                self.assertEqual(patched.status_code, 200, patched.text)
+                body = patched.json()
+
+            self.assertEqual(body["id"], endpoint_id)
+            self.assertEqual(body["name"], "updated secret endpoint")
+            self.assertEqual(body["method"], "POST")
+            self.assertFalse(body["enabled"])
+            self.assertTrue(body["followRedirects"])
+            self.assertIn("api_key=__REDACTED__", body["url"])
+            self.assertEqual(body["headers"]["Authorization"], "__REDACTED__")
+            self.assertEqual(body["headers"]["X-Trace"], "new")
+            self.assertIn("password=__REDACTED__", body["bodyPreview"])
+            self.assertTrue(body["hasCredentials"])
+
+            stored = store.get_fetch_endpoint(endpoint_id)
+            self.assertIn("api_key=__REDACTED__", stored["url"])
+            self.assertEqual(stored["headers"]["Authorization"], "__REDACTED__")
+            self.assertIn("password=__REDACTED__", stored["body"])
+
+            credential = store.get_fetch_credential_set(endpoint_id)
+            self.assertIsNotNone(credential)
+            assert credential is not None
+            self.assertNotIn("new-header", credential["encrypted"])
+            hydrated = hydrate_fetch_endpoint(settings, store, stored)
+            self.assertIn("api_key=new-secret", hydrated["url"])
+            self.assertEqual(hydrated["headers"]["Authorization"], "Bearer new-header")
+            self.assertEqual(hydrated["headers"]["X-Trace"], "new")
+            self.assertIn("new-body", hydrated["body"])
+            self.assertTrue(hydrated["followRedirects"])
+
     def test_fetch_redirects_are_revalidated_against_allowlist(self) -> None:
         class RedirectHandler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:

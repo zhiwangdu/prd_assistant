@@ -1111,7 +1111,9 @@ password, API key, session, Authorization, or Cookie, V2 stores only a redacted
 endpoint definition in `fetch_endpoints` and encrypts the full request material
 in `fetch_credential_sets` using `LOGAGENT_V2_FETCH_SECRET_KEY`. Creating or
 updating a sensitive endpoint without a valid key is rejected before the
-endpoint row is written. Execution hydrates the endpoint from the credential
+endpoint row is written. `PATCH /api/v2/fetch/endpoints/:endpoint_id` rewrites
+the redacted endpoint row and refreshes the encrypted credential set from the
+merged endpoint definition. Execution hydrates the endpoint from the credential
 set, while API, MCP, and result artifacts continue to show only redacted values.
 
 `request_user_input` and `request_approval` persist pending `actions`, write

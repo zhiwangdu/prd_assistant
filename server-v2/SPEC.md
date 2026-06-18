@@ -905,6 +905,9 @@ flag, `followRedirects`, and timestamps. Sensitive request material is stored
 separately in `fetch_credential_sets` as encrypted JSON using
 `LOGAGENT_V2_FETCH_SECRET_KEY`. The public API returns redacted endpoint
 previews; raw request material is only hydrated inside the server-side executor.
+Updating an endpoint through `PATCH /api/v2/fetch/endpoints/:endpoint_id` must
+apply partial updates to the hydrated endpoint, persist only the redacted row,
+and refresh or delete the credential set to match the merged endpoint.
 
 Endpoints can be created directly or imported from DevTools bash cURL commands:
 

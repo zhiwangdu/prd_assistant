@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Endpoint Patch Regression
+
+- Added API-level regression coverage for `PATCH
+  /api/v2/fetch/endpoints/:endpoint_id` on a sensitive Fetch endpoint.
+- The test verifies partial update behavior across method, URL, headers, body,
+  enabled state, and `followRedirects`; public/API storage remains redacted
+  while server-side hydration uses the refreshed encrypted credential set.
+- Updated V2 Server and Tool Runner docs to specify that endpoint PATCH merges
+  against the hydrated endpoint and refreshes or removes the credential set.
+- Verification passed: focused Fetch endpoint PATCH pytest selection,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (133 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Source-built Analyzer V1 Env Alias Coverage
 
 - Added regression coverage that V2 source-built analyzer auto-registration
