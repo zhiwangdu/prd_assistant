@@ -23,6 +23,10 @@ Python V2 已实现只读 `git grep` MVP：
 - 管理员通过 `LOGAGENT_V2_CODE_REPOS_JSON` 配置本地 git repo、默认 ref、版本到 ref 映射和相对 search roots。
 - Task MCP / Agent provider prompt 在存在配置仓库时广告 `logagent.search_code`。
 - `logagent.search_code` 只接受配置内的 `product`、`version` 或受控 `gitRef`，用 `git rev-parse` 锁定 commit，再用 `git grep <commit>` 做只读检索。
+- 若当前 run 的 Session 绑定了 Metadata `instanceId`，且该 instance snapshot 带有
+  `product` / `version`，`logagent.search_code` 会要求请求中的 `product` /
+  `version` 与该上下文一致；未传 `version` 时自动继承 instance version，显式
+  `gitRef` 也必须等于该 version 映射到的配置 ref。
 - 结果写入当前 run 的 `code_evidence/<action_id>.json` evidence artifact，匹配行可作为最终答案 ref：`code_evidence/<action_id>.json#matches/<index>`。
 - 同一 run 内相同 product/ref/keywords/maxMatches 请求会复用已有 artifact，不重复写入。
 
@@ -63,8 +67,8 @@ export LOGAGENT_V2_CODE_REPOS_JSON='{
 
 ## 流程
 
-1. 根据 `product` 找到配置的代码仓。
-2. 根据 `version` 找到 tag 或 branch。
+1. 根据 `product` 找到配置的代码仓；若任务绑定 Metadata instance，则先校验 product 与 instance 上下文一致。
+2. 根据 `version` 找到 tag 或 branch；若任务绑定 Metadata instance 且请求省略 version，则自动使用 instance version。
 3. 当前 V2 用 `git rev-parse <ref>^{commit}` 固化 commit，不 checkout、不 pull、不创建 worktree。
 4. 从显式 `keywords` 或 `query` 中提取关键词。
 5. 使用 `git grep <commit>` 在配置的 `searchRoots` 检索。
@@ -120,6 +124,11 @@ code_evidence:
     "product": "influxdb",
     "searchRoots": ["query", "storage"]
   },
+  "taskContext": {
+    "instanceId": "inst-prod-1",
+    "product": "influxdb",
+    "version": "3.0.2"
+  },
   "keywords": ["PushDownFilterRule"],
   "keywordCounts": {
     "PushDownFilterRule": 1
@@ -144,6 +153,8 @@ code_evidence:
 
 - 代码仓由管理员预先配置和同步。
 - 任务执行时只允许切到配置中允许的 ref。
+- 绑定 Metadata instance 的任务中，MCP 请求不能绕过该 instance 的
+  product/version 安全映射。
 - 当前 V2 第一版只做只读代码检索和证据引用，不 checkout、不 pull、不修改代码仓。
 - 不自动拉取陌生仓库，不自动修改代码。
 - 后续可增加版本间 diff / commit 对比，用于定位回归。

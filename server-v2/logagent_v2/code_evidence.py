@@ -83,8 +83,16 @@ def run_code_search(
     run: JsonObject,
     arguments: JsonObject,
 ) -> JsonObject:
-    repo = resolve_code_repo(settings, require_string(arguments, "product"))
-    version = optional_string(arguments.get("version"))
+    task_context = task_code_context(store, run)
+    product = resolve_task_code_product(
+        require_string(arguments, "product"),
+        task_context,
+    )
+    repo = resolve_code_repo(settings, product)
+    version = resolve_task_code_version(
+        optional_string(arguments.get("version")),
+        task_context,
+    )
     configured_ref = resolve_code_ref(repo, version, optional_string(arguments.get("gitRef")))
     commit = git_output(repo.repo_path, "rev-parse", f"{configured_ref}^{{commit}}")
     keywords = normalize_code_keywords(arguments.get("keywords"), arguments.get("query"))
@@ -114,6 +122,7 @@ def run_code_search(
         "ref": configured_ref,
         "commit": commit,
         "repo": {"product": repo.product, "searchRoots": list(repo.search_roots)},
+        "taskContext": task_context,
         "keywords": keywords,
         "keywordCounts": keyword_counts,
         "matchCount": len(matches),
@@ -156,11 +165,67 @@ def run_code_search(
             "version": version,
             "ref": configured_ref,
             "commit": commit,
+            "taskContext": task_context,
             "matchCount": len(matches),
             "evidenceRefPrefix": f"{logical_path}#matches/",
         },
     )
     return code_search_response(result, evidence)
+
+
+def task_code_context(store: Store, run: JsonObject) -> JsonObject:
+    workspace_id = run.get("workspace_id")
+    if not isinstance(workspace_id, str) or not workspace_id:
+        return {}
+    try:
+        workspace = store.get_workspace(workspace_id)
+    except KeyError:
+        return {}
+    instance_id = workspace.get("instanceId")
+    if not isinstance(instance_id, str) or not instance_id.strip():
+        return {}
+    instance_id = instance_id.strip()
+    metadata = store.get_metadata_instance(instance_id, missing_ok=True)
+    if not isinstance(metadata, dict):
+        return {"instanceId": instance_id}
+    snapshot = metadata.get("snapshot")
+    instance = snapshot.get("instance") if isinstance(snapshot, dict) else {}
+    if not isinstance(instance, dict):
+        instance = {}
+    context: JsonObject = {"instanceId": instance_id}
+    product = optional_string(instance.get("product"))
+    version = optional_string(instance.get("version"))
+    if product:
+        context["product"] = product
+    if version:
+        context["version"] = version
+    return context
+
+
+def resolve_task_code_product(requested_product: str, context: JsonObject) -> str:
+    product = requested_product.strip()
+    context_product = optional_string(context.get("product"))
+    if context_product and product.lower() != context_product.lower():
+        raise ValueError(
+            "logagent.search_code product must match task metadata instance product "
+            f"{context_product}"
+        )
+    return product
+
+
+def resolve_task_code_version(
+    requested_version: str | None,
+    context: JsonObject,
+) -> str | None:
+    context_version = optional_string(context.get("version"))
+    if context_version:
+        if requested_version and requested_version != context_version:
+            raise ValueError(
+                "logagent.search_code version must match task metadata instance version "
+                f"{context_version}"
+            )
+        return context_version
+    return requested_version
 
 
 def resolve_code_repo(settings: Settings, product: str) -> CodeRepoDefinition:
@@ -181,6 +246,12 @@ def resolve_code_ref(
         explicit_ref = validate_configured_git_ref(repo.product, explicit_ref)
         if explicit_ref not in allowed_refs:
             raise ValueError("gitRef must match a configured defaultRef or versionRefs value")
+        if version:
+            expected_ref = repo.version_refs.get(version)
+            if expected_ref is None:
+                raise ValueError(f"unknown version {version} for code repo {repo.product}")
+            if explicit_ref != expected_ref:
+                raise ValueError("gitRef must match the configured ref for version")
         return explicit_ref
     if version and version in repo.version_refs:
         return repo.version_refs[version]

@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Task Context Guard
+
+- Tightened task MCP `logagent.search_code` so runs bound to a Metadata
+  `instanceId` inherit that instance's `product` / `version` and reject
+  mismatched `product`, `version`, or explicit `gitRef` values.
+- Added `taskContext` to Code Evidence artifacts and evidence payloads, keeping
+  the existing final-answer refs `code_evidence/<action_id>.json#matches/<index>`.
+- Updated root, V2 Server, and Code Evidence README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Code Evidence pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (130 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Task MCP Response Parity
 
 - Extended task MCP `logagent.fetch` responses with Rust/V1-compatible top-level

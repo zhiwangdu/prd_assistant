@@ -277,7 +277,9 @@ Implemented in this slice:
 - Code Evidence MVP for configured local git repositories. `logagent.search_code`
   maps product/version to configured refs, runs read-only `git grep` under
   configured search roots, writes `code_evidence/<action_id>.json`, and exposes
-  final-answer refs as `code_evidence/<action_id>.json#matches/<index>`.
+  final-answer refs as `code_evidence/<action_id>.json#matches/<index>`. When a
+  run is bound to a Metadata instance, the tool inherits and enforces that
+  instance's product/version before resolving refs.
 - Legacy System Context resource compatibility APIs backed by SQLite. V2 can
   create, list, read, update, version, activate, and preview prompt packs,
   architecture docs, runbooks, glossaries, tool capability notes, knowledge

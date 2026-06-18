@@ -11,6 +11,10 @@ Python V2 已实现只读 `git grep` MVP：
 - 通过 `LOGAGENT_V2_CODE_REPOS_JSON` 配置本地 git repo、默认 ref、版本到 ref 映射和相对 search roots。
 - Task MCP 和 OpenAI-compatible / binary provider prompt 在存在配置仓库时广告 `logagent.search_code`。
 - `logagent.search_code` 使用 `git rev-parse` 固化 commit，再执行 `git grep <commit>` 检索，不 checkout、不 pull、不修改仓库。
+- 如果当前 run 所属 Session 绑定了 Metadata `instanceId`，且 snapshot
+  `instance.product` / `instance.version` 存在，`logagent.search_code` 必须把
+  请求限制在该 product/version 上；省略 `version` 时继承 instance version，
+  显式 `gitRef` 必须等于该 version 的配置 ref。
 - 检索结果写入当前 run 的 `code_evidence/<action_id>.json` artifact，`matches[].ref` 可作为最终答案 evidence ref。
 
 尚未实现独立 worktree/cache、版本间 diff、commit 对比、符号级解析和 fix mode 代码修改。
@@ -27,7 +31,8 @@ Python V2 已实现只读 `git grep` MVP：
 ## 处理流程
 
 ```text
-version -> branch/tag/ref mapping
+metadata instance product/version guard
+  -> version -> branch/tag/ref mapping
   -> git rev-parse <ref>^{commit}
   -> git grep <commit> under configured searchRoots
   -> extract file/line/text evidence refs
@@ -48,6 +53,9 @@ code_evidence/<action_id>.json
 - `commit`
 - `repo.product`
 - `repo.searchRoots`
+- `taskContext.instanceId`
+- `taskContext.product`
+- `taskContext.version`
 - `keywords`
 - `keywordCounts`
 - `matchCount`
@@ -72,7 +80,8 @@ code_evidence/<action_id>.json#matches/<index>
 - 后续需要 checkout 或 fix mode 时，必须使用独立 worktree/cache，不能影响用户工作区。
 - 版本 ref、显式 `gitRef` 和 search roots 必须来自管理员配置。
 - `searchRoots` 必须是安全相对路径，不能包含绝对路径、`.`、`..`、空 segment 或反斜杠。
-- MCP 请求不能覆盖 task 的 product/version/ref 安全映射。
+- MCP 请求不能覆盖 task 的 product/version/ref 安全映射；当 task 通过
+  Metadata instance 已确定 product/version 时，请求 product/version/gitRef 必须与之匹配。
 
 ## 验收标准
 

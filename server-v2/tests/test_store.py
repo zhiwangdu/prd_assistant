@@ -6476,10 +6476,25 @@ fi
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
+            store.upsert_metadata_instance(
+                instance_id="inst-code",
+                remark="code context",
+                template_type="json",
+                snapshot={
+                    "instance": {
+                        "instanceId": "inst-code",
+                        "product": "opengemini",
+                        "version": "1.0.0",
+                    },
+                    "cluster": {},
+                },
+                raw={},
+            )
             workspace = store.create_workspace(
                 "investigate filter pushdown",
                 "code_investigation",
                 "en-US",
+                instance_id="inst-code",
             )
             run = store.create_run(workspace["id"])
 
@@ -6508,7 +6523,6 @@ fi
                         "name": "logagent.search_code",
                         "arguments": {
                             "product": "opengemini",
-                            "version": "1.0.0",
                             "keywords": ["PushDownFilterRule"],
                             "maxMatchesPerKeyword": 2,
                         },
@@ -6517,11 +6531,73 @@ fi
             )
             payload = json.loads(search_response["result"]["content"][0]["text"])
             self.assertTrue(payload["artifactPath"].startswith("code_evidence/code_"))
+            self.assertEqual(payload["version"], "1.0.0")
+            self.assertEqual(payload["ref"], "v1.0.0")
+            self.assertEqual(payload["codeEvidence"]["taskContext"]["instanceId"], "inst-code")
             self.assertEqual(payload["matchCount"], 1)
             self.assertEqual(payload["matches"][0]["file"], "src/planner.py")
             self.assertEqual(payload["matches"][0]["lineNumber"], 1)
             code_ref = payload["evidenceRefs"][0]
             self.assertTrue(code_ref.endswith("#matches/0"))
+
+            wrong_product = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 21,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_code",
+                        "arguments": {
+                            "product": "influxdb",
+                            "keywords": ["PushDownFilterRule"],
+                        },
+                    },
+                },
+            )
+            self.assertIn("metadata instance product", wrong_product["error"]["message"])
+
+            wrong_version = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 22,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "version": "2.0.0",
+                            "keywords": ["PushDownFilterRule"],
+                        },
+                    },
+                },
+            )
+            self.assertIn("metadata instance version", wrong_version["error"]["message"])
+
+            wrong_ref = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 23,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "gitRef": "HEAD",
+                            "keywords": ["PushDownFilterRule"],
+                        },
+                    },
+                },
+            )
+            self.assertIn("configured ref for version", wrong_ref["error"]["message"])
 
             duplicate_response = task_mcp_response(
                 settings,
@@ -6535,7 +6611,6 @@ fi
                         "name": "logagent.search_code",
                         "arguments": {
                             "product": "opengemini",
-                            "version": "1.0.0",
                             "keywords": ["PushDownFilterRule"],
                             "maxMatchesPerKeyword": 2,
                         },

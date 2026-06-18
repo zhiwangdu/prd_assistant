@@ -134,7 +134,8 @@ slice provides the durable foundation for the V2 product model:
   uses version-bound `git grep` against administrator-defined repo/ref/search
   roots, writes `code_evidence/<action_id>.json`, and exposes final-answer
   refs as `code_evidence/<action_id>.json#matches/<index>` without modifying
-  the source worktree.
+  the source worktree. Runs bound to a Metadata instance inherit and enforce
+  that instance's product/version before resolving refs.
 - Legacy System Context resource compatibility APIs backed by SQLite for
   prompt packs, architecture docs, runbooks, glossaries, tool capability notes,
   knowledge notes, diagnostic-skill records, version activation, and prompt
