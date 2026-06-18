@@ -339,6 +339,10 @@ runtime directories do not control each other's V2 processes. `status` also
 prints the authenticated `sourceBuiltAnalyzers` summary so runtime deployments
 can confirm whether the four analyzer submodule binaries are registered,
 present, executable, unavailable, or runnable by the current V2 process.
+`logagent-v2ctl.sh smoke-tools [--only-tool <name>]` delegates to
+`$LOGAGENT_SRC_DIR/scripts/smoke-source-built-analyzers.sh` using the same short
+names and V2 catalog IDs as `rebuild-v2-install.sh --only-tool`, so deployed
+runtimes can smoke one or all source-built analyzers after rebuilding them.
 
 ## Configuration
 

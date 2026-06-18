@@ -73,6 +73,7 @@ class DeployScriptTests(unittest.TestCase):
             self.assertEqual(help_result.returncode, 0)
             self.assertIn("Usage:", help_result.stdout)
             self.assertIn("help", help_result.stdout)
+            self.assertIn("smoke-tools", help_result.stdout)
 
             pid_file = Path(env["LOGAGENT_V2_PID_FILE"])
             pid_file.write_text(str(os.getpid()), encoding="utf-8")
@@ -82,6 +83,52 @@ class DeployScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("LogAgent V2 server is not running", result.stdout)
             self.assertFalse(pid_file.exists())
+
+    def test_logagent_v2ctl_smoke_tools_delegates_source_built_smoke(self) -> None:
+        script = ROOT_DIR / "deploy" / "logagent-v2ctl.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "source"
+            scripts_dir = source / "scripts"
+            scripts_dir.mkdir(parents=True)
+            smoke_log = tmp_path / "smoke.args"
+            smoke_script = scripts_dir / "smoke-source-built-analyzers.sh"
+            smoke_script.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$@\" > \"$LOGAGENT_TEST_SMOKE_LOG\"\n",
+                encoding="utf-8",
+            )
+            smoke_script.chmod(0o755)
+
+            env = self.isolated_env(tmp_path)
+            env["LOGAGENT_SRC_DIR"] = source.as_posix()
+            env["LOGAGENT_TEST_SMOKE_LOG"] = smoke_log.as_posix()
+
+            result = self.run_script(
+                script,
+                "smoke-tools",
+                "--only-tool",
+                "flux_query_analyzer",
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                smoke_log.read_text(encoding="utf-8").splitlines(),
+                ["--only", "flux"],
+            )
+
+            unknown = self.run_script(
+                script,
+                "smoke-tools",
+                "--only-tool",
+                "unknown_analyzer",
+                env=env,
+            )
+            self.assertEqual(unknown.returncode, 2)
+            self.assertIn("Unsupported --only-tool value", unknown.stderr)
 
     def test_logagent_v2ctl_start_requires_installed_runtime(self) -> None:
         script = ROOT_DIR / "deploy" / "logagent-v2ctl.sh"

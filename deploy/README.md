@@ -274,6 +274,7 @@ V2 has equivalent controls:
 ./logagent-v2ctl.sh start
 ./logagent-v2ctl.sh status
 ./logagent-v2ctl.sh logs
+./logagent-v2ctl.sh smoke-tools --only-tool flux_query_analyzer
 ./logagent-v2ctl.sh restart
 ./logagent-v2ctl.sh stop
 ```
@@ -283,7 +284,9 @@ multiple runtime directories do not accidentally control each other's V2
 processes. `help`, `--help`, and `-h` print usage and exit successfully.
 `start` and `restart` wait for the configured V2 health URL to return success.
 If the process exits or the health check times out, the script removes the
-stale pid file and returns a non-zero status.
+stale pid file and returns a non-zero status. `smoke-tools` delegates to
+`$LOGAGENT_SRC_DIR/scripts/smoke-source-built-analyzers.sh` and accepts the same
+short analyzer names and V2 tool IDs as `rebuild-v2-install.sh --only-tool`.
 
 Check the UI after startup:
 

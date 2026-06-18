@@ -1978,8 +1978,12 @@ The current slice is accepted when:
   `flux_query_analyzer`, `opengemini_storage_analyzer`,
   `influxdb_storage_analyzer`).
 - `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
-  V2 logs using the same `.env` loading pattern as the Rust deploy controls.
-  `help`, `--help`, and `-h` must print usage and return success, while unknown
-  commands still fail. `status` must print authenticated source-built analyzer
-  registration, command existence, executable, and unavailable reason fields
-  when the service and tools catalog are reachable.
+  V2 logs, plus run source-built analyzer smoke checks through `smoke-tools`,
+  using the same `.env` loading pattern as the Rust deploy controls. `help`,
+  `--help`, and `-h` must print usage and return success, while unknown commands
+  still fail. `smoke-tools [--only-tool <name>]` must accept the same short
+  names and V2 catalog IDs as rebuild single-tool mode and delegate to
+  `$LOGAGENT_SRC_DIR/scripts/smoke-source-built-analyzers.sh`. `status` must
+  print authenticated source-built analyzer registration, command existence,
+  executable, and unavailable reason fields when the service and tools catalog
+  are reachable.

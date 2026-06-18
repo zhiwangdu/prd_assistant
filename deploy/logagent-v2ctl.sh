@@ -43,7 +43,38 @@ if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || ((STARTUP_TIMEOUT_SECONDS <
 fi
 
 usage() {
-  echo "Usage: $0 {start|stop|restart|status|logs|help}"
+  cat <<EOF
+Usage: $0 {start|stop|restart|status|logs|smoke-tools|help}
+
+Commands:
+  smoke-tools [--only-tool <name>]  Run source-built analyzer smoke checks.
+
+Accepted --only-tool values:
+  influxql | influxql_analyzer | influxql-analyzer
+  flux | flux_query_analyzer | flux-query-analyzer
+  opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer
+  influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer
+EOF
+}
+
+normalize_only_tool() {
+  case "$1" in
+    influxql | influxql_analyzer | influxql-analyzer)
+      printf 'influxql'
+      ;;
+    flux | flux_query_analyzer | flux-query-analyzer)
+      printf 'flux'
+      ;;
+    opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer)
+      printf 'opengemini'
+      ;;
+    influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer)
+      printf 'influxdb'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 prepare_runtime_dirs() {
@@ -245,7 +276,58 @@ status_server() {
   fi
 }
 
-case "${1:-}" in
+smoke_tools() {
+  local only_tool=""
+  while (($# > 0)); do
+    case "$1" in
+      --only-tool)
+        if (($# < 2)); then
+          echo "Missing value for --only-tool" >&2
+          exit 2
+        fi
+        if ! only_tool="$(normalize_only_tool "$2")"; then
+          echo "Unsupported --only-tool value: $2" >&2
+          usage >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "Unknown smoke-tools option: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+  done
+
+  if [[ -z "${LOGAGENT_SRC_DIR:-}" ]]; then
+    echo "LOGAGENT_SRC_DIR is required for smoke-tools" >&2
+    exit 1
+  fi
+
+  local smoke_script="$LOGAGENT_SRC_DIR/scripts/smoke-source-built-analyzers.sh"
+  if [[ ! -x "$smoke_script" ]]; then
+    echo "Source-built analyzer smoke script is not executable: $smoke_script" >&2
+    exit 1
+  fi
+
+  local smoke_args=()
+  if [[ -n "$only_tool" ]]; then
+    smoke_args+=(--only "$only_tool")
+  fi
+  "$smoke_script" "${smoke_args[@]}"
+}
+
+command_name="${1:-}"
+if (($# > 0)); then
+  shift
+fi
+
+case "$command_name" in
   help | --help | -h)
     usage
     ;;
@@ -265,6 +347,9 @@ case "${1:-}" in
   logs)
     touch "$LOG_FILE"
     tail -n 100 -f "$LOG_FILE"
+    ;;
+  smoke-tools)
+    smoke_tools "$@"
     ;;
   *)
     usage

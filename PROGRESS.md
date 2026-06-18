@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 V2 Runtime Source-Built Analyzer Smoke Control
+
+- `deploy/logagent-v2ctl.sh` now supports
+  `smoke-tools [--only-tool <name>]`, using the same short analyzer names and
+  V2 catalog IDs as V2 rebuild/local helper scripts.
+- The runtime control delegates smoke execution to
+  `$LOGAGENT_SRC_DIR/scripts/smoke-source-built-analyzers.sh`, so deployed
+  environments can verify one or all source-built analyzer submodules after a
+  tools rebuild without starting a separate local helper.
+- Added deploy-script regression coverage for `smoke-tools` help exposure,
+  source smoke delegation, canonical `--only` argument mapping, and unknown
+  analyzer rejection.
+- Updated Deploy README and Server V2 README/SPEC for the new runtime control
+  command.
+- Verification passed: `bash -n deploy/logagent-v2ctl.sh`,
+  `cd server-v2 && .venv/bin/python -m pytest tests/test_deploy_scripts.py -q`,
+  and `git diff --check`.
+
 ## 2026-06-19 Server V2 Single Upload Filename Field Parity
 
 - V2 workspace and session single multipart upload routes now accept the
