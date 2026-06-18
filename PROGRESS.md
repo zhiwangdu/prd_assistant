@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Tool Upload Accept Patterns
+
+- Fixed the V2 Tools manual upload file selector so V1-style descriptor
+  patterns such as `*.log` are converted to browser-valid `.log` accept
+  extensions.
+- Non-extension file patterns such as `*timeout*` are ignored for the HTML
+  accept attribute while remaining visible in tool descriptor details.
+- Updated WebUI README/SPEC for the manual upload accept behavior.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Tool Result Path Typing
 
 - Extended the WebUI V2 tool run result type with the V1-compatible

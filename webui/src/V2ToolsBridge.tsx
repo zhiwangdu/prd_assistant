@@ -711,8 +711,11 @@ function toolMaxFiles(tool: V2ToolDescriptor) {
 }
 
 function fileAccept(tool: V2ToolDescriptor) {
-  const suffixes = (tool.acceptedSuffixes ?? []).filter((suffix) => suffix && suffix !== "*");
-  return suffixes.join(",");
+  return (tool.acceptedSuffixes ?? [])
+    .map((suffix) => suffix.trim())
+    .map((suffix) => suffix.startsWith("*") ? suffix.slice(1) : suffix)
+    .filter((suffix) => suffix.startsWith("."))
+    .join(",");
 }
 
 function explicitToolInputFileCount(tool: V2ToolDescriptor, params: Record<string, unknown>) {
