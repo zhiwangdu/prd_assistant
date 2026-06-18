@@ -19,6 +19,33 @@ import {
   type V2ToolRunArtifacts
 } from "./v2-api";
 
+type V2PprofTopEntry = {
+  rank?: number | null;
+  flat?: string | null;
+  flatPercent?: number | null;
+  sumPercent?: number | null;
+  cum?: string | null;
+  cumPercent?: number | null;
+  function?: string | null;
+};
+
+type V2PprofResult = {
+  schemaVersion?: number;
+  toolId: "pprof_analyzer";
+  actionId?: string;
+  status?: string | null;
+  profileType?: string | null;
+  sampleIndex?: string | null;
+  total?: string | null;
+  top: V2PprofTopEntry[];
+  artifacts: Record<string, unknown>;
+  artifactPaths?: Record<string, unknown>;
+  warnings?: unknown[];
+  error?: string | null;
+  durationMs?: number | null;
+  createdAt?: string | null;
+};
+
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
@@ -29,6 +56,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [manualRuns, setManualRuns] = useState<V2ToolRun[]>([]);
   const [selectedManualRunId, setSelectedManualRunId] = useState("");
   const [manualResultText, setManualResultText] = useState("");
+  const [manualResult, setManualResult] = useState<Record<string, unknown> | null>(null);
   const [manualArtifacts, setManualArtifacts] = useState<V2ToolRunArtifacts | null>(null);
   const [manualUploadProgress, setManualUploadProgress] = useState(0);
   const [paramsText, setParamsText] = useState("{}");
@@ -70,8 +98,10 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     setManualArtifacts(artifacts);
     if (run.status === "succeeded") {
       const result = await getV2ToolRunResult(apiKey, targetRunId);
+      setManualResult(result.result);
       setManualResultText(JSON.stringify(result.result, null, 2));
     } else {
+      setManualResult(null);
       setManualResultText(JSON.stringify(run, null, 2));
     }
     return run;
@@ -95,6 +125,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
         await loadManualRun(current.id);
       } else {
         setManualArtifacts(null);
+        setManualResult(null);
         setManualResultText("");
       }
     }
@@ -119,6 +150,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   useEffect(() => {
     setParamsText(JSON.stringify(selectedTool?.paramsTemplate ?? {}, null, 2));
     setResultText("");
+    setManualResult(null);
     setManualResultText("");
     setManualArtifacts(null);
     setManualFiles([]);
@@ -210,6 +242,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
       return;
     }
     setLoading(true);
+    setManualResult(null);
     setManualResultText("");
     setManualArtifacts(null);
     try {
@@ -236,6 +269,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
       });
       setSelectedManualRunId(run.id);
       setManualRuns((current) => upsertRun(current, run));
+      setManualResult(null);
       setManualResultText(JSON.stringify(run, null, 2));
       setStatus(`Created V2 tool_run ${run.id}`);
       await loadManualRun(run.id);
@@ -248,6 +282,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
 
   async function selectManualRun(runId: string) {
     setSelectedManualRunId(runId);
+    setManualResult(null);
     setManualResultText("");
     setManualArtifacts(null);
     setLoading(true);
@@ -449,7 +484,11 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
               {manualArtifacts ? (
                 <ToolRunArtifactList artifacts={manualArtifacts} onDownload={(artifactId, relativePath) => void downloadManualArtifact(artifactId, relativePath)} />
               ) : null}
-              {manualResultText ? <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{manualResultText}</pre> : null}
+              {manualResult ? (
+                <ManualToolResult result={manualResult} resultText={manualResultText} toolId={selectedManualRun?.toolId ?? selectedTool?.toolId ?? ""} />
+              ) : manualResultText ? (
+                <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{manualResultText}</pre>
+              ) : null}
             </div>
           </div>
         </div>
@@ -507,6 +546,82 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
     <div>
       <p className="mb-2 text-xs text-muted-foreground">{title}</p>
       <pre className="max-h-52 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify(value, null, 2)}</pre>
+    </div>
+  );
+}
+
+function ManualToolResult({ result, resultText, toolId }: { result: Record<string, unknown>; resultText: string; toolId: string }) {
+  if (toolId === "pprof_analyzer" && isPprofResult(result)) {
+    return <V2PprofResultView result={result} />;
+  }
+  return <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre>;
+}
+
+function V2PprofResultView({ result }: { result: V2PprofResult }) {
+  const warnings = (result.warnings ?? []).map((warning) => String(warning)).filter(Boolean);
+  const artifactPaths = isJsonObject(result.artifactPaths) ? result.artifactPaths : result.artifacts;
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">pprof result</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? "pprof_analyzer"}</p>
+        </div>
+        <Badge variant={result.status === "OK" ? "success" : result.status === "FAILED" ? "destructive" : "secondary"}>{result.status ?? "unknown"}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Metric label="Profile" value={result.profileType || "unknown"} />
+        <Metric label="Sample" value={result.sampleIndex || "-"} />
+        <Metric label="Total" value={result.total ?? "-"} />
+        <Metric label="Duration" value={typeof result.durationMs === "number" ? `${result.durationMs}ms` : "-"} />
+      </div>
+      {result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div> : null}
+      {warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{warnings.join(" · ")}</div> : null}
+      <div className="max-h-[420px] overflow-auto rounded-lg border border-border">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+            <tr>
+              <th className="px-3 py-2">#</th>
+              <th className="px-3 py-2">Flat</th>
+              <th className="px-3 py-2">Flat %</th>
+              <th className="px-3 py-2">Cum</th>
+              <th className="px-3 py-2">Cum %</th>
+              <th className="px-3 py-2">Function</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.top.length ? result.top.map((entry, index) => (
+              <tr className="border-t border-border" key={`${entry.rank ?? index}:${entry.function ?? "unknown"}`}>
+                <td className="px-3 py-2 text-muted-foreground">{entry.rank ?? index + 1}</td>
+                <td className="px-3 py-2 font-mono text-xs">{entry.flat ?? "-"}</td>
+                <td className="px-3 py-2">{formatPercent(entry.flatPercent)}</td>
+                <td className="px-3 py-2 font-mono text-xs">{entry.cum ?? "-"}</td>
+                <td className="px-3 py-2">{formatPercent(entry.cumPercent)}</td>
+                <td className="px-3 py-2 font-mono text-xs">{entry.function ?? "-"}</td>
+              </tr>
+            )) : (
+              <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={6}>No parsed top entries. Check raw artifacts.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <ArtifactPath label="Top text" value={artifactPaths["topTextPath"]} />
+        <ArtifactPath label="Tree text" value={artifactPaths["treeTextPath"]} />
+        <ArtifactPath label="Raw text" value={artifactPaths["rawTextPath"]} />
+        <ArtifactPath label="Stderr" value={artifactPaths["stderrPath"]} />
+        {artifactPaths["svgPath"] ? <ArtifactPath label="SVG" value={artifactPaths["svgPath"]} /> : null}
+      </div>
+      <JsonBlock title="raw result" value={result} />
+    </div>
+  );
+}
+
+function ArtifactPath({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground"><FileArchive className="h-4 w-4" />{label}</div>
+      <p className="mt-1 break-all font-mono text-xs">{typeof value === "string" && value.trim() ? value : "-"}</p>
     </div>
   );
 }
@@ -611,6 +726,15 @@ function toolAcceptsInputFiles(tool: V2ToolDescriptor) {
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPprofResult(value: unknown): value is V2PprofResult {
+  if (!isJsonObject(value)) return false;
+  return value.toolId === "pprof_analyzer" && Array.isArray(value.top) && isJsonObject(value.artifacts);
+}
+
+function formatPercent(value?: number | null) {
+  return typeof value === "number" ? `${value.toFixed(2)}%` : "-";
 }
 
 function isTerminalToolRun(status: V2ToolRun["status"]) {

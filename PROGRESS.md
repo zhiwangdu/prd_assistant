@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 pprof Tool Result View
+
+- V2 Tools Workbench now keeps the structured manual `tool_run` result in
+  state instead of only storing formatted JSON text.
+- Successful `pprof_analyzer` manual runs now render a dedicated result view
+  with status, profile type, sample index, total, duration, parsed top function
+  table, warnings/errors, raw JSON, and top/tree/raw/stderr/SVG artifact paths.
+- Other manual tool results continue to render as JSON.
+- Updated WebUI README/SPEC so the V2 Tools product contract explicitly
+  covers the pprof-specific result display on `/api/v2/tools/:tool_id/runs`.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI Source-Built Analyzer Status
 
 - V2 Tools Workbench now reads the complete `/api/v2/tools` catalog envelope,
