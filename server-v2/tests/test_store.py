@@ -13635,6 +13635,68 @@ grep_results.json#matches/0
                     "Multipart text case",
                 )
 
+                imports_before_invalid = client.get(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                ).json()["imports"]
+
+                invalid_json_filename = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    json={
+                        "text": "Title: Invalid JSON filename\nSymptom: Bad name",
+                        "filename": "../..",
+                    },
+                )
+                self.assertEqual(invalid_json_filename.status_code, 400)
+                self.assertIn(
+                    "invalid filename",
+                    invalid_json_filename.json()["detail"],
+                )
+
+                invalid_text_filename = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    files={
+                        "content": (
+                            None,
+                            "Title: Invalid text filename\nSymptom: Bad name",
+                        ),
+                        "filename": (None, "../.."),
+                    },
+                )
+                self.assertEqual(invalid_text_filename.status_code, 400)
+                self.assertIn(
+                    "invalid filename",
+                    invalid_text_filename.json()["detail"],
+                )
+
+                invalid_file_filename = client.post(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                    files={
+                        "file": (
+                            "..",
+                            b"Title: Invalid file filename\nSymptom: Bad name",
+                            "text/plain",
+                        )
+                    },
+                )
+                self.assertEqual(invalid_file_filename.status_code, 400)
+                self.assertIn(
+                    "invalid filename",
+                    invalid_file_filename.json()["detail"],
+                )
+
+                imports_after_invalid = client.get(
+                    "/api/v2/cases/imports",
+                    headers=headers,
+                ).json()["imports"]
+                self.assertEqual(
+                    len(imports_after_invalid),
+                    len(imports_before_invalid),
+                )
+
                 unsupported_response = client.post(
                     "/api/v2/cases/imports",
                     headers=headers,

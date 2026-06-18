@@ -1403,10 +1403,12 @@ Case import drafts live in `case_imports` and are created through
 V2 `content` or V1 `text`, multipart `text`/`content` fields, or one UTF-8
 text file field named `file`; file uploads must use a text/json/yaml content
 type or a `.txt`, `.text`, `.md`, `.markdown`, `.log`, `.json`, `.yaml`,
-`.yml`, or `.csv` filename. It returns HTTP 201 and exposes both V2 `import`
-and Rust/V1-style `draft` fields. Preview/create accept JSON Case fields or
-plain text sections such as `Title`, `Symptom`, `Root Cause`, `Solution`,
-`Product`, `Version`, `Environment`, `Instance ID`, `Node ID`, and
+`.yml`, or `.csv` filename. Optional JSON or multipart filenames are normalized
+to a safe basename, and basenames resolving to `.` or `..` are rejected with
+HTTP 400 before any draft row is persisted. It returns HTTP 201 and exposes
+both V2 `import` and Rust/V1-style `draft` fields. Preview/create accept JSON
+Case fields or plain text sections such as `Title`, `Symptom`, `Root Cause`,
+`Solution`, `Product`, `Version`, `Environment`, `Instance ID`, `Node ID`, and
 `Evidence Refs`. They store the source text, parsed draft, validation errors,
 and follow-up message history without mutating `cases`. `POST
 /api/v2/cases/imports/:import_id/messages` appends a user supplement, combines

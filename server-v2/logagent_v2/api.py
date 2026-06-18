@@ -694,7 +694,17 @@ def _case_import_optional_filename(value: str | None) -> str | None:
     value = value.strip()
     if not value:
         return None
-    return safe_filename(value)
+    return _case_import_filename(value)
+
+
+def _case_import_filename(value: str) -> str:
+    basename = Path(value).name
+    if not basename or basename in {".", ".."}:
+        raise ValueError("invalid filename")
+    filename = safe_filename(basename)
+    if filename in {".", ".."}:
+        raise ValueError("invalid filename")
+    return filename
 
 
 def _case_import_supported_text_file(

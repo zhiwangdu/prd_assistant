@@ -1630,9 +1630,11 @@ POST /api/v2/cases/imports/:import_id/confirm
 JSON bodies with either V2 `content` or V1 `text`, multipart `text`/`content`
 fields, or one UTF-8 text file field named `file`. Text-file imports allow
 `.txt`, `.text`, `.md`, `.markdown`, `.log`, `.json`, `.yaml`, `.yml`, and
-`.csv` filenames, or text/json/yaml content types. The endpoint persists the
-same draft as preview, returns HTTP 201, and includes both V2 `import` and
-Rust/V1-style `draft` aliases.
+`.csv` filenames, or text/json/yaml content types. Optional JSON or multipart
+filenames are normalized to a safe basename, and basenames resolving to `.` or
+`..` are rejected with HTTP 400 before a draft is persisted. The endpoint
+persists the same draft as preview, returns HTTP 201, and includes both V2
+`import` and Rust/V1-style `draft` aliases.
 
 Preview parses JSON Case fields or plain text sections such as `Title`,
 `Symptom`, `Root Cause`, `Solution`, `Product`, `Instance ID`, and

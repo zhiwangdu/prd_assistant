@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Case Import Filename Guard
+
+- V2 Rust/V1-style Case import create endpoint now rejects JSON filenames,
+  multipart text `filename` fields, and multipart file field names whose
+  basename resolves to `.` or `..` with HTTP 400.
+- Case import filename handling now shares a single safe-basename path before
+  draft persistence, while preserving existing path stripping such as
+  `pasted/case.log` -> `case.log`.
+- Added HTTP regression coverage for invalid JSON, multipart text, and
+  multipart file filenames, including verifying rejected imports do not create
+  draft rows.
+- Updated Server V2 README/SPEC for the Case import filename boundary.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused Case import route pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Invalid Upload Filename Guard
 
 - V2 single upload, batch upload, and chunked upload init now reject filenames
