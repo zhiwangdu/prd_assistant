@@ -49,6 +49,7 @@ class DeployScriptTests(unittest.TestCase):
         help_result = self.run_script(script, "--help")
         self.assertEqual(help_result.returncode, 0)
         self.assertIn("Usage: scripts/v2-local.sh", help_result.stdout)
+        self.assertIn("smoke-tools", help_result.stdout)
 
         invalid_timeout = self.run_script(
             script,

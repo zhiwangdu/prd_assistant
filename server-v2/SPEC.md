@@ -47,10 +47,11 @@ Implemented in this slice:
   `/api/v2/tools` with the configured API key to print source-built analyzer
   registration/runnable state.
 - Local development controls through `scripts/v2-local.sh` for V2
-  build/start/stop/restart/status/logs, defaulting to `server-v2/.venv`,
-  `/tmp/logagent-v2-local`, port `50993`, and `target/tools` for optional
-  source-built analyzer output. `status` uses the same authenticated tools
-  catalog probe as the runtime control script.
+  build/start/stop/restart/status/logs/smoke-tools, defaulting to
+  `server-v2/.venv`, `/tmp/logagent-v2-local`, port `50993`, and
+  `target/tools` for optional source-built analyzer output. `status` uses the
+  same authenticated tools catalog probe as the runtime control script, and
+  `smoke-tools` delegates to the source-built analyzer smoke aggregator.
 - Source-built analyzer smoke aggregation through
   `scripts/smoke-source-built-analyzers.sh`, which runs the existing
   InfluxQL, Flux, openGemini storage, and InfluxDB storage smoke scripts

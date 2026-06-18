@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/v2-local.sh build|start|stop|restart|status|logs [options]
+Usage: scripts/v2-local.sh build|start|stop|restart|status|logs|smoke-tools [options]
 
 Commands:
   build       Create/update the V2 virtualenv, install server-v2, and optionally build WebUI/tools.
@@ -16,13 +16,14 @@ Commands:
   restart     Stop and start the local V2 server.
   status      Show pid and health status.
   logs        Tail the local V2 log file.
+  smoke-tools Run source-built analyzer smoke checks.
 
 Options:
   --foreground       With start/restart, run attached to the current terminal.
   --build-webui      Force WebUI build before build/start.
   --no-build         With start/restart, skip editable install unless the venv is missing.
   --with-tools       Build source-referenced analyzers into LOGAGENT_V2_TOOLS_DIR.
-  --only-tool <name> Build one analyzer by short name or V2 toolId.
+  --only-tool <name> Build or smoke one analyzer by short name or V2 toolId.
                      Accepted: influxql/influxql_analyzer,
                      flux/flux_query_analyzer,
                      opengemini/opengemini_storage_analyzer,
@@ -339,6 +340,14 @@ status_v2() {
   fi
 }
 
+smoke_tools() {
+  local smoke_args=()
+  if [[ -n "$only_tool" ]]; then
+    smoke_args+=(--only "$only_tool")
+  fi
+  "$ROOT_DIR/scripts/smoke-source-built-analyzers.sh" "${smoke_args[@]}"
+}
+
 case "$command_name" in
   build)
     mkdir -p "$LOGAGENT_V2_DATA_DIR" "$LOGAGENT_V2_TOOLS_DIR"
@@ -361,6 +370,9 @@ case "$command_name" in
   logs)
     touch "$LOG_FILE"
     tail -n 100 -f "$LOG_FILE"
+    ;;
+  smoke-tools)
+    smoke_tools
     ;;
   -h | --help)
     usage

@@ -233,6 +233,7 @@ For the fastest local V2 loop from the repository root:
 ./scripts/v2-local.sh build
 ./scripts/v2-local.sh start
 ./scripts/v2-local.sh status
+./scripts/v2-local.sh smoke-tools
 ./scripts/v2-local.sh stop
 ```
 
@@ -243,8 +244,10 @@ uses port `50993`, and only rebuilds source-referenced analyzers when
 be a short build name such as `flux` or the V2 catalog ID such as
 `flux_query_analyzer`. `status` queries the protected `/api/v2/tools` catalog
 with the configured API key and prints the `sourceBuiltAnalyzers` registration
-summary when the server is reachable. `start` waits for `/health`;
-`--foreground` keeps the FastAPI server attached for debugging.
+summary when the server is reachable. `smoke-tools` runs the aggregate
+source-built analyzer smoke script and accepts the same `--only-tool <name>`
+selector. `start` waits for `/health`; `--foreground` keeps the FastAPI server
+attached for debugging.
 
 Manual startup remains available:
 

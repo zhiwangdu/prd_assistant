@@ -52,6 +52,7 @@ V2 本地快速开发使用仓库根目录的单脚本入口：
 ./scripts/v2-local.sh build
 ./scripts/v2-local.sh start
 ./scripts/v2-local.sh status
+./scripts/v2-local.sh smoke-tools
 ./scripts/v2-local.sh logs
 ./scripts/v2-local.sh stop
 ```
@@ -68,7 +69,8 @@ V2 本地快速开发使用仓库根目录的单脚本入口：
 部署或本地构建 source-built analyzers 后，可运行
 `./scripts/smoke-source-built-analyzers.sh` 聚合验证 InfluxQL、Flux、
 openGemini storage 和 InfluxDB storage 四个真实工具；需要缩小范围时使用
-`--only influxql|flux|opengemini|influxdb` 或对应 V2 catalog ID。
+`--only influxql|flux|opengemini|influxdb` 或对应 V2 catalog ID。本地也可用
+`./scripts/v2-local.sh smoke-tools --only-tool <name>` 走同一个聚合入口。
 V2 部署脚本的帮助输出、启动超时参数校验、pid file 作用域和缺少 runtime
 安装时的快速失败路径由 `server-v2/tests/test_deploy_scripts.py` 覆盖。
 

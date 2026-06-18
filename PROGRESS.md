@@ -10,6 +10,9 @@ Last updated: 2026-06-18
 - The aggregator supports full serial smoke execution and `--only <name>` for
   short names or V2 catalog IDs, matching the naming accepted by V2 build
   helpers.
+- `scripts/v2-local.sh` now exposes `smoke-tools`, delegating to the same
+  aggregator and reusing `--only-tool <name>` for short names or V2 catalog
+  IDs.
 - Updated root, V2 Server, Deployment, Tool Runner, and Roadmap docs/specs to
   include the aggregate smoke path and to align Environment Collector roadmap
   wording with the now-built Cassandra/RocksDB default templates.
@@ -18,6 +21,7 @@ Last updated: 2026-06-18
   `scripts/smoke-source-built-analyzers.sh --help`,
   `scripts/smoke-source-built-analyzers.sh --only unknown_analyzer` returning
   exit code 2,
+  `scripts/v2-local.sh --help`,
   focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
   with 8 passed, and
   `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check tests/test_deploy_scripts.py`.
