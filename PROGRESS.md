@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Analysis Agent Environment Batch Documentation
+
+- Updated Analysis Agent README/SPEC status to reflect the already implemented
+  V2 `collect_environment` batch remote target path.
+- Clarified that the remaining gap is semantic auto-selection of
+  executor/template across multiple executors and more built-in environment
+  templates, not the batch execution/evidence mechanism itself.
+
 ## 2026-06-18 V2 Analysis Result Availability Status
 
 - `/api/v2/runs/:run_id/result` now returns HTTP 409 with the current run
