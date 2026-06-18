@@ -6413,6 +6413,74 @@ fi
             ],
         )
 
+    def test_tool_stdout_parses_flux_query_report_without_generic_fields(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "tool": "flux_query_analyzer",
+  "metrics": {
+    "totalRows": 3,
+    "parseSuccessCount": 2,
+    "parseErrorCount": 1,
+    "uniqueTemplateCount": 2,
+    "newTemplateCount": 1,
+    "queriesWithDuration": 2,
+    "globalLatencyMs": {"p95": 1500}
+  },
+  "parseErrors": [
+    {
+      "count": 1,
+      "error": "expected RBRACE, got EOF"
+    }
+  ],
+  "topQueries": [
+    {
+      "count": 2,
+      "ratio": 0.6667,
+      "fingerprintShort": "abc123",
+      "normalizedQuery": "from(bucket: \\"\\") |> range(start: -)",
+      "latencyMs": {"p95": 1500}
+    },
+    {
+      "count": 1,
+      "ratio": 0.3333,
+      "fingerprintShort": "def456",
+      "normalizedQuery": "from(bucket: \\"\\") |> filter(fn: (r) => r.host == \\"\\")",
+      "latencyMs": {"p95": 80}
+    }
+  ]
+}"""
+        )
+
+        summary = summary_from_stdout(parsed, b"", False)
+        findings = findings_from_stdout(parsed)
+
+        self.assertIn("flux query stats: rows=3", summary)
+        self.assertIn("parseSuccess=2/3", summary)
+        self.assertIn("newTemplates=1", summary)
+        self.assertTrue(
+            any(
+                finding.get("severity") == "high"
+                and "Flux parse errors occurred 1 time" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any(
+                finding.get("severity") == "high"
+                and "Top Flux template #1" in finding["message"]
+                and "p95=1500ms" in finding["message"]
+                and "abc123" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any(
+                finding.get("severity") == "medium"
+                and "new template" in finding["message"]
+                for finding in findings
+            )
+        )
+
     def test_tool_stdout_parses_influxql_compare_report(self) -> None:
         parsed = parse_json(
             b"""{

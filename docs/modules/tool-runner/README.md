@@ -143,7 +143,7 @@ tools:
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - `scripts/smoke-influxql-analyzer.sh` 会同时运行真实 CLI 的普通 Report 路径和 `-input-a` / `-input-b` CompareReport 路径，断言 statement delta、新增 fingerprint、规则 delta 和 A/B 侧进度输出。
 - 当前 `influxql-analyzer` 源码通过 `third_party/influxql` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支；CLI 入口为 `cmd/influxql-analyze`，LogAgent 构建产物名固定为 `influxql-analyzer`。
-- 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取，并通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。
+- 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取；当旧版或降级输出只包含 `metrics`、`topQueries` 和 `parseErrors` 时，V2 也会生成 summary、parse error findings、Top Flux template findings 和 new template finding。真实 CLI 通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
 - 当前 `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxdb.git` 的 `influxdb-tools` 分支；CLI 入口为 `cmd/influxdb_storage_analyzer`，用于只读检查 TSM、TSI 和 `_series` 文件。
 - Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量或 Rust/V1 的 `LOGAGENT_TOOL_*_ANALYZER` 别名后会自动注册对应 source-built analyzer；V2 专用变量优先生效。默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
@@ -216,6 +216,8 @@ CompareReport smoke 使用真实 compare 协议：
 ```
 
 `opengemini_storage_analyzer` 接受 `.tssp`、`.tssp.init`、TSI mergeset part 文件或目录，CLI 参数为 `--input {input_file} --format json`。`influxdb_storage_analyzer` 接受 `.tsm`、`.tsi` 或 `_series` 目录，CLI 参数为 `-input {input_file} -kind auto -max-samples 10`。二者 stdout 都输出可被通用 Tool Runner 解析的 `summary/findings` JSON。
+
+`flux_query_analyzer` stdout 优先使用工具直接给出的 `summary/findings`。如果只返回 `metrics/topQueries/parseErrors`，V2 会从 metrics 生成 `flux query stats` summary，并将 parse errors、Top Flux templates、p95 延迟和 `newTemplateCount` 转成 `tool_results/<action_id>/result.json#findings/<index>` 可引用 findings。
 
 验证 pprof Tools 页面：
 

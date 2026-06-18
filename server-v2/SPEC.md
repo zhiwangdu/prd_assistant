@@ -187,8 +187,9 @@ Implemented in this slice:
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
   for storage analyzers. Enabled storage analyzer materialized inputs are safe
   artifact files or directory bundles extracted from direct uploads and
-  archives. Generic JSON stdout and InfluxQL analyzer report/compare stdout are
-  normalized into `summary/findings`. Task MCP responses retain the V2 nested
+  archives. Generic JSON stdout, Flux analyzer metrics/topQueries/parseErrors
+  stdout, and InfluxQL analyzer report/compare stdout are normalized into
+  `summary/findings`. Task MCP responses retain the V2 nested
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
   `artifactPaths`, and finding outputs expose `finalEvidenceRefs`. Repeated task

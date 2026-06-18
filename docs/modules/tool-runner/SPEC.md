@@ -157,7 +157,13 @@ evidence ref。
 - 新增 fingerprint 和正向规则增长默认 high severity，移除 fingerprint 默认 low severity。
 - 真实 CLI smoke 必须覆盖 `-input-a` / `-input-b` compare mode；当 `removed_fingerprints` 或 `changed_fingerprints` 为 `null` 时，V2 parser 应按空列表处理并继续解析新增 fingerprint 和规则 delta。
 
-真实 `flux_query_analyzer` stdout JSON 会通过通用 `summary/findings` parser 解析；工具自身还输出 bounded `topQueries` 和 `parseErrors`，用于后续更细的展示。
+真实 `flux_query_analyzer` stdout JSON 会被专门适配：
+
+- 若 stdout 已包含通用 `summary` / `findings`，V2 保持工具输出原样作为 summary 和 findings。
+- 若只包含 `metrics`、`topQueries` 和 `parseErrors`，V2 会从 `metrics.totalRows`、`parseSuccessCount`、`uniqueTemplateCount`、`newTemplateCount`、`parseErrorCount`、`queriesWithDuration` 和 `globalLatencyMs.p95` 生成 summary。
+- `parseErrors[]` 进入 high severity findings。
+- `topQueries[]` 进入模板 finding，包含 count、ratio、p95、fingerprint 和 normalized query；p95 >= 1000ms 标记 high，p95 >= 200ms 标记 medium。
+- `metrics.newTemplateCount` 大于 0 时生成 medium severity baseline/template finding。
 
 真实 storage analyzers stdout JSON 也走通用 parser：
 
@@ -231,6 +237,8 @@ Huawei package sync 的 `result.json` 至少包含：
   Fetch `response_body.bin` 和 pprof top/tree/raw/stderr/SVG 输出，并保持
   `finalAllowed=false`。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
+- Flux stdout 即使缺少通用 `summary/findings`，也必须能从
+  `metrics/topQueries/parseErrors` 生成 summary 和可引用 findings。
 - Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建或复用对应真实工具，并验证 stdout JSON 的 tool id、summary 或关键 finding；InfluxQL smoke 必须同时覆盖普通 Report 和 CompareReport。
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。
 - `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址和顶层仓库 `origin` 不被修改。若 submodule 目录只是父仓库内的未初始化目录，脚本不得对该目录执行 `remote set-url origin`。

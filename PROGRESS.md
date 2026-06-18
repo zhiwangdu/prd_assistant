@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Flux Analyzer Stdout Parser
+
+- Added a dedicated V2 Tool Runner parser for `flux_query_analyzer` stdout.
+  Tool-provided `summary/findings` remain authoritative when present.
+- When Flux stdout only contains `metrics`, `topQueries`, and `parseErrors`,
+  V2 now derives a `flux query stats` summary and structured findings for
+  parse errors, Top Flux templates, p95 latency severity, and new templates.
+- Added regression coverage for the fallback parser path without generic
+  `summary/findings`.
+- Updated root, V2 Server, Tool Runner, and Testing README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Tool Runner stdout parser pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (137 passed, 1 warning),
+  `./scripts/smoke-flux-query-analyzer.sh`, and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Worktree Cache
 
 - Added optional `LOGAGENT_V2_CODE_WORKTREE_ROOT` for Code Evidence detached

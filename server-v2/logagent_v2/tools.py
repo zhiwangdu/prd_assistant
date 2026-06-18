@@ -2369,6 +2369,8 @@ def parsed_stdout_summary(parsed: object | None) -> str | None:
             return influxql_report_summary(parsed)
         if is_influxql_compare_report(parsed):
             return influxql_compare_summary(parsed)
+        if is_flux_query_report(parsed):
+            return flux_query_summary(parsed)
         return string_field(parsed, ("summary", "message", "title"))
     if isinstance(parsed, str) and parsed.strip():
         return parsed.strip()[:500]
@@ -2393,6 +2395,8 @@ def findings_from_stdout(parsed: object | None) -> list[JsonObject]:
             return influxql_report_findings(parsed)
         if is_influxql_compare_report(parsed):
             return influxql_compare_findings(parsed)
+        if is_flux_query_report(parsed):
+            return flux_query_findings(parsed)
         for key in ("findings", "issues", "diagnostics"):
             findings = parsed.get(key)
             if isinstance(findings, list):
@@ -2413,6 +2417,155 @@ def is_influxql_report(value: JsonObject) -> bool:
 
 def is_influxql_compare_report(value: JsonObject) -> bool:
     return "batch_a" in value and "batch_b" in value and "statement_delta" in value
+
+
+def is_flux_query_report(value: JsonObject) -> bool:
+    return value.get("tool") == "flux_query_analyzer" or (
+        isinstance(value.get("metrics"), dict)
+        and isinstance(value.get("topQueries"), list)
+        and ("parseErrors" in value or "summary" in value)
+    )
+
+
+def flux_query_summary(value: JsonObject) -> str:
+    explicit = string_field(value, ("summary",))
+    if explicit:
+        return explicit
+    metrics = value.get("metrics")
+    if not isinstance(metrics, dict):
+        return "flux query stats"
+    total_rows = number_to_string(metrics.get("totalRows")) or "0"
+    parse_success = number_to_string(metrics.get("parseSuccessCount")) or "0"
+    unique_templates = number_to_string(metrics.get("uniqueTemplateCount")) or "0"
+    new_templates = number_to_string(metrics.get("newTemplateCount")) or "0"
+    parse_errors = number_to_string(metrics.get("parseErrorCount")) or "0"
+    queries_with_duration = number_to_string(metrics.get("queriesWithDuration")) or "0"
+    p95 = "unknown"
+    latency = metrics.get("globalLatencyMs")
+    if isinstance(latency, dict):
+        p95 = number_to_string(latency.get("p95")) or p95
+    return (
+        "flux query stats: "
+        f"rows={total_rows}, parseSuccess={parse_success}/{total_rows}, "
+        f"uniqueTemplates={unique_templates}, newTemplates={new_templates}, "
+        f"parseErrors={parse_errors}, durationCoverage={queries_with_duration}/{total_rows}, "
+        f"p95={p95}ms"
+    )
+
+
+def flux_query_findings(value: JsonObject) -> list[JsonObject]:
+    explicit = value.get("findings")
+    if isinstance(explicit, list):
+        parsed = parse_findings_value(explicit)
+        if parsed:
+            return parsed
+    findings: list[JsonObject] = []
+    findings.extend(flux_parse_error_findings(value))
+    findings.extend(flux_top_query_findings(value))
+    findings.extend(flux_metrics_findings(value))
+    return findings
+
+
+def flux_parse_error_findings(value: JsonObject) -> list[JsonObject]:
+    errors = value.get("parseErrors")
+    if not isinstance(errors, list):
+        return []
+    findings = []
+    for item in errors[:5]:
+        if not isinstance(item, dict):
+            continue
+        message = string_field(item, ("error", "message"))
+        if not message:
+            continue
+        count = number_to_string(item.get("count")) or "0"
+        findings.append(
+            {
+                "severity": "high",
+                "message": f"Flux parse errors occurred {count} time(s); error: {message}",
+            }
+        )
+    return findings
+
+
+def flux_top_query_findings(value: JsonObject) -> list[JsonObject]:
+    top_queries = value.get("topQueries")
+    if not isinstance(top_queries, list):
+        return []
+    findings = []
+    for index, item in enumerate(top_queries[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        count = number_to_string(item.get("count")) or "0"
+        ratio = flux_ratio_text(item.get("ratio"))
+        latency = item.get("latencyMs")
+        p95 = "unknown"
+        if isinstance(latency, dict):
+            p95 = number_to_string(latency.get("p95")) or p95
+        fingerprint = (
+            string_field(item, ("fingerprintShort", "fingerprint"))
+            or "unknown"
+        )
+        normalized = string_field(item, ("normalizedQuery", "query")) or "unknown"
+        findings.append(
+            {
+                "severity": flux_latency_severity(p95),
+                "message": (
+                    f"Top Flux template #{index}: count={count}"
+                    f"{ratio}, p95={p95}ms, fingerprint={fingerprint}, "
+                    f"query={normalized}"
+                ),
+            }
+        )
+    return findings
+
+
+def flux_metrics_findings(value: JsonObject) -> list[JsonObject]:
+    metrics = value.get("metrics")
+    if not isinstance(metrics, dict):
+        return []
+    findings = []
+    parse_error_count = int_field(metrics, "parseErrorCount") or 0
+    if parse_error_count > 0 and not flux_parse_error_findings(value):
+        findings.append(
+            {
+                "severity": "high",
+                "message": f"Flux parse errors occurred {parse_error_count} time(s).",
+            }
+        )
+    new_template_count = int_field(metrics, "newTemplateCount") or 0
+    if new_template_count > 0:
+        findings.append(
+            {
+                "severity": "medium",
+                "message": (
+                    f"Flux analyzer found {new_template_count} new template(s) "
+                    "relative to its baseline."
+                ),
+            }
+        )
+    return findings
+
+
+def flux_ratio_text(value: object) -> str:
+    if isinstance(value, bool) or value is None:
+        return ""
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return f" ({ratio * 100:.1f}%)"
+
+
+def flux_latency_severity(p95: str) -> str:
+    try:
+        value = float(p95)
+    except ValueError:
+        return "low"
+    if value >= 1000:
+        return "high"
+    if value >= 200:
+        return "medium"
+    return "low"
 
 
 def influxql_report_summary(value: JsonObject) -> str:

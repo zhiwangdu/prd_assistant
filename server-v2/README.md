@@ -57,9 +57,10 @@ slice provides the durable foundation for the V2 product model:
   materialized `tool_inputs` before execution, then fall back to manifest file
   patterns, initial grep keyword matches, or raw upload artifacts for storage
   analyzers. Enabled storage analyzer materialized inputs point to safe artifact
-  files or directory bundles extracted from uploads and archives. Generic JSON
-  stdout and InfluxQL analyzer report/compare stdout are normalized into
-  `summary/findings`. Task MCP responses preserve the V2 nested
+  files or directory bundles extracted from uploads and archives. Generic JSON,
+  Flux analyzer metrics/topQueries/parseErrors, and InfluxQL analyzer
+  report/compare stdout are normalized into `summary/findings`. Task MCP
+  responses preserve the V2 nested
   `result/artifact/evidence` payload and also expose Rust/V1-compatible
   top-level `artifactPath`, `summary`, and `evidenceRefs` fields, plus
   finding-level `finalEvidenceRefs` when the tool produced findings. During
@@ -927,6 +928,10 @@ for special rules, parse errors, realtime classification, fingerprints, compare
 fingerprint deltas, and rule deltas. V2 uses the Rust/V1 report detection
 rule: `total_records`, `total_statements`, and `fingerprints` keys are enough
 to enter the specialized parser, even if `fingerprints` is not an array.
+Flux analyzer stdout keeps tool-provided `summary/findings` when present. If a
+version only returns `metrics`, `topQueries`, and `parseErrors`, V2 derives a
+`flux query stats` summary plus parse-error, Top Flux template, p95 latency,
+and new-template findings.
 
 Configured tools may declare `paramsSchema`. Task MCP `logagent.run_domain_tool`
 then accepts `params`, validates a conservative object-schema subset
