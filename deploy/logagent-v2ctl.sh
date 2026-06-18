@@ -43,7 +43,7 @@ if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || ((STARTUP_TIMEOUT_SECONDS <
 fi
 
 usage() {
-  echo "Usage: $0 {start|stop|restart|status|logs}"
+  echo "Usage: $0 {start|stop|restart|status|logs|help}"
 }
 
 prepare_runtime_dirs() {
@@ -246,6 +246,9 @@ status_server() {
 }
 
 case "${1:-}" in
+  help | --help | -h)
+    usage
+    ;;
   start)
     start_server
     ;;

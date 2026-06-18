@@ -109,8 +109,9 @@ V2 `deploy/logagent-v2ctl.sh start` 和 `restart` 会等待配置的 health URL
 成功；如果进程启动后退出或超过 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`
 仍未 ready，脚本会清理 stale pid 并以非零状态退出。控制脚本默认只信任
 当前 runtime 的 pid file，不通过全局进程扫描接管其它运行目录的 V2 进程；
-该约束有轻量脚本回归测试，避免后续改动重新引入跨实例误控风险。`status`
-同样会进行 authenticated tools catalog probe，用于部署后确认
+该约束有轻量脚本回归测试，避免后续改动重新引入跨实例误控风险。
+`help`、`--help` 和 `-h` 只打印 usage 并返回成功，未知命令仍返回错误。
+`status` 同样会进行 authenticated tools catalog probe，用于部署后确认
 source-built analyzers 是否被当前进程识别。
 
 个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：

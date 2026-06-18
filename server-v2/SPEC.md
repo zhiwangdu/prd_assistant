@@ -1965,6 +1965,7 @@ The current slice is accepted when:
   `influxdb_storage_analyzer`).
 - `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
   V2 logs using the same `.env` loading pattern as the Rust deploy controls.
-  `status` must print authenticated source-built analyzer registration,
-  command existence, executable, and unavailable reason fields when the service
-  and tools catalog are reachable.
+  `help`, `--help`, and `-h` must print usage and return success, while unknown
+  commands still fail. `status` must print authenticated source-built analyzer
+  registration, command existence, executable, and unavailable reason fields
+  when the service and tools catalog are reachable.

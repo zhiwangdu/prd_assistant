@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Deploy Control Help
+
+- Added explicit `help`, `--help`, and `-h` support to
+  `deploy/logagent-v2ctl.sh`; these now print usage and exit successfully while
+  unknown commands still return an error.
+- Added deployment-script regression coverage for the V2 runtime control help
+  path alongside the existing pid-file-scoped status check.
+- Updated Deployment docs and V2 Server README/SPEC for the help behavior.
+
 ## 2026-06-18 Server V2 InfluxQL CompareReport Null Lists
 
 - Added V2 regression coverage for real InfluxQL CompareReport payloads where

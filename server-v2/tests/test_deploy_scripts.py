@@ -68,6 +68,12 @@ class DeployScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             env = self.isolated_env(tmp_path)
+
+            help_result = self.run_script(script, "--help", env=env)
+            self.assertEqual(help_result.returncode, 0)
+            self.assertIn("Usage:", help_result.stdout)
+            self.assertIn("help", help_result.stdout)
+
             pid_file = Path(env["LOGAGENT_V2_PID_FILE"])
             pid_file.write_text(str(os.getpid()), encoding="utf-8")
 

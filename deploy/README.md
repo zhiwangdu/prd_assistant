@@ -270,6 +270,7 @@ LOGAGENT_LAN_REMOTE_DEPLOY_DIR=/home/duzhiwang/workspace/data/prd_assistant/depl
 V2 has equivalent controls:
 
 ```bash
+./logagent-v2ctl.sh --help
 ./logagent-v2ctl.sh start
 ./logagent-v2ctl.sh status
 ./logagent-v2ctl.sh logs
@@ -279,9 +280,10 @@ V2 has equivalent controls:
 
 `logagent-v2ctl.sh` is scoped to the configured V2 pid file by default, so
 multiple runtime directories do not accidentally control each other's V2
-processes. `start` and `restart` wait for the configured V2 health URL to
-return success. If the process exits or the health check times out, the script
-removes the stale pid file and returns a non-zero status.
+processes. `help`, `--help`, and `-h` print usage and exit successfully.
+`start` and `restart` wait for the configured V2 health URL to return success.
+If the process exits or the health check times out, the script removes the
+stale pid file and returns a non-zero status.
 
 Check the UI after startup:
 

@@ -328,7 +328,8 @@ non-interactive SSH shells. Deploy regression coverage verifies `--help`,
 missing `LOGAGENT_SRC_DIR` validation, pid-file-scoped controls, installed
 runtime checks, and `--tools-only --only-tool <name>` canonical delegation to
 `scripts/build-tools.sh` without creating a V2 virtualenv or syncing WebUI.
-`logagent-v2ctl.sh start` and `restart` export
+`logagent-v2ctl.sh help`, `--help`, and `-h` print usage and exit successfully;
+unknown commands still fail. `logagent-v2ctl.sh start` and `restart` export
 `LOGAGENT_V2_APP_DIR`, wait for `/health` until
 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` expires, and clean stale pid files when
 startup fails. The control script is pid-file scoped by default so separate
