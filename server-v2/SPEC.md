@@ -960,9 +960,10 @@ Manual pprof tool runs must use the Rust/V1 action id prefix
 under `tool_results/<action_id>/`.
 Its generated config example must document the dedicated
 `LOGAGENT_V2_PPROF_GO_COMMAND` path rather than a generic
-`LOGAGENT_V2_TOOLS_JSON` subprocess entry. Built-in tools without standalone
-executables, such as Fetch, Metadata, preprocess, and Huawei package sync, are
-not packaged. The
+`LOGAGENT_V2_TOOLS_JSON` subprocess entry, and must use an absolute path
+placeholder because enabled pprof rejects relative Go command paths. Built-in
+tools without standalone executables, such as Fetch, Metadata, preprocess, and
+Huawei package sync, are not packaged. The
 archive contains:
 
 ```text

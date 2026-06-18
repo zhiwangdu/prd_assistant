@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tools Zip Pprof Absolute Path Example
+
+- Updated `tools.zip` generated `config/examples/pprof_analyzer.yaml` to use
+  an absolute path placeholder for `LOGAGENT_V2_PPROF_GO_COMMAND`.
+- This matches V2 startup validation, which rejects relative Go command paths
+  when pprof is enabled, and avoids presenting the packaged Go executable as a
+  generic subprocess tool.
+- Updated V2 Server and Tool Runner docs plus export-package regression
+  assertions.
+- Verification passed: focused `tools_zip` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Preprocess Node Summary Parity
 
 - Aligned manual `logagent.preprocess_log_package` node aggregation with

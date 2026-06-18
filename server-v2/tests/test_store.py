@@ -12554,7 +12554,10 @@ grep_results.json#matches/0
                 self.assertIn("config/examples/pprof_analyzer.yaml", names)
                 example = archive.read("config/examples/pprof_analyzer.yaml").decode("utf-8")
                 self.assertIn("LOGAGENT_V2_PPROF_GO_COMMAND", example)
-                self.assertIn("./bin/pprof_analyzer/fake-go", example)
+                self.assertIn(
+                    "/absolute/path/to/extracted/tools/bin/pprof_analyzer/fake-go",
+                    example,
+                )
                 self.assertNotIn("LOGAGENT_V2_TOOLS_JSON entry", example)
                 self.assertNotIn("args: []", example)
                 manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))

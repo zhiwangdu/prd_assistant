@@ -1161,8 +1161,10 @@ built-in tools without standalone executables are omitted. Generic subprocess
 tool examples are `LOGAGENT_V2_TOOLS_JSON` snippets; the `pprof_analyzer`
 example instead documents `LOGAGENT_V2_PPROF_GO_COMMAND`, because V2 must
 invoke the packaged Go executable as `go tool pprof` rather than as a raw
-subprocess tool. The export does not include API keys, endpoint credentials,
-runtime environment values, uploads, artifacts, or workspace data.
+subprocess tool. The pprof example uses an absolute path placeholder because
+enabled V2 pprof configuration rejects relative Go command paths. The export
+does not include API keys, endpoint credentials, runtime environment values,
+uploads, artifacts, or workspace data.
 
 Fetch endpoints are configured through the protected HTTP API or imported from
 DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
