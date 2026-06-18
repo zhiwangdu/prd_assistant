@@ -6,6 +6,7 @@ from contextlib import suppress
 
 from .agent import AgentRuntime
 from .config import Settings
+from .environment import persist_remote_environment_evidence
 from .remote_execution import execute_remote_command_run
 from .store import JsonObject, Store
 
@@ -97,7 +98,10 @@ class JobRunner:
                         )
                     except Exception:
                         phase = "EXECUTE_REMOTE_COMMAND"
-                    self.store.fail_remote_run(run_id, phase, str(error))
+                    failed_run = self.store.fail_remote_run(run_id, phase, str(error))
+                    persist_remote_environment_evidence(
+                        self.settings, self.store, failed_run
+                    )
                 except Exception:
                     pass
             self.store.fail_job(job, str(error))

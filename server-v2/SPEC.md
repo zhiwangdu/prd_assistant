@@ -245,13 +245,15 @@ Implemented in this slice:
   accepts the V1 shape with only `reason` and defaults missing `actionType` to
   `manual_approval`. Approved
   `collect_environment` actions either record V1-compatible MOCK
-  `environment_evidence` background artifacts or, when the action input targets
-  an enabled Remote Executor plus exactly one whitelisted command or file
-  template, queue a remote command or bounded SCP file collection job before
-  resuming the analysis run. Remote command `result`, `stdout`, and `stderr`
-  files and remote file `collected_file` support artifacts are copied into the
-  analysis workspace artifact registry and linked from the environment evidence
-  payload.
+  `environment_evidence` background artifacts or queue approved Remote Executor
+  targets before resuming the analysis run. The legacy input shape accepts one
+  enabled executor plus exactly one whitelisted command/file template; the
+  batch shape accepts `targets[]` with up to 20 such entries. Batch collection
+  waits for every remote run to finish and then writes one aggregate evidence
+  artifact with `COLLECTED`, `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Remote
+  command `result`, `stdout`, and `stderr` files and remote file
+  `collected_file` support artifacts are copied into the analysis workspace
+  artifact registry and linked from the environment evidence payload.
 - Final answer schema normalization and evidence ref validation. A run can only
   be marked `succeeded` after final refs point to current-run, final-allowed
   `session_text_input.json#question`, log search, log slice, Fetch response,
@@ -1306,13 +1308,15 @@ remote command smoke runner. They are not a full Environment Collector.
   exact absolute paths with safe path segments; glob patterns, whitespace,
   `.`/`..`, backslashes, repeated separators, and shell metacharacters are
   rejected at settings load.
-- Approved `collect_environment` actions may provide `input.executorId` and
-  either `input.commandId` or `input.fileId`, but not both. Command targets use
-  fixed SSH argv. File targets enqueue a remote run with
-  `operation=file_collection`, construct fixed SCP argv with batch mode,
-  connect timeout, host-key policy, port, `user@host:<remotePath>`, and a
-  server-owned destination path, then verify the collected file exists and does
-  not exceed template/default max bytes.
+- Approved `collect_environment` actions may provide the legacy
+  `input.executorId` plus either `input.commandId` or `input.fileId`, but not
+  both. They may also provide `input.targets[]` / `input.remoteTargets[]` with
+  up to 20 target objects; each target must name an enabled executor and exactly
+  one whitelisted command/file template. Command targets use fixed SSH argv.
+  File targets enqueue a remote run with `operation=file_collection`, construct
+  fixed SCP argv with batch mode, connect timeout, host-key policy, port,
+  `user@host:<remotePath>`, and a server-owned destination path, then verify the
+  collected file exists and does not exceed template/default max bytes.
 - `GET /api/v2/executor-runs/:run_id/files/:file_name` must require the same
   API key as other V2 APIs, accept only `result`, `stdout`, `stderr`, or
   `collected`, resolve the stored relative path from the run result, and reject
@@ -1575,18 +1579,27 @@ containing recent user messages, answered/approved/rejected actions, remaining
 pending actions, and `resumeDirective=finalize_with_current_evidence` when the
 user chooses finalization. If an approved action has
 `actionType=collect_environment`, V2 checks the approved action input, including
-any decision-time override, for `executorId` plus exactly one of `commandId` or
-`fileId`. A valid command target queues a `remote_command_run` with
-`operation=command`; a valid file target queues the same DB-backed job with
+any decision-time override, for either a legacy `executorId` plus exactly one of
+`commandId` / `fileId`, or a batch `targets[]` / `remoteTargets[]` array. Batch
+actions accept up to 20 target objects; each target is independently validated
+against the enabled Remote Executor table and command/file template allowlists.
+A valid command target queues a `remote_command_run` with `operation=command`;
+a valid file target queues the same DB-backed job with
 `operation=file_collection`, validates the template from
 `LOGAGENT_V2_REMOTE_FILES_JSON`, and fetches one bounded remote file through
-the configured SCP binary. The analysis run remains waiting during collection,
-then V2 writes `environment_evidence/<action_id>/result.json` with
-`status=COLLECTED` or `REMOTE_FAILED`, the approved input, remote run id,
-remote operation, remote result paths, bounded stdout/stderr previews, and file
-metadata when present. V2 also registers remote command `remote_result.json`,
-`stdout.txt`, `stderr.txt`, and remote file `collected_file.bin` as run support
-artifacts with logical paths under `environment_evidence/<action_id>/`.
+the configured SCP binary. Single-target collection uses the idempotency key
+`environment:<action_id>`; batch targets use
+`environment:<action_id>:<index>`. The analysis run remains waiting during
+collection, and batch mode does not write final environment evidence until all
+remote runs are terminal. V2 then writes
+`environment_evidence/<action_id>/result.json` with `status=COLLECTED`,
+`PARTIALLY_COLLECTED`, or `REMOTE_FAILED`, the approved input, remote run ids,
+per-target statuses, remote result paths, bounded stdout/stderr previews, and
+file metadata when present. V2 also registers remote command
+`remote_result.json`, `stdout.txt`, `stderr.txt`, and remote file
+`collected_file.bin` as run support artifacts with logical paths under
+`environment_evidence/<action_id>/` for single targets and
+`environment_evidence/<action_id>/targets/<index>/` for batch targets.
 Invalid remote targets produce `status=REMOTE_REJECTED` background evidence.
 When no remote target is supplied, V2 records the V1-compatible `status=MOCK`
 artifact. The resource is available from `GET /api/v2/runs/:run_id/analysis`
@@ -1595,9 +1608,9 @@ and task MCP `logagent://task/<run_id>/environment_evidence`, with the
 outline is included in the next `analysis_package` and Agent prompt. The copied
 remote output support files are available through
 `GET /api/v2/runs/:run_id/artifacts` and task MCP `artifact_index` with
-`source="support"`. The current runtime still does not implement full
-multi-node Environment Collector planning, batch file collection, or Agent
-auto-selection of executor/template targets.
+`source="support"`. The current runtime still does not implement Agent
+auto-selection of executor/template targets or richer environment templates;
+batch collection is driven by approved structured input.
 
 ## Security
 

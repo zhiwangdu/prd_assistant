@@ -2,6 +2,27 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Environment Collector Batch Targets
+
+- Extended approved V2 `collect_environment` actions with a structured
+  `targets[]` / `remoteTargets[]` batch input. Each target must use an enabled
+  Remote Executor and exactly one whitelisted `commandId` or `fileId`.
+- Batch targets use independent idempotency keys
+  `environment:<action_id>:<index>` and wait for every remote run to reach a
+  terminal state before writing one aggregate `environment_evidence` artifact.
+  Aggregate status is `COLLECTED`, `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`.
+- Batch support artifacts use logical paths under
+  `environment_evidence/<action_id>/targets/<index>/...`; single-target paths
+  remain unchanged.
+- Remote job-level failures now also attempt environment evidence aggregation,
+  so failed batch targets do not leave the analysis run permanently waiting.
+- Added regression coverage for mixed command/file batch collection and partial
+  batch failure handling.
+- Verification passed: focused `collect_environment` pytest selection,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (135 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Endpoint Patch Regression
 
 - Added API-level regression coverage for `PATCH

@@ -8359,6 +8359,319 @@ fi
             else:
                 os.environ["LOGAGENT_TEST_REMOTE_ROOT"] = previous_remote_root
 
+    def test_approved_collect_environment_batches_remote_targets(self) -> None:
+        previous_remote_root = os.environ.get("LOGAGENT_TEST_REMOTE_ROOT")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                remote_root = root / "remote-root"
+                remote_file = remote_root / "var" / "log" / "opengemini" / "tsdb.log"
+                remote_file.parent.mkdir(parents=True)
+                remote_file.write_text("batch tsdb backlog\n", encoding="utf-8")
+                os.environ["LOGAGENT_TEST_REMOTE_ROOT"] = remote_root.as_posix()
+                fake_ssh = root / "fake-ssh"
+                fake_ssh.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import json, sys\n"
+                    "print(json.dumps({'argv': sys.argv[1:]}))\n",
+                    encoding="utf-8",
+                )
+                fake_ssh.chmod(0o755)
+                fake_scp = root / "fake-scp"
+                fake_scp.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import os, pathlib, shutil, sys\n"
+                    "source = sys.argv[-2]\n"
+                    "target = pathlib.Path(sys.argv[-1])\n"
+                    "remote = source.split(':', 1)[1]\n"
+                    "root = pathlib.Path(os.environ['LOGAGENT_TEST_REMOTE_ROOT'])\n"
+                    "source_path = root / remote.lstrip('/')\n"
+                    "target.parent.mkdir(parents=True, exist_ok=True)\n"
+                    "shutil.copyfile(source_path, target)\n"
+                    "print(f'copied {remote}')\n",
+                    encoding="utf-8",
+                )
+                fake_scp.chmod(0o755)
+                settings = Settings(
+                    data_dir=root / "data",
+                    api_key="test",
+                    remote_ssh_command=fake_ssh.as_posix(),
+                    remote_scp_command=fake_scp.as_posix(),
+                    remote_commands=(
+                        RemoteCommandTemplate(
+                            command_id="env_snapshot",
+                            display_name="Environment snapshot",
+                            description="collect bounded environment status",
+                            argv=("uname", "-a"),
+                            timeout_seconds=5,
+                        ),
+                    ),
+                    remote_files=(
+                        RemoteFileTemplate(
+                            file_id="tsdb_log",
+                            display_name="TSDB log",
+                            description="collect one bounded tsdb log",
+                            remote_path="/var/log/opengemini/tsdb.log",
+                            timeout_seconds=5,
+                            max_bytes=4096,
+                        ),
+                    ),
+                )
+                settings.ensure_dirs()
+                store = Store(settings.sqlite_path)
+                store.initialize()
+                workspace = store.create_workspace(
+                    "need batch environment evidence", "diagnose", "en-US"
+                )
+                run = store.create_run(workspace["id"])
+                initial_jobs = store.acquire_jobs("test-worker", limit=1)
+                self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+                store.complete_job(initial_jobs[0]["id"])
+                store.update_run_status(
+                    run["id"], "waiting_for_approval", "waiting_for_approval"
+                )
+                command_executor = store.create_remote_executor(
+                    {
+                        "name": "command node",
+                        "host": "127.0.0.1",
+                        "port": 2222,
+                        "user": "root",
+                        "enabled": True,
+                    }
+                )
+                file_executor = store.create_remote_executor(
+                    {
+                        "name": "file node",
+                        "host": "127.0.0.2",
+                        "port": 2222,
+                        "user": "root",
+                        "enabled": True,
+                    }
+                )
+                action = store.create_action(
+                    run["id"],
+                    "approval",
+                    {
+                        "actionType": "collect_environment",
+                        "reason": "Need multiple remote snapshots",
+                        "input": {
+                            "targets": [
+                                {
+                                    "executorId": command_executor["executorId"],
+                                    "commandId": "env_snapshot",
+                                },
+                                {
+                                    "executorId": file_executor["executorId"],
+                                    "fileId": "tsdb_log",
+                                },
+                            ]
+                        },
+                    },
+                )
+                decided = store.decide_action(action["id"], "approved", "ok")
+
+                pending = persist_approved_environment_evidence(settings, store, decided)
+
+                self.assertIsNotNone(pending)
+                assert pending is not None
+                self.assertEqual(pending["payload"]["status"], "QUEUED")
+                self.assertEqual(pending["payload"]["remoteOperation"], "batch")
+                self.assertEqual(pending["payload"]["targetCount"], 2)
+                remote_runs = store.list_remote_runs(limit=10)
+                self.assertEqual(len(remote_runs), 2)
+                self.assertEqual(
+                    {
+                        item["idempotencyKey"]
+                        for item in remote_runs
+                    },
+                    {
+                        f"environment:{action['id']}:0",
+                        f"environment:{action['id']}:1",
+                    },
+                )
+
+                remote_jobs = store.acquire_jobs("remote-worker", limit=2)
+                self.assertEqual(
+                    [item["kind"] for item in remote_jobs],
+                    ["remote_command_run", "remote_command_run"],
+                )
+                asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+                self.assertEqual(
+                    [
+                        item
+                        for item in store.list_evidence(run["id"])
+                        if item["kind"] == "environment_evidence"
+                    ],
+                    [],
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "waiting_for_approval")
+
+                asyncio.run(JobRunner(settings, store).process_job(remote_jobs[1]))
+
+                evidence_items = [
+                    item
+                    for item in store.list_evidence(run["id"])
+                    if item["kind"] == "environment_evidence"
+                ]
+                self.assertEqual(len(evidence_items), 1)
+                evidence = evidence_items[0]
+                self.assertEqual(evidence["payload"]["status"], "COLLECTED")
+                self.assertEqual(evidence["payload"]["remoteOperation"], "batch")
+                self.assertEqual(evidence["payload"]["targetCount"], 2)
+                artifact = store.get_artifact(evidence["artifact_id"])
+                artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+                artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+                self.assertEqual(artifact_json["status"], "COLLECTED")
+                self.assertEqual(artifact_json["successfulTargetCount"], 2)
+                self.assertEqual(artifact_json["failedTargetCount"], 0)
+                self.assertEqual(
+                    [item["targetIndex"] for item in artifact_json["targets"]],
+                    [0, 1],
+                )
+                self.assertEqual(
+                    artifact_json["targets"][0]["remoteCommandId"],
+                    "env_snapshot",
+                )
+                self.assertEqual(artifact_json["targets"][1]["remoteFileId"], "tsdb_log")
+                self.assertEqual(
+                    artifact_json["artifactPaths"]["target0_stdoutPath"],
+                    f"environment_evidence/{action['id']}/targets/0/stdout.txt",
+                )
+                self.assertEqual(
+                    artifact_json["artifactPaths"]["target1_collected_filePath"],
+                    f"environment_evidence/{action['id']}/targets/1/collected_file.bin",
+                )
+                run_artifacts = get_run_artifacts(settings, store, run["id"])
+                artifact_index_paths = {
+                    item["path"] for item in run_artifacts["artifactIndex"]["artifacts"]
+                }
+                self.assertIn(
+                    f"environment_evidence/{action['id']}/targets/0/stdout.txt",
+                    artifact_index_paths,
+                )
+                self.assertIn(
+                    f"environment_evidence/{action['id']}/targets/1/collected_file.bin",
+                    artifact_index_paths,
+                )
+                self.assertEqual(store.get_run(run["id"])["status"], "queued")
+                resume_jobs = store.acquire_jobs("analysis-worker", limit=1)
+                self.assertEqual(resume_jobs[0]["kind"], "run_analysis")
+        finally:
+            if previous_remote_root is None:
+                os.environ.pop("LOGAGENT_TEST_REMOTE_ROOT", None)
+            else:
+                os.environ["LOGAGENT_TEST_REMOTE_ROOT"] = previous_remote_root
+
+    def test_approved_collect_environment_batch_records_partial_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_ssh = root / "fake-ssh"
+            fake_ssh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "argv = ' '.join(sys.argv[1:])\n"
+                "print(argv)\n"
+                "if '127.0.0.2' in argv:\n"
+                "    print('simulated remote failure', file=sys.stderr)\n"
+                "    sys.exit(7)\n",
+                encoding="utf-8",
+            )
+            fake_ssh.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                remote_ssh_command=fake_ssh.as_posix(),
+                remote_commands=(
+                    RemoteCommandTemplate(
+                        command_id="env_snapshot",
+                        display_name="Environment snapshot",
+                        description="collect bounded environment status",
+                        argv=("uname", "-a"),
+                        timeout_seconds=5,
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "need partial batch environment evidence", "diagnose", "en-US"
+            )
+            run = store.create_run(workspace["id"])
+            initial_jobs = store.acquire_jobs("test-worker", limit=1)
+            self.assertEqual(initial_jobs[0]["kind"], "run_analysis")
+            store.complete_job(initial_jobs[0]["id"])
+            store.update_run_status(
+                run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            ok_executor = store.create_remote_executor(
+                {
+                    "name": "ok node",
+                    "host": "127.0.0.1",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            failing_executor = store.create_remote_executor(
+                {
+                    "name": "failing node",
+                    "host": "127.0.0.2",
+                    "port": 2222,
+                    "user": "root",
+                    "enabled": True,
+                }
+            )
+            action = store.create_action(
+                run["id"],
+                "approval",
+                {
+                    "actionType": "collect_environment",
+                    "reason": "Need multiple remote snapshots",
+                    "input": {
+                        "targets": [
+                            {
+                                "executorId": ok_executor["executorId"],
+                                "commandId": "env_snapshot",
+                            },
+                            {
+                                "executorId": failing_executor["executorId"],
+                                "commandId": "env_snapshot",
+                            },
+                        ]
+                    },
+                },
+            )
+            decided = store.decide_action(action["id"], "approved", "ok")
+
+            pending = persist_approved_environment_evidence(settings, store, decided)
+
+            self.assertIsNotNone(pending)
+            remote_jobs = store.acquire_jobs("remote-worker", limit=2)
+            asyncio.run(JobRunner(settings, store).process_job(remote_jobs[0]))
+            asyncio.run(JobRunner(settings, store).process_job(remote_jobs[1]))
+
+            evidence_items = [
+                item
+                for item in store.list_evidence(run["id"])
+                if item["kind"] == "environment_evidence"
+            ]
+            self.assertEqual(len(evidence_items), 1)
+            evidence = evidence_items[0]
+            self.assertEqual(evidence["payload"]["status"], "PARTIALLY_COLLECTED")
+            artifact = store.get_artifact(evidence["artifact_id"])
+            artifact_path = resolve_artifact_path(settings, artifact["relative_path"])
+            artifact_json = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_json["status"], "PARTIALLY_COLLECTED")
+            self.assertEqual(artifact_json["successfulTargetCount"], 1)
+            self.assertEqual(artifact_json["failedTargetCount"], 1)
+            self.assertEqual(artifact_json["remoteStatusCounts"], {"OK": 1, "FAILED": 1})
+            self.assertEqual(
+                [item["remoteStatus"] for item in artifact_json["targets"]],
+                ["OK", "FAILED"],
+            )
+            self.assertEqual(store.get_run(run["id"])["status"], "queued")
+
     def test_collect_environment_invalid_remote_target_records_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

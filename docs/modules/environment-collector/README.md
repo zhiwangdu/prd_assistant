@@ -18,7 +18,7 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 
 ## 当前基础能力
 
-当前已落地通用 Remote Executor 框架，并已接入 V2 审批后的单目标环境采集：
+当前已落地通用 Remote Executor 框架，并已接入 V2 审批后的单目标和结构化批量环境采集：
 
 - WebUI `Tools / Executors` 可纳管 ECS 执行机，资产持久化在 `storage.data_dir/executors`。
 - Server 支持 `remote_command_run` task 和 `EXECUTE_REMOTE_COMMAND` phase，通过系统 `ssh` 二进制执行 `remote_execution.commands` 白名单模板。
@@ -32,20 +32,27 @@ Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等
 - V2 已接入 `collect_environment` 审批后的 evidence 闭环：如果 action input
   含有效 `executorId` 且只选择 `commandId` 或 `fileId` 之一，Server 会通过
   Remote Executor 执行白名单命令，或通过 `LOGAGENT_V2_REMOTE_SCP_COMMAND`
-  按白名单文件模板 SCP 拉取单个有大小上限的远程文件。完成后写入
-  `environment_evidence/<action_id>/result.json`，状态为 `COLLECTED` 或
+  按白名单文件模板 SCP 拉取单个有大小上限的远程文件。action input 也可以
+  携带最多 20 个 `targets[]` / `remoteTargets[]` 批量目标；每个目标都必须
+  指向已启用 executor 和一个白名单 command/file 模板。单目标完成后写入
+  `environment_evidence/<action_id>/result.json`；批量模式使用
+  `environment:<action_id>:<index>` 幂等键排队多个 remote run，等待全部完成后
+  写入一个聚合 result，状态为 `COLLECTED`、`PARTIALLY_COLLECTED` 或
   `REMOTE_FAILED`，并重新排队同一个 analysis run；同时把远程
   `remote_result.json`、`stdout.txt`、`stderr.txt` 和可选
-  `collected_file.bin` 复制为当前 analysis workspace 的 support artifacts，
-  并通过 `/api/v2/runs/:run_id/artifacts` 和任务 MCP `artifact_index` 暴露；
-  远程目标无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留
-  与 Rust Server 兼容的 `MOCK` evidence。
+  `collected_file.bin` 复制为当前 analysis workspace 的 support artifacts。
+  单目标 support artifact 位于 `environment_evidence/<action_id>/...`；批量
+  support artifact 位于
+  `environment_evidence/<action_id>/targets/<index>/...`；这些文件通过
+  `/api/v2/runs/:run_id/artifacts` 和任务 MCP `artifact_index` 暴露。远程目标
+  无效时写入 `REMOTE_REJECTED` evidence；如果没有远程目标，则保留与 Rust
+  Server 兼容的 `MOCK` evidence。
 - V2 Analyze 审批卡片当前会在 `collect_environment` action 上加载已启用的
   Remote Executor、白名单命令模板和白名单文件模板；用户选择 executor 后可在
   command/file 目标类型之间二选一，批准时把互斥的 `commandId` 或 `fileId`
   作为 decision `input` 提交，Server 会先写回 action payload 再调度采集。
-- 当前不支持多节点批量采集，也不支持由 Agent 自动选择
-  executor/command/file；这些仍属于完整 Environment Collector 后续工作。
+- 当前批量采集需要审批输入显式提供 `targets[]`；仍不支持由 Agent 自动选择
+  executor/command/file，也未内置更多环境模板。
 
 ## 适用场景
 
@@ -95,13 +102,15 @@ environments:
 ## 流程
 
 1. 用户选择测试环境和目标节点范围，或 Agent 请求 `collect_environment`
-   审批；审批时可补齐已配置的 `executorId` 加 `commandId` 或 `fileId`。
+   审批；审批时可补齐已配置的 `executorId` 加 `commandId` / `fileId`，也可
+   传入多个 `targets[]`。
 2. 服务端根据配置建立 SSH 连接。
-3. 如果批准的是文件模板，V2 当前通过 SCP 拉取白名单路径下的单个有大小上限文件。
-4. 如果批准的是命令模板，V2 执行单个 Remote Executor command 模板。
+3. 如果批准的是文件模板，V2 通过 SCP 拉取白名单路径下的单个有大小上限文件。
+4. 如果批准的是命令模板，V2 执行 Remote Executor command 模板。
 5. 保存到任务 workspace。
-6. 生成 `environment_evidence.json` 和 `manifest.json`；V2 还会把远程命令
-   `result/stdout/stderr` 和远程文件 `collected_file.bin` 注册为当前 run 的
+6. 单目标直接生成 `environment_evidence.json`；批量目标等待全部完成后生成一个
+   聚合 `environment_evidence.json`，包含 per-target 状态和统计。V2 还会把远程
+   命令 `result/stdout/stderr` 和远程文件 `collected_file.bin` 注册为当前 run 的
    support artifacts。
 7. 采集证据回填 Analysis Orchestrator，继续同一任务。
 
@@ -151,7 +160,8 @@ collected/
 - Remote file template id 复用 command id 安全规则，`remotePath` 必须是配置中的
   绝对安全路径，拒绝 `..`、`.`、`//`、反斜杠、空格、glob 和非安全字符。
 - V2 `collect_environment` 远程执行只接受已存在 executor 和已配置 command/file
-  id，不接受自由命令、自由路径或由用户消息临时扩展白名单。
+  id；批量 `targets[]` 中每个目标都必须满足同一约束。不接受自由命令、自由
+  路径或由用户消息临时扩展白名单。
 - V2 远程命令和文件输出 artifact 属于 background/support evidence，只能辅助下一轮
   分析和人工审计，不能绕过 final evidence ref 校验。
 - WebUI 审批只能选择已启用 executor 和配置模板；不选择远程目标时 Server

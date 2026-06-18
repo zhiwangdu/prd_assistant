@@ -91,12 +91,16 @@ slice provides the durable foundation for the V2 product model:
   `request_approval` accepts the V1 shape with only `reason` and defaults
   missing `actionType` to `manual_approval`.
   Approved `collect_environment` actions can either record V1-compatible mock
-  `environment_evidence` background artifacts or, when given a Remote Executor
-  `executorId` plus exactly one whitelisted `commandId` or `fileId`, queue a
-  remote command or bounded SCP file collection job before resuming the
-  analysis run. Completed remote `result`, `stdout`, `stderr`, and collected
-  file support artifacts are copied into the analysis workspace artifact
-  registry and linked from the environment evidence payload.
+  `environment_evidence` background artifacts or queue Remote Executor
+  collection targets before resuming the analysis run. The legacy single-target
+  shape accepts `executorId` plus exactly one whitelisted `commandId` or
+  `fileId`; the batch shape accepts `targets[]`, each with an executor and one
+  command/file template. Batch collection waits for every remote run to finish
+  before writing one aggregate evidence artifact with `COLLECTED`,
+  `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`. Completed remote `result`,
+  `stdout`, `stderr`, and collected file support artifacts are copied into the
+  analysis workspace artifact registry and linked from the environment evidence
+  payload.
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`; the run question is persisted as
   `session_text_input.json` and can be cited as
@@ -1139,17 +1143,25 @@ advertises these waiting tools during normal analysis; when a provider requests
   waiting/approval tools. The approval decision body may include an `input`
   object; for approved actions V2 writes it back to the action payload before
   executing approval side effects. When an approved action payload has
-  `actionType=collect_environment`, V2 checks `input.executorId` plus either
-  `input.commandId` or `input.fileId`. A valid command target queues a
-  `remote_command_run` using the whitelisted command template. A valid file
-  target queues the same DB-backed remote job with `operation=file_collection`
-  and uses the whitelisted `LOGAGENT_V2_REMOTE_FILES_JSON` template plus
-  `LOGAGENT_V2_REMOTE_SCP_COMMAND` to fetch one bounded file. The analysis run
-  remains waiting while collection runs, then V2 writes
-  `environment_evidence/<action_id>/result.json` with remote status, previews,
-  result paths, and artifact ids. Command collection exposes
-  `remote_result.json`, `stdout.txt`, and `stderr.txt`; file collection also
-  exposes `collected_file.bin` before requeueing the analysis run.
+  `actionType=collect_environment`, V2 checks either the legacy
+  `input.executorId` plus exactly one of `input.commandId` / `input.fileId`, or
+  a batch `input.targets[]` array. Each batch target must name an enabled
+  executor and exactly one whitelisted command/file template; up to 20 targets
+  are accepted. A valid command target queues a `remote_command_run` using the
+  whitelisted command template. A valid file target queues the same DB-backed
+  remote job with `operation=file_collection` and uses the whitelisted
+  `LOGAGENT_V2_REMOTE_FILES_JSON` template plus `LOGAGENT_V2_REMOTE_SCP_COMMAND`
+  to fetch one bounded file. The analysis run remains waiting while collection
+  runs. Single-target collection writes
+  `environment_evidence/<action_id>/result.json` when that remote run finishes;
+  batch collection uses idempotency keys `environment:<action_id>:<index>` and
+  writes one aggregate result only after all targets reach a terminal state.
+  Aggregate status is `COLLECTED`, `PARTIALLY_COLLECTED`, or `REMOTE_FAILED`.
+  Command collection exposes `remote_result.json`, `stdout.txt`, and
+  `stderr.txt`; file collection also exposes `collected_file.bin`. Batch support
+  artifacts use logical paths under
+  `environment_evidence/<action_id>/targets/<index>/...` before requeueing the
+  analysis run.
 Invalid remote targets produce `REMOTE_REJECTED` background evidence instead of
 leaving the approved action half-applied. If no remote target is supplied, V2
 preserves the V1-compatible MOCK evidence path. Environment evidence is exposed
