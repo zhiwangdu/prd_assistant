@@ -135,6 +135,56 @@ def default_remote_commands() -> tuple[RemoteCommandTemplate, ...]:
             description="Read-only TCP listener snapshot.",
             argv=("ss", "-lntp"),
         ),
+        RemoteCommandTemplate(
+            command_id="opengemini_processes",
+            display_name="openGemini: processes",
+            description="Read-only openGemini process snapshot without command-line arguments.",
+            argv=(
+                "ps",
+                "-C",
+                "ts-meta,ts-sql,ts-store,opengemini,influxd",
+                "-o",
+                "pid,ppid,stat,comm",
+                "--sort=comm",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="opengemini_config_dirs",
+            display_name="openGemini: config directories",
+            description="Read-only listing of common openGemini configuration directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/etc/openGemini",
+                "/etc/opengemini",
+                "/opt/openGemini",
+                "/opt/opengemini",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="opengemini_log_dirs",
+            display_name="openGemini: log directories",
+            description="Read-only listing of common openGemini log directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/log/openGemini",
+                "/var/log/opengemini",
+                "/home/Ruby/log",
+            ),
+        ),
+        RemoteCommandTemplate(
+            command_id="opengemini_data_dirs",
+            display_name="openGemini: data directories",
+            description="Read-only listing of common openGemini data directories.",
+            argv=(
+                "ls",
+                "-la",
+                "/var/lib/openGemini",
+                "/var/lib/opengemini",
+                "/var/chroot/gemini",
+            ),
+        ),
     )
 
 

@@ -321,8 +321,8 @@ Implemented in this slice:
 - Remote Executor foundation with SQLite-managed executor assets,
   environment-configured whitelisted SSH command templates, whitelisted SCP
   file templates, DB-backed remote command/file jobs, controlled SSH/SCP argv
-  construction, bounded stdout/stderr capture, and result files under
-  `remote_runs/<run_id>/`.
+  construction, built-in system and openGemini read-only command templates,
+  bounded stdout/stderr capture, and result files under `remote_runs/<run_id>/`.
 - WebUI V2 cutover: the default React routes render V2 Analyze, Memory,
   System Context, Metadata, Tools, Fetch, Executors, and Settings surfaces
   directly against `/api/v2/*` instead of rendering the legacy Rust-compatible
@@ -1343,7 +1343,11 @@ remote command smoke runner. They are not a full Environment Collector.
 - Command templates are loaded from `LOGAGENT_V2_REMOTE_COMMANDS_JSON`. If
   unset, V2 exposes built-in read-only templates: `smoke_ls_root`,
   `system_uname`, `uptime_load`, `disk_usage`, `memory_usage`,
-  `process_overview`, and `network_listeners`.
+  `process_overview`, `network_listeners`, `opengemini_processes`,
+  `opengemini_config_dirs`, `opengemini_log_dirs`, and
+  `opengemini_data_dirs`. The openGemini templates use fixed process-name and
+  common directory candidates only, with no shell pipes, redirects, or
+  user-provided argv.
 - Command template descriptors must match the Rust/V1 behavior: `enabled`
   combines global remote execution state with template state, and
   `timeoutSeconds` is always the template override or default remote command

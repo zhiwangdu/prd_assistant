@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 openGemini Remote Templates
+
+- Added V2 built-in Remote Executor templates for openGemini process-name
+  snapshots and common configuration, log, and data directory candidates.
+- Kept the new templates as fixed read-only argv entries without shell pipes,
+  redirects, or user-provided command parameters.
+- Extended default remote template regression coverage to assert the new IDs
+  and key argv/path values.
+- Updated root, V2 Server, Environment Collector, Analysis Agent, Config, and
+  deploy environment docs.
+- Verification passed: focused default remote command template pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with
+  154 passed and 1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Case MCP Limit Parity
 
 - Aligned V2 readonly MCP `logagent.search_cases` with the Rust/V1 readonly

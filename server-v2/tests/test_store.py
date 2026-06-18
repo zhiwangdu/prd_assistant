@@ -4897,11 +4897,29 @@ class StoreTests(unittest.TestCase):
                 "memory_usage",
                 "process_overview",
                 "network_listeners",
+                "opengemini_processes",
+                "opengemini_config_dirs",
+                "opengemini_log_dirs",
+                "opengemini_data_dirs",
             },
         )
         self.assertEqual(by_id["system_uname"].argv, ("uname", "-a"))
         self.assertEqual(by_id["disk_usage"].argv, ("df", "-h"))
         self.assertEqual(by_id["process_overview"].argv[-1], "--sort=comm")
+        self.assertEqual(
+            by_id["opengemini_processes"].argv,
+            (
+                "ps",
+                "-C",
+                "ts-meta,ts-sql,ts-store,opengemini,influxd",
+                "-o",
+                "pid,ppid,stat,comm",
+                "--sort=comm",
+            ),
+        )
+        self.assertIn("/etc/opengemini", by_id["opengemini_config_dirs"].argv)
+        self.assertIn("/var/log/opengemini", by_id["opengemini_log_dirs"].argv)
+        self.assertIn("/var/chroot/gemini", by_id["opengemini_data_dirs"].argv)
         self.assertEqual(
             [template.command_id for template in parse_remote_commands_env(None)],
             [template.command_id for template in templates],
