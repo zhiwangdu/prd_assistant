@@ -222,7 +222,7 @@ Huawei package sync 的 `result.json` 至少包含：
   Fetch `response_body.bin` 和 pprof top/tree/raw/stderr/SVG 输出，并保持
   `finalAllowed=false`。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
-- Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建对应工具并验证 stdout JSON。
+- Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建或复用对应真实工具，并验证 stdout JSON 的 tool id、summary 或关键 finding。
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。
 - `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址和顶层仓库 `origin` 不被修改。若 submodule 目录只是父仓库内的未初始化目录，脚本不得对该目录执行 `remote set-url origin`。
 - Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。

@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Source-built Analyzer Smoke Verification
+
+- Verified all four source-built analyzer smoke scripts against real local
+  `target/tools` binaries and initialized `third_party/` submodules:
+  `scripts/smoke-flux-query-analyzer.sh`,
+  `scripts/smoke-influxql-analyzer.sh`,
+  `scripts/smoke-opengemini-storage-analyzer.sh`, and
+  `scripts/smoke-influxdb-storage-analyzer.sh`.
+- Updated Analysis Agent and Tool Runner docs to remove the stale note that
+  Flux real smoke was not yet connected, and to document the current four-script
+  smoke coverage.
+- Verification passed: the four smoke scripts above and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Task Context Guard
 
 - Tightened task MCP `logagent.search_code` so runs bound to a Metadata

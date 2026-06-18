@@ -146,6 +146,11 @@ tools:
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
 - 当前 `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxdb.git` 的 `influxdb-tools` 分支；CLI 入口为 `cmd/influxdb_storage_analyzer`，用于只读检查 TSM、TSI 和 `_series` 文件。
 - Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量后会自动注册对应 source-built analyzer，默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
+- `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、
+  `scripts/smoke-opengemini-storage-analyzer.sh` 和
+  `scripts/smoke-influxdb-storage-analyzer.sh` 均会从 submodule 构建或复用
+  `target/tools` 中的真实二进制，并验证 stdout JSON 的 tool id、summary
+  或关键 finding。
 - Python V2 共享工具目录返回 `sourceBuiltAnalyzers`，固定列出
   Flux/InfluxQL/openGemini/InfluxDB 四个 source-built analyzer ID 的
   `registered`、`enabled`、`runnable` 和 `status`，用于部署后确认 submodule
