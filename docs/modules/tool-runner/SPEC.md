@@ -212,6 +212,10 @@ Huawei package sync 的 `result.json` 至少包含：
 - `credentialMetadata` 中的环境变量名，包含 V1 `gaussdbPasswordEnv=null`
   和 V2 `gaussdbDsnEnv=LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`
 
+`gaussdb.queryRowCount` 是查询返回总行数，`gaussdb.queryRows` 只保存前 200
+行 preview；超过 200 行时 `queryRowsTruncated=true`。重复 query 列名必须按
+Rust/V1 形态追加 `_2`、`_3` 等稳定后缀。
+
 OBS `url` 必须使用 Rust/V1 virtual-hosted bucket 形态并按 object key path
 segment 编码；OBS HEAD `contentLength` 有值时必须是数字。
 

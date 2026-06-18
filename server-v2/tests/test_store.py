@@ -113,6 +113,7 @@ from logagent_v2.system_context import (
 )
 import logagent_v2.tools as tools_module
 from logagent_v2.tools import (
+    collect_gaussdb_query_rows,
     execute_tool_run,
     findings_from_stdout,
     huawei_object_url,
@@ -6740,6 +6741,20 @@ fi
                 if item["payload"].get("toolId") == "logagent.huawei_cloud_package_sync"
             )
             self.assertFalse(huawei_evidence["final_allowed"])
+
+    def test_huawei_gaussdb_query_rows_match_v1_bounds(self) -> None:
+        rows = [(index, f"pkg-{index}", {"raw": index}) for index in range(201)]
+
+        result = collect_gaussdb_query_rows(["id", "id", "payload"], rows)
+
+        self.assertEqual(result["rowCount"], 201)
+        self.assertTrue(result["truncated"])
+        self.assertEqual(len(result["rows"]), 200)
+        self.assertEqual(
+            result["rows"][0],
+            {"id": 0, "id_2": "pkg-0", "payload": "{'raw': 0}"},
+        )
+        self.assertEqual(result["rows"][-1]["id"], 199)
 
     def test_huawei_object_url_matches_v1_virtual_host_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

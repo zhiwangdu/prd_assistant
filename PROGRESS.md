@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Huawei Query Preview Parity
+
+- Aligned V2 Huawei package sync GaussDB query result shaping with Rust/V1.
+- `queryRowCount` now records total rows returned by the query, while
+  `queryRows` stores only the first 200 preview rows and
+  `queryRowsTruncated` is true only when more than 200 rows exist.
+- Duplicate GaussDB query column names are now stabilized with `_2`, `_3`, ...
+  suffixes instead of overwriting earlier columns in the preview row object.
+- Added a direct regression for 201-row truncation and duplicate column names.
+- Updated Tool Runner docs/specs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_huawei_package_sync_result_matches_v1_shape tests/test_store.py::StoreTests::test_huawei_gaussdb_query_rows_match_v1_bounds tests/test_store.py::StoreTests::test_huawei_object_url_matches_v1_virtual_host_shape`
+  with 3 passed,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/tools.py tests/test_store.py`,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 170 passed
+  and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Source-Built Analyzer Build Aliases
 
 - Extended `scripts/build-tools.sh`, `scripts/v2-local.sh`, and

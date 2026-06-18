@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 import base64
 from datetime import UTC, datetime
 import email.utils
@@ -59,6 +60,7 @@ SOURCE_BUILT_ANALYZERS: tuple[tuple[str, str], ...] = (
     ("opengemini_storage_analyzer", "openGemini Storage Analyzer"),
     ("influxdb_storage_analyzer", "InfluxDB Storage Analyzer"),
 )
+MAX_HUAWEI_QUERY_ROWS = 200
 
 
 def tool_descriptors(settings: Settings) -> list[JsonObject]:
@@ -2470,19 +2472,57 @@ def execute_gaussdb_sql(dsn: str | None, sql: str, fetch: bool) -> JsonObject:
             cursor.execute(sql)
             if fetch:
                 columns = [item.name for item in cursor.description or []]
-                rows = cursor.fetchmany(200)
-                return {
-                    "rowCount": len(rows),
-                    "truncated": len(rows) == 200,
-                    "rows": [
-                        {columns[index]: stringify_sql_value(value) for index, value in enumerate(row)}
-                        for row in rows
-                    ],
-                    "durationMs": int((time.monotonic() - started) * 1000),
-                }
+                result = collect_gaussdb_query_rows(columns, iter_cursor_rows(cursor))
+                result["durationMs"] = int((time.monotonic() - started) * 1000)
+                return result
             affected = cursor.rowcount
         conn.commit()
     return {"affectedRows": affected, "durationMs": int((time.monotonic() - started) * 1000)}
+
+
+def iter_cursor_rows(cursor: object) -> Iterable[Sequence[object]]:
+    fetchmany = getattr(cursor, "fetchmany")
+    while True:
+        rows = fetchmany(MAX_HUAWEI_QUERY_ROWS)
+        if not rows:
+            break
+        yield from rows
+
+
+def collect_gaussdb_query_rows(
+    columns: Sequence[str],
+    rows: Iterable[Sequence[object]],
+) -> JsonObject:
+    names = unique_sql_column_names(columns)
+    preview_rows: list[JsonObject] = []
+    row_count = 0
+    for row in rows:
+        row_count += 1
+        if len(preview_rows) >= MAX_HUAWEI_QUERY_ROWS:
+            continue
+        preview_rows.append(
+            {
+                names[index]: stringify_sql_value(value)
+                for index, value in enumerate(row)
+                if index < len(names)
+            }
+        )
+    return {
+        "rowCount": row_count,
+        "truncated": row_count > MAX_HUAWEI_QUERY_ROWS,
+        "rows": preview_rows,
+    }
+
+
+def unique_sql_column_names(columns: Sequence[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    names: list[str] = []
+    for column in columns:
+        base = str(column or "column").strip() or "column"
+        count = counts.get(base, 0) + 1
+        counts[base] = count
+        names.append(base if count == 1 else f"{base}_{count}")
+    return names
 
 
 def stringify_sql_value(value: object) -> object:
