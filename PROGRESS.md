@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 InfluxQL Query Extraction Parity
+
+- Aligned V2 InfluxQL query extraction with Rust/V1 by recognizing JSON and
+  `key=value` fields named `query`, `sql`, `stmt`, or `statement`.
+- Added V1-compatible quoted key-value parsing, escaped quote handling, query
+  cleanup, and `grant` / `revoke` statement detection.
+- Extended materialized tool input coverage so generic InfluxQL input records
+  include both JSON query lines and `stmt=...` log lines.
+- Updated V2 Server and Log Analyzer docs.
+- Verification passed: focused InfluxQL extraction/materialization pytest
+  selection, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, and full `cd server-v2 && PYTHONPATH=. uv run --extra
+  dev pytest` with 156 passed and 1 Starlette warning.
+
 ## 2026-06-18 V2 Node Package Filename Parity
 
 - Aligned V2 node log package parsing with Rust/V1 filename semantics for

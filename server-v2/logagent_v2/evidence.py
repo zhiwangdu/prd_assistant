@@ -1327,6 +1327,9 @@ def materialize_file_query_inputs(
     return results
 
 
+INFLUXQL_QUERY_KEYS = ("query", "sql", "stmt", "statement")
+
+
 def extract_influxql_query(line: str) -> str | None:
     stripped = line.strip()
     if not stripped:
@@ -1336,13 +1339,53 @@ def extract_influxql_query(line: str) -> str | None:
     except Exception:
         value = None
     if isinstance(value, dict):
-        for key in ("query", "sql", "statement"):
+        for key in INFLUXQL_QUERY_KEYS:
             query = value.get(key)
-            if isinstance(query, str) and looks_like_influxql(query):
-                return query.strip()
-    if looks_like_influxql(stripped):
-        return stripped
+            if isinstance(query, str):
+                query = clean_query(query)
+                if looks_like_influxql(query):
+                    return query
+    for key in INFLUXQL_QUERY_KEYS:
+        query = extract_key_value(stripped, key)
+        if query:
+            query = clean_query(query)
+            if looks_like_influxql(query):
+                return query
+    query = clean_query(stripped)
+    if looks_like_influxql(query):
+        return query
     return None
+
+
+def extract_key_value(line: str, key: str) -> str | None:
+    lower = line.lower()
+    needle = f"{key}="
+    start = lower.find(needle)
+    if start < 0:
+        return None
+    rest = line[start + len(needle) :].lstrip()
+    if not rest:
+        return None
+    first = rest[0]
+    if first in {"'", '"'}:
+        value = []
+        escaped = False
+        for char in rest[1:]:
+            if escaped:
+                value.append(char)
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == first:
+                break
+            else:
+                value.append(char)
+        return "".join(value)
+    return rest.split(maxsplit=1)[0].strip(",")
+
+
+def clean_query(value: str) -> str:
+    return value.strip().strip('"').strip("'")
 
 
 def extract_flux_query(line: str) -> str | None:
@@ -1374,6 +1417,8 @@ def looks_like_influxql(value: str) -> bool:
             "drop ",
             "create ",
             "alter ",
+            "grant ",
+            "revoke ",
         )
     )
 

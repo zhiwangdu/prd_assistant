@@ -100,7 +100,7 @@ tool_inputs/log_text/<nodeId>/<timestamp>/<logGroup>.jsonl
 tool_inputs/influxql_analyzer/<nodeId>/<timestamp>.jsonl
 ```
 
-`log_text` JSONL 是 V1 风格的通用逐行文本流，按节点、采集时间和日志组聚合且不绑定具体 `toolIds`；`influxql_analyzer` JSONL 只包含能明确提取 `query` 的记录，供 Tool Runner 优先传给 `influxql_analyzer`。
+`log_text` JSONL 是 V1 风格的通用逐行文本流，按节点、采集时间和日志组聚合且不绑定具体 `toolIds`；`influxql_analyzer` JSONL 只包含能从 raw SQL、JSON 字段或 `key=value` 字段中明确提取 `query` / `sql` / `stmt` / `statement` 的记录，供 Tool Runner 优先传给 `influxql_analyzer`。
 
 如果 Log Analysis Session 没有上传日志，Server pipeline 仍会创建 `raw/` 和 `extracted/` 目录，并生成 `session_text_input.json`、空文件列表的 `manifest.json` 和空 matches 的 `grep_results.json`，让 Analysis Orchestrator 可以基于用户问题、Metadata、Case 和后续交互继续运行。
 

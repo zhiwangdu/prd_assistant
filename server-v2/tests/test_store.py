@@ -51,7 +51,11 @@ from logagent_v2.config import (
     parse_tools_env,
 )
 from logagent_v2.environment import persist_approved_environment_evidence
-from logagent_v2.evidence import build_initial_evidence, parse_node_log_package
+from logagent_v2.evidence import (
+    build_initial_evidence,
+    extract_influxql_query,
+    parse_node_log_package,
+)
 from logagent_v2.exports import build_skills_zip, build_tools_zip
 from logagent_v2.fetch import (
     endpoint_for_storage,
@@ -3424,6 +3428,23 @@ class StoreTests(unittest.TestCase):
             )
         )
 
+    def test_extract_influxql_query_accepts_v1_key_value_fields(self) -> None:
+        self.assertEqual(
+            extract_influxql_query(
+                'level=info stmt="select * from cpu where host = \\"a\\" limit 10"'
+            ),
+            'select * from cpu where host = "a" limit 10',
+        )
+        self.assertEqual(
+            extract_influxql_query("sql='show series from cpu'"),
+            "show series from cpu",
+        )
+        self.assertEqual(
+            extract_influxql_query('{"stmt":"grant all privileges to admin"}'),
+            "grant all privileges to admin",
+        )
+        self.assertIsNone(extract_influxql_query('stmt="not an influxql statement"'))
+
     def test_node_log_package_is_classified_and_gzip_rotation_is_read(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)
@@ -6598,6 +6619,7 @@ fi
             workspace = store.create_workspace("analyze query templates", "diagnose", "en-US")
             content = (
                 "{\"query\":\"select * from cpu where host = 'a'\"}\n"
+                'level=info stmt="show series from cpu"\n'
                 '{"flux":"from(bucket: \\"metrics\\") |> range(start: -1h)"}\n'
             ).encode("utf-8")
             artifact = write_artifact_bytes(
@@ -6624,6 +6646,7 @@ fi
             index = json.loads(index_path.read_text(encoding="utf-8"))
             entries = {entry["toolIds"][0]: entry for entry in index["inputs"]}
             self.assertEqual(entries["influxql_analyzer"]["inputKind"], "influxql_jsonl")
+            self.assertEqual(entries["influxql_analyzer"]["recordCount"], 2)
             self.assertEqual(entries["flux_query_analyzer"]["inputKind"], "flux_query_jsonl")
             self.assertEqual(entries["flux_query_analyzer"]["scope"], "file")
 
@@ -6642,7 +6665,7 @@ fi
                 },
             )
             influx_payload = json.loads(influx_response["result"]["content"][0]["text"])
-            self.assertEqual(influx_payload["result"]["summary"], "influx rows=1")
+            self.assertEqual(influx_payload["result"]["summary"], "influx rows=2")
             self.assertIn("select * from cpu", influx_payload["result"]["findings"][0]["message"])
 
             flux_response = task_mcp_response(
