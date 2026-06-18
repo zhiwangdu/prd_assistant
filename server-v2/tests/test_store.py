@@ -5927,7 +5927,11 @@ fi
                 result["artifactPaths"]["stderrPath"],
                 f"tool_results/{action_id}/stderr.txt",
             )
-            self.assertEqual(result["artifacts"], result["artifactIds"])
+            self.assertEqual(result["artifacts"], result["artifactPaths"])
+            self.assertEqual(
+                result["artifacts"]["topTextPath"],
+                f"tool_results/{action_id}/top.txt",
+            )
             self.assertIn("top", result["artifactIds"])
             self.assertIn("stderr", result["artifactIds"])
             run_artifacts = store.list_run_artifacts(tool_run["id"])

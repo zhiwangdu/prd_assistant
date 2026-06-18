@@ -257,7 +257,7 @@ Huawei package sync 的 `result.json` 至少包含：
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。
 - `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址和顶层仓库 `origin` 不被修改。若 submodule 目录只是父仓库内的未初始化目录，脚本不得对该目录执行 `remote set-url origin`。
 - Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。
-- `pprof_analyzer` 手动运行必须创建 `tool_run` task，action id 使用 Rust/V1 前缀 `act_tool_pprof_analyzer_<run_id>`，成功后 `/api/tools/runs/:task_id/result` 返回 profile type、total、top 表格、`error`、`durationMs`、`createdAt`、V2 artifact id 映射和 Rust/V1-style `artifactPaths`（top/tree/raw/stderr/SVG 逻辑路径）；top/tree/raw 都成功时 status 才是 `OK`，SVG 失败只进入 warnings。
+- `pprof_analyzer` 手动运行必须创建 `tool_run` task，action id 使用 Rust/V1 前缀 `act_tool_pprof_analyzer_<run_id>`，成功后 `/api/tools/runs/:task_id/result` 返回 profile type、total、top 表格、`error`、`durationMs`、`createdAt`、Rust/V1-style `artifacts` / `artifactPaths`（top/tree/raw/stderr/SVG 逻辑路径）和 V2 `artifactIds` 映射；top/tree/raw 都成功时 status 才是 `OK`，SVG 失败只进入 warnings。
 - V2 `/api/v2/tools/runs/:run_id/result` 在 tool run 未成功前必须返回
   HTTP 409 并带当前 status；成功后必须保留 V2 `run` / `artifact` /
   `result` 对象，同时补齐 Rust/V1-compatible 顶层 `runId`、`toolId` 和

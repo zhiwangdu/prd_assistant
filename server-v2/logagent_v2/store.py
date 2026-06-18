@@ -79,9 +79,10 @@ def artifact_support_specs(value: Any) -> list[JsonObject]:
     artifact_ids = value.get("artifactIds")
     if isinstance(artifact_ids, dict):
         add_artifact_id_map(specs, seen, action_id, artifact_ids, value.get("artifactPaths"))
-    artifacts = value.get("artifacts")
-    if isinstance(artifacts, dict):
-        add_artifact_id_map(specs, seen, action_id, artifacts, value.get("artifactPaths"))
+    else:
+        artifacts = value.get("artifacts")
+        if isinstance(artifacts, dict):
+            add_artifact_id_map(specs, seen, action_id, artifacts, value.get("artifactPaths"))
     return specs
 
 

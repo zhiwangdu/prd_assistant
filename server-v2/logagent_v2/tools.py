@@ -1975,7 +1975,7 @@ def run_pprof_tool(
         "sampleIndex": sample_index,
         "total": total,
         "top": top_entries,
-        "artifacts": artifact_ids,
+        "artifacts": artifact_paths,
         "artifactIds": artifact_ids,
         "artifactPaths": artifact_paths,
         "warnings": warnings,

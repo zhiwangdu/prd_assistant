@@ -1132,8 +1132,9 @@ an absolute Go command path. Its `paramsSchema` exposes V1 top-level
 mirror; `sampleIndex` is trimmed and must contain only letters, digits, `_`, or
 `-`, while `generateSvg` must be a JSON boolean.
 Its result JSON includes parsed `profileType`, `total`, top rows, `error`,
-`durationMs`, `createdAt`, V2 artifact id mappings, and Rust/V1-style `artifactPaths` for
-`tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`.
+`durationMs`, `createdAt`, Rust/V1-style `artifacts` / `artifactPaths` for
+`tool_results/<action_id>/{top.txt,tree.txt,raw.txt,stderr.txt,graph.svg}`, and
+V2-only `artifactIds` for local artifact records.
 The pprof action id follows Rust/V1 as `act_tool_pprof_analyzer_<run_id>`, so
 manual run support artifact paths keep the same logical prefix.
 The pprof subprocess argv matches Rust/V1: top/tree/svg use

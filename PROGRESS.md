@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Pprof Artifact Field Parity
+
+- Restored Rust/V1 pprof result semantics by making `result.artifacts` a
+  logical path object again, matching `artifactPaths`.
+- Kept V2 local artifact database ids under the additive `artifactIds` field.
+- Tightened support artifact aggregation to prefer `artifactIds`; legacy
+  payloads without `artifactIds` can still use `artifacts` as an id map, while
+  V1-style pprof path objects no longer create fake support artifact ids.
+- Updated pprof regression coverage and V2 Server / Tool Runner docs.
+- Verification passed: focused `pprof` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Pprof Tool Result Path Parity
 
 - Aligned V2 `pprof_analyzer` manual tool-run action ids with Rust/V1:

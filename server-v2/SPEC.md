@@ -238,8 +238,9 @@ Implemented in this slice:
   and `gaussdbQuery` fields.
 - `pprof_analyzer` catalog metadata matches the Rust/V1 configured command
   shape (`source=configured`, `backend=command`) while remaining manual-only in
-  V2. Tool-run results preserve V2 artifact ids and include Rust/V1-style
-  `artifactPaths` for top/tree/raw/stderr/SVG outputs, plus parsed
+  V2. Tool-run results keep Rust/V1-style `artifacts` and `artifactPaths` for
+  top/tree/raw/stderr/SVG outputs, preserve V2 artifact ids under
+  `artifactIds`, and include parsed
   `profileType`, `total`, top table rows, `error`, `durationMs`, and
   `createdAt`.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
