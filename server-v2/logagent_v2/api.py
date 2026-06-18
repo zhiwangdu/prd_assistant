@@ -1455,7 +1455,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         if not run.get("result"):
-            raise HTTPException(status_code=404, detail="remote run result is not available")
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "remote command result is only available after success",
+                    "status": run.get("status"),
+                },
+            )
         return run["result"]
 
     @app.get("/api/v2/executor-runs/{run_id}/files/{file_name}")

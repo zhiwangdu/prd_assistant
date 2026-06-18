@@ -151,6 +151,7 @@ logical `case_recall/recall_<stable_id>.json` path on background
 - Python V2 任务 MCP 兼容 V1 的 `artifact_index`、`case_context` 和 `tool_results` 资源；`artifact_index` 从 V2 Store 枚举当前 run 上传和 evidence artifacts，`case_context` 返回最新 Case background context，`tool_results` 聚合 `tool_result` / `fetch_result` artifact 并保持 `tool_results/<action_id>/result.json` canonical path。
 - `GET /api/v2/runs/<run_id>/result` 在 final answer/result artifact 生成前必须返回 HTTP 409 和当前 run status；成功后返回 finalAnswer、result artifact、Markdown artifact 和对应 evidence metadata。
 - `GET /api/v2/tools/runs/<run_id>/result` 在结果 artifact 生成前必须返回 HTTP 409 和当前 run status；成功后保留 V2 `run` / `artifact` / `result` 对象，并提供 Rust/V1-compatible 顶层 `taskId`、`runId`、`toolId`、`resultPath`，其中 `taskId == runId`。
+- `GET /api/v2/executor-runs/<run_id>/result` 在远程执行结果生成前必须返回 HTTP 409 和当前 run status；成功后返回 Rust/V1-compatible `taskId`、`executorId`、`commandId`、`resultPath`、`result` wrapper。
 - `agent_response.json` 只能表达 completed / waiting outcome。
 - Server 继续负责 MCP tool schema、白名单、预算、幂等、审批和 final evidence ref 校验。
 

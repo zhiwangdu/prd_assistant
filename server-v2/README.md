@@ -678,7 +678,10 @@ data_dir/
 Non-zero exit, timeout, and start failures are recorded in `result.json`; the
 remote run itself reaches `SUCCEEDED` when the controlled execution completed
 and result files were persisted. System errors before result persistence mark
-the run `FAILED`. The protected
+the run `FAILED`. `GET /api/v2/executor-runs/:run_id/result` returns HTTP 409
+with the current run status until a result is available, then returns the
+Rust/V1-compatible wrapper fields `taskId`, `executorId`, `commandId`,
+`resultPath`, and `result`. The protected
 `GET /api/v2/executor-runs/:run_id/files/:file_name` endpoint downloads only
 the persisted `result`, `stdout`, `stderr`, or collected file (`collected` /
 `file`) logical names. The server resolves those logical names from the stored

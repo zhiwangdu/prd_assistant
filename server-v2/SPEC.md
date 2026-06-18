@@ -1503,8 +1503,12 @@ remote command smoke runner. They are not a full Environment Collector.
   `result.status` as `FAILED` or `TIMED_OUT`; SCP start failure, non-zero exit,
   timeout, missing output file, or over-limit output file follows the same
   status model. The remote run reaches `SUCCEEDED` when controlled execution
-  completed and result files were persisted. System errors before result
-  persistence mark the run `FAILED`.
+  completes and files are persisted.
+- `GET /api/v2/executor-runs/:run_id/result` must return HTTP 409 with the
+  current run status until a persisted result exists. Successful responses must
+  keep the Rust/V1 `RemoteCommandRunResultResponse` wrapper fields: `taskId`,
+  `executorId`, `commandId`, `resultPath`, and `result`.
+- System errors before result persistence mark the run `FAILED`.
 
 ## Final Answer Validation
 

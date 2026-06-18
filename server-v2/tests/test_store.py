@@ -13488,6 +13488,18 @@ grep_results.json#matches/0
             jobs = store.acquire_jobs("test-worker", limit=1)
             self.assertEqual(jobs[0]["kind"], "remote_command_run")
 
+            from fastapi.testclient import TestClient
+            from logagent_v2.api import create_app
+
+            headers = {"Authorization": "Bearer test"}
+            with TestClient(create_app(settings)) as client:
+                pending_result = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/result",
+                    headers=headers,
+                )
+                self.assertEqual(pending_result.status_code, 409)
+                self.assertEqual(pending_result.json()["detail"]["status"], "QUEUED")
+
             asyncio.run(JobRunner(settings, store).process_job(jobs[0]))
 
             finished = store.get_remote_run(run["taskId"])
@@ -13499,11 +13511,20 @@ grep_results.json#matches/0
             self.assertIn("ls", stdout_preview)
             result_path = settings.data_dir / finished["result"]["resultPath"]
             self.assertTrue(result_path.exists())
-            from fastapi.testclient import TestClient
-            from logagent_v2.api import create_app
 
-            headers = {"Authorization": "Bearer test"}
             with TestClient(create_app(settings)) as client:
+                wrapped_result = client.get(
+                    f"/api/v2/executor-runs/{run['taskId']}/result",
+                    headers=headers,
+                )
+                self.assertEqual(wrapped_result.status_code, 200)
+                wrapped_body = wrapped_result.json()
+                self.assertEqual(wrapped_body["taskId"], run["taskId"])
+                self.assertEqual(wrapped_body["executorId"], executor["executorId"])
+                self.assertEqual(wrapped_body["commandId"], "smoke_ls_root")
+                self.assertEqual(wrapped_body["resultPath"], finished["result"]["resultPath"])
+                self.assertEqual(wrapped_body["result"]["status"], "OK")
+
                 result_response = client.get(
                     f"/api/v2/executor-runs/{run['taskId']}/files/result",
                     headers=headers,

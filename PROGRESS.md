@@ -1472,6 +1472,11 @@ Last updated: 2026-06-18
 
 ## 2026-06-18 V2 Remote Executor File Downloads
 
+- `GET /api/v2/executor-runs/:run_id/result` now returns HTTP 409 with the
+  current run status until a remote result exists, matching the Rust/V1
+  RemoteCommandRunResultResponse availability semantics.
+- Successful Remote Executor result responses preserve the Rust/V1 wrapper
+  fields `taskId`, `executorId`, `commandId`, `resultPath`, and `result`.
 - Added protected `GET /api/v2/executor-runs/:run_id/files/:file_name` for V2
   Remote Executor result file downloads. The endpoint only accepts `result`,
   `stdout`, or `stderr`, resolves the path from persisted run output, and
@@ -1482,10 +1487,10 @@ Last updated: 2026-06-18
 - Added regression coverage for successful result/stdout/stderr downloads and
   invalid file names.
 - Updated server-v2, WebUI, and Environment Collector README/SPEC docs.
-- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
-  tests`, focused Remote Executor file download pytest, full
-  `PYTHONPATH=. uv run --extra dev pytest`, `npm run lint`,
-  `npm run typecheck`, and `npm run build`.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2/api.py tests/test_store.py`, focused Remote Executor result/file
+  pytest selection, full `PYTHONPATH=. uv run --extra dev pytest` (162 passed,
+  1 warning), and `git diff --check`.
 
 ## 2026-06-18 WebUI V2 Fetch Standalone Runs
 
