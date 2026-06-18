@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Stub Agent Fallback Wording
+
+- Updated the V2 default stub final answer so it no longer claims LangGraph,
+  model reasoning, domain-tool follow-up, or Case follow-up are "not wired".
+- Stub mode remains a deterministic low-confidence evidence-summary fallback
+  and now states the narrower limitation: it did not perform additional
+  model-driven tool calls.
+- Added regression coverage to the foundation run test so generated stub
+  answers keep the evidence-summary wording and avoid stale "not wired"
+  language.
+- Updated V2 Server README/SPEC to distinguish the local stub fallback from
+  non-stub provider/tool-loop execution.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_workspace_run_job_and_stub_agent`,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/agent.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 WebUI Metadata CSV Import Entry
 
 - Extended the V2 Metadata Workbench template selector with `csv`.

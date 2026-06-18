@@ -151,6 +151,9 @@ Implemented in this slice:
   Claude Code local provider failures expose the same classification shape for
   configuration, timeout, transport, process, output-size, decode, and parse
   errors.
+  The default stub summary is a local fallback and must state only that it did
+  not perform additional model-driven tool calls; it must not describe the V2
+  LangGraph/tool loop as unwired.
   Follow-up evidence refs
   returned by tool observations are added to the next round's
   `allowedEvidenceRefs`. After successful final-answer validation, non-stub

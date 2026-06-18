@@ -745,6 +745,18 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(finished["phase"], "finish")
             self.assertEqual(finished["finalAnswer"]["confidence"], "low")
             self.assertEqual(finished["finalAnswer"]["evidenceRefs"], ["grep_results.json#matches/0"])
+            self.assertIn(
+                "evidence summary",
+                finished["finalAnswer"]["likelyRootCauses"][0]["cause"],
+            )
+            self.assertNotIn(
+                "not wired",
+                json.dumps(finished["finalAnswer"], ensure_ascii=False),
+            )
+            self.assertIn(
+                "Stub provider did not perform additional model-driven tool calls.",
+                finished["finalAnswer"]["missingInformation"],
+            )
             self.assertTrue(finished["alias"])
             self.assertNotIn("task_", finished["alias"].lower())
             self.assertEqual(store.list_runs(workspace["id"])[0]["alias"], finished["alias"])

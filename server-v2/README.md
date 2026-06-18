@@ -758,7 +758,9 @@ parameters. Successful task and readonly MCP `tools/call` responses include the
 Rust/V1-compatible `isError=false` envelope flag. Readonly MCP still exposes the
 catalog for discovery, but any `tools/call` targeting catalog
 configured/manual built-in tools is rejected with an explicit readonly error.
-Full LangGraph planning remains a separate product step.
+The default stub provider remains a low-confidence evidence-summary fallback;
+non-stub providers use the LangGraph provider/tool loop for model-driven
+follow-up.
 
 ## Job Recovery
 
@@ -772,7 +774,9 @@ already terminal or waiting for user/approval, the stale job is marked
 ## Agent Runtime
 
 By default V2 uses `LOGAGENT_V2_AGENT_PROVIDER=stub`, which produces the
-deterministic low-confidence evidence summary used by the foundation tests.
+deterministic low-confidence evidence summary used by the foundation tests. It
+does not run additional model-driven tool calls, so its final answer now
+describes that limitation without implying that the V2 tool loop is absent.
 `LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` sends a compact prompt with the
 Workspace question, manifest counts, initial grep preview, allowed evidence
 refs, recent user messages/action results from resumed runs, available

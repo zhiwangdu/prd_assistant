@@ -1094,7 +1094,7 @@ class AgentRuntime:
                 "likelyRootCauses": [],
                 "nextChecks": [
                     "Run a targeted search with domain-specific keywords.",
-                    "Wire the LangGraph model loop to plan follow-up MCP searches.",
+                    "Enable a non-stub Agent provider when model-driven follow-up is required.",
                 ],
                 "fixSuggestions": [],
                 "missingInformation": ["Initial grep evidence is empty."],
@@ -1111,19 +1111,20 @@ class AgentRuntime:
             "likelyRootCauses": [
                 {
                     "cause": (
-                        "Initial log evidence contains suspicious keywords. Full model reasoning "
-                        "is not wired yet, so this is an evidence summary rather than root cause."
+                        "Initial log evidence contains suspicious keywords. The default stub "
+                        "provider reports this as an evidence summary rather than a confirmed "
+                        "root cause."
                     ),
                     "evidenceRefs": [top[0]["ref"]],
                 }
             ],
             "nextChecks": [
-                "Enable the OpenAI-compatible Agent provider for model reasoning.",
-                "Use task MCP log search and log slice tools for iterative investigation.",
+                "Enable a non-stub Agent provider for model-driven tool use and root-cause reasoning.",
+                "Use task MCP log search, log slice, metadata, case, fetch, and domain-tool calls for iterative investigation.",
             ],
             "fixSuggestions": [],
             "missingInformation": [
-                "Full automatic domain-tool and Case follow-up are not wired yet."
+                "Stub provider did not perform additional model-driven tool calls."
             ],
             "confidence": "low",
             "evidenceRefs": [match["ref"] for match in top],
