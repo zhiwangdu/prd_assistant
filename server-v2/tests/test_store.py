@@ -12496,6 +12496,10 @@ grep_results.json#matches/0
             with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
                 names = set(archive.namelist())
                 self.assertIn("README.md", names)
+                readme = archive.read("README.md").decode("utf-8")
+                self.assertIn("enabled configured subprocess tools", readme)
+                self.assertIn("Built-in tools without standalone executables", readme)
+                self.assertNotIn("Built-in tools are intentionally omitted", readme)
                 self.assertIn("bin/fake_tool/fake-tool", names)
                 self.assertIn("wrappers/fake_tool.sh", names)
                 binary_mode = (archive.getinfo("bin/fake_tool/fake-tool").external_attr >> 16)
@@ -12536,6 +12540,11 @@ grep_results.json#matches/0
                 self.assertIn("bin/pprof_analyzer/fake-go", names)
                 self.assertIn("wrappers/pprof_analyzer.sh", names)
                 self.assertIn("config/examples/pprof_analyzer.yaml", names)
+                example = archive.read("config/examples/pprof_analyzer.yaml").decode("utf-8")
+                self.assertIn("LOGAGENT_V2_PPROF_GO_COMMAND", example)
+                self.assertIn("./bin/pprof_analyzer/fake-go", example)
+                self.assertNotIn("LOGAGENT_V2_TOOLS_JSON entry", example)
+                self.assertNotIn("args: []", example)
                 manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))
 
             tools = {item["toolId"]: item for item in manifest["tools"]}

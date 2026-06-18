@@ -171,6 +171,8 @@ def tool_wrapper(tool_id: str, binary_filename: str) -> str:
 
 
 def tool_config_example(tool: ToolDefinition, binary_filename: object) -> str:
+    if tool.id == PPROF_ANALYZER_ID:
+        return pprof_config_example(binary_filename)
     packaged_path = (
         f"./bin/{safe_zip_segment(tool.id)}/{binary_filename}"
         if isinstance(binary_filename, str)
@@ -192,12 +194,42 @@ def tool_config_example(tool: ToolDefinition, binary_filename: object) -> str:
     )
 
 
+def pprof_config_example(binary_filename: object) -> str:
+    packaged_path = (
+        f"./bin/{safe_zip_segment(PPROF_ANALYZER_ID)}/{binary_filename}"
+        if isinstance(binary_filename, str)
+        else "<absolute path to go executable>"
+    )
+    return (
+        "# pprof_analyzer is the V1-style pprof adapter.\n"
+        "# Configure it with dedicated environment variables, not as a generic\n"
+        "# LOGAGENT_V2_TOOLS_JSON subprocess entry. The Server invokes this command\n"
+        "# as: $LOGAGENT_V2_PPROF_GO_COMMAND tool pprof ...\n"
+        "pprof_analyzer:\n"
+        "  env:\n"
+        '    LOGAGENT_V2_PPROF_ENABLED: "1"\n'
+        "    LOGAGENT_V2_PPROF_GO_COMMAND: "
+        + json.dumps(packaged_path, ensure_ascii=True)
+        + "\n"
+    )
+
+
 def tools_package_readme() -> str:
     return (
         "# LogAgent V2 Tools Package\n\n"
-        "This archive contains configured executable tools from this Server. "
-        "Built-in tools are intentionally omitted. See tools-manifest.json for "
-        "packaged and skipped tools.\n"
+        "This archive contains executable snapshots for enabled configured "
+        "subprocess tools and the enabled pprof_analyzer Go command.\n\n"
+        "- Binaries are under `bin/<tool_id>/`.\n"
+        "- Shell wrappers are under `wrappers/` for packaged executable tools.\n"
+        "- `tools-manifest.json` records configured args, match rules, sha256, "
+        "size, and skipped tools.\n"
+        "- `config/examples/` contains LOGAGENT_V2_TOOLS_JSON snippets for "
+        "generic subprocess tools; pprof_analyzer uses the dedicated "
+        "LOGAGENT_V2_PPROF_GO_COMMAND environment variable.\n"
+        "- Built-in tools without standalone executables, such as Fetch, "
+        "Metadata, preprocess, and Huawei package sync, are omitted.\n"
+        "- No API keys, environment variable values, server config files, "
+        "uploads, or workspaces are included.\n"
     )
 
 

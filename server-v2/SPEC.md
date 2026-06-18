@@ -952,7 +952,11 @@ used with an absolute Go command path. Its descriptor must expose V1 top-level
 digits, `_`, or `-`; `generateSvg` must be a JSON boolean; `nodeCount` is
 clamped to 1..200. The subprocess argv must match Rust/V1: top/tree/svg pass
 `-nodecount=<nodeCount>`, and top/tree/raw/svg all pass `-symbolize=none`.
-Built-in tools are not packaged. The
+Its generated config example must document the dedicated
+`LOGAGENT_V2_PPROF_GO_COMMAND` path rather than a generic
+`LOGAGENT_V2_TOOLS_JSON` subprocess entry. Built-in tools without standalone
+executables, such as Fetch, Metadata, preprocess, and Huawei package sync, are
+not packaged. The
 archive contains:
 
 ```text

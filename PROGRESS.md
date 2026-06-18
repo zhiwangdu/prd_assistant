@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tools Zip Pprof Export Parity
+
+- Corrected V2 `tools.zip` package README to match the actual Rust/V1-style
+  export behavior: enabled configured subprocess tools and the enabled
+  `pprof_analyzer` Go executable are included, while built-ins without
+  standalone executables remain omitted.
+- Changed the generated `config/examples/pprof_analyzer.yaml` from a misleading
+  generic `LOGAGENT_V2_TOOLS_JSON` subprocess example to a dedicated
+  `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_V2_PPROF_ENABLED` example, because
+  V2 must invoke the packaged Go executable as `go tool pprof`.
+- Updated V2 Server and Tool Runner docs and added regression assertions for
+  the exported README and pprof config example.
+- Verification passed: focused `tools_zip` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 MCP Interface Documentation Sync
 
 - Synced Interface and Analysis Agent docs with the latest V2 task MCP parity
