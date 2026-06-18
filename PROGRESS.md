@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Diff Tool
+
+- Added task MCP / Agent provider `logagent.diff_code` for configured local
+  git repositories. It compares controlled base/target versions or refs with
+  read-only `git diff --numstat` under configured `searchRoots`.
+- Diff artifacts are persisted as `code_evidence/<action_id>.json` with
+  base/target refs, commits, file-level added/deleted/binary summaries, and
+  accurate `truncated` status plus final-answer refs
+  `code_evidence/<action_id>.json#diffs/<index>`.
+- Final answer validation and analysis package evidence summaries now accept
+  Code Evidence `#diffs/<index>` refs in addition to existing `#matches/<index>`
+  refs.
+- Metadata-bound runs continue to enforce product/version context: diff target
+  inherits the bound version when omitted, while diff base may point at another
+  configured version/ref for regression comparison.
+- Updated root, V2 Server, and Code Evidence README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Code Evidence pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (141 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Worktree LRU
 
 - Added `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` / `code_worktree_max_per_repo`

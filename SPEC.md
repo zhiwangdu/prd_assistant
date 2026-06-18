@@ -201,11 +201,11 @@ flowchart TD
   Provider request id 与稳定结构化协议；V2 Agent provider 审计字段已先行落地。
 - Memory 外部 embedding provider、可选 sqlite-vec/pgvector 召回增强，以及更正式的 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
-- Code Evidence V2 只读 worktree 检索 MVP 已支持 product/version 到配置 ref 的映射、detached worktree cache、per-product LRU 清理和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version；后续继续实现版本 diff、符号级解析和 fix mode 隔离修改。
+- Code Evidence V2 只读 worktree 检索和文件级 diff MVP 已支持 product/version 到配置 ref 的映射、detached worktree cache、per-product LRU 清理、受控 base/target `git diff --numstat` 比较和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version，diff target 继承该版本而 base 可指向更早的配置版本/ref；后续继续实现符号级解析、patch hunk / AST diff 和 fix mode 隔离修改。
 - 基于已落地的 Remote Executor 命令、V2 SCP 文件采集、approved `targets[]`
   批量采集、Agent 可见候选摘要和单 executor 自动补齐，继续实现多 executor
   语义选型和更多环境模板。
-- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、Environment Collector 单目标和批量采集、Code Evidence 只读 worktree 检索、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
+- V2 clean-room 分支已完成默认 WebUI V2 cutover，继续推进真实领域 fixture 和产品化验证；日志解压/search、拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime、Tool Runner、Metadata、Skills、Case Memory、Fetch、Remote Executor、Environment Collector 单目标和批量采集、Code Evidence 只读 worktree 检索和文件级 diff、核心 MCP 面、Native Agent V2 target 和默认 WebUI 路由已迁移到 V2。
 
 ## 全局验收
 

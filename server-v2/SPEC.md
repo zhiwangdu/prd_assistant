@@ -290,9 +290,13 @@ Implemented in this slice:
   worktrees per product, runs read-only `git grep` under configured search
   roots inside that worktree, writes `code_evidence/<action_id>.json`, and
   exposes final-answer refs as
-  `code_evidence/<action_id>.json#matches/<index>`. When a run is bound to a
-  Metadata instance, the tool inherits and enforces that instance's
-  product/version before resolving refs.
+  `code_evidence/<action_id>.json#matches/<index>`. `logagent.diff_code`
+  compares configured base/target versions or refs with read-only
+  `git diff --numstat`, persists changed-file summaries, and exposes refs as
+  `code_evidence/<action_id>.json#diffs/<index>`. When a run is bound to a
+  Metadata instance, the tools inherit and enforce that instance's
+  product/version before resolving target refs; diff base may use another
+  configured version/ref.
 - Legacy System Context resource compatibility APIs backed by SQLite. V2 can
   create, list, read, update, version, activate, and preview prompt packs,
   architecture docs, runbooks, glossaries, tool capability notes, knowledge
@@ -696,21 +700,33 @@ Code Evidence configuration is optional and loaded from
 `LOGAGENT_V2_CODE_REPOS_JSON`. It accepts either an object keyed by product or
 an array with explicit `product`. Each repo entry requires an absolute
 `repoPath`, a safe `defaultRef`, optional `versionRefs`, and relative
-`searchRoots`. Task MCP `logagent.search_code` is only advertised when at least
-one repo is configured. It accepts `product`, optional `version` or `gitRef`,
-`query`/`keywords`, and `maxMatchesPerKeyword`; `gitRef` must match the
-configured default ref or a configured version ref. The implementation uses
-`git rev-parse`, creates or reuses a detached worktree under
-`LOGAGENT_V2_CODE_WORKTREE_ROOT` or default `data_dir/code_worktrees`, updates
-that worktree's directory mtime as its usage marker, and runs `git grep` inside
-that worktree. `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` defaults to `5` and is
-clamped to at least `1`; after each search V2 removes oldest non-current
-`wt_*` directories for the same product until the cache is within that limit.
-The worktree evidence payload records `worktree.maxPerRepo` and
-`worktree.cleanup` with removed path/name summaries. It does not clone, pull,
-run build scripts, or modify the administrator-configured source repository.
-The worktree root must be absolute when set explicitly, and V2 only
-removes/recreates cached paths after verifying they stay under that root.
+`searchRoots`. Task MCP `logagent.search_code` and `logagent.diff_code` are
+only advertised when at least one repo is configured. `logagent.search_code`
+accepts `product`, optional `version` or `gitRef`, `query`/`keywords`, and
+`maxMatchesPerKeyword`; `gitRef` must match the configured default ref or a
+configured version ref. The implementation uses `git rev-parse`, creates or
+reuses a detached worktree under `LOGAGENT_V2_CODE_WORKTREE_ROOT` or default
+`data_dir/code_worktrees`, updates that worktree's directory mtime as its usage
+marker, and runs `git grep` inside that worktree.
+
+`logagent.diff_code` accepts `product`, optional `baseVersion` / `targetVersion`
+or `baseGitRef` / `targetGitRef`, and `maxFiles`. Refs must be the configured
+default ref or a configured version ref; if a run is bound to Metadata
+product/version, target version/ref is inherited and enforced while base may be
+another configured version/ref. It resolves base/target commits, rejects same
+ref or same commit, and runs read-only
+`git diff --numstat <baseCommit> <targetCommit> -- <searchRoots>` from the
+configured repo. The diff artifact records changed-file `diffs[]` with
+added/deleted/binary summaries and final-answer refs.
+
+`LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` defaults to `5` and is clamped to at
+least `1`; after each search V2 removes oldest non-current `wt_*` directories
+for the same product until the cache is within that limit. The worktree evidence
+payload records `worktree.maxPerRepo` and `worktree.cleanup` with removed
+path/name summaries. It does not clone, pull, run build scripts, or modify the
+administrator-configured source repository. The worktree root must be absolute
+when set explicitly, and V2 only removes/recreates cached paths after verifying
+they stay under that root.
 
 `LOGAGENT_V2_TOOLS_JSON` accepts either a descriptor array or a Rust/V1-style
 object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1
@@ -1379,6 +1395,7 @@ case_context.json#cases/<index>
 tool_results/<tool_id>/result.json#findings/<index>
 tool_results/<fetch_action_id>/result.json#response
 code_evidence/<action_id>.json#matches/<index>
+code_evidence/<action_id>.json#diffs/<index>
 ```
 
 The referenced artifact must exist and the match/finding index must be in
@@ -1516,7 +1533,8 @@ context outlines, bounded `analysisState` resume context, allowed current-run
 evidence refs starting with `session_text_input.json#question`, and
 final-evidence policy including
 `case_context.json#cases/<index>` and
-`code_evidence/<action_id>.json#matches/<index>`. Its resource index includes
+`code_evidence/<action_id>.json#matches/<index>` /
+`code_evidence/<action_id>.json#diffs/<index>`. Its resource index includes
 Agent audit resources, Code Evidence, and optional Rust/V1 Claude runtime
 compatibility resources `claude_mcp_config` and `claude_session`. It
 intentionally omits full Skill content, full Metadata topology, and raw

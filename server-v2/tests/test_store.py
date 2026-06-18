@@ -7021,6 +7021,211 @@ fi
             self.assertEqual(cleanup["remainingCount"], 2)
             self.assertEqual(cleanup["removed"][0]["path"], first_path.as_posix())
 
+    def test_task_mcp_diff_code_creates_final_evidence_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+            (repo / "src").mkdir()
+            (repo / "src" / "planner.py").write_text(
+                "def plan_query():\n"
+                "    return 'old planner'\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "user.name=Test User",
+                    "commit",
+                    "-m",
+                    "v1",
+                ],
+                cwd=repo,
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True)
+            (repo / "src" / "planner.py").write_text(
+                "def plan_query():\n"
+                "    return 'new planner with pushdown'\n"
+                "\n"
+                "def PushDownFilterRule():\n"
+                "    return True\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "user.name=Test User",
+                    "commit",
+                    "-m",
+                    "v2",
+                ],
+                cwd=repo,
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(["git", "tag", "v2.0.0"], cwd=repo, check=True)
+
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                code_repos=(
+                    CodeRepoDefinition(
+                        product="opengemini",
+                        repo_path=repo,
+                        default_ref="HEAD",
+                        version_refs={"1.0.0": "v1.0.0", "2.0.0": "v2.0.0"},
+                        search_roots=("src",),
+                    ),
+                ),
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            store.upsert_metadata_instance(
+                instance_id="inst-code-diff",
+                remark="code diff context",
+                template_type="json",
+                snapshot={
+                    "instance": {
+                        "instanceId": "inst-code-diff",
+                        "product": "opengemini",
+                        "version": "2.0.0",
+                    },
+                    "cluster": {},
+                },
+                raw={},
+            )
+            workspace = store.create_workspace(
+                "investigate planner regression",
+                "code_investigation",
+                "en-US",
+                instance_id="inst-code-diff",
+            )
+            run = store.create_run(workspace["id"])
+
+            tools_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {"jsonrpc": "2.0", "id": 31, "method": "tools/list"},
+            )
+            tool_names = {item["name"] for item in tools_response["result"]["tools"]}
+            self.assertIn("logagent.diff_code", tool_names)
+            self.assertIn(
+                "logagent.diff_code",
+                {item["name"] for item in agent_available_tools(settings)},
+            )
+
+            diff_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.diff_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "baseVersion": "1.0.0",
+                            "maxFiles": 5,
+                        },
+                    },
+                },
+            )
+            payload = json.loads(diff_response["result"]["content"][0]["text"])
+            self.assertEqual(payload["operation"], "diff")
+            self.assertEqual(payload["baseRef"], "v1.0.0")
+            self.assertEqual(payload["targetRef"], "v2.0.0")
+            self.assertEqual(payload["targetVersion"], "2.0.0")
+            self.assertEqual(payload["diffCount"], 1)
+            self.assertFalse(payload["codeEvidence"]["truncated"])
+            self.assertEqual(payload["diffs"][0]["file"], "src/planner.py")
+            self.assertGreaterEqual(payload["diffs"][0]["addedLines"], 2)
+            diff_ref = payload["evidenceRefs"][0]
+            self.assertTrue(diff_ref.endswith("#diffs/0"))
+
+            duplicate_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.diff_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "baseVersion": "1.0.0",
+                            "maxFiles": 5,
+                        },
+                    },
+                },
+            )
+            duplicate = json.loads(duplicate_response["result"]["content"][0]["text"])
+            self.assertEqual(duplicate["artifactPath"], payload["artifactPath"])
+            self.assertEqual(
+                len(
+                    [
+                        item
+                        for item in store.list_evidence(run["id"])
+                        if item["kind"] == "code_evidence"
+                    ]
+                ),
+                1,
+            )
+
+            answer = {
+                "summary": "Code diff evidence is valid.",
+                "symptoms": [],
+                "likelyRootCauses": [
+                    {"cause": "Planner changed between versions", "evidenceRefs": [diff_ref]}
+                ],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": [diff_ref],
+            }
+            normalize_and_validate_final_answer(settings, store, run["id"], answer)
+
+            bad_ref = dict(answer, evidenceRefs=[f"{payload['artifactPath']}#diffs/99"])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], bad_ref)
+
+            wrong_target = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 34,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.diff_code",
+                        "arguments": {
+                            "product": "opengemini",
+                            "baseVersion": "1.0.0",
+                            "targetVersion": "1.0.0",
+                        },
+                    },
+                },
+            )
+            self.assertIn("metadata instance version", wrong_target["error"]["message"])
+
     def test_fetch_endpoint_runs_through_task_mcp_and_final_refs(self) -> None:
         class FetchHandler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:

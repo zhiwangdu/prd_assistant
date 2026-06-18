@@ -6,7 +6,9 @@ from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
 from .code_evidence import (
     code_evidence_available,
+    code_diff_tool_descriptor,
     code_evidence_tool_descriptor,
+    run_code_diff,
     run_code_search,
 )
 from .config import Settings
@@ -377,7 +379,7 @@ def task_resources(run: dict) -> list[dict]:
         ("claude_mcp_config", "Claude MCP config artifact", "application/json"),
         ("claude_session", "Claude session artifact", "application/json"),
         ("case_context", "Latest Case background context", "application/json"),
-        ("code_evidence", "Latest Code Evidence search result", "application/json"),
+        ("code_evidence", "Latest Code Evidence result", "application/json"),
         ("tool_results", "Tool result artifacts", "application/json"),
         ("mcp_calls", "Task MCP call audit log", "application/json"),
         ("result", "Final result JSON artifact", "application/json"),
@@ -776,7 +778,7 @@ def search_logs_descriptor() -> dict:
 def code_evidence_task_tool_descriptors(settings: Settings) -> list[dict]:
     if not code_evidence_available(settings):
         return []
-    return [code_evidence_tool_descriptor()]
+    return [code_evidence_tool_descriptor(), code_diff_tool_descriptor()]
 
 
 def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) -> dict:
@@ -835,6 +837,16 @@ def call_task_tool(settings: Settings, store: Store, run: dict, params: dict) ->
         }
     if name == "logagent.search_code":
         value = run_code_search(settings, store, run, arguments)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=True, indent=2),
+                }
+            ]
+        }
+    if name == "logagent.diff_code":
+        value = run_code_diff(settings, store, run, arguments)
         return {
             "content": [
                 {

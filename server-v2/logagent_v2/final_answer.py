@@ -20,7 +20,9 @@ TOOL_FINDING_RE = re.compile(
 FETCH_RESPONSE_RE = re.compile(r"^(tool_results/[A-Za-z0-9_.-]+/result\.json)#response$")
 CASE_CONTEXT_RE = re.compile(r"^case_context\.json#cases/(\d+)$")
 CASE_ID_RE = re.compile(r"(case_[A-Za-z0-9_]+)")
-CODE_EVIDENCE_RE = re.compile(r"^(code_evidence/[A-Za-z0-9_-]+\.json)#matches/(\d+)$")
+CODE_EVIDENCE_RE = re.compile(
+    r"^(code_evidence/[A-Za-z0-9_-]+\.json)#(matches|diffs)/(\d+)$"
+)
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
@@ -197,12 +199,13 @@ def is_valid_ref(
     code_evidence = CODE_EVIDENCE_RE.match(ref)
     if code_evidence:
         path = code_evidence.group(1)
-        index = int(code_evidence.group(2))
+        field = code_evidence.group(2)
+        index = int(code_evidence.group(3))
         return any(
             item["kind"] == "code_evidence"
             and item["final_allowed"]
             and item["payload"].get("path") == path
-            and artifact_match_exists(settings, store, item, "matches", index)
+            and artifact_match_exists(settings, store, item, field, index)
             for item in evidence_items
         )
 

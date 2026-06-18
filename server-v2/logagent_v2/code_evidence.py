@@ -15,9 +15,10 @@ from .store import JsonObject, Store, now_iso
 
 MAX_CODE_KEYWORDS = 20
 MAX_MATCHES_PER_KEYWORD = 10
+MAX_CODE_DIFF_FILES = 50
 MAX_TEXT_CHARS = 1000
 CODE_EVIDENCE_REF_RE = re.compile(
-    r"^(code_evidence/[A-Za-z0-9_-]+\.json)#matches/(\d+)$"
+    r"^(code_evidence/[A-Za-z0-9_-]+\.json)#(matches|diffs)/(\d+)$"
 )
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]{2,}")
 SAFE_WORKTREE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -71,6 +72,33 @@ def code_evidence_tool_descriptor() -> JsonObject:
                     "minimum": 1,
                     "maximum": MAX_MATCHES_PER_KEYWORD,
                     "default": MAX_MATCHES_PER_KEYWORD,
+                },
+            },
+            "required": ["product"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def code_diff_tool_descriptor() -> JsonObject:
+    return {
+        "name": "logagent.diff_code",
+        "description": (
+            "Compare two configured source versions/refs and return file-level code diff evidence."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product": {"type": "string", "minLength": 1},
+                "baseVersion": {"type": "string"},
+                "targetVersion": {"type": "string"},
+                "baseGitRef": {"type": "string"},
+                "targetGitRef": {"type": "string"},
+                "maxFiles": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_CODE_DIFF_FILES,
+                    "default": MAX_CODE_DIFF_FILES,
                 },
             },
             "required": ["product"],
@@ -183,6 +211,122 @@ def run_code_search(
     return code_search_response(result, evidence)
 
 
+def run_code_diff(
+    settings: Settings,
+    store: Store,
+    run: JsonObject,
+    arguments: JsonObject,
+) -> JsonObject:
+    task_context = task_code_context(store, run)
+    product = resolve_task_code_product(
+        require_string(arguments, "product"),
+        task_context,
+    )
+    repo = resolve_code_repo(settings, product)
+    base_version = optional_string(arguments.get("baseVersion"))
+    target_version = resolve_task_code_version(
+        optional_string(arguments.get("targetVersion")),
+        task_context,
+    )
+    base_ref = resolve_code_ref(repo, base_version, optional_string(arguments.get("baseGitRef")))
+    target_ref = resolve_code_ref(
+        repo,
+        target_version,
+        optional_string(arguments.get("targetGitRef")),
+    )
+    if base_ref == target_ref:
+        raise ValueError("logagent.diff_code requires different base and target refs")
+    base_commit = git_output(repo.repo_path, "rev-parse", f"{base_ref}^{{commit}}")
+    target_commit = git_output(repo.repo_path, "rev-parse", f"{target_ref}^{{commit}}")
+    if base_commit == target_commit:
+        raise ValueError("logagent.diff_code base and target resolve to the same commit")
+    max_files = normalize_max_diff_files(arguments.get("maxFiles"))
+    action_id = code_diff_action_id(
+        repo.product,
+        base_version,
+        base_ref,
+        target_version,
+        target_ref,
+        max_files,
+    )
+    existing = existing_code_evidence(settings, store, run["id"], action_id)
+    if existing is not None:
+        return existing
+
+    raw_diffs, truncated = git_diff_numstat(repo, base_commit, target_commit, max_files)
+    logical_path = f"code_evidence/{action_id}.json"
+    for index, diff in enumerate(raw_diffs):
+        diff["ref"] = f"{logical_path}#diffs/{index}"
+    result = {
+        "schemaVersion": 1,
+        "kind": "code_evidence",
+        "operation": "diff",
+        "actionId": action_id,
+        "product": repo.product,
+        "baseVersion": base_version,
+        "targetVersion": target_version,
+        "baseRef": base_ref,
+        "targetRef": target_ref,
+        "baseCommit": base_commit,
+        "targetCommit": target_commit,
+        "repo": {
+            "product": repo.product,
+            "repoPath": repo.repo_path.as_posix(),
+            "searchRoots": list(repo.search_roots),
+        },
+        "taskContext": task_context,
+        "diffCount": len(raw_diffs),
+        "truncated": truncated,
+        "diffs": raw_diffs,
+        "createdAt": now_iso(),
+        "finalEvidenceAllowed": True,
+    }
+    artifact = write_artifact_bytes(
+        settings=settings,
+        store=store,
+        workspace_id=run["workspace_id"],
+        filename=f"{action_id}_code_diff.json",
+        data=json.dumps(result, ensure_ascii=True, indent=2).encode("utf-8"),
+        content_type="application/json",
+        schema_name="logagent.v2.code_evidence.v1",
+        preview={
+            "path": logical_path,
+            "product": repo.product,
+            "baseRef": base_ref,
+            "targetRef": target_ref,
+            "diffCount": len(raw_diffs),
+        },
+    )
+    evidence = store.create_evidence(
+        workspace_id=run["workspace_id"],
+        run_id=run["id"],
+        kind="code_evidence",
+        final_allowed=True,
+        summary=(
+            f"Code diff found {len(raw_diffs)} changed file(s) in "
+            f"{repo.product}: {base_ref} -> {target_ref}."
+        ),
+        artifact_id=artifact["id"],
+        payload={
+            "artifactId": artifact["id"],
+            "path": logical_path,
+            "actionId": action_id,
+            "operation": "diff",
+            "product": repo.product,
+            "baseVersion": base_version,
+            "targetVersion": target_version,
+            "baseRef": base_ref,
+            "targetRef": target_ref,
+            "baseCommit": base_commit,
+            "targetCommit": target_commit,
+            "taskContext": task_context,
+            "diffCount": len(raw_diffs),
+            "evidenceRefPrefix": f"{logical_path}#diffs/",
+        },
+    )
+    return code_diff_response(result, evidence)
+
+
 def task_code_context(store: Store, run: JsonObject) -> JsonObject:
     workspace_id = run.get("workspace_id")
     if not isinstance(workspace_id, str) or not workspace_id:
@@ -217,7 +361,7 @@ def resolve_task_code_product(requested_product: str, context: JsonObject) -> st
     context_product = optional_string(context.get("product"))
     if context_product and product.lower() != context_product.lower():
         raise ValueError(
-            "logagent.search_code product must match task metadata instance product "
+            "Code Evidence product must match task metadata instance product "
             f"{context_product}"
         )
     return product
@@ -231,7 +375,7 @@ def resolve_task_code_version(
     if context_version:
         if requested_version and requested_version != context_version:
             raise ValueError(
-                "logagent.search_code version must match task metadata instance version "
+                "Code Evidence version must match task metadata instance version "
                 f"{context_version}"
             )
         return context_version
@@ -304,6 +448,14 @@ def normalize_max_matches(value: Any) -> int:
     return max(1, min(value, MAX_MATCHES_PER_KEYWORD))
 
 
+def normalize_max_diff_files(value: Any) -> int:
+    if value is None:
+        return MAX_CODE_DIFF_FILES
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("maxFiles must be an integer")
+    return max(1, min(value, MAX_CODE_DIFF_FILES))
+
+
 def git_grep_keyword(
     repo: CodeRepoDefinition,
     worktree_path: Path,
@@ -346,6 +498,64 @@ def git_grep_keyword(
         if len(matches) >= max_matches:
             break
     return matches
+
+
+def git_diff_numstat(
+    repo: CodeRepoDefinition,
+    base_commit: str,
+    target_commit: str,
+    max_files: int,
+) -> tuple[list[JsonObject], bool]:
+    args = ["diff", "--numstat", base_commit, target_commit]
+    if repo.search_roots:
+        args.extend(["--", *repo.search_roots])
+    completed = git_run(repo.repo_path, *args)
+    if completed.returncode != 0:
+        raise ValueError((completed.stderr or completed.stdout).strip() or "git diff failed")
+    diffs: list[JsonObject] = []
+    truncated = False
+    for line in completed.stdout.splitlines():
+        parsed = parse_git_numstat_line(line)
+        if parsed is None:
+            continue
+        if len(diffs) >= max_files:
+            truncated = True
+            break
+        diffs.append(parsed)
+    return diffs, truncated
+
+
+def parse_git_numstat_line(line: str) -> JsonObject | None:
+    parts = line.split("\t", 2)
+    if len(parts) != 3:
+        return None
+    added_raw, deleted_raw, file_path = parts
+    file_path = normalize_git_numstat_path(file_path)
+    if not file_path:
+        return None
+    binary = added_raw == "-" or deleted_raw == "-"
+    return {
+        "file": file_path,
+        "path": file_path,
+        "addedLines": None if binary else int(added_raw),
+        "deletedLines": None if binary else int(deleted_raw),
+        "binary": binary,
+        "summary": (
+            f"Binary file changed: {file_path}"
+            if binary
+            else f"{file_path}: +{int(added_raw)} -{int(deleted_raw)}"
+        ),
+    }
+
+
+def normalize_git_numstat_path(value: str) -> str:
+    # Git may render renames as "old => new"; the destination is the useful path
+    # for follow-up code search and final evidence references.
+    if " => " in value:
+        value = value.rsplit(" => ", 1)[1]
+        if value.endswith("}"):
+            value = value.rsplit("}", 1)[0]
+    return value.strip()
 
 
 def prepare_code_worktree(
@@ -570,6 +780,32 @@ def code_action_id(
     return f"code_{digest}"
 
 
+def code_diff_action_id(
+    product: str,
+    base_version: str | None,
+    base_ref: str,
+    target_version: str | None,
+    target_ref: str,
+    max_files: int,
+) -> str:
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "operation": "diff",
+                "product": product,
+                "baseVersion": base_version,
+                "baseRef": base_ref,
+                "targetVersion": target_version,
+                "targetRef": target_ref,
+                "maxFiles": max_files,
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"codediff_{digest}"
+
+
 def existing_code_evidence(
     settings: Settings,
     store: Store,
@@ -589,6 +825,8 @@ def existing_code_evidence(
         except Exception:
             continue
         if isinstance(result, dict):
+            if result.get("operation") == "diff":
+                return code_diff_response(result, evidence)
             return code_search_response(result, evidence)
     return None
 
@@ -612,6 +850,34 @@ def code_search_response(result: JsonObject, evidence: JsonObject) -> JsonObject
         "worktree": result.get("worktree"),
         "matches": matches,
         "matchCount": result.get("matchCount", len(matches)),
+        "evidenceRefs": evidence_refs,
+        "finalEvidenceRefs": evidence_refs,
+        "finalEvidenceAllowed": True,
+    }
+
+
+def code_diff_response(result: JsonObject, evidence: JsonObject) -> JsonObject:
+    diffs = result.get("diffs") if isinstance(result.get("diffs"), list) else []
+    evidence_refs = [
+        diff["ref"]
+        for diff in diffs
+        if isinstance(diff, dict) and isinstance(diff.get("ref"), str)
+    ]
+    payload = evidence.get("payload") if isinstance(evidence.get("payload"), dict) else {}
+    return {
+        "schemaVersion": 1,
+        "codeEvidence": result,
+        "artifactPath": payload.get("path"),
+        "operation": "diff",
+        "product": result.get("product"),
+        "baseVersion": result.get("baseVersion"),
+        "targetVersion": result.get("targetVersion"),
+        "baseRef": result.get("baseRef"),
+        "targetRef": result.get("targetRef"),
+        "baseCommit": result.get("baseCommit"),
+        "targetCommit": result.get("targetCommit"),
+        "diffs": diffs,
+        "diffCount": result.get("diffCount", len(diffs)),
         "evidenceRefs": evidence_refs,
         "finalEvidenceRefs": evidence_refs,
         "finalEvidenceAllowed": True,

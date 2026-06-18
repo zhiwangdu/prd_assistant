@@ -109,6 +109,7 @@ def build_analysis_package(
                 "tool_results/<action_id>/result.json#findings/<index>",
                 "tool_results/<action_id>/result.json#response",
                 "code_evidence/<action_id>.json#matches/<index>",
+                "code_evidence/<action_id>.json#diffs/<index>",
             ],
             "backgroundOnlyKinds": [
                 "manifest",
@@ -329,12 +330,15 @@ def code_evidence_refs(settings: Settings, store: Store, run_id: str) -> list[st
             value = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
-        matches = value.get("matches") if isinstance(value, dict) else None
-        if not isinstance(matches, list):
+        if not isinstance(value, dict):
             continue
-        for match in matches:
-            if isinstance(match, dict) and isinstance(match.get("ref"), str):
-                refs.append(match["ref"])
+        for field in ("matches", "diffs"):
+            items = value.get(field)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict) and isinstance(item.get("ref"), str):
+                    refs.append(item["ref"])
     return list(dict.fromkeys(refs))
 
 
