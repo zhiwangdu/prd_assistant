@@ -421,6 +421,7 @@ GET  /api/v2/executors/:executor_id
 PATCH /api/v2/executors/:executor_id
 DELETE /api/v2/executors/:executor_id
 GET  /api/v2/executor-command-templates
+GET  /api/v2/executor-file-templates
 GET  /api/v2/executor-runs
 POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id

@@ -423,22 +423,37 @@ Tool descriptor example:
 ## Current API
 
 ```http
+GET  /
 GET  /health
 POST /api/v2/workspaces
 GET  /api/v2/workspaces
 GET  /api/v2/workspaces/:workspace_id
 PATCH /api/v2/workspaces/:workspace_id
 DELETE /api/v2/workspaces/:workspace_id
+POST /api/v2/sessions
+GET  /api/v2/sessions
+GET  /api/v2/sessions/:session_id
+PATCH /api/v2/sessions/:session_id
+DELETE /api/v2/sessions/:session_id
 GET  /api/v2/workspaces/:workspace_id/uploads
 GET  /api/v2/workspaces/:workspace_id/upload-sessions
 GET  /api/v2/workspaces/:workspace_id/runs
+GET  /api/v2/sessions/:session_id/uploads
+GET  /api/v2/sessions/:session_id/upload-sessions
+GET  /api/v2/sessions/:session_id/tasks
+GET  /api/v2/sessions/:session_id/timeline
 POST /api/v2/workspaces/:workspace_id/uploads
 POST /api/v2/workspaces/:workspace_id/uploads/batch
 POST /api/v2/workspaces/:workspace_id/uploads/init
+POST /api/v2/sessions/:session_id/uploads
+POST /api/v2/sessions/:session_id/uploads/batch
+POST /api/v2/sessions/:session_id/uploads/init
+DELETE /api/v2/sessions/:session_id/uploads/:upload_id
 GET  /api/v2/uploads/:session_id
 POST /api/v2/uploads/:session_id/chunks?offset=<bytes>
 POST /api/v2/uploads/:session_id/complete
 POST /api/v2/workspaces/:workspace_id/runs
+POST /api/v2/sessions/:session_id/tasks
 GET  /api/v2/runs?workspaceId=<workspace_id>
 GET  /api/v2/runs/:run_id
 GET  /api/v2/runs/:run_id/timeline
@@ -471,6 +486,7 @@ GET  /api/v2/executors/:executor_id
 PATCH /api/v2/executors/:executor_id
 DELETE /api/v2/executors/:executor_id
 GET  /api/v2/executor-command-templates
+GET  /api/v2/executor-file-templates
 GET  /api/v2/executor-runs
 POST /api/v2/executor-runs
 GET  /api/v2/executor-runs/:run_id

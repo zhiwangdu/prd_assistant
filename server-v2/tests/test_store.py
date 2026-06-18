@@ -407,6 +407,163 @@ class StoreTests(unittest.TestCase):
                     [session_id],
                 )
 
+    def test_v2_api_route_table_covers_v1_server_capability_domains(self) -> None:
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            app = create_app(settings)
+            actual = {
+                (method, route.path)
+                for route in app.routes
+                for method in getattr(route, "methods", set())
+                if method in {"GET", "POST", "PATCH", "PUT", "DELETE"}
+            }
+
+        expected_by_domain = {
+            "public": {
+                ("GET", "/"),
+                ("GET", "/health"),
+            },
+            "sessions_uploads_runs": {
+                ("POST", "/api/v2/workspaces"),
+                ("GET", "/api/v2/workspaces"),
+                ("GET", "/api/v2/workspaces/{workspace_id}"),
+                ("PATCH", "/api/v2/workspaces/{workspace_id}"),
+                ("DELETE", "/api/v2/workspaces/{workspace_id}"),
+                ("POST", "/api/v2/sessions"),
+                ("GET", "/api/v2/sessions"),
+                ("GET", "/api/v2/sessions/{session_id}"),
+                ("PATCH", "/api/v2/sessions/{session_id}"),
+                ("DELETE", "/api/v2/sessions/{session_id}"),
+                ("GET", "/api/v2/workspaces/{workspace_id}/uploads"),
+                ("GET", "/api/v2/workspaces/{workspace_id}/upload-sessions"),
+                ("GET", "/api/v2/workspaces/{workspace_id}/runs"),
+                ("GET", "/api/v2/sessions/{session_id}/uploads"),
+                ("GET", "/api/v2/sessions/{session_id}/upload-sessions"),
+                ("GET", "/api/v2/sessions/{session_id}/tasks"),
+                ("GET", "/api/v2/sessions/{session_id}/timeline"),
+                ("POST", "/api/v2/workspaces/{workspace_id}/uploads"),
+                ("POST", "/api/v2/workspaces/{workspace_id}/uploads/batch"),
+                ("POST", "/api/v2/workspaces/{workspace_id}/uploads/init"),
+                ("POST", "/api/v2/sessions/{session_id}/uploads"),
+                ("POST", "/api/v2/sessions/{session_id}/uploads/batch"),
+                ("POST", "/api/v2/sessions/{session_id}/uploads/init"),
+                ("DELETE", "/api/v2/sessions/{session_id}/uploads/{upload_id}"),
+                ("GET", "/api/v2/uploads/{session_id}"),
+                ("POST", "/api/v2/uploads/{session_id}/chunks"),
+                ("POST", "/api/v2/uploads/{session_id}/complete"),
+                ("POST", "/api/v2/workspaces/{workspace_id}/runs"),
+                ("POST", "/api/v2/sessions/{session_id}/tasks"),
+                ("GET", "/api/v2/runs"),
+                ("GET", "/api/v2/runs/{run_id}"),
+                ("GET", "/api/v2/runs/{run_id}/timeline"),
+                ("GET", "/api/v2/runs/{run_id}/evidence"),
+                ("GET", "/api/v2/runs/{run_id}/artifacts"),
+                ("GET", "/api/v2/runs/{run_id}/analysis"),
+                ("GET", "/api/v2/runs/{run_id}/result"),
+                ("POST", "/api/v2/runs/{run_id}/messages"),
+                ("POST", "/api/v2/actions/{action_id}/decisions"),
+                ("GET", "/api/v2/evidence/{evidence_id}"),
+                ("GET", "/api/v2/artifacts/{artifact_id}"),
+            },
+            "tools_fetch_executors": {
+                ("GET", "/api/v2/tools"),
+                ("GET", "/api/v2/tools/{tool_id}"),
+                ("POST", "/api/v2/tools/{tool_id}/runs"),
+                ("GET", "/api/v2/tools/runs"),
+                ("GET", "/api/v2/tools/runs/{run_id}"),
+                ("GET", "/api/v2/tools/runs/{run_id}/result"),
+                ("GET", "/api/v2/tools/runs/{run_id}/artifacts"),
+                ("POST", "/api/v2/fetch/imports/preview"),
+                ("POST", "/api/v2/fetch/imports"),
+                ("GET", "/api/v2/fetch/endpoints"),
+                ("POST", "/api/v2/fetch/endpoints"),
+                ("GET", "/api/v2/fetch/endpoints/{endpoint_id}"),
+                ("PATCH", "/api/v2/fetch/endpoints/{endpoint_id}"),
+                ("DELETE", "/api/v2/fetch/endpoints/{endpoint_id}"),
+                ("POST", "/api/v2/fetch/endpoints/{endpoint_id}/runs"),
+                ("GET", "/api/v2/fetch/runs"),
+                ("POST", "/api/v2/runs/{run_id}/fetch/{endpoint_id}"),
+                ("GET", "/api/v2/executors"),
+                ("POST", "/api/v2/executors"),
+                ("GET", "/api/v2/executors/{executor_id}"),
+                ("PATCH", "/api/v2/executors/{executor_id}"),
+                ("DELETE", "/api/v2/executors/{executor_id}"),
+                ("GET", "/api/v2/executor-command-templates"),
+                ("GET", "/api/v2/executor-file-templates"),
+                ("GET", "/api/v2/executor-runs"),
+                ("POST", "/api/v2/executor-runs"),
+                ("GET", "/api/v2/executor-runs/{run_id}"),
+                ("GET", "/api/v2/executor-runs/{run_id}/result"),
+                ("GET", "/api/v2/executor-runs/{run_id}/files/{file_name}"),
+            },
+            "metadata_cases_context_mcp_settings": {
+                ("GET", "/api/v2/debug/llm"),
+                ("PUT", "/api/v2/debug/llm"),
+                ("GET", "/api/v2/settings/llm"),
+                ("GET", "/api/v2/settings/llm/models"),
+                ("POST", "/api/v2/settings/llm/chat"),
+                ("GET", "/api/v2/settings/agent-backends"),
+                ("POST", "/api/v2/settings/agent-backends/{backend_id}/test"),
+                ("GET", "/api/v2/settings/domain-adapters"),
+                ("GET", "/api/v2/exports/skills.zip"),
+                ("GET", "/api/v2/exports/tools.zip"),
+                ("GET", "/api/v2/skills"),
+                ("GET", "/api/v2/skills/{skill_id}"),
+                ("POST", "/api/v2/skills/imports"),
+                ("POST", "/api/v2/skills/preview"),
+                ("GET", "/api/v2/system-context/resources"),
+                ("POST", "/api/v2/system-context/resources"),
+                ("GET", "/api/v2/system-context/resources/{context_id}"),
+                ("PATCH", "/api/v2/system-context/resources/{context_id}"),
+                ("POST", "/api/v2/system-context/resources/{context_id}/versions"),
+                (
+                    "PATCH",
+                    "/api/v2/system-context/resources/{context_id}/versions/{version_id}",
+                ),
+                (
+                    "POST",
+                    "/api/v2/system-context/resources/{context_id}/versions/{version_id}/activate",
+                ),
+                ("POST", "/api/v2/system-context/preview"),
+                ("GET", "/api/v2/metadata/instances"),
+                ("GET", "/api/v2/metadata/instances/{instance_id}"),
+                ("GET", "/api/v2/metadata/instances/{instance_id}/snapshot"),
+                ("POST", "/api/v2/metadata/instances/{instance_id}/refresh"),
+                ("DELETE", "/api/v2/metadata/instances/{instance_id}"),
+                ("GET", "/api/v2/metadata/clusters/{cluster_id}"),
+                ("GET", "/api/v2/metadata/clusters/{cluster_id}/nodes"),
+                ("GET", "/api/v2/metadata/imports"),
+                ("GET", "/api/v2/metadata/imports/{import_id}"),
+                ("POST", "/api/v2/metadata/imports/preview"),
+                ("POST", "/api/v2/metadata/imports/fetch/preview"),
+                ("POST", "/api/v2/metadata/imports/{import_id}/confirm"),
+                ("POST", "/api/v2/metadata/imports/fetch"),
+                ("POST", "/api/v2/metadata/snapshots/fetch"),
+                ("POST", "/api/v2/metadata/imports"),
+                ("POST", "/api/v2/metadata/field-types"),
+                ("POST", "/api/v2/metadata/tag-fields"),
+                ("POST", "/api/v2/cases"),
+                ("POST", "/api/v2/runs/{run_id}/case"),
+                ("GET", "/api/v2/cases"),
+                ("GET", "/api/v2/cases/imports"),
+                ("GET", "/api/v2/cases/imports/{import_id}"),
+                ("POST", "/api/v2/cases/imports/preview"),
+                ("POST", "/api/v2/cases/imports/{import_id}/messages"),
+                ("PATCH", "/api/v2/cases/imports/{import_id}"),
+                ("POST", "/api/v2/cases/imports/{import_id}/confirm"),
+                ("GET", "/api/v2/cases/{case_id}"),
+                ("PATCH", "/api/v2/cases/{case_id}"),
+                ("POST", "/api/v2/mcp/readonly"),
+                ("POST", "/api/v2/mcp/task/{run_id}"),
+            },
+        }
+        expected = {
+            item for routes in expected_by_domain.values() for item in routes
+        }
+        self.assertFalse(expected - actual, sorted(expected - actual))
+
     def test_run_result_route_returns_conflict_until_result_exists(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

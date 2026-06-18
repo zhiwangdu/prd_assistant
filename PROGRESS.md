@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Route Capability Parity Audit
+
+- Added a V2 FastAPI route-table regression test that groups the V1 Server
+  capability domains and asserts the V2 surface exposes corresponding routes
+  for public health/static hosting, Sessions/uploads/runs, Tools/Fetch/Remote
+  Executor, Metadata, Case Memory, Skills/System Context, Settings/exports,
+  and readonly/task MCP.
+- Confirmed the default WebUI entry already mounts V2 bridge components instead
+  of the historical `/api/*` Rust-compatible panels; no V1 path compatibility
+  aliases were added because V2 intentionally keeps the `/api/v2/*` product
+  model.
+- Updated the V2 Server README/SPEC API tables to include the Session-scoped
+  route group and `GET /api/v2/executor-file-templates`.
+- Verification passed: focused route-capability pytest, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 159 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Task MCP Tool Schema Parity Coverage
 
 - Extended the V2 MCP/tool catalog regression test to lock Rust/V1-compatible
