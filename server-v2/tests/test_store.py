@@ -8257,6 +8257,72 @@ fi
             with self.assertRaises(FinalAnswerValidationError):
                 normalize_and_validate_final_answer(settings, store, run["id"], background_ref)
 
+    def test_final_answer_normalizes_v1_grep_ref_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("why did logs fail?", "diagnose", "en-US")
+            artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "db.log",
+                b"query timeout on shard 1\nnormal line\npanic in compaction\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "db.log", artifact["id"])
+            run = store.create_run(workspace["id"])
+            build_initial_evidence(settings, store, workspace["id"], run["id"])
+
+            expected_refs = ["grep_results.json#matches/0", "grep_results.json#matches/1"]
+            answer = {
+                "summary": "Legacy refs are valid.",
+                "symptoms": [],
+                "likelyRootCauses": [
+                    {
+                        "cause": "The matching log lines contain failures.",
+                        "evidenceRefs": ["#0-#1"],
+                    }
+                ],
+                "nextChecks": [],
+                "fixSuggestions": [],
+                "missingInformation": [],
+                "confidence": "medium",
+                "evidenceRefs": ["matches/0-1"],
+            }
+
+            validated = normalize_and_validate_final_answer(
+                settings,
+                store,
+                run["id"],
+                answer,
+            )
+
+            self.assertEqual(validated["evidenceRefs"], expected_refs)
+            self.assertEqual(
+                validated["likelyRootCauses"][0]["evidenceRefs"],
+                expected_refs,
+            )
+
+            line_answer = dict(answer, evidenceRefs=["1-3"], likelyRootCauses=[])
+            line_validated = normalize_and_validate_final_answer(
+                settings,
+                store,
+                run["id"],
+                line_answer,
+            )
+            self.assertEqual(line_validated["evidenceRefs"], expected_refs)
+
+            no_match_line = dict(answer, evidenceRefs=["2"], likelyRootCauses=[])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], no_match_line)
+
+            reversed_range = dict(answer, evidenceRefs=["matches/1-0"], likelyRootCauses=[])
+            with self.assertRaises(FinalAnswerValidationError):
+                normalize_and_validate_final_answer(settings, store, run["id"], reversed_range)
+
     def test_task_mcp_search_code_creates_final_evidence_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

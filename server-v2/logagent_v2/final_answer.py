@@ -23,6 +23,9 @@ CASE_ID_RE = re.compile(r"(case_[A-Za-z0-9_]+)")
 CODE_EVIDENCE_RE = re.compile(
     r"^(code_evidence/[A-Za-z0-9_-]+\.json)#(matches|diffs)/(\d+)$"
 )
+MATCH_ALIAS_RE = re.compile(r"^matches/(\d+)(?:-(\d+))?$")
+MATCH_INDEX_RANGE_RE = re.compile(r"^#(\d+)-#(\d+)$")
+LINE_RANGE_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
 SESSION_TEXT_INPUT_REF = "session_text_input.json#question"
 
 
@@ -38,6 +41,7 @@ def normalize_and_validate_final_answer(
 ) -> JsonObject:
     normalized = normalize_final_answer(final_answer)
     normalized = normalize_case_refs(settings, store, run_id, normalized)
+    normalized = normalize_legacy_grep_refs(settings, store, run_id, normalized)
     validate_evidence_refs(settings, store, run_id, collect_evidence_refs(normalized))
     return normalized
 
@@ -112,6 +116,105 @@ def collect_evidence_refs(final_answer: JsonObject) -> list[str]:
     for root_cause in final_answer.get("likelyRootCauses", []):
         refs.extend(root_cause.get("evidenceRefs", []))
     return list(dict.fromkeys(refs))
+
+
+def normalize_legacy_grep_refs(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+    final_answer: JsonObject,
+) -> JsonObject:
+    matches = latest_initial_grep_matches(settings, store, run_id)
+    value = dict(final_answer)
+    value["evidenceRefs"] = expand_legacy_grep_ref_list(value.get("evidenceRefs", []), matches)
+    root_causes = []
+    for root_cause in value.get("likelyRootCauses", []):
+        if not isinstance(root_cause, dict):
+            root_causes.append(root_cause)
+            continue
+        normalized = dict(root_cause)
+        normalized["evidenceRefs"] = expand_legacy_grep_ref_list(
+            normalized.get("evidenceRefs", []),
+            matches,
+        )
+        root_causes.append(normalized)
+    value["likelyRootCauses"] = root_causes
+    return value
+
+
+def expand_legacy_grep_ref_list(refs: list[str], matches: list[JsonObject]) -> list[str]:
+    result: list[str] = []
+    for ref in refs:
+        result.extend(expand_legacy_grep_ref(ref, matches))
+    return result
+
+
+def expand_legacy_grep_ref(ref: str, matches: list[JsonObject]) -> list[str]:
+    match_alias = MATCH_ALIAS_RE.match(ref)
+    if match_alias:
+        start = int(match_alias.group(1))
+        end = int(match_alias.group(2) or start)
+        return canonical_grep_match_range(start, end)
+
+    index_range = MATCH_INDEX_RANGE_RE.match(ref)
+    if index_range:
+        start = int(index_range.group(1))
+        end = int(index_range.group(2))
+        return canonical_grep_match_range(start, end)
+
+    line_range = LINE_RANGE_RE.match(ref)
+    if line_range:
+        start = int(line_range.group(1))
+        end = int(line_range.group(2) or start)
+        if start > end:
+            raise FinalAnswerValidationError("line range start is greater than end")
+        refs = []
+        for index, item in enumerate(matches):
+            line_number = match_line_number(item)
+            if line_number is not None and start <= line_number <= end:
+                refs.append(canonical_grep_match_ref(index))
+        if not refs:
+            raise FinalAnswerValidationError("line range does not match any grep evidence")
+        return refs
+
+    return [ref]
+
+
+def canonical_grep_match_range(start: int, end: int) -> list[str]:
+    if start > end:
+        raise FinalAnswerValidationError("range start is greater than end")
+    return [canonical_grep_match_ref(index) for index in range(start, end + 1)]
+
+
+def canonical_grep_match_ref(index: int) -> str:
+    return f"grep_results.json#matches/{index}"
+
+
+def match_line_number(item: JsonObject) -> int | None:
+    for field in ("lineNumber", "line"):
+        value = item.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    return None
+
+
+def latest_initial_grep_matches(
+    settings: Settings,
+    store: Store,
+    run_id: str,
+) -> list[JsonObject]:
+    for evidence in reversed(store.list_evidence(run_id)):
+        if evidence["kind"] != "log_search":
+            continue
+        if evidence.get("payload", {}).get("path") != "grep_results.json":
+            continue
+        matches = read_evidence_artifact(settings, store, evidence).get("matches")
+        if isinstance(matches, list):
+            return [item for item in matches if isinstance(item, dict)]
+        return []
+    return []
 
 
 def validate_evidence_refs(

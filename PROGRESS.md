@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Final Answer Legacy Grep Ref Parity
+
+- Added V1-compatible final-answer evidence ref normalization for legacy grep
+  aliases: `matches/<index>`, `matches/<start>-<end>`, `#<start>-#<end>`, and
+  bare line numbers/ranges that map to initial `grep_results.json` rows.
+- The normalized refs still pass through the existing current-run artifact
+  validation path and become canonical `grep_results.json#matches/<index>`
+  refs before a run can succeed.
+- Updated V2 Server and Interface docs to record the accepted legacy ref
+  aliases.
+- Verification passed: focused final-answer evidence-ref pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 161 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Terminal Run State Guard
 
 - Added Store-level terminal-state protection for V2 analysis runs, manual

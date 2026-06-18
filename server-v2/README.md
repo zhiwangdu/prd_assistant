@@ -127,8 +127,9 @@ slice provides the durable foundation for the V2 product model:
 - Final answer schema normalization and evidence ref validation before a run
   can be marked `succeeded`; the run question is persisted as
   `session_text_input.json` and can be cited as
-  `session_text_input.json#question`, and recalled Cases can be cited through
-  `case_context.json#cases/<index>`.
+  `session_text_input.json#question`, recalled Cases can be cited through
+  `case_context.json#cases/<index>`, and V1 legacy grep aliases are normalized
+  to canonical `grep_results.json#matches/<index>` refs before validation.
 - Final result persistence as `result.json` and `result.md` artifacts, with
   HTTP and task MCP read surfaces, plus provider-backed run alias generation
   with deterministic fallback for history/UI display.
@@ -1338,7 +1339,10 @@ The current required shape is:
 
 Only current-task evidence refs are accepted. Most refs must come from
 `final_allowed=true` evidence; `case_context.json#cases/<index>` is the
-canonical exception for recalled Case background context:
+canonical exception for recalled Case background context. V1 legacy grep refs
+are accepted and normalized before validation: `matches/<index>`,
+`matches/<start>-<end>`, `#<start>-#<end>`, and bare line numbers or line
+ranges that map to initial `grep_results.json` matches.
 
 ```text
 session_text_input.json#question

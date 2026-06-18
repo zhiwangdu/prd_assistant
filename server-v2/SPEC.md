@@ -295,7 +295,10 @@ Implemented in this slice:
   be marked `succeeded` after final refs point to current-run, final-allowed
   `session_text_input.json#question`, log search, log slice, Fetch response,
   tool finding, or Code Evidence match evidence; recalled Case context is
-  accepted through `case_context.json#cases/<index>`.
+  accepted through `case_context.json#cases/<index>`. V1 legacy grep aliases
+  (`matches/<index>`, `matches/<start>-<end>`, `#<start>-#<end>`, and matching
+  line numbers/ranges) are normalized to canonical
+  `grep_results.json#matches/<index>` refs before validation.
 - Final result persistence as `result.json` and `result.md` background
   artifacts, exposed through HTTP and task MCP resources.
 - Metadata foundation with direct JSON/YAML/openGemini content import,
@@ -1499,10 +1502,13 @@ normalized to one-item arrays.
 
 The validator collects top-level `evidenceRefs` and
 `likelyRootCauses[].evidenceRefs`, normalizes current-run Case id aliases such
-as `历史案例 case_<id>` to canonical `case_context.json#cases/<index>`, then
+as `历史案例 case_<id>` to canonical `case_context.json#cases/<index>`, expands
+V1 legacy grep refs to canonical `grep_results.json#matches/<index>` refs, then
 verifies every ref against evidence rows visible to the current run. Most refs
 must resolve to `final_allowed=true` evidence; Case context refs resolve against
-the current run's `case_context` artifact.
+the current run's `case_context` artifact. Supported legacy grep refs are
+`matches/<index>`, `matches/<start>-<end>`, `#<start>-#<end>`, and bare line
+numbers or line ranges that match initial `grep_results.json` rows.
 
 Accepted ref formats:
 
