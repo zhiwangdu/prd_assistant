@@ -137,7 +137,7 @@ class DeployScriptTests(unittest.TestCase):
                 script,
                 "--tools-only",
                 "--only-tool",
-                "flux",
+                "flux_query_analyzer",
                 "--no-restart",
                 env=env,
             )
@@ -151,6 +151,43 @@ class DeployScriptTests(unittest.TestCase):
                 build_log.read_text(encoding="utf-8").splitlines(),
                 ["--output-dir", f"{tmp_path.as_posix()}/bin/tools", "--only", "flux"],
             )
+
+    def test_tool_build_scripts_document_source_built_id_aliases(self) -> None:
+        build_tools = ROOT_DIR / "scripts" / "build-tools.sh"
+        rebuild_v2 = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
+        v2_local = ROOT_DIR / "scripts" / "v2-local.sh"
+
+        build_help = self.run_script(build_tools, "--help")
+        self.assertEqual(build_help.returncode, 0)
+        self.assertIn("flux_query_analyzer", build_help.stdout)
+        self.assertIn("influxdb_storage_analyzer", build_help.stdout)
+
+        rebuild_help = self.run_script(rebuild_v2, "--help")
+        self.assertEqual(rebuild_help.returncode, 0)
+        self.assertIn("opengemini_storage_analyzer", rebuild_help.stdout)
+
+        local_help = self.run_script(v2_local, "--help")
+        self.assertEqual(local_help.returncode, 0)
+        self.assertIn("influxql_analyzer", local_help.stdout)
+
+    def test_rebuild_v2_rejects_unknown_only_tool_before_source_validation(self) -> None:
+        script = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            env = self.isolated_env(tmp_path)
+            env["LOGAGENT_SRC_DIR"] = ""
+
+            result = self.run_script(
+                script,
+                "--tools-only",
+                "--only-tool",
+                "unknown_analyzer",
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Unsupported --only-tool value", result.stderr)
 
 
 if __name__ == "__main__":

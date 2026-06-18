@@ -22,7 +22,11 @@ Options:
   --build-webui      Force WebUI build before build/start.
   --no-build         With start/restart, skip editable install unless the venv is missing.
   --with-tools       Build source-referenced analyzers into LOGAGENT_V2_TOOLS_DIR.
-  --only-tool <name> Build one analyzer: influxql, flux, opengemini, or influxdb.
+  --only-tool <name> Build one analyzer by short name or V2 toolId.
+                     Accepted: influxql/influxql_analyzer,
+                     flux/flux_query_analyzer,
+                     opengemini/opengemini_storage_analyzer,
+                     influxdb/influxdb_storage_analyzer.
 
 Environment:
   LOGAGENT_V2_API_KEY       Defaults to LOGAGENT_NATIVE_API_KEY or dev-token.
@@ -45,6 +49,26 @@ build_webui=false
 skip_build=false
 with_tools=false
 only_tool=""
+
+normalize_only_tool() {
+  case "$1" in
+    influxql | influxql_analyzer | influxql-analyzer)
+      printf 'influxql'
+      ;;
+    flux | flux_query_analyzer | flux-query-analyzer)
+      printf 'flux'
+      ;;
+    opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer)
+      printf 'opengemini'
+      ;;
+    influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer)
+      printf 'influxdb'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 while (($# > 0)); do
   case "$1" in
@@ -69,7 +93,11 @@ while (($# > 0)); do
         printf 'Missing value for --only-tool\n' >&2
         exit 2
       fi
-      only_tool="$2"
+      if ! only_tool="$(normalize_only_tool "$2")"; then
+        printf 'Unsupported --only-tool value: %s\n' "$2" >&2
+        usage >&2
+        exit 2
+      fi
       with_tools=true
       shift 2
       ;;

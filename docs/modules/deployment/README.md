@@ -59,7 +59,9 @@ V2 本地快速开发使用仓库根目录的单脚本入口：
 `v2-local.sh` 默认使用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口
 `50993` 和 `target/tools`。`start` 会在缺少 virtualenv 或 WebUI build 时自动补齐，
 已有运行环境则直接启动并等待 `/health`。需要构建 submodule analyzer 时显式使用
-`--with-tools` 或 `--only-tool influxql|flux|opengemini|influxdb`。
+`--with-tools` 或 `--only-tool influxql|flux|opengemini|influxdb`；`--only-tool`
+也接受 V2 catalog ID，例如 `influxql_analyzer`、`flux_query_analyzer`、
+`opengemini_storage_analyzer` 和 `influxdb_storage_analyzer`。
 V2 部署脚本的帮助输出、启动超时参数校验、pid file 作用域和缺少 runtime
 安装时的快速失败路径由 `server-v2/tests/test_deploy_scripts.py` 覆盖。
 

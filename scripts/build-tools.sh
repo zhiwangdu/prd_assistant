@@ -8,9 +8,15 @@ source "$SCRIPT_DIR/lib-logagent-workdir.sh"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/build-tools.sh [--output-dir <dir>] [--only influxql|flux|opengemini|influxdb]
+Usage: scripts/build-tools.sh [--output-dir <dir>] [--only <tool>]
 
 Builds source-referenced diagnostic tools used by LogAgent.
+
+Accepted --only values:
+  influxql | influxql_analyzer | influxql-analyzer
+  flux | flux_query_analyzer | flux-query-analyzer
+  opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer
+  influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer
 
 Environment:
   LOGAGENT_TOOLS_BIN_DIR   Optional output directory. Overrides LOGAGENT_WORK_DIR.
@@ -41,6 +47,26 @@ EOF
 output_dir="${LOGAGENT_TOOLS_BIN_DIR:-}"
 only_tool=""
 
+normalize_only_tool() {
+  case "$1" in
+    influxql | influxql_analyzer | influxql-analyzer)
+      printf 'influxql'
+      ;;
+    flux | flux_query_analyzer | flux-query-analyzer)
+      printf 'flux'
+      ;;
+    opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer)
+      printf 'opengemini'
+      ;;
+    influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer)
+      printf 'influxdb'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 while (($# > 0)); do
   case "$1" in
     --output-dir)
@@ -56,14 +82,11 @@ while (($# > 0)); do
         printf 'Missing value for --only\n' >&2
         exit 2
       fi
-      only_tool="$2"
-      case "$only_tool" in
-        influxql | flux | opengemini | influxdb) ;;
-        *)
-          printf 'Unsupported --only value: %s\n' "$only_tool" >&2
-          exit 2
-          ;;
-      esac
+      if ! only_tool="$(normalize_only_tool "$2")"; then
+        printf 'Unsupported --only value: %s\n' "$2" >&2
+        usage >&2
+        exit 2
+      fi
       shift 2
       ;;
     -h | --help)

@@ -2,6 +2,28 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Source-Built Analyzer Build Aliases
+
+- Extended `scripts/build-tools.sh`, `scripts/v2-local.sh`, and
+  `deploy/rebuild-v2-install.sh` so single-tool analyzer rebuilds accept both
+  short build names and V2 catalog tool IDs.
+- Supported aliases now include `influxql_analyzer`, `flux_query_analyzer`,
+  `opengemini_storage_analyzer`, and `influxdb_storage_analyzer`, plus their
+  hyphenated forms, all normalized to the canonical `influxql`, `flux`,
+  `opengemini`, or `influxdb` build target before delegation.
+- Added deployment regression coverage for canonical delegation, help text, and
+  early rejection of unknown `--only-tool` values before source-dir validation.
+- Updated V2 Server and Deployment docs.
+- Verification passed:
+  `bash -n scripts/build-tools.sh scripts/v2-local.sh deploy/rebuild-v2-install.sh deploy/logagent-v2ctl.sh`,
+  focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
+  with 7 passed, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check tests/test_deploy_scripts.py`,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 169 passed
+  and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Case Import Multipart Parity
 
 - Extended `POST /api/v2/cases/imports` beyond JSON create payloads to also

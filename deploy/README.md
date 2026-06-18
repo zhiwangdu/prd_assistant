@@ -213,6 +213,7 @@ Useful variants:
 ./rebuild-v2-install.sh --server-only
 ./rebuild-v2-install.sh --with-tools
 ./rebuild-v2-install.sh --tools-only --only-tool influxql
+./rebuild-v2-install.sh --tools-only --only-tool influxql_analyzer
 ./rebuild-v2-install.sh --no-restart
 ```
 
@@ -242,7 +243,10 @@ the same fast V2 build/start/stop/status/logs loop without copying `deploy/`:
 
 It defaults to `server-v2/.venv`, `/tmp/logagent-v2-local`, port `50993`, and
 `target/tools`. Use `--with-tools` or `--only-tool <name>` when source-built
-analyzers need to be rebuilt.
+analyzers need to be rebuilt. Single-tool rebuild accepts both short names
+`influxql|flux|opengemini|influxdb` and V2 tool IDs such as
+`influxql_analyzer`, `flux_query_analyzer`, `opengemini_storage_analyzer`, and
+`influxdb_storage_analyzer`.
 
 Useful overrides:
 

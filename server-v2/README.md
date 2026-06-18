@@ -238,8 +238,10 @@ For the fastest local V2 loop from the repository root:
 The helper creates or reuses `server-v2/.venv`, installs `server-v2` in
 editable mode, initializes SQLite under `/tmp/logagent-v2-local` by default,
 uses port `50993`, and only rebuilds source-referenced analyzers when
-`--with-tools` or `--only-tool <name>` is supplied. `start` waits for
-`/health`; `--foreground` keeps the FastAPI server attached for debugging.
+`--with-tools` or `--only-tool <name>` is supplied. The `--only-tool` value can
+be a short build name such as `flux` or the V2 catalog ID such as
+`flux_query_analyzer`. `start` waits for `/health`; `--foreground` keeps the
+FastAPI server attached for debugging.
 
 Manual startup remains available:
 
@@ -297,13 +299,16 @@ was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
 `$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
 Use `--with-tools` to also build source-referenced analyzer submodules into
 `$LOGAGENT_APP_DIR/bin/tools`, or `--tools-only --only-tool <name>` for a fast
-tool-only rebuild. When explicit analyzer env vars are unset, V2 auto-registers
-the standard analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
+tool-only rebuild. Single-tool rebuild accepts both short names
+`influxql|flux|opengemini|influxdb` and V2 catalog IDs
+`influxql_analyzer|flux_query_analyzer|opengemini_storage_analyzer|influxdb_storage_analyzer`.
+When explicit analyzer env vars are unset, V2 auto-registers the standard
+analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
 `$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when
 present so rustup-managed `cargo` is available for Flux analyzer builds in
 non-interactive SSH shells. Deploy regression coverage verifies `--help`,
 missing `LOGAGENT_SRC_DIR` validation, pid-file-scoped controls, installed
-runtime checks, and `--tools-only --only-tool <name>` delegation to
+runtime checks, and `--tools-only --only-tool <name>` canonical delegation to
 `scripts/build-tools.sh` without creating a V2 virtualenv or syncing WebUI.
 `logagent-v2ctl.sh start` and `restart` export
 `LOGAGENT_V2_APP_DIR`, wait for `/health` until

@@ -1914,6 +1914,9 @@ The current slice is accepted when:
 - `deploy/rebuild-v2-install.sh --tools-only --only-tool <name>` can rebuild a
   single source-built analyzer through `scripts/build-tools.sh` without
   creating the V2 virtualenv, initializing SQLite, syncing WebUI, or starting
-  the server.
+  the server. `<name>` may be a short build target (`influxql`, `flux`,
+  `opengemini`, `influxdb`) or the V2 catalog ID (`influxql_analyzer`,
+  `flux_query_analyzer`, `opengemini_storage_analyzer`,
+  `influxdb_storage_analyzer`).
 - `deploy/logagent-v2ctl.sh` can start, stop, restart, report status, and tail
   V2 logs using the same `.env` loading pattern as the Rust deploy controls.

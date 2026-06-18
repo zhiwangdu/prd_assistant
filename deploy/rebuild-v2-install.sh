@@ -48,7 +48,10 @@ Options:
   --server-only      Install only server-v2 into the runtime virtualenv.
   --with-tools       Build source-referenced analyzer tools into $LOGAGENT_APP_DIR/bin/tools.
   --tools-only       Build analyzer tools only; skip server install, DB init, and WebUI sync.
-  --only-tool        Build one analyzer: influxql, flux, opengemini, or influxdb.
+  --only-tool        Build one analyzer by short name or V2 toolId:
+                     influxql/influxql_analyzer, flux/flux_query_analyzer,
+                     opengemini/opengemini_storage_analyzer, or
+                     influxdb/influxdb_storage_analyzer.
   --no-restart       Do not restart V2 after replacing files.
 USAGE
 }
@@ -58,6 +61,26 @@ with_tools=false
 tools_only=false
 only_tool=""
 restart=true
+
+normalize_only_tool() {
+  case "$1" in
+    influxql | influxql_analyzer | influxql-analyzer)
+      printf 'influxql'
+      ;;
+    flux | flux_query_analyzer | flux-query-analyzer)
+      printf 'flux'
+      ;;
+    opengemini | opengemini_storage_analyzer | opengemini-storage-analyzer)
+      printf 'opengemini'
+      ;;
+    influxdb | influxdb_storage_analyzer | influxdb-storage-analyzer)
+      printf 'influxdb'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -80,7 +103,11 @@ while [[ $# -gt 0 ]]; do
         echo "Missing value for --only-tool" >&2
         exit 2
       fi
-      only_tool="$2"
+      if ! only_tool="$(normalize_only_tool "$2")"; then
+        echo "Unsupported --only-tool value: $2" >&2
+        usage >&2
+        exit 2
+      fi
       with_tools=true
       shift 2
       ;;
