@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 InfluxQL Compare Smoke Coverage
+
+- Extended `scripts/smoke-influxql-analyzer.sh` so the real source-built
+  `influxql-analyzer` smoke now covers both normal Report mode and
+  CompareReport mode with `-input-a` / `-input-b`.
+- The compare smoke asserts `statement_delta`, added fingerprints,
+  `large_limit` rule deltas, and A/B-side stderr progress output from the real
+  CLI.
+- Updated root and Tool Runner docs to move InfluxQL compare-mode smoke from
+  pending work into the current verified capability set.
+- Verification passed: `bash -n scripts/smoke-influxql-analyzer.sh`,
+  `./scripts/smoke-influxql-analyzer.sh`, and `git diff --check`.
+
 ## 2026-06-18 V2 Source-built Analyzer Smoke Verification
 
 - Verified all four source-built analyzer smoke scripts against real local

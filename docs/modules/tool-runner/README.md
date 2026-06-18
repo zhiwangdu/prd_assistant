@@ -141,6 +141,7 @@ tools:
 - 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置；该配置通过 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向构建产物。
 - 已适配真实 `influxql-analyzer` Report stdout：包含 `total_records`、`total_statements` 和 `fingerprints` key 时即按 Rust/V1 进入专门 parser；`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`，其中非数组 `fingerprints` 只跳过 fingerprint findings。
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
+- `scripts/smoke-influxql-analyzer.sh` 会同时运行真实 CLI 的普通 Report 路径和 `-input-a` / `-input-b` CompareReport 路径，断言 statement delta、新增 fingerprint、规则 delta 和 A/B 侧进度输出。
 - 当前 `influxql-analyzer` 源码通过 `third_party/influxql` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxql.git` 的 `influxql-analyzer` 分支；CLI 入口为 `cmd/influxql-analyze`，LogAgent 构建产物名固定为 `influxql-analyzer`。
 - 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取，并通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
@@ -195,10 +196,16 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
 
 `examples/server-influxql-tool.yaml` 使用 `path_env: LOGAGENT_TOOL_INFLUXQL_ANALYZER`。部署环境中 `deploy/rebuild-install.sh` 会把同一源码构建为 `$LOGAGENT_APP_DIR/bin/tools/influxql-analyzer`，`deploy/logagent.example.yaml` 默认指向该路径。
 
-`influxql-analyzer` 输入应是 JSONL，每行至少包含 `query` 字段，可选 `timestamp` 或 `time`。CLI 参数使用真实工具协议：
+`influxql-analyzer` 输入应是 JSONL，每行至少包含 `query` 字段，可选 `timestamp` 或 `time`。普通 Report CLI 参数使用真实工具协议：
 
 ```text
 -input <file> -output json -detail-limit 5
+```
+
+CompareReport smoke 使用真实 compare 协议：
+
+```text
+-input-a <baseline.jsonl> -input-b <candidate.jsonl> -output json -detail-limit 3
 ```
 
 只验证 storage analyzers 时：

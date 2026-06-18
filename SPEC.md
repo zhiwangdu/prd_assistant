@@ -164,7 +164,7 @@ flowchart TD
 - Claude Code Session Runner 已支持 `claude_code` 配置、`analysisMode=diagnose|code_investigation|fix`、Settings 摘要和 dry-run 诊断；旧 `agent_backends` 配置不再作为运行入口。
 - Domain Adapters 第一阶段已内置 `opengemini_influxdb` active adapter，以及 `cassandra`、`rocksdb` skeleton adapter，并通过 Settings API 暴露摘要。
 - Executor 按持久化 phase 调度并从中断阶段恢复，公共 Action/Evidence 契约已落地。
-- Tool Runner MVP 支持白名单工具配置、规则版多输入工具 action、`RUN_TOOL` phase、Claude MCP `logagent.run_domain_tool`、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，并由 `scripts/build-tools.sh` 构建到 LogAgent 工具目录。源码构建阶段支持通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动覆盖 submodule clone 地址，便于无法访问 GitHub 的内网镜像环境部署；该覆盖只写 submodule config，不得改写顶层仓库 `origin`。
+- Tool Runner MVP 支持白名单工具配置、规则版多输入工具 action、`RUN_TOOL` phase、Claude MCP `logagent.run_domain_tool`、`tool_results` artifact 和 JSON stdout summary/findings 解析；真实 InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，并由 `scripts/build-tools.sh` 构建到 LogAgent 工具目录。源码构建阶段支持通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动覆盖 submodule clone 地址，便于无法访问 GitHub 的内网镜像环境部署；该覆盖只写 submodule config，不得改写顶层仓库 `origin`。`scripts/smoke-influxql-analyzer.sh` 已覆盖真实 InfluxQL Report 和 CompareReport 两条 CLI 路径。
 - Fetch endpoint MVP 支持 `fetch` 配置段、DevTools bash cURL 导入预览、endpoint CRUD、加密 credential set、allowlist 出网校验、WebUI 手动运行、任务 MCP `logagent.list_fetch_endpoints` / `logagent.fetch` 和 `tool_results/<action_id>/result.json#response` evidence ref。任务 MCP Fetch 使用稳定 `act_fetch_<digest>` action id，并返回 Rust/V1 顶层状态字段；Fetch result 使用 Rust/V1 `schemaVersion=3` tool result envelope，并附带 V2 response-body artifact id/path；只读 HTTP MCP 只展示工具目录 descriptor，不允许执行 `logagent.fetch`。
 - Log Analyzer 支持节点日志包预处理：匹配 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz` 的包会按节点和时间展开到 `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/`，archive 内允许顶层包装目录和 `./` 等目录项，路径中匹配 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 的文件会归类到对应日志组；目录内轮转日志不依赖文件名后缀，gzip 内容按 magic bytes 透明解码，并生成 `tool_inputs/index.json`、通用日志 JSONL 和 `influxql_analyzer` JSONL 输入。匹配当前工具的 materialized input 会作为独占自动输入，避免工具继续回退读取原始轮转日志。节点包若没有任何支持日志目录会失败并返回明确错误，避免空 manifest 被误判为成功解包。
 - 任务 MCP `logagent.search_logs` 的后续检索写入 `log_searches/logsearch_*.json`，返回命中行正文、`keywordCounts`、`unmatchedKeywords` 和稳定 `log_searches/...#matches/<index>` refs，不再覆盖初始 `grep_results.json`。`logagent.get_log_slice` 写入稳定 `log_slices/slice_<digest>.json#lines` refs。Claude Code prompt 明确要求检查 `matches[].text`，禁止只根据 `totalMatches` 推断异常类型或技术栈。
@@ -195,7 +195,6 @@ flowchart TD
 - 完善 Claude Code session runner 的用量审计、错误分类、resume 和模式权限。
 - 将更多工具按 Tools 插件描述接入，并让 MCP `logagent.run_domain_tool` 复用同一个工具 registry。
 - 基于真实生产 Flux 查询日志继续扩展 `flux_query_analyzer` 输入转换、模板风险规则和 baseline 新模板解释。
-- 继续用真实输入 smoke `influxql_analyzer` compare mode，并按外部工具协议变化微调 delta 字段映射。
 - 基于真实 TSSP/TSI/TSM/series fixture 扩展 openGemini 和 InfluxDB storage analyzers 的解析深度和 finding 规则。
 - Fetch 后续补齐 token refresh policy、更多 curl 方言和 endpoint schema 版本迁移；v1 只支持 bash 风格 cURL 和手动 credential set。
 - Analysis Orchestrator 更完整的用户追问/审批策略、恢复幂等审计和产品化交互。
