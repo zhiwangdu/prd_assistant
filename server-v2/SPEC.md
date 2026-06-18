@@ -1054,7 +1054,11 @@ Executable commands must resolve to absolute, regular, executable files to be
 packaged. Tools that cannot be packaged remain in `tools-manifest.json` with
 `skipped=true` and `skipReason`; disabled tools are omitted. The export does
 not include API keys, Fetch endpoint secrets, environment values, uploads,
-artifacts, or workspace data.
+artifacts, or workspace data. `tools-manifest.json` must also include the same
+four-item `sourceBuiltAnalyzers` status list exposed by the live catalog for
+`flux_query_analyzer`, `influxql_analyzer`, `opengemini_storage_analyzer`, and
+`influxdb_storage_analyzer`, including registered/enabled/runnable and command
+availability fields.
 
 When a tool arg contains `{input_file}`, V2 first honors explicit selectors
 from task MCP top-level `inputFile`, `params.inputFiles`, or manual tool-run

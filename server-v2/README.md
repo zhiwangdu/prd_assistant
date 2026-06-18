@@ -1271,9 +1271,13 @@ placeholders; the `pprof_analyzer` example instead documents
 `LOGAGENT_V2_PPROF_GO_COMMAND`, because V2 must invoke the packaged Go
 executable as `go tool pprof` rather than as a raw subprocess tool. The
 examples use absolute path placeholders because enabled V2 tool and pprof
-configuration rejects relative executable paths. The export does not include
-API keys, endpoint credentials, runtime environment values, uploads, artifacts,
-or workspace data.
+configuration rejects relative executable paths. `tools-manifest.json` also
+includes the same fixed `sourceBuiltAnalyzers` status list exposed by
+`/api/v2/tools`, so exported runtime bundles can be audited for
+`flux_query_analyzer`, `influxql_analyzer`, `opengemini_storage_analyzer`, and
+`influxdb_storage_analyzer` registration or command availability without
+starting the server. The export does not include API keys, endpoint
+credentials, runtime environment values, uploads, artifacts, or workspace data.
 
 Fetch endpoints are configured through the protected HTTP API or imported from
 DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and

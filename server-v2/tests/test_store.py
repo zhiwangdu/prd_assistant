@@ -13729,6 +13729,60 @@ grep_results.json#matches/0
             self.assertIn("regular file", tools["missing_tool"]["skipReason"])
             self.assertNotIn("disabled_tool", tools)
 
+    def test_tools_zip_manifest_reports_source_built_analyzers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            executable = root / "flux_query_analyzer"
+            executable.write_text("#!/usr/bin/env sh\necho flux\n", encoding="utf-8")
+            executable.chmod(0o755)
+            settings = Settings(
+                data_dir=root / "data",
+                api_key="test",
+                tools=(
+                    ToolDefinition(
+                        id="flux_query_analyzer",
+                        display_name="Flux Query Analyzer",
+                        command=executable.as_posix(),
+                        match_file_patterns=("*.jsonl",),
+                    ),
+                    ToolDefinition(
+                        id="influxdb_storage_analyzer",
+                        display_name="InfluxDB Storage Analyzer",
+                        command=(root / "missing-influxdb-storage").as_posix(),
+                    ),
+                ),
+            )
+
+            archive_bytes = build_tools_zip(settings)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                manifest = json.loads(archive.read("tools-manifest.json").decode("utf-8"))
+
+            source_built = {
+                item["toolId"]: item for item in manifest["sourceBuiltAnalyzers"]
+            }
+            self.assertEqual(
+                set(source_built),
+                {
+                    "flux_query_analyzer",
+                    "influxql_analyzer",
+                    "opengemini_storage_analyzer",
+                    "influxdb_storage_analyzer",
+                },
+            )
+            self.assertEqual(source_built["flux_query_analyzer"]["status"], "registered")
+            self.assertTrue(source_built["flux_query_analyzer"]["runnable"])
+            self.assertTrue(source_built["flux_query_analyzer"]["commandExecutable"])
+            self.assertEqual(
+                source_built["influxdb_storage_analyzer"]["status"],
+                "unavailable",
+            )
+            self.assertEqual(
+                source_built["influxdb_storage_analyzer"]["statusReason"],
+                "command_file_not_found",
+            )
+            self.assertFalse(source_built["influxql_analyzer"]["registered"])
+            self.assertEqual(source_built["influxql_analyzer"]["status"], "missing")
+
     def test_tools_zip_exports_enabled_pprof_go_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tools Export Source-Built Analyzer Status
+
+- `GET /api/v2/exports/tools.zip` now writes the fixed
+  `sourceBuiltAnalyzers` status list into `tools-manifest.json`, matching the
+  live `/api/v2/tools` catalog envelope.
+- Exported runtime bundles can now be audited offline for
+  `flux_query_analyzer`, `influxql_analyzer`, `opengemini_storage_analyzer`,
+  and `influxdb_storage_analyzer` registration, runnable state, command path,
+  command existence, command executability, and unavailable reason.
+- Updated the zip package README text plus V2 Server README/SPEC for the new
+  manifest field.
+- Added regression coverage for a packaged source-built analyzer and a
+  registered-but-missing source-built analyzer in `tools.zip`.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_tools_zip_packages_executable_and_marks_missing_skipped tests/test_store.py::StoreTests::test_tools_zip_manifest_reports_source_built_analyzers tests/test_store.py::StoreTests::test_tools_zip_exports_enabled_pprof_go_command`,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/exports.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Stub Agent Fallback Wording
 
 - Updated the V2 default stub final answer so it no longer claims LangGraph,

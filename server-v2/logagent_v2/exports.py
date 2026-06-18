@@ -12,7 +12,11 @@ from pathlib import Path, PurePosixPath
 from .config import Settings, ToolDefinition
 from .skills import get_skill, list_skills
 from .store import JsonObject
-from .tools import PPROF_ANALYZER_ID, resolve_pprof_go_command
+from .tools import (
+    PPROF_ANALYZER_ID,
+    resolve_pprof_go_command,
+    source_built_analyzer_summaries,
+)
 
 
 def build_skills_zip(settings: Settings) -> bytes:
@@ -69,6 +73,7 @@ def build_tools_zip(settings: Settings) -> bytes:
         "serverOs": server_os,
         "serverArch": server_arch,
         "tools": [],
+        "sourceBuiltAnalyzers": source_built_analyzer_summaries(settings),
     }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -223,7 +228,7 @@ def tools_package_readme() -> str:
         "- Binaries are under `bin/<tool_id>/`.\n"
         "- Shell wrappers are under `wrappers/` for packaged executable tools.\n"
         "- `tools-manifest.json` records configured args, match rules, sha256, "
-        "size, and skipped tools.\n"
+        "size, skipped tools, and the fixed source-built analyzer status list.\n"
         "- `config/examples/` contains LOGAGENT_V2_TOOLS_JSON snippets for "
         "generic subprocess tools; pprof_analyzer uses the dedicated "
         "LOGAGENT_V2_PPROF_GO_COMMAND environment variable.\n"
