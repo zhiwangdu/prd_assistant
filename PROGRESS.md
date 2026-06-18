@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Task MCP Tool Routing
+
+- Fixed V2 Tools Workbench run-scoped task MCP routing.
+- Configured command/source-built analyzer tools now call
+  `logagent.run_domain_tool`, metadata built-ins call their same-name MCP
+  tools, Fetch calls `logagent.fetch`, and manual-only tools now prompt users
+  to use the Manual `tool_run` path instead of being incorrectly routed through
+  `logagent.run_domain_tool`.
+- Updated WebUI README/SPEC for the explicit task MCP routing boundary.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Metadata Tool Result View
 
 - V2 Tools Workbench now renders metadata built-in manual `tool_run` results

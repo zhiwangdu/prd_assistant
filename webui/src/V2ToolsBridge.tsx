@@ -332,15 +332,18 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     }
     setLoading(true);
     try {
-      const toolName = selectedTool.toolId === "logagent.fetch" ? "logagent.fetch" : "logagent.run_domain_tool";
-      const args = selectedTool.toolId === "logagent.fetch" ? params : { toolId: selectedTool.toolId, params };
-      const response = await callV2TaskTool(apiKey, runId.trim(), toolName, args);
+      const taskCall = taskMcpCallForTool(selectedTool, params);
+      if (!taskCall) {
+        setStatus(`${selectedTool.displayName} is only available through Manual tool_run`);
+        return;
+      }
+      const response = await callV2TaskTool(apiKey, runId.trim(), taskCall.name, taskCall.arguments);
       if (response.error) {
         setResultText(JSON.stringify(response.error, null, 2));
         setStatus(response.error.message);
       } else {
         setResultText(JSON.stringify(response.result, null, 2));
-        setStatus(`V2 task MCP called ${toolName}`);
+        setStatus(`V2 task MCP called ${taskCall.name}`);
       }
     } catch (reason) {
       setStatus(errorMessage(reason));
@@ -548,7 +551,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
             <div className="space-y-4 rounded-lg border border-border p-4">
               <div>
                 <h3 className="text-sm font-semibold">Run-scoped execution</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Configured tools run through `logagent.run_domain_tool`; `logagent.fetch` expects an `endpointId` param.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Configured command tools use `logagent.run_domain_tool`; Metadata and Fetch call their task MCP tools directly. Manual-only tools run below.</p>
               </div>
               <Input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="V2 run id, e.g. run_..." />
               <div className="space-y-2">
@@ -1300,6 +1303,28 @@ function toolAcceptsInputFiles(tool: V2ToolDescriptor) {
   return Boolean(isJsonObject(properties) && Object.prototype.hasOwnProperty.call(properties, "inputFiles"));
 }
 
+function taskMcpCallForTool(tool: V2ToolDescriptor, params: Record<string, unknown>) {
+  if (tool.toolId === "logagent.fetch") {
+    return { name: "logagent.fetch", arguments: params };
+  }
+  if (isMetadataToolId(tool.toolId)) {
+    return { name: tool.toolId, arguments: params };
+  }
+  if (tool.source === "configured" && tool.backend === "command" && !tool.manualOnly) {
+    return { name: "logagent.run_domain_tool", arguments: { toolId: tool.toolId, params } };
+  }
+  return null;
+}
+
+function isMetadataToolId(toolId: string) {
+  return [
+    "logagent.list_metadata_instances",
+    "logagent.get_metadata_snapshot",
+    "logagent.get_metadata_field_types",
+    "logagent.get_metadata_tag_fields"
+  ].includes(toolId);
+}
+
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1326,12 +1351,7 @@ function isHuaweiPackageSyncResult(value: unknown): value is V2HuaweiPackageSync
 
 function isMetadataToolResult(value: unknown): value is V2MetadataToolResult {
   if (!isJsonObject(value)) return false;
-  return typeof value.toolId === "string" && [
-    "logagent.list_metadata_instances",
-    "logagent.get_metadata_snapshot",
-    "logagent.get_metadata_field_types",
-    "logagent.get_metadata_tag_fields"
-  ].includes(value.toolId);
+  return typeof value.toolId === "string" && isMetadataToolId(value.toolId);
 }
 
 function metadataToolValue(result: V2MetadataToolResult) {
