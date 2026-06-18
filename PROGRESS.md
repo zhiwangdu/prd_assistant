@@ -2,6 +2,16 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI Source Analyzer Exists Badge
+
+- V2 Tools source-built analyzer cards now show command existence separately
+  from executability, using `exists/no file` alongside `exec/no exec`.
+- This makes `/api/v2/tools.sourceBuiltAnalyzers.commandExists` visible in the
+  WebUI instead of only showing `commandExecutable`.
+- Updated WebUI README/SPEC to document the explicit exists/executable badges.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Tool Upload Accept Patterns
 
 - Fixed the V2 Tools manual upload file selector so V1-style descriptor

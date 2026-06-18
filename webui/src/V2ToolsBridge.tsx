@@ -530,6 +530,7 @@ function SourceBuiltAnalyzerPanel({ analyzers }: { analyzers: V2SourceBuiltAnaly
                 <Badge variant={analyzer.registered ? "success" : "secondary"}>{analyzer.registered ? "registered" : "missing"}</Badge>
                 <Badge variant={analyzer.enabled ? "success" : "secondary"}>{analyzer.enabled ? "enabled" : "disabled"}</Badge>
                 <Badge variant={analyzer.runnable ? "success" : "secondary"}>{analyzer.runnable ? "runnable" : "not runnable"}</Badge>
+                <Badge variant={analyzer.commandExists ? "success" : "secondary"}>{analyzer.commandExists ? "exists" : "no file"}</Badge>
                 <Badge variant={analyzer.commandExecutable ? "success" : "secondary"}>{analyzer.commandExecutable ? "exec" : "no exec"}</Badge>
               </div>
               <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{analyzer.commandPath || "no command path"}</p>
