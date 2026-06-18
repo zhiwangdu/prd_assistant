@@ -971,6 +971,7 @@ V2 supports three upload paths:
 - `POST /api/v2/workspaces/<workspace_id>/uploads` for one multipart `file`.
   The request may also include a text `filename` field; V2 uses it as the
   stored filename after the same basename and character filtering as Rust/V1.
+  Basenames that resolve to `.` or `..` are rejected with HTTP 400.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/batch` for multiple
   multipart files under one Workspace; repeated file parts may be named
   `file` or `files`, matching Rust/V1 batch upload clients. Each stored batch
@@ -992,9 +993,9 @@ Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Each chunk request is bounded by
 `LOGAGENT_V2_MAX_CHUNK_BYTES`, total received bytes are bounded by
 `LOGAGENT_V2_MAX_UPLOAD_BYTES`, init filenames are stored after Rust/V1-style
-basename and character filtering, and completion validates received size,
-converts the temp file into a regular artifact, creates an Upload row, and
-marks the session completed.
+basename and character filtering, invalid `.` / `..` basenames are rejected,
+and completion validates received size, converts the temp file into a regular
+artifact, creates an Upload row, and marks the session completed.
 
 ## Initial Evidence Pipeline
 

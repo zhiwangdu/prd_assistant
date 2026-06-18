@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Invalid Upload Filename Guard
+
+- V2 single upload, batch upload, and chunked upload init now reject filenames
+  whose basename resolves to `.` or `..` with HTTP 400, matching Rust/V1's
+  invalid filename boundary instead of letting those names reach filesystem
+  artifact paths.
+- Batch upload validates all incoming filenames before writing any artifact or
+  Upload row, so a later invalid file part cannot leave partial batch state.
+- Added HTTP regression coverage for invalid single-upload `filename` override,
+  invalid batch file part name, invalid chunked init filename, and absence of
+  persisted upload/upload-session rows after rejection.
+- Updated Server V2 README/SPEC for the invalid upload filename contract.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused upload pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Batch Upload Filename Sanitization Parity
 
 - V2 batch upload now stores each `file` / `files` part filename after the same

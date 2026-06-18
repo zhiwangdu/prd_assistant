@@ -440,6 +440,16 @@ def _clean_optional(value: str | None) -> str | None:
     return value or None
 
 
+def _upload_filename(value: str) -> str:
+    basename = Path(value).name
+    if not basename or basename in {".", ".."}:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    filename = safe_filename(basename)
+    if filename in {".", ".."}:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    return filename
+
+
 def _session_create_question(value: str | None) -> str:
     return _clean_optional(value) or DEFAULT_SESSION_QUESTION
 
@@ -1063,7 +1073,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 filename_override = str(value)
 
         file = files[0]
-        filename = safe_filename(filename_override or file.filename or "upload.bin")
+        filename = _upload_filename(
+            filename_override if filename_override is not None else file.filename or "upload.bin"
+        )
         data = await file.read(settings.max_upload_bytes + 1)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
@@ -1145,15 +1157,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ]
         if not files:
             raise HTTPException(status_code=400, detail="missing file fields")
+        file_names = [
+            (file, _upload_filename(file.filename or "upload.bin")) for file in files
+        ]
         results = []
-        for file in files:
+        for file, filename in file_names:
             data = await file.read(settings.max_upload_bytes + 1)
             if len(data) > settings.max_upload_bytes:
                 raise HTTPException(
                     status_code=413,
                     detail=f"upload {file.filename or 'upload.bin'} exceeds max_upload_bytes",
                 )
-            filename = safe_filename(file.filename or "upload.bin")
             artifact = write_artifact_bytes(
                 settings=settings,
                 store=store,
@@ -1189,7 +1203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if payload.sizeBytes is not None and payload.sizeBytes > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
         session_id = new_id("ups")
-        filename = safe_filename(payload.filename)
+        filename = _upload_filename(payload.filename)
         temp_relative_path = f"tmp/upload_sessions/{session_id}/{filename}"
         session = store.create_upload_session(
             session_id=session_id,

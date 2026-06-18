@@ -2078,6 +2078,75 @@ class StoreTests(unittest.TestCase):
                     expected_filename,
                 )
 
+    def test_upload_routes_reject_dotdot_filenames_like_v1(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "invalid filename",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+
+                single = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads",
+                    headers=headers,
+                    files=[
+                        ("filename", (None, "../..")),
+                        ("file", ("original.log", b"alpha\n", "text/plain")),
+                    ],
+                )
+                self.assertEqual(single.status_code, 400, single.text)
+                self.assertIn("invalid filename", single.json()["detail"])
+
+                batch = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads/batch",
+                    headers=headers,
+                    files=[
+                        ("file", ("ok.log", b"ok\n", "text/plain")),
+                        ("files", ("..", b"bad\n", "text/plain")),
+                    ],
+                )
+                self.assertEqual(batch.status_code, 400, batch.text)
+                self.assertIn("invalid filename", batch.json()["detail"])
+
+                init = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads/init",
+                    headers=headers,
+                    json={
+                        "filename": "../..",
+                        "contentType": "text/plain",
+                        "sizeBytes": 3,
+                    },
+                )
+                self.assertEqual(init.status_code, 400, init.text)
+                self.assertIn("invalid filename", init.json()["detail"])
+
+                listed = client.get(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads",
+                    headers=headers,
+                )
+                self.assertEqual(listed.status_code, 200, listed.text)
+                self.assertEqual(listed.json()["uploads"], [])
+                sessions = client.get(
+                    f"/api/v2/workspaces/{workspace['id']}/upload-sessions",
+                    headers=headers,
+                )
+                self.assertEqual(sessions.status_code, 200, sessions.text)
+                self.assertEqual(sessions.json()["sessions"], [])
+
     def test_chunked_upload_rejects_chunk_over_configured_limit(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

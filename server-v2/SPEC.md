@@ -646,7 +646,8 @@ named `file` plus an optional text `filename` field, which overrides the file
 part name after basename and character filtering to match Rust/V1 behavior.
 Batch uploads accept repeated multipart file parts named either `file` or
 `files`, matching Rust/V1 clients, and store each batch filename after the same
-basename and character filtering.
+basename and character filtering. Filenames whose basename resolves to `.` or
+`..` are rejected with HTTP 400 before upload/session state is created.
 
 Chunked uploads use a durable `upload_sessions` row:
 
@@ -657,12 +658,12 @@ complete -> validate size, copy temp file to artifact store, create upload
 ```
 
 Session state is stored in SQLite, while partial bytes live under
-`tmp/upload_sessions/<session_id>/`. Init stores the Rust/V1-sanitized filename
-in the session record before any chunk is written. Each chunk request is bounded
-by `LOGAGENT_V2_MAX_CHUNK_BYTES` before it is written, total received bytes
-remain bounded by `LOGAGENT_V2_MAX_UPLOAD_BYTES`, and completion marks the
-session `completed` with the resulting `upload_id` and `artifact_id`; repeated
-complete calls can return the completed session.
+`tmp/upload_sessions/<session_id>/`. Init validates and stores the
+Rust/V1-sanitized filename in the session record before any chunk is written.
+Each chunk request is bounded by `LOGAGENT_V2_MAX_CHUNK_BYTES` before it is
+written, total received bytes remain bounded by `LOGAGENT_V2_MAX_UPLOAD_BYTES`,
+and completion marks the session `completed` with the resulting `upload_id` and
+`artifact_id`; repeated complete calls can return the completed session.
 
 Native Agent V2 mode uses `POST /api/v2/sessions/:session_id/uploads` for small
 imports and `POST /api/v2/sessions/:session_id/uploads/init` plus the upload
