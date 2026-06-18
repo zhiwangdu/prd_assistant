@@ -462,6 +462,21 @@ def _session_create_title(value: str | None, question: str) -> str:
     return question[:80] or "New log analysis session"
 
 
+def _session_upload_ids(values: list[str]) -> list[str]:
+    upload_ids: list[str] = []
+    for value in values:
+        upload_id = value.strip()
+        if not upload_id:
+            continue
+        if not upload_id.startswith("upl_"):
+            raise ValueError("invalid uploadId")
+        if upload_id not in upload_ids:
+            upload_ids.append(upload_id)
+    if not upload_ids:
+        raise ValueError("missing uploadIds")
+    return upload_ids
+
+
 def _session_title(workspace: dict) -> str:
     explicit = _clean_optional(workspace.get("title"))
     if explicit:
@@ -1141,7 +1156,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail=str(error)) from error
             try:
                 payload = AttachSessionUploads.model_validate(await request.json())
-                workspace = store.attach_uploads(session_id, payload.uploadIds)
+                workspace = store.attach_uploads(
+                    session_id,
+                    _session_upload_ids(payload.uploadIds),
+                )
                 return _session_record(store, workspace)
             except ValidationError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error

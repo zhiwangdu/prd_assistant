@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Session Upload Attach Normalization
+
+- Session JSON upload attach now matches Rust/V1 upload id normalization:
+  `uploadIds` entries are trimmed, empty entries are ignored, duplicates are
+  collapsed, non-`upl_` ids return HTTP 400, and requests with no valid ids
+  return `missing uploadIds`.
+- The Session attach route now passes normalized upload ids into the Store,
+  preserving existing direct multipart upload behavior.
+- Added HTTP regression coverage for invalid upload ids, empty-after-trim attach
+  requests, and whitespace/duplicate upload id normalization.
+- Updated Server V2 README/SPEC for Session upload attachment boundaries.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused Session alias pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 V1-Style Manual Tool Run Create
 
 - `POST /api/v2/tools/:tool_id/runs` now accepts Rust/V1-style requests without

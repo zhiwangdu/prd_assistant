@@ -308,10 +308,26 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(empty_uploads.status_code, 200)
                 self.assertEqual(empty_uploads.json()["uploads"], [])
 
+                invalid_attach = client.post(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                    json={"uploadIds": ["bad-id"]},
+                )
+                self.assertEqual(invalid_attach.status_code, 400)
+                self.assertIn("invalid uploadId", invalid_attach.json()["detail"])
+
+                missing_attach = client.post(
+                    f"/api/v2/sessions/{session_id}/uploads",
+                    headers=headers,
+                    json={"uploadIds": [" ", ""]},
+                )
+                self.assertEqual(missing_attach.status_code, 400)
+                self.assertIn("missing uploadIds", missing_attach.json()["detail"])
+
                 attached = client.post(
                     f"/api/v2/sessions/{session_id}/uploads",
                     headers=headers,
-                    json={"uploadIds": [upload_id]},
+                    json={"uploadIds": [f" {upload_id} ", "", upload_id]},
                 )
                 self.assertEqual(attached.status_code, 200)
                 self.assertEqual(attached.json()["uploadIds"], [upload_id])

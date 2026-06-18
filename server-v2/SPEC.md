@@ -70,10 +70,12 @@ Implemented in this slice:
   `succeeded` or `failed`.
   Session uploadIds are stored as an attachment set: direct uploads auto-attach,
   JSON attach can reattach existing Workspace uploads, and detach is allowed
-  only before any task run exists. Session task create/list responses return
-  Rust-style TaskSummary objects with `taskId`, `taskKind`, `sessionId`,
-  `analysisMode`, `analysisLanguage`, `status`, `phase`, and `url`, while
-  retaining raw Run records under `runs`.
+  only before any task run exists. JSON attach must trim ids, ignore empty
+  entries, collapse duplicates, reject non-`upl_` ids with HTTP 400, and reject
+  requests that contain no valid upload id after normalization. Session task
+  create/list responses return Rust-style TaskSummary objects with `taskId`,
+  `taskKind`, `sessionId`, `analysisMode`, `analysisLanguage`, `status`,
+  `phase`, and `url`, while retaining raw Run records under `runs`.
 - Task-scoped API aliases under `/api/v2/tasks`. `POST /api/v2/tasks` is the
   Rust/V1-style creation alias: it requires an existing `sessionId`, accepts
   `uploadId` / `uploadIds`, `question`, `sourceUrl`, metadata selectors,

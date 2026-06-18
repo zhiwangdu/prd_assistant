@@ -983,11 +983,13 @@ V2 supports three upload paths:
 Session APIs expose the same stored uploads through an attachment set:
 `POST /api/v2/sessions/<session_id>/uploads` accepts either one multipart
 `file` for direct upload, with the same optional text `filename` override, or
-JSON `{"uploadIds":[...]}` to attach existing Workspace uploads. `DELETE
-/api/v2/sessions/<session_id>/uploads/<upload_id>` detaches an upload only
-before any task run exists; the Upload row and artifact remain stored. Native
-Agent V2 mode uses these Session-scoped upload APIs, so browser imports do not
-require Chrome Extension code changes.
+JSON `{"uploadIds":[...]}` to attach existing Workspace uploads. JSON attach
+uses Rust/V1 normalization: entries are trimmed, empty entries are ignored,
+duplicates are collapsed, non-`upl_` ids return HTTP 400, and at least one
+valid id is required. `DELETE /api/v2/sessions/<session_id>/uploads/<upload_id>`
+detaches an upload only before any task run exists; the Upload row and artifact
+remain stored. Native Agent V2 mode uses these Session-scoped upload APIs, so
+browser imports do not require Chrome Extension code changes.
 
 Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Each chunk request is bounded by
