@@ -627,6 +627,10 @@ Initial grep keywords come from
 `LOGAGENT_V2_GREP_KEYWORDS`, a comma-separated list that defaults to the
 Rust/V1 keyword set `error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify`;
 the user question is not automatically tokenized into the initial grep query.
+`manifest.json` always includes the Rust/V1-compatible `sourceUrl` field copied
+from the Workspace, with `null` when no source URL is set. Generated
+`tool_inputs/index.json` uses the Rust/V1 `generatedBy` value
+`log_package_preprocessor`.
 
 Initial grep refs use:
 

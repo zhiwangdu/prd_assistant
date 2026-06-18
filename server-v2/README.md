@@ -904,8 +904,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts, including
-  V1-style manifest upload summaries for node packages and grep match aliases
-  (`file`, `line`, `evidenceRef`) alongside V2 fields;
+  V1-style `sourceUrl`, manifest upload summaries for node packages, and grep
+  match aliases (`file`, `line`, `evidenceRef`) alongside V2 fields;
 - uses `LOGAGENT_V2_GREP_KEYWORDS` for initial grep, defaulting to the
   Rust/V1 keyword set instead of deriving keywords from the user question;
 - writes `tool_inputs/index.json`, node-package `log_text` JSONL artifacts,
@@ -936,6 +936,8 @@ summaries include `packageId`, `instanceId`, `nodeId`, `packageTimestamp`,
 `nodeDir`, sorted `logGroups`, `ignoredFileCount`, and `ignoredPathSamples`;
 manifest file entries include V1 aliases such as `size`, `uploadId`,
 `instanceId`, `nodeId`, `packageTimestamp`, `compressed`, and `compression`.
+The manifest always includes the V1-compatible `sourceUrl` field copied from
+the Workspace, using `null` when the Workspace has no source URL.
 A node package with no supported log directory fails instead of producing an
 empty manifest.
 

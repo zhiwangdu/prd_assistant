@@ -135,6 +135,7 @@ def build_initial_evidence(
         run_id,
         uploads,
         text_files,
+        source_url=workspace.get("sourceUrl"),
         tool_inputs_path=tool_input_bundle.get("path"),
         tool_input_count=len(tool_input_bundle.get("inputs", [])),
     )
@@ -756,7 +757,7 @@ def materialize_tool_inputs(
         return {"path": None, "inputs": []}
     index = {
         "schemaVersion": 1,
-        "generatedBy": "logagent_v2_tool_input_materializer",
+        "generatedBy": "log_package_preprocessor",
         "inputs": [item.entry for item in inputs],
     }
     artifact = write_json_artifact(
@@ -1584,6 +1585,7 @@ def build_manifest(
     run_id: str,
     uploads: list[JsonObject],
     text_files: list[TextFile],
+    source_url: str | None = None,
     tool_inputs_path: str | None = None,
     tool_input_count: int = 0,
 ) -> JsonObject:
@@ -1625,6 +1627,7 @@ def build_manifest(
         "uploadIds": [upload["id"] for upload in uploads],
         "source": "upload",
         "filename": first_upload["filename"] if first_upload else "session_text_input",
+        "sourceUrl": source_url,
         "uploadCount": len(uploads),
         "fileCount": len(text_files),
         "uploads": upload_summaries,

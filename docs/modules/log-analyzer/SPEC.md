@@ -164,7 +164,9 @@ Python V2 对应环境变量为 `LOGAGENT_V2_GREP_KEYWORDS` 和 `LOGAGENT_V2_MAX
 - manifest upload summary 必须包含 V1 样式 `packageId`、`instanceId`、`nodeId`、`packageTimestamp`、`nodeDir`、log group 文件数 / gzip 压缩统计，以及 ignored 文件数量和样例路径；manifest file entry 必须包含 `size`、`uploadId`、package metadata 和 gzip `compressed` / `compression` 字段。
 - 节点日志包没有任何支持日志目录时任务失败并给出明确错误，不产生空成功 manifest。
 - `tool_inputs/index.json` 中每个节点日志组都有通用 `log_text_jsonl` 输入；该输入不绑定具体 `toolIds`，供显式后续工具或人工排查复用。
+- `tool_inputs/index.json` 的 `generatedBy` 必须保持 Rust/V1 兼容值 `log_package_preprocessor`。
 - `tool_inputs/index.json` 中的 `influxql_analyzer` 输入只包含从 raw SQL、JSON 字段或 `key=value` 字段中明确提取出 `query` / `sql` / `stmt` / `statement` 查询文本的记录；节点日志包记录必须保留 V1 `line` / `logGroup` 字段，并可额外提供 V2 `lineNumber`。
+- `manifest.json` 必须始终包含 Rust/V1 兼容字段 `sourceUrl`，值来自 Workspace source URL，没有设置时为 `null`。
 - 路径逃逸压缩包被拒绝。
 - manifest 路径使用 `/` 分隔。
 - 普通多上传场景下，同名上传和同名 archive 成员必须产生唯一 `extracted/<uploadDir>/...` 路径；`logagent.get_log_slice` 和 Tool Runner fallback 必须能按该路径精确选中文件。

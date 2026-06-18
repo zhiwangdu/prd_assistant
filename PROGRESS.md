@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Manifest Source URL and Tool Input Generator Parity
+
+- Added Rust/V1-compatible `sourceUrl` to V2 `manifest.json` artifacts for both
+  Log Analysis runs and manual `logagent.preprocess_log_package` tool runs.
+- Aligned `tool_inputs/index.json` `generatedBy` with Rust/V1
+  `log_package_preprocessor` instead of the V2-internal materializer name.
+- Extended regression coverage for Session manifest source URL, manual
+  preprocess manifest source URL, and persisted tool input index generator.
+- Updated V2 Server and Log Analyzer docs.
+- Verification passed: focused sourceUrl/tool-input pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Log Slice Artifact Alias Parity
 
 - Added Rust/V1-compatible `sourcePath` and `lines[].line` aliases directly to

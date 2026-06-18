@@ -120,6 +120,7 @@ tool_inputs/influxql_analyzer/<nodeId>/<timestamp>.jsonl
 {
   "taskId": "task_xxx",
   "uploadIds": ["upl_xxx"],
+  "sourceUrl": "webui-smoke",
   "uploads": [
     {
       "uploadId": "upl_xxx",
@@ -154,6 +155,8 @@ tool_inputs/influxql_analyzer/<nodeId>/<timestamp>.jsonl
 ```
 
 V2 manifest 保留已有 `sizeBytes`、`sourceUploadId`、`artifactId` 等扩展字段，同时补齐 Rust/V1 的 upload summary、file-level package metadata 和 gzip 统计，便于 Agent 不读取完整文件也能判断节点包结构。
+`sourceUrl` 始终按 Rust/V1 manifest schema 写入，值来自 Workspace；没有来源 URL 时为 `null`。
+`tool_inputs/index.json` 的 `generatedBy` 固定为 Rust/V1 的 `log_package_preprocessor`。
 
 ## rg 检索
 

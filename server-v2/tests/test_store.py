@@ -3669,7 +3669,12 @@ class StoreTests(unittest.TestCase):
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
-            workspace = store.create_workspace("slow query", "diagnose", "en-US")
+            workspace = store.create_workspace(
+                "slow query",
+                "diagnose",
+                "en-US",
+                source_url="webui-smoke",
+            )
             artifact = write_artifact_bytes(
                 settings,
                 store,
@@ -3738,6 +3743,7 @@ class StoreTests(unittest.TestCase):
             )
             manifest_body = json.loads(manifest["result"]["contents"][0]["text"])
             self.assertEqual(manifest_body["fileCount"], 1)
+            self.assertEqual(manifest_body["sourceUrl"], "webui-smoke")
 
             provider_search_tool = next(
                 item
@@ -5674,7 +5680,12 @@ class StoreTests(unittest.TestCase):
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
-            workspace = store.create_workspace("manual preprocess", "tool_run", "en-US")
+            workspace = store.create_workspace(
+                "manual preprocess",
+                "tool_run",
+                "en-US",
+                source_url="manual-preprocess-smoke",
+            )
             tar_path = Path(tmp) / "Pkg_Inst_NodeA_20260617120000_logs.tar.gz"
             with tarfile.open(tar_path, "w:gz") as archive:
                 add_file(
@@ -5721,6 +5732,16 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(result["toolInputsPath"], "tool_inputs/index.json")
             self.assertTrue(result["manifestArtifactPath"].endswith("_manifest.json"))
             self.assertTrue(result["grepArtifactPath"].endswith("_grep_results.json"))
+            manifest_artifact = store.get_artifact(result["manifestArtifactId"])
+            manifest_body = json.loads(
+                resolve_artifact_path(settings, manifest_artifact["relative_path"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                manifest_body["sourceUrl"],
+                "manual-preprocess-smoke",
+            )
             self.assertEqual(result["logGroups"], {"tsdb": 1, "stream": 1})
             self.assertEqual(result["nodePackages"][0]["nodeId"], "NodeA")
             self.assertEqual(result["nodes"][0]["nodeId"], "NodeA")
@@ -6681,6 +6702,7 @@ fi
             index_artifact = store.get_artifact(index_evidence["artifact_id"])
             index_path = resolve_artifact_path(settings, index_artifact["relative_path"])
             index = json.loads(index_path.read_text(encoding="utf-8"))
+            self.assertEqual(index["generatedBy"], "log_package_preprocessor")
             log_text_entry = next(
                 item for item in index["inputs"] if item["inputKind"] == "log_text_jsonl"
             )

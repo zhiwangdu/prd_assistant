@@ -1668,6 +1668,7 @@ def run_preprocess_tool(
     if params:
         raise ValueError("preprocess tool does not accept params")
     started = time.monotonic()
+    workspace = store.get_workspace(run["workspace_id"])
     uploads = store.list_uploads_by_ids(run["workspace_id"], run.get("toolUploadIds") or [])
     text_files = collect_text_files(settings, uploads)
     tool_input_bundle = materialize_tool_inputs(
@@ -1683,6 +1684,7 @@ def run_preprocess_tool(
         run["id"],
         uploads,
         text_files,
+        source_url=workspace.get("sourceUrl"),
         tool_inputs_path=tool_input_bundle.get("path"),
         tool_input_count=len(tool_input_bundle.get("inputs", [])),
     )
