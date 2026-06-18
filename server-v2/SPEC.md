@@ -847,7 +847,11 @@ tool descriptors must retain the Rust/V1 catalog semantics:
 `match.filePatterns`. Their `paramsSchema` must expose Rust/V1 read-only
 `configuredArgs` and `match` entries, and V2 additionally mirrors those entries
 under `properties` so schema-oriented clients can render them alongside
-reserved `inputFiles` and any configured custom params.
+reserved `inputFiles` and any configured custom params. Runtime validation for
+configured custom params must enforce the supported JSON Schema subset used by
+V1-style descriptors: `type`, `enum`, `oneOf` / `anyOf`, string length,
+numeric min/max, array `items` / min/max items, and nested object `required` /
+`additionalProperties=false`.
 
 Configured subprocess `result.json` must retain the Rust/V1 `ToolRunRecord`
 record shape: `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`,

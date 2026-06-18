@@ -31,6 +31,11 @@ ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具是固定 Server
 不从该用户配置命名空间加载。
 `LOGAGENT_V2_TOOLS_JSON.match.filePatterns` 和 `keywords` 在配置加载阶段
 统一转小写，HTTP/MCP 工具目录输出与 Rust/V1 保持一致。
+Configured subprocess 的自定义 `paramsSchema` 在运行前必须按 V1 常见 JSON
+Schema 子集校验：`type`、`enum`、`oneOf` / `anyOf`、字符串长度、数值
+min/max、数组 `items` / min/max items，以及嵌套对象 `required` /
+`additionalProperties=false`。未知参数仍由顶层
+`additionalProperties=false` 拒绝。
 
 Server 还实现内置 `logagent.preprocess_log_package` 和 `logagent.fetch` runnable tools。预处理 tool 复用 Analyze 解压链路，按节点日志包生成 `tool_inputs` 和摘要 result；Fetch tool 复用 `tool_run`、Tools 目录和 `tool_results` artifact，但执行由 `fetch.enabled`、AES-256-GCM credential store、HTTP allowlist 和 reqwest 负责；二者都不导出到 `tools.zip`。
 

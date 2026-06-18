@@ -1032,7 +1032,11 @@ configured subprocess descriptors use the Rust/V1 command shape:
 `exportable=enabled`, `minFiles=1`, and `acceptedSuffixes` copied from
 `match.filePatterns`. Their `paramsSchema` also exposes Rust/V1 read-only
 `configuredArgs` and `match` entries, with the same data mirrored under
-`properties` for V2 clients that expect object-schema fields. V2 currently
+`properties` for V2 clients that expect object-schema fields. Runtime params
+for configured tools are validated against a practical JSON Schema subset:
+`type`, `enum`, `oneOf` / `anyOf`, string length, numeric min/max, array
+`items` / min/max items, and nested object `required` /
+`additionalProperties=false`. V2 currently
 includes manual built-ins for metadata tools, `logagent.preprocess_log_package`,
 `logagent.fetch`, and default-off `logagent.huawei_cloud_package_sync`, plus the
 V1-style configured command adapter `pprof_analyzer`.

@@ -1515,22 +1515,115 @@ def validate_tool_params(tool: ToolDefinition, params: JsonObject) -> JsonObject
 def validate_tool_param_value(
     tool_id: str, key: str, value: object, schema: JsonObject
 ) -> None:
+    one_of = schema.get("oneOf")
+    if isinstance(one_of, list):
+        match_count = 0
+        for subschema in one_of:
+            if not isinstance(subschema, dict):
+                continue
+            try:
+                validate_tool_param_value(tool_id, key, value, subschema)
+            except ValueError:
+                continue
+            match_count += 1
+        if match_count != 1:
+            raise ValueError(f"tool {tool_id} param {key} must match exactly one schema")
+        return
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        for subschema in any_of:
+            if not isinstance(subschema, dict):
+                continue
+            try:
+                validate_tool_param_value(tool_id, key, value, subschema)
+            except ValueError:
+                continue
+            return
+        raise ValueError(f"tool {tool_id} param {key} must match one allowed schema")
     expected = schema.get("type")
-    if expected == "string" and not isinstance(value, str):
-        raise ValueError(f"tool {tool_id} param {key} must be a string")
-    if expected == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
-        raise ValueError(f"tool {tool_id} param {key} must be an integer")
-    if expected == "number" and (
-        isinstance(value, bool) or not isinstance(value, (int, float))
-    ):
-        raise ValueError(f"tool {tool_id} param {key} must be a number")
-    if expected == "boolean" and not isinstance(value, bool):
-        raise ValueError(f"tool {tool_id} param {key} must be a boolean")
-    if expected == "array" and not isinstance(value, list):
-        raise ValueError(f"tool {tool_id} param {key} must be an array")
+    if expected is not None and not json_schema_type_matches(value, expected):
+        raise ValueError(
+            f"tool {tool_id} param {key} must be {json_schema_type_label(expected)}"
+        )
     enum = schema.get("enum")
     if isinstance(enum, list) and value not in enum:
         raise ValueError(f"tool {tool_id} param {key} must be one of {enum}")
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            raise ValueError(f"tool {tool_id} param {key} is shorter than {min_length}")
+        if isinstance(max_length, int) and len(value) > max_length:
+            raise ValueError(f"tool {tool_id} param {key} is longer than {max_length}")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if isinstance(minimum, (int, float)) and value < minimum:
+            raise ValueError(f"tool {tool_id} param {key} must be >= {minimum}")
+        if isinstance(maximum, (int, float)) and value > maximum:
+            raise ValueError(f"tool {tool_id} param {key} must be <= {maximum}")
+    if isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if isinstance(min_items, int) and len(value) < min_items:
+            raise ValueError(f"tool {tool_id} param {key} needs at least {min_items} item(s)")
+        if isinstance(max_items, int) and len(value) > max_items:
+            raise ValueError(f"tool {tool_id} param {key} allows at most {max_items} item(s)")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                validate_tool_param_value(tool_id, f"{key}[{index}]", item, item_schema)
+    if isinstance(value, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            required = schema.get("required")
+            if isinstance(required, list):
+                for field in required:
+                    if field not in value:
+                        raise ValueError(f"tool {tool_id} param {key}.{field} is required")
+            if schema.get("additionalProperties", True) is False:
+                unknown = sorted(field for field in value if field not in properties)
+                if unknown:
+                    raise ValueError(
+                        f"tool {tool_id} param {key} does not accept fields: "
+                        f"{', '.join(unknown)}"
+                    )
+            for field, item in value.items():
+                field_schema = properties.get(field)
+                if isinstance(field_schema, dict):
+                    validate_tool_param_value(tool_id, f"{key}.{field}", item, field_schema)
+
+
+def json_schema_type_matches(value: object, expected: object) -> bool:
+    if isinstance(expected, list):
+        return any(json_schema_type_matches(value, item) for item in expected)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "null":
+        return value is None
+    return True
+
+
+def json_schema_type_label(expected: object) -> str:
+    if isinstance(expected, list):
+        return " or ".join(str(item) for item in expected)
+    if expected == "array":
+        return "an array"
+    if expected == "object":
+        return "an object"
+    if expected == "integer":
+        return "an integer"
+    return f"a {expected}"
 
 
 def tool_param_to_arg(params: JsonObject, key: str) -> str:

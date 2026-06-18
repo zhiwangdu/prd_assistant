@@ -4743,6 +4743,101 @@ class StoreTests(unittest.TestCase):
                     "pprof_analyzer",
                     {"generateSvg": "false"},
                 )
+            schema_tool = ToolDefinition(
+                id="schema_tool",
+                display_name="Schema Tool",
+                command=sys.executable,
+                params_schema={
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "oneOf": [
+                                {"type": "string", "minLength": 1},
+                                {
+                                    "type": "array",
+                                    "items": {"type": "string", "minLength": 1},
+                                    "minItems": 1,
+                                    "maxItems": 3,
+                                },
+                            ]
+                        },
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                        "mode": {"type": "string", "enum": ["fast", "full"]},
+                        "filter": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {"type": "boolean"},
+                                "tags": {
+                                    "type": "array",
+                                    "items": {"type": "string", "minLength": 1},
+                                },
+                            },
+                            "required": ["enabled"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["field"],
+                    "additionalProperties": False,
+                },
+            )
+            schema_settings = Settings(
+                data_dir=Path(tmp) / "schema",
+                api_key="test",
+                tools=(schema_tool,),
+            )
+            self.assertEqual(
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {
+                        "field": ["host", "region"],
+                        "limit": 10,
+                        "mode": "fast",
+                        "filter": {"enabled": True, "tags": ["hot"]},
+                    },
+                )["field"],
+                ["host", "region"],
+            )
+            self.assertEqual(
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value"},
+                )["field"],
+                "value",
+            )
+            with self.assertRaisesRegex(ValueError, "field.*exactly one schema"):
+                validate_tool_run_params(schema_settings, "schema_tool", {"field": []})
+            with self.assertRaisesRegex(ValueError, r"filter\.tags\[0\].*shorter"):
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value", "filter": {"enabled": True, "tags": [""]}},
+                )
+            with self.assertRaisesRegex(ValueError, "limit.*>= 1"):
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value", "limit": 0},
+                )
+            with self.assertRaisesRegex(ValueError, "mode.*one of"):
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value", "mode": "slow"},
+                )
+            with self.assertRaisesRegex(ValueError, "filter.enabled.*required"):
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value", "filter": {"tags": ["hot"]}},
+                )
+            with self.assertRaisesRegex(ValueError, "filter.*does not accept fields"):
+                validate_tool_run_params(
+                    schema_settings,
+                    "schema_tool",
+                    {"field": "value", "filter": {"enabled": True, "owner": "ops"}},
+                )
             self.assertEqual(
                 descriptors["logagent.huawei_cloud_package_sync"]["acceptedSuffixes"],
                 ["*"],

@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Configured Tool Params Schema Validation
+
+- V2 configured subprocess tool params now validate a practical Rust/V1-style
+  JSON Schema subset before execution: `type`, `enum`, `oneOf` / `anyOf`,
+  string length, numeric min/max, array `items` / min/max items, and nested
+  object `required` / `additionalProperties=false`.
+- Added regression coverage for string-or-array `oneOf`, array item validation,
+  numeric bounds, enum rejection, nested required fields, and nested unknown
+  field rejection.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused configured tool registry pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (143 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Agent Budget-Limited Termination
 
 - V2 Agent runtime now matches the Rust/V1 core budget defaults for provider

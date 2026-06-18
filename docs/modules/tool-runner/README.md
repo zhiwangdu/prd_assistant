@@ -91,6 +91,10 @@ tools:
   `source=configured`、`backend=command`、`readOnly=false`、`editable=true`、
   `exportable=enabled`、`minFiles=1`，并将 `acceptedSuffixes` 原样设置为
   `match.filePatterns`。
+- configured subprocess 的自定义 `paramsSchema` 在运行前按 V1 常见 JSON
+  Schema 子集校验：`type`、`enum`、`oneOf` / `anyOf`、字符串长度、数值
+  min/max、数组 `items` / min/max items，以及嵌套对象 `required` /
+  `additionalProperties=false`。
 - `logagent.fetch` 使用 Rust/V1 catalog 形状：`source=built_in`、`backend=fetch`、`readOnly=false`、tag 包含 `manual-run`、不可导出、不可编辑、无需上传文件、`paramsTemplate` 以 `fetchId` 为主并包含 `body=null`、`outputViews=["summary","request","response","body_artifact"]`；只有 `fetch.enabled=true` 时才可运行。只读 HTTP MCP 可看到 descriptor，但不能执行该工具。运行时仍兼容 V2 `endpointId` 和 V1 `fetchId`。
 - `logagent.huawei_cloud_package_sync` 使用 Rust/V1 catalog 形状：display name 为 `Huawei OBS + GaussDB Package Sync`，`source=built_in`、`backend=huawei_cloud_package_sync`、tag 包含 `huawei-cloud`、不可导出、不可编辑、`minFiles=maxFiles=1`、`acceptedSuffixes=["*"]`、`outputViews=["summary","obs","gaussdb","json"]`；只有 `huawei_cloud.package_sync.enabled=true` / `LOGAGENT_V2_HUAWEI_PACKAGE_SYNC_ENABLED=1` 且 OBS/GaussDB 配置通过启动校验时才可运行。V2 会校验 OBS endpoint、bucket、object prefix、必填 OBS keys 和 GaussDB DSN；它执行用户提交的 SQL，首版视受保护 Tools API 使用者为信任边界，不对 SQL 做业务语义限制。
 
