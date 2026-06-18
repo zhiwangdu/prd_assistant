@@ -554,7 +554,7 @@ def call_fetch_tool(
         }
     if name == "logagent.fetch":
         run_params = normalize_fetch_run_params(arguments)
-        return execute_fetch_endpoint(
+        executed = execute_fetch_endpoint(
             settings,
             store,
             run["workspace_id"],
@@ -563,6 +563,7 @@ def call_fetch_tool(
             run_params=run_params,
             action_id=stable_fetch_action_id(run_params),
         )
+        return {**executed, **fetch_tool_compat_payload(executed)}
     raise ValueError(f"unsupported fetch tool {name}")
 
 
@@ -709,6 +710,31 @@ def stable_fetch_action_id(run_params: JsonObject) -> str:
     encoded = json.dumps(run_params, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     digest = sha256(encoded.encode("utf-8")).hexdigest()[:16]
     return f"act_fetch_{digest}"
+
+
+def fetch_tool_compat_payload(executed: JsonObject) -> JsonObject:
+    result = executed.get("result") if isinstance(executed.get("result"), dict) else {}
+    action_id = result.get("actionId")
+    artifact_path = (
+        f"tool_results/{action_id}/result.json" if isinstance(action_id, str) else None
+    )
+    response = result.get("response") if isinstance(result.get("response"), dict) else {}
+    body_preview = response.get("bodyPreview")
+    if isinstance(body_preview, str):
+        body_preview = body_preview[:1200]
+    else:
+        body_preview = ""
+    evidence_refs = result.get("evidenceRefs")
+    if not isinstance(evidence_refs, list):
+        evidence_ref = result.get("evidenceRef")
+        evidence_refs = [evidence_ref] if isinstance(evidence_ref, str) else []
+    return {
+        "artifactPath": artifact_path,
+        "statusCode": result.get("statusCode"),
+        "httpOk": bool(result.get("httpOk", False)),
+        "bodyPreview": body_preview,
+        "evidenceRefs": evidence_refs,
+    }
 
 
 def perform_http_request(settings: Settings, endpoint: JsonObject) -> JsonObject:

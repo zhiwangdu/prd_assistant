@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Task MCP Response Parity
+
+- Extended task MCP `logagent.fetch` responses with Rust/V1-compatible top-level
+  `artifactPath`, `statusCode`, `httpOk`, `bodyPreview`, and `evidenceRefs`
+  fields while preserving the V2 `result`, `artifact`, and `evidence` objects.
+- Kept deterministic task MCP Fetch action ids and the Rust/V1
+  `schemaVersion=3` result envelope from the earlier Fetch parity slices.
+- Updated root, V2 Server, and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Fetch pytest selection, full `PYTHONPATH=. uv run --extra
+  dev pytest` (130 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Log Slice Stable Evidence Refs
 
 - Aligned V2 task MCP `logagent.get_log_slice` with Rust/V1 stable logical

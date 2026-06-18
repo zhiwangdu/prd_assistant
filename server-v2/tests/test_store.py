@@ -6679,6 +6679,13 @@ fi
                     },
                 )
                 payload = json.loads(fetch_response["result"]["content"][0]["text"])
+                self.assertEqual(
+                    payload["artifactPath"],
+                    f"tool_results/{payload['result']['actionId']}/result.json",
+                )
+                self.assertEqual(payload["statusCode"], 200)
+                self.assertTrue(payload["httpOk"])
+                self.assertIn('"ok"', payload["bodyPreview"])
                 self.assertEqual(payload["result"]["response"]["statusCode"], 200)
                 self.assertEqual(
                     payload["result"]["response"]["headers"]["X-Api-Key"], "__REDACTED__"
@@ -6713,7 +6720,9 @@ fi
                     repeated_payload["result"]["actionId"],
                     payload["result"]["actionId"],
                 )
+                self.assertEqual(repeated_payload["artifactPath"], payload["artifactPath"])
                 self.assertEqual(repeated_payload["result"]["evidenceRef"], ref)
+                self.assertEqual(repeated_payload["evidenceRefs"], payload["evidenceRefs"])
                 answer = {
                     "summary": "Fetch-backed answer.",
                     "symptoms": [],
