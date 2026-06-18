@@ -6,14 +6,14 @@
 
 ## 当前状态
 
-已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。`collect_environment` 批准后已可接入 Remote Executor 白名单命令、通过 V2 白名单 file template 拉取单个有大小上限的 SCP 文件，或通过审批输入中的 `targets[]` / `remoteTargets[]` 批量采集多个远程目标；多 executor / 多模板场景已支持基于 `target` / `executor` / `node` / `host` 和 `template` / `command` / `file` hint 的确定性唯一匹配，匹配不到或有歧义时写入 `REMOTE_REJECTED` 并拒绝执行 SSH/SCP。V2 已内置通用只读环境模板和 openGemini 基础只读模板，更多 Cassandra/RocksDB 产品专用模板仍未实现。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
+已实现 Analysis State Store MVP、`PLAN_ANALYSIS` Claude Code session orchestration、LogAgent MCP stdio server、用户追问和审批恢复 API。V2 同时提供 run-scoped `/api/v2/runs/:run_id/messages` / `/api/v2/actions/:action_id/decisions` 和 task-scoped `/api/v2/tasks/:task_id/messages` / `/api/v2/tasks/:task_id/actions/:action_id/decision` 入口，后者用于承接 Rust/V1 的 taskId 语义并校验 action 属于对应 task。`collect_environment` 批准后已可接入 Remote Executor 白名单命令、通过 V2 白名单 file template 拉取单个有大小上限的 SCP 文件，或通过审批输入中的 `targets[]` / `remoteTargets[]` 批量采集多个远程目标；多 executor / 多模板场景已支持基于 `target` / `executor` / `node` / `host` 和 `template` / `command` / `file` hint 的确定性唯一匹配，匹配不到或有歧义时写入 `REMOTE_REJECTED` 并拒绝执行 SSH/SCP。V2 已内置通用只读环境模板和 openGemini 基础只读模板，更多 Cassandra/RocksDB 产品专用模板仍未实现。Claude Code runner 已提供配置、诊断接口和 session 输入/响应产物。
 
 已落地：
 
 - `analysis_state.json`
 - `analysis_events.jsonl`
 - `system_context.json`
-- `GET /api/tasks/:task_id/analysis`
+- `GET /api/v2/tasks/:task_id/analysis` 和 `GET /api/v2/runs/:run_id/analysis`
 - `GET /api/sessions/:session_id/timeline` 聚合 Session events 和 task analysis events
 - grep/tool/final result/failure 的基础事件记录
 - Claude Code session lifecycle 事件记录

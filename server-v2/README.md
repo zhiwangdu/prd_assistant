@@ -27,6 +27,10 @@ slice provides the durable foundation for the V2 product model:
   unfinished. Session task APIs return Rust-style TaskSummary fields including
   the persisted `analysisMode` while retaining raw V2 Run records under `runs`
   for diagnostics.
+- Task-scoped HTTP aliases under `/api/v2/tasks`: `taskId` maps to the
+  underlying Run id for list/read/timeline/evidence/artifacts/analysis/result,
+  user-message resume, and Rust/V1-style approval decisions at
+  `/api/v2/tasks/:task_id/actions/:action_id/decision`.
 - Native Agent import compatibility through `native_agent.server_api: "v2"`:
   Chrome Extension still calls local `/imports`; Native Agent creates or reuses
   a V2 `ws_...` Session and uploads through Session-scoped V2 APIs.
@@ -473,6 +477,15 @@ GET  /api/v2/runs/:run_id/analysis
 GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
+GET  /api/v2/tasks?workspaceId=<workspace_id>
+GET  /api/v2/tasks/:task_id
+GET  /api/v2/tasks/:task_id/timeline
+GET  /api/v2/tasks/:task_id/evidence
+GET  /api/v2/tasks/:task_id/artifacts
+GET  /api/v2/tasks/:task_id/analysis
+GET  /api/v2/tasks/:task_id/result
+POST /api/v2/tasks/:task_id/messages
+POST /api/v2/tasks/:task_id/actions/:action_id/decision
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools

@@ -1002,12 +1002,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/tasks")
+    async def list_tasks_alias(_: Auth, workspaceId: str | None = None) -> dict:
+        try:
+            return {"tasks": store.list_runs(workspaceId)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/v2/runs/{run_id}")
     async def get_run(_: Auth, run_id: str) -> dict:
         try:
             return store.get_run(run_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/tasks/{task_id}")
+    async def get_task_alias(_: Auth, task_id: str) -> dict:
+        return await get_run(_, task_id)
 
     @app.get("/api/v2/runs/{run_id}/timeline")
     async def get_timeline(_: Auth, run_id: str) -> dict:
@@ -1016,12 +1027,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/tasks/{task_id}/timeline")
+    async def get_task_timeline_alias(_: Auth, task_id: str) -> dict:
+        return await get_timeline(_, task_id)
+
     @app.get("/api/v2/runs/{run_id}/evidence")
     async def list_evidence(_: Auth, run_id: str) -> dict:
         try:
             return {"evidence": store.list_evidence(run_id)}
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/tasks/{task_id}/evidence")
+    async def list_task_evidence_alias(_: Auth, task_id: str) -> dict:
+        return await list_evidence(_, task_id)
 
     @app.get("/api/v2/runs/{run_id}/artifacts")
     async def list_run_artifacts(_: Auth, run_id: str) -> dict:
@@ -1030,12 +1049,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/tasks/{task_id}/artifacts")
+    async def list_task_artifacts_alias(_: Auth, task_id: str) -> dict:
+        return await list_run_artifacts(_, task_id)
+
     @app.get("/api/v2/runs/{run_id}/analysis")
     async def get_analysis(_: Auth, run_id: str) -> dict:
         try:
             return get_run_analysis(settings, store, run_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/v2/tasks/{task_id}/analysis")
+    async def get_task_analysis_alias(_: Auth, task_id: str) -> dict:
+        return await get_analysis(_, task_id)
 
     @app.get("/api/v2/runs/{run_id}/result")
     async def get_result(_: Auth, run_id: str) -> dict:
@@ -1057,8 +1084,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
-    @app.post("/api/v2/runs/{run_id}/messages")
-    async def post_message(_: Auth, run_id: str, payload: MessageCreate) -> dict:
+    @app.get("/api/v2/tasks/{task_id}/result")
+    async def get_task_result_alias(_: Auth, task_id: str) -> dict:
+        return await get_result(_, task_id)
+
+    async def submit_run_message(run_id: str, payload: MessageCreate) -> dict:
         try:
             run = store.get_run(run_id)
         except KeyError as error:
@@ -1121,10 +1151,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "duplicate": False,
         }
 
-    @app.post("/api/v2/actions/{action_id}/decisions")
-    async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
+    @app.post("/api/v2/runs/{run_id}/messages")
+    async def post_message(_: Auth, run_id: str, payload: MessageCreate) -> dict:
+        return await submit_run_message(run_id, payload)
+
+    @app.post("/api/v2/tasks/{task_id}/messages")
+    async def post_task_message_alias(_: Auth, task_id: str, payload: MessageCreate) -> dict:
+        return await submit_run_message(task_id, payload)
+
+    async def submit_action_decision(
+        action_id: str,
+        payload: DecisionCreate,
+        *,
+        task_id: str | None = None,
+    ) -> dict:
         try:
             current_action = store.get_action(action_id)
+            if task_id is not None and current_action.get("run_id") != task_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"unknown actionId {action_id} for taskId {task_id}",
+                )
             run = store.get_run(current_action["run_id"])
             idempotency_key = normalize_optional_message_id(payload.idempotencyKey)
             if idempotency_key is not None:
@@ -1183,6 +1230,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "job": job,
             "duplicate": False,
         }
+
+    @app.post("/api/v2/actions/{action_id}/decisions")
+    async def decide_action(_: Auth, action_id: str, payload: DecisionCreate) -> dict:
+        return await submit_action_decision(action_id, payload)
+
+    @app.post("/api/v2/tasks/{task_id}/actions/{action_id}/decision")
+    async def decide_task_action_alias(
+        _: Auth, task_id: str, action_id: str, payload: DecisionCreate
+    ) -> dict:
+        return await submit_action_decision(action_id, payload, task_id=task_id)
 
     @app.get("/api/v2/evidence/{evidence_id}")
     async def get_evidence(_: Auth, evidence_id: str) -> dict:

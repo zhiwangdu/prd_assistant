@@ -65,6 +65,11 @@ Implemented in this slice:
   Rust-style TaskSummary objects with `taskId`, `taskKind`, `sessionId`,
   `analysisMode`, `analysisLanguage`, `status`, `phase`, and `url`, while
   retaining raw Run records under `runs`.
+- Task-scoped API aliases under `/api/v2/tasks`. These map `taskId` to the
+  underlying Run id for list/read/timeline/evidence/artifacts/analysis/result,
+  user-message resume, and Rust/V1-style approval decisions at
+  `/api/v2/tasks/:task_id/actions/:action_id/decision`; the approval alias
+  rejects action ids that belong to a different task.
 - Native Agent V2 target support: browser imports still enter the local Native
   Agent `/imports` endpoint, and `native_agent.server_api=v2` maps them to
   `POST /api/v2/sessions` plus Session-scoped upload APIs.
@@ -411,6 +416,15 @@ GET  /api/v2/runs/:run_id/analysis
 GET  /api/v2/runs/:run_id/result
 POST /api/v2/runs/:run_id/messages
 POST /api/v2/actions/:action_id/decisions
+GET  /api/v2/tasks?workspaceId=<workspace_id>
+GET  /api/v2/tasks/:task_id
+GET  /api/v2/tasks/:task_id/timeline
+GET  /api/v2/tasks/:task_id/evidence
+GET  /api/v2/tasks/:task_id/artifacts
+GET  /api/v2/tasks/:task_id/analysis
+GET  /api/v2/tasks/:task_id/result
+POST /api/v2/tasks/:task_id/messages
+POST /api/v2/tasks/:task_id/actions/:action_id/decision
 GET  /api/v2/evidence/:evidence_id
 GET  /api/v2/artifacts/:artifact_id
 GET  /api/v2/tools
@@ -1783,6 +1797,11 @@ submissions with the same `idempotencyKey` return the original decision event
 without updating the action or creating another job. Approved submissions may
 include an `input` object, which replaces the action payload input and is
 recorded in the decision result/timeline event.
+The same wait-state semantics are available through task-scoped aliases:
+`POST /api/v2/tasks/:task_id/messages` and
+`POST /api/v2/tasks/:task_id/actions/:action_id/decision`. The decision alias
+validates that the action belongs to the supplied task id before applying the
+approval or rejection.
 `POST /api/v2/runs/:run_id/messages` and
 `POST /api/v2/actions/:action_id/decisions` requeue waiting runs into the
 SQLite job queue. User messages also mark pending matching `user_input`

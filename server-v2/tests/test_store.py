@@ -457,14 +457,23 @@ class StoreTests(unittest.TestCase):
                 ("POST", "/api/v2/workspaces/{workspace_id}/runs"),
                 ("POST", "/api/v2/sessions/{session_id}/tasks"),
                 ("GET", "/api/v2/runs"),
+                ("GET", "/api/v2/tasks"),
                 ("GET", "/api/v2/runs/{run_id}"),
+                ("GET", "/api/v2/tasks/{task_id}"),
                 ("GET", "/api/v2/runs/{run_id}/timeline"),
+                ("GET", "/api/v2/tasks/{task_id}/timeline"),
                 ("GET", "/api/v2/runs/{run_id}/evidence"),
+                ("GET", "/api/v2/tasks/{task_id}/evidence"),
                 ("GET", "/api/v2/runs/{run_id}/artifacts"),
+                ("GET", "/api/v2/tasks/{task_id}/artifacts"),
                 ("GET", "/api/v2/runs/{run_id}/analysis"),
+                ("GET", "/api/v2/tasks/{task_id}/analysis"),
                 ("GET", "/api/v2/runs/{run_id}/result"),
+                ("GET", "/api/v2/tasks/{task_id}/result"),
                 ("POST", "/api/v2/runs/{run_id}/messages"),
+                ("POST", "/api/v2/tasks/{task_id}/messages"),
                 ("POST", "/api/v2/actions/{action_id}/decisions"),
+                ("POST", "/api/v2/tasks/{task_id}/actions/{action_id}/decision"),
                 ("GET", "/api/v2/evidence/{evidence_id}"),
                 ("GET", "/api/v2/artifacts/{artifact_id}"),
             },
@@ -1460,6 +1469,101 @@ class StoreTests(unittest.TestCase):
                     decision_events[0]["payload"]["idempotencyKey"],
                     "approval-1",
                 )
+
+    def test_task_alias_message_and_decision_routes_reuse_run_semantics(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("task aliases", "diagnose", "en-US")
+            user_run = store.create_run(workspace["id"])
+            user_action = store.create_action(
+                user_run["id"],
+                "user_input",
+                {
+                    "questionId": "q-alias",
+                    "question": "Which version?",
+                    "required": True,
+                },
+            )
+            approval_workspace = store.create_workspace("approval alias", "diagnose", "en-US")
+            approval_run = store.create_run(approval_workspace["id"])
+            approval_action = store.create_action(
+                approval_run["id"],
+                "approval",
+                {
+                    "actionType": "manual_approval",
+                    "reason": "Need operator confirmation",
+                    "input": {},
+                },
+            )
+            store.update_run_status(user_run["id"], "waiting_for_user", "waiting_for_user")
+            store.update_run_status(
+                approval_run["id"], "waiting_for_approval", "waiting_for_approval"
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                tasks = client.get("/api/v2/tasks", headers=headers)
+                self.assertEqual(tasks.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in tasks.json()["tasks"]],
+                    [approval_run["id"], user_run["id"]],
+                )
+
+                fetched_task = client.get(
+                    f"/api/v2/tasks/{user_run['id']}",
+                    headers=headers,
+                )
+                self.assertEqual(fetched_task.status_code, 200)
+                self.assertEqual(fetched_task.json()["id"], user_run["id"])
+
+                message = client.post(
+                    f"/api/v2/tasks/{user_run['id']}/messages",
+                    headers=headers,
+                    json={
+                        "questionId": "q-alias",
+                        "message": "version 2.0.0",
+                        "idempotencyKey": "task-message-alias",
+                    },
+                )
+                self.assertEqual(message.status_code, 200)
+                self.assertEqual(
+                    message.json()["answeredActions"][0]["id"],
+                    user_action["id"],
+                )
+                self.assertEqual(store.get_run(user_run["id"])["status"], "queued")
+
+                wrong_task = client.post(
+                    f"/api/v2/tasks/{user_run['id']}/actions/{approval_action['id']}/decision",
+                    headers=headers,
+                    json={"decision": "approved", "reason": "ok"},
+                )
+                self.assertEqual(wrong_task.status_code, 404)
+
+                decision = client.post(
+                    (
+                        f"/api/v2/tasks/{approval_run['id']}/actions/"
+                        f"{approval_action['id']}/decision"
+                    ),
+                    headers=headers,
+                    json={
+                        "decision": "approved",
+                        "reason": "ok",
+                        "idempotencyKey": "task-decision-alias",
+                    },
+                )
+                self.assertEqual(decision.status_code, 200)
+                self.assertEqual(decision.json()["action"]["status"], "approved")
+                self.assertEqual(store.get_run(approval_run["id"])["status"], "queued")
 
     def test_action_decision_api_can_override_collect_environment_input(self) -> None:
         from fastapi.testclient import TestClient

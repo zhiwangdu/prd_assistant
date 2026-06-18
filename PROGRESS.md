@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Task Alias Resume Route Parity
+
+- Added V2 task-scoped aliases under `/api/v2/tasks` for analysis run
+  list/read/timeline/evidence/artifacts/analysis/result, user-message resume,
+  and Rust/V1-style approval decisions at
+  `/api/v2/tasks/:task_id/actions/:action_id/decision`.
+- Reused the existing run/action resume logic so task aliases preserve
+  idempotency, waiting-state validation, job requeue behavior, and
+  approval-input overrides. The task approval alias rejects action ids that
+  belong to a different task.
+- Added route-table and behavior regression coverage, and updated V2 Server
+  and Analysis Agent docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_task_alias_message_and_decision_routes_reuse_run_semantics`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 165 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/api.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Endpoint Last Run Parity
 
 - Added `fetch_endpoints.last_run_id` SQLite storage and migration for V2 Fetch
