@@ -10,6 +10,9 @@ slice provides the durable foundation for the V2 product model:
 - Local artifact storage for uploads and future evidence files.
 - DB-backed job queue for restartable background runs, with startup recovery
   for interrupted analysis and remote command jobs.
+- Store-level terminal-state protection for analysis, tool, and remote runs:
+  once a run reaches succeeded/failed, later worker retries or manual state
+  writes cannot overwrite the terminal result.
 - Workspace, Run, TimelineEvent, Evidence, Artifact, Upload, Action, and Job
   schema foundations.
 - Workspace update and soft-delete lifecycle; deleted Workspaces are hidden from

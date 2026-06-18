@@ -21,6 +21,8 @@ DEFAULT_FETCH_REFRESH_POLICY: JsonObject = {
 }
 CASE_VECTOR_DIMS = 64
 UNSET = object()
+RUN_TERMINAL_STATUSES = {"succeeded", "failed"}
+REMOTE_RUN_TERMINAL_STATUSES = {"SUCCEEDED", "FAILED"}
 
 
 def now_iso() -> str:
@@ -154,6 +156,23 @@ def session_status_from_run_status(status: str) -> str:
     if status == "queued":
         return "ready"
     return status
+
+
+def ensure_run_not_terminal(run: JsonObject, action: str) -> None:
+    status = run.get("status")
+    if status in RUN_TERMINAL_STATUSES:
+        raise ValueError(
+            f"terminal run {run.get('id')} with status {status} cannot be {action}"
+        )
+
+
+def ensure_remote_run_not_terminal(run: JsonObject, action: str) -> None:
+    status = run.get("status")
+    if status in REMOTE_RUN_TERMINAL_STATUSES:
+        run_id = run.get("taskId") or run.get("id")
+        raise ValueError(
+            f"terminal remote run {run_id} with status {status} cannot be {action}"
+        )
 
 
 def case_tokens(value: str) -> set[str]:
@@ -1297,6 +1316,7 @@ class Store:
         run = self.get_run(run_id)
         if run.get("kind") != "tool_run":
             raise ValueError(f"run {run_id} is not a tool run")
+        ensure_run_not_terminal(run, "marked running")
         ts = now_iso()
         with self.connect() as conn:
             conn.execute(
@@ -1326,6 +1346,7 @@ class Store:
         run = self.get_run(run_id)
         if run.get("kind") != "tool_run":
             raise ValueError(f"run {run_id} is not a tool run")
+        ensure_run_not_terminal(run, "completed")
         ts = now_iso()
         with self.connect() as conn:
             conn.execute(
@@ -1351,6 +1372,7 @@ class Store:
         run = self.get_run(run_id)
         if run.get("kind") != "tool_run":
             raise ValueError(f"run {run_id} is not a tool run")
+        ensure_run_not_terminal(run, "failed")
         ts = now_iso()
         error = {"message": message[:2000]}
         with self.connect() as conn:
@@ -1410,9 +1432,13 @@ class Store:
     ) -> JsonObject:
         ts = now_iso()
         with self.connect() as conn:
-            row = conn.execute("SELECT workspace_id FROM runs WHERE id = ?", (run_id,)).fetchone()
+            row = conn.execute(
+                "SELECT id, workspace_id, status FROM runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
             if row is None:
                 raise KeyError(f"unknown run {run_id}")
+            ensure_run_not_terminal(dict(row), "updated")
             workspace_id = row["workspace_id"]
             encoded_final_answer = encode_json(final_answer) if final_answer is not None else None
             if alias is None:
@@ -1743,10 +1769,11 @@ class Store:
         ts = now_iso()
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT attempts FROM remote_runs WHERE id = ?", (run_id,)
+                "SELECT id, status, attempts FROM remote_runs WHERE id = ?", (run_id,)
             ).fetchone()
             if row is None:
                 raise KeyError(f"unknown remote run {run_id}")
+            ensure_remote_run_not_terminal(dict(row), "marked running")
             conn.execute(
                 """
                 UPDATE remote_runs
@@ -1758,6 +1785,8 @@ class Store:
         return self.get_remote_run(run_id)
 
     def complete_remote_run(self, run_id: str, result: JsonObject) -> JsonObject:
+        remote_run = self.get_remote_run(run_id)
+        ensure_remote_run_not_terminal(remote_run, "completed")
         ts = now_iso()
         with self.connect() as conn:
             conn.execute(
@@ -1772,6 +1801,8 @@ class Store:
         return self.get_remote_run(run_id)
 
     def fail_remote_run(self, run_id: str, phase: str, message: str) -> JsonObject:
+        remote_run = self.get_remote_run(run_id)
+        ensure_remote_run_not_terminal(remote_run, "failed")
         ts = now_iso()
         error = {"phase": phase, "message": message[:2000]}
         with self.connect() as conn:

@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Terminal Run State Guard
+
+- Added Store-level terminal-state protection for V2 analysis runs, manual
+  tool runs, and remote executor runs.
+- Once a run reaches `succeeded` / `failed` or remote `SUCCEEDED` / `FAILED`,
+  late worker retries, duplicate completions, or manual status writes now raise
+  instead of overwriting the terminal result and timeline.
+- Added regression coverage for succeeded and failed analysis/tool/remote run
+  overwrite attempts.
+- Verification passed: focused terminal-state pytest, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 160 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Route Capability Parity Audit
 
 - Added a V2 FastAPI route-table regression test that groups the V1 Server

@@ -585,6 +585,118 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(response.status_code, 409)
             self.assertEqual(response.json()["detail"]["status"], "queued")
 
+    def test_terminal_runs_reject_status_overwrites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("terminal guard", "diagnose", "en-US")
+
+            succeeded_run = store.create_run(workspace["id"])
+            store.update_run_status(succeeded_run["id"], "running", "agent_round")
+            store.update_run_status(
+                succeeded_run["id"],
+                "succeeded",
+                "finish",
+                {"summary": "done", "evidenceRefs": []},
+            )
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.update_run_status(succeeded_run["id"], "failed", "failed")
+            self.assertEqual(store.get_run(succeeded_run["id"])["status"], "succeeded")
+
+            failed_run = store.create_run(workspace["id"])
+            store.update_run_status(failed_run["id"], "running", "agent_round")
+            store.update_run_status(failed_run["id"], "failed", "failed")
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.update_run_status(failed_run["id"], "queued", "queued")
+            self.assertEqual(store.get_run(failed_run["id"])["status"], "failed")
+
+            result_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "tool-result.json",
+                b'{"status":"OK"}',
+                "application/json",
+            )
+            tool_run = store.create_tool_run(workspace["id"], "demo_tool", {})
+            store.mark_tool_run_running(tool_run["id"])
+            store.complete_tool_run(
+                tool_run["id"],
+                result_artifact["id"],
+                {"status": "OK"},
+            )
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.mark_tool_run_running(tool_run["id"])
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.complete_tool_run(tool_run["id"], result_artifact["id"], {"status": "OK"})
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.fail_tool_run(tool_run["id"], "late failure")
+            self.assertEqual(store.get_run(tool_run["id"])["status"], "succeeded")
+
+            failed_tool_run = store.create_tool_run(workspace["id"], "demo_tool", {})
+            store.mark_tool_run_running(failed_tool_run["id"])
+            store.fail_tool_run(failed_tool_run["id"], "failed")
+            with self.assertRaisesRegex(ValueError, "terminal run"):
+                store.complete_tool_run(
+                    failed_tool_run["id"],
+                    result_artifact["id"],
+                    {"status": "OK"},
+                )
+            self.assertEqual(store.get_run(failed_tool_run["id"])["status"], "failed")
+
+            executor = store.create_remote_executor(
+                {
+                    "name": "remote",
+                    "host": "127.0.0.1",
+                    "port": 22,
+                    "user": "root",
+                    "tags": [],
+                    "enabled": True,
+                    "notes": None,
+                }
+            )
+            remote_run = store.create_remote_run(
+                executor["executorId"],
+                "system_uname",
+                "Remote uname",
+            )
+            store.mark_remote_run_running(remote_run["taskId"], "EXECUTE_REMOTE_COMMAND")
+            store.complete_remote_run(remote_run["taskId"], {"status": "OK"})
+            with self.assertRaisesRegex(ValueError, "terminal remote run"):
+                store.mark_remote_run_running(remote_run["taskId"], "EXECUTE_REMOTE_COMMAND")
+            with self.assertRaisesRegex(ValueError, "terminal remote run"):
+                store.complete_remote_run(remote_run["taskId"], {"status": "OK"})
+            with self.assertRaisesRegex(ValueError, "terminal remote run"):
+                store.fail_remote_run(
+                    remote_run["taskId"],
+                    "EXECUTE_REMOTE_COMMAND",
+                    "late failure",
+                )
+            self.assertEqual(store.get_remote_run(remote_run["taskId"])["status"], "SUCCEEDED")
+
+            failed_remote_run = store.create_remote_run(
+                executor["executorId"],
+                "system_uname",
+                "Remote uname failed",
+            )
+            store.mark_remote_run_running(
+                failed_remote_run["taskId"],
+                "EXECUTE_REMOTE_COMMAND",
+            )
+            store.fail_remote_run(
+                failed_remote_run["taskId"],
+                "EXECUTE_REMOTE_COMMAND",
+                "failed",
+            )
+            with self.assertRaisesRegex(ValueError, "terminal remote run"):
+                store.complete_remote_run(failed_remote_run["taskId"], {"status": "OK"})
+            self.assertEqual(
+                store.get_remote_run(failed_remote_run["taskId"])["status"],
+                "FAILED",
+            )
+
     def test_workspace_run_job_and_stub_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

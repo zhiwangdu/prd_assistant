@@ -77,6 +77,10 @@ Implemented in this slice:
 - Startup recovery for interrupted DB-backed jobs: non-terminal analysis and
   remote jobs are requeued immediately, while stale jobs for terminal or
   waiting runs are completed without rerun.
+- Store-level state transitions protect terminal analysis/tool runs
+  (`succeeded` / `failed`) and remote runs (`SUCCEEDED` / `FAILED`) from late
+  worker retries or direct status writes, matching the V1 TaskStore terminal
+  guard.
 - Initial evidence pipeline for uploaded text files and supported archives.
 - Node log package preprocessing for
   `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`;
