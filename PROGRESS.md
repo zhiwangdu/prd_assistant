@@ -2,6 +2,14 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 MCP Interface Documentation Sync
+
+- Synced Interface and Analysis Agent docs with the latest V2 task MCP parity
+  behavior: summary resource top-level V1 fields, `search_logs`
+  `matches[].index`, and log slice requested-range semantics.
+- No runtime code changed in this slice.
+- Verification passed: `git diff --check`.
+
 ## 2026-06-18 V2 Task Summary Resource Parity
 
 - Added Rust/V1-compatible top-level fields to the V2 task MCP `summary`

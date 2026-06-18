@@ -65,8 +65,8 @@ Claude Code structured outcome 支持：
 
 LogAgent MCP tools 支持：
 
-- `logagent.search_logs`，支持 `keywords` 和 V1 兼容可选 `maxMatches`，`maxMatches` 按 1..200 裁剪；响应保留 V2 `search` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`totalMatches`、`keywordCounts`、`unmatchedKeywords`、`matches`、`evidenceRefs` 和 `note`
-- `logagent.get_log_slice`，支持 `path + lineNumber + before?/after?` 和 V1 兼容的 `path + startLine/endLine`；两种形态不能混用；响应保留 V2 `slice` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`evidenceRefs` 和 `lines`
+- `logagent.search_logs`，支持 `keywords` 和 V1 兼容可选 `maxMatches`，`maxMatches` 按 1..200 裁剪；响应保留 V2 `search` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`totalMatches`、`keywordCounts`、`unmatchedKeywords`、`matches`、`matches[].index`、`evidenceRefs` 和 `note`
+- `logagent.get_log_slice`，支持 `path + lineNumber + before?/after?` 和 V1 兼容的 `path + startLine/endLine`；两种形态不能混用；响应保留 V2 `slice` 对象，并补齐 Rust/V1 顶层 `artifactPath`、`evidenceRefs` 和 `lines`；slice artifact 的 `startLine` / `endLine` 保留请求范围，`lines[]` 只包含实际存在的行
 - `logagent.run_domain_tool`，`tools/list` schema 同时广告 V2 `toolId` 和 Rust/V1 `tool + inputFile` 调用形态；保留 V2 `result/artifact/evidence` 响应，并补齐 Rust/V1 顶层 `artifactPath`、`summary` 和 `evidenceRefs`；多输入工具额外返回 `artifactPaths`，有 findings 时返回最终答案可引用的 `finalEvidenceRefs`
 - `logagent.list_fetch_endpoints`
 - `logagent.fetch`
