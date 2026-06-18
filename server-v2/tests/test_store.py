@@ -5605,6 +5605,61 @@ fi
             )
             self.assertEqual(snapshot_result["value"]["instance"]["instanceId"], "inst-manual")
 
+    def test_tool_run_result_route_returns_v1_compat_fields_after_success(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("manual metadata", "diagnose", "en-US")
+            import_metadata(
+                store,
+                instance_id="inst-route",
+                template_type="json",
+                content=json.dumps(
+                    {
+                        "cluster": {
+                            "clusterId": "cluster-route",
+                            "nodes": [{"nodeId": "n1", "host": "127.0.0.1"}],
+                        }
+                    }
+                ),
+                remark="manual route tool run",
+            )
+            tool_run = store.create_tool_run(
+                workspace_id=workspace["id"],
+                tool_id="logagent.list_metadata_instances",
+                params={},
+            )
+
+            with TestClient(create_app(settings)) as client:
+                pending = client.get(
+                    f"/api/v2/tools/runs/{tool_run['id']}/result",
+                    headers={"Authorization": "Bearer test"},
+                )
+                self.assertEqual(pending.status_code, 409)
+                self.assertEqual(pending.json()["detail"]["status"], "queued")
+
+                executed = execute_tool_run(settings, store, tool_run["id"])
+                result = client.get(
+                    f"/api/v2/tools/runs/{tool_run['id']}/result",
+                    headers={"Authorization": "Bearer test"},
+                )
+
+            self.assertEqual(result.status_code, 200)
+            body = result.json()
+            self.assertEqual(body["runId"], tool_run["id"])
+            self.assertEqual(body["toolId"], "logagent.list_metadata_instances")
+            self.assertEqual(body["resultPath"], executed["artifact"]["relative_path"])
+            self.assertEqual(body["artifact"]["id"], executed["artifact"]["id"])
+            self.assertEqual(
+                body["result"]["result"]["instances"][0]["instanceId"],
+                "inst-route",
+            )
+
     def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             script = (

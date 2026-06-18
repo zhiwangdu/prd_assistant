@@ -807,7 +807,10 @@ migrated built-in from one surface accidentally.
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
 validated `params`; results are stored as V2 artifacts/evidence and exposed
-through `/api/v2/tools/runs/:run_id/result`. Configured tools with
+through `/api/v2/tools/runs/:run_id/result`. The result endpoint must return
+HTTP 409 until the run has a result artifact, and successful payloads must keep
+the V2 `run/artifact/result` objects while adding Rust/V1-compatible top-level
+`runId`, `toolId`, and `resultPath`. Configured tools with
 `{input_file}` may pass reserved `params.inputFiles` to select existing
 Workspace inputs without re-uploading files.
 When uploads are attached, V2 validates both the upload count and each uploaded

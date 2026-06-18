@@ -1258,14 +1258,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError(f"run {run_id} is not a tool run")
             artifact_id = run.get("toolResultArtifactId")
             if not artifact_id:
-                raise ValueError("tool run result is not available")
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "tool run result is only available after success",
+                        "status": run.get("status"),
+                    },
+                )
             artifact = store.get_artifact(artifact_id)
             path = resolve_artifact_path(settings, artifact["relative_path"])
+            result = json_load_file(path)
             return {
+                "runId": run["id"],
+                "toolId": run.get("toolId"),
+                "resultPath": artifact["relative_path"],
                 "run": run,
                 "artifact": artifact,
-                "result": json_load_file(path),
+                "result": result,
             }
+        except HTTPException:
+            raise
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

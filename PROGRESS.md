@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Run Result Compatibility
+
+- `/api/v2/tools/runs/:run_id/result` now returns HTTP 409 with the current
+  tool-run status until a result artifact exists, matching the Rust/V1
+  "available after success" behavior.
+- Successful result payloads now keep the V2 `run`, `artifact`, and `result`
+  objects while adding Rust/V1-compatible top-level `runId`, `toolId`, and
+  `resultPath` fields.
+- Added route regression coverage for queued and succeeded manual metadata
+  tool runs.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused tool-run result pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (145 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Settings Agent Budget Visibility
 
 - `/api/v2/settings/llm` now returns the active Agent budgets:
