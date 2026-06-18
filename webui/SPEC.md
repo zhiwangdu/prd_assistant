@@ -83,7 +83,7 @@ Database
 - V2 Analyze 页面必须调用 `/api/v2/workspaces/:workspace_id/runs` 创建 Run，轮询 `/api/v2/runs/:run_id/analysis`，并展示 run status、phase、timeline、evidence count、resource count、artifact count 和最终结果摘要。
 - V2 Analyze 页面必须从 `/api/v2/runs/:run_id/analysis.resources` 展示运行资源摘要，包括 `analysis_state.json` 中的 LangGraph engine/graph/nodes、Agent request/response provider/model/validation、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 的 call count / last call。
 - V2 Analyze 页面的 timeline 事件标签必须优先使用 Python V2 后端返回的 `kind` 字段，并兼容旧 `event_type` 字段。
-- V2 Analyze 页面必须读取 `/api/v2/runs/:run_id/analysis` 中的 `pendingActions`；`WAITING_FOR_USER` 时调用 `/api/v2/runs/:run_id/messages` 提交补充或 `resumeMode=finalize`，接受返回的 `answeredActions` 并通过后续轮询刷新 pending actions，`WAITING_FOR_APPROVAL` 时调用 `/api/v2/actions/:action_id/decisions` 批准或拒绝并恢复 run；`collect_environment` 审批必须允许用户从 `/api/v2/executors`、`/api/v2/executor-command-templates` 和 `/api/v2/executor-file-templates` 选择远程采集目标，并把互斥的 `commandId` 或 `fileId` 作为 decision `input` 提交。
+- V2 Analyze 页面必须读取 `/api/v2/runs/:run_id/analysis` 中的 `pendingActions`；`WAITING_FOR_USER` 时调用 `/api/v2/runs/:run_id/messages` 提交补充或 `resumeMode=finalize`，接受返回的 `answeredActions` 并通过后续轮询刷新 pending actions，`WAITING_FOR_APPROVAL` 时调用 `/api/v2/actions/:action_id/decisions` 批准或拒绝并恢复 run；`collect_environment` 审批必须允许用户从 `/api/v2/executors`、`/api/v2/executor-command-templates` 和 `/api/v2/executor-file-templates` 选择远程采集目标。未加入批量队列时，批准提交互斥的 `commandId` 或 `fileId`；加入一个或多个批量目标后，批准提交 `input.targets[]`，每个目标包含 executor 加一种目标类型。
 - V2 Analyze 页面在 run `SUCCEEDED` 且存在 final answer 时必须提供 Case 保存区，用 final answer 预填标题、现象、根因、解决方案和 evidence refs，允许用户编辑后调用 `/api/v2/runs/:run_id/case` 写入 V2 Memory。
 - V2 Analyze 页面的 artifact 下载必须由前端 `fetch` 携带 Authorization header 调用 `/api/v2/artifacts/:artifact_id`，不能依赖无法带 Bearer header 的裸链接。
 - V2 Analyze 页面的 artifact 列表必须同时展示 uploads、evidence artifacts
@@ -95,7 +95,7 @@ Database
 - 执行阶段作为次级进度展示，不能由前端直接修改。
 - `WAITING_FOR_USER` 按 pending action payload 中的 `questionId` 提交回答，重复提交使用由 run、action、resumeMode 和消息内容派生的稳定幂等 key。
 - `WAITING_FOR_USER` 必须提供“没有更多信息，直接生成最终结果”入口，点击时调用 message API 并传 `resumeMode: "finalize"`；即使回答框为空也必须提交默认说明，使任务基于当前证据直接恢复到最终结果生成。
-- `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因；批准或拒绝请求使用由 run、action、decision、原因和审批 input 派生的稳定幂等 key。`collect_environment` 未选择远程目标时必须允许批准，以保留后端兼容 MOCK evidence 路径；选择远程目标时必须只提交 executor 加一种目标类型，不能同时提交 `commandId` 和 `fileId`。
+- `WAITING_FOR_APPROVAL` 展示动作类型、原因、目标范围和风险；拒绝时可填写原因；批准或拒绝请求使用由 run、action、decision、原因和审批 input 派生的稳定幂等 key。`collect_environment` 未选择远程目标时必须允许批准，以保留后端兼容 MOCK evidence 路径；选择单个远程目标时必须只提交 executor 加一种目标类型，不能同时提交 `commandId` 和 `fileId`；批量目标列表非空时必须提交 `targets[]`，每个目标都满足同一互斥约束。
 - 当前 WebUI 已在 Task execution 卡片内展示 pending prompt / pending approval，并通过 Server API 恢复任务。
 - 时间线来自服务端事件摘要，不渲染隐藏思维链或未经清洗的 Provider 原始响应。
 - Analyze 必须以 Session 为唯一历史入口。未选择 Session 时只显示新建入口；选择后展示 Session draft editor、uploads、active run、历史 runs 和 Evidence timeline。

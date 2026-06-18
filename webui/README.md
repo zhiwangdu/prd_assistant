@@ -9,7 +9,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - 顶部栏使用 `LogAgent Analysis Workbench` 作为全局产品名，覆盖证据、Memory、Skill-backed System Context、Metadata 和工具工作流，不再只强调 Metadata。
 
 - 顶部导航默认进入 `Analyze`，可见顺序固定为 `Analyze`、`Memory`、`System Context`、`Tools`、`Settings`；Metadata 不再是顶层 tab，作为 System Context 页面内的 V2 Metadata 工作台区块提供。
-- `Analyze`：已切换为 Python V2 原生入口，直接调用 `/api/v2/*`。可新建 Workspace、选择历史 Workspace、回填并保存 Workspace 问题/模式、软删除历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、pending actions、resources、最终结果和 artifacts；运行资源区会展开 `analysis_state.json` 中的 LangGraph runtime、Agent request/response 审计、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 摘要；当 V2 run 等待用户或审批时，可提交补充、请求基于当前证据收尾、批准或拒绝 action，补充消息会带上 pending action 的 `questionId`，补充和审批都会生成稳定 `idempotencyKey`，`collect_environment` 审批会从已配置 Remote Executor、命令模板或文件模板中选择目标并随 decision `input` 提交；返回的 `answeredActions` 会被后续轮询反映到 pending actions；成功 run 可编辑并保存为 V2 task Case，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Rust Session-first Analyze 页面不再默认渲染。
+- `Analyze`：已切换为 Python V2 原生入口，直接调用 `/api/v2/*`。可新建 Workspace、选择历史 Workspace、回填并保存 Workspace 问题/模式、软删除历史 Workspace、上传小文件或分片上传大文件、创建 Run、轮询 `/api/v2/runs/:run_id/analysis`，展示 V2 run 状态、evidence、timeline、pending actions、resources、最终结果和 artifacts；运行资源区会展开 `analysis_state.json` 中的 LangGraph runtime、Agent request/response 审计、`claude_mcp_config.json`、`claude_session.json` 和 `mcp_calls.jsonl` 摘要；当 V2 run 等待用户或审批时，可提交补充、请求基于当前证据收尾、批准或拒绝 action，补充消息会带上 pending action 的 `questionId`，补充和审批都会生成稳定 `idempotencyKey`，`collect_environment` 审批会从已配置 Remote Executor、命令模板或文件模板中选择单个目标，也可以把多个目标加入批量队列并随 decision `input.targets[]` 提交；返回的 `answeredActions` 会被后续轮询反映到 pending actions；成功 run 可编辑并保存为 V2 task Case，并通过带 Authorization header 的下载按钮读取 `/api/v2/artifacts/:artifact_id`。旧 Rust Session-first Analyze 页面不再默认渲染。
 - V2 Analyze artifacts 列表会合并 uploads、evidence artifacts 和 V2
   `supportArtifacts`。support artifacts 用 Rust/V1 逻辑路径展示，并可通过同一
   `/api/v2/artifacts/:artifact_id` 下载，覆盖 Tool Runner stdout/stderr、
@@ -33,7 +33,7 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - Session 内新增 unified Evidence Timeline，合并 session events 和 task `analysis_events.jsonl`，显示 upload、Metadata、Case recall、grep、tool output、Claude Code session、MCP waiting request、用户追问/审批和 final result。
 - `Task execution` 读取 `/api/tasks/:task_id/analysis`，实时展示 Analysis revision、预算、事件摘要、Claude callId/attempt、session outcome 和 evidence。
 - 成功任务展示 `session_text_input.json` 中的 Session 对话框输入，最终结果引用 `session_text_input.json#question` 时可滚动定位到该输入。
-- `Task execution` 在 `WAITING_FOR_USER` 展示待补充问题并提交回答，也提供“没有更多信息，直接生成最终结果”按钮；该按钮会以 `resumeMode: "finalize"` 提交，即使回答框为空也会请求基于当前证据生成最终结果。在 `WAITING_FOR_APPROVAL` 展示待审批 action、risk、input，并支持批准或拒绝后继续任务；V2 `collect_environment` 审批会显示 Remote Executor、远程命令和远程文件模板选择，留空则走兼容 MOCK 采集。
+- `Task execution` 在 `WAITING_FOR_USER` 展示待补充问题并提交回答，也提供“没有更多信息，直接生成最终结果”按钮；该按钮会以 `resumeMode: "finalize"` 提交，即使回答框为空也会请求基于当前证据生成最终结果。在 `WAITING_FOR_APPROVAL` 展示待审批 action、risk、input，并支持批准或拒绝后继续任务；V2 `collect_environment` 审批会显示 Remote Executor、远程命令和远程文件模板选择，留空则走兼容 MOCK 采集；点击添加目标可形成批量 `targets[]`，批准时提交多个远程采集目标。
 - 用户可填写分析问题；任务成功后展示单次 LLM 生成的摘要、症状、可能根因、检查项、修复建议、缺失信息和置信度。
 - 成功任务支持编辑标题、现象、根因和解决方案后人工确认保存为 Case；同页可搜索相似 Case 并禁用不再召回的 Case。
 - 成功任务展示任务创建时固化的 `caseContext`，区分历史 Case 参考和实时 Case 搜索结果；Case 列表已适配 schema v2 并展示 `task` / `manual` 来源。

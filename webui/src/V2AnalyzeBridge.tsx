@@ -1,4 +1,4 @@
-import { BookOpenCheck, CheckCircle2, Cpu, Download, FileArchive, FileJson, MessageSquare, Network, Play, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, Cpu, Download, FileArchive, FileJson, MessageSquare, Network, Play, PlusCircle, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import type { UiLanguage } from "./i18n";
@@ -38,6 +38,12 @@ import {
 
 type BridgeCopy = (typeof copyByLanguage)[UiLanguage];
 type EnvironmentTargetKind = "command" | "file";
+type EnvironmentApprovalTarget = {
+  executorId: string;
+  targetKind: EnvironmentTargetKind;
+  commandId?: string;
+  fileId?: string;
+};
 type RunCaseDraft = {
   title: string;
   symptom: string;
@@ -138,6 +144,9 @@ const copyByLanguage = {
     noRemoteFile: "不指定文件模板",
     remoteCommandTarget: "远程命令",
     remoteFileTarget: "远程文件",
+    addEnvironmentTarget: "添加目标",
+    selectedEnvironmentTargets: "批量目标",
+    removeEnvironmentTarget: "移除目标",
     reasonPlaceholder: "可选：审批原因",
     noPendingAction: "Run 处于等待状态，但没有 pending action。",
     latestEvents: "最近事件",
@@ -245,6 +254,9 @@ const copyByLanguage = {
     noRemoteFile: "No file template",
     remoteCommandTarget: "Remote command",
     remoteFileTarget: "Remote file",
+    addEnvironmentTarget: "Add target",
+    selectedEnvironmentTargets: "Batch targets",
+    removeEnvironmentTarget: "Remove target",
     reasonPlaceholder: "Optional approval reason",
     noPendingAction: "The run is waiting, but no pending action is available.",
     latestEvents: "Latest events",
@@ -283,6 +295,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
   const [environmentTargetKind, setEnvironmentTargetKind] = useState<EnvironmentTargetKind>("command");
   const [environmentCommandId, setEnvironmentCommandId] = useState("");
   const [environmentFileId, setEnvironmentFileId] = useState("");
+  const [environmentBatchTargets, setEnvironmentBatchTargets] = useState<EnvironmentApprovalTarget[]>([]);
   const [caseDraft, setCaseDraft] = useState<RunCaseDraft>(emptyRunCaseDraft());
   const [caseDraftRunId, setCaseDraftRunId] = useState("");
   const [savedCase, setSavedCase] = useState<V2CaseRecord | null>(null);
@@ -311,6 +324,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
       setEnvironmentTargetKind("command");
       setEnvironmentCommandId("");
       setEnvironmentFileId("");
+      setEnvironmentBatchTargets([]);
       return;
     }
     const currentInput = actionInputRecord(action);
@@ -344,6 +358,12 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
       const selectedFileId = selectedExecutorId && nextTargetKind === "file" && currentFileId && enabledFiles.some((file) => file.fileId === currentFileId)
         ? currentFileId
         : selectedExecutorId && nextTargetKind === "file" ? enabledFiles[0]?.fileId || "" : "";
+      const currentBatchTargets = environmentTargetsFromInput(
+        currentInput,
+        enabledExecutors,
+        enabledCommands,
+        enabledFiles
+      );
       setEnvironmentExecutors(enabledExecutors);
       setEnvironmentCommands(enabledCommands);
       setEnvironmentFiles(enabledFiles);
@@ -351,6 +371,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
       setEnvironmentTargetKind(nextTargetKind);
       setEnvironmentCommandId(selectedCommandId);
       setEnvironmentFileId(selectedFileId);
+      setEnvironmentBatchTargets(currentBatchTargets);
     } catch {
       setEnvironmentExecutors([]);
       setEnvironmentCommands([]);
@@ -359,6 +380,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
       setEnvironmentTargetKind(currentFileId ? "file" : "command");
       setEnvironmentCommandId(currentCommandId);
       setEnvironmentFileId(currentFileId);
+      setEnvironmentBatchTargets(environmentTargetsFromInput(currentInput));
     }
   }, [apiKey]);
 
@@ -564,7 +586,8 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
             environmentExecutorId,
             environmentTargetKind,
             environmentCommandId,
-            environmentFileId
+            environmentFileId,
+            environmentBatchTargets
           )
         : undefined;
       await decideV2Action(apiKey, action.id, {
@@ -580,6 +603,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
         )
       });
       setDecisionReason("");
+      setEnvironmentBatchTargets([]);
       setStatus(copy.refreshed);
       await refreshSelectedRun();
     } catch (reason) {
@@ -629,6 +653,21 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     if (!environmentFileId && environmentFiles[0]) {
       setEnvironmentFileId(environmentFiles[0].fileId);
     }
+  }
+
+  function addEnvironmentTarget() {
+    const target = selectedEnvironmentApprovalTarget(
+      environmentExecutorId,
+      environmentTargetKind,
+      environmentCommandId,
+      environmentFileId
+    );
+    if (!target) return;
+    setEnvironmentBatchTargets((current) => [...current, target]);
+  }
+
+  function removeEnvironmentTarget(index: number) {
+    setEnvironmentBatchTargets((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   useEffect(() => {
@@ -751,6 +790,7 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           environmentTargetKind={environmentTargetKind}
           environmentCommandId={environmentCommandId}
           environmentFileId={environmentFileId}
+          environmentBatchTargets={environmentBatchTargets}
           loading={loading}
           onMessageChange={setWaitingMessage}
           onReasonChange={setDecisionReason}
@@ -758,6 +798,8 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
           onEnvironmentTargetKindChange={updateEnvironmentTargetKind}
           onEnvironmentCommandChange={setEnvironmentCommandId}
           onEnvironmentFileChange={setEnvironmentFileId}
+          onAddEnvironmentTarget={addEnvironmentTarget}
+          onRemoveEnvironmentTarget={removeEnvironmentTarget}
           onSend={(action, resumeMode) => void sendWaitingMessage(action, resumeMode)}
           onDecision={(action, decision) => void decideWaitingAction(action, decision)}
         />
@@ -916,6 +958,7 @@ function WaitingActionsPanel({
   environmentTargetKind,
   environmentCommandId,
   environmentFileId,
+  environmentBatchTargets,
   loading,
   onMessageChange,
   onReasonChange,
@@ -923,6 +966,8 @@ function WaitingActionsPanel({
   onEnvironmentTargetKindChange,
   onEnvironmentCommandChange,
   onEnvironmentFileChange,
+  onAddEnvironmentTarget,
+  onRemoveEnvironmentTarget,
   onSend,
   onDecision
 }: {
@@ -938,6 +983,7 @@ function WaitingActionsPanel({
   environmentTargetKind: EnvironmentTargetKind;
   environmentCommandId: string;
   environmentFileId: string;
+  environmentBatchTargets: EnvironmentApprovalTarget[];
   loading: boolean;
   onMessageChange: (value: string) => void;
   onReasonChange: (value: string) => void;
@@ -945,6 +991,8 @@ function WaitingActionsPanel({
   onEnvironmentTargetKindChange: (value: EnvironmentTargetKind) => void;
   onEnvironmentCommandChange: (value: string) => void;
   onEnvironmentFileChange: (value: string) => void;
+  onAddEnvironmentTarget: () => void;
+  onRemoveEnvironmentTarget: (index: number) => void;
   onSend: (action: V2Action, resumeMode: "continue" | "finalize") => void;
   onDecision: (action: V2Action, decision: "approved" | "rejected") => void;
 }) {
@@ -959,6 +1007,12 @@ function WaitingActionsPanel({
     );
   }
   const isEnvironmentApproval = isCollectEnvironmentAction(action);
+  const canAddEnvironmentTarget = Boolean(selectedEnvironmentApprovalTarget(
+    environmentExecutorId,
+    environmentTargetKind,
+    environmentCommandId,
+    environmentFileId
+  ));
   if (run.status === "waiting_for_approval" || action.kind === "approval") {
     return (
       <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -1036,6 +1090,43 @@ function WaitingActionsPanel({
                 )}
               </label>
             </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-amber-900">
+                <span>{copy.selectedEnvironmentTargets}</span>
+                <Badge variant="secondary">{environmentBatchTargets.length}</Badge>
+              </div>
+              <Button
+                disabled={loading || !canAddEnvironmentTarget}
+                type="button"
+                variant="outline"
+                onClick={onAddEnvironmentTarget}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                {copy.addEnvironmentTarget}
+              </Button>
+            </div>
+            {environmentBatchTargets.length ? (
+              <div className="mt-2 grid gap-2">
+                {environmentBatchTargets.map((target, index) => (
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-white/70 px-3 py-2" key={`${target.executorId}:${target.targetKind}:${target.commandId ?? target.fileId ?? ""}:${index}`}>
+                    <p className="min-w-0 truncate text-xs text-amber-900">
+                      {environmentApprovalTargetLabel(target, environmentExecutors, environmentCommands, environmentFiles)}
+                    </p>
+                    <Button
+                      aria-label={copy.removeEnvironmentTarget}
+                      className="h-8 w-8 shrink-0 px-0"
+                      disabled={loading}
+                      title={copy.removeEnvironmentTarget}
+                      type="button"
+                      variant="outline"
+                      onClick={() => onRemoveEnvironmentTarget(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         <textarea
@@ -1472,12 +1563,79 @@ function stringRecordValue(payload: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function selectedEnvironmentApprovalTarget(
+  executorId: string,
+  targetKind: EnvironmentTargetKind,
+  commandId: string,
+  fileId: string
+): EnvironmentApprovalTarget | null {
+  const nextExecutorId = executorId.trim();
+  const nextCommandId = commandId.trim();
+  const nextFileId = fileId.trim();
+  if (!nextExecutorId) return null;
+  if (targetKind === "command" && nextCommandId) {
+    return { executorId: nextExecutorId, targetKind, commandId: nextCommandId };
+  }
+  if (targetKind === "file" && nextFileId) {
+    return { executorId: nextExecutorId, targetKind, fileId: nextFileId };
+  }
+  return null;
+}
+
+function environmentTargetsFromInput(
+  input: Record<string, unknown>,
+  executors: V2RemoteExecutorRecord[] = [],
+  commands: V2RemoteCommandTemplate[] = [],
+  files: V2RemoteFileTemplate[] = []
+): EnvironmentApprovalTarget[] {
+  const rawTargets = arrayField(input, "targets").length
+    ? arrayField(input, "targets")
+    : arrayField(input, "remoteTargets");
+  return rawTargets
+    .map(asRecord)
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item): EnvironmentApprovalTarget | null => {
+      const executorId = stringRecordValue(item, "executorId") || stringRecordValue(item, "remoteExecutorId");
+      const commandId = stringRecordValue(item, "commandId") || stringRecordValue(item, "remoteCommandId");
+      const fileId = stringRecordValue(item, "fileId") || stringRecordValue(item, "remoteFileId");
+      if (!executorId || (commandId && fileId)) return null;
+      if (executors.length && !executors.some((executor) => executor.executorId === executorId)) return null;
+      if (commandId) {
+        if (commands.length && !commands.some((command) => command.commandId === commandId)) return null;
+        return { executorId, targetKind: "command" as const, commandId };
+      }
+      if (fileId) {
+        if (files.length && !files.some((file) => file.fileId === fileId)) return null;
+        return { executorId, targetKind: "file" as const, fileId };
+      }
+      return null;
+    })
+    .filter((item): item is EnvironmentApprovalTarget => Boolean(item));
+}
+
+function environmentApprovalTargetLabel(
+  target: EnvironmentApprovalTarget,
+  executors: V2RemoteExecutorRecord[],
+  commands: V2RemoteCommandTemplate[],
+  files: V2RemoteFileTemplate[]
+) {
+  const executor = executors.find((item) => item.executorId === target.executorId);
+  const executorLabel = executor ? `${executor.name} · ${executor.user}@${executor.host}:${executor.port}` : target.executorId;
+  if (target.targetKind === "file") {
+    const file = files.find((item) => item.fileId === target.fileId);
+    return `${executorLabel} · file · ${file?.displayName ?? target.fileId}`;
+  }
+  const command = commands.find((item) => item.commandId === target.commandId);
+  return `${executorLabel} · command · ${command?.displayName ?? target.commandId}`;
+}
+
 function buildEnvironmentApprovalInput(
   action: V2Action,
   executorId: string,
   targetKind: EnvironmentTargetKind,
   commandId: string,
-  fileId: string
+  fileId: string,
+  batchTargets: EnvironmentApprovalTarget[]
 ) {
   const input: Record<string, unknown> = { ...actionInputRecord(action) };
   const nextExecutorId = executorId.trim();
@@ -1488,6 +1646,17 @@ function buildEnvironmentApprovalInput(
   delete input.remoteFileId;
   delete input.commandId;
   delete input.fileId;
+  delete input.targets;
+  delete input.remoteTargets;
+  if (batchTargets.length) {
+    input.targets = batchTargets.map((target) => {
+      if (target.targetKind === "file") {
+        return { executorId: target.executorId, fileId: target.fileId };
+      }
+      return { executorId: target.executorId, commandId: target.commandId };
+    });
+    return input;
+  }
   const hasRemoteTarget = nextExecutorId && (
     (targetKind === "command" && nextCommandId) ||
     (targetKind === "file" && nextFileId)

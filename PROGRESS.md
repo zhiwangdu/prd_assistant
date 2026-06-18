@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Environment Batch Approval
+
+- V2 Analyze `collect_environment` approval card now supports building a
+  batch target list from enabled Remote Executors, command templates, and file
+  templates.
+- When the batch list is non-empty, the approval decision submits
+  `input.targets[]`; when it is empty, the UI keeps the existing single-target
+  or MOCK approval behavior.
+- Existing action payloads that already contain `targets[]` / `remoteTargets[]`
+  are restored into the approval card when loading a waiting run.
+- Updated WebUI README/SPEC for the single-target plus batch-target approval
+  behavior.
+- Verification passed: `npm run lint`, `npm run typecheck`, and
+  `npm run build` in `webui/`.
+
 ## 2026-06-18 V2 Environment Collector Batch Targets
 
 - Extended approved V2 `collect_environment` actions with a structured
