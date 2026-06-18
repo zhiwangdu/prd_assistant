@@ -4631,6 +4631,9 @@ fi
 
             self.assertEqual(result["profileType"], "samples")
             self.assertEqual(result["total"], "100ms")
+            self.assertIsNone(result["error"])
+            self.assertIsInstance(result["durationMs"], int)
+            self.assertIsInstance(result["createdAt"], str)
             self.assertEqual(result["top"][0]["function"], "github.com/acme/foo")
             self.assertEqual(
                 result["artifactPaths"]["topTextPath"],

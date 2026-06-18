@@ -1755,6 +1755,7 @@ def run_pprof_tool(
     if not profile_path.is_file():
         raise ValueError("uploaded pprof profile is missing")
     action_id = f"act_tool_pprof_{run['id']}"
+    started = time.monotonic()
     node_count = int(params["nodeCount"])
     sample_index = str(params["sampleIndex"])
     commands = {
@@ -1813,6 +1814,7 @@ def run_pprof_tool(
         if all(outputs.get(name, {}).get("exitCode") == 0 for name in ("top", "tree", "raw"))
         else "FAILED"
     )
+    error = None if status == "OK" else "one or more pprof commands failed"
     stderr_artifact = write_pprof_stderr_artifact(
         settings, store, run["workspace_id"], action_id, outputs
     )
@@ -1842,6 +1844,9 @@ def run_pprof_tool(
         "artifactIds": artifact_ids,
         "artifactPaths": artifact_paths,
         "warnings": warnings,
+        "error": error,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "createdAt": datetime.now(UTC).isoformat(),
     }
     artifact = write_tool_result_artifact(settings, store, run["workspace_id"], action_id, result)
     evidence = store.create_evidence(

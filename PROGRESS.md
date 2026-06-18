@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Pprof Tool Result Field Parity
+
+- Extended V2 `pprof_analyzer` manual tool results with Rust/V1-compatible
+  `error`, `durationMs`, and `createdAt` fields while keeping existing
+  artifact id mappings and `artifactPaths`.
+- Added regression coverage to the fake-Go pprof run so the compatibility
+  fields stay present with parsed profile metadata and top rows.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check
+  logagent_v2 tests`, focused pprof/tool registry pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (130 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Metadata Tool Result Field Parity
 
 - Extended V2 manual metadata built-in tool results with Rust/V1-compatible

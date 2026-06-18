@@ -218,7 +218,8 @@ Implemented in this slice:
   shape (`source=configured`, `backend=command`) while remaining manual-only in
   V2. Tool-run results preserve V2 artifact ids and include Rust/V1-style
   `artifactPaths` for top/tree/raw/stderr/SVG outputs, plus parsed
-  `profileType`, `total`, and top table rows.
+  `profileType`, `total`, top table rows, `error`, `durationMs`, and
+  `createdAt`.
 - Fetch endpoint foundation. Endpoints are stored in SQLite, listed and managed
   through protected HTTP APIs, importable from DevTools bash cURL, exposed as a
   built-in `/api/v2/tools` descriptor, and executable through task MCP
