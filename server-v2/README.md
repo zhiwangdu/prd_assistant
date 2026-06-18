@@ -608,6 +608,24 @@ POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
+GET  /api/metadata/instances
+GET  /api/metadata/instances/:instance_id
+GET  /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
+DELETE /api/metadata/instances/:instance_id
+GET  /api/metadata/clusters/:cluster_id
+GET  /api/metadata/clusters/:cluster_id/nodes
+GET  /api/metadata/imports
+GET  /api/metadata/imports/:import_id
+GET  /api/metadata/imports/:import_id/preview
+POST /api/metadata/imports/preview
+POST /api/metadata/imports/fetch/preview
+POST /api/metadata/imports/:import_id/confirm
+POST /api/metadata/snapshots/fetch
+POST /api/metadata/imports/fetch
+POST /api/metadata/imports
+POST /api/metadata/field-types
+POST /api/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
 POST /api/v2/tasks/:task_id/case
@@ -621,6 +639,19 @@ PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
+POST /api/cases
+POST /api/runs/:run_id/case
+POST /api/tasks/:task_id/case
+GET  /api/cases
+GET  /api/cases/imports
+GET  /api/cases/imports/:import_id
+POST /api/cases/imports
+POST /api/cases/imports/preview
+POST /api/cases/imports/:import_id/messages
+PATCH /api/cases/imports/:import_id
+POST /api/cases/imports/:import_id/confirm
+GET  /api/cases/:case_id
+PATCH /api/cases/:case_id
 GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
@@ -1566,6 +1597,12 @@ and returns node/database counts without changing `metadata_instances`.
 preview summary, while `GET /api/v2/metadata/imports/:import_id` also includes
 the normalized snapshot for inspection. Confirm upserts the normalized snapshot
 and marks the draft `confirmed`.
+Rust/V1-style `/api/metadata/*` aliases share the same Metadata store and
+query handlers. The legacy `POST /api/metadata/imports` and
+`POST /api/metadata/imports/fetch` paths keep Rust/V1 preview-draft semantics
+and return a top-level import preview; V2-only
+`POST /api/v2/metadata/imports` and `/fetch` remain direct immediate import
+shortcuts.
 
 `templateType=csv` is dependency-free and intended for small-team maintained
 tables. A `section` column may be set to `instance`, `node`, `database`,
@@ -1675,15 +1712,19 @@ local migration and rollback layer:
 }
 ```
 
-Manual cases are created through `POST /api/v2/cases`. Succeeded runs can be
-confirmed through `POST /api/v2/runs/:run_id/case` or the Rust/V1-style task
-alias `POST /api/v2/tasks/:task_id/case`; repeated confirmation of the same run
-returns the existing task case. Cases can be searched with keyword
+Manual cases are created through `POST /api/v2/cases` or the Rust/V1-style
+`POST /api/cases` alias. Succeeded runs can be confirmed through
+`POST /api/v2/runs/:run_id/case`, `/api/runs/:run_id/case`, or the task aliases
+`POST /api/v2/tasks/:task_id/case` and `/api/tasks/:task_id/case`; repeated
+confirmation of the same run returns the existing task case. Cases can be
+searched with keyword
 queries, read by ID, edited, or disabled. Query search uses local SQLite
 FTS5/BM25 over title, symptom, root cause, solution, product/version/
 environment, instance/node, and evidence refs, plus a dependency-light local
 hash-vector recall column stored in SQLite. Disabled cases are hidden unless
 the caller sets `includeDisabled=true`.
+Rust/V1-style `/api/cases/*` aliases share the same Case Memory handlers as the
+V2 routes.
 
 On startup, V2 imports `cases/*.json` schema v2 files by `caseId` using
 idempotent upsert semantics. Creating or editing a Case first updates SQLite,

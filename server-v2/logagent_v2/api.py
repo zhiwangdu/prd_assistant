@@ -779,6 +779,34 @@ def _case_import_filename(value: str) -> str:
     return filename
 
 
+def _legacy_metadata_import_preview(
+    result: dict[str, Any],
+    *,
+    filename: str | None = None,
+) -> dict[str, Any]:
+    preview = dict(result["import"])
+    snapshot = result.get("snapshot", {})
+    cluster = snapshot.get("cluster", {}) if isinstance(snapshot, dict) else {}
+    nodes = cluster.get("nodes", []) if isinstance(cluster, dict) else []
+    databases = cluster.get("databases", []) if isinstance(cluster, dict) else []
+    partition_views = cluster.get("partitionViews", []) if isinstance(cluster, dict) else []
+    if filename is not None:
+        preview["filename"] = _case_import_optional_filename(filename)
+    preview["summary"] = {
+        "instances": 1,
+        "clusters": 1 if cluster else 0,
+        "nodes": len(nodes) if isinstance(nodes, list) else 0,
+        "databases": len(databases) if isinstance(databases, list) else 0,
+        "partitionViews": len(partition_views) if isinstance(partition_views, list) else 0,
+        "warnings": 0,
+        "errors": 0,
+    }
+    preview.setdefault("changes", [])
+    preview.setdefault("warnings", [])
+    preview.setdefault("errors", [])
+    return preview
+
+
 def _case_import_supported_text_file(
     filename: str,
     content_type: str | None,
@@ -2522,10 +2550,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/metadata/instances")
     @app.get("/api/v2/metadata/instances")
     async def list_metadata_instances(_: Auth) -> dict:
         return {"instances": store.list_metadata_instances()}
 
+    @app.get("/api/metadata/instances/{instance_id}")
     @app.get("/api/v2/metadata/instances/{instance_id}")
     async def get_metadata_instance(_: Auth, instance_id: str) -> dict:
         try:
@@ -2533,6 +2563,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/metadata/instances/{instance_id}/snapshot")
     @app.get("/api/v2/metadata/instances/{instance_id}/snapshot")
     async def get_metadata_snapshot(_: Auth, instance_id: str) -> dict:
         try:
@@ -2540,6 +2571,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/metadata/instances/{instance_id}/refresh")
     @app.post("/api/v2/metadata/instances/{instance_id}/refresh")
     async def refresh_metadata_instance_api(_: Auth, instance_id: str) -> dict:
         try:
@@ -2549,6 +2581,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.delete("/api/metadata/instances/{instance_id}")
     @app.delete("/api/v2/metadata/instances/{instance_id}")
     async def delete_metadata_instance(_: Auth, instance_id: str) -> dict:
         try:
@@ -2557,6 +2590,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/metadata/clusters/{cluster_id}")
     @app.get("/api/v2/metadata/clusters/{cluster_id}")
     async def get_metadata_cluster_api(_: Auth, cluster_id: str) -> dict:
         try:
@@ -2564,6 +2598,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/metadata/clusters/{cluster_id}/nodes")
     @app.get("/api/v2/metadata/clusters/{cluster_id}/nodes")
     async def list_metadata_cluster_nodes_api(_: Auth, cluster_id: str) -> dict:
         try:
@@ -2574,6 +2609,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/metadata/imports")
     @app.get("/api/v2/metadata/imports")
     async def list_metadata_imports(
         _: Auth,
@@ -2585,6 +2621,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ]
         }
 
+    @app.get("/api/metadata/imports/{import_id}")
     @app.get("/api/v2/metadata/imports/{import_id}")
     async def get_metadata_import(_: Auth, import_id: str) -> dict:
         try:
@@ -2593,6 +2630,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/metadata/imports/{import_id}/preview")
     @app.get("/api/v2/metadata/imports/{import_id}/preview")
     async def get_metadata_import_preview(_: Auth, import_id: str) -> dict:
         try:
@@ -2600,6 +2638,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/metadata/imports/preview")
     @app.post("/api/v2/metadata/imports/preview")
     async def create_metadata_import_preview(_: Auth, payload: MetadataImportCreate) -> dict:
         try:
@@ -2613,6 +2652,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/metadata/imports")
+    async def create_metadata_import_legacy(_: Auth, payload: MetadataImportCreate) -> dict:
+        result = await create_metadata_import_preview(_, payload)
+        return _legacy_metadata_import_preview(result, filename=payload.filename)
+
+    @app.post("/api/metadata/imports/fetch/preview")
     @app.post("/api/v2/metadata/imports/fetch/preview")
     async def create_metadata_fetch_preview(
         _: Auth, payload: MetadataImportFetchCreate
@@ -2636,6 +2681,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/metadata/imports/{import_id}/confirm")
+    async def confirm_metadata_import_draft_legacy(_: Auth, import_id: str) -> dict:
+        result = await confirm_metadata_import_draft(_, import_id)
+        preview = _legacy_metadata_import_preview(result)
+        return {
+            "importId": preview["importId"],
+            "applied": True,
+            "summary": preview["summary"],
+        }
+
+    @app.post("/api/metadata/imports/fetch")
+    async def create_metadata_fetch_import_legacy(
+        _: Auth, payload: MetadataImportFetchCreate
+    ) -> dict:
+        result = await create_metadata_fetch_preview(_, payload)
+        preview = _legacy_metadata_import_preview(result)
+        if "fetch" in result:
+            preview["fetch"] = result["fetch"]
+        return preview
+
     @app.post("/api/v2/metadata/imports/fetch")
     async def create_metadata_fetch_import(
         _: Auth, payload: MetadataImportFetchCreate
@@ -2652,6 +2717,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/metadata/snapshots/fetch")
     @app.post("/api/v2/metadata/snapshots/fetch")
     async def fetch_metadata_snapshot_api(
         _: Auth, payload: MetadataImportFetchCreate
@@ -2680,6 +2746,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/metadata/field-types")
     @app.post("/api/v2/metadata/field-types")
     async def get_metadata_field_types(_: Auth, payload: MetadataFieldTypesQuery) -> dict:
         try:
@@ -2694,6 +2761,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/metadata/tag-fields")
     @app.post("/api/v2/metadata/tag-fields")
     async def get_metadata_tag_fields(_: Auth, payload: MetadataFieldTypesQuery) -> dict:
         try:
@@ -2708,6 +2776,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/cases")
     @app.post("/api/v2/cases")
     async def create_case(_: Auth, payload: CaseCreate) -> dict:
         try:
@@ -2715,6 +2784,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/runs/{run_id}/case")
     @app.post("/api/v2/runs/{run_id}/case")
     async def create_run_case(_: Auth, run_id: str, payload: CaseUpdate | None = None) -> dict:
         try:
@@ -2725,12 +2795,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/tasks/{task_id}/case")
     @app.post("/api/v2/tasks/{task_id}/case")
     async def create_task_case_alias(
         _: Auth, task_id: str, payload: CaseUpdate | None = None
     ) -> dict:
         return await create_run_case(_, task_id, payload)
 
+    @app.get("/api/cases")
     @app.get("/api/v2/cases")
     async def search_cases(
         _: Auth,
@@ -2746,6 +2818,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         }
 
+    @app.get("/api/cases/imports")
     @app.get("/api/v2/cases/imports")
     async def list_case_imports(
         _: Auth,
@@ -2757,6 +2830,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ]
         }
 
+    @app.get("/api/cases/imports/{import_id}")
     @app.get("/api/v2/cases/imports/{import_id}")
     async def get_case_import(_: Auth, import_id: str) -> dict:
         try:
@@ -2764,6 +2838,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/cases/imports", status_code=201)
     @app.post("/api/v2/cases/imports", status_code=201)
     async def create_case_import_api(_: Auth, request: Request) -> dict:
         try:
@@ -2777,6 +2852,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/cases/imports/preview")
     @app.post("/api/v2/cases/imports/preview")
     async def preview_case_import_api(_: Auth, payload: CaseImportPreviewCreate) -> dict:
         return preview_case_import(
@@ -2785,6 +2861,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             filename=payload.filename,
         )
 
+    @app.post("/api/cases/imports/{import_id}/messages")
     @app.post("/api/v2/cases/imports/{import_id}/messages")
     async def append_case_import_message_api(
         _: Auth,
@@ -2798,6 +2875,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.patch("/api/cases/imports/{import_id}")
     @app.patch("/api/v2/cases/imports/{import_id}")
     async def patch_case_import(
         _: Auth,
@@ -2815,6 +2893,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/cases/imports/{import_id}/confirm")
     @app.post("/api/v2/cases/imports/{import_id}/confirm")
     async def confirm_case_import_api(
         _: Auth,
@@ -2829,6 +2908,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/cases/{case_id}")
     @app.get("/api/v2/cases/{case_id}")
     async def get_case(_: Auth, case_id: str) -> dict:
         try:
@@ -2836,6 +2916,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.patch("/api/cases/{case_id}")
     @app.patch("/api/v2/cases/{case_id}")
     async def patch_case(_: Auth, case_id: str, payload: CaseUpdate) -> dict:
         try:

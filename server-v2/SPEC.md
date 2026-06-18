@@ -541,6 +541,24 @@ POST /api/v2/metadata/imports/fetch
 POST /api/v2/metadata/imports
 POST /api/v2/metadata/field-types
 POST /api/v2/metadata/tag-fields
+GET  /api/metadata/instances
+GET  /api/metadata/instances/:instance_id
+GET  /api/metadata/instances/:instance_id/snapshot
+POST /api/metadata/instances/:instance_id/refresh
+DELETE /api/metadata/instances/:instance_id
+GET  /api/metadata/clusters/:cluster_id
+GET  /api/metadata/clusters/:cluster_id/nodes
+GET  /api/metadata/imports
+GET  /api/metadata/imports/:import_id
+GET  /api/metadata/imports/:import_id/preview
+POST /api/metadata/imports/preview
+POST /api/metadata/imports/fetch/preview
+POST /api/metadata/imports/:import_id/confirm
+POST /api/metadata/snapshots/fetch
+POST /api/metadata/imports/fetch
+POST /api/metadata/imports
+POST /api/metadata/field-types
+POST /api/metadata/tag-fields
 POST /api/v2/cases
 POST /api/v2/runs/:run_id/case
 POST /api/v2/tasks/:task_id/case
@@ -554,6 +572,19 @@ PATCH /api/v2/cases/imports/:import_id
 POST /api/v2/cases/imports/:import_id/confirm
 GET  /api/v2/cases/:case_id
 PATCH /api/v2/cases/:case_id
+POST /api/cases
+POST /api/runs/:run_id/case
+POST /api/tasks/:task_id/case
+GET  /api/cases
+GET  /api/cases/imports
+GET  /api/cases/imports/:import_id
+POST /api/cases/imports
+POST /api/cases/imports/preview
+POST /api/cases/imports/:import_id/messages
+PATCH /api/cases/imports/:import_id
+POST /api/cases/imports/:import_id/confirm
+GET  /api/cases/:case_id
+PATCH /api/cases/:case_id
 GET  /api/v2/skills
 GET  /api/v2/skills/:skill_id
 POST /api/v2/skills/imports
@@ -1356,6 +1387,11 @@ without the full snapshot; `GET /api/v2/metadata/imports/:import_id` returns the
 preview summary plus the normalized snapshot. Confirm upserts the draft snapshot
 into `metadata_instances` and marks the draft `confirmed`.
 `POST /api/v2/metadata/imports` remains as a direct immediate import shortcut.
+Rust/V1-style `/api/metadata/*` aliases share the same Metadata store and query
+handlers. The legacy `POST /api/metadata/imports` and
+`POST /api/metadata/imports/fetch` paths keep Rust/V1 preview-draft semantics
+and return a top-level import preview; V2-only `/api/v2/metadata/imports` and
+`/fetch` remain direct immediate import shortcuts.
 
 `POST /api/v2/metadata/instances/:instance_id/refresh` loads the instance's
 stored raw JSON from SQLite, reruns the current normalizer with the same
@@ -1464,12 +1500,16 @@ after the SQLite row and FTS/vector index are updated.
 
 Supported sources:
 
-- `manual`: created through `POST /api/v2/cases`; requires `title`, `symptom`,
-  `rootCause`, and `solution`.
-- `task`: created through `POST /api/v2/runs/:run_id/case` or the Rust/V1-style
-  task alias `POST /api/v2/tasks/:task_id/case`; the run must be `succeeded`
-  and have a final answer. Repeated confirmation of one run returns the existing
-  task Case instead of creating duplicates.
+- `manual`: created through `POST /api/v2/cases` or Rust/V1-style
+  `POST /api/cases`; requires `title`, `symptom`, `rootCause`, and `solution`.
+- `task`: created through `POST /api/v2/runs/:run_id/case`,
+  `/api/runs/:run_id/case`, or the task aliases
+  `POST /api/v2/tasks/:task_id/case` and `/api/tasks/:task_id/case`; the run
+  must be `succeeded` and have a final answer. Repeated confirmation of one run
+  returns the existing task Case instead of creating duplicates.
+
+Rust/V1-style `/api/cases/*` aliases share the same Case Memory handlers as the
+V2 routes.
 
 Case import drafts live in `case_imports` and are created through
 `POST /api/v2/cases/imports/preview` or the Rust/V1-style create alias

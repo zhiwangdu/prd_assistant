@@ -811,6 +811,274 @@ class StoreTests(unittest.TestCase):
             finally:
                 set_debug_log_responses(False)
 
+    def test_v1_metadata_and_case_aliases_share_v2_handlers(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        csv_content = "\n".join(
+            [
+                (
+                    "section,clusterId,product,version,environment,nodeId,host,role,"
+                    "database,defaultRetentionPolicy,retentionPolicy,measurement,field,typ"
+                ),
+                "instance,cluster-alias,opengemini,1.2.3,prod,,,,,,,,,",
+                "node,,,,,node-a,10.0.0.1,data,,,,,,",
+                "database,,,,,,,,metrics,autogen,,,,",
+                "field,,,,,,,,metrics,,autogen,cpu,host,tag",
+                "field,,,,,,,,metrics,,autogen,cpu,value,float",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test", inline_worker=False)
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace(
+                "legacy task case alias",
+                "diagnose",
+                "en-US",
+            )
+            run = store.create_run(workspace["id"])
+            store.update_run_status(
+                run["id"],
+                "succeeded",
+                "finish",
+                final_answer={
+                    "summary": "Legacy task case",
+                    "symptoms": ["legacy task symptom"],
+                    "likelyRootCauses": [{"cause": "legacy task root cause"}],
+                    "fixSuggestions": ["legacy task solution"],
+                },
+            )
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                preview = client.post(
+                    "/api/metadata/imports",
+                    headers=headers,
+                    json={
+                        "instanceId": "inst-alias",
+                        "templateType": "csv",
+                        "content": csv_content,
+                        "filename": "metadata.csv",
+                        "remark": "legacy preview",
+                    },
+                )
+                self.assertEqual(preview.status_code, 200, preview.text)
+                preview_body = preview.json()
+                self.assertIn("importId", preview_body)
+                self.assertEqual(preview_body["filename"], "metadata.csv")
+                self.assertEqual(preview_body["summary"]["nodes"], 1)
+
+                imports = client.get("/api/metadata/imports", headers=headers)
+                self.assertEqual(imports.status_code, 200)
+                self.assertEqual(
+                    imports.json()["imports"][0]["importId"],
+                    preview_body["importId"],
+                )
+
+                import_detail = client.get(
+                    f"/api/metadata/imports/{preview_body['importId']}",
+                    headers=headers,
+                )
+                self.assertEqual(import_detail.status_code, 200)
+                self.assertIn("snapshot", import_detail.json())
+
+                import_preview = client.get(
+                    f"/api/metadata/imports/{preview_body['importId']}/preview",
+                    headers=headers,
+                )
+                self.assertEqual(import_preview.status_code, 200)
+                self.assertEqual(import_preview.json()["importId"], preview_body["importId"])
+
+                confirmed = client.post(
+                    f"/api/metadata/imports/{preview_body['importId']}/confirm",
+                    headers=headers,
+                )
+                self.assertEqual(confirmed.status_code, 200, confirmed.text)
+                self.assertTrue(confirmed.json()["applied"])
+
+                instances = client.get("/api/metadata/instances", headers=headers)
+                self.assertEqual(instances.status_code, 200)
+                self.assertEqual(instances.json()["instances"][0]["instanceId"], "inst-alias")
+
+                instance = client.get(
+                    "/api/metadata/instances/inst-alias",
+                    headers=headers,
+                )
+                self.assertEqual(instance.status_code, 200)
+                self.assertEqual(instance.json()["instanceId"], "inst-alias")
+
+                snapshot = client.get(
+                    "/api/metadata/instances/inst-alias/snapshot",
+                    headers=headers,
+                )
+                self.assertEqual(snapshot.status_code, 200)
+                self.assertEqual(snapshot.json()["cluster"]["clusterId"], "cluster-alias")
+
+                refreshed = client.post(
+                    "/api/metadata/instances/inst-alias/refresh",
+                    headers=headers,
+                )
+                self.assertEqual(refreshed.status_code, 200)
+                self.assertEqual(
+                    refreshed.json()["snapshot"]["cluster"]["clusterId"],
+                    "cluster-alias",
+                )
+
+                cluster = client.get(
+                    "/api/metadata/clusters/cluster-alias",
+                    headers=headers,
+                )
+                self.assertEqual(cluster.status_code, 200)
+                self.assertEqual(cluster.json()["cluster"]["clusterId"], "cluster-alias")
+
+                nodes = client.get(
+                    "/api/metadata/clusters/cluster-alias/nodes",
+                    headers=headers,
+                )
+                self.assertEqual(nodes.status_code, 200)
+                self.assertEqual(nodes.json()["nodes"][0]["nodeId"], "node-a")
+
+                fields = client.post(
+                    "/api/metadata/field-types",
+                    headers=headers,
+                    json={
+                        "instanceId": "inst-alias",
+                        "database": "metrics",
+                        "measurement": "cpu",
+                    },
+                )
+                self.assertEqual(fields.status_code, 200, fields.text)
+                by_name = {item["name"]: item for item in fields.json()["fields"]}
+                self.assertEqual(by_name["value"]["typeLabel"], "Float")
+
+                tags = client.post(
+                    "/api/metadata/tag-fields",
+                    headers=headers,
+                    json={
+                        "instanceId": "inst-alias",
+                        "database": "metrics",
+                        "measurement": "cpu",
+                    },
+                )
+                self.assertEqual(tags.status_code, 200, tags.text)
+                self.assertEqual([item["name"] for item in tags.json()["fields"]], ["host"])
+
+                deleted = client.delete(
+                    "/api/metadata/instances/inst-alias",
+                    headers=headers,
+                )
+                self.assertEqual(deleted.status_code, 200)
+                self.assertTrue(deleted.json()["deleted"])
+
+                manual_case = client.post(
+                    "/api/cases",
+                    headers=headers,
+                    json={
+                        "title": "Legacy manual case",
+                        "symptom": "legacy manual symptom",
+                        "rootCause": "legacy manual root cause",
+                        "solution": "legacy manual solution",
+                        "product": "opengemini",
+                    },
+                )
+                self.assertEqual(manual_case.status_code, 200, manual_case.text)
+                case_id = manual_case.json()["caseId"]
+
+                case_search = client.get(
+                    "/api/cases?query=manual%20root",
+                    headers=headers,
+                )
+                self.assertEqual(case_search.status_code, 200)
+                self.assertEqual(case_search.json()["cases"][0]["caseId"], case_id)
+
+                case_detail = client.get(f"/api/cases/{case_id}", headers=headers)
+                self.assertEqual(case_detail.status_code, 200)
+                self.assertEqual(case_detail.json()["caseId"], case_id)
+
+                patched_case = client.patch(
+                    f"/api/cases/{case_id}",
+                    headers=headers,
+                    json={"environment": "legacy"},
+                )
+                self.assertEqual(patched_case.status_code, 200)
+                self.assertEqual(patched_case.json()["environment"], "legacy")
+
+                imported_case = client.post(
+                    "/api/cases/imports",
+                    headers=headers,
+                    json={
+                        "text": "Title: Imported legacy case\nSymptom: timeout",
+                        "filename": "legacy-case.txt",
+                    },
+                )
+                self.assertEqual(imported_case.status_code, 201, imported_case.text)
+                import_id = imported_case.json()["import"]["importId"]
+
+                case_imports = client.get("/api/cases/imports", headers=headers)
+                self.assertEqual(case_imports.status_code, 200)
+                self.assertEqual(case_imports.json()["imports"][0]["importId"], import_id)
+
+                case_import_detail = client.get(
+                    f"/api/cases/imports/{import_id}",
+                    headers=headers,
+                )
+                self.assertEqual(case_import_detail.status_code, 200)
+                self.assertEqual(case_import_detail.json()["import"]["importId"], import_id)
+
+                appended = client.post(
+                    f"/api/cases/imports/{import_id}/messages",
+                    headers=headers,
+                    json={
+                        "message": "Root Cause: imported root\n"
+                        "Solution: imported solution",
+                    },
+                )
+                self.assertEqual(appended.status_code, 200, appended.text)
+                self.assertEqual(appended.json()["import"]["validationErrors"], [])
+
+                patched_import = client.patch(
+                    f"/api/cases/imports/{import_id}",
+                    headers=headers,
+                    json={"product": "opengemini"},
+                )
+                self.assertEqual(patched_import.status_code, 200)
+                self.assertEqual(
+                    patched_import.json()["import"]["draft"]["product"],
+                    "opengemini",
+                )
+
+                confirmed_case = client.post(
+                    f"/api/cases/imports/{import_id}/confirm",
+                    headers=headers,
+                    json={},
+                )
+                self.assertEqual(confirmed_case.status_code, 200, confirmed_case.text)
+                self.assertEqual(confirmed_case.json()["case"]["sourceType"], "manual")
+
+                preview_case = client.post(
+                    "/api/cases/imports/preview",
+                    headers=headers,
+                    json={
+                        "content": "Title: Preview legacy case\n"
+                        "Symptom: preview timeout\n"
+                        "Root Cause: preview root\n"
+                        "Solution: preview solution",
+                    },
+                )
+                self.assertEqual(preview_case.status_code, 200)
+                self.assertEqual(preview_case.json()["import"]["validationErrors"], [])
+
+                task_case = client.post(
+                    f"/api/tasks/{run['id']}/case",
+                    headers=headers,
+                    json={},
+                )
+                self.assertEqual(task_case.status_code, 200, task_case.text)
+                self.assertEqual(task_case.json()["sourceType"], "task")
+
     def test_run_result_route_returns_conflict_until_result_exists(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app

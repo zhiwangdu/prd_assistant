@@ -2,6 +2,29 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Metadata And Case Route Aliases
+
+- Mounted Rust/V1-style `/api/metadata/*`, `/api/cases/*`,
+  `/api/runs/:run_id/case`, and `/api/tasks/:task_id/case` aliases in V2.
+- Kept Rust/V1 Metadata import semantics for legacy
+  `POST /api/metadata/imports` and `/api/metadata/imports/fetch`: they create
+  preview drafts and return a top-level import preview, while V2-only
+  `/api/v2/metadata/imports` and `/fetch` remain direct immediate import
+  shortcuts.
+- The remaining metadata aliases share V2 instance, snapshot, refresh, cluster,
+  field/tag query, draft detail, confirm, and snapshot-fetch handlers; Case
+  aliases share manual case, task case, search, import draft, supplement,
+  patch, confirm, detail, and update handlers.
+- Added HTTP regression coverage for legacy Metadata preview/confirm,
+  instance/snapshot/refresh/delete, cluster/nodes, field/tag queries, manual
+  Case CRUD/search, Case import draft lifecycle, preview, and task Case
+  aliases.
+- Updated Server V2 README/SPEC for the Rust/V1-style Metadata and Case route
+  aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Rust/V1 Knowledge Route Aliases
 
 - Mounted Rust/V1-style `/api/debug/llm`, `/api/settings/*`,
