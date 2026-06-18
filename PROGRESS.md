@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Case MCP Limit Parity
+
+- Aligned V2 readonly MCP `logagent.search_cases` with the Rust/V1 readonly
+  limit range of 1..50.
+- Kept task MCP `logagent.recall_cases` bounded to 1..20 and added explicit
+  integer validation before Store search.
+- Added regression coverage for readonly tool schema, readonly search clamping,
+  task recall clamping, and invalid limit rejection.
+- Updated V2 Server and Case Store README/SPEC docs.
+- Verification passed: `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, focused Case MCP limit pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 154 passed and
+  1 Starlette warning.
+
 ## 2026-06-18 V2 Fetch Endpoint Schema Policy
 
 - Added Fetch endpoint `schemaVersion=2` and persisted `refreshPolicy` storage.

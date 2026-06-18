@@ -11264,6 +11264,92 @@ fi
                 recall_body["backgroundRef"],
             )
 
+    def test_case_mcp_limits_match_v1_readonly_and_task_recall_bounds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            for index in range(55):
+                create_manual_case(
+                    store,
+                    {
+                        "title": f"Limit marker case {index:02d}",
+                        "symptom": "limit-marker query timeout",
+                        "rootCause": "limit-marker backlog",
+                        "solution": "limit-marker mitigation",
+                    },
+                )
+
+            tools = readonly_mcp_response(
+                settings,
+                store,
+                {"jsonrpc": "2.0", "id": 501, "method": "tools/list"},
+            )
+            search_descriptor = next(
+                item
+                for item in tools["result"]["tools"]
+                if item["name"] == "logagent.search_cases"
+            )
+            self.assertEqual(
+                search_descriptor["inputSchema"]["properties"]["limit"]["maximum"],
+                50,
+            )
+
+            readonly_cases = readonly_mcp_response(
+                settings,
+                store,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 502,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.search_cases",
+                        "arguments": {"query": "limit-marker", "limit": 99},
+                    },
+                },
+            )
+            readonly_body = json.loads(readonly_cases["result"]["content"][0]["text"])
+            self.assertEqual(readonly_body["caseCount"], 50)
+
+            workspace = store.create_workspace("case recall limits", "diagnose", "en-US")
+            run = store.create_run(workspace["id"])
+            recall_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 503,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.recall_cases",
+                        "arguments": {"query": "limit-marker", "limit": 99},
+                    },
+                },
+            )
+            recall_body = json.loads(recall_response["result"]["content"][0]["text"])
+            self.assertEqual(recall_body["caseCount"], 20)
+
+            invalid_limit = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 504,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.recall_cases",
+                        "arguments": {"query": "limit-marker", "limit": "many"},
+                    },
+                },
+            )
+            self.assertIn(
+                "case search limit must be an integer",
+                invalid_limit["error"]["message"],
+            )
+
     def test_case_import_preview_confirm_and_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "logagent.sqlite")

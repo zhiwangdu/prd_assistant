@@ -1430,10 +1430,12 @@ logagent.get_case
 ```
 
 Readonly MCP exposes `logagent.search_cases` and `logagent.get_case`.
-`logagent.recall_cases` is task-MCP-only and keeps the Rust V1 name for enabled
-Case recall. Task MCP Case calls persist `case_context` evidence as background
-context with `final_allowed=false`. Historical cases are references for
-investigation and do not replace current-task evidence.
+`logagent.search_cases` keeps the Rust/V1 readonly limit range of 1..50.
+`logagent.recall_cases` is task-MCP-only, keeps the Rust V1 name for enabled
+Case recall, and clamps limit to 1..20. Task MCP Case calls persist
+`case_context` evidence as background context with `final_allowed=false`.
+Historical cases are references for investigation and do not replace
+current-task evidence.
 
 ## Skills And System Context
 

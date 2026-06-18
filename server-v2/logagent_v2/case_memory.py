@@ -429,7 +429,7 @@ def case_tool_descriptors() -> list[JsonObject]:
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                     "includeDisabled": {"type": "boolean"},
                 },
                 "additionalProperties": False,
@@ -478,10 +478,14 @@ def call_case_tool(
         query = optional_string(arguments.get("query"))
         if name == "logagent.recall_cases" and query is None:
             raise ValueError("query is required")
+        limit = case_tool_limit(
+            arguments.get("limit"),
+            maximum=20 if name == "logagent.recall_cases" else 50,
+        )
         value = {
             "cases": store.search_cases(
                 query=query,
-                limit=int(arguments.get("limit", 5)),
+                limit=limit,
                 include_disabled=False
                 if name == "logagent.recall_cases"
                 else bool(arguments.get("includeDisabled", False)),
@@ -503,6 +507,14 @@ def call_case_tool(
     if settings is not None and run is not None:
         persist_case_context(settings, store, run, name, value)
     return value
+
+
+def case_tool_limit(value: object, *, maximum: int) -> int:
+    if value is None:
+        return 5
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("case search limit must be an integer")
+    return max(1, min(value, maximum))
 
 
 def persist_case_context(
