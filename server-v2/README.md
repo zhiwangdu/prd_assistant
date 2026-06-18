@@ -990,9 +990,10 @@ require Chrome Extension code changes.
 Chunked uploads persist session state in SQLite and temporary bytes under
 `data_dir/tmp/upload_sessions`. Each chunk request is bounded by
 `LOGAGENT_V2_MAX_CHUNK_BYTES`, total received bytes are bounded by
-`LOGAGENT_V2_MAX_UPLOAD_BYTES`, and completion validates received size, converts
-the temp file into a regular artifact, creates an Upload row, and marks the
-session completed.
+`LOGAGENT_V2_MAX_UPLOAD_BYTES`, init filenames are stored after Rust/V1-style
+basename and character filtering, and completion validates received size,
+converts the temp file into a regular artifact, creates an Upload row, and
+marks the session completed.
 
 ## Initial Evidence Pipeline
 

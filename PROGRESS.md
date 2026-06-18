@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Chunked Upload Filename Sanitization Parity
+
+- V2 chunked upload init now stores the Rust/V1-sanitized filename in the
+  upload-session row before any chunk is written, instead of retaining raw
+  client path fragments.
+- Chunk completion now naturally propagates the sanitized session filename into
+  the resulting Upload row and artifact preview/path.
+- Added HTTP regression coverage for init -> chunk -> complete using a pathy
+  filename and verifying session, upload, and artifact filename behavior.
+- Updated Server V2 README/SPEC for chunked-upload filename normalization.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused upload pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 V2 Runtime Source-Built Analyzer Smoke Control
 
 - `deploy/logagent-v2ctl.sh` now supports

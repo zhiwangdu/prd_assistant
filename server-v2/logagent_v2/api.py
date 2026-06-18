@@ -1189,13 +1189,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if payload.sizeBytes is not None and payload.sizeBytes > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload exceeds max_upload_bytes")
         session_id = new_id("ups")
-        temp_relative_path = (
-            f"tmp/upload_sessions/{session_id}/{safe_filename(payload.filename)}"
-        )
+        filename = safe_filename(payload.filename)
+        temp_relative_path = f"tmp/upload_sessions/{session_id}/{filename}"
         session = store.create_upload_session(
             session_id=session_id,
             workspace_id=workspace_id,
-            filename=payload.filename,
+            filename=filename,
             content_type=payload.contentType or "application/octet-stream",
             expected_size_bytes=payload.sizeBytes,
             temp_relative_path=temp_relative_path,

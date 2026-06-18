@@ -2011,6 +2011,66 @@ class StoreTests(unittest.TestCase):
                     session_filename,
                 )
 
+    def test_chunked_upload_init_sanitizes_filename_like_v1(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                workspace_response = client.post(
+                    "/api/v2/workspaces",
+                    headers=headers,
+                    json={
+                        "question": "chunk upload",
+                        "mode": "diagnose",
+                        "language": "en-US",
+                    },
+                )
+                self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
+                workspace = workspace_response.json()
+                expected_filename = safe_filename("../chunked log.txt")
+
+                created = client.post(
+                    f"/api/v2/workspaces/{workspace['id']}/uploads/init",
+                    headers=headers,
+                    json={
+                        "filename": "../chunked log.txt",
+                        "contentType": "text/plain",
+                        "sizeBytes": 11,
+                    },
+                )
+                self.assertEqual(created.status_code, 200, created.text)
+                session = created.json()["session"]
+                session_id = session["id"]
+                self.assertEqual(session["filename"], expected_filename)
+                self.assertTrue(
+                    session["temp_relative_path"].endswith(f"/{expected_filename}")
+                )
+
+                chunk = client.post(
+                    f"/api/v2/uploads/{session_id}/chunks?offset=0",
+                    headers={**headers, "Content-Type": "application/octet-stream"},
+                    content=b"hello world",
+                )
+                self.assertEqual(chunk.status_code, 200, chunk.text)
+
+                completed = client.post(
+                    f"/api/v2/uploads/{session_id}/complete",
+                    headers=headers,
+                )
+                self.assertEqual(completed.status_code, 200, completed.text)
+                completed_body = completed.json()
+                self.assertEqual(completed_body["session"]["filename"], expected_filename)
+                self.assertEqual(completed_body["upload"]["filename"], expected_filename)
+                self.assertEqual(
+                    completed_body["artifact"]["preview"]["filename"],
+                    expected_filename,
+                )
+
     def test_chunked_upload_rejects_chunk_over_configured_limit(self) -> None:
         from fastapi.testclient import TestClient
         from logagent_v2.api import create_app
