@@ -2391,8 +2391,17 @@ def huawei_object_url(settings: Settings, object_key: str) -> str | None:
     config = settings.huawei_package_sync
     if not config.obs_endpoint or not config.obs_bucket:
         return None
-    endpoint = config.obs_endpoint.rstrip("/")
-    return f"{endpoint}/{config.obs_bucket}/{object_key}"
+    parsed = urllib.parse.urlsplit(config.obs_endpoint.rstrip("/"))
+    host = parsed.hostname
+    if not host:
+        return None
+    bucket_prefix = f"{config.obs_bucket}."
+    netloc = parsed.netloc
+    if host != config.obs_bucket and not host.startswith(bucket_prefix):
+        port = f":{parsed.port}" if parsed.port is not None else ""
+        netloc = f"{config.obs_bucket}.{host}{port}"
+    encoded_key = "/".join(urllib.parse.quote(segment) for segment in object_key.split("/"))
+    return urllib.parse.urlunsplit((parsed.scheme, netloc, f"/{encoded_key}", "", ""))
 
 
 def huawei_obs_request(
@@ -2432,11 +2441,20 @@ def huawei_obs_request(
             return {
                 "statusCode": response.status,
                 "etag": response.headers.get("ETag"),
-                "contentLength": response.headers.get("Content-Length"),
+                "contentLength": parse_optional_int(response.headers.get("Content-Length")),
                 "durationMs": int((time.monotonic() - started) * 1000),
             }
     except urllib.error.HTTPError as error:
         raise ValueError(f"OBS {method} returned HTTP {error.code}") from error
+
+
+def parse_optional_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def execute_gaussdb_sql(dsn: str | None, sql: str, fetch: bool) -> JsonObject:

@@ -1155,6 +1155,9 @@ single-upload count plus structured SQL/object-key params. Execution also
 emits Rust/V1-style result fields (`tool`, `input`, `obs`, `gaussdb`, `sql`,
 `timings`, `warnings`, `credentialMetadata`, and logical `evidenceRefs`) while
 retaining V2 top-level `obsPut` / `gaussdbQuery` compatibility fields.
+OBS object URLs use the Rust/V1 virtual-hosted bucket shape
+`<scheme>://<bucket>.<endpoint-host>/<object-key>` and percent-encode object key
+segments.
 `credentialMetadata` keeps the V1 `gaussdbPasswordEnv` key as `null` because
 V2 uses a single `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` environment value.
 `pprof_analyzer` catalog metadata uses the Rust/V1 configured command shape

@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Huawei OBS URL Parity
+
+- Aligned V2 Huawei package sync OBS object URL generation with Rust/V1
+  virtual-hosted bucket URLs and per-segment object-key percent encoding.
+- Normalized real OBS HEAD `contentLength` output to an integer when present.
+- Added regression coverage for virtual-hosted URL generation and updated
+  V2 Server / Tool Runner docs.
+- Verification passed: focused Huawei pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 162 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Redaction Token Parity
 
 - Aligned V2 Fetch redaction output with Rust/V1 by changing API, MCP, and

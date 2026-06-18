@@ -115,6 +115,7 @@ import logagent_v2.tools as tools_module
 from logagent_v2.tools import (
     execute_tool_run,
     findings_from_stdout,
+    huawei_object_url,
     parse_json,
     summary_from_stdout,
     tool_descriptors,
@@ -6391,7 +6392,10 @@ fi
                 "Uploaded package.tar.gz to OBS and queried GaussDB records",
             )
             self.assertEqual(result["objectKey"], "packages/demo/package.tar.gz")
-            self.assertEqual(result["objectUrl"], "https://obs.example.com/bucket-a/packages/demo/package.tar.gz")
+            self.assertEqual(
+                result["objectUrl"],
+                "https://bucket-a.obs.example.com/packages/demo/package.tar.gz",
+            )
             self.assertEqual(result["input"]["uploadId"], upload["id"])
             self.assertEqual(result["input"]["filename"], "package.tar.gz")
             self.assertEqual(result["input"]["size"], len(b"package-bytes"))
@@ -6433,6 +6437,36 @@ fi
                 if item["payload"].get("toolId") == "logagent.huawei_cloud_package_sync"
             )
             self.assertFalse(huawei_evidence["final_allowed"])
+
+    def test_huawei_object_url_matches_v1_virtual_host_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                huawei_package_sync=HuaweiPackageSyncSettings(
+                    enabled=True,
+                    obs_endpoint="https://obs.example.com:8443",
+                    obs_bucket="bucket-a",
+                ),
+            )
+            self.assertEqual(
+                huawei_object_url(settings, "packages/demo package.tar.gz"),
+                "https://bucket-a.obs.example.com:8443/packages/demo%20package.tar.gz",
+            )
+
+            already_bucketed = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                huawei_package_sync=HuaweiPackageSyncSettings(
+                    enabled=True,
+                    obs_endpoint="https://bucket-a.obs.example.com",
+                    obs_bucket="bucket-a",
+                ),
+            )
+            self.assertEqual(
+                huawei_object_url(already_bucketed, "packages/demo.tar.gz"),
+                "https://bucket-a.obs.example.com/packages/demo.tar.gz",
+            )
 
     def test_readonly_mcp_tools_catalog_matches_v1_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

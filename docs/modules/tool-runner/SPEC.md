@@ -212,6 +212,9 @@ Huawei package sync 的 `result.json` 至少包含：
 - `credentialMetadata` 中的环境变量名，包含 V1 `gaussdbPasswordEnv=null`
   和 V2 `gaussdbDsnEnv=LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`
 
+OBS `url` 必须使用 Rust/V1 virtual-hosted bucket 形态并按 object key path
+segment 编码；OBS HEAD `contentLength` 有值时必须是数字。
+
 原始 SQL、OBS access key/secret key/security token、GaussDB password 不得写入 `result.json`。
 
 ## 安全约束
