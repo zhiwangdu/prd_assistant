@@ -28,6 +28,10 @@ def llm_settings_summary(settings: Settings) -> JsonObject:
         "maxInputChars": MAX_SETTINGS_MESSAGE_CHARS,
         "maxOutputTokens": settings.agent_max_output_tokens,
         "requestTimeoutSeconds": settings.agent_timeout_seconds,
+        "maxRounds": settings.agent_max_rounds,
+        "maxLlmCalls": settings.agent_max_llm_calls,
+        "maxActions": settings.agent_max_actions,
+        "maxRepeatedActionFingerprints": settings.agent_max_repeated_action_fingerprints,
         "baseUrlConfigured": bool(settings.agent_base_url),
         "apiKeyConfigured": bool(settings.agent_api_key),
         "binaryPathConfigured": bool(settings.agent_binary_path),
@@ -179,6 +183,7 @@ def agent_backends_summary(settings: Settings) -> JsonObject:
                 "defaultBackend": True,
                 "commandConfigured": agent_backend_configured(settings),
                 "timeoutSeconds": settings.agent_timeout_seconds,
+                "budgets": agent_budget_summary(settings),
                 "maxInputBytes": 0,
                 "maxOutputBytes": MAX_PROVIDER_RESPONSE_BYTES,
                 "executionMode": agent_execution_mode(provider),
@@ -200,7 +205,11 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
             f"{graph_runtime['graph']} state graph."
         ),
         f"Provider={provider}, timeout={settings.agent_timeout_seconds}s, "
-        f"maxRounds={settings.agent_max_rounds}.",
+        "budgets="
+        f"rounds:{settings.agent_max_rounds}, "
+        f"llmCalls:{settings.agent_max_llm_calls}, "
+        f"actions:{settings.agent_max_actions}, "
+        f"repeatedFingerprints:{settings.agent_max_repeated_action_fingerprints}.",
     ]
     if provider == "stub":
         details.append("Stub provider is local and requires no external configuration.")
@@ -316,6 +325,15 @@ def domain_adapter_summaries() -> list[JsonObject]:
             ],
         },
     ]
+
+
+def agent_budget_summary(settings: Settings) -> JsonObject:
+    return {
+        "maxRounds": settings.agent_max_rounds,
+        "maxLlmCalls": settings.agent_max_llm_calls,
+        "maxActions": settings.agent_max_actions,
+        "maxRepeatedActionFingerprints": settings.agent_max_repeated_action_fingerprints,
+    }
 
 
 def claude_code_permission_profiles(settings: Settings) -> list[JsonObject]:

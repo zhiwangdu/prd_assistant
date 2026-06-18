@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Settings Agent Budget Visibility
+
+- `/api/v2/settings/llm` now returns the active Agent budgets:
+  `maxRounds`, `maxLlmCalls`, `maxActions`, and
+  `maxRepeatedActionFingerprints`.
+- `/api/v2/settings/agent-backends` now includes the same budget summary on
+  the `logagent_v2_agent` backend, and the backend diagnostic text reports all
+  four budget values.
+- Updated V2 Server README/SPEC docs.
+- Verification passed: focused settings pytest selection, `PYTHONPATH=. uv run
+  --extra dev ruff check logagent_v2/settings_api.py tests/test_store.py`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (144 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Agent Repeated Action Fingerprint Guard
 
 - Added `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` with default 1,

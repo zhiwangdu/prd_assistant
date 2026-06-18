@@ -11446,6 +11446,10 @@ grep_results.json#matches/0
             self.assertEqual(summary["provider"], "stub")
             self.assertEqual(summary["configuredModel"], "stub")
             self.assertEqual(summary["maxOutputTokens"], 2048)
+            self.assertEqual(summary["maxRounds"], 4)
+            self.assertEqual(summary["maxLlmCalls"], 4)
+            self.assertEqual(summary["maxActions"], 6)
+            self.assertEqual(summary["maxRepeatedActionFingerprints"], 1)
             self.assertFalse(summary["baseUrlConfigured"])
 
             models = list_agent_models(settings)
@@ -11459,12 +11463,22 @@ grep_results.json#matches/0
             self.assertEqual(backends["backends"][0]["backendType"], "langgraph_oriented_agent")
             self.assertEqual(backends["backends"][0]["graphRuntime"]["engine"], "langgraph")
             self.assertEqual(
+                backends["backends"][0]["budgets"],
+                {
+                    "maxRounds": 4,
+                    "maxLlmCalls": 4,
+                    "maxActions": 6,
+                    "maxRepeatedActionFingerprints": 1,
+                },
+            )
+            self.assertEqual(
                 backends["backends"][0]["graphRuntime"]["nodes"],
                 list(AGENT_GRAPH_NODES),
             )
             diagnostic = agent_backend_diagnostic(settings, "logagent_v2_agent")
             self.assertEqual(diagnostic["status"], "configured")
             self.assertEqual(diagnostic["graphRuntime"]["graph"], "logagent_v2_analysis")
+            self.assertTrue(any("llmCalls:4" in item for item in diagnostic["details"]))
             self.assertTrue(diagnostic["details"])
 
             self.assertFalse(debug_log_responses())

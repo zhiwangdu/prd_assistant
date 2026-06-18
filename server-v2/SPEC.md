@@ -1294,7 +1294,9 @@ rather than compatibility routes for the Rust Server:
   configured `/chat/completions` endpoint with the V2 max output token limit.
 - `GET /api/v2/settings/agent-backends` summarizes the in-process V2 Agent
   runtime as `logagent_v2_agent` and returns `graphRuntime` metadata for the
-  LangGraph engine, graph name, and node list used by analysis runs.
+  LangGraph engine, graph name, and node list used by analysis runs. It also
+  returns the active Agent budget summary: `maxRounds`, `maxLlmCalls`,
+  `maxActions`, and `maxRepeatedActionFingerprints`.
 - `POST /api/v2/settings/agent-backends/:backend_id/test` performs a dry-run
   configuration diagnostic only. It must not execute shell commands. For
   `binary`, it validates that the configured path is absolute, regular, and

@@ -542,7 +542,9 @@ task session from the settings chat test. Responses never include API keys or
 configured executable paths.
 
 `/api/v2/settings/agent-backends` describes the in-process V2 Agent runtime
-plus optional provider execution mode. The diagnostic endpoint is a dry-run
+plus optional provider execution mode and the active Agent budgets
+(`maxRounds`, `maxLlmCalls`, `maxActions`, and
+`maxRepeatedActionFingerprints`). The diagnostic endpoint is a dry-run
 configuration check; for `binary` it checks that
 `LOGAGENT_V2_AGENT_BINARY_PATH` is absolute, regular, and executable, and for
 `claude_code` it applies the same path checks to
