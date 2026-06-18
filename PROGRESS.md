@@ -2,6 +2,15 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 Server V2 InfluxQL CompareReport Null Lists
+
+- Added V2 regression coverage for real InfluxQL CompareReport payloads where
+  `removed_fingerprints` and `changed_fingerprints` are `null`.
+- The parser continues to preserve `statementDelta` summaries and emits
+  findings for `new_fingerprints` plus `rule_deltas`, matching the V1 Tool
+  Runner contract for source-built analyzer output.
+- Updated Server V2 README/SPEC for the null-list compatibility behavior.
+
 ## 2026-06-18 Server V2 Manual Configured Tool Aggregates
 
 - V2 standalone Manual `tool_run` executions for configured command tools now

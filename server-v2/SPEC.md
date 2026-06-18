@@ -237,7 +237,10 @@ Implemented in this slice:
   artifact files or directory bundles extracted from direct uploads and
   archives. Generic JSON stdout, Flux analyzer metrics/topQueries/parseErrors
   stdout, and InfluxQL analyzer report/compare stdout are normalized into
-  `summary/findings`. Task MCP responses retain the V2 nested
+  `summary/findings`. InfluxQL CompareReport `removed_fingerprints` and
+  `changed_fingerprints` may be `null`; V2 treats them as empty arrays and
+  continues parsing `new_fingerprints` and `rule_deltas` into findings. Task
+  MCP responses retain the V2 nested
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
   `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.

@@ -80,7 +80,10 @@ slice provides the durable foundation for the V2 product model:
   analyzers. Enabled storage analyzer materialized inputs point to safe artifact
   files or directory bundles extracted from uploads and archives. Generic JSON,
   Flux analyzer metrics/topQueries/parseErrors, and InfluxQL analyzer
-  report/compare stdout are normalized into `summary/findings`. Task MCP
+  report/compare stdout are normalized into `summary/findings`; InfluxQL
+  CompareReport `removed_fingerprints` / `changed_fingerprints` values of
+  `null` are treated as empty arrays so new fingerprints and rule deltas still
+  produce evidence findings. Task MCP
   responses preserve the V2 nested
   `result/artifact/evidence` payload and also expose Rust/V1-compatible
   top-level `artifactPath`, `summary`, and `evidenceRefs` fields, plus

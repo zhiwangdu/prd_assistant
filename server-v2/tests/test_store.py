@@ -8732,6 +8732,63 @@ fi
             )
         )
 
+    def test_tool_stdout_parses_influxql_compare_report_with_null_lists(self) -> None:
+        parsed = parse_json(
+            b"""{
+  "batch_a": {"total_statements": 2},
+  "batch_b": {"total_statements": 4, "qps": 1.5},
+  "statement_delta": 2,
+  "qps_delta": 0.5,
+  "new_fingerprints": [
+    {
+      "fingerprint": "fp-added",
+      "statement_type": "SELECT",
+      "normalized_query": "SELECT * FROM cpu LIMIT 100000",
+      "status": "added",
+      "count_a": 0,
+      "count_b": 2,
+      "count_delta": 2,
+      "qps_a": 0,
+      "qps_b": 0.5,
+      "qps_delta": 0.5,
+      "rules": ["large_limit"]
+    }
+  ],
+  "removed_fingerprints": null,
+  "changed_fingerprints": null,
+  "rule_deltas": [
+    {
+      "rule": "large_limit",
+      "count_a": 0,
+      "count_b": 2,
+      "count_delta": 2,
+      "qps_a": 0,
+      "qps_b": 0.5,
+      "qps_delta": 0.5
+    }
+  ]
+}"""
+        )
+
+        summary = summary_from_stdout(parsed, b"", False)
+        findings = findings_from_stdout(parsed)
+        self.assertIn("statementDelta=2", summary)
+        self.assertTrue(
+            any(
+                finding.get("severity") == "high"
+                and "status=added" in finding["message"]
+                and "rules=large_limit" in finding["message"]
+                for finding in findings
+            )
+        )
+        self.assertTrue(
+            any(
+                "rule=large_limit" in finding["message"]
+                and "count=0->2" in finding["message"]
+                for finding in findings
+            )
+        )
+
     def test_final_answer_evidence_refs_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tool = ToolDefinition(
