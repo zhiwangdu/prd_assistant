@@ -1141,7 +1141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         files = [
             value
             for key, value in form.multi_items()
-            if key in {"file", "files"} and hasattr(value, "read")
+            if key in {"file", "files"} and isinstance(value, StarletteUploadFile)
         ]
         if not files:
             raise HTTPException(status_code=400, detail="missing file fields")
@@ -1153,7 +1153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     status_code=413,
                     detail=f"upload {file.filename or 'upload.bin'} exceeds max_upload_bytes",
                 )
-            filename = file.filename or "upload.bin"
+            filename = safe_filename(file.filename or "upload.bin")
             artifact = write_artifact_bytes(
                 settings=settings,
                 store=store,

@@ -973,7 +973,8 @@ V2 supports three upload paths:
   stored filename after the same basename and character filtering as Rust/V1.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/batch` for multiple
   multipart files under one Workspace; repeated file parts may be named
-  `file` or `files`, matching Rust/V1 batch upload clients.
+  `file` or `files`, matching Rust/V1 batch upload clients. Each stored batch
+  filename uses the same basename and character filtering as single uploads.
 - `POST /api/v2/workspaces/<workspace_id>/uploads/init`, followed by
   `POST /api/v2/uploads/<session_id>/chunks?offset=<bytes>` and
   `POST /api/v2/uploads/<session_id>/complete`, for restartable chunked upload.

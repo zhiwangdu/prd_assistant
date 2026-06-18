@@ -1907,12 +1907,16 @@ class StoreTests(unittest.TestCase):
                 )
                 self.assertEqual(workspace_response.status_code, 200, workspace_response.text)
                 workspace = workspace_response.json()
+                expected_filenames = [
+                    safe_filename("nested/one log.txt"),
+                    safe_filename("../two.log"),
+                ]
                 batch = client.post(
                     f"/api/v2/workspaces/{workspace['id']}/uploads/batch",
                     headers=headers,
                     files=[
-                        ("file", ("one.log", b"one error\n", "text/plain")),
-                        ("files", ("two.log", b"two timeout\n", "text/plain")),
+                        ("file", ("nested/one log.txt", b"one error\n", "text/plain")),
+                        ("files", ("../two.log", b"two timeout\n", "text/plain")),
                     ],
                 )
                 self.assertEqual(batch.status_code, 200, batch.text)
@@ -1920,14 +1924,17 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(len(uploads), 2)
                 self.assertEqual(
                     [item["upload"]["filename"] for item in uploads],
-                    ["one.log", "two.log"],
+                    expected_filenames,
                 )
                 listed = client.get(
                     f"/api/v2/workspaces/{workspace['id']}/uploads",
                     headers=headers,
                 )
                 self.assertEqual(listed.status_code, 200, listed.text)
-                self.assertEqual(len(listed.json()["uploads"]), 2)
+                self.assertEqual(
+                    [item["filename"] for item in listed.json()["uploads"]],
+                    expected_filenames,
+                )
 
     def test_single_upload_accepts_v1_filename_field_override(self) -> None:
         from fastapi.testclient import TestClient

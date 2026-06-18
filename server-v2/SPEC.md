@@ -645,7 +645,8 @@ files and then attach Upload rows to the Workspace. Each file is bounded by
 named `file` plus an optional text `filename` field, which overrides the file
 part name after basename and character filtering to match Rust/V1 behavior.
 Batch uploads accept repeated multipart file parts named either `file` or
-`files`, matching Rust/V1 clients.
+`files`, matching Rust/V1 clients, and store each batch filename after the same
+basename and character filtering.
 
 Chunked uploads use a durable `upload_sessions` row:
 

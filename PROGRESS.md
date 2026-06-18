@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Batch Upload Filename Sanitization Parity
+
+- V2 batch upload now stores each `file` / `files` part filename after the same
+  Rust/V1 basename and character filtering used by single and chunked uploads.
+- The existing V1 field-name compatibility regression now also covers pathy and
+  space-containing batch filenames, and verifies the Workspace upload listing
+  persists sanitized names.
+- Updated Server V2 README/SPEC for batch-upload filename normalization.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused upload pytest, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-19 Server V2 Chunked Upload Filename Sanitization Parity
 
 - V2 chunked upload init now stores the Rust/V1-sanitized filename in the
