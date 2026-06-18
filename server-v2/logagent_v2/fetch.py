@@ -100,6 +100,12 @@ def parse_curl(curl: str) -> JsonObject:
     while index < len(argv):
         token = argv[index]
 
+        def set_url(value: str) -> None:
+            nonlocal url
+            if url is not None:
+                raise ValueError("curl import contains more than one URL")
+            url = value
+
         def next_value(flag: str) -> str:
             nonlocal index
             index += 1
@@ -107,7 +113,9 @@ def parse_curl(curl: str) -> JsonObject:
                 raise ValueError(f"{flag} requires a value")
             return argv[index]
 
-        if token in {"-X", "--request"}:
+        if token == "--url":
+            set_url(next_value(token))
+        elif token in {"-X", "--request"}:
             method = next_value(token)
         elif token in {"-H", "--header"}:
             name, value = parse_header(next_value(token))
@@ -116,12 +124,18 @@ def parse_curl(curl: str) -> JsonObject:
             body = next_value(token)
         elif token in {"-b", "--cookie"}:
             headers["Cookie"] = next_value(token)
+        elif token in {"-A", "--user-agent"}:
+            headers["User-Agent"] = next_value(token)
+        elif token in {"-e", "--referer"}:
+            headers["Referer"] = next_value(token)
         elif token in {"-L", "--location"}:
             follow_redirects = True
         elif token == "--compressed":
             pass
         elif token in {"-I", "--head"}:
             method = "HEAD"
+        elif token.startswith("--url="):
+            set_url(token.removeprefix("--url="))
         elif token.startswith("--request="):
             method = token.removeprefix("--request=")
         elif token.startswith("--header="):
@@ -133,6 +147,10 @@ def parse_curl(curl: str) -> JsonObject:
             body = token.removeprefix("--data-raw=")
         elif token.startswith("--data-binary="):
             body = token.removeprefix("--data-binary=")
+        elif token.startswith("--user-agent="):
+            headers["User-Agent"] = token.removeprefix("--user-agent=")
+        elif token.startswith("--referer="):
+            headers["Referer"] = token.removeprefix("--referer=")
         elif token.startswith("-X") and len(token) > 2:
             method = token[2:]
         elif token.startswith("-H") and len(token) > 2:
@@ -142,15 +160,18 @@ def parse_curl(curl: str) -> JsonObject:
             body = token[2:]
         elif token.startswith("-b") and len(token) > 2:
             headers["Cookie"] = token[2:]
+        elif token.startswith("-A") and len(token) > 2:
+            headers["User-Agent"] = token[2:]
+        elif token.startswith("-e") and len(token) > 2:
+            headers["Referer"] = token[2:]
         elif token.startswith("-"):
             raise ValueError(
                 f"unsupported curl flag {token}; supported flags are -X, -H, --data, "
-                "--cookie, --compressed, --head and --location"
+                "--cookie, --url, --user-agent, --referer, --compressed, --head and "
+                "--location"
             )
         else:
-            if url is not None:
-                raise ValueError("curl import contains more than one URL")
-            url = token
+            set_url(token)
         index += 1
     if not url:
         raise ValueError("curl import is missing URL")

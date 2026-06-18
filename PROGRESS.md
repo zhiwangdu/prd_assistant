@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch cURL Import Dialects
+
+- Extended the V2 Fetch cURL importer with safe common flags:
+  `--url` / `--url=...`, `--user-agent` / `-A`, and `--referer` / `-e`.
+- `--url` now sets the endpoint URL while preserving the existing multiple-URL
+  rejection, and User-Agent/Referer flags are normalized into ordinary headers
+  that continue through Server header validation.
+- Added regression coverage for inline long/short flag forms and the second URL
+  rejection path.
+- Updated root, V2 Server, and Tool Runner docs; the root Fetch pending item now
+  only tracks token refresh policy and endpoint schema migration.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Fetch importer pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (131 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Claude Runtime Session Failure Audit
 
 - V2 now writes a fresh `claude_session.json` runtime artifact for every

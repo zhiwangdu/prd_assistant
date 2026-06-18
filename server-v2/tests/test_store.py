@@ -7482,6 +7482,20 @@ fi
         self.assertEqual(prompted["url"], "https://api.example.com/health")
         self.assertFalse(prompted["followRedirects"])
 
+        rich = endpoint_from_curl(
+            "curl --url=https://api.example.com/v2/items "
+            "-A'LogAgent/1.0' -ehttps://console.example.com "
+            "--request=PUT --data-binary='{\"ok\":true}'"
+        )
+        self.assertEqual(rich["method"], "PUT")
+        self.assertEqual(rich["url"], "https://api.example.com/v2/items")
+        self.assertEqual(rich["headers"]["User-Agent"], "LogAgent/1.0")
+        self.assertEqual(rich["headers"]["Referer"], "https://console.example.com")
+        self.assertEqual(rich["body"], '{"ok":true}')
+
+        with self.assertRaisesRegex(ValueError, "more than one URL"):
+            endpoint_from_curl("curl --url https://api.example.com https://other.example.com")
+
         with self.assertRaisesRegex(ValueError, "unsupported curl flag --form"):
             preview_curl_import("curl https://api.example.com --form file=@/tmp/a")
 

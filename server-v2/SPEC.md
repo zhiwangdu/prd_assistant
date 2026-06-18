@@ -910,9 +910,12 @@ POST /api/v2/fetch/imports/preview
 POST /api/v2/fetch/imports
 ```
 
-The cURL importer supports request method, headers, body, cookies,
-`--compressed`, `--head`, and `--location`, and accepts a leading `$` shell
-prompt from copied terminal commands. `--location` sets `followRedirects=true`;
+The cURL importer supports URL, request method, headers, body, cookies,
+User-Agent, Referer, `--compressed`, `--head`, and `--location`, and accepts a
+leading `$` shell prompt from copied terminal commands. `--url` and
+`--url=...` set the endpoint URL but still reject a second positional URL.
+`--user-agent` / `-A` and `--referer` / `-e` map to ordinary headers and remain
+subject to Server header validation. `--location` sets `followRedirects=true`;
 otherwise imported and directly created endpoints default to no redirect
 following. It rejects unsupported flags such as form uploads, proxy, cert, file,
 or resolver options rather than widening the network or filesystem boundary.
