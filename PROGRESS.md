@@ -15,7 +15,7 @@ Last updated: 2026-06-18
   shape for Agent-generated approval requests.
 - Added Environment Collector regression coverage for successful hinted target
   collection and ambiguous hint rejection.
-- Updated root, V2 Server, Environment Collector, and Analysis Agent
+- Updated root, V2 Server, Environment Collector, Analysis Agent, and Roadmap
   README/SPEC docs.
 - Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
   tests`, focused `collect_environment` / `environment_collection` pytest
