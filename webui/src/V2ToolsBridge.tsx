@@ -89,6 +89,36 @@ type V2PreprocessResult = {
   createdAt?: string | null;
 };
 
+type V2ConfiguredToolFinding = {
+  severity?: string | null;
+  file?: string | null;
+  line?: number | string | null;
+  message?: string | null;
+  [key: string]: unknown;
+};
+
+type V2ConfiguredToolResult = {
+  schemaVersion: 2;
+  toolId: string;
+  tool?: string | null;
+  displayName?: string | null;
+  actionId?: string | null;
+  status?: string | null;
+  inputFile?: string | null;
+  inputKind?: string | null;
+  timedOut?: boolean | null;
+  exitCode?: number | null;
+  durationMs?: number | null;
+  stdoutPath?: string | null;
+  stderrPath?: string | null;
+  stdoutPreview?: string | null;
+  stderrPreview?: string | null;
+  parsedStdout?: unknown;
+  summary?: string | null;
+  findings: V2ConfiguredToolFinding[];
+  error?: string | null;
+};
+
 export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
   const [tools, setTools] = useState<V2ToolDescriptor[]>([]);
   const [sourceBuiltAnalyzers, setSourceBuiltAnalyzers] = useState<V2SourceBuiltAnalyzerStatus[]>([]);
@@ -609,6 +639,9 @@ function ManualToolResult({ result, resultPath, resultText, toolId }: { result: 
   if (toolId === "pprof_analyzer" && isPprofResult(result)) {
     return <V2PprofResultView result={result} resultPath={resultPath} />;
   }
+  if (isConfiguredToolResult(result)) {
+    return <V2ConfiguredToolResultView result={result} resultPath={resultPath} />;
+  }
   return <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{resultText}</pre>;
 }
 
@@ -728,6 +761,87 @@ function PreprocessToolInputTable({ inputs }: { inputs: V2PreprocessToolInput[] 
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function V2ConfiguredToolResultView({ result, resultPath }: { result: V2ConfiguredToolResult; resultPath: string }) {
+  const status = result.status ?? "unknown";
+  const stdoutPreview = result.stdoutPreview?.trim();
+  const stderrPreview = result.stderrPreview?.trim();
+  return (
+    <div className="space-y-4 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{result.displayName || result.toolId}</h3>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result.actionId ?? result.toolId}</p>
+          {result.summary ? <p className="mt-2 text-sm text-muted-foreground">{result.summary}</p> : null}
+        </div>
+        <Badge variant={toolResultStatusVariant(status)}>{status}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-5">
+        <Metric label="Exit" value={result.exitCode === null || result.exitCode === undefined ? "-" : String(result.exitCode)} />
+        <Metric label="Timed out" value={String(Boolean(result.timedOut))} />
+        <Metric label="Findings" value={String(result.findings.length)} />
+        <Metric label="Input kind" value={result.inputKind || "-"} />
+        <Metric label="Duration" value={typeof result.durationMs === "number" ? `${result.durationMs}ms` : "-"} />
+      </div>
+      {result.inputFile ? <ArtifactPath label="Input file" value={result.inputFile} /> : null}
+      <div className="grid gap-2 md:grid-cols-3">
+        <ArtifactPath label="Result JSON" value={resultPath} />
+        <ArtifactPath label="stdout" value={result.stdoutPath} />
+        <ArtifactPath label="stderr" value={result.stderrPath} />
+      </div>
+      {result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div> : null}
+      <ConfiguredToolFindingsTable findings={result.findings} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <TextPreview title="stdout preview" value={stdoutPreview} />
+        <TextPreview title="stderr preview" value={stderrPreview} />
+      </div>
+      {isJsonObject(result.parsedStdout) || Array.isArray(result.parsedStdout) ? <JsonBlock title="parsed stdout" value={result.parsedStdout} /> : null}
+      <JsonBlock title="raw result" value={result} />
+    </div>
+  );
+}
+
+function ConfiguredToolFindingsTable({ findings }: { findings: V2ConfiguredToolFinding[] }) {
+  return (
+    <div className="max-h-[420px] overflow-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr>
+            <th className="px-3 py-2">#</th>
+            <th className="px-3 py-2">Severity</th>
+            <th className="px-3 py-2">Location</th>
+            <th className="px-3 py-2">Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {findings.length ? findings.map((finding, index) => (
+            <tr className="border-t border-border" key={`${finding.file ?? "finding"}:${finding.line ?? index}:${index}`}>
+              <td className="px-3 py-2 text-muted-foreground">{index + 1}</td>
+              <td className="px-3 py-2">{finding.severity ?? "-"}</td>
+              <td className="px-3 py-2 break-all font-mono text-xs">{findingLocation(finding)}</td>
+              <td className="px-3 py-2 break-words">{findingMessage(finding)}</td>
+            </tr>
+          )) : (
+            <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={4}>No structured findings.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TextPreview({ title, value }: { title: string; value?: string }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs text-muted-foreground">{title}</p>
+      {value ? (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-50 p-3 text-xs">{value}</pre>
+      ) : (
+        <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">empty</div>
+      )}
     </div>
   );
 }
@@ -917,6 +1031,11 @@ function isPreprocessResult(value: unknown): value is V2PreprocessResult {
   return value.toolId === "logagent.preprocess_log_package" && Array.isArray(value.nodes);
 }
 
+function isConfiguredToolResult(value: unknown): value is V2ConfiguredToolResult {
+  if (!isJsonObject(value)) return false;
+  return value.schemaVersion === 2 && typeof value.toolId === "string" && Array.isArray(value.findings);
+}
+
 function stringList(value: unknown[] | undefined) {
   return (value ?? []).map((item) => String(item)).filter(Boolean);
 }
@@ -930,6 +1049,28 @@ function formatNodeLogGroups(value: Record<string, V2PreprocessLogGroupSummary>)
 
 function formatPercent(value?: number | null) {
   return typeof value === "number" ? `${value.toFixed(2)}%` : "-";
+}
+
+function toolResultStatusVariant(status: string) {
+  if (status === "OK") return "success";
+  if (status === "FAILED") return "destructive";
+  if (status === "TIMED_OUT") return "warning";
+  return "secondary";
+}
+
+function findingLocation(finding: V2ConfiguredToolFinding) {
+  const file = typeof finding.file === "string" && finding.file.trim() ? finding.file : "-";
+  const line = finding.line === null || finding.line === undefined || finding.line === "" ? "" : `:${finding.line}`;
+  return `${file}${line}`;
+}
+
+function findingMessage(finding: V2ConfiguredToolFinding) {
+  if (typeof finding.message === "string") return finding.message;
+  try {
+    return JSON.stringify(finding);
+  } catch {
+    return String(finding);
+  }
 }
 
 function isTerminalToolRun(status: V2ToolRun["status"]) {

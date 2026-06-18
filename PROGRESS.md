@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI V2 Configured Tool Result View
+
+- V2 Tools Workbench now renders `schemaVersion=2` configured command tool
+  results, including source-built analyzers, with a dedicated structured view.
+- The configured tool view shows status, exit code, timeout, duration, input
+  file, result/stdout/stderr logical paths, findings table, stdout/stderr
+  previews, parsed stdout, and raw JSON.
+- Updated WebUI README/SPEC so source-built analyzer manual runs are no longer
+  treated as raw-JSON-only results.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 WebUI V2 Preprocess Tool Result View
 
 - V2 Tools Workbench now renders successful
