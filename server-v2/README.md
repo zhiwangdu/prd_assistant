@@ -338,6 +338,7 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS` | `200000` | Maximum cumulative provider usage tokens before the next round becomes budget-limited |
 | `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` | `300` | Maximum Agent runtime seconds for one graph invocation before the next round becomes budget-limited |
 | `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS` | `3` | Maximum persisted `request_user_input` prompts per run before resumed analysis becomes budget-limited |
+| `LOGAGENT_V2_AGENT_MAX_APPROVALS` | `3` | Maximum persisted `request_approval` prompts per run before resumed analysis becomes budget-limited |
 | `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
 | `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `/usr/bin/ssh` | Absolute SSH executable used by Remote Executor jobs when remote execution is enabled |
 | `LOGAGENT_V2_REMOTE_SCP_COMMAND` | `/usr/bin/scp` | Absolute SCP executable used by approved Environment Collector file pulls when remote execution is enabled |
@@ -769,9 +770,10 @@ Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS`,
 `LOGAGENT_V2_AGENT_MAX_LLM_CALLS`, `LOGAGENT_V2_AGENT_MAX_ACTIONS`,
 `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`,
 `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS`,
-`LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS`, and
+`LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS`,
 `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`, and
-implemented as explicit graph transitions: provider tool-call responses route
+`LOGAGENT_V2_AGENT_MAX_APPROVALS`. These limits are implemented as explicit
+graph transitions: provider tool-call responses route
 through `execute_tool_calls`, normal answers route through
 `validate_final_answer`, waiting/approval tools end the current graph invocation
 in a waiting state, and non-waiting tool observations loop back to

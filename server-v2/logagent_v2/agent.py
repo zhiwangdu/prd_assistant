@@ -832,6 +832,12 @@ class AgentRuntime:
                 "user prompt budget exhausted: "
                 f"{user_prompt_count}/{self.settings.agent_max_user_prompts}"
             )
+        approval_count = approval_action_count(self.store, run_id)
+        if approval_count >= self.settings.agent_max_approvals:
+            return (
+                "approval budget exhausted: "
+                f"{approval_count}/{self.settings.agent_max_approvals}"
+            )
         action_count = executed_tool_action_count(tool_observations)
         if action_count >= self.settings.agent_max_actions:
             return self._action_budget_reason(action_count)
@@ -1212,7 +1218,15 @@ def total_token_usage(rounds: list[JsonObject]) -> int:
 
 
 def user_input_action_count(store: Store, run_id: str) -> int:
-    return sum(1 for action in store.list_actions(run_id) if action.get("kind") == "user_input")
+    return action_kind_count(store, run_id, "user_input")
+
+
+def approval_action_count(store: Store, run_id: str) -> int:
+    return action_kind_count(store, run_id, "approval")
+
+
+def action_kind_count(store: Store, run_id: str, kind: str) -> int:
+    return sum(1 for action in store.list_actions(run_id) if action.get("kind") == kind)
 
 
 def normalize_tool_calls(

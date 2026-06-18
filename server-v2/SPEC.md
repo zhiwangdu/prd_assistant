@@ -1541,9 +1541,11 @@ fingerprints are also bounded by
 usage tokens are bounded by `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS` (default
 200000), one graph invocation is bounded by
 `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` (default 300), and resumed user prompts
-are bounded by `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS` (default 3). When one of
-these budgets is exhausted, V2 stops calling the provider or skips the duplicate
-tool call, routes through a guarded low-confidence final answer with
+are bounded by `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS` (default 3). Approval
+requests are bounded by `LOGAGENT_V2_AGENT_MAX_APPROVALS` (default 3) before a
+resumed run can request another provider round. When one of these budgets is
+exhausted, V2 stops calling the provider or skips the duplicate tool call,
+routes through a guarded low-confidence final answer with
 `budgetLimited=true`, marks the run `succeeded`, and records the last
 `analysis_state.json` round as `budget_limited`; rounds include `tokenUsage`
 when the provider returns OpenAI/Claude-style usage. Evidence refs returned by

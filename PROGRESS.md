@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Approval Budget
+
+- Added `LOGAGENT_V2_AGENT_MAX_APPROVALS` / `agent_max_approvals` with default
+  3 and the same non-positive clamp behavior as the other Agent budgets.
+- V2 Agent runtime now counts persisted `request_approval` actions before each
+  provider round; after the configured approval budget is reached, resumed
+  analysis produces a `budgetLimited=true` low-confidence final answer and
+  succeeds instead of asking the provider for another round.
+- Settings summaries and Agent backend diagnostics now expose the approval
+  budget alongside rounds, LLM calls, actions, repeated fingerprints, tokens,
+  runtime seconds, and user prompt budgets.
+- Added regression coverage for approval budget exhaustion after an approved
+  waiting state resumes, plus Settings budget visibility.
+- Updated root, V2 Server, Analysis Agent, and Config README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused budget/settings pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (151 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Orphan Worktree Scan
 
 - Code Evidence search worktree preparation now scans the configured

@@ -184,6 +184,7 @@ analysis:
   max_total_tokens: 200000
   max_runtime_seconds: 300
   max_user_prompts: 3
+  max_approvals: 3
 
 embedding:
   provider: "openai_compatible"
@@ -285,11 +286,12 @@ metadata:
   `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`、
   `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS`、
   `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS` 和
-  `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`；非正值统一按 1 处理。
+  `LOGAGENT_V2_AGENT_MAX_USER_PROMPTS`、
+  `LOGAGENT_V2_AGENT_MAX_APPROVALS`；非正值统一按 1 处理。
 - 当前 `PLAN_ANALYSIS` 检查 session 轮数、Claude 调用次数、动作数、重复
   MCP tool fingerprint、provider usage token、单次 graph invocation 运行时间和
-  用户追问次数预算；日志搜索和领域工具执行由 Claude Code 通过 LogAgent MCP
-  tools 请求并由 Server 持久化。
+  用户追问/审批次数预算；日志搜索和领域工具执行由 Claude Code 通过 LogAgent
+  MCP tools 请求并由 Server 持久化。
 - 当前结果调用会对解析/schema 错误做一次修正重试，`max_input_chars` 用于裁剪 grep evidence。
 - `tools.<name>` 的 name 只允许非空 ASCII 字母、数字、`_` 和 `-`；内置 `logagent.*` 工具不通过该配置命名空间声明。
 - `tools.<name>.path` 或 `tools.<name>.path_env` 启用时必须解析为绝对路径；固定 `path` 可使用 `${ENV}` 占位符；参数只支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。

@@ -35,6 +35,7 @@ def llm_settings_summary(settings: Settings) -> JsonObject:
         "maxTotalTokens": settings.agent_max_total_tokens,
         "maxRuntimeSeconds": settings.agent_max_runtime_seconds,
         "maxUserPrompts": settings.agent_max_user_prompts,
+        "maxApprovals": settings.agent_max_approvals,
         "baseUrlConfigured": bool(settings.agent_base_url),
         "apiKeyConfigured": bool(settings.agent_api_key),
         "binaryPathConfigured": bool(settings.agent_binary_path),
@@ -215,7 +216,8 @@ def agent_backend_diagnostic(settings: Settings, backend_id: str) -> JsonObject:
         f"repeatedFingerprints:{settings.agent_max_repeated_action_fingerprints}, "
         f"totalTokens:{settings.agent_max_total_tokens}, "
         f"runtimeSeconds:{settings.agent_max_runtime_seconds}, "
-        f"userPrompts:{settings.agent_max_user_prompts}.",
+        f"userPrompts:{settings.agent_max_user_prompts}, "
+        f"approvals:{settings.agent_max_approvals}.",
     ]
     if provider == "stub":
         details.append("Stub provider is local and requires no external configuration.")
@@ -342,6 +344,7 @@ def agent_budget_summary(settings: Settings) -> JsonObject:
         "maxTotalTokens": settings.agent_max_total_tokens,
         "maxRuntimeSeconds": settings.agent_max_runtime_seconds,
         "maxUserPrompts": settings.agent_max_user_prompts,
+        "maxApprovals": settings.agent_max_approvals,
     }
 
 

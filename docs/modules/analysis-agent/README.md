@@ -64,9 +64,10 @@ V2 LangGraph runtime 已对齐 Rust/V1 的核心预算边界：
 `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS=1`。V2 还提供
 `LOGAGENT_V2_AGENT_MAX_TOTAL_TOKENS=200000`、
 `LOGAGENT_V2_AGENT_MAX_RUNTIME_SECONDS=300` 和
-`LOGAGENT_V2_AGENT_MAX_USER_PROMPTS=3`，分别约束累计 provider usage token、
-单次 LangGraph invocation 运行时间和每个 run 的用户追问次数。当轮次、模型调用、
-动作、token、运行时间、追问预算或重复 task MCP tool fingerprint 耗尽时，V2 会停止继续调用
+`LOGAGENT_V2_AGENT_MAX_USER_PROMPTS=3`、
+`LOGAGENT_V2_AGENT_MAX_APPROVALS=3`，分别约束累计 provider usage token、
+单次 LangGraph invocation 运行时间、每个 run 的用户追问次数和审批请求次数。当轮次、模型调用、
+动作、token、运行时间、追问/审批预算或重复 task MCP tool fingerprint 耗尽时，V2 会停止继续调用
 provider 或跳过重复工具执行，生成带 `budgetLimited=true` 和
 `terminationReason` 的低置信度最终结果，并把 `analysis_state.json`
 最后一轮记录为 `budget_limited`；这属于可解释终止，不会把任务标记为
@@ -99,7 +100,7 @@ result.md
 - 证据引用索引
 - 待执行、待审批和待用户回答的请求
 - 已完成动作的 fingerprint
-- 轮数、模型调用数、动作数、token 和运行时间预算
+- 轮数、模型调用数、动作数、token、运行时间、用户追问和审批预算
 
 `analysis_events.jsonl` 是仅追加的审计事件流，记录用户消息、模型决策摘要、动作执行结果、审批和状态变化。不得保存模型隐藏思维链；只保存简短、可审计的决策依据和证据引用。
 
@@ -152,14 +153,9 @@ Rust/V1 当前已实现配置：
 - 最大动作数
 - 同一动作 fingerprint 的最大重复次数
 
-V2 当前已实现最大分析轮数、最大 LLM 调用次数、最大动作数和同一工具
-fingerprint 重复终止。
-
-后续配置：
-
-- 最大输入和输出 token
-- 总运行时间
-- 每轮最多追问数
+V2 当前已实现最大分析轮数、最大 LLM 调用次数、最大动作数、同一工具
+fingerprint 重复终止、累计 provider usage token、单次 graph invocation
+运行时间、用户追问次数和审批请求次数预算。
 
 等待用户或审批的时间不计入运行时间预算。达到预算、动作重复、用户拒绝或证据仍不足时，Agent 必须输出带不确定性、缺失信息和已尝试动作的最终结果，不能无限循环。
 
