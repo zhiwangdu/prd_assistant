@@ -1131,6 +1131,11 @@ URLs whose host, host:port, or scheme-specific `http(s)://host[:port]` entry
 matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. When Fetch is enabled the allowlist
 must be non-empty; URL-form allowlist entries pin both scheme and port, using
 the default port when omitted.
+Endpoint records are migrated to `schemaVersion=2` and expose
+`refreshPolicy.mode=manual_only`; V2 does not automatically refresh bearer
+tokens, cookies, or API keys. Operators refresh credentials by updating the
+endpoint or re-importing a cURL command, which rewrites the encrypted credential
+set.
 Fetch does not follow redirects by default; imported cURL commands with
 `--location` or endpoints created with `followRedirects=true` opt into bounded
 manual redirects.
@@ -1143,7 +1148,8 @@ The `/api/v2/tools` catalog descriptor keeps the Rust/V1 manual-run shape:
 `readOnly=false`, `paramsTemplate.fetchId`, `body=null`, and
 `outputViews=["summary","request","response","body_artifact"]`.
 Task MCP `logagent.list_fetch_endpoints` matches the Rust/V1 envelope with
-`schemaVersion=1`, enabled endpoint summaries, and
+`schemaVersion=1`, enabled endpoint summaries, and endpoint-level
+`schemaVersion=2` / `refreshPolicy` fields, plus
 `finalEvidenceAllowed=false`; when Fetch execution is disabled it returns a
 JSON-RPC error instead of listing endpoints.
 `GET /api/v2/fetch/runs` lists persisted Fetch tool runs, filtered by

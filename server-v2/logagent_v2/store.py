@@ -14,6 +14,11 @@ from .ids import new_id
 
 
 JsonObject = dict[str, Any]
+DEFAULT_FETCH_REFRESH_POLICY: JsonObject = {
+    "mode": "manual_only",
+    "automaticRefresh": False,
+    "tokenRefreshSupported": False,
+}
 CASE_VECTOR_DIMS = 64
 UNSET = object()
 
@@ -407,6 +412,7 @@ class Store:
 
                 CREATE TABLE IF NOT EXISTS fetch_endpoints (
                   id TEXT PRIMARY KEY,
+                  schema_version INTEGER NOT NULL DEFAULT 2,
                   name TEXT NOT NULL,
                   method TEXT NOT NULL,
                   url TEXT NOT NULL,
@@ -414,6 +420,7 @@ class Store:
                   body TEXT,
                   enabled INTEGER NOT NULL,
                   follow_redirects INTEGER NOT NULL DEFAULT 0,
+                  refresh_policy_json TEXT NOT NULL DEFAULT '{"mode":"manual_only","automaticRefresh":false,"tokenRefreshSupported":false}',
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -525,6 +532,15 @@ class Store:
             self._ensure_column_tx(conn, "metadata_imports", "source_url", "TEXT")
             self._ensure_column_tx(
                 conn, "fetch_endpoints", "follow_redirects", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column_tx(
+                conn, "fetch_endpoints", "schema_version", "INTEGER NOT NULL DEFAULT 2"
+            )
+            self._ensure_column_tx(
+                conn,
+                "fetch_endpoints",
+                "refresh_policy_json",
+                """TEXT NOT NULL DEFAULT '{"mode":"manual_only","automaticRefresh":false,"tokenRefreshSupported":false}'""",
             )
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column_tx(
@@ -2693,6 +2709,8 @@ class Store:
         body: str | None,
         enabled: bool,
         follow_redirects: bool = False,
+        schema_version: int = 2,
+        refresh_policy: JsonObject | None = None,
     ) -> JsonObject:
         endpoint_id = new_id("fetch")
         ts = now_iso()
@@ -2700,12 +2718,13 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO fetch_endpoints(
-                  id, name, method, url, headers_json, body, enabled, follow_redirects,
-                  created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  id, schema_version, name, method, url, headers_json, body, enabled,
+                  follow_redirects, refresh_policy_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     endpoint_id,
+                    schema_version,
                     name,
                     method,
                     url,
@@ -2713,6 +2732,7 @@ class Store:
                     body,
                     1 if enabled else 0,
                     1 if follow_redirects else 0,
+                    encode_json(refresh_policy or DEFAULT_FETCH_REFRESH_POLICY),
                     ts,
                     ts,
                 ),
@@ -2798,7 +2818,8 @@ class Store:
                 """
                 UPDATE fetch_endpoints
                 SET name = ?, method = ?, url = ?, headers_json = ?, body = ?,
-                    enabled = ?, follow_redirects = ?, updated_at = ?
+                    enabled = ?, follow_redirects = ?, schema_version = ?,
+                    refresh_policy_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -2809,6 +2830,8 @@ class Store:
                     merged.get("body"),
                     1 if merged.get("enabled", True) else 0,
                     1 if merged.get("followRedirects", False) else 0,
+                    int(merged.get("schemaVersion") or 2),
+                    encode_json(merged.get("refreshPolicy") or DEFAULT_FETCH_REFRESH_POLICY),
                     ts,
                     endpoint_id,
                 ),
@@ -2824,9 +2847,14 @@ class Store:
 
     def _fetch_endpoint_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
+        item["schemaVersion"] = int(item.pop("schema_version", 2) or 2)
         item["headers"] = decode_json(item.pop("headers_json"), {})
         item["enabled"] = bool(item["enabled"])
         item["followRedirects"] = bool(item.pop("follow_redirects", 0))
+        item["refreshPolicy"] = decode_json(
+            item.pop("refresh_policy_json", None),
+            dict(DEFAULT_FETCH_REFRESH_POLICY),
+        )
         item["createdAt"] = item.pop("created_at")
         item["updatedAt"] = item.pop("updated_at")
         return item

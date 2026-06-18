@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Endpoint Schema Policy
+
+- Added Fetch endpoint `schemaVersion=2` and persisted `refreshPolicy` storage.
+- Existing endpoint rows migrate through new SQLite columns with default
+  `manual_only` refresh policy; direct Store-created endpoints also default to
+  schema v2.
+- Fetch currently rejects automatic token refresh policy modes. Credential
+  refresh remains an explicit endpoint PATCH or cURL re-import operation.
+- Public endpoint summaries, task MCP endpoint summaries, and hydrated
+  credential paths now preserve the manual-only refresh policy.
+- Added regression coverage for schema v2 defaults, legacy-row migration,
+  unsupported automatic refresh policy rejection, and API response visibility.
+- Updated root, V2 Server, and Tool Runner README/SPEC docs.
+- Verification passed: `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, focused Fetch schema/PATCH pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 153 passed and
+  1 Starlette warning.
+
 ## 2026-06-18 V2 Environment Default Templates
 
 - Expanded V2 default Remote Executor command templates beyond `smoke_ls_root`

@@ -59,6 +59,7 @@ from logagent_v2.fetch import (
     endpoint_with_credential_summary,
     execute_fetch_endpoint,
     hydrate_fetch_endpoint,
+    normalize_fetch_endpoint,
     persist_fetch_credentials,
     preview_curl_import,
     public_fetch_endpoint,
@@ -8607,6 +8608,75 @@ fi
             self.assertIn("LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES", fetch_response["error"]["message"])
             self.assertEqual(store.list_evidence(run["id"]), [])
 
+    def test_fetch_endpoint_schema_v2_defaults_manual_refresh_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+
+            normalized = normalize_fetch_endpoint(
+                {
+                    "name": "manual fetch",
+                    "method": "GET",
+                    "url": "https://api.example.com/items",
+                    "enabled": True,
+                }
+            )
+            self.assertEqual(normalized["schemaVersion"], 2)
+            self.assertEqual(normalized["refreshPolicy"]["mode"], "manual_only")
+            self.assertFalse(normalized["refreshPolicy"]["automaticRefresh"])
+            with self.assertRaisesRegex(ValueError, "automatic fetch token refresh"):
+                normalize_fetch_endpoint(
+                    {
+                        "name": "auto refresh",
+                        "method": "GET",
+                        "url": "https://api.example.com/items",
+                        "refreshPolicy": {"mode": "oauth_client_credentials"},
+                    }
+                )
+
+            created = store.create_fetch_endpoint(
+                name=normalized["name"],
+                method=normalized["method"],
+                url=normalized["url"],
+                headers=normalized["headers"],
+                body=normalized.get("body"),
+                enabled=normalized["enabled"],
+                schema_version=normalized["schemaVersion"],
+                refresh_policy=normalized["refreshPolicy"],
+            )
+            self.assertEqual(created["schemaVersion"], 2)
+            self.assertEqual(created["refreshPolicy"]["mode"], "manual_only")
+            public = public_fetch_endpoint(created)
+            self.assertEqual(public["schemaVersion"], 2)
+            self.assertEqual(public["refreshPolicy"]["mode"], "manual_only")
+
+            with store.connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO fetch_endpoints(
+                      id, name, method, url, headers_json, body, enabled,
+                      follow_redirects, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "fetch_legacy",
+                        "legacy",
+                        "GET",
+                        "https://legacy.example.com/health",
+                        "{}",
+                        None,
+                        1,
+                        0,
+                        "2026-01-01T00:00:00Z",
+                        "2026-01-01T00:00:00Z",
+                    ),
+                )
+            legacy = store.get_fetch_endpoint("fetch_legacy")
+            self.assertEqual(legacy["schemaVersion"], 2)
+            self.assertEqual(legacy["refreshPolicy"]["mode"], "manual_only")
+
     def test_fetch_sensitive_credentials_are_encrypted_and_hydrated(self) -> None:
         captured: dict[str, str] = {}
 
@@ -8742,7 +8812,11 @@ fi
                     },
                 )
                 self.assertEqual(created.status_code, 200, created.text)
-                endpoint_id = created.json()["id"]
+                created_body = created.json()
+                endpoint_id = created_body["id"]
+                self.assertEqual(created_body["schemaVersion"], 2)
+                self.assertEqual(created_body["refreshPolicy"]["mode"], "manual_only")
+                self.assertFalse(created_body["refreshPolicy"]["automaticRefresh"])
 
                 patched = client.patch(
                     f"/api/v2/fetch/endpoints/{endpoint_id}",
@@ -8768,6 +8842,8 @@ fi
             self.assertEqual(body["method"], "POST")
             self.assertFalse(body["enabled"])
             self.assertTrue(body["followRedirects"])
+            self.assertEqual(body["schemaVersion"], 2)
+            self.assertEqual(body["refreshPolicy"]["mode"], "manual_only")
             self.assertIn("api_key=__REDACTED__", body["url"])
             self.assertEqual(body["headers"]["Authorization"], "__REDACTED__")
             self.assertEqual(body["headers"]["X-Trace"], "new")
@@ -8789,6 +8865,7 @@ fi
             self.assertEqual(hydrated["headers"]["X-Trace"], "new")
             self.assertIn("new-body", hydrated["body"])
             self.assertTrue(hydrated["followRedirects"])
+            self.assertEqual(hydrated["refreshPolicy"]["mode"], "manual_only")
 
     def test_fetch_redirects_are_revalidated_against_allowlist(self) -> None:
         class RedirectHandler(BaseHTTPRequestHandler):

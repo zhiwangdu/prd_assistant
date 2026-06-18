@@ -990,6 +990,11 @@ URL query parameter, header, or body field name looks like a token, secret,
 password, API key, session, Authorization, or Cookie, creating or updating the
 endpoint uses that key to encrypt the sensitive values before the endpoint row
 is stored.
+Fetch endpoint rows are migrated to `schemaVersion=2` and carry a persisted
+`refreshPolicy` object. The only supported policy is
+`{"mode":"manual_only","automaticRefresh":false,"tokenRefreshSupported":false}`;
+attempting to configure an automatic refresh mode is rejected. Credential
+refresh therefore remains an explicit API/import operation in this slice.
 
 Fetch execution is disabled by default. To execute endpoints, set:
 

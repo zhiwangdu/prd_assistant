@@ -23,6 +23,12 @@ CONTROLLED_HEADERS = {"host", "content-length", "transfer-encoding", "connection
 REDACTED = "__REDACTED__"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 FETCH_TOOL_ID = "logagent.fetch"
+FETCH_ENDPOINT_SCHEMA_VERSION = 2
+DEFAULT_FETCH_REFRESH_POLICY: JsonObject = {
+    "mode": "manual_only",
+    "automaticRefresh": False,
+    "tokenRefreshSupported": False,
+}
 SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)((?:[A-Za-z0-9_-]*(?:token|secret|password|api_key|apikey|session)"
     r"[A-Za-z0-9_-]*)\s*[=:]\s*)([^&\s,}]+)"
@@ -38,6 +44,7 @@ def normalize_fetch_endpoint(value: JsonObject) -> JsonObject:
         raise ValueError("fetch endpoint url is required")
     headers = normalize_headers(value.get("headers") or {})
     return {
+        "schemaVersion": FETCH_ENDPOINT_SCHEMA_VERSION,
         "name": str(value.get("name") or url)[:200],
         "method": method,
         "url": url,
@@ -45,6 +52,7 @@ def normalize_fetch_endpoint(value: JsonObject) -> JsonObject:
         "body": value.get("body") if isinstance(value.get("body"), str) else None,
         "enabled": bool(value.get("enabled", True)),
         "followRedirects": bool(value.get("followRedirects", False)),
+        "refreshPolicy": normalize_fetch_refresh_policy(value.get("refreshPolicy")),
     }
 
 
@@ -257,6 +265,20 @@ def normalize_headers(value: Any) -> JsonObject:
     return headers
 
 
+def normalize_fetch_refresh_policy(value: Any) -> JsonObject:
+    if value is None:
+        return dict(DEFAULT_FETCH_REFRESH_POLICY)
+    if not isinstance(value, dict):
+        raise ValueError("fetch refreshPolicy must be an object")
+    mode = str(value.get("mode") or "manual_only").strip()
+    if mode != "manual_only":
+        raise ValueError("automatic fetch token refresh is not supported")
+    return {
+        **DEFAULT_FETCH_REFRESH_POLICY,
+        "mode": "manual_only",
+    }
+
+
 def normalize_fetch_run_params(value: JsonObject) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError("logagent.fetch params must be an object")
@@ -355,6 +377,8 @@ def redact_variables(variables: JsonObject) -> JsonObject:
 
 def public_fetch_endpoint(endpoint: JsonObject) -> JsonObject:
     result = dict(endpoint)
+    result["schemaVersion"] = int(result.get("schemaVersion") or FETCH_ENDPOINT_SCHEMA_VERSION)
+    result["refreshPolicy"] = normalize_fetch_refresh_policy(result.get("refreshPolicy"))
     result["url"] = redact_url(result["url"])
     result["headers"] = redact_headers(result.get("headers", {}))
     if result.get("body"):
@@ -420,9 +444,12 @@ def persist_fetch_credentials(
     if not sensitive_fields:
         store.delete_fetch_credential_set(endpoint_id)
         return
-    encrypted = encrypt_json(settings, {"schemaVersion": 1, "endpoint": endpoint})
+    encrypted = encrypt_json(
+        settings,
+        {"schemaVersion": FETCH_ENDPOINT_SCHEMA_VERSION, "endpoint": endpoint},
+    )
     redacted = {
-        "schemaVersion": 1,
+        "schemaVersion": FETCH_ENDPOINT_SCHEMA_VERSION,
         "detectedSensitiveFields": sensitive_fields,
         "endpoint": public_fetch_endpoint(endpoint),
     }
@@ -442,9 +469,22 @@ def hydrate_fetch_endpoint(
     if not isinstance(secret_endpoint, dict):
         raise ValueError("fetch credential set is invalid")
     hydrated = dict(endpoint)
-    for key in ("name", "method", "url", "headers", "body", "enabled", "followRedirects"):
+    for key in (
+        "schemaVersion",
+        "name",
+        "method",
+        "url",
+        "headers",
+        "body",
+        "enabled",
+        "followRedirects",
+        "refreshPolicy",
+    ):
         if key in secret_endpoint:
             hydrated[key] = secret_endpoint[key]
+    hydrated["refreshPolicy"] = normalize_fetch_refresh_policy(
+        hydrated.get("refreshPolicy")
+    )
     return hydrated
 
 
