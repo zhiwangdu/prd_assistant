@@ -10436,6 +10436,86 @@ fi
                     auto_body["id"],
                 )
 
+    def test_fetch_v1_route_aliases_share_v2_handlers(self) -> None:
+        from fastapi.testclient import TestClient
+        from logagent_v2.api import create_app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                fetch_enabled=True,
+                inline_worker=False,
+            )
+            settings.ensure_dirs()
+            Store(settings.sqlite_path).initialize()
+            headers = {"Authorization": "Bearer test"}
+
+            with TestClient(create_app(settings)) as client:
+                preview = client.post(
+                    "/api/fetch/imports/preview",
+                    headers=headers,
+                    json={"curl": "curl -H 'X-Trace: abc' http://127.0.0.1/data"},
+                )
+                self.assertEqual(preview.status_code, 200, preview.text)
+                self.assertEqual(preview.json()["endpoint"]["method"], "GET")
+
+                created = client.post(
+                    "/api/fetch/endpoints",
+                    headers=headers,
+                    json={
+                        "name": "runtime metadata",
+                        "method": "GET",
+                        "url": "http://127.0.0.1/metadata/{instance}",
+                        "headers": {},
+                        "enabled": True,
+                    },
+                )
+                self.assertEqual(created.status_code, 200, created.text)
+                endpoint_id = created.json()["id"]
+
+                listed = client.get("/api/fetch/endpoints", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(listed.json()["endpoints"][0]["id"], endpoint_id)
+
+                fetched = client.get(
+                    f"/api/fetch/endpoints/{endpoint_id}",
+                    headers=headers,
+                )
+                self.assertEqual(fetched.status_code, 200)
+                self.assertEqual(fetched.json()["id"], endpoint_id)
+
+                patched = client.patch(
+                    f"/api/fetch/endpoints/{endpoint_id}",
+                    headers=headers,
+                    json={"name": "updated runtime metadata"},
+                )
+                self.assertEqual(patched.status_code, 200, patched.text)
+                self.assertEqual(patched.json()["name"], "updated runtime metadata")
+
+                run = client.post(
+                    f"/api/fetch/endpoints/{endpoint_id}/runs",
+                    headers=headers,
+                    json={"variables": {"instance": "inst-a"}},
+                )
+                self.assertEqual(run.status_code, 202, run.text)
+                self.assertEqual(run.json()["toolId"], "logagent.fetch")
+                self.assertEqual(run.json()["toolParams"]["endpointId"], endpoint_id)
+
+                runs = client.get(
+                    f"/api/fetch/runs?fetchId={endpoint_id}",
+                    headers=headers,
+                )
+                self.assertEqual(runs.status_code, 200)
+                self.assertEqual([item["id"] for item in runs.json()["runs"]], [run.json()["id"]])
+
+                deleted = client.delete(
+                    f"/api/fetch/endpoints/{endpoint_id}",
+                    headers=headers,
+                )
+                self.assertEqual(deleted.status_code, 200)
+                self.assertEqual(deleted.json()["endpointId"], endpoint_id)
+
     def test_fetch_runtime_params_apply_overrides_and_body_artifact(self) -> None:
         captured: dict[str, str] = {}
 

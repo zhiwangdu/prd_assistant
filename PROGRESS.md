@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 Rust/V1 Fetch Route Aliases
+
+- Mounted Rust/V1-style `/api/fetch...` aliases in V2 for cURL import preview,
+  Fetch endpoint list/create/get/patch/delete, endpoint run creation, and Fetch
+  tool-run listing.
+- Kept direct run-scoped Fetch execution on the V2-only
+  `/api/v2/runs/:run_id/fetch/:endpoint_id` endpoint while sharing the same
+  handlers for all aliased management routes.
+- Added HTTP regression coverage for legacy Fetch import preview, endpoint
+  CRUD aliases, endpoint run creation, run filtering, and delete.
+- Updated Server V2 README/SPEC for the Rust/V1-style Fetch route aliases.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused Fetch route alias pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Rust/V1 Tool Route Aliases
 
 - Mounted Rust/V1-style `/api/tools...` aliases in V2 for tool catalog, tool

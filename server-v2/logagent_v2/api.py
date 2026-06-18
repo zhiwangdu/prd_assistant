@@ -2275,6 +2275,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/fetch/endpoints")
     @app.get("/api/v2/fetch/endpoints")
     async def list_fetch_endpoints(_: Auth) -> dict:
         return {
@@ -2286,6 +2287,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ],
         }
 
+    @app.get("/api/fetch/runs")
     @app.get("/api/v2/fetch/runs")
     async def list_fetch_runs(
         _: Auth,
@@ -2314,6 +2316,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/fetch/imports/preview")
     @app.post("/api/v2/fetch/imports/preview")
     async def preview_fetch_import(_: Auth, payload: FetchCurlImportPreviewCreate) -> dict:
         try:
@@ -2349,6 +2352,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/api/fetch/endpoints")
     @app.post("/api/v2/fetch/endpoints")
     async def create_fetch_endpoint(_: Auth, payload: FetchEndpointCreate) -> dict:
         try:
@@ -2373,6 +2377,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/fetch/endpoints/{endpoint_id}")
     @app.get("/api/v2/fetch/endpoints/{endpoint_id}")
     async def get_fetch_endpoint(_: Auth, endpoint_id: str) -> dict:
         try:
@@ -2382,6 +2387,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.patch("/api/fetch/endpoints/{endpoint_id}")
     @app.patch("/api/v2/fetch/endpoints/{endpoint_id}")
     async def patch_fetch_endpoint(_: Auth, endpoint_id: str, payload: FetchEndpointUpdate) -> dict:
         try:
@@ -2404,6 +2410,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.delete("/api/fetch/endpoints/{endpoint_id}")
     @app.delete("/api/v2/fetch/endpoints/{endpoint_id}")
     async def delete_fetch_endpoint(_: Auth, endpoint_id: str) -> dict:
         try:
@@ -2412,6 +2419,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/fetch/endpoints/{endpoint_id}/runs", status_code=202)
     @app.post("/api/v2/fetch/endpoints/{endpoint_id}/runs", status_code=202)
     async def create_fetch_endpoint_run(
         _: Auth,

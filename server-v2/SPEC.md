@@ -553,6 +553,14 @@ PATCH /api/v2/fetch/endpoints/:endpoint_id
 DELETE /api/v2/fetch/endpoints/:endpoint_id
 POST /api/v2/fetch/endpoints/:endpoint_id/runs
 GET  /api/v2/fetch/runs
+POST /api/fetch/imports/preview
+GET  /api/fetch/endpoints
+POST /api/fetch/endpoints
+GET  /api/fetch/endpoints/:endpoint_id
+PATCH /api/fetch/endpoints/:endpoint_id
+DELETE /api/fetch/endpoints/:endpoint_id
+POST /api/fetch/endpoints/:endpoint_id/runs
+GET  /api/fetch/runs
 POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
@@ -1165,6 +1173,10 @@ Endpoints can be created directly or imported from DevTools bash cURL commands:
 POST /api/v2/fetch/imports/preview
 POST /api/v2/fetch/imports
 ```
+
+Rust/V1-style `/api/fetch...` aliases are mounted for import preview, endpoint
+CRUD, endpoint run creation, and fetch-run listing. Direct run-scoped
+execution remains V2-only at `/api/v2/runs/:run_id/fetch/:endpoint_id`.
 
 The cURL importer supports URL, request method, headers, body, cookies,
 User-Agent, Referer, `--compressed`, `--head`, and `--location`, and accepts a

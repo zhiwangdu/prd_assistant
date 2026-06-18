@@ -620,6 +620,14 @@ PATCH /api/v2/fetch/endpoints/:endpoint_id
 DELETE /api/v2/fetch/endpoints/:endpoint_id
 POST /api/v2/fetch/endpoints/:endpoint_id/runs
 GET  /api/v2/fetch/runs
+POST /api/fetch/imports/preview
+GET  /api/fetch/endpoints
+POST /api/fetch/endpoints
+GET  /api/fetch/endpoints/:endpoint_id
+PATCH /api/fetch/endpoints/:endpoint_id
+DELETE /api/fetch/endpoints/:endpoint_id
+POST /api/fetch/endpoints/:endpoint_id/runs
+GET  /api/fetch/runs
 POST /api/v2/runs/:run_id/fetch/:endpoint_id
 POST /api/v2/mcp/readonly
 POST /api/v2/mcp/task/:run_id
@@ -1331,7 +1339,10 @@ DevTools bash cURL commands using `POST /api/v2/fetch/imports/preview` and
 `POST /api/v2/fetch/imports`. Supported cURL flags are limited to URL,
 request method, headers, body, cookies, User-Agent, Referer, compression, HEAD,
 and location; commands may include a leading `$` shell prompt from terminal
-copy/paste. Execution is
+copy/paste. Rust/V1-style `/api/fetch...` aliases are mounted for import
+preview, endpoint CRUD, endpoint run creation, and run listing; the V2-only
+direct run-scoped execution endpoint remains `/api/v2/runs/:run_id/fetch/:endpoint_id`.
+Execution is
 disabled unless `LOGAGENT_V2_FETCH_ENABLED=1` and constrained to `http`/`https`
 URLs whose host, host:port, or scheme-specific `http(s)://host[:port]` entry
 matches `LOGAGENT_V2_FETCH_ALLOWED_HOSTS`. When Fetch is enabled the allowlist
