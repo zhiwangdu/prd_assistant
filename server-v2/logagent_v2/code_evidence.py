@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ CODE_EVIDENCE_REF_RE = re.compile(
     r"^(code_evidence/[A-Za-z0-9_-]+\.json)#matches/(\d+)$"
 )
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]{2,}")
+SAFE_WORKTREE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 STOP_WORDS = {
     "about",
     "after",
@@ -104,10 +106,12 @@ def run_code_search(
     if existing is not None:
         return existing
 
+    worktree = prepare_code_worktree(settings, repo, configured_ref, commit)
+    worktree_path = Path(str(worktree["path"]))
     matches: list[JsonObject] = []
     keyword_counts: dict[str, int] = {}
     for keyword in keywords:
-        keyword_matches = git_grep_keyword(repo, commit, keyword, max_matches)
+        keyword_matches = git_grep_keyword(repo, worktree_path, keyword, max_matches)
         keyword_counts[keyword] = len(keyword_matches)
         matches.extend(keyword_matches)
     logical_path = f"code_evidence/{action_id}.json"
@@ -121,7 +125,12 @@ def run_code_search(
         "version": version,
         "ref": configured_ref,
         "commit": commit,
-        "repo": {"product": repo.product, "searchRoots": list(repo.search_roots)},
+        "repo": {
+            "product": repo.product,
+            "repoPath": repo.repo_path.as_posix(),
+            "searchRoots": list(repo.search_roots),
+        },
+        "worktree": worktree,
         "taskContext": task_context,
         "keywords": keywords,
         "keywordCounts": keyword_counts,
@@ -166,6 +175,7 @@ def run_code_search(
             "ref": configured_ref,
             "commit": commit,
             "taskContext": task_context,
+            "worktree": worktree,
             "matchCount": len(matches),
             "evidenceRefPrefix": f"{logical_path}#matches/",
         },
@@ -296,7 +306,7 @@ def normalize_max_matches(value: Any) -> int:
 
 def git_grep_keyword(
     repo: CodeRepoDefinition,
-    commit: str,
+    worktree_path: Path,
     keyword: str,
     max_matches: int,
 ) -> list[JsonObject]:
@@ -308,18 +318,17 @@ def git_grep_keyword(
         "-F",
         "-e",
         keyword,
-        commit,
     ]
     if repo.search_roots:
         args.extend(["--", *repo.search_roots])
-    completed = git_run(repo.repo_path, *args)
+    completed = git_run(worktree_path, *args)
     if completed.returncode == 1:
         return []
     if completed.returncode != 0:
         raise ValueError((completed.stderr or completed.stdout).strip() or "git grep failed")
     matches: list[JsonObject] = []
     for line in completed.stdout.splitlines():
-        parsed = parse_git_grep_line(line, commit)
+        parsed = parse_git_grep_line(line, "")
         if parsed is None:
             continue
         file_path, line_number, text = parsed
@@ -339,8 +348,112 @@ def git_grep_keyword(
     return matches
 
 
+def prepare_code_worktree(
+    settings: Settings,
+    repo: CodeRepoDefinition,
+    configured_ref: str,
+    commit: str,
+) -> JsonObject:
+    root = settings.effective_code_worktree_root.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    worktree_path = code_worktree_path(root, repo, configured_ref, commit)
+    reused = False
+    if worktree_path.exists():
+        existing_commit = git_worktree_head(worktree_path)
+        if existing_commit == commit:
+            reused = True
+        else:
+            remove_cached_worktree(repo.repo_path, root, worktree_path)
+    if not reused:
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        completed = git_run(
+            repo.repo_path,
+            "worktree",
+            "add",
+            "--detach",
+            worktree_path.as_posix(),
+            commit,
+        )
+        if completed.returncode != 0:
+            raise ValueError(
+                (completed.stderr or completed.stdout).strip()
+                or "git worktree add failed"
+            )
+        actual_commit = git_output(worktree_path, "rev-parse", "HEAD")
+        if actual_commit != commit:
+            raise ValueError("git worktree resolved to an unexpected commit")
+    return {
+        "mode": "git_worktree",
+        "root": root.as_posix(),
+        "path": worktree_path.as_posix(),
+        "commit": commit,
+        "reused": reused,
+    }
+
+
+def code_worktree_path(
+    root: Path,
+    repo: CodeRepoDefinition,
+    configured_ref: str,
+    commit: str,
+) -> Path:
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "repoPath": repo.repo_path.as_posix(),
+                "product": repo.product,
+                "ref": configured_ref,
+                "commit": commit,
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    path = root / safe_worktree_segment(repo.product) / f"wt_{digest}"
+    return ensure_child_path(root, path)
+
+
+def safe_worktree_segment(value: str) -> str:
+    segment = SAFE_WORKTREE_SEGMENT_RE.sub("_", value.strip())[:64].strip("._-")
+    return segment or "repo"
+
+
+def ensure_child_path(root: Path, path: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve(strict=False)
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        raise ValueError("code worktree path escaped configured root")
+    return resolved_path
+
+
+def git_worktree_head(path: Path) -> str | None:
+    if not path.is_dir():
+        return None
+    completed = git_run(path, "rev-parse", "HEAD")
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
+
+
+def remove_cached_worktree(repo_path: Path, root: Path, worktree_path: Path) -> None:
+    safe_path = ensure_child_path(root, worktree_path)
+    completed = git_run(
+        repo_path,
+        "worktree",
+        "remove",
+        "--force",
+        safe_path.as_posix(),
+    )
+    if completed.returncode != 0 and safe_path.exists():
+        if safe_path.is_dir():
+            shutil.rmtree(safe_path)
+        else:
+            safe_path.unlink()
+    git_run(repo_path, "worktree", "prune")
+
+
 def parse_git_grep_line(line: str, commit: str) -> tuple[str, int, str] | None:
-    if line.startswith(f"{commit}:"):
+    if commit and line.startswith(f"{commit}:"):
         line = line[len(commit) + 1 :]
     first, sep, rest = line.partition(":")
     if not sep:
@@ -434,6 +547,7 @@ def code_search_response(result: JsonObject, evidence: JsonObject) -> JsonObject
         "version": result.get("version"),
         "ref": result.get("ref"),
         "commit": result.get("commit"),
+        "worktree": result.get("worktree"),
         "matches": matches,
         "matchCount": result.get("matchCount", len(matches)),
         "evidenceRefs": evidence_refs,

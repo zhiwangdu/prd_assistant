@@ -358,6 +358,7 @@ class Settings:
     remote_commands: tuple[RemoteCommandTemplate, ...] = field(default_factory=default_remote_commands)
     remote_files: tuple[RemoteFileTemplate, ...] = ()
     code_repos: tuple[CodeRepoDefinition, ...] = ()
+    code_worktree_root: Path | None = None
     webui_dir: Path = field(default_factory=default_webui_dir)
 
     @property
@@ -376,11 +377,16 @@ class Settings:
     def skills_dir(self) -> Path:
         return self.data_dir / "skills"
 
+    @property
+    def effective_code_worktree_root(self) -> Path:
+        return self.code_worktree_root or (self.data_dir / "code_worktrees")
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
+        self.effective_code_worktree_root.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -555,6 +561,14 @@ class Settings:
         )
         remote_files = parse_remote_files_env(os.environ.get("LOGAGENT_V2_REMOTE_FILES_JSON"))
         code_repos = parse_code_repos_env(os.environ.get("LOGAGENT_V2_CODE_REPOS_JSON"))
+        raw_code_worktree_root = os.environ.get("LOGAGENT_V2_CODE_WORKTREE_ROOT")
+        code_worktree_root = (
+            Path(raw_code_worktree_root).expanduser()
+            if raw_code_worktree_root and raw_code_worktree_root.strip()
+            else None
+        )
+        if code_worktree_root is not None and not code_worktree_root.is_absolute():
+            raise ValueError("LOGAGENT_V2_CODE_WORKTREE_ROOT must resolve to an absolute path")
         raw_webui_dir = os.environ.get("LOGAGENT_V2_WEBUI_DIR")
         webui_dir = Path(raw_webui_dir).expanduser() if raw_webui_dir else default_webui_dir()
         return cls(
@@ -607,6 +621,7 @@ class Settings:
             remote_commands=remote_commands,
             remote_files=remote_files,
             code_repos=code_repos,
+            code_worktree_root=code_worktree_root,
             webui_dir=webui_dir,
         )
 

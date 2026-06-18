@@ -277,11 +277,13 @@ Implemented in this slice:
   from legacy System Context resources, readonly MCP Skill tools, and task MCP
   reference artifacts.
 - Code Evidence MVP for configured local git repositories. `logagent.search_code`
-  maps product/version to configured refs, runs read-only `git grep` under
-  configured search roots, writes `code_evidence/<action_id>.json`, and exposes
-  final-answer refs as `code_evidence/<action_id>.json#matches/<index>`. When a
-  run is bound to a Metadata instance, the tool inherits and enforces that
-  instance's product/version before resolving refs.
+  maps product/version to configured refs, resolves a commit, creates or
+  reuses a detached worktree cache, runs read-only `git grep` under configured
+  search roots inside that worktree, writes `code_evidence/<action_id>.json`,
+  and exposes final-answer refs as
+  `code_evidence/<action_id>.json#matches/<index>`. When a run is bound to a
+  Metadata instance, the tool inherits and enforces that instance's
+  product/version before resolving refs.
 - Legacy System Context resource compatibility APIs backed by SQLite. V2 can
   create, list, read, update, version, activate, and preview prompt packs,
   architecture docs, runbooks, glossaries, tool capability notes, knowledge
@@ -689,8 +691,12 @@ an array with explicit `product`. Each repo entry requires an absolute
 one repo is configured. It accepts `product`, optional `version` or `gitRef`,
 `query`/`keywords`, and `maxMatchesPerKeyword`; `gitRef` must match the
 configured default ref or a configured version ref. The implementation uses
-`git rev-parse` and `git grep <commit>` only; it does not clone, pull, checkout,
-create worktrees, run build scripts, or modify the source repository.
+`git rev-parse`, creates or reuses a detached worktree under
+`LOGAGENT_V2_CODE_WORKTREE_ROOT` or default `data_dir/code_worktrees`, and runs
+`git grep` inside that worktree. It does not clone, pull, run build scripts, or
+modify the administrator-configured source repository. The worktree root must
+be absolute when set explicitly, and V2 only removes/recreates cached paths
+after verifying they stay under that root.
 
 `LOGAGENT_V2_TOOLS_JSON` accepts either a descriptor array or a Rust/V1-style
 object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1

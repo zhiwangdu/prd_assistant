@@ -3740,6 +3740,45 @@ class StoreTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, message):
                         parse_code_repos_env(bad_raw)
 
+    def test_settings_code_worktree_root_env_and_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_values = {
+                "LOGAGENT_V2_DATA_DIR": (root / "data").as_posix(),
+                "LOGAGENT_V2_CODE_WORKTREE_ROOT": (root / "code-cache").as_posix(),
+            }
+            previous = {key: os.environ.get(key) for key in env_values}
+            try:
+                os.environ.update(env_values)
+                settings = Settings.from_env()
+                self.assertEqual(
+                    settings.effective_code_worktree_root,
+                    root / "code-cache",
+                )
+                settings.ensure_dirs()
+                self.assertTrue((root / "code-cache").is_dir())
+            finally:
+                for key, value in previous.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+            settings = Settings(data_dir=root / "default-data", api_key="test")
+            settings.ensure_dirs()
+            self.assertTrue((root / "default-data" / "code_worktrees").is_dir())
+
+            previous_value = os.environ.get("LOGAGENT_V2_CODE_WORKTREE_ROOT")
+            try:
+                os.environ["LOGAGENT_V2_CODE_WORKTREE_ROOT"] = "relative/cache"
+                with self.assertRaisesRegex(ValueError, "CODE_WORKTREE_ROOT"):
+                    Settings.from_env()
+            finally:
+                if previous_value is None:
+                    os.environ.pop("LOGAGENT_V2_CODE_WORKTREE_ROOT", None)
+                else:
+                    os.environ["LOGAGENT_V2_CODE_WORKTREE_ROOT"] = previous_value
+
     def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
         env_values = {
             "LOGAGENT_V2_FETCH_ENABLED": "1",
@@ -6571,10 +6610,17 @@ fi
                 stdout=subprocess.PIPE,
             )
             subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True)
+            (repo / "src" / "planner.py").write_text(
+                "class DirtyOnlyRule:\n"
+                "    def apply(self):\n"
+                "        return 'dirty source tree should not affect evidence'\n",
+                encoding="utf-8",
+            )
 
             settings = Settings(
                 data_dir=root / "data",
                 api_key="test",
+                code_worktree_root=root / "worktrees",
                 code_repos=(
                     CodeRepoDefinition(
                         product="opengemini",
@@ -6646,9 +6692,32 @@ fi
             self.assertEqual(payload["version"], "1.0.0")
             self.assertEqual(payload["ref"], "v1.0.0")
             self.assertEqual(payload["codeEvidence"]["taskContext"]["instanceId"], "inst-code")
+            self.assertEqual(payload["codeEvidence"]["repo"]["repoPath"], repo.as_posix())
             self.assertEqual(payload["matchCount"], 1)
             self.assertEqual(payload["matches"][0]["file"], "src/planner.py")
             self.assertEqual(payload["matches"][0]["lineNumber"], 1)
+            worktree = payload["worktree"]
+            self.assertEqual(worktree["mode"], "git_worktree")
+            self.assertEqual(worktree["root"], (root / "worktrees").resolve().as_posix())
+            self.assertFalse(worktree["reused"])
+            worktree_path = Path(worktree["path"])
+            self.assertTrue(worktree_path.is_dir())
+            self.assertIn((root / "worktrees").resolve(), worktree_path.parents)
+            self.assertEqual(payload["codeEvidence"]["worktree"], worktree)
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", worktree_path.as_posix(), "rev-parse", "HEAD"],
+                    check=True,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                ).stdout.strip(),
+                payload["commit"],
+            )
+            worktree_source = (worktree_path / "src" / "planner.py").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("PushDownFilterRule", worktree_source)
+            self.assertNotIn("DirtyOnlyRule", worktree_source)
             code_ref = payload["evidenceRefs"][0]
             self.assertTrue(code_ref.endswith("#matches/0"))
 

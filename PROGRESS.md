@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Worktree Cache
+
+- Added optional `LOGAGENT_V2_CODE_WORKTREE_ROOT` for Code Evidence detached
+  worktree cache; when unset, V2 uses `data_dir/code_worktrees`.
+- `logagent.search_code` now resolves the configured ref to a commit, creates
+  or reuses a detached `git worktree` under the safe cache root, and runs
+  read-only `git grep` inside that worktree instead of the administrator source
+  repo worktree.
+- Code Evidence artifacts and MCP responses now include `repo.repoPath` plus
+  `worktree` metadata (`mode`, `root`, `path`, `commit`, `reused`) so evidence
+  consumers can audit where code was read from.
+- Added regression coverage for explicit/default worktree roots, relative-root
+  rejection, detached worktree creation, and dirty source worktree isolation.
+- Updated root, V2 Server, and Code Evidence README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Code Evidence pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (136 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 WebUI V2 Environment Batch Approval
 
 - V2 Analyze `collect_environment` approval card now supports building a
