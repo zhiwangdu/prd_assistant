@@ -2126,6 +2126,7 @@ def run_huawei_package_sync_tool(
             "obsAccessKeyEnv": "LOGAGENT_V2_HUAWEI_OBS_ACCESS_KEY",
             "obsSecretKeyEnv": "LOGAGENT_V2_HUAWEI_OBS_SECRET_KEY",
             "obsSecurityTokenEnv": "LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN",
+            "gaussdbPasswordEnv": None,
             "gaussdbDsnEnv": "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
         },
         "credentialEnv": {

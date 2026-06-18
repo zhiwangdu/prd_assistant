@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Huawei Credential Metadata Parity
+
+- Added the Rust/V1 `gaussdbPasswordEnv` key to Huawei package sync
+  `credentialMetadata`, set to `null` because V2 uses a single GaussDB DSN env.
+- Preserved the V2 `gaussdbDsnEnv=LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` field for
+  the actual runtime configuration source.
+- Added regression assertions for both credential metadata keys.
+- Updated V2 Server and Tool Runner docs.
+- Verification passed: focused Huawei package sync pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Fetch Manual Action ID Parity
 
 - Aligned queued/manual V2 Fetch `tool_run` execution with Rust/V1

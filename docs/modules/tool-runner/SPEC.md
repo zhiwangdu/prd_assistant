@@ -209,7 +209,8 @@ Huawei package sync 的 `result.json` 至少包含：
 - `gaussdb.host/port/database/user/sslmode/updateAffectedRows/queryRows/queryRowsTruncated`
 - `sql.updateSqlProvided/updateSqlLength/querySqlProvided/querySqlLength`
 - `timings`
-- `credentialMetadata` 中的环境变量名
+- `credentialMetadata` 中的环境变量名，包含 V1 `gaussdbPasswordEnv=null`
+  和 V2 `gaussdbDsnEnv=LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`
 
 原始 SQL、OBS access key/secret key/security token、GaussDB password 不得写入 `result.json`。
 

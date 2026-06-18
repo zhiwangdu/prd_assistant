@@ -235,7 +235,9 @@ Implemented in this slice:
   params and writes Rust/V1-style result fields (`tool`, `input`, `obs`,
   `gaussdb`, `sql`, `timings`, `warnings`, `credentialMetadata`, and logical
   `evidenceRefs`) while preserving V2 `obsPut`, `obsHead`, `gaussdbUpdate`,
-  and `gaussdbQuery` fields.
+  and `gaussdbQuery` fields. `credentialMetadata` keeps the V1
+  `gaussdbPasswordEnv` key as `null` because V2 uses
+  `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN`.
 - `pprof_analyzer` catalog metadata matches the Rust/V1 configured command
   shape (`source=configured`, `backend=command`) while remaining manual-only in
   V2. Tool-run results keep Rust/V1-style `artifacts` and `artifactPaths` for
@@ -860,7 +862,9 @@ The migrated built-ins are:
   scheme/shape, bucket characters, safe object prefix, required OBS keys, and
   required GaussDB DSN when package sync is enabled. Results include the V1
   `input`, `obs`, `gaussdb`, `sql`, `timings`, `warnings`, credential metadata,
-  and logical `tool_results/<action_id>/result.json` evidence reference.
+  and logical `tool_results/<action_id>/result.json` evidence reference; the
+  V1 `gaussdbPasswordEnv` credential metadata key is retained as `null` while
+  V2 also reports the DSN env name.
 Regression coverage must lock the V1 built-in tool names across task MCP,
 readonly MCP, and the manual Tools catalog, so future refactors cannot drop a
 migrated built-in from one surface accidentally.

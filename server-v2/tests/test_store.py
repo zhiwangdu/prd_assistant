@@ -6096,6 +6096,11 @@ fi
             self.assertEqual(result["timings"]["gaussdbUpdateMs"], 5)
             self.assertEqual(result["timings"]["obsHeadMs"], 3)
             self.assertEqual(result["timings"]["gaussdbQueryMs"], 11)
+            self.assertIsNone(result["credentialMetadata"]["gaussdbPasswordEnv"])
+            self.assertEqual(
+                result["credentialMetadata"]["gaussdbDsnEnv"],
+                "LOGAGENT_V2_HUAWEI_GAUSSDB_DSN",
+            )
             self.assertIn("GaussDB query rows truncated", result["warnings"][0])
             self.assertEqual(
                 result["evidenceRefs"],
