@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 
 from .artifacts import resolve_artifact_path, write_artifact_bytes
 from .case_memory import call_case_tool, case_tool_descriptors, task_case_tool_descriptors
@@ -1135,6 +1136,9 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
             run_params["inputFiles"] = [input_file, *existing]
         else:
             run_params["inputFiles"] = [input_file, existing]
+    action_id_override = None
+    if "toolId" not in arguments and isinstance(arguments.get("tool"), str) and input_file:
+        action_id_override = f"act_mcp_tool_{stable_mcp_json_digest(arguments)}"
     result = run_configured_tool(
         settings,
         store,
@@ -1143,6 +1147,7 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
         tool_id,
         params=run_params,
         reuse_existing=True,
+        action_id_override=action_id_override,
     )
     payload = {
         "result": result["result"],
@@ -1158,6 +1163,11 @@ def call_run_domain_tool(settings: Settings, store: Store, run: dict, arguments:
         indent=2,
     )
     return {"content": [{"type": "text", "text": text}]}
+
+
+def stable_mcp_json_digest(value: JsonObject) -> str:
+    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def run_domain_tool_compat_payload(result: JsonObject) -> JsonObject:

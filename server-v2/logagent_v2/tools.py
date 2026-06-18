@@ -660,6 +660,7 @@ def run_configured_tool(
     params: JsonObject | None = None,
     upload_ids: list[str] | None = None,
     reuse_existing: bool = False,
+    action_id_override: str | None = None,
 ) -> JsonObject:
     tool = get_tool(settings, tool_id)
     if not tool.enabled:
@@ -678,6 +679,7 @@ def run_configured_tool(
     if tool_requires_input(tool) and not input_entries:
         raise ValueError(f"tool {tool_id} requires an input_file but no tool input matched")
     if input_entries:
+        single_action_id_override = action_id_override if len(input_entries) == 1 else None
         runs = [
             run_single_configured_tool(
                 settings,
@@ -688,6 +690,7 @@ def run_configured_tool(
                 entry,
                 normalized_params,
                 reuse_existing=reuse_existing,
+                action_id_override=single_action_id_override,
             )
             for entry in input_entries[: tool.max_input_files]
         ]
@@ -709,6 +712,7 @@ def run_configured_tool(
         None,
         normalized_params,
         reuse_existing=reuse_existing,
+        action_id_override=action_id_override,
     )
 
 
@@ -762,12 +766,13 @@ def run_single_configured_tool(
     input_entry: JsonObject | None,
     params: JsonObject,
     reuse_existing: bool = False,
+    action_id_override: str | None = None,
 ) -> JsonObject:
     command = Path(tool.command)
     if not command.is_absolute():
         raise ValueError(f"tool {tool.id} command must be an absolute path")
     input_file = resolve_tool_input_path(settings, store, input_entry) if input_entry else None
-    action_id = tool_action_id(tool, input_entry, params)
+    action_id = action_id_override or tool_action_id(tool, input_entry, params)
     if reuse_existing:
         existing = existing_configured_tool_result(
             settings, store, run_id, tool.id, action_id

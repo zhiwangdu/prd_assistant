@@ -7501,7 +7501,42 @@ fi
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertEqual(payload["result"]["summary"], "explicit line")
             self.assertEqual(payload["result"]["inputFile"], "extracted/query/query.log")
+            self.assertTrue(payload["result"]["actionId"].startswith("act_mcp_tool_"))
+            self.assertEqual(
+                payload["artifactPath"],
+                f"tool_results/{payload['result']['actionId']}/result.json",
+            )
             self.assertIn("explicit_tool_", payload["result"]["findings"][0]["message"])
+            repeated = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 37,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.run_domain_tool",
+                        "arguments": {"tool": "explicit_tool", "inputFile": "query.log"},
+                    },
+                },
+            )
+            repeated_payload = json.loads(repeated["result"]["content"][0]["text"])
+            self.assertEqual(
+                repeated_payload["result"]["actionId"],
+                payload["result"]["actionId"],
+            )
+            self.assertEqual(repeated_payload["artifactPath"], payload["artifactPath"])
+            self.assertEqual(
+                len(
+                    [
+                        item
+                        for item in store.list_evidence(run["id"])
+                        if item["kind"] == "tool_result"
+                    ]
+                ),
+                1,
+            )
 
     def test_manual_configured_tool_run_uses_explicit_input_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

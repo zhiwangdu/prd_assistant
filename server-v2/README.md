@@ -1065,7 +1065,9 @@ stored as `tool_result` evidence, added to
 `analysis_package.allowedEvidenceRefs`, and shown to the first provider prompt
 as `preRunToolResults`. Task MCP `logagent.run_domain_tool` reuses an existing
 `toolId + actionId` result when present, so provider retries and user follow-up
-calls do not duplicate the same result inside one run.
+calls do not duplicate the same result inside one run. Legacy Rust/V1
+`{tool,inputFile}` calls use an `act_mcp_tool_<stable_digest>` action id, while
+the V2 `toolId` protocol keeps the tool/input/params-derived action id.
 
 Configured subprocess `result.json` uses the Rust/V1 `ToolRunRecord` shape:
 `schemaVersion=2`, `tool`, `actionId`, `status`, `exitCode`, `durationMs`,

@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Legacy Domain Tool Action ID Parity
+
+- Aligned legacy task MCP `logagent.run_domain_tool` calls using
+  `{tool,inputFile}` with the Rust/V1 `act_mcp_tool_<stable_digest>` action id
+  prefix.
+- Kept the V2 `toolId` protocol on its existing tool/input/params-derived
+  action id path.
+- Added regression assertions for legacy `artifactPath`, repeated-call reuse,
+  and single `tool_result` evidence creation.
+- Updated V2 Server and Tool Runner docs.
+- Verification passed: focused legacy `run_domain_tool` pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Huawei Credential Metadata Parity
 
 - Added the Rust/V1 `gaussdbPasswordEnv` key to Huawei package sync
