@@ -19,6 +19,19 @@ Last updated: 2026-06-18
   `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
   tests`, and `git diff --check`.
 
+## 2026-06-18 Source-Built Analyzer Smoke Verification
+
+- Verified all four source-built analyzer submodule tools from the current V2
+  branch using their repository smoke scripts.
+- Passed `scripts/smoke-flux-query-analyzer.sh` with the existing
+  `target/tools/flux_query_analyzer`.
+- Passed `scripts/smoke-influxql-analyzer.sh`, including both Report and
+  CompareReport CLI paths, with `target/tools/influxql-analyzer`.
+- Passed `scripts/smoke-opengemini-storage-analyzer.sh` with
+  `target/tools/opengemini-storage-analyzer`.
+- Passed `scripts/smoke-influxdb-storage-analyzer.sh` with
+  `target/tools/influxdb_storage_analyzer`.
+
 ## 2026-06-18 V2 Configured Tool Action ID Prefix Parity
 
 - Aligned default configured subprocess action ids with the Rust/V1
