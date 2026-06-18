@@ -881,7 +881,11 @@ def run_single_configured_tool(
             tool.timeout_seconds,
             spawn_error,
         ),
-        "findings": findings_from_stdout(parsed_stdout),
+        "findings": normalize_tool_finding_paths(
+            findings_from_stdout(parsed_stdout),
+            input_entry,
+            input_file,
+        ),
         "error": error_message,
     }
     artifact = write_artifact_bytes(
@@ -952,6 +956,43 @@ def existing_configured_tool_result(
         if isinstance(result, dict):
             return {"result": result, "artifact": artifact, "evidence": evidence}
     return None
+
+
+def normalize_tool_finding_paths(
+    findings: list[JsonObject],
+    input_entry: JsonObject | None,
+    input_file: Path | None,
+) -> list[JsonObject]:
+    if input_entry is None or input_file is None:
+        return findings
+    logical_input = input_entry.get("path")
+    if not isinstance(logical_input, str) or not logical_input:
+        return findings
+    normalized = []
+    for finding in findings:
+        item = dict(finding)
+        file_value = item.get("file")
+        if isinstance(file_value, str) and file_value:
+            item["file"] = normalize_tool_finding_path(file_value, input_file, logical_input)
+        normalized.append(item)
+    return normalized
+
+
+def normalize_tool_finding_path(file_value: str, input_file: Path, logical_input: str) -> str:
+    file_path = Path(file_value)
+    if not file_path.is_absolute():
+        return file_value
+    try:
+        resolved_file = file_path.resolve(strict=False)
+        resolved_input = input_file.resolve(strict=False)
+    except OSError:
+        return file_value
+    if resolved_file == resolved_input:
+        return logical_input
+    if resolved_input.is_dir() and resolved_input in resolved_file.parents:
+        relative = resolved_file.relative_to(resolved_input).as_posix()
+        return f"{logical_input.rstrip('/')}/{relative}"
+    return file_value
 
 
 def configured_tool_results_outline(results: list[JsonObject]) -> list[JsonObject]:

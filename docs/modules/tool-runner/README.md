@@ -134,6 +134,10 @@ tools:
   stdout/stderr artifact 引用。
   非 0 退出、timeout 和 subprocess 启动失败会写成 `FAILED` / `TIMED_OUT`
   tool result，而不是在 MCP 调用层丢失结果。
+- Python V2 会把 configured subprocess `findings[].file` 中指向当前输入
+  artifact 的本机绝对路径规整回 `inputFile` 的 workspace-relative 逻辑路径；
+  若 finding 指向输入目录下的子文件，则保留相对子路径。原始 stdout/stderr
+  仍作为 support artifacts 保存用于审计。
 - 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。

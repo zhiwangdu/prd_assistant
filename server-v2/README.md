@@ -64,7 +64,10 @@ slice provides the durable foundation for the V2 product model:
   `result/artifact/evidence` payload and also expose Rust/V1-compatible
   top-level `artifactPath`, `summary`, and `evidenceRefs` fields, plus
   finding-level `finalEvidenceRefs` when the tool produced findings. During
-  analysis, V2 now runs matching input-based configured subprocess tools after
+  result normalization, `findings[].file` values that point at the current
+  input artifact are mapped back to stable workspace-relative `inputFile`
+  logical paths, while raw stdout/stderr remain available as support artifacts.
+  During analysis, V2 now runs matching input-based configured subprocess tools after
   initial manifest/grep evidence and before the first Agent provider request;
   these pre-run tool summaries are included in `analysis_package.json`,
   `agent_request.json`, and the prompt as `preRunToolResults`.

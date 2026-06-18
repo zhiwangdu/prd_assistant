@@ -5703,7 +5703,7 @@ fi
                 "import json,pathlib,sys;"
                 "p=pathlib.Path(sys.argv[1]);"
                 "print(json.dumps({'summary':'bytes='+str(p.stat().st_size),"
-                "'findings':[{'message':p.name}]}))"
+                "'findings':[{'message':p.name,'file':str(p)}]}))"
             )
             tool = ToolDefinition(
                 id="opengemini_storage_analyzer",
@@ -5773,6 +5773,7 @@ fi
             self.assertEqual(payload["result"]["summary"], "bytes=12")
             self.assertEqual(payload["result"]["inputFile"], storage_entry["path"])
             self.assertIn("storage_", payload["result"]["findings"][0]["message"])
+            self.assertEqual(payload["result"]["findings"][0]["file"], storage_entry["path"])
 
     def test_archive_series_directory_tool_input_feeds_storage_analyzer(self) -> None:
         def add_file(archive: tarfile.TarFile, name: str, data: bytes) -> None:
@@ -5786,7 +5787,7 @@ fi
                 "p=pathlib.Path(sys.argv[1]);"
                 "files=sorted(x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file());"
                 "print(json.dumps({'summary':'files='+str(len(files)),"
-                "'findings':[{'message':files[0]}]}))"
+                "'findings':[{'message':files[0],'file':str(p / files[0])}]}))"
             )
             tool = ToolDefinition(
                 id="influxdb_storage_analyzer",
@@ -5862,6 +5863,10 @@ fi
             self.assertEqual(payload["result"]["inputFile"], directory_entry["path"])
             self.assertEqual(payload["result"]["inputKind"], "influxdb_storage_directory")
             self.assertEqual(payload["result"]["findings"][0]["message"], "00/0000")
+            self.assertEqual(
+                payload["result"]["findings"][0]["file"],
+                f"{directory_entry['path']}/00/0000",
+            )
 
     def test_archive_tsi_directory_tool_input_feeds_opengemini_storage_analyzer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5870,7 +5875,7 @@ fi
                 "p=pathlib.Path(sys.argv[1]);"
                 "files=sorted(x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file());"
                 "print(json.dumps({'summary':'files='+str(len(files)),"
-                "'findings':[{'message':files[-1]}]}))"
+                "'findings':[{'message':files[-1],'file':str(p / files[-1])}]}))"
             )
             tool = ToolDefinition(
                 id="opengemini_storage_analyzer",
@@ -5941,6 +5946,10 @@ fi
             self.assertEqual(payload["result"]["inputFile"], directory_entry["path"])
             self.assertEqual(payload["result"]["inputKind"], "opengemini_storage_directory")
             self.assertEqual(payload["result"]["findings"][0]["message"], "part/metaindex.bin")
+            self.assertEqual(
+                payload["result"]["findings"][0]["file"],
+                f"{directory_entry['path']}/part/metaindex.bin",
+            )
 
     def test_tool_runner_falls_back_to_manifest_and_grep_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

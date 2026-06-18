@@ -83,6 +83,8 @@ environment approval -> mock environment evidence -> Agent continuation -> resul
 - Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
 - Tool Runner 配置测试覆盖 `path` 的 `${ENV}` 展开、`path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
 - Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换、compare report 的基础 delta findings，以及 `flux_query_analyzer` 缺少通用 `summary/findings` 时从 `metrics/topQueries/parseErrors` 生成 summary/findings 的 fallback parser。
+- Tool Runner storage analyzer 单测覆盖直接文件和目录输入中的绝对
+  finding `file` 路径规整，确保最终 evidence 使用 `tool_inputs/...` 逻辑路径。
 - Tools API 单测覆盖 `pprof_analyzer` 目录发现、上传复用、`tool_run` task 创建、后台执行、结果 API，以及 `/api/tasks` 不混入工具运行。
 - Remote Executor API 单测覆盖执行机创建、白名单模板列表、`remote_command_run` task 创建、fake ssh 后台执行、result API，以及 `/api/tasks` 不混入 remote command run。
 - pprof parser 单测覆盖 `go tool pprof -top` 文本到结构化 top 函数表的转换。

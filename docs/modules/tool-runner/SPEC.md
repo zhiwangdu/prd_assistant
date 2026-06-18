@@ -137,6 +137,11 @@ evidence ref。
 
 上述字符串字段必须兼容 Rust/V1 parser：JSON number 转成字符串，JSON boolean
 不作为字符串字段。
+V2 configured subprocess 会在写入 `result.json` 前规整 `findings[].file`：
+当工具输出的绝对路径指向当前输入 artifact 时，替换成 `inputFile` 的
+workspace-relative 逻辑路径；当它指向输入目录下的子文件时，替换成
+`<inputFile>/<relative-child>`。不属于当前输入的绝对路径保持原值，原始
+stdout/stderr 仍作为 support artifact 保存。
 
 真实 `influxql-analyzer` 的 Report stdout 会被专门适配：
 
@@ -237,6 +242,9 @@ Huawei package sync 的 `result.json` 至少包含：
   Fetch `response_body.bin` 和 pprof top/tree/raw/stderr/SVG 输出，并保持
   `finalAllowed=false`。
 - JSON stdout 中的 summary/findings 会写入 result artifact；非 JSON stdout 不影响任务成功。
+- Tool findings 中指向当前输入 artifact 的绝对 `file` 路径必须规整为
+  workspace-relative 逻辑路径，避免最终答案 evidence 暴露本机 artifact/tmp
+  路径；原始 stdout/stderr support artifacts 仍保留审计原文。
 - Flux stdout 即使缺少通用 `summary/findings`，也必须能从
   `metrics/topQueries/parseErrors` 生成 summary 和可引用 findings。
 - Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建或复用对应真实工具，并验证 stdout JSON 的 tool id、summary 或关键 finding；InfluxQL smoke 必须同时覆盖普通 Report 和 CompareReport。

@@ -192,7 +192,10 @@ Implemented in this slice:
   `summary/findings`. Task MCP responses retain the V2 nested
   `result/artifact/evidence` shape and add Rust/V1-compatible `artifactPath`,
   `summary`, and `evidenceRefs` top-level aliases; multi-input runs also return
-  `artifactPaths`, and finding outputs expose `finalEvidenceRefs`. Repeated task
+  `artifactPaths`, and finding outputs expose `finalEvidenceRefs`.
+  `findings[].file` values that point at the current input artifact are
+  normalized from local absolute paths back to stable workspace-relative
+  `inputFile` logical paths. Repeated task
   MCP calls for an existing `toolId + actionId` reuse the current run's
   persisted result evidence to keep Agent retries idempotent.
 - Source-built analyzer env vars or runtime `bin/tools` auto-discovery create

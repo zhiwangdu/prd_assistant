@@ -2,6 +2,24 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Tool Finding Path Normalization
+
+- V2 configured subprocess Tool Runner results now normalize
+  `findings[].file` when the tool reports the current input artifact via a
+  local absolute path.
+- Exact input artifact paths are replaced with the stable `inputFile`
+  workspace-relative logical path; child paths under directory inputs become
+  `<inputFile>/<relative-child>`.
+- Raw stdout/stderr remain stored as support artifacts for audit, while final
+  evidence findings avoid leaking local artifact/tmp paths.
+- Added regression coverage for storage analyzer file and directory inputs
+  that emit absolute finding file paths.
+- Updated root, V2 Server, Tool Runner, and Testing README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused storage/tool-runner pytest selection, full
+  `PYTHONPATH=. uv run --extra dev pytest` (137 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Flux Analyzer Stdout Parser
 
 - Added a dedicated V2 Tool Runner parser for `flux_query_analyzer` stdout.

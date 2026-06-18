@@ -33,6 +33,8 @@
 - Server 单测覆盖纯 JSON、JSON 代码围栏、自然语言包裹的唯一 JSON object 和多个 JSON object 拒绝。
 - Server 单测覆盖 Tool Runner 配置校验、规则版多输入文件选择、稳定 action id、fake tool 执行、timeout、dispatcher `RUN_TOOL` 阶段和 artifacts API。
 - Server 单测覆盖真实 `influxql-analyzer` Report stdout 到 Tool Runner summary/findings 的转换、compare report 的基础 delta findings，以及 `flux_query_analyzer` 缺少通用 `summary/findings` 时从 `metrics/topQueries/parseErrors` 生成 summary/findings 的 fallback parser。
+- Server 单测覆盖 storage analyzer 工具输出绝对 `findings[].file` 时，
+  V2 会把当前输入 artifact 及其子路径规整成 `tool_inputs/...` 逻辑路径。
 - Server 单测覆盖 Tools API、`pprof_analyzer` 手动 `tool_run` task、fake `go tool pprof` 执行和 pprof top 文本解析。
 - Server 单测覆盖 Tool Runner 固定 `path` 的 `${ENV}` 展开、`path_env`、`max_input_files` 解析、缺失/空 env 拒绝以及禁用工具不读取 env。
 - Server 单测覆盖 Remote Executor API、执行机创建、白名单模板发现、`remote_command_run` task、fake ssh 执行、result API，以及 `/api/tasks` 不混入 remote command run。
