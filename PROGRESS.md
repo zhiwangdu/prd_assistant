@@ -14,11 +14,15 @@ Last updated: 2026-06-18
 - V2 Tools Workbench now renders the aggregate result with status, input count,
   per-input results, logical artifact paths, params, and raw JSON instead of
   falling back to a plain JSON block.
+- Tool run artifact aggregation now also exposes the bound result artifact under
+  `supportArtifacts` with `role=result` and the Rust/V1 logical
+  `tool_results/<action_id>/result.json` path when that artifact is not already
+  listed as evidence.
 - Updated Server V2 README/SPEC, WebUI README/SPEC, and Tool Runner SPEC for
   the aggregate result contract.
 - Verification passed: targeted `server-v2` pytest for manual configured
-  tool-run aggregation and related configured tool result routes, plus
-  `cd webui && npm run lint`,
+  tool-run aggregation, related configured tool result routes, and pprof
+  artifact support paths, plus `cd webui && npm run lint`,
   `cd webui && npm run typecheck`, and `cd webui && npm run build`.
 
 ## 2026-06-18 WebUI V2 Manual Tool Input Files Guard

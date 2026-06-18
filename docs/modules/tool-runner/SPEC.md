@@ -278,7 +278,10 @@ segment 编码；OBS HEAD `contentLength` 有值时必须是数字。
   多个输入，tool run 必须绑定 Rust/V1-style 聚合 result artifact，而不是只绑定
   第一个单输入 result；聚合 result 使用
   `act_tool_manual_<tool_id>_<run_id>`，包含 `inputFiles`、per-input
-  `results[]`、每个单输入逻辑 `artifactPath` 和 `artifactPaths`。
+  `results[]`、每个单输入逻辑 `artifactPath` 和 `artifactPaths`。绑定到
+  tool_run 的 result artifact 如果未作为 evidence artifact 出现，必须在
+  `/api/v2/tools/runs/:run_id/artifacts` 的 `supportArtifacts` 中以
+  `role=result` 和 `tool_results/<action_id>/result.json` 逻辑路径暴露。
 - 内置 metadata 工具必须出现在工具目录中并标记 `source=built_in` / `backend=builtin` / `readOnly=true` / `editable=false` / `exportable=false` / `runnable=true`，tag 包含 `read-only` / `manual-run`，并支持无上传手动运行；manual tool run 结果必须保留 V2 `value`，并补齐 Rust/V1 `params`、`result`、`durationMs` 和 `createdAt` 包装字段；metadata action id 必须使用 Rust/V1 `act_tool_metadata_<tool_id_sanitized>_<run_id>` 前缀，并按 V1 规则把 `.` 等分隔符归一为 `_`；`logagent.get_metadata_field_types` 的 `paramsTemplate` 必须包含 `retentionPolicy` 和 `field=[]`，`logagent.get_metadata_tag_fields` 的 `minFiles=maxFiles=0`，`paramsTemplate` 必须包含 `retentionPolicy` 且不包含 `field`，结果只包含 Tag 字段。
 - `logagent.fetch` 必须出现在工具目录中并标记 `source=built_in` / `backend=fetch` / `readOnly=false` / `exportable=false` / `editable=false` / `minFiles=maxFiles=0`；tag 必须包含 `manual-run`，`paramsTemplate` 使用 V1 `fetchId` 主形态并包含 `body=null`，`outputViews=["summary","request","response","body_artifact"]`。fetch 关闭时 `runnable=false`，开启时 WebUI Fetch 子页和任务 MCP 可运行。参数必须兼容 `endpointId` 和 V1 `fetchId`，并支持可选 string map `variables`、临时 string map `headers` 和 string `body` override；URL `{name}` 变量替换后必须重新执行 allowlist 校验，临时 headers 必须拒绝受控头。
 - `logagent.list_fetch_endpoints` 在 Fetch 关闭时必须返回错误；开启时必须返回 Rust/V1 `schemaVersion=1`、enabled endpoint summaries、endpoint-level `schemaVersion=2` / `refreshPolicy`、`fetchId`、`urlTemplate`、`credentialVersion`、`lastRunTaskId` 和 `finalEvidenceAllowed=false`。

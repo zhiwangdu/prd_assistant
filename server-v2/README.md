@@ -155,7 +155,8 @@ slice provides the durable foundation for the V2 product model:
   calls, optional Claude MCP config/session artifacts, and tool results.
   Support files that are not themselves evidence, such as configured subprocess
   stdout/stderr, Fetch response bodies, pprof top/tree/raw/SVG output files,
-  and remote environment command result/stdout/stderr files, are returned under
+  tool-run result artifacts not already listed as evidence, and remote
+  environment command result/stdout/stderr files, are returned under
   `supportArtifacts` and are also included in the task MCP `artifact_index`
   with `source="support"`.
 - Metadata foundation with JSON/YAML/CSV/openGemini content import, allowlisted

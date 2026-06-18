@@ -1070,6 +1070,29 @@ class Store:
                 spec["source_evidence_kind"] = item["evidence_kind"]
                 specs.append(spec)
         if run.get("kind") == "tool_run":
+            result_artifact_id = run.get("toolResultArtifactId")
+            if isinstance(result_artifact_id, str) and result_artifact_id:
+                final_answer = run.get("finalAnswer")
+                action_id = (
+                    final_answer.get("actionId")
+                    if isinstance(final_answer, dict)
+                    and isinstance(final_answer.get("actionId"), str)
+                    else None
+                )
+                specs.append(
+                    {
+                        "artifact_id": result_artifact_id,
+                        "role": "result",
+                        "logical_path": (
+                            f"tool_results/{action_id}/result.json"
+                            if action_id
+                            else "tool_results/result.json"
+                        ),
+                        "action_id": action_id,
+                        "source_evidence_id": None,
+                        "source_evidence_kind": "tool_run_result",
+                    }
+                )
             for spec in artifact_support_specs(run.get("finalAnswer")):
                 spec["source_evidence_id"] = None
                 spec["source_evidence_kind"] = "tool_run_result"

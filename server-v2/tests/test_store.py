@@ -7205,6 +7205,10 @@ fi
                     f"/api/v2/tools/runs/{run_id}/result",
                     headers={"Authorization": "Bearer test"},
                 )
+                artifacts = client.get(
+                    f"/api/v2/tools/runs/{run_id}/artifacts",
+                    headers={"Authorization": "Bearer test"},
+                )
 
             self.assertEqual(result.status_code, 200)
             body = result.json()
@@ -7234,6 +7238,16 @@ fi
                 store.get_run(run_id)["toolResultArtifactId"],
                 executed["artifact"]["id"],
             )
+            self.assertEqual(artifacts.status_code, 200)
+            support_by_id = {
+                item["artifact_id"]: item for item in artifacts.json()["supportArtifacts"]
+            }
+            self.assertIn(executed["artifact"]["id"], support_by_id)
+            self.assertEqual(
+                support_by_id[executed["artifact"]["id"]]["logical_path"],
+                f"tool_results/{aggregate['actionId']}/result.json",
+            )
+            self.assertEqual(support_by_id[executed["artifact"]["id"]]["role"], "result")
 
     def test_task_mcp_runs_configured_tool_with_params_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
