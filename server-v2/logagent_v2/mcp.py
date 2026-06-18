@@ -18,6 +18,7 @@ from .fetch import call_fetch_tool, fetch_tool_descriptors
 from .metadata import (
     call_metadata_tool,
     call_task_metadata_tool,
+    metadata_context_outline,
     metadata_tool_descriptors,
     task_metadata_tool_descriptors,
 )
@@ -375,7 +376,7 @@ def task_resources(run: dict) -> list[dict]:
         ("manifest", "Initial manifest", "application/json"),
         ("grep_results", "Initial grep results", "application/json"),
         ("system_context", "System Context snapshot", "application/json"),
-        ("metadata_context", "Metadata Context snapshot", "application/json"),
+        ("metadata_context", "Metadata Context outline", "application/json"),
         (
             "environment_evidence",
             "Latest approved environment evidence",
@@ -452,7 +453,8 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
     elif name == "system_context":
         value = read_latest_evidence_artifact(settings, store, run["id"], "system_context")
     elif name == "metadata_context":
-        value = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
+        context = read_latest_evidence_artifact(settings, store, run["id"], "metadata_context")
+        value = metadata_context_outline(store, context)
     elif name == "environment_evidence":
         value = read_latest_evidence_artifact(settings, store, run["id"], "environment_evidence")
     elif name == "analysis_package":

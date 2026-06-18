@@ -171,7 +171,9 @@ Implemented in this slice:
   `result_markdown` resources. The `summary` resource includes Rust/V1
   compatible top-level fields (`taskId`, `sessionId`, `analysisMode`,
   `analysisLanguage`, `question`, `sourceUrl`, `nodeId`, `uploadIds`) while
-  preserving V2 `run` and `workspace` objects.
+  preserving V2 `run` and `workspace` objects. The `metadata_context` resource
+  returns `metadata_context_outline` rather than the full
+  `metadata_context.json` artifact.
 - Task MCP `logagent.search_logs`, which accepts V1-compatible optional
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
   returns stable `log_searches/<search_id>.json#matches/<index>` refs. Initial
@@ -1267,18 +1269,20 @@ section-specific filters and `limit`/`cursor`. Task MCP Metadata calls write
 results as `metadata_slice` evidence with `final_allowed=false`; Metadata is
 background context and cannot be cited by final answers as root-cause evidence.
 
-Run startup writes `metadata_context.json` as background evidence and exposes it
-through task MCP resource `logagent://task/<run_id>/metadata_context`, with
-`logagent-v2://run/<run_id>/metadata_context` retained as an alias. The
-context has schema version 1, a selection summary, and bounded
+Run startup writes `metadata_context.json` as background evidence. Task MCP
+resource `logagent://task/<run_id>/metadata_context`, with
+`logagent-v2://run/<run_id>/metadata_context` retained as an alias, returns
+`metadata_context_outline` instead of the full artifact. The outline has schema
+version 1, a selection summary, section counts, query hints, and bounded
 `metadata_instance` resources. If exactly one instance exists, V2 includes it as
 `default_single`; if multiple exist, V2 scores instance id, remark, product,
 environment, cluster, node, database, retention policy, measurement, and field
 names against the Workspace question and mode. Selected resources include only
-bounded topology/schema outlines; full snapshots remain behind
-`logagent.get_metadata_snapshot` and detailed field/tag queries remain behind
-their dedicated tools. The context artifact and all metadata slices use
-`final_allowed=false`.
+bounded topology/schema outlines. The full `metadata_context.json` artifact
+remains available through run artifact APIs for WebUI/compatibility; full
+snapshots remain behind `logagent.get_metadata_snapshot`, and detailed field/tag
+queries remain behind their dedicated tools. The context artifact and all
+metadata slices use `final_allowed=false`.
 
 ## Case Memory
 

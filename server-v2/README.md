@@ -989,6 +989,10 @@ It currently supports:
     `sessionId`, `analysisMode`, `analysisLanguage`, `question`, `sourceUrl`,
     `nodeId`, and `uploadIds`, and also keeps the V2 nested `run` and
     `workspace` objects.
+  - `metadata_context` returns the bounded
+    `metadata_context_outline` resource, not the full
+    `metadata_context.json` artifact; detailed metadata must be read through
+    `logagent.query_metadata` or field/tag metadata tools.
 - `tools/list`
 - `tools/call logagent.search_logs` with V1-compatible optional `maxMatches`
   clamped to 1..200; responses keep the nested V2 `search` object and expose
@@ -1461,11 +1465,13 @@ When a run starts, V2 also writes `metadata_context.json` as background
 evidence. If exactly one metadata instance exists, it is selected as
 `default_single`; with multiple instances, V2 scores instance id, remark,
 cluster, node, database, retention policy, measurement, and field names against
-the Workspace question/mode and includes up to three matched outlines. The
-outline is bounded to node/database/schema summaries and is exposed through task
-MCP resource `logagent://task/<run_id>/metadata_context`; the
-`logagent-v2://run/<run_id>/metadata_context` alias is retained. Full snapshots
-and field details remain available through the Metadata MCP tools.
+the Workspace question/mode and includes up to three matched outlines. Task MCP
+resource `logagent://task/<run_id>/metadata_context` returns the same bounded
+`metadata_context_outline` used by `analysis_package.json`; the
+`logagent-v2://run/<run_id>/metadata_context` alias is retained. The full
+`metadata_context.json` artifact remains available through run artifact APIs for
+WebUI/compatibility, while detailed snapshot and field data remain available
+through Metadata MCP tools.
 
 ## Case Memory
 

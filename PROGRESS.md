@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata Context Resource Parity
+
+- Aligned V2 task MCP `metadata_context` resource with Rust/V1 behavior: the
+  resource now returns `metadata_context_outline` instead of the full
+  `metadata_context.json` artifact.
+- Kept full `metadata_context.json` available through run artifact APIs for
+  WebUI and compatibility, while Agent-facing details continue to flow through
+  bounded `logagent.query_metadata` / field / tag metadata tools.
+- Updated task MCP regression coverage and V2 Server docs.
+- Verification passed: focused Metadata task MCP pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 162 passed and
+  1 Starlette warning, and `cd server-v2 && PYTHONPATH=. uv run --extra dev
+  ruff check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Domain Adapter Registry Parity
 
 - Aligned V2 Domain Adapter summaries with Rust/V1

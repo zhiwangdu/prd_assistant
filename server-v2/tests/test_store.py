@@ -11863,6 +11863,9 @@ fi
             )
             context = json.loads(context_response["result"]["contents"][0]["text"])
             self.assertEqual(context["schemaVersion"], 1)
+            self.assertEqual(context["kind"], "metadata_context_outline")
+            self.assertEqual(context["metadataContextPath"], "metadata_context.json")
+            self.assertFalse(context["fullContextInPackage"])
             self.assertEqual(context["selection"]["totalInstances"], 2)
             self.assertEqual(context["resources"][0]["instanceId"], "prod-og")
             self.assertEqual(context["resources"][0]["selectionReason"], "auto")
@@ -11870,10 +11873,18 @@ fi
             self.assertNotIn(
                 "backup-og", {item["instanceId"] for item in context["resources"]}
             )
-            database = context["resources"][0]["cluster"]["databases"][0]
-            self.assertEqual(database["name"], "metrics")
-            measurement = database["retentionPolicies"][0]["measurements"][0]
-            self.assertEqual(measurement["name"], "cpu")
+            self.assertEqual(context["counts"]["databases"], 1)
+            self.assertEqual(context["counts"]["measurements"], 1)
+            self.assertEqual(
+                context["sections"]["measurements"]["query"]["tool"],
+                "logagent.query_metadata",
+            )
+            self.assertEqual(
+                context["fullContextAccess"]["tool"],
+                "logagent.query_metadata",
+            )
+            self.assertNotIn("rawSnapshot", context["resources"][0])
+            self.assertNotIn("snapshot", context["resources"][0])
 
             evidence = store.list_evidence(run["id"])
             metadata_contexts = [
@@ -11908,6 +11919,7 @@ fi
             self.assertEqual(bound_context["selection"]["mode"], "session_binding")
             self.assertEqual(bound_context["selection"]["boundInstanceId"], "backup-og")
             self.assertEqual(bound_context["selection"]["boundNodeId"], "backup-og:data-2")
+            self.assertEqual(bound_context["kind"], "metadata_context_outline")
             self.assertEqual(bound_context["resources"][0]["instanceId"], "backup-og")
             self.assertEqual(
                 bound_context["resources"][0]["selectionReason"],
