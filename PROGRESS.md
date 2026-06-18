@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata Tool Action ID Parity
+
+- Aligned V2 manual metadata tool action ids with Rust/V1:
+  `act_tool_metadata_<tool_id_sanitized>_<run_id>`.
+- Updated V2 action suffix normalization to match Rust/V1 ASCII rules, so
+  dots and other separators in tool ids are normalized to `_` in generated
+  action ids and related filenames.
+- Added regression assertions for metadata instance-list and snapshot manual
+  tool runs, including the generated result artifact filename.
+- Updated V2 Server and Tool Runner docs.
+- Verification passed: focused metadata manual tool pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Tools Zip Configured Tool Absolute Examples
 
 - Updated generic configured tool examples in `tools.zip` to use absolute

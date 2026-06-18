@@ -1109,7 +1109,9 @@ Metadata built-in descriptors use the Rust/V1 catalog shape with
 `backend=builtin`, `read-only` / `manual-run` tags, and field/tag params
 templates that include `retentionPolicy` where supported. Manual metadata
 tool results preserve the V2 `value` field and also expose Rust/V1-compatible
-`params`, `result`, `durationMs`, and `createdAt` fields.
+`params`, `result`, `durationMs`, and `createdAt` fields. Their action ids use
+the Rust/V1 `act_tool_metadata_<tool_id_sanitized>_<run_id>` prefix with
+non-ASCII, dots, and other separators normalized to `_`.
 Manual tool run creation validates both upload count and uploaded filenames
 against the selected descriptor's `acceptedSuffixes`; `params.inputFiles` can
 still select existing workspace inputs without attaching uploads.

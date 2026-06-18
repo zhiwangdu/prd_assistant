@@ -6244,6 +6244,15 @@ fi
             self.assertEqual(finished["toolResultArtifactId"], executed["artifact"]["id"])
             result_path = resolve_artifact_path(settings, executed["artifact"]["relative_path"])
             result = json.loads(result_path.read_text(encoding="utf-8"))
+            expected_action_id = (
+                f"act_tool_metadata_logagent_list_metadata_instances_{tool_run['id']}"
+            )
+            self.assertEqual(result["actionId"], expected_action_id)
+            self.assertTrue(
+                executed["artifact"]["relative_path"].endswith(
+                    f"/{expected_action_id}_result.json"
+                )
+            )
             self.assertEqual(result["params"], {})
             self.assertEqual(result["result"]["instances"][0]["instanceId"], "inst-manual")
             self.assertEqual(result["value"]["instances"][0]["instanceId"], "inst-manual")
@@ -6262,6 +6271,10 @@ fi
                 settings, executed_snapshot["artifact"]["relative_path"]
             )
             snapshot_result = json.loads(snapshot_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                snapshot_result["actionId"],
+                f"act_tool_metadata_logagent_get_metadata_snapshot_{snapshot_run['id']}",
+            )
             self.assertEqual(
                 snapshot_result["result"]["snapshot"]["instance"]["instanceId"],
                 "inst-manual",

@@ -837,7 +837,9 @@ The migrated built-ins are:
   using Rust/V1 `backend=builtin`, `read-only` / `manual-run` tags, params
   templates with `retentionPolicy` where supported, and manual result wrappers
   containing `params`, `result`, `durationMs`, and `createdAt` while preserving
-  the V2 `value` field;
+  the V2 `value` field; metadata action ids use
+  `act_tool_metadata_<tool_id_sanitized>_<run_id>` with Rust/V1 suffix
+  normalization;
 - `logagent.preprocess_log_package`, whose descriptor advertises rotated log
   normalization and `outputViews=["summary","nodes","log_groups","tool_inputs","warnings"]`;
   results include V1-style `nodes` aggregation, `manifestPath`,

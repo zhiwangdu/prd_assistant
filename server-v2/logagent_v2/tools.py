@@ -1655,7 +1655,10 @@ def tool_action_id(tool: ToolDefinition, input_entry: JsonObject | None, params:
 
 
 def safe_action_segment(value: str) -> str:
-    result = "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
+    result = "".join(
+        char if (char.isascii() and char.isalnum()) or char in "_-" else "_"
+        for char in value
+    )
     return result[:80] or "tool"
 
 
@@ -1858,7 +1861,7 @@ def run_metadata_tool(
         v1_result = {"result": value}
     else:
         raise ValueError(f"unsupported metadata tool {tool_id}")
-    action_id = f"act_tool_{safe_action_segment(tool_id)}_{run['id']}"
+    action_id = f"act_tool_metadata_{safe_action_segment(tool_id)}_{run['id']}"
     result = {
         "schemaVersion": 1,
         "toolId": tool_id,
