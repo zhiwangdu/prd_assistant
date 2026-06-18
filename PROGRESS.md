@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Grep Match Limit Default Parity
+
+- Aligned V2 `max_grep_matches` / `LOGAGENT_V2_MAX_GREP_MATCHES` default with
+  Rust/V1 `log_analyzer.max_matches=200`.
+- Extended Settings regression coverage to assert both the default and the
+  environment override behavior.
+- Updated V2 Server, Log Analyzer, and Config docs.
+- Verification passed: focused Settings pytest selection,
+  `cd server-v2 && uv run --extra dev ruff check logagent_v2 tests`, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Configured Grep Keyword Parity
 
 - Added `Settings.grep_keywords` and `LOGAGENT_V2_GREP_KEYWORDS` for

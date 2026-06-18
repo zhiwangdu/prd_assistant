@@ -4635,8 +4635,9 @@ class StoreTests(unittest.TestCase):
                     os.environ["LOGAGENT_V2_CODE_WORKTREE_ROOT"] = previous_value
 
     def test_settings_grep_keywords_env_defaults_to_v1_keywords(self) -> None:
+        defaults = Settings(data_dir=Path("/tmp/logagent-v2-test"), api_key="test")
         self.assertEqual(
-            Settings(data_dir=Path("/tmp/logagent-v2-test"), api_key="test").grep_keywords,
+            defaults.grep_keywords,
             (
                 "error",
                 "exception",
@@ -4650,8 +4651,10 @@ class StoreTests(unittest.TestCase):
                 "verify",
             ),
         )
+        self.assertEqual(defaults.max_grep_matches, 200)
         env_values = {
             "LOGAGENT_V2_GREP_KEYWORDS": "error,select, slow query ",
+            "LOGAGENT_V2_MAX_GREP_MATCHES": "321",
         }
         previous = {key: os.environ.get(key) for key in env_values}
         try:
@@ -4664,6 +4667,7 @@ class StoreTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
         self.assertEqual(settings.grep_keywords, ("error", "select", "slow query"))
+        self.assertEqual(settings.max_grep_matches, 321)
 
     def test_settings_rejects_enabled_fetch_without_allowlist(self) -> None:
         env_values = {

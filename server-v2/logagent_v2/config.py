@@ -404,7 +404,7 @@ class Settings:
     max_archive_files: int = 2000
     max_archive_bytes: int = 256 * 1024 * 1024
     max_text_file_bytes: int = 16 * 1024 * 1024
-    max_grep_matches: int = 500
+    max_grep_matches: int = 200
     grep_keywords: tuple[str, ...] = DEFAULT_GREP_KEYWORDS
     max_concurrent_jobs: int = 2
     job_poll_seconds: float = 1.0
@@ -511,7 +511,7 @@ class Settings:
         max_text_file_bytes = int(
             os.environ.get("LOGAGENT_V2_MAX_TEXT_FILE_BYTES", str(16 * 1024 * 1024))
         )
-        max_grep_matches = int(os.environ.get("LOGAGENT_V2_MAX_GREP_MATCHES", "500"))
+        max_grep_matches = int(os.environ.get("LOGAGENT_V2_MAX_GREP_MATCHES", "200"))
         grep_keywords = parse_csv_env(
             os.environ.get("LOGAGENT_V2_GREP_KEYWORDS"),
             default=DEFAULT_GREP_KEYWORDS,

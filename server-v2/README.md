@@ -304,7 +304,7 @@ Environment variables:
 | `LOGAGENT_V2_MAX_ARCHIVE_FILES` | `2000` | Maximum files scanned per archive |
 | `LOGAGENT_V2_MAX_ARCHIVE_BYTES` | `268435456` | Maximum aggregate extracted text bytes |
 | `LOGAGENT_V2_MAX_TEXT_FILE_BYTES` | `16777216` | Maximum single text file size |
-| `LOGAGENT_V2_MAX_GREP_MATCHES` | `500` | Maximum initial grep matches |
+| `LOGAGENT_V2_MAX_GREP_MATCHES` | `200` | Maximum initial grep matches, aligned with Rust/V1 defaults |
 | `LOGAGENT_V2_GREP_KEYWORDS` | `error,exception,timeout,fail,failed,panic,fatal,refused,denied,verify` | Comma-separated initial grep keywords, aligned with Rust/V1 defaults |
 | `LOGAGENT_V2_MAX_CONCURRENT_JOBS` | `2` | Inline worker concurrency; non-positive values clamp to 1 |
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
