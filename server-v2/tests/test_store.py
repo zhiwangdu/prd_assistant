@@ -5897,16 +5897,32 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(source_built["flux_query_analyzer"]["registered"])
             self.assertTrue(source_built["flux_query_analyzer"]["enabled"])
             self.assertTrue(source_built["flux_query_analyzer"]["runnable"])
+            self.assertEqual(
+                source_built["flux_query_analyzer"]["commandPath"],
+                sys.executable,
+            )
+            self.assertTrue(source_built["flux_query_analyzer"]["commandExists"])
+            self.assertTrue(source_built["flux_query_analyzer"]["commandExecutable"])
+            self.assertIsNone(source_built["flux_query_analyzer"]["statusReason"])
             self.assertEqual(source_built["flux_query_analyzer"]["timeoutSeconds"], 30)
             self.assertEqual(source_built["flux_query_analyzer"]["maxInputFiles"], 3)
             self.assertEqual(source_built["influxql_analyzer"]["status"], "disabled")
             self.assertTrue(source_built["influxql_analyzer"]["registered"])
             self.assertFalse(source_built["influxql_analyzer"]["enabled"])
+            self.assertEqual(source_built["influxql_analyzer"]["statusReason"], "disabled")
             self.assertEqual(
                 source_built["opengemini_storage_analyzer"]["status"],
                 "missing",
             )
             self.assertFalse(source_built["opengemini_storage_analyzer"]["registered"])
+            self.assertEqual(
+                source_built["opengemini_storage_analyzer"]["statusReason"],
+                "not_registered",
+            )
+            self.assertFalse(source_built["opengemini_storage_analyzer"]["commandExists"])
+            self.assertFalse(
+                source_built["opengemini_storage_analyzer"]["commandExecutable"]
+            )
             self.assertIsNone(source_built["opengemini_storage_analyzer"]["timeoutSeconds"])
             settings.ensure_dirs()
             Store(settings.sqlite_path).initialize()
@@ -6260,6 +6276,62 @@ class StoreTests(unittest.TestCase):
                 ),
                 {},
             )
+
+    def test_unavailable_source_built_analyzer_is_not_advertised_to_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_command = Path(tmp) / "missing-flux-query-analyzer"
+            flux_tool = ToolDefinition(
+                id="flux_query_analyzer",
+                display_name="Flux Query Analyzer",
+                command=missing_command.as_posix(),
+                timeout_seconds=30,
+                max_input_files=3,
+            )
+            influxql_tool = ToolDefinition(
+                id="influxql_analyzer",
+                display_name="InfluxQL Analyzer",
+                command=sys.executable,
+                args=("-c", "print('ok')"),
+                timeout_seconds=30,
+                max_input_files=3,
+            )
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                tools=(flux_tool, influxql_tool),
+            )
+
+            descriptors = {item["toolId"]: item for item in tool_descriptors(settings)}
+            self.assertFalse(descriptors["flux_query_analyzer"]["runnable"])
+            self.assertFalse(descriptors["flux_query_analyzer"]["exportable"])
+            self.assertEqual(
+                descriptors["flux_query_analyzer"]["commandState"]["reason"],
+                "command_file_not_found",
+            )
+
+            catalog = tools_module.tool_catalog(settings)
+            source_built = {
+                item["toolId"]: item for item in catalog["sourceBuiltAnalyzers"]
+            }
+            self.assertEqual(source_built["flux_query_analyzer"]["status"], "unavailable")
+            self.assertEqual(
+                source_built["flux_query_analyzer"]["statusReason"],
+                "command_file_not_found",
+            )
+            self.assertTrue(source_built["flux_query_analyzer"]["registered"])
+            self.assertTrue(source_built["flux_query_analyzer"]["enabled"])
+            self.assertFalse(source_built["flux_query_analyzer"]["runnable"])
+            self.assertFalse(source_built["flux_query_analyzer"]["commandExists"])
+            self.assertFalse(source_built["flux_query_analyzer"]["commandExecutable"])
+
+            domain_tool = next(
+                item
+                for item in agent_available_tools(settings)
+                if item["name"] == "logagent.run_domain_tool"
+            )
+            tool_enum = domain_tool["inputSchema"]["properties"]["toolId"]["enum"]
+            self.assertNotIn("flux_query_analyzer", tool_enum)
+            self.assertIn("influxql_analyzer", tool_enum)
 
     def test_tool_run_route_rejects_upload_suffix_mismatch(self) -> None:
         from fastapi.testclient import TestClient

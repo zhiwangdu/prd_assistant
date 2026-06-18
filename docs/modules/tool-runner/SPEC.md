@@ -74,7 +74,8 @@ Server 还提供只读工具目录和工具包导出：
 - 工具路径，来自固定 `path` 或 `path_env` 环境变量；固定 `path` 可使用 `${ENV}` 占位符
 - 构建 source-built analyzers 时的 submodule clone URL override，来自 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；这些变量只影响本地 Git submodule 初始化，不进入 Server 运行时工具白名单，也不能改写顶层仓库 `origin`
 - 工具 catalog `sourceBuiltAnalyzers` 固定报告四个 source-built analyzer ID
-  的 registered/enabled/runnable/status 状态，作为部署观测字段，不作为执行入口。
+  的 registered/enabled/runnable/status、命令存在性、可执行性和不可用原因，
+  作为部署观测字段，不作为执行入口。
 - `max_input_files`，单个工具在同一任务中最多自动选择的输入文件数量，默认 1
 - 日志片段、查询文本或 manifest 文件
 - 可选显式输入选择：V2 task MCP top-level `inputFile`、`params.inputFiles` 或手动 tool_run `params.inputFiles`。这些路径必须是 workspace-relative，只能解析到当前 Workspace 的 manifest 文本路径、对应 `extracted/...` 虚拟路径或当前 run 的 `tool_inputs/...` entry，不能是任意本地路径。
@@ -281,7 +282,7 @@ segment 编码；OBS HEAD `contentLength` 有值时必须是数字。
 - 任务 MCP `logagent.fetch` 必须按规范化参数生成稳定 `act_fetch_<digest>` action id；同一任务中重复相同参数必须返回相同逻辑 `tool_results/<action_id>/result.json#response` 引用，排队的 API/手动 Fetch `tool_run` 必须使用 Rust/V1 `act_fetch_<run_id>` action id。task MCP 响应必须保留 V2 `result/artifact/evidence`，并补齐 Rust/V1 顶层 `artifactPath`、`statusCode`、`httpOk`、`bodyPreview` 和 `evidenceRefs`。Fetch result 必须使用 Rust/V1 `schemaVersion=3` tool result envelope，包含 `exitCode=null`、`command=[]`、`inputFile=null`、空 `stdoutPath` / `stderrPath`、`findings=[]`、`evidenceRefs=["tool_results/<action_id>/result.json#response"]`，并包含 redacted request、status code、duration、redacted response headers、body preview、body artifact path、truncated 标记、credential version 和 `httpOk`；HTTP 4xx/5xx 不导致 task failed。
 - `logagent.huawei_cloud_package_sync` 必须出现在工具目录中并标记 `source=built_in` / `backend=huawei_cloud_package_sync` / `exportable=false` / `editable=false` / `minFiles=maxFiles=1` / `acceptedSuffixes=["*"]` / `outputViews=["summary","obs","gaussdb","json"]`，display name 为 `Huawei OBS + GaussDB Package Sync`，tag 包含 `huawei-cloud`；配置关闭时 `runnable=false`，开启时 WebUI Tool plugins 可手动运行。
 - Huawei package sync 必须只接受一个已完成 upload，生成安全 OBS object key，流式上传包，不把密钥或原始 SQL 写入 artifact；OBS/GaussDB 失败必须写入 `status=FAILED`、`failedStep` 和 `error`。
-- Configured command tools 必须在 enabled 时 `runnable=true`，通过 `paramsTemplate.inputFiles` 显式输入或按 match rules 自动选择 `extracted/...` 文件，不允许用户传入任意 argv。
+- Configured command tools 必须在 enabled 且命令文件存在并可执行时 `runnable=true`，否则 descriptor 保留配置但标记为不可运行；任务 MCP 和 Agent provider 只广告当前 `runnable=true` 的 configured subprocess tools。工具通过 `paramsTemplate.inputFiles` 显式输入或按 match rules 自动选择 `extracted/...` 文件，不允许用户传入任意 argv。
 - Configured command tools 的 `paramsTemplate.inputFiles` 可显式输入 manifest 文本路径、`extracted/...` 或 `tool_inputs/...` workspace 相对路径；V2 WebUI 手动 `tool_run` 在 Params JSON 提供有效 `inputFiles` 时不得强制新上传文件；V2 task MCP 和 OpenAI-compatible / binary Agent provider prompt 都必须兼容 V1 `tool` + `inputFile` 调用形态，并在工具 input schema 中广告该兼容形态。
 - 规则版 action 选择必须先使用 `tool_inputs/index.json` 中匹配 toolId 的 materialized inputs；如果存在匹配项，不得再补充 manifest 或 grep 候选。同一工具最多生成 `max_input_files` 个 action。只有没有匹配 materialized input 时，才按 manifest file pattern 优先、grep keyword 补充候选。
 - V2 自动 `RUN_TOOL` 阶段必须在初始 evidence 生成之后、首轮 Agent provider 请求之前运行命中的 input-based configured subprocess 工具；未命中时跳过，命中时必须把 finding refs 注入 `analysis_package.allowedEvidenceRefs` 和 `agent_request.allowedEvidenceRefs`。

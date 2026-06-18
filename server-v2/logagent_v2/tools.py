@@ -65,36 +65,74 @@ MAX_HUAWEI_QUERY_ROWS = 200
 
 def tool_descriptors(settings: Settings) -> list[JsonObject]:
     descriptors = [
-        {
-            "toolId": tool.id,
-            "displayName": tool.display_name,
-            "description": (
-                f"Configured Tool Runner command with up to {tool.max_input_files} input file(s)."
-            ),
-            "source": "configured",
-            "tags": ["configured", "manual-run", "tool-runner", "external"],
-            "enabled": tool.enabled,
-            "backend": "command",
-            "readOnly": False,
-            "editable": True,
-            "exportable": tool.enabled,
-            "runnable": tool.enabled,
-            "minFiles": 1,
-            "maxFiles": tool.max_input_files,
-            "maxInputFiles": tool.max_input_files,
-            "match": {
-                "filePatterns": list(tool.match_file_patterns),
-                "keywords": list(tool.match_keywords),
-            },
-            "acceptedSuffixes": list(tool.match_file_patterns),
-            "paramsSchema": configured_tool_params_schema(tool),
-            "paramsTemplate": configured_tool_params_template(tool),
-            "outputViews": ["summary", "findings", "stdout", "stderr"],
-        }
+        configured_tool_descriptor(tool)
         for tool in settings.tools
     ]
     descriptors.extend(built_in_tool_descriptors(settings))
     return descriptors
+
+
+def configured_tool_descriptor(tool: ToolDefinition) -> JsonObject:
+    command_state = command_file_state(tool.command)
+    runnable = bool(tool.enabled and command_state["executable"])
+    return {
+        "toolId": tool.id,
+        "displayName": tool.display_name,
+        "description": (
+            f"Configured Tool Runner command with up to {tool.max_input_files} input file(s)."
+        ),
+        "source": "configured",
+        "tags": ["configured", "manual-run", "tool-runner", "external"],
+        "enabled": tool.enabled,
+        "backend": "command",
+        "readOnly": False,
+        "editable": True,
+        "exportable": runnable,
+        "runnable": runnable,
+        "commandState": command_state,
+        "minFiles": 1,
+        "maxFiles": tool.max_input_files,
+        "maxInputFiles": tool.max_input_files,
+        "match": {
+            "filePatterns": list(tool.match_file_patterns),
+            "keywords": list(tool.match_keywords),
+        },
+        "acceptedSuffixes": list(tool.match_file_patterns),
+        "paramsSchema": configured_tool_params_schema(tool),
+        "paramsTemplate": configured_tool_params_template(tool),
+        "outputViews": ["summary", "findings", "stdout", "stderr"],
+    }
+
+
+def command_file_state(command: str) -> JsonObject:
+    normalized = command.strip()
+    if not normalized:
+        return {
+            "path": command,
+            "absolute": False,
+            "exists": False,
+            "executable": False,
+            "reason": "command_missing",
+        }
+
+    path = Path(normalized)
+    absolute = path.is_absolute()
+    exists = bool(absolute and path.is_file())
+    executable = bool(exists and os.access(path, os.X_OK))
+    reason = None
+    if not absolute:
+        reason = "command_not_absolute"
+    elif not exists:
+        reason = "command_file_not_found"
+    elif not executable:
+        reason = "command_not_executable"
+    return {
+        "path": normalized,
+        "absolute": absolute,
+        "exists": exists,
+        "executable": executable,
+        "reason": reason,
+    }
 
 
 def tool_catalog(settings: Settings) -> JsonObject:
@@ -139,12 +177,19 @@ def source_built_analyzer_summaries(
         configured = configured_by_id.get(tool_id)
         enabled = bool(descriptor.get("enabled")) if descriptor else False
         runnable = bool(descriptor.get("runnable")) if descriptor else False
+        command_state = command_file_state(configured.command) if configured else None
         if configured is None:
             status = "missing"
+            status_reason = "not_registered"
         elif not configured.enabled:
             status = "disabled"
+            status_reason = "disabled"
+        elif command_state and not command_state["executable"]:
+            status = "unavailable"
+            status_reason = command_state.get("reason") or "command_unavailable"
         else:
             status = "registered"
+            status_reason = None
         summaries.append(
             {
                 "toolId": tool_id,
@@ -153,6 +198,14 @@ def source_built_analyzer_summaries(
                 "enabled": enabled,
                 "runnable": runnable,
                 "status": status,
+                "statusReason": status_reason,
+                "commandPath": configured.command if configured is not None else None,
+                "commandExists": (
+                    bool(command_state["exists"]) if command_state is not None else False
+                ),
+                "commandExecutable": (
+                    bool(command_state["executable"]) if command_state is not None else False
+                ),
                 "timeoutSeconds": (
                     find_configured_tool_timeout(settings, tool_id)
                     if configured is not None

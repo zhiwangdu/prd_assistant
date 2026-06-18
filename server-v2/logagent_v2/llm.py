@@ -1241,7 +1241,10 @@ def agent_domain_tool_ids(settings: Settings) -> list[str]:
     return [
         tool["toolId"]
         for tool in tool_descriptors(settings)
-        if tool["enabled"] and tool.get("source") == "configured" and not tool.get("manualOnly")
+        if tool["enabled"]
+        and tool.get("runnable")
+        and tool.get("source") == "configured"
+        and not tool.get("manualOnly")
     ]
 
 

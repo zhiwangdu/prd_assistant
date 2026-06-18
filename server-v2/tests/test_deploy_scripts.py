@@ -114,7 +114,7 @@ case "$target" in
       exit 12
     }
     cat <<'JSON'
-{"sourceBuiltAnalyzers":[{"toolId":"flux_query_analyzer","status":"registered","enabled":true,"runnable":true},{"toolId":"influxdb_storage_analyzer","status":"missing","enabled":false,"runnable":false}]}
+{"sourceBuiltAnalyzers":[{"toolId":"flux_query_analyzer","status":"registered","enabled":true,"runnable":true,"commandExists":true,"commandExecutable":true},{"toolId":"influxdb_storage_analyzer","status":"unavailable","statusReason":"command_file_not_found","enabled":true,"runnable":false,"commandExists":false,"commandExecutable":false}]}
 JSON
     ;;
   *)
@@ -141,11 +141,14 @@ esac
             self.assertIn('"status":"ok"', result.stdout)
             self.assertIn("Analyzer tools:", result.stdout)
             self.assertIn(
-                "flux_query_analyzer: status=registered, enabled=true, runnable=true",
+                "flux_query_analyzer: status=registered, enabled=true, runnable=true, "
+                "commandExists=true, commandExecutable=true",
                 result.stdout,
             )
             self.assertIn(
-                "influxdb_storage_analyzer: status=missing, enabled=false, runnable=false",
+                "influxdb_storage_analyzer: status=unavailable, enabled=true, "
+                "runnable=false, commandExists=false, commandExecutable=false, "
+                "reason=command_file_not_found",
                 result.stdout,
             )
 

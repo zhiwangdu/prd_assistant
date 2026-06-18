@@ -165,8 +165,9 @@ tools:
   执行，也支持 `--only <name>` 单独验证一个 analyzer。
 - Python V2 共享工具目录返回 `sourceBuiltAnalyzers`，固定列出
   Flux/InfluxQL/openGemini/InfluxDB 四个 source-built analyzer ID 的
-  `registered`、`enabled`、`runnable` 和 `status`，用于部署后确认 submodule
-  工具是否被当前进程识别；该字段不提供额外执行入口。
+  `registered`、`enabled`、`runnable`、`status`、`commandExists`、
+  `commandExecutable` 和 `statusReason`，用于部署后确认 submodule 工具是否
+  被当前进程识别且真实可执行；该字段不提供额外执行入口。
 - 四个源码 submodule 的 Go module、CI/build image 或开发说明已统一到 Go 1.26；构建 source-built analyzers 的环境需要提供 Go 1.26 或可自动下载 Go 1.26 toolchain。
 - 内网镜像环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 统一指定仓库 namespace，或通过 `LOGAGENT_SUBMODULE_INFLUXQL_URL`、`LOGAGENT_SUBMODULE_FLUX_URL`、`LOGAGENT_SUBMODULE_OPENGEMINI_URL`、`LOGAGENT_SUBMODULE_INFLUXDB_URL` 分别指定 clone URL。`scripts/build-tools.sh` 会先调用 `scripts/configure-tool-submodules.sh` 写入本地 Git submodule config，再按需初始化 submodule；不会修改提交中的 `.gitmodules`，也不会改写顶层仓库 `origin`。只有 submodule 已经是独立初始化的 Git worktree 时，脚本才会同步更新该 submodule 自身的 `origin`。
 - Server 已新增 Tools API 和 `tool_run` task，用于用户在 WebUI 手动运行工具。创建手动 tool run 时会校验上传数量和上传文件名是否匹配工具 descriptor 的 `acceptedSuffixes`；通过 `params.inputFiles` 显式复用已有 Workspace 输入时可不附带新上传。V2 create/list/get tool-run endpoints 已补齐 Rust/V1 TaskSummary-compatible 顶层 `taskId`、`taskKind=tool_run`、`status`、`phase`、`toolId` 和 `url`，并保留 V2 raw `run` / `rawRuns`。V2 result endpoint 在 tool run 未成功前返回 HTTP 409，成功后同时返回 V2 `run` / `artifact` / `result` 和 Rust/V1-compatible 顶层 `runId`、`toolId`、`resultPath`。`pprof_analyzer` 复用 Rust/V1 configured command catalog 形态和 workspace 产物目录，由 Tools 插件适配器固定调用 `go tool pprof` 并解析 top/tree/raw 结果；V2 中 pprof 默认关闭，只有配置 `LOGAGENT_V2_PPROF_GO_COMMAND` / `LOGAGENT_TOOL_PPROF_GO`，或显式 `LOGAGENT_V2_PPROF_ENABLED=1` 且 Go command 解析为绝对路径时才启用。V2 pprof action id 使用 Rust/V1 前缀 `act_tool_pprof_analyzer_<run_id>`；结果同时保留 Rust/V1-style `artifacts` / `artifactPaths`（`top.txt`、`tree.txt`、`raw.txt`、`stderr.txt`、可选 `graph.svg`）和 V2 `artifactIds` 映射，并返回 `profileType`、`total`、top 表格、`error`、`durationMs` 和 `createdAt`。configured command tools 的 `paramsSchema` 同时暴露 Rust/V1 顶层 `configuredArgs` / `match` 只读项和 V2 `properties` 镜像；它们也可手动运行，Server 会先生成 `extracted/`、`manifest.json`、`grep_results.json` 和可能的 `tool_inputs/index.json`，也可以通过 `params.inputFiles` 显式复用已有 Workspace 输入，再按白名单 args 模板调用工具；内置 metadata tools 可无上传运行并返回 JSON result。

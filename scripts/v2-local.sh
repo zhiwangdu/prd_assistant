@@ -193,14 +193,21 @@ if not items:
 
 print("Analyzer tools:")
 for item in items:
-    print(
-        "  - {tool_id}: status={status}, enabled={enabled}, runnable={runnable}".format(
-            tool_id=item.get("toolId", "<unknown>"),
-            status=item.get("status", "<unknown>"),
-            enabled=str(bool(item.get("enabled"))).lower(),
-            runnable=str(bool(item.get("runnable"))).lower(),
+    fields = [
+        "status={}".format(item.get("status", "<unknown>")),
+        "enabled={}".format(str(bool(item.get("enabled"))).lower()),
+        "runnable={}".format(str(bool(item.get("runnable"))).lower()),
+    ]
+    if item.get("commandExists") is not None:
+        fields.append("commandExists={}".format(str(bool(item.get("commandExists"))).lower()))
+    if item.get("commandExecutable") is not None:
+        fields.append(
+            "commandExecutable={}".format(str(bool(item.get("commandExecutable"))).lower())
         )
-    )
+    status_reason = item.get("statusReason")
+    if status_reason:
+        fields.append("reason={}".format(status_reason))
+    print("  - {}: {}".format(item.get("toolId", "<unknown>"), ", ".join(fields)))
 '; then
     printf 'Analyzer tools: unavailable (failed to parse tools catalog)\n'
   fi

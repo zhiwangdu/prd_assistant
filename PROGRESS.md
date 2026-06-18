@@ -2,6 +2,35 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Analyzer Command Availability Status
+
+- Tightened configured command tool descriptors so `runnable=true` now requires
+  the tool to be enabled and the configured command file to exist and be
+  executable by the current V2 process.
+- Extended `sourceBuiltAnalyzers` with `commandPath`, `commandExists`,
+  `commandExecutable`, and `statusReason`; source-built analyzers configured
+  to a missing or non-executable path now report `status=unavailable` instead
+  of looking runnable from deploy status output.
+- Agent provider and task MCP tool schema generation now only advertise
+  configured subprocess tools that are actually runnable, so bad source-built
+  analyzer paths are visible in catalog/status but not offered to the model as
+  executable actions.
+- `scripts/v2-local.sh status` and `deploy/logagent-v2ctl.sh status` now print
+  command existence, executability, and unavailable reasons when the V2 tools
+  catalog provides them.
+- Updated root, V2 Server, Tool Runner, and Deployment docs/specs for the
+  stricter runnable semantics and status output.
+- Verification passed:
+  `bash -n scripts/v2-local.sh deploy/logagent-v2ctl.sh`,
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
+  with 8 passed,
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_tool_registry_includes_configured_and_builtin_tools tests/test_store.py::StoreTests::test_unavailable_source_built_analyzer_is_not_advertised_to_agent`
+  with 2 passed,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 172 passed
+  and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Source-Built Analyzer Smoke Aggregator
 
 - Added `scripts/smoke-source-built-analyzers.sh` as a single entry point for

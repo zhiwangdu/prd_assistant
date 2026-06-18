@@ -243,8 +243,9 @@ uses port `50993`, and only rebuilds source-referenced analyzers when
 `--with-tools` or `--only-tool <name>` is supplied. The `--only-tool` value can
 be a short build name such as `flux` or the V2 catalog ID such as
 `flux_query_analyzer`. `status` queries the protected `/api/v2/tools` catalog
-with the configured API key and prints the `sourceBuiltAnalyzers` registration
-summary when the server is reachable. `smoke-tools` runs the aggregate
+with the configured API key and prints the `sourceBuiltAnalyzers` registration,
+command existence, executable, and reason fields when the server is reachable.
+`smoke-tools` runs the aggregate
 source-built analyzer smoke script and accepts the same `--only-tool <name>`
 selector. `start` waits for `/health`; `--foreground` keeps the FastAPI server
 attached for debugging.
@@ -325,8 +326,8 @@ runtime checks, and `--tools-only --only-tool <name>` canonical delegation to
 startup fails. The control script is pid-file scoped by default so separate
 runtime directories do not control each other's V2 processes. `status` also
 prints the authenticated `sourceBuiltAnalyzers` summary so runtime deployments
-can confirm whether the four analyzer submodule binaries are registered and
-runnable by the current V2 process.
+can confirm whether the four analyzer submodule binaries are registered,
+present, executable, unavailable, or runnable by the current V2 process.
 
 ## Configuration
 
@@ -1250,7 +1251,8 @@ tool catalog envelope. All return `schemaVersion`, full `tools` descriptors,
 and a V1-compatible `configuredTools` summary with configured args, timeout,
 match rules, and `maxInputFiles`. They also return `sourceBuiltAnalyzers`,
 which reports whether the four source-built analyzer IDs are registered,
-enabled/runnable, disabled, or missing in this V2 process. The readonly MCP
+enabled/runnable, disabled, missing, or unavailable because the configured
+command is absent or not executable in this V2 process. The readonly MCP
 endpoint never runs tools.
 
 `GET /api/v2/exports/tools.zip` exports enabled configured subprocess tools
