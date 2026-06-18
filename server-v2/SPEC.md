@@ -451,6 +451,7 @@ GET  /api/v2/metadata/clusters/:cluster_id
 GET  /api/v2/metadata/clusters/:cluster_id/nodes
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
+GET  /api/v2/metadata/imports/:import_id/preview
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
@@ -1192,13 +1193,17 @@ The product import flow is preview then confirm:
 ```text
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
+GET  /api/v2/metadata/imports/:import_id/preview
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/:import_id/confirm
 ```
 
 Preview parses and normalizes content into a draft with status `previewed` and
-returns summary counts. It does not mutate `metadata_instances`. Confirm upserts
-the draft snapshot into `metadata_instances` and marks the draft `confirmed`.
+returns summary counts. It does not mutate `metadata_instances`.
+`GET /api/v2/metadata/imports/:import_id/preview` returns the preview summary
+without the full snapshot; `GET /api/v2/metadata/imports/:import_id` returns the
+preview summary plus the normalized snapshot. Confirm upserts the draft snapshot
+into `metadata_instances` and marks the draft `confirmed`.
 `POST /api/v2/metadata/imports` remains as a direct immediate import shortcut.
 
 `POST /api/v2/metadata/instances/:instance_id/refresh` loads the instance's

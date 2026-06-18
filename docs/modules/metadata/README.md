@@ -172,12 +172,20 @@ POST /api/metadata/imports/:import_id/confirm
 Python V2 clean-room Server 已提供等价刷新能力：
 
 ```http
+GET /api/v2/metadata/imports
+POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
+GET /api/v2/metadata/imports/:import_id/preview
+GET /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/:import_id/confirm
 POST /api/v2/metadata/instances/:instance_id/refresh
 GET /api/v2/metadata/clusters/:cluster_id
 GET /api/v2/metadata/clusters/:cluster_id/nodes
 POST /api/v2/metadata/snapshots/fetch
 ```
 
+V2 的 preview-only endpoint 只返回 import 摘要，不返回完整 snapshot；full import
+endpoint 返回 `import` 摘要和归一化 `snapshot`，用于确认前检查。
 V2 刷新从 SQLite 中已保存的 `raw_json` 重新运行当前 normalizer 并覆盖
 `metadata_instances.snapshot_json`，不会重新请求原始 URL。
 V2 cluster 查询从已导入 instance snapshot 派生，不新增独立 cluster 表。

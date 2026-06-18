@@ -205,12 +205,20 @@ Python V2 clean-room Server 在 `/api/v2/metadata/*` 下提供同等 raw snapsho
 刷新、cluster 查询和不落库 snapshot fetch：
 
 ```http
+GET /api/v2/metadata/imports
+POST /api/v2/metadata/imports/preview
+POST /api/v2/metadata/imports/fetch/preview
+GET /api/v2/metadata/imports/:import_id/preview
+GET /api/v2/metadata/imports/:import_id
+POST /api/v2/metadata/imports/:import_id/confirm
 POST /api/v2/metadata/instances/:instance_id/refresh
 GET /api/v2/metadata/clusters/:cluster_id
 GET /api/v2/metadata/clusters/:cluster_id/nodes
 POST /api/v2/metadata/snapshots/fetch
 ```
 
+V2 preview-only endpoint 返回轻量 import 摘要，不返回完整 snapshot；full import
+endpoint 返回 `import` 摘要和归一化 `snapshot`。
 该接口读取 SQLite `metadata_instances.raw_json`，按当前 `templateType` 和
 `remark` 重新生成 `snapshot_json`。它不执行网络请求；需要重新拉取 URL 时应走
 fetch import preview/confirm 或 direct fetch import。

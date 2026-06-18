@@ -513,6 +513,7 @@ GET  /api/v2/metadata/clusters/:cluster_id
 GET  /api/v2/metadata/clusters/:cluster_id/nodes
 GET  /api/v2/metadata/imports
 GET  /api/v2/metadata/imports/:import_id
+GET  /api/v2/metadata/imports/:import_id/preview
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
 POST /api/v2/metadata/imports/:import_id/confirm
@@ -1392,13 +1393,17 @@ imports immediately; the safer product flow is:
 ```text
 POST /api/v2/metadata/imports/preview
 POST /api/v2/metadata/imports/fetch/preview
+GET  /api/v2/metadata/imports/:import_id/preview
 GET  /api/v2/metadata/imports/:import_id
 POST /api/v2/metadata/imports/:import_id/confirm
 ```
 
 Preview parses and normalizes content, stores a draft with status `previewed`,
-and returns node/database counts without changing `metadata_instances`. Confirm
-upserts the normalized snapshot and marks the draft `confirmed`.
+and returns node/database counts without changing `metadata_instances`.
+`GET /api/v2/metadata/imports/:import_id/preview` returns only the lightweight
+preview summary, while `GET /api/v2/metadata/imports/:import_id` also includes
+the normalized snapshot for inspection. Confirm upserts the normalized snapshot
+and marks the draft `confirmed`.
 
 `POST /api/v2/metadata/instances/<instance_id>/refresh` rebuilds the normalized
 snapshot from the raw JSON already saved with the instance and upserts the

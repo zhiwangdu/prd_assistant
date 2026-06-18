@@ -537,6 +537,7 @@ class StoreTests(unittest.TestCase):
                 ("GET", "/api/v2/metadata/clusters/{cluster_id}/nodes"),
                 ("GET", "/api/v2/metadata/imports"),
                 ("GET", "/api/v2/metadata/imports/{import_id}"),
+                ("GET", "/api/v2/metadata/imports/{import_id}/preview"),
                 ("POST", "/api/v2/metadata/imports/preview"),
                 ("POST", "/api/v2/metadata/imports/fetch/preview"),
                 ("POST", "/api/v2/metadata/imports/{import_id}/confirm"),
@@ -9968,6 +9969,31 @@ fi
                 store.get_metadata_import(preview["import"]["importId"])["status"],
                 "previewed",
             )
+
+            from fastapi.testclient import TestClient
+            from logagent_v2.api import create_app
+
+            headers = {"Authorization": "Bearer test"}
+            import_id = preview["import"]["importId"]
+            with TestClient(create_app(settings)) as client:
+                preview_response = client.get(
+                    f"/api/v2/metadata/imports/{import_id}/preview",
+                    headers=headers,
+                )
+                self.assertEqual(preview_response.status_code, 200)
+                preview_body = preview_response.json()
+                self.assertEqual(preview_body["importId"], import_id)
+                self.assertEqual(preview_body["status"], "previewed")
+                self.assertNotIn("snapshot", preview_body)
+
+                detail_response = client.get(
+                    f"/api/v2/metadata/imports/{import_id}",
+                    headers=headers,
+                )
+                self.assertEqual(detail_response.status_code, 200)
+                detail_body = detail_response.json()
+                self.assertEqual(detail_body["import"]["importId"], import_id)
+                self.assertIn("snapshot", detail_body)
 
             confirmed = confirm_metadata_import(store, preview["import"]["importId"])
             self.assertEqual(confirmed["import"]["status"], "confirmed")

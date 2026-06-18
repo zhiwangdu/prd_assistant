@@ -1913,6 +1913,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/v2/metadata/imports/{import_id}/preview")
+    async def get_metadata_import_preview(_: Auth, import_id: str) -> dict:
+        try:
+            return metadata_import_preview(store.get_metadata_import(import_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.post("/api/v2/metadata/imports/preview")
     async def create_metadata_import_preview(_: Auth, payload: MetadataImportCreate) -> dict:
         try:

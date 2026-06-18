@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Metadata Import Preview Endpoint Parity
+
+- Added `GET /api/v2/metadata/imports/:import_id/preview` as a V2
+  preview-only endpoint for stored Metadata import drafts, matching the Rust
+  server capability without returning the full normalized snapshot.
+- Kept `GET /api/v2/metadata/imports/:import_id` as the full inspection
+  endpoint that returns both the preview summary and snapshot.
+- Updated V2 route-table and Metadata workflow regression coverage, plus V2
+  Server and Metadata module docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_v2_api_route_table_covers_v1_server_capability_domains tests/test_store.py::StoreTests::test_metadata_preview_confirm_import_workflow`
+  with 2 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 164 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/api.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Deploy Tool Rebuild Regression Coverage
 
 - Added isolated regression coverage for `deploy/rebuild-v2-install.sh` help
