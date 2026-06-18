@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用/openGemini/Cassandra/RocksDB 只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是真实环境 smoke 和生产 fixture 验证。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入和聚合 smoke 入口、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用/openGemini/Cassandra/RocksDB 只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是真实环境 smoke 和生产 fixture 验证。
 
 ## 下一阶段优先级
 
@@ -15,7 +15,7 @@
 3. 用真实生产 fixture 扩展 `flux_query_analyzer` 风险规则、`influxql_analyzer` compare mode delta 字段映射，以及 storage analyzer findings。
 4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。
 5. Code Evidence 后续 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
-6. Environment Collector，基于已落地的审批后 SSH 命令、通用只读模板、单文件 SCP、批量采集和唯一 hint 选型，继续补产品专用环境模板和真实环境 smoke。
+6. Environment Collector，基于已落地的审批后 SSH 命令、通用/openGemini/Cassandra/RocksDB 只读模板、单文件 SCP、批量采集和唯一 hint 选型，继续补真实环境 smoke 和生产 fixture 验证。
 
 ## 阶段门槛
 

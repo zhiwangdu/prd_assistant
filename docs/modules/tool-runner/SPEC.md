@@ -261,7 +261,7 @@ segment 编码；OBS HEAD `contentLength` 有值时必须是数字。
   路径；原始 stdout/stderr support artifacts 仍保留审计原文。
 - Flux stdout 即使缺少通用 `summary/findings`，也必须能从
   `metrics/topQueries/parseErrors` 生成 summary 和可引用 findings。
-- Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建或复用对应真实工具，并验证 stdout JSON 的 tool id、summary 或关键 finding；InfluxQL smoke 必须同时覆盖普通 Report 和 CompareReport。
+- Flux、InfluxQL、openGemini storage 和 InfluxDB storage smoke 脚本必须能从 submodule 源码构建或复用对应真实工具，并验证 stdout JSON 的 tool id、summary 或关键 finding；InfluxQL smoke 必须同时覆盖普通 Report 和 CompareReport。聚合入口 `scripts/smoke-source-built-analyzers.sh` 必须能默认串行运行四个 smoke，并支持 `--only <name>` 单独验证一个 source-built analyzer。
 - 四个 source-built analyzer submodule 的 Go module 和显式 CI/build image 基线保持在 Go 1.26；本地或部署构建环境必须提供 Go 1.26，或启用 Go toolchain 自动下载能力。
 - `scripts/build-tools.sh` 和 `scripts/configure-tool-submodules.sh` 必须支持用环境变量或 CLI 参数把四个工具 submodule clone URL 写入本地 Git config，并保持 `.gitmodules` 默认 GitHub 地址和顶层仓库 `origin` 不被修改。若 submodule 目录只是父仓库内的未初始化目录，脚本不得对该目录执行 `remote set-url origin`。
 - Tool finding evidence ref 可被 LLM 最终结果引用并通过 Gateway 校验。

@@ -212,6 +212,7 @@ esac
 
     def test_tool_build_scripts_document_source_built_id_aliases(self) -> None:
         build_tools = ROOT_DIR / "scripts" / "build-tools.sh"
+        smoke_tools = ROOT_DIR / "scripts" / "smoke-source-built-analyzers.sh"
         rebuild_v2 = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
         v2_local = ROOT_DIR / "scripts" / "v2-local.sh"
 
@@ -219,6 +220,11 @@ esac
         self.assertEqual(build_help.returncode, 0)
         self.assertIn("flux_query_analyzer", build_help.stdout)
         self.assertIn("influxdb_storage_analyzer", build_help.stdout)
+
+        smoke_help = self.run_script(smoke_tools, "--help")
+        self.assertEqual(smoke_help.returncode, 0)
+        self.assertIn("opengemini_storage_analyzer", smoke_help.stdout)
+        self.assertIn("influxdb_storage_analyzer", smoke_help.stdout)
 
         rebuild_help = self.run_script(rebuild_v2, "--help")
         self.assertEqual(rebuild_help.returncode, 0)

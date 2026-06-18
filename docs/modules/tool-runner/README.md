@@ -160,6 +160,9 @@ tools:
   `scripts/smoke-influxdb-storage-analyzer.sh` 均会从 submodule 构建或复用
   `target/tools` 中的真实二进制，并验证 stdout JSON 的 tool id、summary
   或关键 finding。
+- `scripts/smoke-source-built-analyzers.sh` 是四个 smoke 的聚合入口；
+  默认按 InfluxQL、Flux、openGemini storage、InfluxDB storage 顺序全量
+  执行，也支持 `--only <name>` 单独验证一个 analyzer。
 - Python V2 共享工具目录返回 `sourceBuiltAnalyzers`，固定列出
   Flux/InfluxQL/openGemini/InfluxDB 四个 source-built analyzer ID 的
   `registered`、`enabled`、`runnable` 和 `status`，用于部署后确认 submodule
@@ -194,6 +197,12 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
 
 ```bash
 ./scripts/smoke-flux-query-analyzer.sh
+```
+
+验证全部 source-built analyzers 时：
+
+```bash
+./scripts/smoke-source-built-analyzers.sh
 ```
 
 只验证真实 InfluxQL 工具时：

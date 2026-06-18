@@ -27,7 +27,7 @@
 
 ## 第 2 阶段：当前产品闭环
 
-- Tool Runner MVP 已接入 Server；真实 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers 已通过 `third_party/` submodules 引用，并由 `scripts/build-tools.sh` 构建到 LogAgent 工具目录。下一步基于真实生产 fixture 扩展风险规则、compare smoke 和 storage finding 映射。
+- Tool Runner MVP 已接入 Server；真实 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers 已通过 `third_party/` submodules 引用，并由 `scripts/build-tools.sh` 构建到 LogAgent 工具目录，`scripts/smoke-source-built-analyzers.sh` 可聚合运行四个真实 CLI smoke。下一步基于真实生产 fixture 扩展风险规则和 storage finding 映射。
 - Tools 页面 MVP 已接入 Server 和 WebUI，首个 `pprof_analyzer` 通过 `tool_run` task 复用上传、任务状态、workspace 和 artifact 机制；后续更多工具应按同一 registry/adapter 方式扩展。
 - 围绕现有上传、Metadata、Tool Runner、Claude Code MCP、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
 - 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
@@ -69,8 +69,8 @@
 - Code Evidence 已完成版本到配置 ref 的只读 `git grep` MVP；后续补独立 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。
 - Environment Collector 已完成审批后的白名单 SSH 命令、单文件 SCP、最多
   20 个 approved `targets[]` 批量采集，以及多 executor/template 的唯一 hint
-  选型，并已内置通用只读环境模板。
-- 后续补产品专用环境模板和真实环境 smoke。
+  选型，并已内置通用、openGemini、Cassandra 和 RocksDB 基础只读环境模板。
+- 后续补真实环境 smoke 和生产 fixture 验证。
 
 ## 后续质量提升
 

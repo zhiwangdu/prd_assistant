@@ -2,6 +2,26 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Source-Built Analyzer Smoke Aggregator
+
+- Added `scripts/smoke-source-built-analyzers.sh` as a single entry point for
+  the existing InfluxQL, Flux, openGemini storage, and InfluxDB storage analyzer
+  smoke scripts.
+- The aggregator supports full serial smoke execution and `--only <name>` for
+  short names or V2 catalog IDs, matching the naming accepted by V2 build
+  helpers.
+- Updated root, V2 Server, Deployment, Tool Runner, and Roadmap docs/specs to
+  include the aggregate smoke path and to align Environment Collector roadmap
+  wording with the now-built Cassandra/RocksDB default templates.
+- Verification passed:
+  `bash -n scripts/smoke-source-built-analyzers.sh scripts/smoke-flux-query-analyzer.sh scripts/smoke-influxql-analyzer.sh scripts/smoke-opengemini-storage-analyzer.sh scripts/smoke-influxdb-storage-analyzer.sh scripts/build-tools.sh scripts/v2-local.sh deploy/rebuild-v2-install.sh deploy/logagent-v2ctl.sh`,
+  `scripts/smoke-source-built-analyzers.sh --help`,
+  `scripts/smoke-source-built-analyzers.sh --only unknown_analyzer` returning
+  exit code 2,
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
+  with 8 passed, and
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check tests/test_deploy_scripts.py`.
+
 ## 2026-06-18 V2 Cassandra/RocksDB Environment Templates
 
 - Added default read-only Remote Executor command templates for Cassandra and

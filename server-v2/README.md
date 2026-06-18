@@ -305,6 +305,9 @@ Use `--with-tools` to also build source-referenced analyzer submodules into
 tool-only rebuild. Single-tool rebuild accepts both short names
 `influxql|flux|opengemini|influxdb` and V2 catalog IDs
 `influxql_analyzer|flux_query_analyzer|opengemini_storage_analyzer|influxdb_storage_analyzer`.
+After building source-referenced analyzers, run
+`scripts/smoke-source-built-analyzers.sh` from the repository root to smoke all
+four binaries, or pass `--only <name>` for one analyzer.
 When explicit analyzer env vars are unset, V2 auto-registers the standard
 analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
 `$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when

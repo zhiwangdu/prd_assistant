@@ -51,6 +51,10 @@ Implemented in this slice:
   `/tmp/logagent-v2-local`, port `50993`, and `target/tools` for optional
   source-built analyzer output. `status` uses the same authenticated tools
   catalog probe as the runtime control script.
+- Source-built analyzer smoke aggregation through
+  `scripts/smoke-source-built-analyzers.sh`, which runs the existing
+  InfluxQL, Flux, openGemini storage, and InfluxDB storage smoke scripts
+  together or one at a time with `--only <name>`.
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted
