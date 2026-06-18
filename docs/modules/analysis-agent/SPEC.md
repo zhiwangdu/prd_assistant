@@ -36,9 +36,10 @@
 - `run_tool` 可消费 Tool Runner 产生的真实 `influxql_analyzer` 结构化 evidence
 - Rust/V1 `analysis.max_rounds`、`analysis.max_llm_calls`
 - V2 `LOGAGENT_V2_AGENT_MAX_ROUNDS`、`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`、
-  `LOGAGENT_V2_AGENT_MAX_ACTIONS`，默认分别为 4、4、6；预算耗尽时写入
-  `budget_guard` 响应和 `budgetLimited=true` 低置信度最终结果，任务进入
-  `SUCCEEDED` 而不是 `FAILED`
+  `LOGAGENT_V2_AGENT_MAX_ACTIONS`、
+  `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`，默认分别为 4、4、6、1；
+  预算或重复 tool fingerprint 耗尽时写入 `budgetLimited=true` 低置信度最终
+  结果，任务进入 `SUCCEEDED` 而不是 `FAILED`
 
 尚未实现：
 

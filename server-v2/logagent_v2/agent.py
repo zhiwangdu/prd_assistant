@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -25,7 +26,7 @@ from .llm import (
     execute_agent_provider_request,
 )
 from .mcp import call_task_tool
-from .mcp_audit import persist_mcp_call
+from .mcp_audit import persist_mcp_call, read_mcp_calls
 from .metadata import persist_metadata_context
 from .results import persist_run_result
 from .skills import persist_system_context
@@ -388,6 +389,35 @@ class AgentRuntime:
                     provider_response,
                 )
                 raise
+            repeated_reason = self._repeated_action_reason(run_id, tool_calls)
+            if repeated_reason:
+                blocked_response = provider_response.get("response")
+                if not isinstance(blocked_response, dict):
+                    blocked_response = {}
+                return {
+                    "providerResponse": {
+                        **provider_response,
+                        "toolCalls": tool_calls,
+                        "reason": repeated_reason,
+                        "response": {
+                            **blocked_response,
+                            "type": "repeated_action_blocked",
+                            "reason": repeated_reason,
+                        },
+                        "finalAnswer": self._budget_limited_final_answer(
+                            state["workspace"],
+                            state["evidenceBundle"],
+                            state.get("interactionContext") or {},
+                            repeated_reason,
+                        ),
+                    },
+                    "baseRound": {
+                        **base_round,
+                        "budgetLimited": True,
+                        "reason": repeated_reason,
+                    },
+                    "runtimeStatus": "validate_final_answer",
+                }
             return {
                 "providerResponse": provider_response,
                 "toolCalls": tool_calls,
@@ -770,6 +800,34 @@ class AgentRuntime:
             f"{action_count}/{self.settings.agent_max_actions}"
         )
 
+    def _repeated_action_reason(
+        self,
+        run_id: str,
+        tool_calls: list[JsonObject],
+    ) -> str | None:
+        counts: dict[str, int] = {}
+        calls = read_mcp_calls(self.settings, self.store, run_id).get("calls", [])
+        if isinstance(calls, list):
+            for call in calls:
+                if not isinstance(call, dict) or call.get("status") != "succeeded":
+                    continue
+                name = call.get("name")
+                if not isinstance(name, str) or not name.startswith("logagent."):
+                    continue
+                fingerprint = tool_call_fingerprint(name, call.get("arguments") or {})
+                counts[fingerprint] = counts.get(fingerprint, 0) + 1
+        for tool_call in tool_calls:
+            fingerprint = tool_call_fingerprint(tool_call["name"], tool_call["arguments"])
+            count = counts.get(fingerprint, 0)
+            if count >= self.settings.agent_max_repeated_action_fingerprints:
+                return (
+                    "repeated action fingerprint blocked: "
+                    f"{fingerprint} {count}/"
+                    f"{self.settings.agent_max_repeated_action_fingerprints}"
+                )
+            counts[fingerprint] = count + 1
+        return None
+
     def _persist_failed_state(
         self,
         workspace_id: str,
@@ -1104,6 +1162,17 @@ def executed_tool_action_count(observations: list[JsonObject]) -> int:
                 continue
         count += 1
     return count
+
+
+def tool_call_fingerprint(name: str, arguments: JsonObject) -> str:
+    payload = json.dumps(
+        {"name": name, "arguments": arguments},
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return f"mcp_tool:{digest}"
 
 
 def parse_tool_result(result: JsonObject) -> JsonObject:

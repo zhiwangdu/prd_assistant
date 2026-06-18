@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Agent Repeated Action Fingerprint Guard
+
+- Added `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` with default 1,
+  matching the Rust/V1 repeated action fingerprint guardrail.
+- V2 Agent provider tool calls now compute stable task MCP fingerprints from
+  tool name and normalized arguments. If a requested fingerprint has already
+  succeeded the configured number of times, V2 skips duplicate execution,
+  returns a `budgetLimited=true` low-confidence final answer, records the round
+  as `budget_limited`, and still finalizes the run as `succeeded`.
+- Added regression coverage proving repeated provider requests only execute the
+  first MCP tool call.
+- Updated root, V2 Server, and Analysis Agent README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused repeated-action budget pytest selection, full `PYTHONPATH=.
+  uv run --extra dev pytest` (144 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Configured Tool Params Schema Validation
 
 - V2 configured subprocess tool params now validate a practical Rust/V1-style

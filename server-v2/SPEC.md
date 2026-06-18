@@ -1519,9 +1519,11 @@ V1-compatible waiting marker, moves the run to `waiting_for_user` or
 job without writing `result.json`. The loop is bounded by
 `LOGAGENT_V2_AGENT_MAX_ROUNDS` (default 4),
 `LOGAGENT_V2_AGENT_MAX_LLM_CALLS` (default 4), and
-`LOGAGENT_V2_AGENT_MAX_ACTIONS` (default 6). When one of these budgets is
-exhausted, V2 stops calling the provider, routes through an internal
-`budget_guard` response, validates a low-confidence final answer with
+`LOGAGENT_V2_AGENT_MAX_ACTIONS` (default 6). Identical successful task MCP tool
+fingerprints are also bounded by
+`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` (default 1). When one of
+these budgets is exhausted, V2 stops calling the provider or skips the duplicate
+tool call, routes through a guarded low-confidence final answer with
 `budgetLimited=true`, marks the run `succeeded`, and records the last
 `analysis_state.json` round as `budget_limited`. Evidence refs returned by
 ordinary tool observations, including
@@ -1533,11 +1535,11 @@ validation.
 The provider must eventually return one JSON object matching the final answer
 schema. V2 then runs the same normalization and evidence-ref validation used by
 the stub. Invalid JSON, unsupported refs, provider HTTP errors, unsupported
-tool requests, or system/provider failures fail the run; round, LLM-call, and
-action budget exhaustion is controlled analysis termination and produces a
-budget-limited result instead of `FAILED`. After a user message or approval
-decision requeues the run, the next provider request includes recent messages,
-action results, remaining pending actions, and `resumePolicy` in
+tool requests, or system/provider failures fail the run; round, LLM-call,
+action budget, and repeated action fingerprint exhaustion are controlled
+analysis terminations and produce a budget-limited result instead of `FAILED`.
+After a user message or approval decision requeues the run, the next provider
+request includes recent messages, action results, remaining pending actions, and `resumePolicy` in
 `interactionContext`. When the latest user message has `resumeMode=finalize`,
 `resumePolicy.finalizeWithCurrentEvidence=true`, waiting tools are removed from
 the advertised tool list, and the provider must return a final answer based on

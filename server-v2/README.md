@@ -328,6 +328,7 @@ Environment variables:
 | `LOGAGENT_V2_AGENT_MAX_ROUNDS` | `4` | Maximum provider/tool-loop rounds per run |
 | `LOGAGENT_V2_AGENT_MAX_LLM_CALLS` | `4` | Maximum provider calls per run before a budget-limited result |
 | `LOGAGENT_V2_AGENT_MAX_ACTIONS` | `6` | Maximum provider-directed task MCP tool calls per run before a budget-limited result |
+| `LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS` | `1` | Maximum successful identical task MCP tool fingerprint count before a budget-limited result |
 | `LOGAGENT_V2_AGENT_MAX_OUTPUT_TOKENS` | `2048` | Maximum provider output tokens for V2 Agent calls |
 | `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED` | `1` | Enable V2 Remote Executor APIs and jobs |
 | `LOGAGENT_V2_REMOTE_SSH_COMMAND` | `/usr/bin/ssh` | Absolute SSH executable used by Remote Executor jobs when remote execution is enabled |
@@ -755,7 +756,8 @@ Provider-visible `logagent.search_logs` also exposes the V1-compatible
 `maxMatches` cap.
 
 Provider-directed tool use is bounded by `LOGAGENT_V2_AGENT_MAX_ROUNDS`,
-`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`, and `LOGAGENT_V2_AGENT_MAX_ACTIONS`, and
+`LOGAGENT_V2_AGENT_MAX_LLM_CALLS`, `LOGAGENT_V2_AGENT_MAX_ACTIONS`, and
+`LOGAGENT_V2_AGENT_MAX_REPEATED_ACTION_FINGERPRINTS`, and
 implemented as explicit graph transitions: provider tool-call responses route
 through `execute_tool_calls`, normal answers route through
 `validate_final_answer`, waiting/approval tools end the current graph invocation
@@ -763,10 +765,12 @@ in a waiting state, and non-waiting tool observations loop back to
 `prepare_agent_request`. If a budget is exhausted before the next provider
 call, `prepare_agent_request` routes to an internal `budget_guard` response
 that cites current evidence, records `analysis_state.json` status
-`budget_limited`, and finalizes successfully. Resumed runs include a bounded
-`interactionContext` with recent user messages, answered/approved/rejected
-actions, pending actions, and a finalize-with-current-evidence directive when
-the user requests it.
+`budget_limited`, and finalizes successfully. If the provider asks for a task
+MCP tool fingerprint that has already succeeded the configured number of times,
+the current round is also finalized as `budget_limited` without executing the
+duplicate call. Resumed runs include a bounded `interactionContext` with recent
+user messages, answered/approved/rejected actions, pending actions, and a
+finalize-with-current-evidence directive when the user requests it.
 
 Every run writes `analysis_package.json` after initial evidence collection. The
 package is a bounded Agent context bundle: Workspace/run metadata, task MCP
