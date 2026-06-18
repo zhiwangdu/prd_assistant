@@ -957,6 +957,10 @@ It currently supports:
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
   `analysis_state`, `agent_request`, `agent_response`, `case_context`,
   `tool_results`, `mcp_calls`, `result`, and `result_markdown`
+  - `summary` includes Rust/V1-compatible top-level fields such as `taskId`,
+    `sessionId`, `analysisMode`, `analysisLanguage`, `question`, `sourceUrl`,
+    `nodeId`, and `uploadIds`, and also keeps the V2 nested `run` and
+    `workspace` objects.
 - `tools/list`
 - `tools/call logagent.search_logs` with V1-compatible optional `maxMatches`
   clamped to 1..200; responses keep the nested V2 `search` object and expose

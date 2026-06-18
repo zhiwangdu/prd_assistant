@@ -3683,7 +3683,7 @@ class StoreTests(unittest.TestCase):
                 b"slow query on cpu\ncache miss warning\n",
                 "text/plain",
             )
-            store.create_upload(workspace["id"], "query.log", artifact["id"])
+            upload = store.create_upload(workspace["id"], "query.log", artifact["id"])
             run = store.create_run(workspace["id"])
             AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
 
@@ -3729,6 +3729,29 @@ class StoreTests(unittest.TestCase):
             self.assertIn("mcp_calls", names)
             self.assertIn(f"logagent://task/{run['id']}/analysis_package", resource_uris)
             self.assertIn(f"logagent-v2://run/{run['id']}/analysis_package", resource_uris)
+
+            summary = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 20,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent://task/{run['id']}/summary"},
+                },
+            )
+            summary_body = json.loads(summary["result"]["contents"][0]["text"])
+            self.assertEqual(summary_body["schemaVersion"], 1)
+            self.assertEqual(summary_body["taskId"], run["id"])
+            self.assertEqual(summary_body["sessionId"], workspace["id"])
+            self.assertEqual(summary_body["analysisMode"], "diagnose")
+            self.assertEqual(summary_body["analysisLanguage"], "en-US")
+            self.assertEqual(summary_body["question"], "slow query")
+            self.assertEqual(summary_body["sourceUrl"], "webui-smoke")
+            self.assertEqual(summary_body["uploadIds"], [upload["id"]])
+            self.assertEqual(summary_body["run"]["id"], run["id"])
+            self.assertEqual(summary_body["workspace"]["id"], workspace["id"])
 
             manifest = task_mcp_response(
                 settings,
@@ -3850,26 +3873,28 @@ class StoreTests(unittest.TestCase):
                 },
             )
             calls_body = json.loads(calls_response["result"]["contents"][0]["text"])
-            self.assertEqual(calls_body["callCount"], 4)
+            self.assertEqual(calls_body["callCount"], 5)
             self.assertEqual(
                 [call["name"] for call in calls_body["calls"]],
                 [
+                    "resources/read",
                     "resources/read",
                     "logagent.search_logs",
                     "logagent.get_log_slice",
                     "resources/read",
                 ],
             )
-            self.assertEqual(calls_body["calls"][0]["result"]["resource"], "manifest")
-            self.assertEqual(calls_body["calls"][3]["result"]["resource"], "artifact_index")
-            self.assertIn(payload["search"]["matches"][0]["ref"], calls_body["calls"][1]["evidenceRefs"])
-            self.assertIn(slice_payload["slice"]["ref"], calls_body["calls"][2]["evidenceRefs"])
+            self.assertEqual(calls_body["calls"][0]["result"]["resource"], "summary")
+            self.assertEqual(calls_body["calls"][1]["result"]["resource"], "manifest")
+            self.assertEqual(calls_body["calls"][4]["result"]["resource"], "artifact_index")
+            self.assertIn(payload["search"]["matches"][0]["ref"], calls_body["calls"][2]["evidenceRefs"])
+            self.assertIn(slice_payload["slice"]["ref"], calls_body["calls"][3]["evidenceRefs"])
 
             analysis = get_run_analysis(settings, store, run["id"])
             self.assertEqual(analysis["resources"]["artifact_index"]["artifactCount"], len(index_paths))
             self.assertEqual(analysis["resources"]["case_context"]["caseCount"], 0)
             self.assertEqual(analysis["resources"]["tool_results"]["toolResultCount"], 0)
-            self.assertEqual(analysis["resources"]["mcp_calls"]["callCount"], 5)
+            self.assertEqual(analysis["resources"]["mcp_calls"]["callCount"], 6)
             self.assertEqual(
                 analysis["resources"]["mcp_calls"]["calls"][-1]["result"]["resource"],
                 "mcp_calls",

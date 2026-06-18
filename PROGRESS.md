@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Task Summary Resource Parity
+
+- Added Rust/V1-compatible top-level fields to the V2 task MCP `summary`
+  resource: `taskId`, `sessionId`, `analysisMode`, `analysisLanguage`,
+  `question`, `sourceUrl`, `instanceId`, `clusterId`, `nodeId`, and
+  `uploadIds`.
+- Preserved existing V2 nested `run` and `workspace` payloads for current UI
+  and API callers.
+- Extended task MCP resource regression coverage and updated V2 Server docs.
+- Verification passed: focused task MCP resource pytest selection,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Log Slice EOF Range Parity
 
 - Aligned `logagent.get_log_slice` EOF behavior with Rust/V1 by preserving the

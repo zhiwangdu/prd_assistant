@@ -424,9 +424,21 @@ def read_task_resource(settings: Settings, store: Store, run: dict, uri: str) ->
     if not name:
         raise ValueError("resource URI does not belong to this run")
     if name == "summary":
+        workspace = store.get_workspace(run["workspace_id"])
         value = {
+            "schemaVersion": 1,
+            "taskId": run["id"],
+            "sessionId": run["workspace_id"],
+            "analysisMode": workspace.get("mode"),
+            "analysisLanguage": workspace.get("language"),
+            "question": workspace.get("question"),
+            "sourceUrl": workspace.get("sourceUrl"),
+            "instanceId": workspace.get("instanceId"),
+            "clusterId": None,
+            "nodeId": workspace.get("nodeId"),
+            "uploadIds": workspace.get("uploadIds", []),
             "run": run,
-            "workspace": store.get_workspace(run["workspace_id"]),
+            "workspace": workspace,
         }
     elif name == "artifact_index":
         value = build_task_artifact_index(store, run)

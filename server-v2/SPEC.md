@@ -164,7 +164,10 @@ Implemented in this slice:
   `grep_results`, `system_context`, `metadata_context`, `analysis_package`,
   `analysis_state`, `agent_request`, `agent_response`, `claude_mcp_config`,
   `claude_session`, `case_context`, `tool_results`, `mcp_calls`, `result`, and
-  `result_markdown` resources.
+  `result_markdown` resources. The `summary` resource includes Rust/V1
+  compatible top-level fields (`taskId`, `sessionId`, `analysisMode`,
+  `analysisLanguage`, `question`, `sourceUrl`, `nodeId`, `uploadIds`) while
+  preserving V2 `run` and `workspace` objects.
 - Task MCP `logagent.search_logs`, which accepts V1-compatible optional
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
   returns stable `log_searches/<search_id>.json#matches/<index>` refs. Initial
