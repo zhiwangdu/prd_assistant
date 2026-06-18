@@ -2,6 +2,25 @@
 
 Last updated: 2026-06-19
 
+## 2026-06-19 Server V2 V1-Style Manual Tool Run Create
+
+- `POST /api/v2/tools/:tool_id/runs` now accepts Rust/V1-style requests without
+  `workspaceId`; V2 infers the workspace from the first non-empty `uploadIds`
+  entry, or creates a short-lived `Manual tool run` workspace for zero-upload
+  built-ins such as metadata tools.
+- Manual tool-run create now trims `uploadIds`, ignores empty upload entries,
+  and accepts the Rust/V1 `idempotencyKey` field while preserving the current
+  non-deduplicating behavior.
+- Added HTTP regression coverage for V1-style metadata tool runs without
+  `workspaceId`, V1-style preprocess runs that infer workspace from upload, and
+  trimmed/empty `uploadIds` normalization.
+- Updated Server V2 README/SPEC for optional manual tool-run `workspaceId`
+  behavior.
+- Verification passed: `cd server-v2 && .venv/bin/python -m ruff check
+  logagent_v2/api.py tests/test_store.py`, focused tool-run route pytest,
+  full `cd server-v2 && .venv/bin/python -m pytest -q`, and
+  `git diff --check`.
+
 ## 2026-06-19 Server V2 Case Import Filename Guard
 
 - V2 Rust/V1-style Case import create endpoint now rejects JSON filenames,

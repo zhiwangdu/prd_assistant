@@ -953,13 +953,16 @@ waiting/approval parameters accidentally. Successful task and readonly MCP
 `tools/call` responses must keep the Rust/V1 `isError=false` envelope flag.
 
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
-the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
-validated `params`; results are stored as V2 artifacts/evidence and exposed
-through `/api/v2/tools/runs/:run_id/result`. Create/list/get tool-run responses
-must expose Rust/V1 TaskSummary-compatible top-level fields including `taskId`,
-`taskKind=tool_run`, `status`, `phase`, `toolId`, and `url`, while retaining the
-raw V2 Run under `run` and list `rawRuns` for diagnostics. The result endpoint
-must return
+the DB-backed queue. They accept optional `workspaceId`, optional `uploadIds`,
+validated `params`, and a Rust/V1-compatible ignored `idempotencyKey`.
+`uploadIds` entries are trimmed and empty entries are ignored. If `workspaceId`
+is omitted, V2 infers it from the first upload, or creates a short-lived
+`Manual tool run` workspace for zero-upload built-ins. Results are stored as V2
+artifacts/evidence and exposed through `/api/v2/tools/runs/:run_id/result`.
+Create/list/get tool-run responses must expose Rust/V1 TaskSummary-compatible
+top-level fields including `taskId`, `taskKind=tool_run`, `status`, `phase`,
+`toolId`, and `url`, while retaining the raw V2 Run under `run` and list
+`rawRuns` for diagnostics. The result endpoint must return
 HTTP 409 until the run has a result artifact, and successful payloads must keep
 the V2 `run/artifact/result` objects while adding Rust/V1-compatible top-level
 `taskId`, `runId`, `toolId`, and `resultPath`; `taskId` equals `runId`.

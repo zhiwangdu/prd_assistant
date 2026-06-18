@@ -6716,6 +6716,19 @@ class StoreTests(unittest.TestCase):
                 "application/zip",
             )
             upload = store.create_upload(workspace["id"], "logs.zip", artifact["id"])
+            valid_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "logs.tar.gz",
+                b"not a real tarball; route validation only",
+                "application/gzip",
+            )
+            valid_upload = store.create_upload(
+                workspace["id"],
+                "logs.tar.gz",
+                valid_artifact["id"],
+            )
 
             with TestClient(create_app(settings)) as client:
                 response = client.post(
@@ -6727,9 +6740,23 @@ class StoreTests(unittest.TestCase):
                         "params": {},
                     },
                 )
+                legacy_response = client.post(
+                    "/api/v2/tools/logagent.preprocess_log_package/runs",
+                    headers={"Authorization": "Bearer test"},
+                    json={
+                        "uploadIds": [f" {valid_upload['id']} ", ""],
+                        "params": {},
+                        "idempotencyKey": "legacy-key",
+                    },
+                )
 
             self.assertEqual(response.status_code, 400)
             self.assertIn("does not accept upload", response.json()["detail"])
+            self.assertEqual(legacy_response.status_code, 202, legacy_response.text)
+            legacy_body = legacy_response.json()
+            self.assertEqual(legacy_body["workspaceId"], workspace["id"])
+            self.assertEqual(legacy_body["uploadIds"], [valid_upload["id"]])
+            self.assertEqual(legacy_body["toolId"], "logagent.preprocess_log_package")
 
     def test_tool_run_routes_expose_v1_task_summary_fields(self) -> None:
         from fastapi.testclient import TestClient
@@ -6778,6 +6805,21 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(fetched_body["taskId"], created_body["taskId"])
                 self.assertEqual(fetched_body["run"]["id"], created_body["taskId"])
                 self.assertEqual(fetched_body["task"]["taskKind"], "tool_run")
+
+                legacy_created = client.post(
+                    "/api/v2/tools/logagent.list_metadata_instances/runs",
+                    headers=headers,
+                    json={"params": {}, "idempotencyKey": "legacy-key"},
+                )
+                self.assertEqual(legacy_created.status_code, 202, legacy_created.text)
+                legacy_body = legacy_created.json()
+                self.assertNotEqual(legacy_body["workspaceId"], workspace["id"])
+                self.assertEqual(legacy_body["workspace"]["title"], "Manual tool run")
+                self.assertEqual(legacy_body["workspace"]["question"], "Run selected tool")
+                self.assertEqual(legacy_body["analysisMode"], "diagnose")
+                self.assertEqual(legacy_body["analysisLanguage"], "zh-CN")
+                self.assertEqual(legacy_body["toolId"], "logagent.list_metadata_instances")
+                self.assertEqual(legacy_body["uploadIds"], [])
 
     def test_task_result_and_artifacts_aliases_reject_tool_runs(self) -> None:
         from fastapi.testclient import TestClient

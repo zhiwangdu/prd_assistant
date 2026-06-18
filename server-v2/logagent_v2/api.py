@@ -384,9 +384,10 @@ class FetchRunCreate(BaseModel):
 
 
 class ToolRunCreate(BaseModel):
-    workspaceId: str = Field(min_length=1, max_length=120)
+    workspaceId: str | None = Field(default=None, max_length=120)
     uploadIds: list[str] = Field(default_factory=list, max_length=100)
     params: dict = Field(default_factory=dict)
+    idempotencyKey: str | None = Field(default=None, max_length=200)
 
 
 class LlmDebugUpdate(BaseModel):
@@ -583,6 +584,28 @@ def _tool_run_response(store: Store, run: dict) -> dict:
         "run": run,
         "workspace": workspace,
     }
+
+
+def _tool_run_upload_ids(payload: ToolRunCreate) -> list[str]:
+    return [upload_id.strip() for upload_id in payload.uploadIds if upload_id.strip()]
+
+
+def _tool_run_workspace_id(store: Store, payload: ToolRunCreate, upload_ids: list[str]) -> str:
+    workspace_id = _clean_optional(payload.workspaceId)
+    if workspace_id is not None:
+        store.get_workspace(workspace_id)
+        return workspace_id
+    if upload_ids:
+        upload = store.get_upload_with_artifact(upload_ids[0])
+        store.get_workspace(upload["workspace_id"])
+        return upload["workspace_id"]
+    workspace = store.create_workspace(
+        "Run selected tool",
+        "diagnose",
+        "zh-CN",
+        title="Manual tool run",
+    )
+    return workspace["id"]
 
 
 def _require_succeeded_log_analysis_task(run: dict, noun: str) -> None:
@@ -1737,24 +1760,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v2/tools/{tool_id}/runs", status_code=202)
     async def create_tool_run(_: Auth, tool_id: str, payload: ToolRunCreate) -> dict:
         try:
-            store.get_workspace(payload.workspaceId)
+            upload_ids = _tool_run_upload_ids(payload)
+            workspace_id = _tool_run_workspace_id(store, payload, upload_ids)
             uploads = (
-                store.list_uploads_by_ids(payload.workspaceId, payload.uploadIds)
-                if payload.uploadIds
+                store.list_uploads_by_ids(workspace_id, upload_ids)
+                if upload_ids
                 else []
             )
             params = validate_manual_tool_run(
                 settings,
                 tool_id,
-                len(payload.uploadIds),
+                len(upload_ids),
                 payload.params,
                 upload_filenames=[upload["filename"] for upload in uploads],
             )
             run = store.create_tool_run(
-                workspace_id=payload.workspaceId,
+                workspace_id=workspace_id,
                 tool_id=tool_id,
                 params=params,
-                upload_ids=payload.uploadIds,
+                upload_ids=upload_ids,
             )
             return _tool_run_response(store, run)
         except KeyError as error:
