@@ -281,10 +281,10 @@ Environment variables:
 | `LOGAGENT_V2_INLINE_WORKER` | `1` | Run worker inside API process |
 | `LOGAGENT_V2_TOOLS_JSON` | unset | JSON array or object map of fixed whitelist tool descriptors; supports V2 `command` plus V1 `path` / `path_env`, camelCase or snake_case limits; configured IDs allow only ASCII letters, digits, `_`, and `-`; enabled commands may use `${ENV}` / `~` and must resolve to absolute paths |
 | `LOGAGENT_V2_TOOLS_DIR` | unset | Optional directory for standard source-built analyzer binaries; falls back to `$LOGAGENT_V2_APP_DIR/bin/tools` or `$LOGAGENT_APP_DIR/bin/tools` |
-| `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | unset | Default configured InfluxQL analyzer executable |
-| `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | unset | Default configured Flux analyzer executable |
-| `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | unset | Default configured openGemini storage analyzer executable |
-| `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | unset | Default configured InfluxDB storage analyzer executable |
+| `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` | `LOGAGENT_TOOL_INFLUXQL_ANALYZER` or unset | Default configured InfluxQL analyzer executable |
+| `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER` | `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER` or unset | Default configured Flux analyzer executable |
+| `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER` | `LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER` or unset | Default configured openGemini storage analyzer executable |
+| `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER` | `LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER` or unset | Default configured InfluxDB storage analyzer executable |
 | `LOGAGENT_V2_PPROF_ENABLED` | auto when Go command set | Enable V1-style configured `pprof_analyzer` adapter |
 | `LOGAGENT_V2_PPROF_GO_COMMAND` | `LOGAGENT_TOOL_PPROF_GO` or unset | Go executable for `go tool pprof`; required and absolute when pprof is enabled |
 | `LOGAGENT_V2_FETCH_ENABLED` | `0` | Enable configured Fetch endpoint execution |
@@ -331,9 +331,10 @@ Environment variables:
 | `LOGAGENT_V2_HUAWEI_OBS_SECURITY_TOKEN` | unset | Optional Huawei OBS security token; trimmed when present |
 | `LOGAGENT_V2_HUAWEI_GAUSSDB_DSN` | unset | GaussDB/PostgreSQL DSN for package sync; required and trimmed when enabled |
 
-Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable auto-registers that
-source-built analyzer as a configured subprocess tool. If those variables are
-unset, V2 auto-discovers the standard analyzer filenames from
+Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable, or its Rust/V1
+`LOGAGENT_TOOL_*_ANALYZER` alias, auto-registers that source-built analyzer as
+a configured subprocess tool. The V2-specific name takes precedence. If those
+variables are unset, V2 auto-discovers the standard analyzer filenames from
 `LOGAGENT_V2_TOOLS_DIR`, `$LOGAGENT_V2_APP_DIR/bin/tools`, or
 `$LOGAGENT_APP_DIR/bin/tools`. Both paths use the same args, timeouts,
 `maxInputFiles`, match patterns, and keywords as `examples/server-tools.yaml`.

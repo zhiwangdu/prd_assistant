@@ -2,6 +2,22 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Source-built Analyzer V1 Env Alias Coverage
+
+- Added regression coverage that V2 source-built analyzer auto-registration
+  accepts Rust/V1 executable env aliases:
+  `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`,
+  `LOGAGENT_TOOL_INFLUXQL_ANALYZER`,
+  `LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
+  `LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER`.
+- Updated V2 Server, Tool Runner, and Deploy docs to state that V2-specific
+  `LOGAGENT_V2_TOOL_*_ANALYZER` names take precedence, while V1 aliases remain
+  supported for migration.
+- Verification passed: focused `parse_tools_env` pytest selection,
+  `PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`, full
+  `PYTHONPATH=. uv run --extra dev pytest` (132 passed, 1 warning), and
+  `git diff --check`.
+
 ## 2026-06-18 V2 Memory Vector Recall Documentation
 
 - Reconciled Memory / Case Store docs with the current V2 implementation:

@@ -107,7 +107,11 @@ Optional variables:
   `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
   `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER`: optional explicit source-built
   analyzer executable path overrides, usually unnecessary when using
-  `rebuild-v2-install.sh --with-tools`.
+  `rebuild-v2-install.sh --with-tools`. Rust/V1 aliases
+  `LOGAGENT_TOOL_INFLUXQL_ANALYZER`, `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`,
+  `LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
+  `LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER` are also accepted for migration;
+  V2-specific names take precedence.
 - `LOGAGENT_V2_PPROF_ENABLED` and `LOGAGENT_V2_PPROF_GO_COMMAND`: optional
   built-in `pprof_analyzer` configuration.
 - `LOGAGENT_V2_REMOTE_EXECUTION_ENABLED`, `LOGAGENT_V2_REMOTE_SSH_COMMAND`,
@@ -221,7 +225,8 @@ $LOGAGENT_APP_DIR/bin/tools`; `--tools-only` skips server install, DB init, and
 WebUI sync for fast analyzer rebuilds. `logagent-v2ctl.sh` exports
 `LOGAGENT_V2_APP_DIR`, so a later V2 start auto-registers the standard analyzer
 filenames from `$LOGAGENT_APP_DIR/bin/tools` unless explicit
-`LOGAGENT_V2_TOOL_*` overrides are set. `rebuild-v2-install.sh` also loads
+`LOGAGENT_V2_TOOL_*` overrides or Rust/V1 `LOGAGENT_TOOL_*` aliases are set;
+V2-specific names take precedence. `rebuild-v2-install.sh` also loads
 `$HOME/.cargo/env` when present so Flux analyzer builds can find rustup-managed
 `cargo` in non-interactive SSH shells.
 

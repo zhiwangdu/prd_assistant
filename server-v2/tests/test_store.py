@@ -3407,6 +3407,54 @@ class StoreTests(unittest.TestCase):
         )
         self.assertIn("series file", tools["influxdb_storage_analyzer"].match_keywords)
 
+    def test_env_source_built_tools_accept_v1_env_aliases(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER": "/opt/v1-tools/flux_query_analyzer",
+            "LOGAGENT_TOOL_INFLUXQL_ANALYZER": "/opt/v1-tools/influxql-analyzer",
+            "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER": (
+                "/opt/v1-tools/opengemini-storage-analyzer"
+            ),
+            "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER": (
+                "/opt/v1-tools/influxdb_storage_analyzer"
+            ),
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        try:
+            for key, value in env_values.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+            tools = {tool.id: tool for tool in parse_tools_env(None)}
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(
+            tools["flux_query_analyzer"].command,
+            "/opt/v1-tools/flux_query_analyzer",
+        )
+        self.assertEqual(
+            tools["influxql_analyzer"].command,
+            "/opt/v1-tools/influxql-analyzer",
+        )
+        self.assertEqual(
+            tools["opengemini_storage_analyzer"].command,
+            "/opt/v1-tools/opengemini-storage-analyzer",
+        )
+        self.assertEqual(
+            tools["influxdb_storage_analyzer"].command,
+            "/opt/v1-tools/influxdb_storage_analyzer",
+        )
+
     def test_source_built_tools_auto_discover_runtime_bin_dir(self) -> None:
         env_values = {
             "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": None,

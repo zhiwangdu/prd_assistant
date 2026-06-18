@@ -696,8 +696,11 @@ object keyed by tool id. Descriptors may use V2 `command`, V1 `path`, or V1
 as `timeoutSeconds` / `timeout_seconds`, `maxOutputBytes` / `max_output_bytes`,
 and `maxInputFiles` / `max_input_files`. V2 expands `${ENV}` / `$ENV` variables
 and `~` in configured command paths and in source-built analyzer executable
-environment variables. When explicit source-built analyzer env vars are unset,
-V2 auto-discovers the standard analyzer filenames from `LOGAGENT_V2_TOOLS_DIR`,
+environment variables. Source-built analyzer executable env vars accept both
+V2 names such as `LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER` and Rust/V1 aliases such
+as `LOGAGENT_TOOL_INFLUXQL_ANALYZER`, with V2 names taking precedence. When
+explicit source-built analyzer env vars are unset, V2 auto-discovers the
+standard analyzer filenames from `LOGAGENT_V2_TOOLS_DIR`,
 `$LOGAGENT_V2_APP_DIR/bin/tools`, or `$LOGAGENT_APP_DIR/bin/tools`. If an
 enabled configured tool does not resolve to an absolute command path, settings
 loading fails before the descriptor is exposed through HTTP, readonly MCP, or

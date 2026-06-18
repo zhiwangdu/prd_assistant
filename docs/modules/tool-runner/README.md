@@ -146,7 +146,7 @@ tools:
 - 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取，并通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
 - 当前 `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxdb.git` 的 `influxdb-tools` 分支；CLI 入口为 `cmd/influxdb_storage_analyzer`，用于只读检查 TSM、TSI 和 `_series` 文件。
-- Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量后会自动注册对应 source-built analyzer，默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
+- Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量或 Rust/V1 的 `LOGAGENT_TOOL_*_ANALYZER` 别名后会自动注册对应 source-built analyzer；V2 专用变量优先生效。默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
 - `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、
   `scripts/smoke-opengemini-storage-analyzer.sh` 和
   `scripts/smoke-influxdb-storage-analyzer.sh` 均会从 submodule 构建或复用
