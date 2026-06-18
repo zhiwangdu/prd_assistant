@@ -62,6 +62,9 @@ V2 本地快速开发使用仓库根目录的单脚本入口：
 `--with-tools` 或 `--only-tool influxql|flux|opengemini|influxdb`；`--only-tool`
 也接受 V2 catalog ID，例如 `influxql_analyzer`、`flux_query_analyzer`、
 `opengemini_storage_analyzer` 和 `influxdb_storage_analyzer`。
+`status` 会在 health 输出后用配置的 API Key 访问 `/api/v2/tools`，打印
+`sourceBuiltAnalyzers` 中四个源码 analyzer 的 registered/enabled/runnable
+状态；查询失败只影响该诊断摘要，不改变服务状态返回。
 V2 部署脚本的帮助输出、启动超时参数校验、pid file 作用域和缺少 runtime
 安装时的快速失败路径由 `server-v2/tests/test_deploy_scripts.py` 覆盖。
 
@@ -99,7 +102,9 @@ V2 `deploy/logagent-v2ctl.sh start` 和 `restart` 会等待配置的 health URL
 成功；如果进程启动后退出或超过 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS`
 仍未 ready，脚本会清理 stale pid 并以非零状态退出。控制脚本默认只信任
 当前 runtime 的 pid file，不通过全局进程扫描接管其它运行目录的 V2 进程；
-该约束有轻量脚本回归测试，避免后续改动重新引入跨实例误控风险。
+该约束有轻量脚本回归测试，避免后续改动重新引入跨实例误控风险。`status`
+同样会进行 authenticated tools catalog probe，用于部署后确认
+source-built analyzers 是否被当前进程识别。
 
 个人本地 Claude Code 不由部署脚本自动接管。Server 运行后会在受保护 API 下提供：
 

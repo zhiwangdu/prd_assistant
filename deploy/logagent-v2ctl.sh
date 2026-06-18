@@ -35,6 +35,7 @@ export LOGAGENT_V2_PORT="${LOGAGENT_V2_PORT:-50993}"
 export LOGAGENT_V2_API_KEY="${LOGAGENT_V2_API_KEY:-${LOGAGENT_NATIVE_API_KEY:-dev-token}}"
 
 HEALTH_URL="${LOGAGENT_V2_HEALTH_URL:-http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/health}"
+TOOLS_URL="${LOGAGENT_V2_TOOLS_URL:-http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/api/v2/tools}"
 
 if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || ((STARTUP_TIMEOUT_SECONDS < 1)); then
   echo "LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS must be a positive integer" >&2
@@ -85,6 +86,57 @@ process_matches_server() {
   local args
   args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
   [[ "$args" == *" -m logagent_v2 server"* || "$args" == *"/logagent_v2 "* ]]
+}
+
+python_for_json() {
+  if [[ -x "$PYTHON" ]]; then
+    echo "$PYTHON"
+    return 0
+  fi
+  command -v python3 2>/dev/null || true
+}
+
+print_source_built_analyzers_status() {
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local catalog
+  if ! catalog="$(curl --max-time 2 --silent --fail \
+    -H "Authorization: Bearer $LOGAGENT_V2_API_KEY" \
+    "$TOOLS_URL" 2>/dev/null)"; then
+    echo "Analyzer tools: unavailable (tools API request failed)"
+    return 0
+  fi
+
+  local parser
+  parser="$(python_for_json)"
+  if [[ -z "$parser" ]]; then
+    echo "Analyzer tools: unavailable (python3 not found for catalog parsing)"
+    return 0
+  fi
+
+  if ! printf '%s' "$catalog" | "$parser" -c '
+import json
+import sys
+
+doc = json.load(sys.stdin)
+items = doc.get("sourceBuiltAnalyzers") or []
+if not items:
+    print("Analyzer tools: no source-built analyzer summary")
+    raise SystemExit(0)
+
+print("Analyzer tools:")
+for item in items:
+    print(
+        "  - {tool_id}: status={status}, enabled={enabled}, runnable={runnable}".format(
+            tool_id=item.get("toolId", "<unknown>"),
+            status=item.get("status", "<unknown>"),
+            enabled=str(bool(item.get("enabled"))).lower(),
+            runnable=str(bool(item.get("runnable"))).lower(),
+        )
+    )
+'; then
+    echo "Analyzer tools: unavailable (failed to parse tools catalog)"
+  fi
 }
 
 find_running_pid() {
@@ -179,6 +231,7 @@ status_server() {
       curl -sS "$HEALTH_URL" || true
       echo
     fi
+    print_source_built_analyzers_status
   else
     echo "LogAgent V2 server is not running"
     return 1

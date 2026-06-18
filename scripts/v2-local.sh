@@ -127,6 +127,7 @@ PYTHON="${LOGAGENT_V2_PYTHON:-$VENV_DIR/bin/python}"
 PID_FILE="${LOGAGENT_V2_PID_FILE:-/tmp/logagent-v2-local.pid}"
 LOG_FILE="${LOGAGENT_V2_LOG_FILE:-/tmp/logagent-v2-local.log}"
 HEALTH_URL="${LOGAGENT_V2_HEALTH_URL:-http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/health}"
+TOOLS_URL="${LOGAGENT_V2_TOOLS_URL:-http://$LOGAGENT_V2_HOST:$LOGAGENT_V2_PORT/api/v2/tools}"
 STARTUP_TIMEOUT_SECONDS="${LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS:-30}"
 
 if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || ((STARTUP_TIMEOUT_SECONDS < 1)); then
@@ -151,6 +152,57 @@ read_pid() {
 is_running() {
   local pid="$1"
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+python_for_json() {
+  if [[ -x "$PYTHON" ]]; then
+    printf '%s\n' "$PYTHON"
+    return 0
+  fi
+  command -v python3 2>/dev/null || true
+}
+
+print_source_built_analyzers_status() {
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local catalog
+  if ! catalog="$(curl --max-time 2 --silent --fail \
+    -H "Authorization: Bearer $LOGAGENT_V2_API_KEY" \
+    "$TOOLS_URL" 2>/dev/null)"; then
+    printf 'Analyzer tools: unavailable (tools API request failed)\n'
+    return 0
+  fi
+
+  local parser
+  parser="$(python_for_json)"
+  if [[ -z "$parser" ]]; then
+    printf 'Analyzer tools: unavailable (python3 not found for catalog parsing)\n'
+    return 0
+  fi
+
+  if ! printf '%s' "$catalog" | "$parser" -c '
+import json
+import sys
+
+doc = json.load(sys.stdin)
+items = doc.get("sourceBuiltAnalyzers") or []
+if not items:
+    print("Analyzer tools: no source-built analyzer summary")
+    raise SystemExit(0)
+
+print("Analyzer tools:")
+for item in items:
+    print(
+        "  - {tool_id}: status={status}, enabled={enabled}, runnable={runnable}".format(
+            tool_id=item.get("toolId", "<unknown>"),
+            status=item.get("status", "<unknown>"),
+            enabled=str(bool(item.get("enabled"))).lower(),
+            runnable=str(bool(item.get("runnable"))).lower(),
+        )
+    )
+'; then
+    printf 'Analyzer tools: unavailable (failed to parse tools catalog)\n'
+  fi
 }
 
 build_v2() {
@@ -280,6 +332,7 @@ status_v2() {
       curl -sS "$HEALTH_URL" || true
       printf '\n'
     fi
+    print_source_built_analyzers_status
   else
     printf 'LogAgent V2 is stopped.\n'
     return 1

@@ -240,8 +240,10 @@ editable mode, initializes SQLite under `/tmp/logagent-v2-local` by default,
 uses port `50993`, and only rebuilds source-referenced analyzers when
 `--with-tools` or `--only-tool <name>` is supplied. The `--only-tool` value can
 be a short build name such as `flux` or the V2 catalog ID such as
-`flux_query_analyzer`. `start` waits for `/health`; `--foreground` keeps the
-FastAPI server attached for debugging.
+`flux_query_analyzer`. `status` queries the protected `/api/v2/tools` catalog
+with the configured API key and prints the `sourceBuiltAnalyzers` registration
+summary when the server is reachable. `start` waits for `/health`;
+`--foreground` keeps the FastAPI server attached for debugging.
 
 Manual startup remains available:
 
@@ -314,7 +316,10 @@ runtime checks, and `--tools-only --only-tool <name>` canonical delegation to
 `LOGAGENT_V2_APP_DIR`, wait for `/health` until
 `LOGAGENT_V2_STARTUP_TIMEOUT_SECONDS` expires, and clean stale pid files when
 startup fails. The control script is pid-file scoped by default so separate
-runtime directories do not control each other's V2 processes.
+runtime directories do not control each other's V2 processes. `status` also
+prints the authenticated `sourceBuiltAnalyzers` summary so runtime deployments
+can confirm whether the four analyzer submodule binaries are registered and
+runnable by the current V2 process.
 
 ## Configuration
 

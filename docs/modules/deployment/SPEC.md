@@ -14,10 +14,12 @@ MVP 采用尽量简单的部署形态：Rust Server + WEBUI 静态目录 + Nativ
   默认使用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口 `50993` 和
   `target/tools`，`start` 在已有 virtualenv/WebUI 时不得重复执行 editable
   install，显式 `--with-tools` / `--only-tool <name>` 时才构建 source-built
-  analyzers。
+  analyzers；`status` 会在服务运行时通过带 Bearer API Key 的 `/api/v2/tools`
+  查询打印 `sourceBuiltAnalyzers` 状态，便于确认 submodule analyzer 是否已被
+  当前进程注册。
 - 工作目录脚本通过 `LOGAGENT_WORK_DIR` 定位运行目录，支持初始化 `bin/config/data/logs/run/webui`、快速编译 Server、快速编译 WebUI、启动、停止、重启、状态和日志查看；缺少 `LOGAGENT_WORK_DIR` 时必须报错。
 - 根目录 `deploy/` 提供可复制到 runtime 的部署模板：`.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README。该模板默认父目录为 `LOGAGENT_APP_DIR`，脚本 best-effort 加载 `$HOME/.bashrc` 后自动加载同目录 `.env`，真实 `.env` 和 active `logagent.yaml` 不提交。
-- `deploy/logagent-v2ctl.sh` 和 `deploy/rebuild-v2-install.sh` 提供 V2 Python/FastAPI runtime 的快速构建、安装、启动、停止、重启、状态和日志查看。V2 默认使用 `$LOGAGENT_APP_DIR/server-v2/.venv`、`$LOGAGENT_APP_DIR/data-v2`、`$LOGAGENT_APP_DIR/webui/out` 和端口 `50993`。`logagent-v2ctl.sh start/restart` 会等待 health ready，启动失败时清理 stale pid 并返回非零状态；默认只按当前 runtime 的 pid file 判定运行进程，避免多实例互相误控。`rebuild-v2-install.sh --with-tools` 会把 source-built analyzers 构建到 `$LOGAGENT_APP_DIR/bin/tools`，`--tools-only --only-tool <name>` 用于快速单工具重建；`<name>` 支持短名 `influxql|flux|opengemini|influxdb`，也支持 V2 catalog ID `influxql_analyzer|flux_query_analyzer|opengemini_storage_analyzer|influxdb_storage_analyzer`；脚本会在存在 `$HOME/.cargo/env` 时加载它，以支持非交互 SSH shell 下的 rustup cargo。
+- `deploy/logagent-v2ctl.sh` 和 `deploy/rebuild-v2-install.sh` 提供 V2 Python/FastAPI runtime 的快速构建、安装、启动、停止、重启、状态和日志查看。V2 默认使用 `$LOGAGENT_APP_DIR/server-v2/.venv`、`$LOGAGENT_APP_DIR/data-v2`、`$LOGAGENT_APP_DIR/webui/out` 和端口 `50993`。`logagent-v2ctl.sh start/restart` 会等待 health ready，启动失败时清理 stale pid 并返回非零状态；默认只按当前 runtime 的 pid file 判定运行进程，避免多实例互相误控；`status` 会保留这个 pid-file 作用域，并在 health 成功后尝试 authenticated tools catalog probe，打印四个 source-built analyzer 的 registered/enabled/runnable 状态。`rebuild-v2-install.sh --with-tools` 会把 source-built analyzers 构建到 `$LOGAGENT_APP_DIR/bin/tools`，`--tools-only --only-tool <name>` 用于快速单工具重建；`<name>` 支持短名 `influxql|flux|opengemini|influxdb`，也支持 V2 catalog ID `influxql_analyzer|flux_query_analyzer|opengemini_storage_analyzer|influxdb_storage_analyzer`；脚本会在存在 `$HOME/.cargo/env` 时加载它，以支持非交互 SSH shell 下的 rustup cargo。
 - V2 部署脚本回归测试覆盖 `scripts/v2-local.sh --help`、启动超时参数校验、`logagent-v2ctl.sh` 默认 pid file 作用域、未安装 runtime 时 `start` 的快速失败路径、`rebuild-v2-install.sh --help`、缺少 `LOGAGENT_SRC_DIR` 的快速失败路径，以及 `--tools-only --only-tool <name>` 对 `scripts/build-tools.sh` 的 canonical 单工具参数透传。
 - `deploy/install-deps.sh` 支持快速安装从源码 rebuild 需要的通用依赖：git、curl、C/C++ build tools、pkg-config、Node.js/npm、Go，并在缺少 cargo 时通过 rustup 安装 Rust。运行已构建 Server binary 不要求单独安装 SQLite。
 - `scripts/build-tools.sh` 从 `third_party/` submodules 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers；`scripts/build-server.sh` 会安装到 `$LOGAGENT_WORK_DIR/bin/tools/`，`deploy/rebuild-install.sh` 会安装到 `$LOGAGENT_APP_DIR/bin/tools/`。构建前会调用 `scripts/configure-tool-submodules.sh`，支持通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 把 submodule clone 地址覆盖到本地 Git config，以便内网镜像环境初始化 submodule；该脚本不得改写顶层仓库 `origin`。
@@ -78,10 +80,12 @@ WEBUI -> Server 同源 API
 - `scripts/v2-local.sh --help` 可执行；`build` 能创建/更新本地 V2
   virtualenv 并初始化 SQLite；`start --no-build` 在已有 virtualenv 时能直接
   启动并等待 health；`status`、`stop`、`restart`、`logs` 使用本地 pid/log
-  文件，不影响 runtime deploy pid。
+  文件，不影响 runtime deploy pid；`status` 会用 API Key 查询
+  `/api/v2/tools` 并打印 `sourceBuiltAnalyzers` 状态，查询失败不得导致服务
+  状态检查失败。
 - V2 `logagent-v2ctl.sh start/restart` 必须等待 `/health` 成功；进程提前退出或 health 超时必须清理 pid 文件并返回失败。
 - V2 控制脚本默认必须按当前 runtime pid file 管理进程，不得在未显式开启发现模式时通过全局 `pgrep` 控制其它运行目录的 V2 实例。
-- V2 部署脚本回归测试必须能在不启动长期服务、不修改宿主全局环境的情况下验证帮助输出、配置校验、pid file 作用域、未安装 runtime 的失败提示、tools-only 单工具重建不会创建 V2 virtualenv 或同步 WebUI，以及 V2 catalog toolId 会规范化为底层 `scripts/build-tools.sh` 的短名。
+- V2 部署脚本回归测试必须能在不启动长期服务、不修改宿主全局环境的情况下验证帮助输出、配置校验、pid file 作用域、未安装 runtime 的失败提示、本地 `status` 的 tools catalog Bearer 查询和 analyzer 状态输出、tools-only 单工具重建不会创建 V2 virtualenv 或同步 WebUI，以及 V2 catalog toolId 会规范化为底层 `scripts/build-tools.sh` 的短名。
 - V2 deploy 模板的 `--with-tools` / `--tools-only` 能复用 `scripts/build-tools.sh` 构建 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer，非交互 SSH shell 下也能通过 `$HOME/.cargo/env` 找到 rustup-managed `cargo`，并且 `.env.example` 提供 V2 工具路径、Fetch allowlist/request/response 边界、Remote Executor SSH 边界、pprof 和 Huawei package sync 的环境变量样例。设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 后，V2 会按 `examples/server-tools.yaml` 的 args、timeout、`maxInputFiles` 和 match rules 自动注册对应 analyzer。
 - 运行目录快捷脚本在缺少 `LOGAGENT_WORK_DIR` 时失败；设置后能初始化工作目录、编译 Server、同步 WebUI、启动/停止/重启服务。
 - 运行目录和 deploy rebuild 脚本会从 submodules 构建 source-built analyzers，并把默认配置中的工具路径指向对应构建产物。

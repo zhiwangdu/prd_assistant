@@ -43,10 +43,14 @@ Implemented in this slice:
 - Deploy template controls through `deploy/rebuild-v2-install.sh` and
   `deploy/logagent-v2ctl.sh` for runtime virtualenv install, SQLite
   initialization, WebUI static sync, start, stop, restart, status, and logs.
+  `status` keeps pid-file-scoped process detection and, when reachable, queries
+  `/api/v2/tools` with the configured API key to print source-built analyzer
+  registration/runnable state.
 - Local development controls through `scripts/v2-local.sh` for V2
   build/start/stop/restart/status/logs, defaulting to `server-v2/.venv`,
   `/tmp/logagent-v2-local`, port `50993`, and `target/tools` for optional
-  source-built analyzer output.
+  source-built analyzer output. `status` uses the same authenticated tools
+  catalog probe as the runtime control script.
 - Bearer auth for `/api/v2/*`.
 - SQLite schema creation with WAL.
 - Workspace creation/list/read/update and soft-delete lifecycle; deleted

@@ -2,6 +2,29 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Analyzer Status Visibility
+
+- Extended `scripts/v2-local.sh status` and `deploy/logagent-v2ctl.sh status`
+  with an authenticated `/api/v2/tools` catalog probe.
+- When V2 is running and reachable, status output now prints the
+  `sourceBuiltAnalyzers` registration summary for `flux_query_analyzer`,
+  `influxql_analyzer`, `opengemini_storage_analyzer`, and
+  `influxdb_storage_analyzer`, including status, enabled, and runnable flags.
+- The tools catalog probe is diagnostic-only: curl/API/parser failures print an
+  unavailable message and do not change the service status result.
+- Added deployment-script regression coverage with a fake `curl` to verify the
+  Bearer token header and analyzer status output.
+- Updated root, V2 Server, and Deployment docs/specs.
+- Verification passed:
+  `bash -n scripts/v2-local.sh deploy/logagent-v2ctl.sh deploy/rebuild-v2-install.sh scripts/build-tools.sh`,
+  focused `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_deploy_scripts.py`
+  with 8 passed,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check tests/test_deploy_scripts.py`,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 171 passed
+  and 1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2 tests`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Huawei Query Preview Parity
 
 - Aligned V2 Huawei package sync GaussDB query result shaping with Rust/V1.

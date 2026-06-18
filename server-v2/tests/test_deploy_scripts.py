@@ -90,6 +90,64 @@ class DeployScriptTests(unittest.TestCase):
             self.assertIn("Run deploy/rebuild-v2-install.sh first.", result.stderr)
             self.assertFalse(Path(env["LOGAGENT_V2_PID_FILE"]).exists())
 
+    def test_v2_local_status_reports_source_built_analyzers(self) -> None:
+        script = ROOT_DIR / "scripts" / "v2-local.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            fake_curl = bin_dir / "curl"
+            fake_curl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+target="${@: -1}"
+case "$target" in
+  */health)
+    printf '{"status":"ok"}'
+    ;;
+  */api/v2/tools)
+    args=" $* "
+    [[ "$args" == *"Authorization: Bearer secret"* ]] || {
+      echo "missing Authorization header" >&2
+      exit 12
+    }
+    cat <<'JSON'
+{"sourceBuiltAnalyzers":[{"toolId":"flux_query_analyzer","status":"registered","enabled":true,"runnable":true},{"toolId":"influxdb_storage_analyzer","status":"missing","enabled":false,"runnable":false}]}
+JSON
+    ;;
+  *)
+    echo "unexpected curl target: $target" >&2
+    exit 13
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            env = self.isolated_env(tmp_path)
+            env["LOGAGENT_V2_API_KEY"] = "secret"
+            env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+            Path(env["LOGAGENT_V2_PID_FILE"]).write_text(
+                str(os.getpid()),
+                encoding="utf-8",
+            )
+
+            result = self.run_script(script, "status", env=env)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("LogAgent V2 is running", result.stdout)
+            self.assertIn('"status":"ok"', result.stdout)
+            self.assertIn("Analyzer tools:", result.stdout)
+            self.assertIn(
+                "flux_query_analyzer: status=registered, enabled=true, runnable=true",
+                result.stdout,
+            )
+            self.assertIn(
+                "influxdb_storage_analyzer: status=missing, enabled=false, runnable=false",
+                result.stdout,
+            )
+
     def test_rebuild_v2_install_validates_source_dir_before_install(self) -> None:
         script = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
 
