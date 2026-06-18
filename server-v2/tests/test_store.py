@@ -730,7 +730,19 @@ class StoreTests(unittest.TestCase):
 
     def test_mcp_tool_lists_cover_v1_builtin_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings = Settings(
+                data_dir=Path(tmp),
+                api_key="test",
+                tools=(
+                    ToolDefinition(
+                        id="schema_tool",
+                        display_name="Schema Tool",
+                        command=sys.executable,
+                        args=("-c", "print('ok')", "{input_file}"),
+                        match_file_patterns=("*.log",),
+                    ),
+                ),
+            )
             settings.ensure_dirs()
             store = Store(settings.sqlite_path)
             store.initialize()
@@ -766,6 +778,40 @@ class StoreTests(unittest.TestCase):
                     "logagent.fetch",
                 }.issubset(task_tool_names)
             )
+            task_tools = {item["name"]: item for item in task_list["result"]["tools"]}
+
+            slice_schema = task_tools["logagent.get_log_slice"]["inputSchema"]
+            self.assertIn({"required": ["startLine", "endLine"]}, slice_schema["anyOf"])
+            self.assertEqual(
+                {"path", "lineNumber", "before", "after", "startLine", "endLine"},
+                set(slice_schema["properties"].keys()),
+            )
+
+            domain_schema = task_tools["logagent.run_domain_tool"]["inputSchema"]
+            self.assertIn({"required": ["tool", "inputFile"]}, domain_schema["anyOf"])
+            self.assertIn("schema_tool", domain_schema["properties"]["tool"]["enum"])
+            self.assertIn("schema_tool", domain_schema["properties"]["toolId"]["enum"])
+
+            fetch_schema = task_tools["logagent.fetch"]["inputSchema"]
+            self.assertIn({"required": ["fetchId"]}, fetch_schema["anyOf"])
+            self.assertIn("fetchId", fetch_schema["properties"])
+            self.assertIn("endpointId", fetch_schema["properties"])
+
+            field_schema = task_tools["logagent.get_metadata_field_types"]["inputSchema"]
+            self.assertEqual(
+                ["instanceId", "database", "measurement"],
+                field_schema["required"],
+            )
+            self.assertIn("field", field_schema["properties"])
+            tag_schema = task_tools["logagent.get_metadata_tag_fields"]["inputSchema"]
+            self.assertNotIn("field", tag_schema["properties"])
+
+            user_input_schema = task_tools["logagent.request_user_input"]["inputSchema"]
+            self.assertEqual(["question"], user_input_schema["required"])
+            self.assertIn("answerFormat", user_input_schema["properties"])
+            approval_schema = task_tools["logagent.request_approval"]["inputSchema"]
+            self.assertEqual(["reason"], approval_schema["required"])
+            self.assertIn("evidenceRefs", approval_schema["properties"])
 
             readonly_list = readonly_mcp_response(
                 settings,

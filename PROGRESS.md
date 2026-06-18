@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Task MCP Tool Schema Parity Coverage
+
+- Extended the V2 MCP/tool catalog regression test to lock Rust/V1-compatible
+  task MCP schemas for `logagent.get_log_slice`, `logagent.run_domain_tool`,
+  `logagent.fetch`, metadata field/tag tools, `request_user_input`, and
+  `request_approval`.
+- The test now validates legacy `tool/inputFile`, `fetchId`,
+  `startLine`/`endLine`, metadata field/tag, and waiting/approval parameters in
+  addition to the V1 tool-name coverage across task MCP, readonly MCP, and the
+  manual Tools catalog.
+- Updated V2 Server README/SPEC to record the stronger parity coverage.
+- Verification passed: focused MCP tool-list parity pytest, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 158 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Configured Tool Action ID Prefix Parity
 
 - Aligned default configured subprocess action ids with the Rust/V1

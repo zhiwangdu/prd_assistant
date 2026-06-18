@@ -869,9 +869,11 @@ The migrated built-ins are:
   and logical `tool_results/<action_id>/result.json` evidence reference; the
   V1 `gaussdbPasswordEnv` credential metadata key is retained as `null` while
   V2 also reports the DSN env name.
-Regression coverage must lock the V1 built-in tool names across task MCP,
-readonly MCP, and the manual Tools catalog, so future refactors cannot drop a
-migrated built-in from one surface accidentally.
+Regression coverage must lock the V1 built-in tool names and key task MCP
+input schemas across task MCP, readonly MCP, and the manual Tools catalog, so
+future refactors cannot drop a migrated built-in or break legacy
+`tool/inputFile`, `fetchId`, `startLine`/`endLine`, metadata field/tag, or
+waiting/approval parameters accidentally.
 
 Manual tool runs create `kind=tool_run` rows in `runs` and `tool_run` jobs in
 the DB-backed queue. They accept `workspaceId`, optional `uploadIds`, and
