@@ -1247,8 +1247,10 @@ Saved endpoint bodies and runtime body overrides are rejected before the HTTP
 request when their UTF-8 byte size exceeds
 `LOGAGENT_V2_FETCH_MAX_REQUEST_BYTES`.
 Request URLs, sensitive headers, and sensitive JSON/form-style body preview
-fields are redacted in API, MCP, and artifact previews. Redirects are followed
-manually up to
+fields are redacted as `<redacted>` in API, MCP, and artifact previews.
+Inside URL query strings and form-style body previews the marker is URL-encoded
+as `%3Credacted%3E`.
+Redirects are followed manually up to
 `LOGAGENT_V2_FETCH_MAX_REDIRECTS`; every hop is revalidated against the same
 allowlist, and sensitive headers are stripped when redirecting across origin.
 Fetch stores bounded response previews as `fetch_result` evidence and stores
@@ -1271,7 +1273,9 @@ updating a sensitive endpoint without a valid key is rejected before the
 endpoint row is written. `PATCH /api/v2/fetch/endpoints/:endpoint_id` rewrites
 the redacted endpoint row and refreshes the encrypted credential set from the
 merged endpoint definition. Execution hydrates the endpoint from the credential
-set, while API, MCP, and result artifacts continue to show only redacted values.
+set, while API, MCP, and result artifacts continue to show only `<redacted>`
+values; URL query strings and form-style body previews percent-encode that
+marker.
 
 `request_user_input` and `request_approval` persist pending `actions`, write
 `mcp_waiting_request.json`, and move the run into `waiting_for_user` or

@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Redaction Token Parity
+
+- Aligned V2 Fetch redaction output with Rust/V1 by changing API, MCP, and
+  artifact previews from `__REDACTED__` to `<redacted>`.
+- Updated Fetch/Security/Tool Runner docs and test expectations for endpoint
+  summaries, request metadata, response headers, redirect URLs, and cURL import
+  previews.
+- URL query strings and form-style body previews percent-encode the marker as
+  `%3Credacted%3E`, while structured header, variable, and JSON body fields show
+  `<redacted>`.
+- Verification passed: focused Fetch pytest selection, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 161 passed and
+  1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff
+  check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Case MCP Default Limit Parity
 
 - Aligned V2 readonly MCP `logagent.search_cases` default limit with Rust/V1:

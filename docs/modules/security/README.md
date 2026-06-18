@@ -9,7 +9,7 @@
 - Native Agent 只接受 `127.0.0.1` 请求。
 - Native Agent 校验文件路径，避免任意文件上传。
 - 不在日志或数据库中保存 Cookie、Authorization、session token。
-- Fetch endpoint 导入的 Authorization、Cookie、token/api_key/secret/password/session 等敏感值只进入 Server credential store，并用 AES-256-GCM 加密持久化；API、WebUI、日志、artifact 和 LLM evidence 只展示脱敏值。
+- Fetch endpoint 导入的 Authorization、Cookie、token/api_key/secret/password/session 等敏感值只进入 Server credential store，并用 AES-256-GCM 加密持久化；API、WebUI、日志、artifact 和 LLM evidence 只展示 Rust/V1 兼容 `<redacted>` 脱敏值；URL query 和 form-style body preview 中按标准编码显示为 `%3Credacted%3E`。
 - Huawei package sync 的 OBS access key、secret key、可选 security token 和 GaussDB password 只从环境变量读取；工具目录、日志和 `tool_results` 只记录环境变量名、对象 key、状态和摘要，不记录密钥值或原始 SQL。
 - 上传文件大小限制。
 - 任务失败要保留错误信息，方便定位。

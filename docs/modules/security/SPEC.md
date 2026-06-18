@@ -50,7 +50,7 @@
 
 - 密钥来自环境变量。
 - 不写入日志、manifest、grep 结果或前端任务记录。
-- Fetch credential encryption key 来自 `fetch.secret_key_env` 指向的环境变量；值必须是 32-byte base64 key。Authorization、Cookie 和 token/api_key/secret/password/session 类 query/body 字段只能以密文保存，响应 artifact、API 和 UI 只显示 `<redacted>` 或脱敏 URL/header/body preview。
+- Fetch credential encryption key 来自 `fetch.secret_key_env` 指向的环境变量；值必须是 32-byte base64 key。Authorization、Cookie 和 token/api_key/secret/password/session 类 query/body 字段只能以密文保存，响应 artifact、API 和 UI 只显示 `<redacted>` 或脱敏 URL/header/body preview；URL query 和 form-style body preview 中按标准编码显示为 `%3Credacted%3E`。
 - Huawei OBS access key、secret key、可选 security token 和 GaussDB password 来自 `huawei_cloud.package_sync.*_env` 指向的环境变量；启用时缺失或为空必须启动失败，禁用时不得读取这些变量。
 
 ## 验收标准

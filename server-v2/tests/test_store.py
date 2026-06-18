@@ -8960,16 +8960,16 @@ fi
                 self.assertEqual(listed["endpoints"][0]["description"], "")
                 self.assertEqual(listed["endpoints"][0]["tags"], [])
                 self.assertIn(
-                    "api_key=__REDACTED__", listed["endpoints"][0]["urlTemplate"]
+                    "api_key=%3Credacted%3E", listed["endpoints"][0]["urlTemplate"]
                 )
                 self.assertIsNone(listed["endpoints"][0]["credentialVersion"])
                 self.assertEqual(
-                    listed["endpoints"][0]["headers"]["Authorization"], "__REDACTED__"
+                    listed["endpoints"][0]["headers"]["Authorization"], "<redacted>"
                 )
-                self.assertIn("api_key=__REDACTED__", listed["endpoints"][0]["url"])
+                self.assertIn("api_key=%3Credacted%3E", listed["endpoints"][0]["url"])
                 self.assertEqual(
                     listed["endpoints"][0]["bodyPreview"],
-                    "password=__REDACTED__&keep=value",
+                    "password=%3Credacted%3E&keep=value",
                 )
                 disabled_list_response = task_mcp_response(
                     Settings(data_dir=Path(tmp), api_key="test", fetch_enabled=False),
@@ -9011,12 +9011,12 @@ fi
                 self.assertIn('"ok"', payload["bodyPreview"])
                 self.assertEqual(payload["result"]["response"]["statusCode"], 200)
                 self.assertEqual(
-                    payload["result"]["response"]["headers"]["X-Api-Key"], "__REDACTED__"
+                    payload["result"]["response"]["headers"]["X-Api-Key"], "<redacted>"
                 )
-                self.assertIn("api_key=__REDACTED__", payload["result"]["request"]["url"])
+                self.assertIn("api_key=%3Credacted%3E", payload["result"]["request"]["url"])
                 self.assertEqual(
                     payload["result"]["request"]["bodyPreview"],
-                    "password=__REDACTED__&keep=value",
+                    "password=%3Credacted%3E&keep=value",
                 )
                 self.assertEqual(payload["evidence"]["kind"], "fetch_result")
                 self.assertTrue(payload["evidence"]["final_allowed"])
@@ -9319,14 +9319,14 @@ fi
                 self.assertTrue(result["httpOk"])
                 self.assertEqual(result["statusCode"], 200)
                 self.assertEqual(result["fetchId"], endpoint["id"])
-                self.assertIn("token=__REDACTED__", result["request"]["url"])
-                self.assertEqual(result["request"]["variables"]["token"], "__REDACTED__")
+                self.assertIn("token=%3Credacted%3E", result["request"]["url"])
+                self.assertEqual(result["request"]["variables"]["token"], "<redacted>")
                 self.assertEqual(result["request"]["variables"]["instance"], "i001")
-                self.assertEqual(result["request"]["headers"]["Authorization"], "__REDACTED__")
+                self.assertEqual(result["request"]["headers"]["Authorization"], "<redacted>")
                 self.assertEqual(result["request"]["headers"]["X-Run"], "trace-1")
                 self.assertEqual(
                     result["request"]["bodyPreview"],
-                    "password=__REDACTED__&keep=override",
+                    "password=%3Credacted%3E&keep=override",
                 )
                 self.assertEqual(
                     result["bodyArtifactPath"],
@@ -9549,9 +9549,9 @@ fi
                 )
                 persist_fetch_credentials(settings, store, created["id"], endpoint)
                 stored_endpoint = store.get_fetch_endpoint(created["id"])
-                self.assertIn("api_key=__REDACTED__", stored_endpoint["url"])
-                self.assertEqual(stored_endpoint["headers"]["Authorization"], "__REDACTED__")
-                self.assertIn('"password": "__REDACTED__"', stored_endpoint["body"])
+                self.assertIn("api_key=%3Credacted%3E", stored_endpoint["url"])
+                self.assertEqual(stored_endpoint["headers"]["Authorization"], "<redacted>")
+                self.assertIn('"password": "<redacted>"', stored_endpoint["body"])
                 credential = store.get_fetch_credential_set(created["id"])
                 self.assertIsNotNone(credential)
                 assert credential is not None
@@ -9579,8 +9579,8 @@ fi
                 self.assertIn("api_key=query-secret", captured["path"])
                 self.assertEqual(captured["authorization"], "Bearer header-secret")
                 self.assertIn("body-secret", captured["body"])
-                self.assertIn("__REDACTED__", result["result"]["request"]["url"])
-                self.assertIn("__REDACTED__", result["result"]["request"]["bodyPreview"])
+                self.assertIn("%3Credacted%3E", result["result"]["request"]["url"])
+                self.assertIn("<redacted>", result["result"]["request"]["bodyPreview"])
         finally:
             server.shutdown()
             server.server_close()
@@ -9653,16 +9653,16 @@ fi
             self.assertTrue(body["followRedirects"])
             self.assertEqual(body["schemaVersion"], 2)
             self.assertEqual(body["refreshPolicy"]["mode"], "manual_only")
-            self.assertIn("api_key=__REDACTED__", body["url"])
-            self.assertEqual(body["headers"]["Authorization"], "__REDACTED__")
+            self.assertIn("api_key=%3Credacted%3E", body["url"])
+            self.assertEqual(body["headers"]["Authorization"], "<redacted>")
             self.assertEqual(body["headers"]["X-Trace"], "new")
-            self.assertIn("password=__REDACTED__", body["bodyPreview"])
+            self.assertIn("password=%3Credacted%3E", body["bodyPreview"])
             self.assertTrue(body["hasCredentials"])
 
             stored = store.get_fetch_endpoint(endpoint_id)
-            self.assertIn("api_key=__REDACTED__", stored["url"])
-            self.assertEqual(stored["headers"]["Authorization"], "__REDACTED__")
-            self.assertIn("password=__REDACTED__", stored["body"])
+            self.assertIn("api_key=%3Credacted%3E", stored["url"])
+            self.assertEqual(stored["headers"]["Authorization"], "<redacted>")
+            self.assertIn("password=%3Credacted%3E", stored["body"])
 
             credential = store.get_fetch_credential_set(endpoint_id)
             self.assertIsNotNone(credential)
@@ -9783,7 +9783,7 @@ fi
                 self.assertEqual(ok_result["status"], "OK")
                 self.assertEqual(ok_result["response"]["statusCode"], 200)
                 self.assertEqual(ok_result["response"]["redirectCount"], 1)
-                self.assertIn("api_key=__REDACTED__", ok_result["response"]["finalUrl"])
+                self.assertIn("api_key=%3Credacted%3E", ok_result["response"]["finalUrl"])
                 self.assertEqual(ok_result["response"]["redirects"][0]["statusCode"], 302)
 
                 blocked_response = task_mcp_response(
@@ -9819,10 +9819,10 @@ fi
         preview = preview_curl_import(curl)
         endpoint = preview["endpoint"]
         self.assertEqual(endpoint["method"], "POST")
-        self.assertIn("api_key=__REDACTED__", endpoint["url"])
+        self.assertIn("api_key=%3Credacted%3E", endpoint["url"])
         self.assertTrue(endpoint["followRedirects"])
-        self.assertEqual(endpoint["headers"]["Authorization"], "__REDACTED__")
-        self.assertIn('"password": "__REDACTED__"', endpoint["bodyPreview"])
+        self.assertEqual(endpoint["headers"]["Authorization"], "<redacted>")
+        self.assertIn('"password": "<redacted>"', endpoint["bodyPreview"])
         self.assertIn({"location": "query", "name": "api_key"}, preview["detectedSensitiveFields"])
         self.assertIn(
             {"location": "header", "name": "Authorization"},
@@ -10038,7 +10038,7 @@ fi
                     remark="url import",
                 )
                 self.assertEqual(preview["fetch"]["statusCode"], 200)
-                self.assertIn("token=__REDACTED__", preview["import"]["sourceUrl"])
+                self.assertIn("token=%3Credacted%3E", preview["import"]["sourceUrl"])
                 self.assertEqual(store.list_metadata_instances(), [])
 
                 confirmed = confirm_metadata_import(store, preview["import"]["importId"])
@@ -10076,7 +10076,7 @@ fi
                     "inst-url-snapshot",
                 )
                 self.assertEqual(fetched_body["fetch"]["statusCode"], 200)
-                self.assertIn("token=__REDACTED__", fetched_body["fetch"]["url"])
+                self.assertIn("token=%3Credacted%3E", fetched_body["fetch"]["url"])
                 self.assertEqual(
                     len(store.list_metadata_instances()),
                     instance_count,

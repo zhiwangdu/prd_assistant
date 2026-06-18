@@ -1099,9 +1099,10 @@ Fetch timeout, request-byte cap, and response-byte cap use a minimum value of
 1; maximum redirects uses a minimum value of 0.
 Controlled headers such as `Host`,
 `Content-Length`, `Transfer-Encoding`, and `Connection` are rejected when
-endpoints are saved. Sensitive headers, query parameters, and JSON/form body fields
-containing token/secret/password/api key style names are redacted from API, MCP,
-and artifact previews.
+endpoints are saved. Sensitive headers, query parameters, and JSON/form body
+fields containing token/secret/password/api key style names are redacted as
+`<redacted>` from API, MCP, and artifact previews; URL query strings and
+form-style body previews percent-encode the marker as `%3Credacted%3E`.
 
 Redirects are not followed unless the endpoint has `followRedirects=true`. When
 enabled, redirects are followed manually up to
