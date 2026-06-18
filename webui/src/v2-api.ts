@@ -446,7 +446,7 @@ export type V2MetadataInstanceSummary = {
 export type V2MetadataImport = {
   importId: string;
   instanceId: string;
-  templateType: "json" | "yaml" | "opengemini" | string;
+  templateType: "json" | "yaml" | "csv" | "opengemini" | string;
   remark?: string | null;
   status: string;
   sourceUrl?: string | null;

@@ -2,6 +2,17 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 WebUI Metadata CSV Import Entry
+
+- Extended the V2 Metadata Workbench template selector with `csv`.
+- Metadata file selection now accepts `.csv` and automatically switches the
+  template type to `csv` when a CSV file is loaded; JSON/YAML file suffixes
+  continue to auto-select their matching template type.
+- Updated WebUI and Metadata docs/specs so the product entry matches the V2
+  Server CSV import support.
+- Verification passed: `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, and `cd webui && npm run build`.
+
 ## 2026-06-18 V2 Metadata CSV Import
 
 - Added dependency-free V2 Metadata CSV import support for

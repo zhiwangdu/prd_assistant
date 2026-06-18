@@ -22,7 +22,7 @@ Metadata 模块已完成基础 Rust Server 实现。
 - 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看；重复导入同一个 `instanceId` 会按新快照覆盖，并清理旧 cluster/node 残留。
 - 已导入 openGemini Instance 可用保存的 `rawSnapshot` 手动刷新归一化快照，也可删除单条 Instance 及其对应 cluster/node 记录。
 - Python V2 已补齐从持久化 snapshot 派生的 cluster detail / cluster nodes 查询，以及不落库的远端 snapshot fetch。
-- WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
+- WEBUI Metadata 页面支持实时 URL 加载、JSON/YAML/CSV 文件上传和手动 JSON/YAML/CSV 文本导入。
 - task 创建时关联 `instanceId` / `nodeId`；`clusterId` 已从用户入口弃用，仅作为兼容字段保留。
 - 在 task workspace 原子写入 `metadata_context.json`。
 - 将产品、版本、环境和拓扑数量摘要提供给 Claude Code MCP resources；完整 Metadata 不再进入 `analysis_package.json` 或任务 MCP 默认 resource。
@@ -134,8 +134,8 @@ Metadata 模块已完成基础 Rust Server 实现。
 导入方式：
 
 - WEBUI 实时加载 openGemini `/getdata` URL。
-- WEBUI 上传 JSON 模板文件。
-- WEBUI 手动粘贴 JSON 模板文本。
+- WEBUI 上传 JSON/YAML/CSV 模板文件。
+- WEBUI 手动粘贴 JSON/YAML/CSV 模板文本。
 - Server 调用 Metadata Importer 解析。
 - 校验字段和重复项。
 - 生成导入预览。
@@ -260,7 +260,7 @@ Authorization: Bearer <api-key>
 - Raw JSON 页面按需展开原始 JSON，不在进入页面时全量 stringify 大对象。
 - 展示产品、版本、环境、标签。
 - 从真实元数据 URL 拉取并预览。
-- 上传 JSON 文件或输入 JSON 文本并预览导入结果。
+- 上传 JSON/YAML/CSV 文件或输入 JSON/YAML/CSV 文本并预览导入结果。
 - 导入确认后显示成功/失败明细。
 
 任务创建时可选择或输入：
@@ -300,7 +300,7 @@ data_dir/
 - 已导入 Instance 列表查询。
 - 集群节点查询。
 - YAML/JSON 模板导入预览。
-- WebUI JSON 文件上传和手动 JSON 文本导入预览。
+- WebUI JSON/YAML/CSV 文件上传和手动 JSON/YAML/CSV 文本导入预览。
 - 导入确认。
 
 ## 上下游接口

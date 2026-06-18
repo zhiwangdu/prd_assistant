@@ -17,7 +17,7 @@ import {
   type V2MetadataInstanceSummary
 } from "./v2-api";
 
-type TemplateType = "json" | "yaml" | "opengemini";
+type TemplateType = "json" | "yaml" | "csv" | "opengemini";
 
 export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
   const [instances, setInstances] = useState<V2MetadataInstanceSummary[]>([]);
@@ -191,6 +191,10 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
     try {
       setContent(await file.text());
       if (!instanceId.trim()) setInstanceId(file.name.replace(/\.[^.]+$/, ""));
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      if (extension === "csv") setTemplateType("csv");
+      if (extension === "yaml" || extension === "yml") setTemplateType("yaml");
+      if (extension === "json") setTemplateType("json");
       setStatus(`${file.name} loaded`);
     } catch (reason) {
       setStatus(errorMessage(reason));
@@ -232,16 +236,17 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
               <select className="w-full bg-transparent text-sm outline-none" value={templateType} onChange={(event) => setTemplateType(event.target.value as TemplateType)}>
                 <option value="json">json</option>
                 <option value="yaml">yaml</option>
+                <option value="csv">csv</option>
                 <option value="opengemini">opengemini</option>
               </select>
             </label>
             <Input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Metadata URL" />
             <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 px-3 text-center text-sm text-muted-foreground transition hover:border-primary">
               <UploadCloud className="mb-2 h-5 w-5" />
-              Upload metadata JSON/YAML
-              <input className="hidden" type="file" accept=".json,.yaml,.yml,text/*,application/json" onChange={(event) => void handleFileSelected(event.target.files?.[0])} />
+              Upload metadata JSON/YAML/CSV
+              <input className="hidden" type="file" accept=".json,.yaml,.yml,.csv,text/*,text/csv,application/json" onChange={(event) => void handleFileSelected(event.target.files?.[0])} />
             </label>
-            <textarea className="min-h-56 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20" spellCheck={false} value={content} onChange={(event) => setContent(event.target.value)} placeholder="Metadata JSON/YAML content" />
+            <textarea className="min-h-56 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20" spellCheck={false} value={content} onChange={(event) => setContent(event.target.value)} placeholder="Metadata JSON/YAML/CSV content" />
             <div className="grid gap-2 sm:grid-cols-2">
               <Button disabled={loading || !instanceId.trim() || !content.trim()} variant="outline" onClick={() => void previewContentImport()}>Preview content</Button>
               <Button disabled={loading || !instanceId.trim() || !url.trim()} variant="outline" onClick={() => void previewFetchImport()}>Preview URL</Button>

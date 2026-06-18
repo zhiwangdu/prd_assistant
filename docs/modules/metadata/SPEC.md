@@ -22,7 +22,7 @@ Metadata 在产品入口上归入 System Context 和 Domain Adapter。现有 `/a
 - 已导入 Instance 列表、按 InstanceID 读取拓扑快照、按保存的 Raw JSON 手动刷新快照、删除单条 Instance。
 - Python V2 已补齐从持久化 snapshot 派生的 cluster detail / cluster nodes 查询，以及不落库的远端 snapshot fetch。
 - 重复确认导入同一个 `instanceId` 时必须按新快照覆盖，并清理该实例旧 cluster/node 记录，避免 UI 和 task context 读到残留拓扑。
-- WEBUI Metadata 页面支持实时 URL 加载、JSON 文件上传和手动 JSON 文本三种导入方式。
+- WEBUI Metadata 页面支持实时 URL 加载、JSON/YAML/CSV 文件上传和手动 JSON/YAML/CSV 文本导入。
 - task context 关联 `instanceId` / `nodeId`；`clusterId` 仅兼容旧请求和内部拓扑。
 - `metadata_context.json` workspace 快照和 LLM 摘要。
 - Claude Code 初始 evidence package 和任务 MCP `metadata_context` resource 只暴露 `metadataContextOutline`；完整 Metadata 需通过 `logagent.query_metadata` 按 section/filter/分页读取 bounded slice。
@@ -361,7 +361,7 @@ V2 readonly MCP 保持全局只读入口，仅暴露 imported instance/snapshot/
 - 已导入 Instance 列表和按 InstanceID 查询拓扑快照。
 - 兼容集群节点查询，并重点展示 `PtView` 分区归属和 `Databases` 库表/RP/shard 摘要。
 - 真实元数据 URL 拉取和预览。
-- JSON 文件上传、手动 JSON 文本输入、导入预览和确认。
+- JSON/YAML/CSV 文件上传、手动 JSON/YAML/CSV 文本输入、导入预览和确认。
 - 完整 Metadata JSON 模板可不填写 InstanceID；openGemini 原始 JSON 仍需填写 InstanceID。
 - task 创建时选择实例和可选节点。
 
@@ -383,7 +383,7 @@ V2 readonly MCP 保持全局只读入口，仅暴露 imported instance/snapshot/
 - 能从 cluster 查询结果中直接看到 openGemini `Databases` 的默认 RP、Measurements schema 和 ShardGroups。
 - 能提交 YAML/JSON 模板并得到导入预览。
 - WebUI 能上传 `.json` 文件并得到导入预览。
-- WebUI 能粘贴 JSON 文本并得到导入预览。
+- WebUI 能粘贴 JSON/YAML/CSV 文本并得到导入预览。
 - 能在用户输入 InstanceID 后从 `http://127.0.0.1:8091/getdata` 拉取 openGemini metadata 并归一化展示。
 - `analysis_package.json` 不包含完整 databases/measurements/shards/indexes payload，任务 MCP `metadata_context` resource 返回 outline/counts。
 - `logagent.query_metadata` 能按 database/RP/measurement/shard/partition filters 和 limit/cursor 返回 bounded slice，非法 section/filter 返回错误。
