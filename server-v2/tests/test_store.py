@@ -3400,6 +3400,90 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 AgentRuntime(settings, store).run_analysis(bad_workspace["id"], bad_run["id"])
 
+    def test_duplicate_plain_upload_paths_get_stable_extracted_prefixes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), api_key="test")
+            settings.ensure_dirs()
+            store = Store(settings.sqlite_path)
+            store.initialize()
+            workspace = store.create_workspace("timeout error", "diagnose", "en-US")
+
+            first_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "app.log",
+                b"first timeout\n",
+                "text/plain",
+            )
+            second_artifact = write_artifact_bytes(
+                settings,
+                store,
+                workspace["id"],
+                "app.log",
+                b"second error\n",
+                "text/plain",
+            )
+            store.create_upload(workspace["id"], "app.log", first_artifact["id"])
+            store.create_upload(workspace["id"], "app.log", second_artifact["id"])
+            run = store.create_run(workspace["id"])
+
+            AgentRuntime(settings, store).run_analysis(workspace["id"], run["id"])
+            manifest_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 13,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/manifest"},
+                },
+            )
+            manifest = json.loads(manifest_response["result"]["contents"][0]["text"])
+            paths = [item["path"] for item in manifest["files"]]
+            self.assertEqual(paths, ["extracted/app/app.log", "extracted/app_2/app.log"])
+            self.assertEqual(
+                [item["extractedDir"] for item in manifest["uploads"]],
+                ["extracted/app", "extracted/app_2"],
+            )
+
+            grep_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 14,
+                    "method": "resources/read",
+                    "params": {"uri": f"logagent-v2://run/{run['id']}/grep_results"},
+                },
+            )
+            grep_results = json.loads(grep_response["result"]["contents"][0]["text"])
+            grep_paths = {item["path"] for item in grep_results["matches"]}
+            self.assertEqual(grep_paths, {"extracted/app/app.log", "extracted/app_2/app.log"})
+
+            slice_response = task_mcp_response(
+                settings,
+                store,
+                run["id"],
+                {
+                    "jsonrpc": "2.0",
+                    "id": 15,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "logagent.get_log_slice",
+                        "arguments": {
+                            "path": "extracted/app_2/app.log",
+                            "startLine": 1,
+                            "endLine": 1,
+                        },
+                    },
+                },
+            )
+            payload = json.loads(slice_response["result"]["content"][0]["text"])
+            self.assertEqual(payload["lines"][0]["text"], "second error")
+
     def test_parse_node_log_package_accepts_v1_timestamp_shape(self) -> None:
         package = parse_node_log_package(
             "pkg123_instance123_node123_2026_06_16_09_58_02_561564_logs.tar.gz"
@@ -3685,7 +3769,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(payload["keywordCounts"]["cache"], 1)
             self.assertEqual(payload["unmatchedKeywords"], [])
             self.assertEqual(payload["matches"][0]["evidenceRef"], payload["search"]["matches"][0]["ref"])
-            self.assertEqual(payload["matches"][0]["file"], "query.log")
+            self.assertEqual(payload["matches"][0]["file"], "extracted/query/query.log")
             self.assertEqual(payload["matches"][0]["line"], payload["search"]["matches"][0]["lineNumber"])
             self.assertEqual(payload["evidenceRefs"], [payload["search"]["matches"][0]["ref"]])
             self.assertIn("matches[].text", payload["note"])
@@ -7036,7 +7120,10 @@ fi
             inputs = [item["inputFile"] for item in payload["results"]]
             self.assertEqual(
                 inputs,
-                ["extracted/queries/one.log", "extracted/queries/two.txt"],
+                [
+                    "extracted/queries/queries/one.log",
+                    "extracted/queries/queries/two.txt",
+                ],
             )
             summaries = [item["summary"] for item in payload["results"]]
             self.assertEqual(summaries, ["plain log line", "select * from cpu"])
@@ -7288,7 +7375,7 @@ fi
             )
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertEqual(payload["result"]["summary"], "explicit line")
-            self.assertEqual(payload["result"]["inputFile"], "extracted/query.log")
+            self.assertEqual(payload["result"]["inputFile"], "extracted/query/query.log")
             self.assertIn("explicit_tool_", payload["result"]["findings"][0]["message"])
 
     def test_manual_configured_tool_run_uses_explicit_input_files(self) -> None:
@@ -7345,7 +7432,7 @@ fi
             executed = execute_tool_run(settings, store, tool_run["id"])
 
             self.assertEqual(executed["result"]["summary"], "manual line")
-            self.assertEqual(executed["result"]["inputFile"], "extracted/manual.log")
+            self.assertEqual(executed["result"]["inputFile"], "extracted/manual/manual.log")
             finished = store.get_run(tool_run["id"])
             self.assertEqual(finished["status"], "succeeded")
 

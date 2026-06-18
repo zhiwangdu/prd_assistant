@@ -604,7 +604,16 @@ Workspace uploads
 ```
 
 Supported archive formats are `.zip`, `.tar`, `.tar.gz`, and `.tgz`. Archive
-members are never extracted by path. V2 normalizes member names and rejects
+members from ordinary uploads are exposed as `extracted/<uploadDir>/<member>`
+logical paths. Plain text uploads are exposed as
+`extracted/<uploadDir>/<filename>`. Repeated upload directory names receive
+stable `_2`, `_3`, ... suffixes in upload order, matching Rust/V1's
+per-upload extracted directory behavior and preventing ambiguous log-slice or
+tool-fallback selectors. Legacy bare filename or original archive-member
+selectors are still accepted by `logagent.get_log_slice` and explicit Tool
+Runner input selectors when they match exactly one current Workspace text file.
+Archive members are never extracted by path. V2
+normalizes member names and rejects
 absolute paths, `..` traversal, empty paths, and other unsafe names. Non-file
 members and symlinks are skipped. Text files are bounded by
 `LOGAGENT_V2_MAX_TEXT_FILE_BYTES`, aggregate scanned bytes by

@@ -2,6 +2,28 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Multi-Upload Manifest Path Parity
+
+- Aligned ordinary V2 upload logical paths with Rust/V1 per-upload extracted
+  directory semantics.
+- Plain text uploads now appear as `extracted/<uploadDir>/<filename>` and
+  ordinary archive members appear as `extracted/<uploadDir>/<member>` in
+  manifest, grep results, log slices, generic query tool inputs, and Tool
+  Runner fallback selectors.
+- Repeated upload directory names now receive stable `_2`, `_3`, ... suffixes
+  in upload order, preventing duplicate `app.log` paths from becoming
+  ambiguous across multiple uploads.
+- Legacy bare filename and original archive-member selectors still resolve
+  when they match exactly one current Workspace text file, while returned
+  results expose the canonical `extracted/<uploadDir>/...` path.
+- Added regression coverage for duplicate plain uploads and precise
+  `logagent.get_log_slice` selection against the second upload.
+- Updated root, V2 Server, and Log Analyzer docs.
+- Verification passed: focused path/selector pytest selection,
+  `cd server-v2 && uv run --extra dev ruff check logagent_v2 tests`, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 157 passed and
+  1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Manifest Upload Summary Parity
 
 - Aligned V2 manifest artifacts with Rust/V1 node-package summary shape while

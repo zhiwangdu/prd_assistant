@@ -66,6 +66,8 @@ Log Analyzer 负责把原始日志包压缩成 LLM 可消费的证据。
 extracted/<文件基名>/
 ```
 
+普通文本上传和普通 archive 成员在 V2 manifest、grep、log slice 和 Tool Runner fallback 中也使用这个稳定逻辑路径；同名上传会按上传顺序追加 `_2`、`_3` 等后缀，避免多个上传内的 `app.log` 等同名路径互相覆盖。旧的裸文件名或 archive 原始成员路径在唯一匹配时仍可作为 `logagent.get_log_slice` 和显式 Tool Runner 输入 selector。
+
 匹配以下包名的节点日志包使用专用预处理：
 
 ```text

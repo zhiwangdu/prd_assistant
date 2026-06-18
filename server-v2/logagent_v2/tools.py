@@ -25,6 +25,7 @@ from .evidence import (
     collect_text_files,
     grep_text_files,
     materialize_tool_inputs,
+    resolve_text_file_selector,
     search_keywords,
     write_json_artifact,
 )
@@ -1092,10 +1093,6 @@ def select_explicit_tool_inputs(
     }
     uploads = store.list_uploads_by_ids(workspace_id, upload_ids or [])
     text_files = collect_text_files(settings, uploads)
-    text_files_by_path: dict[str, TextFile] = {}
-    for text_file in text_files:
-        text_files_by_path[text_file.path] = text_file
-        text_files_by_path[fallback_virtual_path(text_file.path)] = text_file
     upload_inputs_by_path = {
         item["path"]: item for item in select_upload_artifact_inputs(uploads, tool)
     }
@@ -1108,10 +1105,11 @@ def select_explicit_tool_inputs(
                 raise ValueError(f"tool input {input_file} is not declared for {tool.id}")
             selected.append(entry)
             continue
-        if input_file in text_files_by_path:
+        text_file = resolve_text_file_selector(text_files, input_file)
+        if text_file is not None:
             selected.append(
                 materialize_fallback_tool_input(
-                    settings, store, workspace_id, tool, text_files_by_path[input_file]
+                    settings, store, workspace_id, tool, text_file
                 )
             )
             continue

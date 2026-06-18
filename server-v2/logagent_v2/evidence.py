@@ -324,7 +324,7 @@ def get_log_line_range(
         raise ValueError("line range must contain at most 500 lines")
     uploads = store.list_uploads(workspace_id)
     text_files = collect_text_files(settings, uploads)
-    selected = next((text_file for text_file in text_files if text_file.path == path), None)
+    selected = resolve_text_file_selector(text_files, path)
     if selected is None:
         raise ValueError(f"log path {path!r} is not available in this workspace")
     lines = selected.text.splitlines()
@@ -402,21 +402,73 @@ def stable_log_slice_id(
     return f"slice_{digest}"
 
 
+def resolve_text_file_selector(text_files: list[TextFile], path: str) -> TextFile | None:
+    for text_file in text_files:
+        if text_file.path == path:
+            return text_file
+    aliases: dict[str, TextFile] = {}
+    ambiguous: set[str] = set()
+    for text_file in text_files:
+        for alias in text_file_selector_aliases(text_file):
+            if not alias or alias == text_file.path:
+                continue
+            if alias in ambiguous:
+                continue
+            existing = aliases.get(alias)
+            if existing is not None and existing != text_file:
+                aliases.pop(alias, None)
+                ambiguous.add(alias)
+                continue
+            aliases[alias] = text_file
+    if path in ambiguous:
+        raise ValueError(f"log path {path!r} is ambiguous in this workspace")
+    return aliases.get(path)
+
+
+def text_file_selector_aliases(text_file: TextFile) -> list[str]:
+    aliases = [
+        text_file.source_filename,
+        text_file.original_path,
+        posixpath.basename(text_file.path),
+    ]
+    if text_file.original_path:
+        aliases.append(f"extracted/{text_file.original_path}")
+    return [alias for alias in aliases if alias]
+
+
 def collect_text_files(settings: Settings, uploads: list[JsonObject]) -> list[TextFile]:
     text_files: list[TextFile] = []
     total_archive_bytes = 0
+    used_extracted_dirs: list[str] = []
     for upload in uploads:
         filename = upload["filename"]
         artifact_path = resolve_artifact_path(settings, upload["artifact_relative_path"])
         raw = artifact_path.read_bytes()
+        path_prefix = None
+        if parse_node_log_package(filename) is None:
+            path_prefix = generic_extracted_dir(filename, used_extracted_dirs)
         if is_archive(filename):
-            extracted, extracted_bytes = read_archive_text_files(settings, upload, raw)
+            extracted, extracted_bytes = read_archive_text_files(
+                settings,
+                upload,
+                raw,
+                path_prefix,
+            )
             total_archive_bytes += extracted_bytes
             if total_archive_bytes > settings.max_archive_bytes:
                 raise ValueError("archive extraction exceeds LOGAGENT_V2_MAX_ARCHIVE_BYTES")
             text_files.extend(extracted)
         elif is_text_path(filename):
-            text_files.append(text_file_from_bytes(settings, upload, filename, raw))
+            assert path_prefix is not None
+            text_files.append(
+                text_file_from_bytes(
+                    settings,
+                    upload,
+                    direct_upload_logical_path(filename, path_prefix),
+                    raw,
+                    original_path=filename,
+                )
+            )
     return text_files
 
 
@@ -431,18 +483,26 @@ def is_text_path(path: str) -> bool:
 
 
 def read_archive_text_files(
-    settings: Settings, upload: JsonObject, raw: bytes
+    settings: Settings,
+    upload: JsonObject,
+    raw: bytes,
+    path_prefix: str | None,
 ) -> tuple[list[TextFile], int]:
     filename = upload["filename"].lower()
     if filename.endswith(".zip"):
-        return read_zip_text_files(settings, upload, raw)
+        if path_prefix is None:
+            raise ValueError("zip uploads require a logical path prefix")
+        return read_zip_text_files(settings, upload, raw, path_prefix)
     if filename.endswith((".tar", ".tar.gz", ".tgz")):
-        return read_tar_text_files(settings, upload, raw)
+        return read_tar_text_files(settings, upload, raw, path_prefix)
     return [], 0
 
 
 def read_zip_text_files(
-    settings: Settings, upload: JsonObject, raw: bytes
+    settings: Settings,
+    upload: JsonObject,
+    raw: bytes,
+    path_prefix: str,
 ) -> tuple[list[TextFile], int]:
     result: list[TextFile] = []
     total_bytes = 0
@@ -458,16 +518,28 @@ def read_zip_text_files(
             path = safe_archive_path(info.filename)
             if not is_text_path(path):
                 continue
+            logical_path = f"{path_prefix}/{path}"
             if info.file_size > settings.max_text_file_bytes:
                 continue
             data = archive.read(info, pwd=None)
             total_bytes += len(data)
-            result.append(text_file_from_bytes(settings, upload, path, data))
+            result.append(
+                text_file_from_bytes(
+                    settings,
+                    upload,
+                    logical_path,
+                    data,
+                    original_path=path,
+                )
+            )
     return result, total_bytes
 
 
 def read_tar_text_files(
-    settings: Settings, upload: JsonObject, raw: bytes
+    settings: Settings,
+    upload: JsonObject,
+    raw: bytes,
+    path_prefix: str | None,
 ) -> tuple[list[TextFile], int]:
     result: list[TextFile] = []
     total_bytes = 0
@@ -488,6 +560,10 @@ def read_tar_text_files(
                 logical_path, log_group = classified
             elif not is_text_path(path):
                 continue
+            else:
+                if path_prefix is None:
+                    raise ValueError("tar uploads require a logical path prefix")
+                logical_path = f"{path_prefix}/{path}"
             if member.size > settings.max_text_file_bytes:
                 continue
             extracted = archive.extractfile(member)
@@ -1564,7 +1640,6 @@ def build_upload_manifest_summaries(
     summaries: list[JsonObject] = []
     for upload in uploads:
         node_package = parse_node_log_package(upload["filename"])
-        extracted_dir = generic_extracted_dir(upload["filename"], used_extracted_dirs)
         package_summary: JsonObject = {}
         if node_package is not None:
             extracted_dir = f"extracted/{node_package.node_id}/{node_package.timestamp}"
@@ -1575,6 +1650,8 @@ def build_upload_manifest_summaries(
                 package_files_by_upload.get(upload["id"], []),
             )
             file_metadata.update(package_file_metadata)
+        else:
+            extracted_dir = generic_extracted_dir(upload["filename"], used_extracted_dirs)
         summary = {
             "uploadId": upload["id"],
             "filename": upload["filename"],
@@ -1684,6 +1761,13 @@ def generic_extracted_dir(filename: str, used: list[str]) -> str:
         index += 1
     used.append(candidate)
     return f"extracted/{candidate}"
+
+
+def direct_upload_logical_path(filename: str, path_prefix: str) -> str:
+    name = posixpath.basename(filename.replace("\\", "/")) or "upload.bin"
+    if name in {".", ".."}:
+        name = "upload.bin"
+    return f"{path_prefix}/{name}"
 
 
 def upload_dir_name(filename: str) -> str:

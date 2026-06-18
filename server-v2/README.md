@@ -892,6 +892,11 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
   `.yaml`, `.yml`, `.conf`, and `.cfg` files;
 - scans `.zip`, `.tar`, `.tar.gz`, and `.tgz` packages without writing archive
   members to arbitrary filesystem paths;
+- assigns ordinary text uploads and ordinary archive members stable
+  `extracted/<uploadDir>/...` logical paths, using `_2` suffixes for repeated
+  upload directory names so multi-upload manifests and log slices are
+  unambiguous; legacy bare filename or original archive-member selectors still
+  resolve when they match exactly one current Workspace text file;
 - recognizes openGemini-style node log packages named
   `<packageId>_<instanceId>_<nodeId>_<yyyy_MM_dd_HH_mm_ss_micros>_logs.tar.gz`;
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
