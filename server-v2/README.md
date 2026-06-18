@@ -644,7 +644,10 @@ fetch/pprof/Huawei built-ins, storage analyzer materialized inputs, raw upload
 fallback, and the default WebUI routes for Analyze, Memory, System Context,
 Metadata, Tools, Fetch, Executors, and Settings. Regression coverage now locks
 the V1 built-in tool names across task MCP, readonly MCP, and the manual Tools
-catalog. Full LangGraph planning remains a separate product step.
+catalog. Readonly MCP still exposes the catalog for discovery, but any
+`tools/call` targeting catalog configured/manual built-in tools is rejected
+with an explicit readonly error. Full LangGraph planning remains a separate
+product step.
 
 ## Job Recovery
 
@@ -1024,6 +1027,10 @@ configured subprocess descriptors use the Rust/V1 command shape:
 includes manual built-ins for metadata tools, `logagent.preprocess_log_package`,
 `logagent.fetch`, and default-off `logagent.huawei_cloud_package_sync`, plus the
 V1-style configured command adapter `pprof_analyzer`.
+Readonly MCP exposes these descriptors through `logagent.list_tools` and
+`logagent://tools/catalog`, but it rejects direct `tools/call` execution for
+catalog tools such as configured commands, preprocess, fetch, pprof, and Huawei
+sync.
 Metadata built-in descriptors use the Rust/V1 catalog shape with
 `backend=builtin`, `read-only` / `manual-run` tags, and field/tag params
 templates that include `retentionPolicy` where supported. Manual metadata

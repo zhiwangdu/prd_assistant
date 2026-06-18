@@ -85,7 +85,7 @@ tools:
 - 每次执行必须设置 timeout。
 - stdout、stderr、exit code、耗时都要保存。
 - 工具失败不应导致整个任务失败，除非标记为必需。
-- 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。
+- 只读 HTTP MCP 的工具目录和 `tools.zip` 导出不能触发 Tool Runner 执行，不能读取 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件；对 catalog 中的 configured/manual built-in tool 发起 `tools/call` 时会返回明确的 readonly 拒绝错误。
 - 工具目录必须通过 descriptor 标记 `source/tags/readOnly/editable/exportable/runnable/paramsTemplate`；内置工具使用 `source=built_in`，`readOnly` 按具体工具执行语义标记，不可编辑、不可导出，是否支持页面手动运行由 `runnable` 决定。
 - configured subprocess 工具按 Rust/V1 command descriptor 形态暴露：
   `source=configured`、`backend=command`、`readOnly=false`、`editable=true`、

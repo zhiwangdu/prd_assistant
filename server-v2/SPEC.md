@@ -696,6 +696,11 @@ LOGAGENT_V2_TOOLS_JSON
 The model cannot submit executable paths, shell snippets, dynamic argv, or
 environment overrides.
 
+Readonly MCP exposes the same catalog through `logagent.list_tools` and
+`logagent://tools/catalog`, but it must reject direct `tools/call` execution for
+catalog configured/manual built-in tools. Tool execution must go through task
+MCP or the protected manual Tools API so run/workspace boundaries are present.
+
 Code Evidence configuration is optional and loaded from
 `LOGAGENT_V2_CODE_REPOS_JSON`. It accepts either an object keyed by product or
 an array with explicit `product`. Each repo entry requires an absolute

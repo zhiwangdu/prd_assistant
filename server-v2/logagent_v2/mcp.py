@@ -223,6 +223,8 @@ def readonly_mcp_response(
                         }
                     ]
                 }
+            elif is_catalog_tool(settings, name):
+                raise ValueError(f"readonly MCP cannot execute catalog tool {name}")
             else:
                 raise ValueError(f"unsupported readonly tool {name}")
         elif method == "resources/read":
@@ -294,6 +296,12 @@ def canonical_readonly_uri(uri: object) -> object:
     if isinstance(uri, str) and uri.startswith("logagent://"):
         return f"logagent-v2://{uri.removeprefix('logagent://')}"
     return uri
+
+
+def is_catalog_tool(settings: Settings, name: object) -> bool:
+    if not isinstance(name, str) or not name:
+        return False
+    return any(descriptor.get("toolId") == name for descriptor in tool_descriptors(settings))
 
 
 def readonly_resource_descriptors(settings: Settings, store: Store) -> list[JsonObject]:

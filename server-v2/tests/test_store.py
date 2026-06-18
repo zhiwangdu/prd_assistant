@@ -5075,6 +5075,28 @@ fi
             called_catalog = json.loads(tool_call["result"]["content"][0]["text"])
             self.assertEqual(called_catalog["configuredTools"], catalog["configuredTools"])
 
+            for blocked_tool in [
+                "mock_tool",
+                "logagent.preprocess_log_package",
+                "logagent.fetch",
+                "logagent.huawei_cloud_package_sync",
+            ]:
+                with self.subTest(blocked_tool=blocked_tool):
+                    blocked_call = readonly_mcp_response(
+                        settings,
+                        store,
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 16,
+                            "method": "tools/call",
+                            "params": {"name": blocked_tool, "arguments": {}},
+                        },
+                    )
+                    self.assertIn(
+                        f"readonly MCP cannot execute catalog tool {blocked_tool}",
+                        blocked_call["error"]["message"],
+                    )
+
     def test_manual_tool_run_executes_metadata_builtin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), api_key="test")

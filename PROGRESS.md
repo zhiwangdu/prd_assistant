@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Readonly MCP Tool Execution Boundary
+
+- Readonly MCP now returns an explicit error when `tools/call` targets a tool
+  catalog entry such as configured subprocess tools, preprocess, Fetch, Huawei
+  package sync, or pprof. Discovery remains available through
+  `logagent.list_tools` and `logagent://tools/catalog`.
+- Added regression coverage to lock the readonly boundary for configured and
+  manual built-in catalog tools while leaving readonly metadata tools on their
+  existing path.
+- Updated V2 Server and Tool Runner README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused readonly/tool catalog pytest selection, full `PYTHONPATH=.
+  uv run --extra dev pytest` (141 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Code Evidence Diff Tool
 
 - Added task MCP / Agent provider `logagent.diff_code` for configured local
