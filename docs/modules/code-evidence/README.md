@@ -35,8 +35,11 @@ Python V2 已实现只读 worktree 检索和文件级 diff MVP：
   使用标记，并按 least-recently-used 清理同 product 下超过上限的旧 `wt_*`
   目录；当前 search 正在使用的 worktree 不会被删除，清理结果写入
   `worktree.cleanup` 供审计。
+- 每次准备 search worktree 时，V2 会扫描同 product cache root 下的 `wt_*`
+  目录，记录不是有效 git worktree 或未注册到当前 repo 的 orphan，结果写入
+  `worktree.cleanup.orphanScan`；首版只记录告警，不自动删除 orphan。
 
-尚未实现启动孤儿 worktree 扫描、函数级符号解析、patch hunk / AST diff 或 fix mode 代码修改。
+尚未实现函数级符号解析、patch hunk / AST diff 或 fix mode 代码修改。
 
 ## 输入示例
 
@@ -134,7 +137,8 @@ code_evidence:
 - 每次 search 会 touch 当前 worktree 目录作为最近使用标记。
 - 超过上限时删除最近最少使用的同 product `wt_*` worktree。
 - 当前 search 正在使用的 worktree 不删除。
-- 启动时扫描孤儿 worktree 并记录告警仍是后续工作。
+- 准备 worktree 时扫描同 product `wt_*` 目录并把 orphan 告警记录到
+  `worktree.cleanup.orphanScan`；首版不自动删除 orphan。
 
 ## Search 输出结构
 

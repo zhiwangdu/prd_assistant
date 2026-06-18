@@ -14,6 +14,9 @@ Python V2 已实现只读 worktree 检索和文件级 diff MVP：
   保留的 detached worktree 数量；默认 5，非正值按 1 处理。
 - Task MCP 和 OpenAI-compatible / binary provider prompt 在存在配置仓库时广告 `logagent.search_code` 和 `logagent.diff_code`。
 - `logagent.search_code` 使用 `git rev-parse` 固化 commit，再创建或复用 cache root 下的 detached `git worktree`，更新当前 worktree 目录 mtime 作为使用标记，按 least-recently-used 清理同 product 下超过上限的旧 `wt_*` worktree，最后在该 worktree 内执行 `git grep` 检索；不会 pull 或修改管理员配置的源代码仓。
+- 准备 search worktree 时，V2 会扫描同 product cache root 下的 `wt_*`
+  目录，记录不是有效 git worktree 或未注册到当前 repo 的 orphan，结果写入
+  `worktree.cleanup.orphanScan`；首版只记录告警，不自动删除 orphan。
 - `logagent.diff_code` 使用配置内的 `baseVersion` / `targetVersion` 或受控 `baseGitRef` / `targetGitRef`，用 `git rev-parse` 固化 base/target commit，在管理员配置的 repo 内执行只读 `git diff --numstat <base> <target> -- <searchRoots>`，返回最多 50 个文件级变更摘要；不会创建 writable worktree、pull 或修改源码仓。
 - 如果当前 run 所属 Session 绑定了 Metadata `instanceId`，且 snapshot
   `instance.product` / `instance.version` 存在，Code Evidence 工具必须把
@@ -27,7 +30,7 @@ Python V2 已实现只读 worktree 检索和文件级 diff MVP：
   `matches[].ref` 可作为最终答案 evidence ref；diff 记录 base/target ref、
   commit、`diffs[]` 文件变更摘要，`diffs[].ref` 可作为最终答案 evidence ref。
 
-尚未实现启动孤儿 worktree 扫描、符号级解析、patch hunk / AST diff 和 fix mode 代码修改。
+尚未实现符号级解析、patch hunk / AST diff 和 fix mode 代码修改。
 
 ## 输入
 
@@ -91,6 +94,10 @@ code_evidence/<action_id>.json
 - search: `worktree.cleanup.removedCount`
 - search: `worktree.cleanup.remainingCount`
 - search: `worktree.cleanup.removed[]`
+- search: `worktree.cleanup.orphanScan.policy`
+- search: `worktree.cleanup.orphanScan.scannedCount`
+- search: `worktree.cleanup.orphanScan.orphanCount`
+- search: `worktree.cleanup.orphanScan.orphans[]`
 - `taskContext.instanceId`
 - `taskContext.product`
 - `taskContext.version`
@@ -142,6 +149,8 @@ code_evidence/<action_id>.json#diffs/<index>
 - 同一 diff 请求可幂等恢复，不创建 writable worktree，不依赖源 repo 工作区状态。
 - 超过 `LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` 时，后续 search 会删除同 product
   最近最少使用的旧 worktree，并在 `worktree.cleanup` 中记录删除摘要。
+- 准备 worktree 时会扫描同 product `wt_*` cache 目录并在
+  `worktree.cleanup.orphanScan` 中记录 orphan 告警；该扫描不自动删除目录。
 - 源 repo 工作区存在未提交修改时，证据仍来自固定 commit 的 cache worktree。
 - Task MCP 和 provider prompt 只在配置仓库存在时广告 `logagent.search_code` 和 `logagent.diff_code`。
 - 最终答案只接受当前 run 中实际存在的 `code_evidence/...#matches/<index>` 或 `code_evidence/...#diffs/<index>`。

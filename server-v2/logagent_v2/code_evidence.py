@@ -666,6 +666,7 @@ def cleanup_code_worktrees(
 ) -> JsonObject:
     limit = max(1, int(settings.code_worktree_max_per_repo))
     repo_root = ensure_child_path(root, root / safe_worktree_segment(repo.product))
+    orphan_scan = scan_code_worktree_orphans(repo.repo_path, root, repo_root)
     if not repo_root.is_dir():
         return {
             "policy": "least_recently_used",
@@ -673,6 +674,7 @@ def cleanup_code_worktrees(
             "removedCount": 0,
             "removed": [],
             "remainingCount": 0,
+            "orphanScan": orphan_scan,
         }
     current = ensure_child_path(root, current_path)
     entries: list[tuple[float, Path]] = []
@@ -687,6 +689,7 @@ def cleanup_code_worktrees(
             "removedCount": 0,
             "removed": [],
             "remainingCount": len(entries),
+            "orphanScan": orphan_scan,
         }
     removed: list[JsonObject] = []
     remaining_count = len(entries)
@@ -704,7 +707,60 @@ def cleanup_code_worktrees(
         "removedCount": len(removed),
         "removed": removed,
         "remainingCount": remaining_count,
+        "orphanScan": orphan_scan,
     }
+
+
+def scan_code_worktree_orphans(repo_path: Path, root: Path, repo_root: Path) -> JsonObject:
+    if not repo_root.is_dir():
+        return {
+            "policy": "record_only",
+            "scannedCount": 0,
+            "orphanCount": 0,
+            "orphans": [],
+        }
+    registered_paths = registered_git_worktree_paths(repo_path)
+    scanned_count = 0
+    orphans: list[JsonObject] = []
+    for item in sorted(repo_root.iterdir(), key=lambda path: path.name):
+        if not item.name.startswith("wt_") or not item.is_dir():
+            continue
+        scanned_count += 1
+        safe_item = ensure_child_path(root, item)
+        head = git_worktree_head(safe_item)
+        reason = None
+        if head is None:
+            reason = "invalid_head"
+        elif registered_paths and safe_item.resolve() not in registered_paths:
+            reason = "unregistered"
+        if reason is not None:
+            orphans.append(
+                {
+                    "path": safe_item.as_posix(),
+                    "name": safe_item.name,
+                    "reason": reason,
+                }
+            )
+    return {
+        "policy": "record_only",
+        "scannedCount": scanned_count,
+        "orphanCount": len(orphans),
+        "orphans": orphans,
+    }
+
+
+def registered_git_worktree_paths(repo_path: Path) -> set[Path]:
+    completed = git_run(repo_path, "worktree", "list", "--porcelain")
+    if completed.returncode != 0:
+        return set()
+    paths: set[Path] = set()
+    for line in completed.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        value = line.removeprefix("worktree ").strip()
+        if value:
+            paths.add(Path(value).expanduser().resolve())
+    return paths
 
 
 def remove_cached_worktree(repo_path: Path, root: Path, worktree_path: Path) -> None:

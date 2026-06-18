@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Code Evidence Orphan Worktree Scan
+
+- Code Evidence search worktree preparation now scans the configured
+  per-product `wt_*` cache directories for invalid or unregistered orphan
+  worktrees.
+- The scan is record-only in this slice: orphan details are written under
+  `worktree.cleanup.orphanScan` and are not automatically deleted.
+- Added regression coverage that creates a stale non-worktree cache directory
+  and verifies the resulting orphan scan payload.
+- Updated root and Code Evidence README/SPEC docs.
+- Verification passed: `PYTHONPATH=. uv run --extra dev ruff check logagent_v2
+  tests`, focused Code Evidence pytest selection, full `PYTHONPATH=. uv run
+  --extra dev pytest` (150 passed, 1 warning), and `git diff --check`.
+
 ## 2026-06-18 V2 Agent Token Runtime Prompt Budgets
 
 - Added V2 Agent budget settings for cumulative provider usage tokens,

@@ -7456,6 +7456,12 @@ fi
                 ),
             )
             settings.ensure_dirs()
+            orphan_worktree = root / "worktrees" / "opengemini" / "wt_orphan"
+            orphan_worktree.mkdir(parents=True)
+            (orphan_worktree / "README.md").write_text(
+                "stale non-worktree directory\n",
+                encoding="utf-8",
+            )
             store = Store(settings.sqlite_path)
             store.initialize()
             store.upsert_metadata_instance(
@@ -7524,6 +7530,14 @@ fi
             self.assertEqual(worktree["mode"], "git_worktree")
             self.assertEqual(worktree["root"], (root / "worktrees").resolve().as_posix())
             self.assertFalse(worktree["reused"])
+            orphan_scan = worktree["cleanup"]["orphanScan"]
+            self.assertEqual(orphan_scan["policy"], "record_only")
+            self.assertEqual(orphan_scan["orphanCount"], 1)
+            self.assertEqual(orphan_scan["orphans"][0]["reason"], "invalid_head")
+            self.assertEqual(
+                orphan_scan["orphans"][0]["path"],
+                orphan_worktree.resolve().as_posix(),
+            )
             worktree_path = Path(worktree["path"])
             self.assertTrue(worktree_path.is_dir())
             self.assertIn((root / "worktrees").resolve(), worktree_path.parents)

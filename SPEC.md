@@ -202,7 +202,7 @@ flowchart TD
   Provider request id 与稳定结构化协议；V2 Agent provider 审计字段已先行落地。
 - Memory 外部 embedding provider、可选 sqlite-vec/pgvector 召回增强，以及更正式的 analysis evidence bundle。
 - Cassandra 和 RocksDB domain adapter 的日志模式、工具和 fixture。
-- Code Evidence V2 只读 worktree 检索和文件级 diff MVP 已支持 product/version 到配置 ref 的映射、detached worktree cache、per-product LRU 清理、受控 base/target `git diff --numstat` 比较和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version，diff target 继承该版本而 base 可指向更早的配置版本/ref；后续继续实现符号级解析、patch hunk / AST diff 和 fix mode 隔离修改。
+- Code Evidence V2 只读 worktree 检索和文件级 diff MVP 已支持 product/version 到配置 ref 的映射、detached worktree cache、per-product LRU 清理、orphan cache 扫描记录、受控 base/target `git diff --numstat` 比较和最终答案 code evidence ref；绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version，diff target 继承该版本而 base 可指向更早的配置版本/ref；后续继续实现符号级解析、patch hunk / AST diff 和 fix mode 隔离修改。
 - 基于已落地的 Remote Executor 命令、V2 SCP 文件采集、approved `targets[]`
   批量采集、Agent 可见候选摘要、单 executor 自动补齐和多 executor/template
   唯一 hint 选型，继续实现更多环境模板。
