@@ -1050,7 +1050,7 @@ TSSP/TSI/TSM/_series payloads pass directly to source-built analyzer binaries.
 
 V2 Fetch endpoints are stored in SQLite table `fetch_endpoints` with name,
 method, redacted URL, redacted headers, optional redacted body material, enabled
-flag, `followRedirects`, and timestamps. Sensitive request material is stored
+flag, `followRedirects`, last queued endpoint-run id, and timestamps. Sensitive request material is stored
 separately in `fetch_credential_sets` as encrypted JSON using
 `LOGAGENT_V2_FETCH_SECRET_KEY`. The public API returns redacted endpoint
 previews; raw request material is only hydrated inside the server-side executor.
@@ -1151,7 +1151,8 @@ request and supports `endpointId`, `fetchId`, V1-style `fetch_id`,
 `workspaceId`, and `limit` filters. `POST
 /api/v2/fetch/endpoints/:endpoint_id/runs` queues a Fetch `tool_run`, validates
 the endpoint and runtime params, reuses a provided `workspaceId`, or creates an
-isolated workspace when no workspace is provided.
+isolated workspace when no workspace is provided. It must update the endpoint
+summary with `lastRunId` and Rust/V1-compatible `lastRunTaskId`.
 Task MCP `logagent.fetch` must derive a deterministic Rust/V1-style
 `act_fetch_<digest>` action id from normalized params so repeated identical MCP
 calls produce the same logical response evidence ref. Queued API/manual Fetch

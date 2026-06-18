@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Fetch Endpoint Last Run Parity
+
+- Added `fetch_endpoints.last_run_id` SQLite storage and migration for V2 Fetch
+  endpoints.
+- Updated `POST /api/v2/fetch/endpoints/:endpoint_id/runs` to record the newly
+  queued Fetch `tool_run` on the endpoint summary as `lastRunId` and
+  Rust/V1-compatible `lastRunTaskId`.
+- Added regression coverage for persisted and public endpoint summaries after
+  repeated endpoint-run creation, and updated V2 Server / Tool Runner docs.
+- Verification passed: focused
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest tests/test_store.py::StoreTests::test_fetch_endpoint_run_route_creates_tool_run`
+  with 1 passed and 1 Starlette warning, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 164 passed and
+  1 Starlette warning,
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev ruff check logagent_v2/api.py logagent_v2/store.py tests/test_store.py`,
+  and `git diff --check`.
+
 ## 2026-06-18 V2 Metadata Import Preview Endpoint Parity
 
 - Added `GET /api/v2/metadata/imports/:import_id/preview` as a V2

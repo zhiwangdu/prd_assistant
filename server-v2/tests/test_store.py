@@ -9273,6 +9273,18 @@ fi
                     created_body["toolParams"]["variables"],
                     {"instance": "inst-a"},
                 )
+                updated_endpoint = store.get_fetch_endpoint(endpoint["id"])
+                self.assertEqual(updated_endpoint["lastRunId"], created_body["id"])
+                self.assertEqual(updated_endpoint["lastRunTaskId"], created_body["id"])
+                fetched_endpoint = client.get(
+                    f"/api/v2/fetch/endpoints/{endpoint['id']}",
+                    headers=headers,
+                )
+                self.assertEqual(fetched_endpoint.status_code, 200)
+                self.assertEqual(
+                    fetched_endpoint.json()["lastRunTaskId"],
+                    created_body["id"],
+                )
 
                 auto_workspace_run = client.post(
                     f"/api/v2/fetch/endpoints/{endpoint['id']}/runs",
@@ -9286,6 +9298,10 @@ fi
                     store.get_workspace(auto_body["workspace_id"])["question"].startswith(
                         "Run fetch endpoint"
                     )
+                )
+                self.assertEqual(
+                    store.get_fetch_endpoint(endpoint["id"])["lastRunTaskId"],
+                    auto_body["id"],
                 )
 
     def test_fetch_runtime_params_apply_overrides_and_body_artifact(self) -> None:

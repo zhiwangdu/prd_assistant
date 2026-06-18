@@ -1254,7 +1254,8 @@ JSON-RPC error instead of listing endpoints.
 `endpointId`, `fetchId`, V1-style `fetch_id`, or `workspaceId`, without
 executing network requests. `POST /api/v2/fetch/endpoints/:endpoint_id/runs`
 queues a Fetch `tool_run`; callers may provide `workspaceId`, otherwise V2
-creates an isolated workspace for the run.
+creates an isolated workspace for the run. This endpoint-run path updates the
+endpoint summary with `lastRunId` and Rust/V1-compatible `lastRunTaskId`.
 Task MCP `logagent.fetch` uses a deterministic Rust/V1-style
 `act_fetch_<digest>` action id derived from normalized Fetch params, so repeated
 same-parameter calls produce the same logical `result.json#response` evidence

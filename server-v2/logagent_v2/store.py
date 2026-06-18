@@ -441,6 +441,7 @@ class Store:
                   enabled INTEGER NOT NULL,
                   follow_redirects INTEGER NOT NULL DEFAULT 0,
                   refresh_policy_json TEXT NOT NULL DEFAULT '{"mode":"manual_only","automaticRefresh":false,"tokenRefreshSupported":false}',
+                  last_run_id TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
@@ -562,6 +563,7 @@ class Store:
                 "refresh_policy_json",
                 """TEXT NOT NULL DEFAULT '{"mode":"manual_only","automaticRefresh":false,"tokenRefreshSupported":false}'""",
             )
+            self._ensure_column_tx(conn, "fetch_endpoints", "last_run_id", "TEXT")
             self._ensure_column_tx(conn, "cases", "vector_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column_tx(
                 conn, "case_imports", "messages_json", "TEXT NOT NULL DEFAULT '[]'"
@@ -2877,12 +2879,30 @@ class Store:
             if cursor.rowcount == 0:
                 raise KeyError(f"unknown fetch endpoint {endpoint_id}")
 
+    def set_fetch_endpoint_last_run(self, endpoint_id: str, run_id: str) -> JsonObject:
+        ts = now_iso()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE fetch_endpoints
+                SET last_run_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (run_id, ts, endpoint_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"unknown fetch endpoint {endpoint_id}")
+        return self.get_fetch_endpoint(endpoint_id)
+
     def _fetch_endpoint_from_row(self, row: sqlite3.Row) -> JsonObject:
         item = dict(row)
         item["schemaVersion"] = int(item.pop("schema_version", 2) or 2)
         item["headers"] = decode_json(item.pop("headers_json"), {})
         item["enabled"] = bool(item["enabled"])
         item["followRedirects"] = bool(item.pop("follow_redirects", 0))
+        last_run_id = item.pop("last_run_id", None)
+        item["lastRunId"] = last_run_id
+        item["lastRunTaskId"] = last_run_id
         item["refreshPolicy"] = decode_json(
             item.pop("refresh_policy_json", None),
             dict(DEFAULT_FETCH_REFRESH_POLICY),

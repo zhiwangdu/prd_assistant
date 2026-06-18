@@ -1806,12 +1806,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 0,
                 params,
             )
-            return store.create_tool_run(
+            fetch_run = store.create_tool_run(
                 workspace_id=workspace_id,
                 tool_id=FETCH_TOOL_ID,
                 params=validated,
                 upload_ids=[],
             )
+            store.set_fetch_endpoint_last_run(endpoint_id, fetch_run["id"])
+            return fetch_run
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
