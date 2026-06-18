@@ -115,7 +115,18 @@ Log Analyzer 把上传文件展开为统一 workspace 结构，生成文件清�
 {
   "keywords": ["error", "timeout"],
   "totalMatches": 2,
-  "matches": []
+  "matches": [
+    {
+      "ref": "grep_results.json#matches/0",
+      "evidenceRef": "grep_results.json#matches/0",
+      "path": "extracted/app/app.log",
+      "file": "extracted/app/app.log",
+      "lineNumber": 12,
+      "line": 12,
+      "keyword": "error",
+      "text": "ERROR compaction failed"
+    }
+  ]
 }
 ```
 

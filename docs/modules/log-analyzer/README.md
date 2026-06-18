@@ -155,6 +155,8 @@ V2 manifest 保留已有 `sizeBytes`、`sourceUploadId`、`artifactId` 等扩展
 rg -i "error|exception|timeout|fail|failed|panic|fatal|refused|denied|verify" extracted/
 ```
 
+`grep_results.json` 和后续 `log_searches/*.json` 的每条 match 同时写入 V2 字段 `path` / `lineNumber` / `ref` 和 Rust/V1 兼容字段 `file` / `line` / `evidenceRef`。
+
 上下文提取：
 
 ```bash

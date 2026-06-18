@@ -902,7 +902,8 @@ When a run starts, V2 now reads all uploads attached to the Workspace and:
 - rejects absolute paths, `..` path traversal, and unsafe archive entries;
 - skips symlinks and non-file archive members;
 - writes bounded `manifest.json` and `grep_results.json` artifacts, including
-  V1-style manifest upload summaries for node packages;
+  V1-style manifest upload summaries for node packages and grep match aliases
+  (`file`, `line`, `evidenceRef`) alongside V2 fields;
 - writes `tool_inputs/index.json`, node-package `log_text` JSONL artifacts,
   `influxql_analyzer` JSONL artifacts, and `flux_query_analyzer` JSONL
   artifacts when logs contain supported query lines;

@@ -167,8 +167,10 @@ Implemented in this slice:
   `result_markdown` resources.
 - Task MCP `logagent.search_logs`, which accepts V1-compatible optional
   `maxMatches` clamped to 1..200, creates follow-up `log_search` evidence, and
-  returns stable `log_searches/<search_id>.json#matches/<index>` refs. The
-  response preserves the V2 nested `search` object and also exposes
+  returns stable `log_searches/<search_id>.json#matches/<index>` refs. Initial
+  `grep_results.json` and follow-up `log_searches` artifacts store each match
+  with V2 fields (`path`, `lineNumber`, `ref`) plus Rust/V1 aliases (`file`,
+  `line`, `evidenceRef`). The response preserves the V2 nested `search` object and also exposes
   Rust-compatible top-level `artifactPath`, `totalMatches`, `keywordCounts`,
   `unmatchedKeywords`, `matches`, `evidenceRefs`, and `note` fields.
 - Task MCP `logagent.get_log_slice`, which reads bounded context from a current

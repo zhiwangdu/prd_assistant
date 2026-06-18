@@ -2,6 +2,21 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Grep Match Alias Parity
+
+- Aligned V2 initial `grep_results.json` and follow-up `log_searches` match
+  records with Rust/V1 by writing `file`, `line`, and `evidenceRef` aliases
+  alongside existing `path`, `lineNumber`, and `ref` fields.
+- Kept task MCP `logagent.search_logs` response behavior unchanged; wrappers
+  now expose aliases that are already present in the underlying artifacts.
+- Added regression coverage against the persisted grep artifact for the alias
+  fields.
+- Updated V2 Server and Log Analyzer docs.
+- Verification passed: focused grep/path pytest selection,
+  `cd server-v2 && uv run --extra dev ruff check logagent_v2 tests`, full
+  `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 157 passed and
+  1 Starlette warning, and `git diff --check`.
+
 ## 2026-06-18 V2 Multi-Upload Manifest Path Parity
 
 - Aligned ordinary V2 upload logical paths with Rust/V1 per-upload extracted

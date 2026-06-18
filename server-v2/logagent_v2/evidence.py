@@ -1538,13 +1538,17 @@ def grep_text_files(
                 index = len(matches)
                 keyword_counts[keyword] += 1
                 matched_keywords.add(lowered_keyword)
+                ref = f"{ref_base}{index}"
                 matches.append(
                     {
                         "index": index,
-                        "ref": f"{ref_base}{index}",
+                        "ref": ref,
+                        "evidenceRef": ref,
                         "path": text_file.path,
+                        "file": text_file.path,
                         "sourceUploadId": text_file.source_upload_id,
                         "lineNumber": line_number,
+                        "line": line_number,
                         "keyword": keyword,
                         "text": line[:2000],
                     }

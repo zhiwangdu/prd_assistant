@@ -3462,6 +3462,10 @@ class StoreTests(unittest.TestCase):
             grep_results = json.loads(grep_response["result"]["contents"][0]["text"])
             grep_paths = {item["path"] for item in grep_results["matches"]}
             self.assertEqual(grep_paths, {"extracted/app/app.log", "extracted/app_2/app.log"})
+            for match in grep_results["matches"]:
+                self.assertEqual(match["file"], match["path"])
+                self.assertEqual(match["line"], match["lineNumber"])
+                self.assertEqual(match["evidenceRef"], match["ref"])
 
             slice_response = task_mcp_response(
                 settings,
