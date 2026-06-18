@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-18
 
+## 2026-06-18 V2 Domain Adapter Registry Parity
+
+- Aligned V2 Domain Adapter summaries with Rust/V1
+  `DomainAdapterRegistry::builtin()`.
+- `opengemini_influxdb` now advertises the Rust/V1 product ids, evidence
+  kinds, `case_context`, `storage_file_tool_results`, and `pprof_analyzer`.
+- Cassandra and RocksDB skeleton adapters now use the Rust/V1 evidence kinds
+  and planned tool names.
+- Updated readonly MCP regression coverage and V2 Server / Domain Adapter docs.
+- Verification passed: focused readonly Domain Adapter MCP pytest selection,
+  full `cd server-v2 && PYTHONPATH=. uv run --extra dev pytest` with 162
+  passed and 1 Starlette warning, `cd server-v2 && PYTHONPATH=. uv run --extra
+  dev ruff check logagent_v2 tests`, and `git diff --check`.
+
 ## 2026-06-18 V2 Readonly Case Search Default Correction
 
 - Corrected V2 readonly MCP `logagent.search_cases` default limit to the

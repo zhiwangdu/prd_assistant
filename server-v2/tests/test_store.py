@@ -13309,6 +13309,15 @@ grep_results.json#matches/0
             ])
             self.assertEqual(adapters[0]["status"], "active")
             self.assertEqual(adapters[1]["status"], "skeleton")
+            self.assertEqual(
+                adapters[0]["products"],
+                ["opengemini", "influxdb", "influxql"],
+            )
+            self.assertIn("case_context", adapters[0]["evidenceKinds"])
+            self.assertIn("storage_file_tool_results", adapters[0]["evidenceKinds"])
+            self.assertIn("pprof_analyzer", adapters[0]["plannedTools"])
+            self.assertIn("nodetool_tpstats", adapters[1]["plannedTools"])
+            self.assertIn("rocksdb_log_parser", adapters[2]["plannedTools"])
 
             resources = readonly_mcp_response(
                 settings,
@@ -13357,6 +13366,7 @@ grep_results.json#matches/0
             alias_payload = json.loads(alias_resource["result"]["contents"][0]["text"])
             self.assertEqual(alias_payload["schemaVersion"], 1)
             self.assertEqual(alias_payload["domainAdapters"][0]["id"], "opengemini_influxdb")
+            self.assertEqual(alias_payload["domainAdapters"], adapters)
 
             tool_call = readonly_mcp_response(
                 settings,
@@ -13370,6 +13380,7 @@ grep_results.json#matches/0
             )
             payload = json.loads(tool_call["result"]["content"][0]["text"])
             self.assertEqual(payload["domainAdapters"][0]["id"], "opengemini_influxdb")
+            self.assertEqual(payload["domainAdapters"], adapters)
 
     def test_v2_remote_executor_run_uses_queued_fake_ssh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

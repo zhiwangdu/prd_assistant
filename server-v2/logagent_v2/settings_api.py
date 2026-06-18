@@ -292,44 +292,68 @@ def domain_adapter_summaries() -> list[JsonObject]:
             "id": "opengemini_influxdb",
             "displayName": "openGemini / InfluxDB",
             "status": "active",
-            "products": ["openGemini", "InfluxDB"],
+            "products": ["opengemini", "influxdb", "influxql"],
             "evidenceKinds": [
                 "metadata_context",
-                "log_search",
-                "tool_result",
-                "fetch_result",
+                "log_patterns",
+                "query_tool_results",
+                "storage_file_tool_results",
+                "case_context",
             ],
             "plannedTools": [
                 "influxql_analyzer",
                 "flux_query_analyzer",
                 "opengemini_storage_analyzer",
                 "influxdb_storage_analyzer",
+                "pprof_analyzer",
             ],
             "notes": [
-                "Active adapter for Metadata topology, query analyzers, and storage analyzers.",
-                "Tool execution remains constrained by V2 tool descriptors and task MCP validation.",
+                (
+                    "Current default adapter; owns openGemini metadata, PT/shard/index "
+                    "views, Influx query diagnostics, and read-only storage file analysis."
+                ),
             ],
         },
         {
             "id": "cassandra",
             "displayName": "Cassandra",
             "status": "skeleton",
-            "products": ["Cassandra"],
-            "evidenceKinds": ["log_search", "system_context"],
-            "plannedTools": ["nodetool", "sstablemetadata"],
+            "products": ["cassandra"],
+            "evidenceKinds": [
+                "system_log",
+                "schema_and_ring",
+                "nodetool_output",
+                "ci_pipeline_logs",
+            ],
+            "plannedTools": [
+                "nodetool_status",
+                "nodetool_tpstats",
+                "nodetool_compactionstats",
+            ],
             "notes": [
-                "Skeleton adapter for ring ownership, repair, compaction, tombstones, and latency evidence."
+                (
+                    "Future adapter for repair, compaction, tombstone, read/write latency, "
+                    "and ring ownership diagnostics."
+                )
             ],
         },
         {
             "id": "rocksdb",
             "displayName": "RocksDB",
             "status": "skeleton",
-            "products": ["RocksDB"],
-            "evidenceKinds": ["log_search", "system_context"],
-            "plannedTools": ["ldb", "sst_dump"],
+            "products": ["rocksdb"],
+            "evidenceKinds": [
+                "rocksdb_log",
+                "manifest_options",
+                "sst_metadata",
+                "perf_context",
+            ],
+            "plannedTools": ["ldb", "sst_dump", "rocksdb_log_parser"],
             "notes": [
-                "Skeleton adapter for LOG, MANIFEST, OPTIONS, SST, compaction, flush, and write-stall evidence."
+                (
+                    "Future adapter for compaction, write stalls, flush, MANIFEST/OPTIONS, "
+                    "and SST-level analysis."
+                )
             ],
         },
     ]

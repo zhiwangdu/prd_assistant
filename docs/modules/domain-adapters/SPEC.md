@@ -30,6 +30,9 @@ POST /api/mcp/readonly
 - `notes`
 
 只读 HTTP MCP 使用 `logagent://domain-adapters` resource 和 `logagent.list_domain_adapters` tool 暴露相同摘要，不改变任务执行路径。
+Python V2 adapter registry 必须与 Rust/V1 `DomainAdapterRegistry::builtin()`
+保持同构字段值，便于个人 Claude Code 和 Settings 页面读取相同领域能力
+边界。
 
 ## 适配器能力模型
 
@@ -48,16 +51,25 @@ POST /api/mcp/readonly
 
 - 继续承载现有 Metadata Explorer、PT/Shard/Index 诊断、Influx query 工具链，以及 openGemini/InfluxDB storage analyzer 工具链。
 - storage analyzer 证据只来自 Tool Runner 白名单执行结果，当前包括 openGemini TSSP/TSI mergeset 和 InfluxDB TSM/TSI/_series 只读检查。
+- evidence kinds 固定为 `metadata_context`、`log_patterns`、
+  `query_tool_results`、`storage_file_tool_results` 和 `case_context`。
+- planned tools 固定包含 `influxql_analyzer`、`flux_query_analyzer`、
+  `opengemini_storage_analyzer`、`influxdb_storage_analyzer` 和
+  `pprof_analyzer`。
 
 `cassandra`：
 
 - 第一阶段仅定义 skeleton。
 - 后续优先处理 ring ownership、repair、compaction、tombstone、read/write latency 和 `nodetool` 输出。
+- planned tools 使用 Rust/V1 命名：`nodetool_status`、
+  `nodetool_tpstats`、`nodetool_compactionstats`。
 
 `rocksdb`：
 
 - 第一阶段仅定义 skeleton。
 - 后续优先处理 LOG、MANIFEST、OPTIONS、SST、compaction、flush、write stall 和 perf context。
+- planned tools 使用 Rust/V1 命名：`ldb`、`sst_dump`、
+  `rocksdb_log_parser`。
 
 ## 安全约束
 
@@ -70,5 +82,7 @@ POST /api/mcp/readonly
 - Settings 能列出三类 adapter。
 - 只读 HTTP MCP 能列出三类 adapter。
 - `opengemini_influxdb` 标记为 active。
+- `opengemini_influxdb` 必须列出 `case_context`、
+  `storage_file_tool_results` 和 `pprof_analyzer`。
 - `cassandra` 和 `rocksdb` 标记为 skeleton，不能误导为已具备完整诊断能力。
 - 新增产品领域时必须同步 README/SPEC，并至少提供 fixture 或最小验收场景。

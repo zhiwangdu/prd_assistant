@@ -21,6 +21,11 @@ POST /api/mcp/readonly
 
 当前 registry 不改变任务执行路径，主要用于产品方向显式化和后续任务创建/自动识别的接口基础。
 只读 HTTP MCP 通过 `logagent://domain-adapters` 和 `logagent.list_domain_adapters` 暴露同一摘要，供个人本地 Claude Code 读取。
+Python V2 registry 与 Rust/V1 内置 registry 对齐：`opengemini_influxdb`
+包含 `metadata_context`、`log_patterns`、`query_tool_results`、
+`storage_file_tool_results` 和 `case_context` evidence kinds，并列出
+`influxql_analyzer`、`flux_query_analyzer`、`opengemini_storage_analyzer`、
+`influxdb_storage_analyzer`、`pprof_analyzer`。
 
 ## 领域职责
 
@@ -49,13 +54,13 @@ POST /api/mcp/readonly
 - system.log / debug.log。
 - schema、ring、token ownership。
 - repair、compaction、tombstone、read/write latency。
-- 计划工具：`nodetool status`、`tpstats`、`compactionstats`。
+- 计划工具：`nodetool_status`、`nodetool_tpstats`、`nodetool_compactionstats`。
 
 `rocksdb`：
 
 - RocksDB LOG、MANIFEST、OPTIONS。
 - SST 元数据、flush、compaction、write stall。
-- 计划工具：`ldb`、`sst_dump`、日志解析器。
+- 计划工具：`ldb`、`sst_dump`、`rocksdb_log_parser`。
 
 ## 后续计划
 

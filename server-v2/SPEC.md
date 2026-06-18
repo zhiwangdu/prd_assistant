@@ -1412,7 +1412,9 @@ rather than compatibility routes for the Rust Server:
   executable. It returns the same `graphRuntime` metadata.
 - `GET /api/v2/settings/domain-adapters` returns the built-in adapter registry:
   `opengemini_influxdb` is active, while `cassandra` and `rocksdb` are
-  skeleton adapters.
+  skeleton adapters. V2 must keep this registry aligned with Rust/V1, including
+  `case_context`, `storage_file_tool_results`, `pprof_analyzer`, and the V1
+  Cassandra/RocksDB planned tool names.
 
 Readonly MCP must expose the same Domain Adapter summaries through
 `logagent-v2://domain-adapters` and `logagent.list_domain_adapters`.

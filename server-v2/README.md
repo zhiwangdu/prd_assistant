@@ -591,9 +591,11 @@ configuration check; for `binary` it checks that
 and diagnostic response include `graphRuntime` with the LangGraph engine, graph
 name, and node list used by analysis runs. The Domain
 Adapter endpoint returns the built-in `opengemini_influxdb` active adapter plus
-`cassandra` and `rocksdb` skeleton adapters. The same adapter summaries are also
-available through readonly MCP `logagent-v2://domain-adapters` and
-`logagent.list_domain_adapters`.
+`cassandra` and `rocksdb` skeleton adapters. The V2 registry mirrors the
+Rust/V1 built-in adapter summaries, including `case_context`,
+`storage_file_tool_results`, `pprof_analyzer`, and the V1 Cassandra/RocksDB
+planned tool names. The same adapter summaries are also available through
+readonly MCP `logagent-v2://domain-adapters` and `logagent.list_domain_adapters`.
 
 `/api/v2/debug/llm` toggles process-local response-content logging for provider
 debugging. It only logs model response content to stderr and does not log
