@@ -238,12 +238,13 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
     setLoading(true);
     try {
       const response = await listV2Tools(apiKey);
-      setTools(response.tools);
+      const catalogTools = catalogToolDescriptors(response);
+      setTools(catalogTools);
       setSourceBuiltAnalyzers(response.sourceBuiltAnalyzers ?? []);
-      if (!response.tools.some((tool) => tool.toolId === selectedToolId) && response.tools.length) {
-        setSelectedToolId(response.tools[0].toolId);
+      if (!catalogTools.some((tool) => tool.toolId === selectedToolId) && catalogTools.length) {
+        setSelectedToolId(catalogTools[0].toolId);
       }
-      setStatus(`V2 loaded ${response.tools.length} tools and ${(response.sourceBuiltAnalyzers ?? []).length} source analyzers`);
+      setStatus(`V2 loaded ${catalogTools.length} tools and ${(response.sourceBuiltAnalyzers ?? []).length} source analyzers`);
     } catch (reason) {
       setStatus(errorMessage(reason));
     } finally {
@@ -715,6 +716,12 @@ function SourceBuiltAnalyzerPanel({ analyzers }: { analyzers: V2SourceBuiltAnaly
       ) : <EmptyState>No source-built analyzer status returned.</EmptyState>}
     </div>
   );
+}
+
+function catalogToolDescriptors(response: { tools?: V2ToolDescriptor[]; toolPlugins?: V2ToolDescriptor[] }) {
+  if (Array.isArray(response.tools)) return response.tools;
+  if (Array.isArray(response.toolPlugins)) return response.toolPlugins;
+  return [];
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

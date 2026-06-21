@@ -1105,6 +1105,16 @@ def source_built_tool_dirs() -> list[Path]:
         app_dir = non_empty_string(os.environ.get(env_name))
         if app_dir:
             raw_dirs.append(str(Path(app_dir) / "bin" / "tools"))
+    cwd = Path.cwd()
+    source_root = Path(__file__).resolve().parents[2]
+    raw_dirs.extend(
+        [
+            str(cwd / "bin" / "tools"),
+            str(cwd / "target" / "tools"),
+            str(source_root / "bin" / "tools"),
+            str(source_root / "target" / "tools"),
+        ]
+    )
     dirs: list[Path] = []
     seen: set[str] = set()
     for raw_dir in raw_dirs:

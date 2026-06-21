@@ -338,8 +338,10 @@ After building source-referenced analyzers, run
 `scripts/smoke-source-built-analyzers.sh` from the repository root to smoke all
 four binaries, or pass `--only <name>` for one analyzer.
 When explicit analyzer env vars are unset, V2 auto-registers the standard
-analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
-`$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when
+analyzer filenames found under `$LOGAGENT_V2_TOOLS_DIR`,
+`$LOGAGENT_APP_DIR/bin/tools`, `$LOGAGENT_V2_APP_DIR/bin/tools`, the current
+working directory's `bin/tools` / `target/tools`, or the source checkout's
+`bin/tools` / `target/tools`. The rebuild script loads `$HOME/.cargo/env` when
 present so rustup-managed `cargo` is available for Flux and InfluxDB analyzer
 builds in non-interactive SSH shells. InfluxDB storage analyzer builds
 temporarily replace `github.com/influxdata/flux` with the local
@@ -1431,8 +1433,9 @@ The pprof subprocess argv matches Rust/V1: top/tree/svg use
 `GET /api/v2/tools`, readonly MCP `logagent://tools/catalog`, the retained
 `logagent-v2://tools/catalog` alias, and `logagent.list_tools` expose the same
 tool catalog envelope. All return `schemaVersion`, full `tools` descriptors,
-and a V1-compatible `configuredTools` summary with configured args, timeout,
-match rules, and `maxInputFiles`. They also return `sourceBuiltAnalyzers`,
+a compatibility `toolPlugins` alias containing the same descriptors, and a
+V1-compatible `configuredTools` summary with configured args, timeout, match
+rules, and `maxInputFiles`. They also return `sourceBuiltAnalyzers`,
 which reports whether the four source-built analyzer IDs are registered,
 enabled/runnable, disabled, missing, or unavailable because the configured
 command is absent or not executable in this V2 process. The readonly MCP

@@ -2,6 +2,30 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 V2 Tool Plugins Catalog Compatibility
+
+- Verified the currently running V2 `/api/v2/tools` catalog was not actually
+  empty: it returned the four source-built analyzer tools plus the built-in
+  Tool Plugins. The empty UI symptom can still occur when a frontend expects
+  the legacy `toolPlugins` field or when V2 is launched manually without the
+  runtime tool directory environment variables exported by the rebuild script.
+- Added a compatibility `toolPlugins` alias to the V2 tool catalog and MCP
+  tool catalog responses. The alias contains the same descriptors as `tools`.
+- Updated the WebUI V2 Tools bridge to read `tools` first and fall back to
+  `toolPlugins`, so frontend/backend version skew no longer renders the tool
+  list as empty when the catalog itself is populated.
+- Hardened source-built analyzer auto-discovery to scan standard current
+  working directory and source checkout locations (`bin/tools` and
+  `target/tools`) in addition to explicit `LOGAGENT_V2_TOOLS_DIR` and runtime
+  app directories.
+- Added regression coverage for the catalog alias and current-working-directory
+  analyzer discovery path.
+- Verification passed: focused V2 tool catalog/discovery pytest, full
+  `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`, full
+  `cd server-v2 && .venv/bin/python -m pytest -q`, `cd webui && npm run lint`,
+  `cd webui && npm run typecheck`, `cd webui && npm run build`, and
+  `git diff --check`.
+
 ## 2026-06-21 InfluxDB Analyzer Local Flux Build
 
 - Root-caused the InfluxDB storage analyzer build failure to

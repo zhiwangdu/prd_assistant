@@ -140,6 +140,7 @@ def tool_catalog(settings: Settings) -> JsonObject:
     return {
         "schemaVersion": 1,
         "tools": descriptors,
+        "toolPlugins": descriptors,
         "configuredTools": configured_tool_summaries(settings, descriptors),
         "sourceBuiltAnalyzers": source_built_analyzer_summaries(settings, descriptors),
     }

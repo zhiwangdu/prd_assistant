@@ -6049,6 +6049,50 @@ class StoreTests(unittest.TestCase):
             str((tools_dir / "influxdb_storage_analyzer").resolve()),
         )
 
+    def test_source_built_tools_auto_discover_current_working_dir(self) -> None:
+        env_values = {
+            "LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_FLUX_QUERY_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXQL_ANALYZER": None,
+            "LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER": None,
+            "LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER": None,
+            "LOGAGENT_V2_TOOLS_DIR": None,
+            "LOGAGENT_V2_APP_DIR": None,
+            "LOGAGENT_APP_DIR": None,
+        }
+        previous = {key: os.environ.get(key) for key in env_values}
+        previous_cwd = Path.cwd()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tools_dir = Path(tmpdir) / "bin" / "tools"
+                tools_dir.mkdir(parents=True)
+                flux_tool = tools_dir / "flux_query_analyzer"
+                flux_tool.write_text("#!/bin/sh\n", encoding="utf-8")
+                flux_tool.chmod(0o755)
+                for key, value in env_values.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                os.chdir(tmpdir)
+
+                discovered = {tool.id: tool for tool in parse_tools_env(None)}
+        finally:
+            os.chdir(previous_cwd)
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(
+            discovered["flux_query_analyzer"].command,
+            str(flux_tool.resolve()),
+        )
+
     def test_parse_tools_env_expands_command_and_allows_disabled_relative(self) -> None:
         previous = os.environ.get("LOGAGENT_TEST_TOOL_DIR")
         try:
@@ -6951,6 +6995,8 @@ class StoreTests(unittest.TestCase):
             catalog = tools_module.tool_catalog(settings)
             self.assertEqual(catalog["schemaVersion"], 1)
             self.assertIn("tools", catalog)
+            self.assertIn("toolPlugins", catalog)
+            self.assertEqual(catalog["toolPlugins"], catalog["tools"])
             self.assertIn("configuredTools", catalog)
             self.assertIn("sourceBuiltAnalyzers", catalog)
             configured_catalog = {
@@ -7023,6 +7069,7 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 api_catalog = response.json()
                 self.assertEqual(api_catalog["schemaVersion"], 1)
+                self.assertEqual(api_catalog["toolPlugins"], api_catalog["tools"])
                 self.assertEqual(
                     api_catalog["configuredTools"],
                     catalog["configuredTools"],

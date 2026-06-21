@@ -245,11 +245,14 @@ Implemented in this slice:
 - Tool Plugin registry. Configured subprocess tools are loaded from
   `LOGAGENT_V2_TOOLS_JSON`, explicit V2 analyzer executable environment
   variables, or standard source-built analyzer filenames auto-discovered under
-  `LOGAGENT_V2_TOOLS_DIR` / `$LOGAGENT_V2_APP_DIR/bin/tools`, listed through
-  `/api/v2/tools`, runnable through manual tool-run APIs, and exposed to task
-  MCP `logagent.run_domain_tool`. The HTTP catalog shares the readonly MCP
-  catalog envelope: `schemaVersion`, complete `tools` descriptors, and
-  V1-compatible `configuredTools` summaries. Tools with `{input_file}`
+  `LOGAGENT_V2_TOOLS_DIR`, `$LOGAGENT_V2_APP_DIR/bin/tools`,
+  `$LOGAGENT_APP_DIR/bin/tools`, the current working directory's `bin/tools` /
+  `target/tools`, or the source checkout's `bin/tools` / `target/tools`,
+  listed through `/api/v2/tools`, runnable through manual tool-run APIs, and
+  exposed to task MCP `logagent.run_domain_tool`. The HTTP catalog shares the
+  readonly MCP catalog envelope: `schemaVersion`, complete `tools`
+  descriptors, a compatibility `toolPlugins` alias with the same descriptors,
+  and V1-compatible `configuredTools` summaries. Tools with `{input_file}`
   can use explicit `inputFile`/`inputFiles` workspace selectors, otherwise
   consume matching materialized tool inputs before execution, then fall back to
   manifest file patterns, initial grep keyword matches, or raw upload artifacts
@@ -1038,8 +1041,9 @@ readonly MCP `logagent.list_tools`, manual tool-run validation, and task MCP
 configured tool execution. `/api/v2/tools`, readonly MCP
 `logagent://tools/catalog`, `logagent-v2://tools/catalog`, and
 `logagent.list_tools` must expose the same catalog envelope with
-`schemaVersion`, complete `tools` descriptors, and V1-compatible
-`configuredTools` summaries. The same envelope also includes
+`schemaVersion`, complete `tools` descriptors, a `toolPlugins` compatibility
+alias containing the same descriptor list, and V1-compatible `configuredTools`
+summaries. The same envelope also includes
 `sourceBuiltAnalyzers`, a fixed four-item status list for
 `flux_query_analyzer`, `influxql_analyzer`, `opengemini_storage_analyzer`, and
 `influxdb_storage_analyzer`, so deployments can confirm whether submodule
@@ -1122,6 +1126,7 @@ or `*` for unrestricted single-upload built-ins.
 HTTP `/api/v2/tools`, readonly MCP `logagent://tools/catalog`, retained
 `logagent-v2://tools/catalog`, and `logagent.list_tools` expose the same catalog
 payload shape used by the Rust server: `schemaVersion`, complete `tools`
+descriptors, a `toolPlugins` compatibility alias containing the same
 descriptors, and `configuredTools` summaries containing configured args,
 timeout, match rules, and `maxInputFiles`, plus `sourceBuiltAnalyzers` status
 for the four source-built analyzer IDs, including command existence,

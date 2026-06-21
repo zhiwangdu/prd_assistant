@@ -260,7 +260,8 @@ export type V2SourceBuiltAnalyzerStatus = {
 
 export type V2ToolCatalog = {
   schemaVersion?: number;
-  tools: V2ToolDescriptor[];
+  tools?: V2ToolDescriptor[];
+  toolPlugins?: V2ToolDescriptor[];
   configuredTools?: Record<string, unknown>[];
   sourceBuiltAnalyzers?: V2SourceBuiltAnalyzerStatus[];
 };
