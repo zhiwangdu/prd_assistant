@@ -301,8 +301,10 @@ def call_openai_compatible(
             raw = response.read(MAX_PROVIDER_RESPONSE_BYTES)
             http_status = response.status
     except urllib.error.HTTPError as error:
-        body = error.read(4096).decode("utf-8", errors="replace")
+        body, body_read_error = read_http_error_body_preview(error)
         response_payload: JsonObject = {"httpStatus": error.code, "bodyPreview": body}
+        if body_read_error:
+            response_payload["bodyReadError"] = body_read_error
         add_provider_header_audit(
             response_payload,
             provider_response_headers(error.headers),
@@ -1380,6 +1382,13 @@ def provider_http_error_classification(status_code: int) -> JsonObject:
     if 400 <= status_code <= 499:
         return {"classification": "provider_client_error", "retryable": False}
     return {"classification": "provider_http_error", "retryable": False}
+
+
+def read_http_error_body_preview(error: urllib.error.HTTPError) -> tuple[str, str | None]:
+    try:
+        return error.read(4096).decode("utf-8", errors="replace"), None
+    except OSError as read_error:
+        return "", f"{read_error.__class__.__name__}: {read_error}"
 
 
 def provider_response_headers(headers: Any) -> JsonObject:

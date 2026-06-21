@@ -24,7 +24,8 @@
 - V2 OpenAI-compatible Agent provider 的 HTTP 失败会保留
   `error.type=HTTPError`，并写入 `error.classification`、`error.retryable`
   和 `error.httpStatus`，区分鉴权失败、限流、输入超限、Provider timeout、
-  5xx server error 和其他 4xx client error。
+  5xx server error 和其他 4xx client error；HTTP 错误体读取失败时必须保持
+  status/header 分类并记录 `response.bodyReadError`。
 - V2 binary 和 Claude Code Agent provider 失败会在 `error.classification`
   和 `error.retryable` 中区分 configuration、timeout、transport、process、
   output-size、decode 和 parse 阶段。
@@ -147,7 +148,8 @@ binary provider 错误包括：
   model、finish reason、usage 和 allowlist request-id headers 写入
   `agent_response.json`。
 - V2 OpenAI-compatible Agent provider 对 401/403、429、413、408/504、5xx 和
-  其他 4xx HTTP 失败必须写入稳定 `error.classification` 和 `retryable`。
+  其他 4xx HTTP 失败必须写入稳定 `error.classification` 和 `retryable`；如果
+  错误体读取失败，不得把已有 HTTP 失败覆盖为 transport 失败。
 - V2 binary 和 Claude Code Agent provider 的配置错误与非零退出必须写入稳定
   `error.classification` 和 `retryable`，并保留安全的 argv/path preview。
 - FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。

@@ -106,8 +106,9 @@ Optional variables:
   `LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER`,
   `LOGAGENT_V2_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
   `LOGAGENT_V2_TOOL_INFLUXDB_STORAGE_ANALYZER`: optional explicit source-built
-  analyzer executable path overrides, usually unnecessary when using
-  `rebuild-v2-install.sh --with-tools`. Rust/V1 aliases
+  analyzer executable path overrides, usually unnecessary because a full
+  `rebuild-v2-install.sh` now builds analyzers into the runtime tool directory.
+  Rust/V1 aliases
   `LOGAGENT_TOOL_INFLUXQL_ANALYZER`, `LOGAGENT_TOOL_FLUX_QUERY_ANALYZER`,
   `LOGAGENT_TOOL_OPENGEMINI_STORAGE_ANALYZER`, and
   `LOGAGENT_TOOL_INFLUXDB_STORAGE_ANALYZER` are also accepted for migration;
@@ -212,6 +213,7 @@ Useful variants:
 ```bash
 ./rebuild-v2-install.sh --server-only
 ./rebuild-v2-install.sh --with-tools
+./rebuild-v2-install.sh --skip-tools
 ./rebuild-v2-install.sh --tools-only --only-tool influxql
 ./rebuild-v2-install.sh --tools-only --only-tool influxql_analyzer
 ./rebuild-v2-install.sh --no-restart
@@ -220,10 +222,11 @@ Useful variants:
 The script creates `$LOGAGENT_V2_VENV_DIR`, installs `server-v2` with pip,
 initializes the V2 SQLite database under `$LOGAGENT_V2_DATA_DIR`, runs the WebUI
 build unless `--server-only` is set, syncs `webui/out` to
-`$LOGAGENT_V2_WEBUI_DIR`, and restarts V2 only if it was already running.
-`--with-tools` calls `scripts/build-tools.sh --output-dir
-$LOGAGENT_APP_DIR/bin/tools`; `--tools-only` skips server install, DB init, and
-WebUI sync for fast analyzer rebuilds. `logagent-v2ctl.sh` exports
+`$LOGAGENT_V2_WEBUI_DIR`, builds source-referenced analyzer tools into
+`$LOGAGENT_APP_DIR/bin/tools` by default, and restarts V2 only if it was
+already running. `--skip-tools` keeps the older fast path when a deployment
+must avoid submodule clone/compile work; `--tools-only` skips server install,
+DB init, and WebUI sync for fast analyzer rebuilds. `logagent-v2ctl.sh` exports
 `LOGAGENT_V2_APP_DIR`, so a later V2 start auto-registers the standard analyzer
 filenames from `$LOGAGENT_APP_DIR/bin/tools` unless explicit
 `LOGAGENT_V2_TOOL_*` overrides or Rust/V1 `LOGAGENT_TOOL_*` aliases are set;

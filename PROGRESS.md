@@ -1,6 +1,31 @@
 # Development Progress
 
-Last updated: 2026-06-19
+Last updated: 2026-06-21
+
+## 2026-06-21 Server V2 Rebuild Default Analyzer Tools
+
+- Root-caused empty V2 source-built analyzer registration after runtime
+  rebuilds to `deploy/rebuild-v2-install.sh` only invoking
+  `scripts/build-tools.sh` when `--with-tools`, `--tools-only`, or
+  `--only-tool` was explicitly supplied. Without that build step the
+  `third_party/` analyzer submodules were never initialized and V2 had no
+  analyzer binaries to auto-register under runtime `bin/tools`.
+- Changed full `deploy/rebuild-v2-install.sh` installs to build source-built
+  analyzers into `$LOGAGENT_APP_DIR/bin/tools` by default, which triggers the
+  existing submodule URL configuration, submodule clone/update, and analyzer
+  compilation path.
+- Added `--skip-tools` for deployments that intentionally want the old fast
+  server/WebUI rebuild path without analyzer clone/compile work. `--server-only`
+  still skips tools unless combined with explicit tool-build options, and
+  `--tools-only --only-tool <name>` remains the fast single-tool rebuild path.
+- Added deploy script regression coverage for default full-install tool
+  delegation and the explicit `--skip-tools` path.
+- Updated Deploy and Server V2 README/SPEC documentation for the new default
+  tool-build behavior.
+- Hardened V2 OpenAI-compatible Agent provider HTTP error handling so a
+  connection reset while reading the error body no longer replaces the already
+  available HTTP status/header classification; V2 now records
+  `response.bodyReadError` and keeps `error.type=HTTPError`.
 
 ## 2026-06-19 Server V2 Rust/V1 Session Upload Task Route Aliases
 

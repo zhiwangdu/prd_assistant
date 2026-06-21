@@ -38,7 +38,7 @@ export LOGAGENT_V2_WEBUI_DIR="$WEBUI_DST"
 
 usage() {
   cat <<'USAGE'
-Usage: ./rebuild-v2-install.sh [--server-only] [--with-tools] [--tools-only] [--only-tool <tool>] [--no-restart]
+Usage: ./rebuild-v2-install.sh [--server-only] [--with-tools] [--skip-tools] [--tools-only] [--only-tool <tool>] [--no-restart]
 
 Environment:
   LOGAGENT_APP_DIR or LOGAGENT_V2_APP_DIR  Runtime directory. Defaults to parent of deploy/.
@@ -47,6 +47,8 @@ Environment:
 Options:
   --server-only      Install only server-v2 into the runtime virtualenv.
   --with-tools       Build source-referenced analyzer tools into $LOGAGENT_APP_DIR/bin/tools.
+                     This is the default for a full install.
+  --skip-tools       Skip analyzer tool build during a full install.
   --tools-only       Build analyzer tools only; skip server install, DB init, and WebUI sync.
   --only-tool        Build one analyzer by short name or V2 toolId:
                      influxql/influxql_analyzer, flux/flux_query_analyzer,
@@ -57,7 +59,8 @@ USAGE
 }
 
 server_only=false
-with_tools=false
+with_tools_requested=false
+skip_tools=false
 tools_only=false
 only_tool=""
 restart=true
@@ -89,12 +92,17 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --with-tools)
-      with_tools=true
+      with_tools_requested=true
+      skip_tools=false
+      shift
+      ;;
+    --skip-tools)
+      skip_tools=true
       shift
       ;;
     --tools-only)
       tools_only=true
-      with_tools=true
+      with_tools_requested=true
       server_only=true
       shift
       ;;
@@ -108,7 +116,7 @@ while [[ $# -gt 0 ]]; do
         usage >&2
         exit 2
       fi
-      with_tools=true
+      with_tools_requested=true
       shift 2
       ;;
     --no-restart)
@@ -126,6 +134,21 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$skip_tools" == true && "$tools_only" == true ]]; then
+  echo "--skip-tools cannot be combined with --tools-only" >&2
+  usage >&2
+  exit 2
+fi
+
+build_tools=true
+if [[ "$skip_tools" == true ]]; then
+  build_tools=false
+elif [[ "$tools_only" == true ]]; then
+  build_tools=true
+elif [[ "$server_only" == true ]]; then
+  build_tools="$with_tools_requested"
+fi
 
 if [[ -z "$SRC_DIR" ]]; then
   echo "LOGAGENT_SRC_DIR is required" >&2
@@ -162,7 +185,7 @@ if [[ "$tools_only" == false ]]; then
   "$VENV_DIR/bin/python" -m logagent_v2 init-db
 fi
 
-if [[ "$with_tools" == true ]]; then
+if [[ "$build_tools" == true ]]; then
   echo "Building V2 analyzer tools into $APP_DIR/bin/tools..."
   build_args=(--output-dir "$APP_DIR/bin/tools")
   if [[ -n "$only_tool" ]]; then

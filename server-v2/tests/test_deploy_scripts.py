@@ -267,6 +267,130 @@ esac
                 ["--output-dir", f"{tmp_path.as_posix()}/bin/tools", "--only", "flux"],
             )
 
+    def test_rebuild_v2_full_install_builds_tools_by_default(self) -> None:
+        script = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "source"
+            (source / "server-v2").mkdir(parents=True)
+            (source / "server-v2" / "pyproject.toml").write_text(
+                "[project]\nname = \"fake-logagent-v2\"\nversion = \"0.0.0\"\n",
+                encoding="utf-8",
+            )
+            (source / "webui").mkdir()
+            scripts_dir = source / "scripts"
+            scripts_dir.mkdir()
+            build_log = tmp_path / "build-tools.args"
+            build_tools = scripts_dir / "build-tools.sh"
+            build_tools.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$@\" > \"$LOGAGENT_TEST_BUILD_LOG\"\n",
+                encoding="utf-8",
+            )
+            build_tools.chmod(0o755)
+
+            venv_bin = tmp_path / "server-v2" / ".venv" / "bin"
+            venv_bin.mkdir(parents=True)
+            fake_python = venv_bin / "python"
+            fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_python.chmod(0o755)
+
+            bin_dir = tmp_path / "bin-shims"
+            bin_dir.mkdir()
+            fake_npm = bin_dir / "npm"
+            fake_npm.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "prefix=''\n"
+                "while (($# > 0)); do\n"
+                "  case \"$1\" in\n"
+                "    --prefix) prefix=\"$2\"; shift 2 ;;\n"
+                "    *) shift ;;\n"
+                "  esac\n"
+                "done\n"
+                "mkdir -p \"$prefix/out\"\n"
+                "printf '<html></html>\\n' > \"$prefix/out/index.html\"\n",
+                encoding="utf-8",
+            )
+            fake_npm.chmod(0o755)
+
+            env = self.isolated_env(tmp_path)
+            env["LOGAGENT_SRC_DIR"] = source.as_posix()
+            env["LOGAGENT_TEST_BUILD_LOG"] = build_log.as_posix()
+            env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+
+            result = self.run_script(script, "--no-restart", env=env)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Building V2 analyzer tools", result.stdout)
+            self.assertEqual(
+                build_log.read_text(encoding="utf-8").splitlines(),
+                ["--output-dir", f"{tmp_path.as_posix()}/bin/tools"],
+            )
+            self.assertTrue(Path(env["LOGAGENT_V2_WEBUI_DIR"], "index.html").exists())
+
+    def test_rebuild_v2_full_install_can_skip_default_tools(self) -> None:
+        script = ROOT_DIR / "deploy" / "rebuild-v2-install.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "source"
+            (source / "server-v2").mkdir(parents=True)
+            (source / "server-v2" / "pyproject.toml").write_text(
+                "[project]\nname = \"fake-logagent-v2\"\nversion = \"0.0.0\"\n",
+                encoding="utf-8",
+            )
+            (source / "webui").mkdir()
+            scripts_dir = source / "scripts"
+            scripts_dir.mkdir()
+            build_log = tmp_path / "build-tools.args"
+            build_tools = scripts_dir / "build-tools.sh"
+            build_tools.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$@\" > \"$LOGAGENT_TEST_BUILD_LOG\"\n",
+                encoding="utf-8",
+            )
+            build_tools.chmod(0o755)
+
+            venv_bin = tmp_path / "server-v2" / ".venv" / "bin"
+            venv_bin.mkdir(parents=True)
+            fake_python = venv_bin / "python"
+            fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_python.chmod(0o755)
+
+            bin_dir = tmp_path / "bin-shims"
+            bin_dir.mkdir()
+            fake_npm = bin_dir / "npm"
+            fake_npm.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "prefix=''\n"
+                "while (($# > 0)); do\n"
+                "  case \"$1\" in\n"
+                "    --prefix) prefix=\"$2\"; shift 2 ;;\n"
+                "    *) shift ;;\n"
+                "  esac\n"
+                "done\n"
+                "mkdir -p \"$prefix/out\"\n"
+                "printf '<html></html>\\n' > \"$prefix/out/index.html\"\n",
+                encoding="utf-8",
+            )
+            fake_npm.chmod(0o755)
+
+            env = self.isolated_env(tmp_path)
+            env["LOGAGENT_SRC_DIR"] = source.as_posix()
+            env["LOGAGENT_TEST_BUILD_LOG"] = build_log.as_posix()
+            env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+
+            result = self.run_script(script, "--skip-tools", "--no-restart", env=env)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("Building V2 analyzer tools", result.stdout)
+            self.assertFalse(build_log.exists())
+
     def test_tool_build_scripts_document_source_built_id_aliases(self) -> None:
         build_tools = ROOT_DIR / "scripts" / "build-tools.sh"
         smoke_tools = ROOT_DIR / "scripts" / "smoke-source-built-analyzers.sh"
@@ -286,6 +410,7 @@ esac
         rebuild_help = self.run_script(rebuild_v2, "--help")
         self.assertEqual(rebuild_help.returncode, 0)
         self.assertIn("opengemini_storage_analyzer", rebuild_help.stdout)
+        self.assertIn("--skip-tools", rebuild_help.stdout)
 
         local_help = self.run_script(v2_local, "--help")
         self.assertEqual(local_help.returncode, 0)

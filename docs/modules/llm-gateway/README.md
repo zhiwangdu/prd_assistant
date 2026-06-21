@@ -62,7 +62,8 @@ artifact。HTTP 失败保留兼容的 `error.type=HTTPError`，并新增
 `error.classification`、`error.retryable` 和 `error.httpStatus`：401/403 归类为
 `authentication_failed`，429 为 `rate_limited`，413 为 `input_too_large`，
 408/504 为 `provider_timeout`，5xx 为 `provider_server_error`，其他 4xx 为
-`provider_client_error`。Binary 和 Claude Code 本地 provider 失败也使用同一
+`provider_client_error`；如果 HTTP 错误体读取失败，仍保留 status/header
+分类并记录 `response.bodyReadError`。Binary 和 Claude Code 本地 provider 失败也使用同一
 分类字段：configuration、timeout、transport、process、output-size、decode 和
 parse 阶段分别写入稳定分类和 retryable 标记。
 

@@ -164,8 +164,11 @@ Implemented in this slice:
   Provider HTTP failures preserve `error.type=HTTPError` and also expose
   `error.classification`, `error.retryable`, and `error.httpStatus` for
   authentication failures, rate limits, input-too-large responses, provider
-  server errors, provider timeouts, and generic client errors. Binary and
-  Claude Code local provider failures expose the same classification shape for
+  server errors, provider timeouts, and generic client errors. If reading the
+  provider error body fails after the status and headers are available, V2 must
+  keep the HTTP classification and record `response.bodyReadError` instead of
+  replacing the failure with a transport classification. Binary and Claude Code
+  local provider failures expose the same classification shape for
   configuration, timeout, transport, process, output-size, decode, and parse
   errors.
   The default stub summary is a local fallback and must state only that it did
@@ -2142,9 +2145,11 @@ The current slice is accepted when:
 - Interrupted `running` jobs are recovered on startup without waiting for the
   previous lock timeout.
 - `deploy/rebuild-v2-install.sh` can create the V2 virtualenv, install
-  `server-v2`, initialize SQLite, sync WebUI static files, load
-  `$HOME/.cargo/env` for source-built analyzer rebuilds when present, and
-  preserve existing `data-v2`.
+  `server-v2`, initialize SQLite, sync WebUI static files, build source-built
+  analyzers into the runtime `bin/tools` directory by default, load
+  `$HOME/.cargo/env` for Flux analyzer rebuilds when present, and preserve
+  existing `data-v2`. `--skip-tools` can explicitly keep the fast path that
+  avoids submodule clone/compile work.
 - `deploy/rebuild-v2-install.sh --tools-only --only-tool <name>` can rebuild a
   single source-built analyzer through `scripts/build-tools.sh` without
   creating the V2 virtualenv, initializing SQLite, syncing WebUI, or starting

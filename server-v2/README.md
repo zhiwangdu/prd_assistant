@@ -233,7 +233,9 @@ foundation for the V2 product model:
   HTTP failures keep `type=HTTPError` for compatibility and add stable
   `error.classification`, `error.retryable`, and `error.httpStatus` fields for
   authentication failures, rate limits, input-too-large responses, server
-  errors, provider timeouts, and generic client errors. Binary and Claude Code
+  errors, provider timeouts, and generic client errors; if a provider closes
+  the connection before its error body can be read, V2 keeps the HTTP
+  classification and records `response.bodyReadError`. Binary and Claude Code
   local provider failures use the same `error.classification` /
   `error.retryable` shape for configuration, timeout, transport, process,
   output-size, decode, and parse errors.
@@ -322,12 +324,14 @@ cd deploy
 ```
 
 `rebuild-v2-install.sh` creates `$LOGAGENT_V2_VENV_DIR`, installs `server-v2`,
-initializes SQLite, builds and syncs `webui/out`, and restarts V2 only when it
-was already running. Runtime defaults are `$LOGAGENT_APP_DIR/server-v2/.venv`,
-`$LOGAGENT_APP_DIR/data-v2`, `$LOGAGENT_APP_DIR/webui/out`, and port `50993`.
-Use `--with-tools` to also build source-referenced analyzer submodules into
-`$LOGAGENT_APP_DIR/bin/tools`, or `--tools-only --only-tool <name>` for a fast
-tool-only rebuild. Single-tool rebuild accepts both short names
+initializes SQLite, builds and syncs `webui/out`, builds source-referenced
+analyzer submodules into `$LOGAGENT_APP_DIR/bin/tools` by default, and restarts
+V2 only when it was already running. Runtime defaults are
+`$LOGAGENT_APP_DIR/server-v2/.venv`, `$LOGAGENT_APP_DIR/data-v2`,
+`$LOGAGENT_APP_DIR/webui/out`, and port `50993`. Use `--skip-tools` for a fast
+server/WebUI rebuild that does not clone or compile analyzer submodules, or
+`--tools-only --only-tool <name>` for a fast tool-only rebuild. Single-tool
+rebuild accepts both short names
 `influxql|flux|opengemini|influxdb` and V2 catalog IDs
 `influxql_analyzer|flux_query_analyzer|opengemini_storage_analyzer|influxdb_storage_analyzer`.
 After building source-referenced analyzers, run
