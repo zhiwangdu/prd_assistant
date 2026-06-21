@@ -1,6 +1,6 @@
-import { Activity, BookOpenCheck, BrainCircuit, FileSearch, Globe2, KeyRound, Layers3, Server, Settings, Wrench } from "lucide-react";
+import { Activity, BookOpenCheck, Boxes, BrainCircuit, FileSearch, Globe2, KeyRound, Layers3, Server, Settings, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Badge, Button, Card, CardContent, Input } from "./components/ui";
+import { Badge, Button, Card, CardContent, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 import { V2AnalyzeBridge } from "./V2AnalyzeBridge";
@@ -118,10 +118,18 @@ export function App() {
 
 function V2SystemContextWorkbench({ apiKey }: { apiKey: string }) {
   return (
-    <div className="space-y-5">
-      <V2SystemContextBridge apiKey={apiKey} />
-      <V2MetadataBridge apiKey={apiKey} />
-    </div>
+    <Tabs defaultValue="system-context" className="space-y-5">
+      <TabsList>
+        <TabsTrigger value="system-context"><BrainCircuit className="mr-2 inline h-4 w-4" />System Context</TabsTrigger>
+        <TabsTrigger value="metadata"><Boxes className="mr-2 inline h-4 w-4" />Metadata</TabsTrigger>
+      </TabsList>
+      <TabsContent value="system-context" className="mt-0">
+        <V2SystemContextBridge apiKey={apiKey} />
+      </TabsContent>
+      <TabsContent value="metadata" className="mt-0">
+        <V2MetadataBridge apiKey={apiKey} />
+      </TabsContent>
+    </Tabs>
   );
 }
 

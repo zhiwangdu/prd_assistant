@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 WebUI System Context Module Tabs
+
+- Changed the WebUI `System Context` top-level page from rendering V2 System
+  Context and V2 Metadata workbenches sequentially to a page-local tab switch.
+  The default tab now shows Skills/System Context resources, while the
+  `Metadata` tab opens the metadata import, instance management, snapshot, and
+  raw JSON workflow.
+- Updated WebUI README/SPEC to document the System Context page-local module
+  switch and require large internal modules to use tabs or equivalent buttons
+  instead of being laid out one after another.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  and `cd webui && npm run build`.
+
 ## 2026-06-21 V2 Rust Server Removal
 
 - Removed the legacy Rust `server/` crate from the V2 branch and pruned it from
