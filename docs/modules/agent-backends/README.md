@@ -1,94 +1,53 @@
-# Claude Code Session Runner 方案
+# Agent Provider Runtime
 
 ## 定位
 
-LogAgent 不再维护自研通用 Agent 调查循环，也不再通过旧 adapter 协议接入后端。Log Analysis 的 `PLAN_ANALYSIS` 现在启动一次 Claude Code CLI session，并通过 LogAgent MCP server 暴露日志、Metadata、System Context、Tool Runner、Case 和审批能力。
+Agent Provider Runtime 定义 V2 Analysis Orchestrator 与模型/本地代理后端之间的边界。V2 不再把 Claude Code 作为固定后端；实际后端由 `LOGAGENT_V2_AGENT_PROVIDER` 选择，默认是 `stub`。
+
+支持的 provider：
+
+| Provider | 用途 | 关键配置 |
+|----------|------|----------|
+| `stub` | 本地开发、无模型环境、确定性低置信度结果 | 默认值，无额外依赖 |
+| `openai_compatible` | OpenAI-compatible Chat Completions 服务 | `LOGAGENT_V2_LLM_BASE_URL`、`LOGAGENT_V2_LLM_API_KEY`、`LOGAGENT_V2_LLM_MODEL` |
+| `binary` | 本机可执行 Agent provider PoC | `LOGAGENT_V2_AGENT_BINARY_PATH` |
+| `claude_code` | 可选 Claude Code CLI + task MCP provider | `LOGAGENT_V2_CLAUDE_CODE_PATH` 或兼容的 `LOGAGENT_CLAUDE_CODE_PATH` |
 
 职责边界：
 
-- Claude Code 负责通用推理、代码上下文理解和按模式使用允许的 native tools。
-- LogAgent 负责 evidence package、MCP resources/tools、工具白名单、等待态、审批、审计 artifact 和 Case 确认。
-- MCP tools 的输出必须写入 task workspace artifact，并返回 canonical evidence refs。
-- Case 保存仍由用户确认，Claude Code 和 MCP tool 都不能直接写入长期 Memory。
+- Analysis Orchestrator 负责 run 状态、预算、证据包、工具调用、等待态和最终 evidence ref 校验。
+- Agent provider 只返回结构化 outcome：完成、追问用户、请求审批或失败。
+- Tool Runner、Fetch、Code Evidence、Remote Executor、Metadata 和 Case recall 只能通过 Server/task MCP 受控执行。
+- Claude Code provider 可按 `analysisMode` 使用 native tools，但领域能力仍必须走 LogAgent Server 边界。
 
-## 当前实现状态
+## 当前实现
 
 已实现：
 
-- `claude_code` 配置块，读取 `LOGAGENT_CLAUDE_CODE_PATH` 或显式 `command_path`。
-- `mcp.enabled` / `mcp.transport=stdio` 配置。
-- V2 task MCP HTTP endpoint `/api/v2/mcp/task/:run_id`，由 `claude_mcp_config.json` 暴露给 Claude Code。
-- Claude Code runner 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，通过 stdin 传入短启动 prompt，证据包由 Claude 通过 MCP `analysis_package` resource 读取。Task MCP resource 主 URI 为 `logagent://task/<run_id>/<resource>`，Python V2 保留 `logagent-v2://run/<run_id>/<resource>` alias。
-- `analysis_package.json` 不再内联完整 Metadata；Claude 初始只看到 `metadataContextOutline`，任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 也返回 outline，细节通过 `logagent.query_metadata` 分页读取。
-- 分模式 permission profile：默认 `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/受控 Bash，`fix` 预留 Edit/Write/Test 能力。所有 profile 都自动允许 `mcp__logagent__*`，否则 Claude Code 的 `dontAsk` 模式会拒绝任务 MCP tools。
-- task 创建接受 `analysisMode`，默认来自 `claude_code.default_mode`。
-- 新 workspace artifacts：
-  - `analysis_package.json`
-  - `claude_prompt.md`
-  - `claude_mcp_config.json`
-  - `claude_session.json`
-  - `mcp_calls.jsonl`
-  - `agent_response.json`，已重定义为 Claude Code session response。
-- `agent_response.json` 记录 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、MCP call path、native tool policy、duration、error 和 stdout preview。
-- Settings API 继续使用 `/api/settings/agent-backends` 作为前端兼容入口，但返回的是单一 `claude_code` 后端摘要。
-- Python V2 迁移路径已支持 `LOGAGENT_V2_AGENT_PROVIDER=claude_code`：V2 的 LangGraph runtime 在每个 provider round 生成同类 `claude_prompt.md` / `claude_mcp_config.json`，启动配置的 Claude Code CLI，通过 HTTP task MCP 读取 `analysis_package`，并把 `waiting_for_user` / `waiting_for_approval` structured output 转换为现有 task MCP 等待工具。
-- Python V2 恢复等待任务时会从最新 `agent_response.json` 读取上一轮 `response.sessionId`，并在下一次 Claude Code CLI 调用追加 `--resume <session_id>`。
-- Python V2 会把 Claude envelope 的 `usage` 和 `total_cost_usd` / `totalCostUsd` 保存到 `agent_response.json` 的 `response.usage` 和 `response.cost.usd`。
-- Python V2 会在 Claude Code provider 响应后写入新的 `claude_session.json` runtime artifact，记录 runtime/provider status、可选 `claudeSessionId`、`resumedSessionId`、usage/cost、prompt delivery、错误/校验状态和对应 `agent_response` artifact id；即使失败响应没有 session id，也会覆盖初始 contract 形成可审计运行态。
-- Python V2 现在也按 Workspace `mode` 选择 Rust/V1 同名 permission profile：
-  `diagnose` 禁用 native tools，`code_investigation` 允许 Read/Grep/Bash，
-  `fix` 允许 Read/Grep/Bash/Edit/Write；每个 profile 都自动允许
-  `mcp__logagent__*`。扁平 `LOGAGENT_V2_CLAUDE_CODE_*` 权限变量只作为
-  `diagnose` profile 的兼容覆盖；多模式覆盖使用
-  `LOGAGENT_V2_CLAUDE_CODE_PERMISSION_PROFILES_JSON`。
-- Python V2 的 settings diagnostics 不启动真实 Claude session，只校验 `LOGAGENT_V2_CLAUDE_CODE_PATH` / `LOGAGENT_CLAUDE_CODE_PATH` 是否 absolute、regular、executable；真实调用结果仍由 `agent_request.json` / `agent_response.json` 审计。
-- Python V2 的 OpenAI-compatible Agent provider 会在 `agent_response.json`
-  的 `response` 字段保存稳定审计元数据，包括 allowlist header
-  `providerRequestId`、响应体 `providerResponseId`、response model、finish
-  reason、usage 和 system fingerprint；请求 headers 和 API Key 不写入
-  artifact。HTTP 失败会保留 `error.type=HTTPError`，同时写入
-  `error.classification`、`error.retryable` 和 `error.httpStatus`，用于区分
-  鉴权失败、限流、输入过大、Provider timeout、5xx 和其他 4xx。Binary 和
-  Claude Code 本地 provider 失败也写入同一分类字段，覆盖配置、超时、启动、
-  非零退出、输出过大、decode 和 parse 阶段。
+- `LOGAGENT_V2_AGENT_PROVIDER=stub|openai_compatible|binary|claude_code`。
+- 每轮 provider 调用写入 `agent_request.json` 和 `agent_response.json` 审计产物。
+- `analysis_package.json` 作为 provider 背景包；Metadata 默认只暴露 outline/counts，细节通过 task MCP slice 读取。
+- `analysisMode=diagnose|code_investigation|fix`，用于 Claude Code permission profile 和后续模式扩展。
+- `WAITING_FOR_USER` / `WAITING_FOR_APPROVAL` 恢复路径；等待恢复后继续同一 run。
+- OpenAI-compatible provider 保存 request id、response id、model、finish reason、usage、system fingerprint 和 allowlist response headers，不保存 API Key。
+- Binary provider 固定调用 `<binary_path> run <prompt>`，不拼接 shell，不允许用户覆盖 path 或 argv。
+- Claude Code provider 生成 `claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`，通过 HTTP task MCP 读取证据包，并在恢复等待态时使用上一轮 `sessionId`。
+- Provider 失败统一写入 `error.classification` 和 `error.retryable`，覆盖配置、鉴权、限流、输入过大、超时、transport、进程退出、输出过大、decode 和 parse 阶段。
+- Settings 诊断接口复用 `/api/v2/settings/agent-backends`，展示当前 provider 摘要；诊断不启动真实 Claude Code session。
 
-## CLI 与 Agent SDK 取舍
+## Claude Code Provider
 
-当前生产路径继续使用 Claude Code CLI。CLI 已覆盖一次性 headless 运行、JSON schema 输出、MCP 配置、session resume 和 permission profile；Server 侧只需要把大 `analysis_package.json` 从启动 prompt 移到 MCP resource，即可避免 argv 和 stdin 大小问题。Claude Agent SDK 更适合作为后续 adapter PoC：当需要 SDK message streaming、SDK hooks、独立 session store 或长期服务化 agent runtime 时，再引入 TypeScript/Python sidecar，不作为本轮默认路径。
+`claude_code` 是可选 provider，不是 V2 默认依赖。启用后：
 
-## 配置示例
+- CLI path 必须是绝对、常规且可执行文件。
+- Server 使用 `--print --output-format json --json-schema --mcp-config --strict-mcp-config`，stdin 只放短启动 prompt。
+- 大证据包不进入 argv/stdin；Claude 通过 task MCP `analysis_package` resource 读取。
+- 所有 permission profile 自动允许 `mcp__logagent__*`，否则 `dontAsk` 模式会拒绝任务 MCP tools。
+- `diagnose` 默认禁用 native tools；`code_investigation` 允许 Read/Grep/Bash；`fix` 预留 Edit/Write/Test 能力。
 
-```yaml
-claude_code:
-  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
-  default_mode: "diagnose"
-  max_session_seconds: 600
-  max_output_bytes: 1048576
-  permission_profiles:
-    diagnose:
-      permission_mode: "dontAsk"
-      tools: ""
-      allowed_tools: ["mcp__logagent__*"]
-      disallowed_tools: ["Bash", "Edit", "Write", "Read", "Grep"]
-    code_investigation:
-      permission_mode: "dontAsk"
-      tools: "Read,Grep,Bash"
-      allowed_tools: ["Read", "Grep", "Bash", "mcp__logagent__*"]
-      disallowed_tools: ["Edit", "Write"]
-    fix:
-      permission_mode: "acceptEdits"
-      tools: "Read,Grep,Bash,Edit,Write"
-      allowed_tools: ["Read", "Grep", "Bash", "Edit", "Write", "mcp__logagent__*"]
-      disallowed_tools: []
+## Provider Outcome
 
-mcp:
-  enabled: true
-  transport: "stdio"
-```
-
-## Claude 输出
-
-Claude Code 必须返回结构化 session outcome：
+Provider 必须返回结构化对象，最终被规范化为：
 
 ```json
 {
@@ -110,29 +69,35 @@ Claude Code 必须返回结构化 session outcome：
 - `runtimeStatus=waiting_for_user` + `pendingPrompt`
 - `runtimeStatus=waiting_for_approval` + `pendingApproval`
 
-旧 JSON 动作循环不再由 `PLAN_ANALYSIS` 消费。日志搜索和工具运行应通过 LogAgent MCP tools 完成。
+最终答案中的 evidence refs 由 Server 校验。`system_context.json`、Diagnostic Skill reference 和 Metadata slice 只能作为背景，不能作为根因证据。
 
-## MCP 能力
+## 相关产物
 
-Resources：
+通用产物：
 
-- task summary / artifact index
-- analysis package
-- manifest / grep results
-- metadata context outline
-- system context
-- case context
-- tool results
+- `analysis_package.json`
+- `agent_request.json`
+- `agent_response.json`
+- `analysis_state.json`
+- `analysis_events.jsonl`
 
-Tools：
+Claude Code provider 额外产物：
 
-- `logagent.search_logs`
-- `logagent.get_log_slice`
-- `logagent.run_domain_tool`
-- `logagent.recall_cases`
-- `logagent.get_metadata_topology`（兼容 alias，返回 overview outline）
-- `logagent.query_metadata`
-- `logagent.request_user_input`
-- `logagent.request_approval`
+- `claude_prompt.md`
+- `claude_mcp_config.json`
+- `claude_session.json`
+- `mcp_calls.jsonl`
 
-每个 MCP tool call 追加到 `mcp_calls.jsonl`。会产生证据的工具同时写入对应 workspace artifact。`logagent.query_metadata` 写入 `metadata_slices/<stable_id>.json`，该 slice 是背景上下文，不是最终 evidence ref。
+## 验证入口
+
+- `GET /api/v2/settings/agent-backends`
+- `POST /api/v2/settings/agent-backends/:backend_id/test`
+- `GET /api/v2/tasks/:task_id/analysis`
+- `GET /api/v2/runs/:run_id/analysis`
+
+本地常用：
+
+```bash
+scripts/v2-local.sh status
+scripts/v2-local.sh logs
+```

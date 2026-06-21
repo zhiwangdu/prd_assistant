@@ -2,7 +2,7 @@
 
 ## 定位
 
-Domain Adapters 是 LogAgent 的领域差异化层。Claude Code 可以做通用推理，但具体系统的问题分析需要 LogAgent 提供可靠的领域证据组织方式，包括日志模式、元数据结构、工具结果、Runbook、Case 和测试流水线线索。
+Domain Adapters 是 LogAgent 的领域差异化层。Agent provider 可以做通用推理，但具体系统的问题分析需要 LogAgent 提供可靠的领域证据组织方式，包括日志模式、元数据结构、工具结果、Runbook、Case 和测试流水线线索。
 
 第一批领域：
 
@@ -37,7 +37,7 @@ Python V2 registry 与 Rust/V1 内置 registry 对齐：`opengemini_influxdb`
 - 可用工具清单和工具结果解释。
 - 可注入 System Context / Runbook 片段。
 - 测试流水线失败阶段和 artifact 分类。
-- 面向 Claude Code / MCP resources 的证据摘要。
+- 面向 Agent provider / MCP resources 的证据摘要。
 
 ## 初始领域
 
@@ -66,5 +66,5 @@ Python V2 registry 与 Rust/V1 内置 registry 对齐：`opengemini_influxdb`
 
 1. 在 task/session 创建时记录 `domainAdapterId`。
 2. 基于上传文件、Metadata 产品字段和用户问题自动推荐 adapter。
-3. 让 Tool Runner、System Context 和 Claude MCP 资源构建读取 adapter 能力。
+3. 让 Tool Runner、System Context 和 task MCP 资源构建读取 adapter 能力。
 4. 为 Cassandra/RocksDB 增加 fixture 和解析测试。

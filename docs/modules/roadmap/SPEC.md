@@ -2,16 +2,16 @@
 
 ## 目标
 
-按“持久化基础 -> 证据能力 -> Claude Code MCP 适配 -> Domain Adapter -> 用户交互 -> Case”推进。LogAgent 不复制 Claude Code 的通用能力，而是提供可审计证据工作台和领域诊断增强。
+按“持久化基础 -> 证据能力 -> Agent Provider Runtime / task MCP -> Domain Adapter -> 用户交互 -> Case”推进。LogAgent 不复制 Claude Code/Codex/OpenCode 的通用能力，而是提供可审计证据工作台和领域诊断增强。
 
 ## 当前进度
 
-已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入和聚合 smoke 入口、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用/openGemini/Cassandra/RocksDB 只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Claude Code session runner 配置/诊断、LogAgent MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是真实环境 smoke 和生产 fixture 验证。
+已完成上传与 Upload session 持久化、任务持久化、解压、初始 grep、Metadata API/WebUI、task Metadata context、可恢复 Executor、Tool Runner MVP、Tools 页面 MVP、`pprof_analyzer` 示例工具、真实 InfluxQL/Flux/openGemini storage/InfluxDB storage analyzer 源码构建接入和聚合 smoke 入口、Code Evidence 只读 `git grep` MVP、Remote Executor 白名单命令、V2 通用/openGemini/Cassandra/RocksDB 只读环境模板、V2 审批后单文件 SCP 采集、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、单次 LLM Gateway、Analysis 用户追问/审批恢复 API、Agent Provider Runtime 配置/诊断、task MCP artifacts、Domain Adapter registry 和静态 WebUI 托管。Environment Collector 后续重点是真实环境 smoke 和生产 fixture 验证。
 
 ## 下一阶段优先级
 
-1. 完善 Claude Code session runner 的 structured outcome、用量审计、错误分类、resume 和 permission profile。
-2. 围绕现有上传、Metadata、Tool Runner、Tools、Claude Code MCP、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
+1. 完善 Agent Provider Runtime 的 structured outcome、用量审计、错误分类、resume 和 mode-specific policy。
+2. 围绕现有上传、Metadata、Tool Runner、Tools、task MCP、Domain Adapter 和 WebUI 逻辑补齐完整产品闭环，包括任务创建、工具运行、追问/审批、证据展示、结果确认和本地 smoke。
 3. 用真实生产 fixture 扩展 `flux_query_analyzer` 风险规则、`influxql_analyzer` compare mode delta 字段映射，以及 storage analyzer findings。
 4. Cassandra 和 RocksDB domain adapter 的真实 fixture、日志模式和工具设计。
 5. Code Evidence 后续 worktree/cache、版本 diff、符号级解析和 fix mode 隔离修改。

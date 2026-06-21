@@ -256,7 +256,7 @@ metadata:
 - `native_agent.state_path` 保存本机活动 Session，Chrome 导入默认附加到该 Session；缺省为 `~/.logagent/native-agent-state.json`。
 - 用户输入不能覆盖白名单路径、白名单命令或代码仓地址。
 - `rg`、外部工具、SSH key、repo path 都在启动时做存在性校验。
-- Analysis Agent 预算必须有有限默认值，不能通过用户消息提高。
+- Analysis Orchestrator 预算必须有有限默认值，不能通过用户消息提高。
 - `server.max_concurrent_tasks` 控制单 Server 进程后台任务并发，缺省为 2，非正值按 1 处理。
 - `llm.provider` 默认 `stub`；`openai_compatible` 从 `base_url_env` 和 `api_key_env` 读取真实连接信息。V2 `LOGAGENT_V2_AGENT_PROVIDER` 只允许 `stub`、`openai_compatible`、`binary` 或 `claude_code`；选择 `openai_compatible` 时 `LOGAGENT_V2_AGENT_BASE_URL`、`LOGAGENT_V2_AGENT_MODEL` 和 `LOGAGENT_V2_AGENT_API_KEY` 必须非空。
 - `llm.model_env` 可选；配置后从对应环境变量读取模型名并优先于静态 `llm.model`，变量缺失或值为空时启动失败。

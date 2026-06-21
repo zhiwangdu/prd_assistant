@@ -2,11 +2,11 @@
 
 ## 目标
 
-定义 Server、Analysis Orchestrator、Claude Code Session Runner、LogAgent MCP、LLM Gateway、Domain Adapter 和证据模块之间的稳定契约。
+定义 Server、Analysis Orchestrator、Agent Provider Runtime、LogAgent MCP、LLM Gateway、Domain Adapter 和证据模块之间的稳定契约。
 
 ## 当前状态
 
-Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Code Evidence 已通过任务 MCP 写入 `code_evidence/<action_id>.json#matches/<index>` 最终证据引用。Huawei package sync 已接入同一 `tool_run` / `tool_results` 产物面，首版只支持受保护 Tools API 手动运行，不新增最终答案 evidence ref 类型。Claude Code 配置摘要、dry-run 诊断、MCP/session 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/mcp/readonly`。它面向个人本地 Claude Code 读取共享知识，与任务 stdio MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint 和 Huawei package sync。
+Server 已实现第一版 `TaskContext`、Action、Evidence 和 `EvidenceProvider` 契约，以及持久化 phase 驱动的 Executor dispatcher。Tool Runner 已实现第一个 Evidence Provider。Fetch endpoint 已接入同一 `tool_run` / `tool_results` 产物面，并新增 `tool_results/<action_id>/result.json#response` 作为受控最终证据引用。Code Evidence 已通过任务 MCP 写入 `code_evidence/<action_id>.json#matches/<index>` 最终证据引用。Huawei package sync 已接入同一 `tool_run` / `tool_results` 产物面，首版只支持受保护 Tools API 手动运行，不新增最终答案 evidence ref 类型。Agent Provider Runtime 配置摘要、dry-run 诊断、request/response 契约产物和 Domain Adapter 内置 registry 已实现。只读 HTTP MCP 已实现为独立受保护接口：`POST /api/v2/mcp/readonly`。它面向个人本地 Claude Code/Codex 等客户端读取共享知识，与 task MCP 分离，不绑定 task，不读取 workspace，不执行 action，包括不执行 Fetch endpoint 和 Huawei package sync。
 
 ## 公共产物
 
@@ -26,6 +26,7 @@ analysis_events.jsonl
 result.json
 result.md
 analysis_package.json
+agent_request.json
 claude_prompt.md
 claude_mcp_config.json
 claude_session.json
@@ -40,7 +41,7 @@ Log Analysis 公开历史入口是 Session。Session 保存草稿、`analysisMod
 
 Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
-- `log_analysis`：完整上传、解压、grep、Tool Runner、Analysis Orchestrator、Claude Code session result 流程。
+- `log_analysis`：完整上传、解压、grep、Tool Runner、Analysis Orchestrator、Agent provider result 流程。
 - `log_analysis` 必须绑定 `sessionId`。
 - `tool_run`：手动工具运行，复用上传、TaskStore、workspace 和 `RUN_TOOL` phase，不绑定 Session，成功后通过 `/api/tools/runs/:task_id/result` 暴露工具结果。内置 `logagent.preprocess_log_package` 使用同一任务类型生成预处理摘要和 `tool_inputs`；内置 `logagent.fetch` 也使用 `tool_run`，但无需上传文件，结果写入 `tool_results/<action_id>/result.json` 和 `response_body.bin`；内置 `logagent.huawei_cloud_package_sync` 使用一个上传文件，结果写入 `tool_results/<action_id>/result.json`。
 
@@ -57,7 +58,7 @@ Task schema 现在包含 `taskKind` 和可选 `sessionId`：
 
 ## MCP / Outcome 契约
 
-Claude Code structured outcome 支持：
+Agent provider structured outcome 支持：
 
 - `completed`
 - `waiting_for_user`
@@ -160,7 +161,7 @@ logical `case_recall/recall_<stable_id>.json` path on background
 优先定义：
 
 - `AnalysisAgent`
-- `ClaudeSessionRunner`
+- `AgentProviderRuntime`
 - `DomainAdapter`
 - `LlmGateway`
 - `LogAnalyzer`

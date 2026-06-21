@@ -2,6 +2,23 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 V2 Server Documentation Cleanup
+
+- Rewrote the root README/SPEC and `server-v2/README.md` / `server-v2/SPEC.md`
+  around the current V2 architecture: Python/FastAPI Server, SQLite WAL, local
+  artifact store, Session-first runs, Analysis Orchestrator, task/read-only MCP,
+  and Agent Provider Runtime.
+- Pruned historical implementation logs from the V2 Server docs and replaced
+  stale Claude Code-default wording with the current provider model:
+  `stub` is default, while `openai_compatible`, `binary`, and `claude_code` are
+  selectable providers.
+- Reworked module docs for Agent Provider Runtime, Analysis Orchestrator and
+  LLM Gateway, and aligned related module references in Interfaces, Roadmap,
+  Tool Runner, Log Analyzer, Code Evidence, Domain Adapters, Security and
+  Config docs.
+- Verification passed: `git diff --check` and stale wording scans over current
+  README/SPEC/module docs, excluding historical `PROGRESS.md` entries.
+
 ## 2026-06-21 WebUI Metadata Import Layout
 
 - Fixed the V2 Metadata Workbench import form around `Template type` by

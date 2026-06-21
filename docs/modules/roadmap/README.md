@@ -10,7 +10,7 @@
 | Code Evidence | 已完成 V2 只读 MVP |
 | Environment Collector | 已完成 V2 远程命令、单文件 SCP、批量采集和唯一 hint 选型 |
 | Analysis Orchestrator | 4~6 天 |
-| Claude Code MCP Session Runner | 已完成 MVP |
+| Agent Provider Runtime | 已完成 MVP |
 | Domain Adapters | 持续迭代 |
 | LLM Gateway | 3~4 天 |
 | Case Store | 3~4 天 |
@@ -29,17 +29,17 @@
 
 - Tool Runner MVP 已接入 Server；真实 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzers 已通过 `third_party/` submodules 引用，并由 `scripts/build-tools.sh` 构建到 LogAgent 工具目录，`scripts/smoke-source-built-analyzers.sh` 可聚合运行四个真实 CLI smoke。下一步基于真实生产 fixture 扩展风险规则和 storage finding 映射。
 - Tools 页面 MVP 已接入 Server 和 WebUI，首个 `pprof_analyzer` 通过 `tool_run` task 复用上传、任务状态、workspace 和 artifact 机制；后续更多工具应按同一 registry/adapter 方式扩展。
-- 围绕现有上传、Metadata、Tool Runner、Claude Code MCP、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
+- 围绕现有上传、Metadata、Tool Runner、Agent Provider Runtime、task MCP、Domain Adapter 和 WebUI 流程补齐端到端产品闭环。
 - 完善任务创建、等待用户、审批、结果展示、证据跳转、结果确认和 smoke 流程，使当前逻辑可稳定演示和反复使用。
 - 所有结果关联 `actionId` 并使用稳定证据引用。
 
-## 第 3 阶段：Claude Code MCP 与 Domain Adapter
+## 第 3 阶段：Agent Provider Runtime 与 Domain Adapter
 
-- 已新增 `claude_code` 配置、`mcp` 配置、Claude Code session runner 和 Settings dry-run 诊断。
+- 已新增 `LOGAGENT_V2_AGENT_PROVIDER`、task MCP、Agent Provider Runtime 和 Settings dry-run 诊断；默认 provider 为 `stub`，Claude Code 是可选 `claude_code` provider。
 - 已新增 `opengemini_influxdb` active adapter，以及 Cassandra/RocksDB skeleton adapter。
-- 已固化 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` session 输入/响应产物。
-- 下一步完善 Claude Code usage/cost、session resume、mode-specific native tool policy 和 MCP tool tests。
-- Claude 通过 MCP tools 请求日志、工具、Case、Metadata、用户追问和审批。
+- 已固化 `analysis_package.json`、`agent_request.json`、`agent_response.json`，以及 Claude Code provider 专属的 `claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl`。
+- 下一步完善 provider usage/cost、resume、mode-specific native tool policy 和 MCP tool tests。
+- Provider 通过 task MCP tools 请求日志、工具、Case、Metadata、用户追问和审批。
 - 安全只读动作自动执行；远程采集默认等待批准。
 
 ## 第 4 阶段：LLM Gateway

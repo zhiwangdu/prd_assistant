@@ -1,11 +1,11 @@
 # Server Internal Module Docs
 
-这些文档描述 LogAgent Server 内部能力的职责、接口和规划。当前这些能力都集成在 `server` crate 中，不再作为根目录下的独立组件目录存在。
+这些文档描述 LogAgent V2 Server 内部能力的职责、接口和规划。当前这些能力都集成在 `server-v2/` 的 Python/FastAPI 单机进程中，不再作为根目录下的独立服务目录存在。
 
 | 能力 | README | SPEC |
 |------|--------|------|
-| Claude Code Session Runner | [README](./agent-backends/README.md) | [SPEC](./agent-backends/SPEC.md) |
-| Analysis Agent | [README](./analysis-agent/README.md) | [SPEC](./analysis-agent/SPEC.md) |
+| Agent Provider Runtime | [README](./agent-backends/README.md) | [SPEC](./agent-backends/SPEC.md) |
+| Analysis Orchestrator | [README](./analysis-agent/README.md) | [SPEC](./analysis-agent/SPEC.md) |
 | Domain Adapters | [README](./domain-adapters/README.md) | [SPEC](./domain-adapters/SPEC.md) |
 | Memory | [README](./memory/README.md) | [SPEC](./memory/SPEC.md) |
 | Memory / Case Store compatibility | [README](./case-store/README.md) | [SPEC](./case-store/SPEC.md) |

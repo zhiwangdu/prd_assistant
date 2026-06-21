@@ -12,9 +12,9 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 ## 职责
 
-Code Evidence 根据用户输入的软件产品和版本，定位对应代码分支或 tag，并结合实际代码生成证据链，供 Claude Code 做代码上下文分析。
+Code Evidence 根据用户输入的软件产品和版本，定位对应代码分支或 tag，并结合实际代码生成证据链，供 Agent provider 做代码上下文分析。
 
-Analysis Orchestrator 后续可根据 `code_investigation` mode 或 Claude MCP 请求执行新的关键词检索、符号检索或版本 diff。Server 必须把请求限制到 task 已确定的 product/version、配置仓库、配置 ref 和 search roots。
+Analysis Orchestrator 后续可根据 `code_investigation` mode 或 task MCP 请求执行新的关键词检索、符号检索或版本 diff。Server 必须把请求限制到 task 已确定的 product/version、配置仓库、配置 ref 和 search roots。
 
 ## 当前状态
 

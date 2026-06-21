@@ -14,7 +14,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 Environment Collector 面向测试环境，允许任务跳过浏览器下载和本地上传，直接通过 SSH/SCP 从目标节点收集日志、配置和诊断信息。
 
-Analysis Orchestrator 也可根据 Claude MCP `logagent.request_approval` 的等待请求补充环境采集。该请求默认进入 `WAITING_FOR_APPROVAL`，只有用户批准后 Server 才能将其映射到已配置环境、节点、文件和命令白名单。
+Analysis Orchestrator 也可根据 task MCP `logagent.request_approval` 的等待请求补充环境采集。该请求默认进入 `WAITING_FOR_APPROVAL`，只有用户批准后 Server 才能将其映射到已配置环境、节点、文件和命令白名单。
 
 ## 当前基础能力
 

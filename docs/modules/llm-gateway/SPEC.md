@@ -2,173 +2,95 @@
 
 ## 目标
 
-为 LogAgent 提供受约束、可替换的模型辅助能力，用于 Case import、alias 生成和兼容恢复路径的结构化结果生成。Log Analysis 的运行后端已切换为 Claude Code session runner，Claude Code 不归入 LLM Gateway。
+为 LogAgent 提供受约束、可替换的模型辅助能力。当前范围限定为 Case import、alias 生成和兼容恢复路径的结构化 JSON 处理；Log Analysis 的主调查循环由 Analysis Orchestrator 和 Agent Provider Runtime 执行。
 
-## 当前状态
+## 输入
 
-已实现最小单次调用版本：
+- 用户提供的 Case 文本或文件文本。
+- 成功 run 的问题、最终结果、manifest 摘要和 Metadata 摘要，用于 alias。
+- 兼容恢复路径中的 final answer 文本。
+- System Context、Case、日志和工具摘要的 bounded prompt 片段。
 
-- `stub` Provider。
-- OpenAI-compatible `/chat/completions` Provider。
-- `binary` Provider 预留分支，使用参数数组调用 `<binary_path> run <prompt>` 并解析 stdout JSON。
-- V2 clean-room Agent runtime 已实现同等 binary provider：通过
-  `LOGAGENT_V2_AGENT_PROVIDER=binary`、
-  `LOGAGENT_V2_AGENT_BINARY_PATH` 和
-  `LOGAGENT_V2_AGENT_BINARY_MAX_OUTPUT_BYTES` 配置，固定 argv 调用本地
-  executable，并把 request/response/state 写入 V2 Agent audit artifacts。
-- V2 OpenAI-compatible Agent provider 会在 `agent_response.json` 的
-  `response` 字段中保存 Provider 审计信息：`providerRequestId`
-  优先来自 allowlist response headers，没有时回退到响应体 `id`；同时保存
-  `providerResponseId`、`responseModel`、`finishReason`、`usage`、
-  `systemFingerprint` 和 allowlist `providerRequestHeaders`。
-- V2 OpenAI-compatible Agent provider 的 HTTP 失败会保留
-  `error.type=HTTPError`，并写入 `error.classification`、`error.retryable`
-  和 `error.httpStatus`，区分鉴权失败、限流、输入超限、Provider timeout、
-  5xx server error 和其他 4xx client error；HTTP 错误体读取失败时必须保持
-  status/header 分类并记录 `response.bodyReadError`。
-- V2 binary 和 Claude Code Agent provider 失败会在 `error.classification`
-  和 `error.retryable` 中区分 configuration、timeout、transport、process、
-  output-size、decode 和 parse 阶段。
-- 支持通过 `llm.model_env` 从环境变量读取模型名，并保留静态 `llm.model` 兼容。
-- session text、manifest/grep/metadata Prompt 和字符数裁剪。
-- System Context 背景资源 Prompt 和字符数裁剪。
-- tool result summary/findings Prompt 和字符数裁剪。
-- 最终结果 schema、confidence、session text、初始 grep evidence ref、稳定 log search evidence ref 和 tool finding evidence ref 校验。
-- FinalAnswer schema 和 parser，供 Claude Code runner 与兼容恢复路径复用。
-- Claude Code 返回裸最终结果 JSON，或返回多包一层的 `final_answer.result.result` / `answer` / `finalAnswer` 时，会规范化为最终结果并继续做 evidence ref 校验。
-- 可追踪 evidence ref 别名规范化：裸日志行号/范围和 `#start-#end` 索引范围会映射为 `grep_results.json#matches/<index>`；任务 MCP 后续搜索可直接引用稳定 `log_searches/<search_id>.json#matches/<index>`，未知 artifact 或越界 match 会拒绝。
-- 响应解析接受纯 JSON、单个 JSON Markdown 代码围栏，或混有额外自然语言但只包含一个可解析顶层 JSON object 的内容。
-- 最终结果解析/schema 错误会追加修正提示并重试一次；Provider HTTP、鉴权、限流和超时错误不重试。
-- 成功 task 的 alias 生成调用，输出 `{"alias":"..."}`，用于 UI 展示而不是分析证据。
-- `result.json` / `result.md` 持久化。
-- Task Executor 在 `PLAN_ANALYSIS` 阶段已改为调用 Claude Code session runner，并复用本模块的最终结果 evidence ref 校验。
-- Settings LLM 诊断接口：`/api/settings/llm`、`/api/settings/llm/models`、`/api/settings/llm/chat`。
-- V2 Settings 诊断接口：`/api/v2/settings/llm`、
-  `/api/v2/settings/llm/models`、`/api/v2/settings/llm/chat`、
-  `/api/v2/settings/agent-backends`，其中 binary dry-run 校验路径绝对、
-  常规文件和可执行权限，chat smoke 会调用二进制并解析 summary。
-- Claude Code 诊断接口已由 session runner registry 提供，LLM Gateway 不负责 Claude Code runtime。
-- session 输入/响应文件由 Analysis Orchestrator 写入，LLM Gateway 不执行 `analysis_package.json` / `claude_prompt.md` / `claude_mcp_config.json` / `claude_session.json` / `mcp_calls.jsonl` / `agent_response.json`。
+## 输出
 
-## 当前输入
+- Case import draft：`structuredCase`、`missingFields`、`assistantQuestion`。
+- Alias：`{"alias":"..."}`。
+- 规范化 final answer JSON。
+- Provider usage、request id、错误分类和 schema retry 事件。
 
-- 用户问题。
-- `session_text_input.json#question` 用户输入文本证据。
-- manifest 文件摘要。
-- 初始 grep match 以及 MCP 后续 `log_searches` match 的索引、文件、行号、关键词和文本。
-- task 创建时固化的 Metadata 摘要，包括产品、版本、环境、节点状态、数据库和 PT 统计。
-- task 创建时固化的 System Context 摘要，包括 Prompt Pack、架构文档、Runbook、工具能力说明和 Metadata adapter。
-- Tool Runner 的工具名、状态、退出码、耗时、summary 和 findings。
+## Provider
 
-## 当前输出
+支持：
 
-结构化最终结果包含 summary、symptoms、likelyRootCauses、nextChecks、fixSuggestions、missingInformation 和 confidence。根因证据最终只保存有效的 session text、初始 grep match、稳定 log search match 或 tool finding 引用。
-根因证据也可以引用当前 task 创建时固化的历史 Case context，canonical 格式为：
+- `stub`
+- OpenAI-compatible `/chat/completions`
+- `binary`，固定 argv `<binary_path> run <prompt>`
 
-- `case_context.json#cases/<index>`
+LLM Gateway provider 与 V2 Agent provider runtime 是两个边界。Agent runtime 也支持 `openai_compatible`、`binary` 和可选 `claude_code`，但其 request/response/run 状态由 Analysis Orchestrator 管理。
 
-真实模型输出 `case_<id>` 或“历史案例 case_<id>”时，Gateway 会在当前 `case_context.json` 中查找对应 Case 并规范化为 canonical ref；找不到或索引越界必须拒绝。
+## 结构化校验
 
-System Context 不属于最终结果 evidence ref。模型可以参考其中背景知识，但根因证据不能引用 `system_context.json`。
+Gateway 必须：
 
-Task alias 输出只包含 `alias` 字段。alias 必须是短标题，不能包含 task ID、时间戳、`LogAgent`、`task`、`run` 等泛化词。alias 调用不记录到 `analysis_events.jsonl` 或 Session timeline；schema 错误最多重试一次，最终失败由 Server fallback，不影响 task 成功状态。
+- 接受纯 JSON、完整 JSON Markdown 代码围栏，或只包含一个可解析顶层 JSON object 的自然语言响应。
+- 拒绝多个 JSON object、无 JSON object、非法 schema 或非法 confidence。
+- 对解析/schema 错误最多追加一次修正提示并重试。
+- 不对 HTTP 鉴权、限流、超时、网络错误或输入过大做 schema retry。
 
-用户输入文本 evidence ref 使用固定 canonical 格式：
+FinalAnswer 可兼容裸最终结果 JSON 和常见包裹字段：`result`、`answer`、`finalAnswer`。
+
+## Evidence Ref
+
+允许引用：
 
 - `session_text_input.json#question`
-
-Tool finding evidence ref 使用 canonical 格式：
-
+- `grep_results.json#matches/<index>`
+- `log_searches/<search_id>.json#matches/<index>`
 - `tool_results/<action_id>/result.json#findings/<index>`
+- `case_context.json#cases/<index>`
 
-Gateway 可接受并规范化以下 grep 可追踪别名：
+可规范化别名：
 
-- `12`：映射到原始日志行号 12 对应的 grep match。
-- `12-14`：映射到原始日志行号 12 到 14 对应的 grep matches。
-- `#0-#7`：映射到 grep match 索引 0 到 7。
-- `matches/0` 或 `matches/0-7`：映射到 grep match 索引或索引范围。
+- 原始日志行号或行号范围。
+- `matches/<index>` / `matches/<start>-<end>`。
+- `#<start>-#<end>`。
+- `case_<id>`。
 
-无法映射的行号或越界索引必须拒绝。
+无法映射、越界、跨 run 或引用背景资源的 evidence ref 必须拒绝。System Context、Diagnostic Skills 和 Metadata slices 只能作为背景。
 
-未知 tool action、越界 finding index 或非 canonical tool ref 必须拒绝。
-
-真实模型如果把 `likelyRootCauses` 写成字符串数组，且字符串中包含 `evidenceRefs: [...]`，Gateway 会抽取字符串正文作为 `cause`，抽取引用列表作为 `evidenceRefs`。字符串根因没有可追踪 evidence refs 时必须拒绝。
-
-`symptoms`、`nextChecks`、`fixSuggestions` 和 `missingInformation` 必须以字符串数组保存。真实模型返回单个字符串时会规范化为单元素数组；空字符串规范化为空数组；数组内非字符串值必须拒绝。
-
-## 错误
+## 错误分类
 
 必须区分：
 
-- Provider 超时或网络错误
-- 限流
-- 鉴权失败
-- 输入超限
-- 输出 schema 无效
-- 不支持的结构化输出
+- `authentication_failed`
+- `rate_limited`
+- `input_too_large`
+- `provider_timeout`
+- `provider_server_error`
+- `provider_client_error`
+- `transport_error`
+- `configuration_error`
+- `output_too_large`
+- `decode_error`
+- `parse_error`
+- `schema_error`
 
-当前版本对最终结果解析/schema 错误最多调用两次。第二次仍失败，或遇到 Provider HTTP、鉴权、限流、网络、超时错误时，任务进入对应失败阶段。最终结果失败进入 `FAILED / GENERATE_RESULT`；`PLAN_ANALYSIS` 的 Claude structured outcome 失败由 Claude runner 写入 `FAILED / PLAN_ANALYSIS`。
-
-裸最终结果 JSON 和常见最终结果包裹变体会作为最终结果兼容；其他缺失必要字段且不满足最终结果 schema 的响应仍会失败。当前 `PLAN_ANALYSIS` 通过 Claude MCP `request_user_input` 进入 `WAITING_FOR_USER`，通过 `request_approval` 进入 `WAITING_FOR_APPROVAL`。
-
-binary provider 错误包括：
-
-- `llm.binary_path` 或 `llm.binary_path_env` 缺失、为空或不是绝对路径。
-- V2 `LOGAGENT_V2_AGENT_BINARY_PATH` 缺失、为空、不是绝对路径、不是常规文件或不可执行。
-- 二进制启动失败。
-- `<binary_path> run <prompt>` 超时。
-- 进程非零退出。
-- stdout 不是 UTF-8。
-- stdout 超过 `llm.binary_max_output_bytes`。
-- stdout 中没有合法的结构化 JSON 或 schema / evidence ref 校验失败。
+错误响应不得泄露 API Key、Authorization header、Cookie 或完整 provider headers。
 
 ## 安全约束
 
-- 不直接执行任何 action。
-- 不接收密钥、SSH key、Cookie 或完整敏感配置。
-- 不保存模型隐藏思维链。
-- binary provider 只调用配置中的绝对路径二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell，不接受用户输入覆盖可执行路径或 argv。
-- V2 `agent_request.json` 不记录实际 binary path；Settings 和
-  `agent_response.json` 可以返回配置状态、退出码、耗时和 bounded
-  stdout/stderr 预览，但不得返回 API Key。
-- Provider 原始响应仅在显式安全调试配置下短期保存，默认只保留结构化结果、用量和
-  allowlist 审计元数据；V2 `agent_response.json` 不保存请求 headers 或 API Key。
-- runtime LLM output debug 开关默认关闭，仅在当前 Server 进程内生效；开启时只把模型 response content 打印到 Server stderr，不打印 prompt、API Key 或 headers。
-- 模型名可来自环境变量，但不得记录 API Key；模型环境变量缺失或值为空时启动失败。
-- Prompt 中的日志、Case、System Context 和用户文本视为不可信数据，不能覆盖系统 schema、MCP tool 白名单或 permission profile。
+- LLM Gateway 无执行能力，不能调用 Tool Runner、Fetch、Remote Executor、Code Evidence 或 Metadata 查询。
+- binary provider 只允许配置的绝对路径和固定 argv，不拼接 shell。
+- 不保存隐藏思维链。
+- Prompt 和响应调试默认关闭；开启时也不得打印 prompt、密钥或 headers。
+- 模型输出必须经过 schema 和 evidence ref 校验后才能进入持久化结果。
 
 ## 验收标准
 
-- stub Provider 能返回最终结果。
-- binary Provider 能通过 mock binary 验证 `<binary_path> run <prompt>` 调用路径，stdout JSON 可用于最终结果生成和 action decision。
-- V2 binary Agent provider 能通过 mock binary 验证运行时分析、Settings
-  model list、Settings chat smoke、Agent backend dry-run 和 request/response
-  audit artifacts。
-- V2 OpenAI-compatible Agent provider 能把 Chat Completions `id`、response
-  model、finish reason、usage 和 allowlist request-id headers 写入
-  `agent_response.json`。
-- V2 OpenAI-compatible Agent provider 对 401/403、429、413、408/504、5xx 和
-  其他 4xx HTTP 失败必须写入稳定 `error.classification` 和 `retryable`；如果
-  错误体读取失败，不得把已有 HTTP 失败覆盖为 transport 失败。
-- V2 binary 和 Claude Code Agent provider 的配置错误与非零退出必须写入稳定
-  `error.classification` 和 `retryable`，并保留安全的 argv/path preview。
-- FinalAnswer parser 兼容裸最终结果 JSON 与常见最终结果包裹变体。
-- 非法 schema、confidence 或 evidence ref 被拒绝。
-- 最终结果 schema 解析失败时会重试一次，最终错误包含最新失败原因和上一轮失败原因。
-- 可映射的行号/索引范围 evidence ref 会规范化为 canonical refs。
-- 可映射的历史 Case ID evidence ref 会规范化为 `case_context.json#cases/<index>`。
-- 可追踪的字符串形式 root cause 会规范化为对象形式。
-- 单字符串形式的列表字段会规范化为字符串数组。
-- 纯 JSON、完整 JSON 代码围栏和包含唯一顶层 JSON object 的自然语言响应可解析；多个 JSON object、无 JSON object 或 schema 不合法必须拒绝。
-- 输入裁剪后不超过字符上限且保留 grep 和 tool 证据引用。
-- 只填写对话框文本时，最终结果可以引用 `session_text_input.json#question`。
-- Metadata `rawSnapshot` 不进入 Prompt。
-- System Context 背景进入 Prompt，但不能作为最终结果 evidence ref。
-- Tool Runner stdout/stderr 原文不进入 Prompt；只使用 result summary/findings。
-- 鉴权、限流、5xx、网络、超时和解析失败产生明确错误。
-- Gateway 无法直接访问 Tool Runner、Environment Collector、Claude Code session 或任务状态存储。
-- Gateway 不负责外部成熟 agent CLI 的认证、进程交互和输出协议。
-- `/api/debug/llm` 可手动开启和关闭 LLM response content 日志，Server 重启后恢复关闭。
-- `/api/settings/llm` 可读取不含密钥的当前 LLM 配置摘要；`/api/settings/llm/models` 可测试模型列表获取；`/api/settings/llm/chat` 可发送简单消息并返回响应或完整异常文本。
-- LLM Gateway 调用必须带 `llmcall_*` callId，并记录 started/completed/schema_retry 事件；schema retry 和最终错误必须能关联该 callId。
-- Task alias 生成不得写入 analysis event 或 Session timeline，且 UI 可用 alias 替代裸 task ID。
+- stub provider 可生成有效 alias 或结构化 Case draft。
+- OpenAI-compatible provider 能记录 request id、model、finish reason、usage 和稳定错误分类。
+- binary provider 能通过 mock executable 验证固定 argv 和 stdout JSON 解析。
+- Case import 缺必填字段时返回 `missingFields` 和 `assistantQuestion`。
+- Alias 失败不影响 run 成功状态，Server 能 fallback。
+- 非法 schema、非法 evidence ref、多个 JSON object 或无 JSON object 均被拒绝。
+- response debug 开关默认关闭且不泄露敏感信息。

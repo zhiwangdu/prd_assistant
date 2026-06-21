@@ -26,11 +26,11 @@
 - Tools 页面手动工具运行只能引用 Server UploadStore 中已完成上传，不能传入任意本地路径、远程 URL 或自由 argv；`pprof_analyzer` 的 `PPROF_TMPDIR` 必须位于 task workspace 内。
 - Fetch endpoint 不接受任意 URL 出网，只允许访问 `fetch.allowed_hosts` 中的 `http/https` 目标；redirect 每跳重新校验 allowlist，跨 host redirect 不转发 Authorization/Cookie。
 - Fetch import 和运行时 override 不能设置 `Host`、`Content-Length`、`Transfer-Encoding`、`Connection` 等受控 header，不能使用上传文件、form、proxy、cert/key、resolve 或 connect-to 等会扩大网络或文件边界的 cURL 参数。
-- LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Agent action。
+- LLM binary provider 只能执行配置中的绝对路径模型二进制，固定 argv 为 `run` 和完整 prompt，不拼接 shell；该执行路径属于模型 Provider 适配，不开放为 Analysis Orchestrator action。
 - Claude Code 只能通过 `claude_code` 配置声明；第一阶段 Settings 诊断只检查路径，不执行 CLI。
 - `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 `agent_response.json` 是 workspace 内契约产物，不携带密钥，也不授权 Claude Code 绕过 Server 执行领域命令、SSH 或状态写入；`claude_prompt.md` 只包含短启动指令，证据通过任务 MCP resource 读取，完整 Metadata 不进入 prompt/package。
 - `logagent.query_metadata` 只能读取当前 task workspace 的 `metadata_context.json`，按 section/filter/limit/cursor 写入 bounded `metadata_slices/<stable_id>.json` 背景上下文，不扩大 Claude native file `Read` 权限，也不新增最终 evidence ref 类型。
-- Claude MCP tool call 必须经过 Server schema、白名单、预算、幂等和审批校验。
+- Agent/task MCP tool call 必须经过 Server schema、白名单、预算、幂等和审批校验。
 - Claude CLI `allowedTools` 必须包含任务 MCP 命名空间 `mcp__logagent__*`；Server 自动注入该 allowlist。用户审批 API 只恢复 LogAgent Server 侧等待状态，不能扩大 Claude CLI native tool 权限。
 - 只读 HTTP MCP 只能读取共享知识资源和只读 tools；禁止创建、读取、启动或恢复 Session，禁止读取 task workspace，禁止上传文件，禁止运行 Tool Runner，禁止审批、SSH/SCP 或修改 Case/Metadata/Skills/System Context。
 - 只读 HTTP MCP 可以通过工具目录展示 `logagent.fetch` descriptor，但 `tools/call logagent.fetch` 必须拒绝；Fetch 执行范围仅限任务 MCP 和受保护 Server `tool_run` API。

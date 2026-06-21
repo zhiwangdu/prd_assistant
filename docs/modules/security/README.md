@@ -27,7 +27,7 @@
 
 ## Analysis Orchestrator / Claude Code MCP
 
-- Claude MCP tool call 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
+- Agent/task MCP tool call 必须通过 Server 的 schema、预算、白名单、幂等和审批校验。
 - Claude Code permission profile 自动允许 `mcp__logagent__*`，只开放任务专属 LogAgent MCP server；native built-in tools 仍由 `tools` / `allowed_tools` / `disallowed_tools` 控制。LogAgent 的用户审批只控制 Server 侧 approval-gated action，不能替代 Claude CLI 的 tool allowlist。
 - Claude Code 只能通过 `claude_code` 配置接入；领域能力只能通过 LogAgent MCP 调用，不能直接执行 LogAgent 工具、SSH、任务外文件系统或状态变更。
 - 只读 HTTP MCP 只面向个人本地 Claude Code 读取共享知识；它不能创建、读取、启动或恢复 Session，不能读取 task workspace，不能上传文件，不能运行 Tool Runner，不能审批或远程采集，不能修改 Case、Metadata、Skills 或 System Context。
@@ -53,7 +53,7 @@
 - Tool Runner 可消费 `tool_inputs/...`，但路径仍必须是当前 workspace 相对路径，不能由用户或 Claude Code 传入任意文件系统路径。
 - 内置 Fetch tool 不调用外部命令，执行边界来自 `fetch.enabled`、32-byte base64 secret key、`fetch.allowed_hosts`、请求/响应大小限制、timeout 和 redirect 限制。每次请求和每个 redirect hop 都必须命中 `http/https` allowlist，跨 host redirect 不转发 Authorization/Cookie。
 - Fetch cURL import 和运行时 header override 必须拒绝 `Host`、`Content-Length`、`Transfer-Encoding`、`Connection` 等受控 header，拒绝 form/upload/proxy/cert/resolve/connect-to 等扩大网络或文件边界的参数。
-- 内置 Huawei package sync 不接受任意本地路径或远程 URL，只能读取 Server UploadStore 中已完成上传的一个 raw snapshot 文件。OBS `objectKey` 必须是安全相对 key；GaussDB SQL 来自受保护 API 使用者，首版不开放给 Claude MCP 自动执行。
+- 内置 Huawei package sync 不接受任意本地路径或远程 URL，只能读取 Server UploadStore 中已完成上传的一个 raw snapshot 文件。OBS `objectKey` 必须是安全相对 key；GaussDB SQL 来自受保护 API 使用者，首版不开放给 task MCP 自动执行。
 - `tools.zip` 导出只打包当前 enabled 且解析为普通可执行文件的工具二进制、wrapper 和示例配置；不导出 API Key、环境变量值、Server 配置原文、workspace 数据或上传文件。缺失或不可执行工具只在 manifest 标记 skipped。
 
 ## 代码仓
