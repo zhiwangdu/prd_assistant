@@ -2147,9 +2147,13 @@ The current slice is accepted when:
 - `deploy/rebuild-v2-install.sh` can create the V2 virtualenv, install
   `server-v2`, initialize SQLite, sync WebUI static files, build source-built
   analyzers into the runtime `bin/tools` directory by default, load
-  `$HOME/.cargo/env` for Flux analyzer rebuilds when present, and preserve
-  existing `data-v2`. `--skip-tools` can explicitly keep the fast path that
-  avoids submodule clone/compile work.
+  `$HOME/.cargo/env` for Flux and InfluxDB analyzer rebuilds when present, and
+  preserve existing `data-v2`. The InfluxDB storage analyzer build must point
+  `pkg-config.sh` at local `third_party/flux` sources for `libflux` instead of
+  the Go module cache, default `GOSUMDB=off` only for that temporary build when
+  the caller has not set it, and restore InfluxDB `go.mod/go.sum` afterward.
+  `--skip-tools` can explicitly keep the fast path that avoids submodule
+  clone/compile work.
 - `deploy/rebuild-v2-install.sh --tools-only --only-tool <name>` can rebuild a
   single source-built analyzer through `scripts/build-tools.sh` without
   creating the V2 virtualenv, initializing SQLite, syncing WebUI, or starting

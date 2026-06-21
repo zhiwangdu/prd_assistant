@@ -158,7 +158,7 @@ Preview without changing the host:
 ./install-deps.sh --dry-run
 ```
 
-InfluxQL, Flux, openGemini storage, and InfluxDB storage analyzers are built from `third_party/` submodules during `rebuild-install.sh` and installed to `$LOGAGENT_APP_DIR/bin/tools/`. `pprof_analyzer` uses the configured Go executable at runtime. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
+InfluxQL, Flux, openGemini storage, and InfluxDB storage analyzers are built from `third_party/` submodules during `rebuild-install.sh` and installed to `$LOGAGENT_APP_DIR/bin/tools/`. The InfluxDB storage analyzer build also initializes `third_party/flux` and temporarily points InfluxDB's Flux dependency at that local source tree so `pkg-config.sh` can build `libflux` from complete Rust sources, then restores the InfluxDB module files. That temporary InfluxDB build defaults `GOSUMDB=off` to avoid unstable public checksum lookups in mirrored/proxied environments; set `GOSUMDB` explicitly to override it. `pprof_analyzer` uses the configured Go executable at runtime. Remote Executor uses the configured system `ssh` binary and the Server process user's SSH config/agent/keys; LogAgent does not store SSH private keys.
 
 In environments that cannot reach GitHub, set the submodule URL variables in `.env` before running `rebuild-install.sh`. The rebuild path calls `scripts/build-tools.sh`, which first writes these URLs to local Git submodule config and then runs `git submodule update --init --recursive` as needed. If a submodule directory exists but has not been initialized as its own Git worktree yet, the helper skips `remote set-url origin` for that directory so the parent repository remote stays intact. You can also apply the same override manually from the source checkout:
 
@@ -231,8 +231,8 @@ DB init, and WebUI sync for fast analyzer rebuilds. `logagent-v2ctl.sh` exports
 filenames from `$LOGAGENT_APP_DIR/bin/tools` unless explicit
 `LOGAGENT_V2_TOOL_*` overrides or Rust/V1 `LOGAGENT_TOOL_*` aliases are set;
 V2-specific names take precedence. `rebuild-v2-install.sh` also loads
-`$HOME/.cargo/env` when present so Flux analyzer builds can find rustup-managed
-`cargo` in non-interactive SSH shells.
+`$HOME/.cargo/env` when present so Flux and InfluxDB analyzer builds can find
+rustup-managed `cargo` in non-interactive SSH shells.
 
 For local development from the source checkout, `scripts/v2-local.sh` provides
 the same fast V2 build/start/stop/status/logs loop without copying `deploy/`:

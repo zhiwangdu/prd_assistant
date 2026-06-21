@@ -340,8 +340,13 @@ four binaries, or pass `--only <name>` for one analyzer.
 When explicit analyzer env vars are unset, V2 auto-registers the standard
 analyzer filenames found under `$LOGAGENT_APP_DIR/bin/tools` or
 `$LOGAGENT_V2_TOOLS_DIR`. The rebuild script loads `$HOME/.cargo/env` when
-present so rustup-managed `cargo` is available for Flux analyzer builds in
-non-interactive SSH shells. Deploy regression coverage verifies `--help`,
+present so rustup-managed `cargo` is available for Flux and InfluxDB analyzer
+builds in non-interactive SSH shells. InfluxDB storage analyzer builds
+temporarily replace `github.com/influxdata/flux` with the local
+`third_party/flux` source tree while `pkg-config.sh` builds `libflux`, then
+restore the InfluxDB module files. That temporary build defaults `GOSUMDB=off`
+unless the environment already sets `GOSUMDB`, avoiding public checksum DB
+timeouts in mirrored or proxied environments. Deploy regression coverage verifies `--help`,
 missing `LOGAGENT_SRC_DIR` validation, pid-file-scoped controls, installed
 runtime checks, and `--tools-only --only-tool <name>` canonical delegation to
 `scripts/build-tools.sh` without creating a V2 virtualenv or syncing WebUI.

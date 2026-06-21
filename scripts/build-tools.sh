@@ -121,7 +121,7 @@ fi
 if [[ -z "$only_tool" || "$only_tool" == "influxql" || "$only_tool" == "opengemini" || "$only_tool" == "influxdb" ]]; then
   logagent_require_command go
 fi
-if [[ -z "$only_tool" || "$only_tool" == "flux" ]]; then
+if [[ -z "$only_tool" || "$only_tool" == "flux" || "$only_tool" == "influxdb" ]]; then
   logagent_require_command cargo
 fi
 
@@ -223,10 +223,43 @@ if [[ -z "$only_tool" || "$only_tool" == "influxdb" ]]; then
     fi
   fi
   if [[ -n "$influxdb_dir" && -f "$influxdb_dir/go.mod" ]]; then
+    flux_dir="$repo_root/third_party/flux"
+    flux_manifest="$flux_dir/libflux/flux-core/Cargo.toml"
+    if [[ ! -f "$flux_manifest" ]]; then
+      git -C "$repo_root" submodule update --init --recursive third_party/flux
+    fi
+    if [[ ! -f "$flux_manifest" ]]; then
+      printf 'Missing Flux source required by InfluxDB storage analyzer: %s\n' "$flux_dir" >&2
+      printf 'Run: scripts/configure-tool-submodules.sh if using custom clone URLs, then git submodule update --init --recursive third_party/flux\n' >&2
+      exit 1
+    fi
+
     output_path="$output_dir/influxdb_storage_analyzer"
     printf 'Building InfluxDB storage analyzer: %s\n' "$output_path"
     (
       cd "$influxdb_dir"
+      go_mod_path="$influxdb_dir/go.mod"
+      go_sum_path="$influxdb_dir/go.sum"
+      go_mod_backup="$(mktemp "${TMPDIR:-/tmp}/logagent-influxdb-go.mod.XXXXXX")"
+      go_sum_backup="$(mktemp "${TMPDIR:-/tmp}/logagent-influxdb-go.sum.XXXXXX")"
+      had_go_sum=0
+      cp "$go_mod_path" "$go_mod_backup"
+      if [[ -f "$go_sum_path" ]]; then
+        had_go_sum=1
+        cp "$go_sum_path" "$go_sum_backup"
+      fi
+      restore_influxdb_go_files() {
+        cp "$go_mod_backup" "$go_mod_path"
+        if [[ "$had_go_sum" == "1" ]]; then
+          cp "$go_sum_backup" "$go_sum_path"
+        else
+          rm -f "$go_sum_path"
+        fi
+        rm -f "$go_mod_backup" "$go_sum_backup"
+      }
+      trap restore_influxdb_go_files EXIT
+      GOFLAGS= go mod edit -replace "github.com/influxdata/flux=$flux_dir"
+
       tool_go_root="$(go env GOROOT)"
       tool_go_version="$(go env GOVERSION 2>/dev/null || go version | awk '{print $3}')"
       tool_go_version="${tool_go_version//[^A-Za-z0-9_.-]/_}"
@@ -234,11 +267,11 @@ if [[ -z "$only_tool" || "$only_tool" == "influxdb" ]]; then
       mkdir -p "$tool_go_cache"
       export GOROOT="$tool_go_root"
       export PATH="$tool_go_root/bin:$PATH"
+      build_env=(GOCACHE="$tool_go_cache" GOSUMDB="${GOSUMDB:-off}")
       if [[ -x "$influxdb_dir/pkg-config.sh" ]]; then
-        PKG_CONFIG="$influxdb_dir/pkg-config.sh" GOCACHE="$tool_go_cache" go build -o "$output_path" ./cmd/influxdb_storage_analyzer
-      else
-        GOCACHE="$tool_go_cache" go build -o "$output_path" ./cmd/influxdb_storage_analyzer
+        build_env+=(PKG_CONFIG="$influxdb_dir/pkg-config.sh")
       fi
+      env "${build_env[@]}" go build -mod=mod -o "$output_path" ./cmd/influxdb_storage_analyzer
     )
     chmod 0755 "$output_path"
     printf 'Installed InfluxDB storage analyzer: %s\n' "$output_path"

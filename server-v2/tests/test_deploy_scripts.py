@@ -391,6 +391,142 @@ esac
             self.assertNotIn("Building V2 analyzer tools", result.stdout)
             self.assertFalse(build_log.exists())
 
+    def test_build_tools_influxdb_uses_local_flux_replace_temporarily(self) -> None:
+        script = ROOT_DIR / "scripts" / "build-tools.sh"
+        influxdb_go_mod = ROOT_DIR / "third_party" / "influxdb" / "go.mod"
+        influxdb_go_sum = ROOT_DIR / "third_party" / "influxdb" / "go.sum"
+        flux_manifest = (
+            ROOT_DIR / "third_party" / "flux" / "libflux" / "flux-core" / "Cargo.toml"
+        )
+        if not influxdb_go_mod.exists() or not flux_manifest.exists():
+            self.skipTest("source-built analyzer submodules are not initialized")
+
+        go_mod_before = influxdb_go_mod.read_bytes()
+        go_sum_before = influxdb_go_sum.read_bytes() if influxdb_go_sum.exists() else None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            output_dir = tmp_path / "tools"
+            build_env_log = tmp_path / "build-env.log"
+            fake_go = bin_dir / "go"
+            fake_go.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  env)
+    case "${2:-}" in
+      GOROOT)
+        printf '%s\\n' "$LOGAGENT_TEST_GOROOT"
+        ;;
+      GOVERSION)
+        printf 'go1.26.4\\n'
+        ;;
+      *)
+        exit 31
+        ;;
+    esac
+    ;;
+  mod)
+    [[ "${2:-}" == "edit" ]] || exit 32
+    shift 2
+    replace=''
+    while (($# > 0)); do
+      case "$1" in
+        -replace)
+          replace="$2"
+          shift 2
+          ;;
+        -replace=*)
+          replace="${1#-replace=}"
+          shift
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    [[ -n "$replace" ]] || exit 33
+    old="${replace%%=*}"
+    new="${replace#*=}"
+    printf '\\nreplace %s => %s\\n' "$old" "$new" >> go.mod
+    ;;
+  build)
+    output=''
+    while (($# > 0)); do
+      case "$1" in
+        -o)
+          output="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    [[ -n "$output" ]] || exit 34
+    {
+      printf 'PKG_CONFIG=%s\\n' "${PKG_CONFIG:-}"
+      printf 'GOCACHE=%s\\n' "${GOCACHE:-}"
+      printf 'GOSUMDB=%s\\n' "${GOSUMDB:-}"
+      printf 'GO_MOD_BEGIN\\n'
+      cat go.mod
+      printf 'GO_MOD_END\\n'
+    } > "$LOGAGENT_TEST_BUILD_ENV_LOG"
+    mkdir -p "$(dirname "$output")"
+    printf '#!/usr/bin/env bash\\n' > "$output"
+    chmod 0755 "$output"
+    ;;
+  version)
+    printf 'go version go1.26.4 darwin/arm64\\n'
+    ;;
+  *)
+    exit 35
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o755)
+            fake_cargo = bin_dir / "cargo"
+            fake_cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_cargo.chmod(0o755)
+
+            env = {
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "LOGAGENT_TEST_GOROOT": (tmp_path / "goroot").as_posix(),
+                "LOGAGENT_TEST_BUILD_ENV_LOG": build_env_log.as_posix(),
+            }
+
+            result = self.run_script(
+                script,
+                "--output-dir",
+                output_dir.as_posix(),
+                "--only",
+                "influxdb",
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output_dir / "influxdb_storage_analyzer").exists())
+            build_env = build_env_log.read_text(encoding="utf-8")
+            self.assertIn(
+                f"PKG_CONFIG={ROOT_DIR / 'third_party' / 'influxdb' / 'pkg-config.sh'}",
+                build_env,
+            )
+            self.assertIn("GOSUMDB=off", build_env)
+            self.assertIn(
+                f"replace github.com/influxdata/flux => {ROOT_DIR / 'third_party' / 'flux'}",
+                build_env,
+            )
+
+        self.assertEqual(influxdb_go_mod.read_bytes(), go_mod_before)
+        if go_sum_before is None:
+            self.assertFalse(influxdb_go_sum.exists())
+        else:
+            self.assertEqual(influxdb_go_sum.read_bytes(), go_sum_before)
+
     def test_tool_build_scripts_document_source_built_id_aliases(self) -> None:
         build_tools = ROOT_DIR / "scripts" / "build-tools.sh"
         smoke_tools = ROOT_DIR / "scripts" / "smoke-source-built-analyzers.sh"

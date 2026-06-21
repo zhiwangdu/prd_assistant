@@ -2,6 +2,31 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 InfluxDB Analyzer Local Flux Build
+
+- Root-caused the InfluxDB storage analyzer build failure to
+  `third_party/influxdb/pkg-config.sh` correctly being used, but its
+  `github.com/influxdata/pkg-config` helper reading InfluxDB `go.mod` and
+  resolving `github.com/influxdata/flux v0.200.0` from the Go module cache.
+  That cache lacks the full Rust `libflux` workspace, so cargo failed with a
+  missing `Cargo.toml`.
+- Changed `scripts/build-tools.sh --only influxdb` and full analyzer builds to
+  ensure `third_party/flux` is initialized, require `cargo`, temporarily add a
+  local `github.com/influxdata/flux => third_party/flux` replace to the
+  InfluxDB module while building, keep using `PKG_CONFIG=third_party/influxdb/pkg-config.sh`,
+  default `GOSUMDB=off` for only that temporary InfluxDB build unless the
+  caller explicitly sets it, and restore InfluxDB `go.mod/go.sum` afterward.
+- Added deploy script regression coverage that fakes Go/Cargo, verifies the
+  temporary local Flux replace, `PKG_CONFIG`, and default `GOSUMDB=off`
+  environment during the InfluxDB analyzer build, and confirms InfluxDB module
+  files are restored.
+- Updated root, deploy, and Server V2 README/SPEC documentation for the
+  InfluxDB analyzer's local Flux source build behavior.
+- Verification passed: `bash -n scripts/build-tools.sh deploy/rebuild-v2-install.sh scripts/v2-local.sh deploy/logagent-v2ctl.sh`,
+  focused deploy regression, `scripts/build-tools.sh --only influxdb --output-dir /tmp/logagent-influxdb-build-test-default`,
+  `scripts/smoke-influxdb-storage-analyzer.sh`, `cd server-v2 && .venv/bin/python -m ruff check logagent_v2 tests`,
+  `cd server-v2 && .venv/bin/python -m pytest -q`, and `git diff --check`.
+
 ## 2026-06-21 Server V2 Rebuild Default Analyzer Tools
 
 - Root-caused empty V2 source-built analyzer registration after runtime
