@@ -1,5 +1,5 @@
 import { Boxes, CheckCircle2, RefreshCw, Trash2, UploadCloud } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import {
   confirmV2MetadataImport,
@@ -228,19 +228,26 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
         <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)_420px]">
           <div className="space-y-4 rounded-lg border border-border p-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID" />
-              <Input value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Remark" />
+              <Field label="Instance ID">
+                <Input value={instanceId} onChange={(event) => setInstanceId(event.target.value)} placeholder="Instance ID" />
+              </Field>
+              <Field label="Remark">
+                <Input value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Optional remark" />
+              </Field>
             </div>
-            <label className="rounded-lg border border-border p-3 text-sm">
-              <span className="mb-2 block text-xs text-muted-foreground">Template type</span>
-              <select className="w-full bg-transparent text-sm outline-none" value={templateType} onChange={(event) => setTemplateType(event.target.value as TemplateType)}>
-                <option value="json">json</option>
-                <option value="yaml">yaml</option>
-                <option value="csv">csv</option>
-                <option value="opengemini">opengemini</option>
-              </select>
-            </label>
-            <Input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Metadata URL" />
+            <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+              <Field label="Template type">
+                <select className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-teal-600/20" value={templateType} onChange={(event) => setTemplateType(event.target.value as TemplateType)}>
+                  <option value="json">json</option>
+                  <option value="yaml">yaml</option>
+                  <option value="csv">csv</option>
+                  <option value="opengemini">opengemini</option>
+                </select>
+              </Field>
+              <Field label="Metadata URL">
+                <Input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="http://127.0.0.1:8091/getdata" />
+              </Field>
+            </div>
             <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 px-3 text-center text-sm text-muted-foreground transition hover:border-primary">
               <UploadCloud className="mb-2 h-5 w-5" />
               Upload metadata JSON/YAML/CSV
@@ -319,6 +326,15 @@ export function V2MetadataBridge({ apiKey }: { apiKey: string }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-all text-sm">{value}</p></div>;
+}
+
+function Field({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
 }
 
 function JsonBlock({ title, value }: { title: string; value: unknown }) {

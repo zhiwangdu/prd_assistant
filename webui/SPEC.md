@@ -51,7 +51,7 @@ Database
 - 顶部必须提供 WebUI 语言选择，当前支持 `zh-CN` 和 `en-US`，默认 `zh-CN`。语言选择保存在浏览器 localStorage；在 `Analyze` 中会同步到当前 Session 的 `analysisLanguage`，创建新 run 时由 Server 快照到 task。
 - `Analyze` 中固定 UI 文案、状态、阶段、置信度和常见 timeline event 必须优先使用简体中文展示；仅当专业名词无法准确翻译时保留英文，例如 `Session`、`Case`、`Claude Code`、`MCP`、`Metadata`、`Tool Runner`、`grep`、`artifact`、`evidence ref`、`InstanceID`、`NodeID`、产品名和 JSON/path。切换到 `en-US` 时这些固定展示改为英文。
 - Metadata 不再作为顶层导航项；V2 Metadata 导入、实例管理和 snapshot 查看通过 System Context 页面内的 `Metadata` 标签页进入。System Context 页面内的主模块必须使用标签页或同等切换按钮展示，不能把 System Context 和 Metadata 两个大型模块默认纵向铺开。
-- Metadata 导入区必须支持实时 URL 加载、JSON/YAML/CSV 文件上传、手动 JSON/YAML/CSV 文本输入。所有方式都先生成导入预览，再由用户确认写入 Metadata Store。
+- Metadata 导入区必须支持实时 URL 加载、JSON/YAML/CSV 文件上传、手动 JSON/YAML/CSV 文本输入。所有方式都先生成导入预览，再由用户确认写入 Metadata Store。Instance ID、备注、Template type 和 Metadata URL 必须使用带标签的稳定字段布局；Template type 的 select 必须与 URL 输入保持统一高度和响应式换行，不能和周边字段挤压或重叠。
 - 实时 URL 加载面向 openGemini `/getdata` 或其他已启用模板类型的 URL，必须要求 InstanceID；JSON/YAML/CSV 文件和文本使用用户选择的 `templateType`，CSV 文件选择后前端必须自动切换到 `templateType=csv`，openGemini 原始 JSON 仍要求 InstanceID。
 - Metadata 导入区必须提供 Raw JSON 刷新入口，对当前 Instance 调用 `/api/metadata/instances/:instance_id/refresh`；刷新成功后更新右侧快照和已导入列表，失败时展示 Server 错误。
 - Imported Instances 列表必须提供单条删除入口，调用 `DELETE /api/metadata/instances/:instance_id`；删除当前选中 Instance 后清空右侧快照和 InstanceID 输入。

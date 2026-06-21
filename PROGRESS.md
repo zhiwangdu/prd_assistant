@@ -2,6 +2,20 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 WebUI Metadata Import Layout
+
+- Fixed the V2 Metadata Workbench import form around `Template type` by
+  replacing the loose bordered select block with labeled, fixed-height field
+  controls. `Template type` and `Metadata URL` now share a responsive row and
+  stack on narrow widths.
+- Added labeled wrappers for Instance ID and Remark so the import form uses a
+  consistent field rhythm instead of mixing placeholders and standalone labels.
+- Verified the local WebUI in Safari at `127.0.0.1:5174`, including navigating
+  through `System Context` to the `Metadata` tab and confirming the Template
+  type / URL area no longer overlaps or appears misaligned.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  and `cd webui && npm run build`.
+
 ## 2026-06-21 WebUI System Context Module Tabs
 
 - Changed the WebUI `System Context` top-level page from rendering V2 System
