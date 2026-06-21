@@ -227,6 +227,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
 
   const selectedTool = useMemo(() => tools.find((tool) => tool.toolId === selectedToolId) ?? tools[0] ?? null, [selectedToolId, tools]);
   const selectedManualRun = useMemo(() => manualRuns.find((run) => run.id === selectedManualRunId) ?? null, [manualRuns, selectedManualRunId]);
+  const catalogEmptyMessage = !apiKey.trim() || status !== "V2 tools waiting to load" ? status : "No V2 tools.";
 
   const refreshTools = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -542,7 +543,7 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
                   </div>
                   {tool.tags?.length ? <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{tool.tags.join(", ")}</p> : null}
                 </button>
-              )) : <EmptyState>No V2 tools.</EmptyState>}
+              )) : <EmptyState>{catalogEmptyMessage}</EmptyState>}
             </div>
           </div>
 

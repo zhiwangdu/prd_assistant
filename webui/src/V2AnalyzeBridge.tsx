@@ -431,7 +431,11 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
     if (nextWorkspaceId) {
       await loadWorkspace(nextWorkspaceId, selectedRunId || undefined);
     }
-    if (!quiet) setStatus(copy.refreshed);
+    if (!quiet) {
+      setStatus(copy.refreshed);
+    } else {
+      setStatus((current) => current === copy.apiKeyRequired ? copy.refreshed : current);
+    }
   }, [apiKey, copy.apiKeyRequired, copy.refreshed, loadWorkspace, selectedRunId, selectedWorkspaceId]);
 
   useEffect(() => {

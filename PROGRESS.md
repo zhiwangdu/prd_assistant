@@ -2,6 +2,32 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 WebUI Local Tool Plugins Empty State
+
+- Confirmed the running 50993 service directly: `/api/v2/tools` with
+  `dev-token` returned 12 tools, the `toolPlugins` compatibility alias also
+  returned 12 tools, and all four source-built analyzers were registered and
+  runnable. The runtime static bundle, repo build output, and HTTP-served JS
+  asset had identical hashes.
+- Confirmed in Safari that the Tools page renders the source-built analyzer
+  panel and V2 catalog when a valid API Key is available. The misleading empty
+  state comes from the frontend clearing tool state before authentication is
+  available, which can make first-open local pages look like the tool registry
+  is empty.
+- Updated the WebUI to auto-use the local script default `dev-token` only on
+  `127.0.0.1`, `localhost`, or `::1` when no API Key is already saved in
+  localStorage. Non-local deployments still require the user to enter a key.
+- Updated the V2 Tools catalog empty state to show the current loading or auth
+  status instead of always saying `No V2 tools`.
+- Cleared the Analyze page's stale initial API Key status after a successful
+  quiet workspace refresh, so first-open local pages no longer keep showing
+  `请填写 API Key` after the default local key is applied.
+- Verification passed: `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  `cd webui && npm run build`, runtime sync to the active 50993 WebUI static
+  directory, authenticated `/api/v2/tools` probe showing 12 tools and four
+  runnable source-built analyzers, static bundle hash comparison, and Safari
+  reload/click-through confirmation that Tools renders the catalog.
+
 ## 2026-06-21 V2 Tool Plugins Catalog Compatibility
 
 - Verified the currently running V2 `/api/v2/tools` catalog was not actually

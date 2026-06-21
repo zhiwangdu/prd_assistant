@@ -13,9 +13,10 @@ import { V2SystemContextBridge } from "./V2SystemContextBridge";
 import { V2ToolsBridge } from "./V2ToolsBridge";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
+const LOCAL_DEV_API_KEY = "dev-token";
 
 export function App() {
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(initialApiKey);
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
   const [language, setLanguage] = useState<UiLanguage>(DEFAULT_UI_LANGUAGE);
@@ -24,7 +25,6 @@ export function App() {
   const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools" | "settings">("operations");
 
   useEffect(() => {
-    setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
     setLanguage(normalizeUiLanguage(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)));
     void fetch("/health").then((response) => setHealthy(response.ok)).catch(() => setHealthy(false));
   }, []);
@@ -141,4 +141,14 @@ function V2ToolsWorkbench({ apiKey }: { apiKey: string }) {
 
 function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
+}
+
+function initialApiKey() {
+  const stored = localStorage.getItem(API_KEY_STORAGE)?.trim();
+  if (stored) return stored;
+  return isLocalDevHost() ? LOCAL_DEV_API_KEY : "";
+}
+
+function isLocalDevHost() {
+  return ["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
 }
