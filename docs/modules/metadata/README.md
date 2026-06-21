@@ -2,7 +2,7 @@
 
 ## 当前实现状态
 
-Metadata 模块已完成基础 Rust Server 实现。
+Metadata 模块已完成 V2 Server 实现。
 
 模块目标是管理实例 ID 对应的业务和部署元数据、集群节点信息，并把这些信息提供给后续日志分析、环境采集、代码证据和 WEBUI 展示。
 
@@ -10,13 +10,13 @@ Metadata 模块已完成基础 Rust Server 实现。
 
 已实现：
 
-- 本地 JSON 文件存储。
+- V2 SQLite snapshot 存储，并保留 JSON/YAML/CSV/openGemini 导入入口。
 - `instance` / `cluster` / `node` 查询。
 - JSON/YAML/CSV 模板导入预览。
 - openGemini `/getdata` 真实元数据解析。
 - openGemini `PtView` 分区视图解析。
 - openGemini `Databases` 库、保留策略、表结构和 shard group 摘要解析。
-- Server 侧从真实元数据 URL 拉取并预览。
+- V2 Server 侧从真实元数据 URL 拉取并预览。
 - openGemini 导入依赖用户手工输入 `instanceId`，并以 `instanceId` 作为唯一业务键；原始 `ClusterID` 仅保存在 `sourceClusterId` 标签中。
 - Instance 支持可选 `remark` 备注名，openGemini 实时加载和导入预览可随 `instanceId` 一起提交。
 - 导入确认后写入 metadata store，并支持按已导入 Instance 列表查看；重复导入同一个 `instanceId` 会按新快照覆盖，并清理旧 cluster/node 残留。
@@ -276,7 +276,7 @@ Claude Code 初始上下文不再直接获得完整 `metadata_context.json`。`a
 
 ## 本地运行方式
 
-Metadata 作为 Rust Server 内部模块实现，随 Server 启动。
+Metadata 作为 V2 Server 内部模块实现，随 `server-v2` 启动。
 
 ## 部署方式
 

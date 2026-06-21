@@ -11,7 +11,7 @@
 - `claude_code` 配置解析。
 - `mcp` 配置解析。
 - `analysisMode=diagnose|code_investigation|fix` task 字段。
-- `logagent-server mcp` stdio 子命令。
+- V2 task MCP HTTP endpoint `/api/v2/mcp/task/:run_id`。
 - `PLAN_ANALYSIS` 生成 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`。
 - Claude Code runner 调用 `claude --print --output-format json --json-schema ... --mcp-config claude_mcp_config.json --strict-mcp-config`，通过 stdin 传入短启动 prompt，并要求 Claude 通过 MCP `analysis_package` resource 读取证据包。
 - `analysis_package.json` 中 Metadata 只包含 `metadataContextOutline`，不内联完整 `metadata_context.json`；任务 MCP `metadata_context` resource 和 `logagent.get_metadata_topology` 返回 outline，`logagent.query_metadata` 负责按需分页读取 slice。

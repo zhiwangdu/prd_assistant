@@ -16,8 +16,7 @@ single-machine deployment over distributed infrastructure:
 V2's canonical API lives under `/api/v2`, while migrated Rust/V1 internal
 tools and Native Agent flows are served through explicit `/api/*`
 compatibility aliases. V2 does not need to be byte-for-byte compatible with the
-current Rust Server implementation or artifact
-layout. The stable product goal remains evidence-backed diagnosis with an
+legacy V1 API or artifact layout. The stable product goal remains evidence-backed diagnosis with an
 auditable agent boundary.
 
 ## Product Model
@@ -278,7 +277,7 @@ Implemented in this slice:
   per-input `results[]`, per-input logical `artifactPath`, and `artifactPaths`
   while preserving each single-input result/evidence artifact.
 - Source-built analyzer env vars or runtime `bin/tools` auto-discovery create
-  default configured descriptors aligned with `examples/server-tools.yaml`:
+  V2 built-in default configured descriptors:
   Flux and InfluxQL use the V1 query analyzer args with `timeoutSeconds=30`
   and `maxInputFiles=3`, openGemini storage uses the full TSSP/TSI/mergeset
   file-pattern set with `maxInputFiles=10`, and InfluxDB storage uses
@@ -1671,7 +1670,7 @@ directories are skipped; archive paths must remain relative and cannot contain
 ## Settings And Domain Adapters
 
 V2 Settings APIs are equivalent product diagnostics for the clean-room runtime
-rather than compatibility routes for the Rust Server:
+rather than legacy compatibility routes:
 
 - `GET /api/v2/settings/llm` returns the V2 Agent provider summary, configured
   model, timeout, input/output limits, and boolean configuration flags. It must
@@ -1712,7 +1711,7 @@ matching the Rust/V1 debug API capability.
 
 ## Remote Executors
 
-Remote Executors provide the V2 equivalent of the Rust Server's low-level
+Remote Executors provide the V2 equivalent of the legacy low-level
 remote command smoke runner. They are not a full Environment Collector.
 
 - Executors are stored in SQLite with `executorId`, name, host, port, SSH user,

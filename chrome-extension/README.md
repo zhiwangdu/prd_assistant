@@ -24,34 +24,33 @@ Chrome 插件负责识别日志下载，并把用户确认后的文件交给 Nat
 
 - Native Agent 已在本机启动。
 - Native Agent 的 `allowed_dirs` 包含浏览器下载目录。
-- Server 已启动，或 Native Agent 的 `server_base_url` 指向 ECS Server。
-- 插件只调用 Native Agent `/imports`，不需要区分远端是 Rust V1 Server
-  还是 `server-v2`；V2 切换由 Native Agent 的 `server_api: "v2"` 配置完成。
+- V2 Server 已启动，或 Native Agent 的 `server_base_url` 指向 ECS 上的 V2 Server。
+- 插件只调用 Native Agent `/imports`，不需要区分远端 API；Native Agent 默认使用 `server_api: "v2"`。
 - Chrome 对下载文件路径可见。当前实现依赖 `chrome.downloads.search()` 返回的 `filename`。
 
 ## 本地验证
 
-1. 启动 Server：
+1. 启动 V2 Server：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-server -- --config examples/logagent.yaml
+./scripts/v2-local.sh start
 ```
 
 2. 启动 Native Agent：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-native-agent -- --config examples/logagent.yaml
+cargo run -p logagent-native-agent -- --config examples/native-agent-v2-50993.yaml
 ```
 
 3. 在 Chrome 下载一个匹配后缀的文件，例如 `.log`、`.txt`、`.zip`、`.tar.gz`、`.tgz`、`.tar`。
 4. Chrome notification 弹出后点击 `Send to LogAgent`。
 5. 成功 notification 显示 `LogAgent session updated`。
-6. 检查 Server 侧 Session 和 workspace：
+6. 检查 V2 Server 侧数据目录：
 
 ```bash
-find data/logagent -maxdepth 5 -type f | sort
+find /tmp/logagent-v2-local -maxdepth 5 -type f | sort
 ```
 
 ## 部署方式
@@ -108,9 +107,8 @@ chrome.downloads.onChanged.addListener((delta) => {
 
 ## Native Agent 接口
 
-该接口对 Chrome Extension 保持稳定。Native Agent 可以继续对接 Rust V1
-Server，也可以通过 `server_api: "v2"` 上传到 `server-v2` Session-scoped
-接口。
+该接口对 Chrome Extension 保持稳定。Native Agent 默认上传到 `server-v2`
+Session-scoped 接口。
 
 ```http
 POST http://127.0.0.1:<port>/imports

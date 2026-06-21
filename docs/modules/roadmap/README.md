@@ -81,4 +81,4 @@
 - 失败任务诊断和观测指标。
 - pgvector 迁移。
 
-MVP 保持单 Orchestrator、任务级上下文和单 Rust Server，不引入 Multi-Agent、长期用户记忆、独立队列或 Worker，也不复制成熟 agent 产品的通用能力。
+MVP 保持单 Orchestrator、任务级上下文和单 V2 Server，不引入 Multi-Agent、长期用户记忆、独立队列或 Worker，也不复制成熟 agent 产品的通用能力。

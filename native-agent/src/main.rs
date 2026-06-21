@@ -96,7 +96,7 @@ enum ServerApi {
 
 impl Default for ServerApi {
     fn default() -> Self {
-        Self::V1
+        Self::V2
     }
 }
 
@@ -768,7 +768,7 @@ fn default_bind() -> String {
 }
 
 fn default_server_base_url() -> String {
-    "http://127.0.0.1:8080".to_string()
+    "http://127.0.0.1:50993".to_string()
 }
 
 fn default_api_key_env() -> String {
@@ -911,7 +911,7 @@ mod tests {
         AppConfig {
             bind: "127.0.0.1:0".to_string(),
             server_base_url: "http://127.0.0.1:0".to_string(),
-            server_api: ServerApi::V1,
+            server_api: ServerApi::V2,
             api_key: "test-key".to_string(),
             allowed_dirs: Vec::new(),
             allowed_suffixes: default_file_suffixes(),
@@ -950,20 +950,6 @@ mod tests {
 
         assert_eq!(
             config.api_url("/sessions"),
-            "http://127.0.0.1:50993/api/sessions"
-        );
-        assert_eq!(
-            small_upload_url(&config, None).unwrap(),
-            "http://127.0.0.1:50993/api/uploads"
-        );
-        assert_eq!(
-            init_upload_url(&config, None).unwrap(),
-            "http://127.0.0.1:50993/api/uploads/init"
-        );
-
-        config.server_api = ServerApi::V2;
-        assert_eq!(
-            config.api_url("/sessions"),
             "http://127.0.0.1:50993/api/v2/sessions"
         );
         assert_eq!(
@@ -973,6 +959,20 @@ mod tests {
         assert_eq!(
             init_upload_url(&config, Some("ws_test")).unwrap(),
             "http://127.0.0.1:50993/api/v2/sessions/ws_test/uploads/init"
+        );
+
+        config.server_api = ServerApi::V1;
+        assert_eq!(
+            config.api_url("/sessions"),
+            "http://127.0.0.1:50993/api/sessions"
+        );
+        assert_eq!(
+            small_upload_url(&config, None).unwrap(),
+            "http://127.0.0.1:50993/api/uploads"
+        );
+        assert_eq!(
+            init_upload_url(&config, None).unwrap(),
+            "http://127.0.0.1:50993/api/uploads/init"
         );
     }
 

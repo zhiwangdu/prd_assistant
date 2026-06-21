@@ -53,7 +53,7 @@ cd "$src_dir"
 git pull --ff-only
 
 cd "$deploy_dir"
-./rebuild-install.sh
-./logagentctl.sh start
-./logagentctl.sh status
+./rebuild-v2-install.sh
+./logagent-v2ctl.sh start
+./logagent-v2ctl.sh status
 REMOTE

@@ -26,7 +26,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 上传日志包到服务端。
 - 维护本机活动 Session。
 - 上传完成后把文件附加到活动 Session；没有活动 Session 时自动创建一个 `Native import ...` Session 并设为活动。
-- 可通过 `native_agent.server_api` 指向 Rust V1 Server 或 `server-v2`。
+- 默认通过 `native_agent.server_api=v2` 指向 `server-v2`。
 - 返回任务 URL 给插件或自动打开 WebUI。
 
 ## 本地接口
@@ -47,11 +47,12 @@ Content-Type: application/json
 
 ## 本地运行
 
-先启动 Server，再启动 Native Agent。
+先启动 V2 Server，再启动 Native Agent。
 
 ```bash
+./scripts/v2-local.sh start
 export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-native-agent -- --config examples/logagent.yaml
+cargo run -p logagent-native-agent -- --config examples/native-agent-v2-50993.yaml
 ```
 
 健康检查：
@@ -83,9 +84,9 @@ curl -X POST http://127.0.0.1:17321/imports \
 ```json
 {
   "uploadId": "upl_...",
-  "sessionId": "sess_... 或 ws_...",
+  "sessionId": "ws_...",
   "taskId": null,
-  "url": "http://127.0.0.1:8080/sessions/sess_..."
+  "url": "http://127.0.0.1:50993/sessions/ws_..."
 }
 ```
 
@@ -109,8 +110,8 @@ LOGAGENT_NATIVE_API_KEY=<same-as-server> \
 配置要求：
 
 - `native_agent.bind` 建议保持 `127.0.0.1:17321`。
-- `native_agent.server_base_url` 指向 ECS 上的 Server 地址。
-- `native_agent.server_api` 支持 `v1` 和 `v2`，默认 `v1`；连接 `server-v2` 时使用 `v2`。
+- `native_agent.server_base_url` 指向 V2 Server 地址，默认 `http://127.0.0.1:50993`。
+- `native_agent.server_api` 支持 `v1` 和 `v2`，默认 `v2`；`v1` 仅作为对接外部旧服务的兼容模式保留。
 - `native_agent.allowed_dirs` 包含浏览器下载目录。
 - `storage.max_upload_bytes` 与 Server 保持一致或更小。
 - `native_agent.upload_chunk_bytes` 控制分片上传大小，默认 512KB。
@@ -138,19 +139,19 @@ Native Agent 从本地配置读取服务端地址和 API Key。API Key 不写死
 
 ```yaml
 native_agent:
-  server_base_url: "http://logagent:8080"
-  server_api: "v1"
+  server_base_url: "http://logagent:50993"
+  server_api: "v2"
   api_key_env: "LOGAGENT_NATIVE_API_KEY"
 ```
 
-连接 `server-v2` 默认本机端口：
+连接 V2 默认本机端口：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
 cargo run -p logagent-native-agent -- --config examples/native-agent-v2-50993.yaml
 ```
 
-V1 上传：
+V1 兼容上传路径仍保留给外部旧服务：
 
 ```http
 POST /api/uploads
@@ -164,7 +165,7 @@ POST /api/v2/sessions/:session_id/uploads
 Authorization: Bearer <api_key>
 ```
 
-V1 附加到 Session：
+V1 兼容附加到 Session：
 
 ```http
 POST /api/sessions/:session_id/uploads

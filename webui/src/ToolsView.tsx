@@ -612,7 +612,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Tool catalog</CardTitle>
-              <CardDescription>Configured and built-in tools exposed by the Rust Server</CardDescription>
+              <CardDescription>Configured and built-in tools exposed by the V2 server</CardDescription>
             </div>
             <Button className="h-8 px-3" variant="outline" onClick={() => void refreshTools()}><RefreshCw className="h-4 w-4" /></Button>
           </div>

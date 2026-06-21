@@ -100,7 +100,7 @@ tools:
 
 ## 当前实现状态
 
-- 已实现 `server/src/tool_runner.rs`。
+- 已在 Python V2 Tool Runner、task MCP 和 Tools API 中实现。
 - 已支持配置解析、绝对路径校验、timeout、stdout/stderr 捕获、输出截断和幂等复用。
 - 已支持 `{input_file}`、`{manifest_path}`、`{grep_results_path}`、`{workspace}`、`{action_id}` 占位符。
 - Python V2 会为每次 configured subprocess action 物化
@@ -145,8 +145,7 @@ tools:
 - 已支持从工具 stdout JSON 中提取 `summary` 和 `findings`；stdout 不是 JSON 时保留原始输出并使用通用 summary，不影响任务成功。
 - artifacts API 和 WebUI 能展示 tool result 与结构化 findings。
 - LLM Gateway 会读取 Tool Runner summary/findings 并允许最终结果引用 `tool_results/<action_id>/result.json#findings/<index>`。
-- 已新增 `examples/server-tools.yaml` 作为真实 `flux_query_analyzer` / `influxql_analyzer` 接入模板；默认启动配置仍不强依赖这些二进制。
-- 已新增 `examples/server-influxql-tool.yaml` 作为单独验证真实 `influxql-analyzer` 的配置；该配置通过 `LOGAGENT_TOOL_INFLUXQL_ANALYZER` 指向构建产物。
+- source-built analyzer 通过 V2 环境变量、runtime `bin/tools` auto-discovery 或 `LOGAGENT_V2_TOOLS_JSON` 接入；默认启动配置仍不强依赖这些二进制。
 - 已适配真实 `influxql-analyzer` Report stdout：包含 `total_records`、`total_statements` 和 `fingerprints` key 时即按 Rust/V1 进入专门 parser；`total_records`、`fingerprints`、`special_rules`、`parse_errors` 和 `realtime_query` 会标准化为 `ToolRunRecord.summary/findings`，其中非数组 `fingerprints` 只跳过 fingerprint findings。
 - 已增强真实 `influxql-analyzer` CompareReport stdout：`batch_a` / `batch_b`、`statement_delta`、`qps_delta`、`new_fingerprints`、`removed_fingerprints`、`changed_fingerprints` 和 `rule_deltas` 会转成可读 summary/findings，包含 count/qps A->B、delta、规则和 normalized query。
 - `scripts/smoke-influxql-analyzer.sh` 会同时运行真实 CLI 的普通 Report 路径和 `-input-a` / `-input-b` CompareReport 路径，断言 statement delta、新增 fingerprint、规则 delta 和 A/B 侧进度输出。
@@ -154,7 +153,7 @@ tools:
 - 当前 `flux_query_analyzer` 源码通过 `third_party/flux` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/flux.git` 的 `feature/query-stats` 分支；CLI 入口为 `libflux/flux-core` 的 `query_stats`，LogAgent 构建产物名固定为 `flux_query_analyzer`。stdout JSON 已适配通用 `summary/findings` 提取；当旧版或降级输出只包含 `metrics`、`topQueries` 和 `parseErrors` 时，V2 也会生成 summary、parse error findings、Top Flux template findings 和 new template finding。真实 CLI 通过 `--top-k`、`--max-input-lines` 和 `--max-error-findings` 控制输入和输出规模。
 - 当前 `opengemini_storage_analyzer` 源码通过 `third_party/openGemini` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/openGemini.git` 的 `openGemini-tools` 分支；CLI 入口为 `app/opengemini-storage-analyzer`，用于只读检查 TSSP 和 TSI mergeset 文件。
 - 当前 `influxdb_storage_analyzer` 源码通过 `third_party/influxdb` submodule 引用，默认跟踪 `git@github.com:zhiwangdu/influxdb.git` 的 `influxdb-tools` 分支；CLI 入口为 `cmd/influxdb_storage_analyzer`，用于只读检查 TSM、TSI 和 `_series` 文件。
-- Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量或 Rust/V1 的 `LOGAGENT_TOOL_*_ANALYZER` 别名后会自动注册对应 source-built analyzer；V2 专用变量优先生效。默认 args、timeout、`max_input_files`、match patterns 和 keywords 与 `examples/server-tools.yaml` 对齐：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
+- Python V2 设置 `LOGAGENT_V2_TOOL_*_ANALYZER` 环境变量或 Rust/V1 的 `LOGAGENT_TOOL_*_ANALYZER` 别名后会自动注册对应 source-built analyzer；V2 专用变量优先生效。默认 args、timeout、`max_input_files`、match patterns 和 keywords 由 V2 内置：Flux/InfluxQL 查询工具各处理最多 3 个输入，openGemini storage 最多 10 个输入，InfluxDB storage timeout 为 60 秒且最多 5 个输入。
 - `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、
   `scripts/smoke-opengemini-storage-analyzer.sh` 和
   `scripts/smoke-influxdb-storage-analyzer.sh` 均会从 submodule 构建或复用
@@ -187,12 +186,12 @@ tools:
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-export LOGAGENT_TOOL_FLUX_QUERY_ANALYZER=/abs/path/to/flux_query_analyzer
-export LOGAGENT_TOOL_INFLUXQL_ANALYZER=/abs/path/to/influxql_analyzer
-cargo run -p logagent-server -- --config examples/server-tools.yaml
+export LOGAGENT_V2_TOOL_FLUX_QUERY_ANALYZER=/abs/path/to/flux_query_analyzer
+export LOGAGENT_V2_TOOL_INFLUXQL_ANALYZER=/abs/path/to/influxql-analyzer
+./scripts/v2-local.sh start
 ```
 
-`server-tools.yaml` 可配合 mock Claude CLI 单独验证 Tool Runner。上传 Flux 查询 NDJSON/JSONL（每行包含 `time`、`query` 和可选 `duration_ms`）或包含 `flux`、`"query"`、`duration_ms` 关键词的日志会触发 `flux_query_analyzer`；上传 `.jsonl` 或包含 `influxql`、`"query"`、`select`、`show series`、`show measurements` 关键词的日志会触发 `influxql_analyzer`。
+上传 Flux 查询 NDJSON/JSONL（每行包含 `time`、`query` 和可选 `duration_ms`）或包含 `flux`、`"query"`、`duration_ms` 关键词的日志会触发 `flux_query_analyzer`；上传 `.jsonl` 或包含 `influxql`、`"query"`、`select`、`show series`、`show measurements` 关键词的日志会触发 `influxql_analyzer`。
 
 只验证真实 Flux 工具时：
 
@@ -212,7 +211,7 @@ cargo run -p logagent-server -- --config examples/server-tools.yaml
 ./scripts/smoke-influxql-analyzer.sh
 ```
 
-`examples/server-influxql-tool.yaml` 使用 `path_env: LOGAGENT_TOOL_INFLUXQL_ANALYZER`。部署环境中 `deploy/rebuild-install.sh` 会把同一源码构建为 `$LOGAGENT_APP_DIR/bin/tools/influxql-analyzer`，`deploy/logagent.example.yaml` 默认指向该路径。
+部署环境中 `deploy/rebuild-v2-install.sh` 默认会把同一源码构建为 `$LOGAGENT_APP_DIR/bin/tools/influxql-analyzer`，V2 会按标准文件名自动发现该路径。
 
 `influxql-analyzer` 输入应是 JSONL，每行至少包含 `query` 字段，可选 `timestamp` 或 `time`。普通 Report CLI 参数使用真实工具协议：
 
@@ -241,11 +240,12 @@ CompareReport smoke 使用真实 compare 协议：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-export LOGAGENT_TOOL_PPROF_GO="$(command -v go)"
-cargo run -p logagent-server -- --config examples/server-pprof-tool.yaml
+export LOGAGENT_V2_PPROF_ENABLED=1
+export LOGAGENT_V2_PPROF_GO_COMMAND="$(command -v go)"
+./scripts/v2-local.sh start
 ```
 
-访问 `http://127.0.0.1:50997/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；descriptor 的 `paramsSchema` 同时包含 V1 顶层 `sampleIndex` / `nodeCount` / `generateSvg` 和 V2 `properties` 镜像，运行时 `sampleIndex` 会按 Rust/V1 规则 trim 并限制为字母、数字、`_` 和 `-`，`generateSvg` 必须是 JSON boolean。V2 调用 `go tool pprof` 时与 Rust/V1 一致：top/tree/svg 使用 `-nodecount=<nodeCount>`，top/tree/raw/svg 都使用 `-symbolize=none`。configured command tools 可上传匹配文件，也可在 `inputFiles` 中指定 `extracted/...` 或 `tool_inputs/...` 路径复用 Workspace 已知输入；metadata built-ins 不需要上传，`logagent.get_metadata_tag_fields` 的模板只需要 `instanceId`、`database`、`measurement` 和可选 `retentionPolicy`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/tools/runs/:task_id/result` 查询。
+访问 `http://127.0.0.1:50993/` 的 Tools 页面选择工具后按预填 JSON 参数模板运行。`pprof_analyzer` 上传 `.pprof`、`.prof`、`.profile` 或 `.pb.gz`；descriptor 的 `paramsSchema` 同时包含 V1 顶层 `sampleIndex` / `nodeCount` / `generateSvg` 和 V2 `properties` 镜像，运行时 `sampleIndex` 会按 Rust/V1 规则 trim 并限制为字母、数字、`_` 和 `-`，`generateSvg` 必须是 JSON boolean。V2 调用 `go tool pprof` 时与 Rust/V1 一致：top/tree/svg 使用 `-nodecount=<nodeCount>`，top/tree/raw/svg 都使用 `-symbolize=none`。configured command tools 可上传匹配文件，也可在 `inputFiles` 中指定 `extracted/...` 或 `tool_inputs/...` 路径复用 Workspace 已知输入；metadata built-ins 不需要上传，`logagent.get_metadata_tag_fields` 的模板只需要 `instanceId`、`database`、`measurement` 和可选 `retentionPolicy`。该路径创建 `taskKind=tool_run` 的任务，结果通过 `/api/v2/tools/runs/:run_id/result` 查询。
 
 验证 Huawei package sync 时，需要在配置中启用 `huawei_cloud.package_sync` 并设置 OBS/GaussDB 环境变量；Tools 页面选择 `logagent.huawei_cloud_package_sync` 后上传一个包并填写 JSON 参数：
 

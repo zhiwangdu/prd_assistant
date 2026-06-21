@@ -2,6 +2,32 @@
 
 Last updated: 2026-06-21
 
+## 2026-06-21 V2 Rust Server Removal
+
+- Removed the legacy Rust `server/` crate from the V2 branch and pruned it from
+  the Cargo workspace. `Cargo.lock` now only retains dependencies needed by the
+  remaining Rust workspace member, `native-agent/`.
+- Deleted V1-only Server runtime assets: old server example YAML files, legacy
+  rebuild/control scripts, the old architecture review document, and the old
+  Server deploy template.
+- Updated Native Agent defaults to target the Python/FastAPI V2 server on
+  `127.0.0.1:50993` while keeping explicit V1 compatibility available for
+  older deployments.
+- Updated root, Native Agent, Chrome Extension, Server V2, Deploy, Tool Runner,
+  Config, Testing, Interface, Memory, Case Store, Agent Backend, Roadmap, and
+  WebUI documentation so the branch consistently treats `server-v2/` as the
+  active Server implementation.
+- Updated local/deploy helper scripts to use the V2 build and control flow
+  (`v2-local.sh`, `rebuild-v2-install.sh`, `logagent-v2ctl.sh`) and kept
+  `build-webui.sh` as a standalone WebUI build/copy helper without requiring
+  the removed Rust Server work directory layout.
+- Verification passed: legacy reference scans for removed V1 Server scripts and
+  configs, `cargo fmt --check`, `cargo check`, `cargo test`,
+  `server-v2/.venv/bin/python -m ruff check server-v2/logagent_v2 server-v2/tests`,
+  `server-v2/.venv/bin/python -m pytest -q server-v2/tests/test_deploy_scripts.py`,
+  `cd webui && npm run lint`, `cd webui && npm run typecheck`,
+  `cd webui && npm run build`, and `bash -n` over the remaining deploy/scripts.
+
 ## 2026-06-21 WebUI Local Tool Plugins Empty State
 
 - Confirmed the running 50993 service directly: `/api/v2/tools` with

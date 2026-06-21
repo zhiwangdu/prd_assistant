@@ -2,11 +2,11 @@
 
 ## 目标
 
-MVP 使用单一 Rust binary 和内部模块边界。Server 持有任务状态和执行权限，Analysis Orchestrator 持有证据包构建、Claude MCP 配置、预算和等待态，Claude Code 只提供推理/代码上下文分析，证据模块只执行受约束能力。
+V2 使用单一 Python/FastAPI Server 进程和内部模块边界。Server 持有任务状态和执行权限，Analysis Orchestrator 持有证据包构建、Claude MCP 配置、预算和等待态，Claude Code 只提供推理/代码上下文分析，证据模块只执行受约束能力。
 
 ## 当前实现
 
-Server 已在 `server/src/domain/contracts.rs` 落地第一版公共契约，并新增 Claude Code / Domain Adapter 摘要接口：
+V2 已在 Python 数据模型和 API/MCP handler 中落地第一版公共契约，并提供 Claude Code / Domain Adapter 摘要接口：
 
 - `TaskContext`
 - `AgentAction` / `ActionKind` / `ActionRisk`

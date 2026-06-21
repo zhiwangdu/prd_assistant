@@ -8,9 +8,6 @@ Memory 保存已确认故障 Case，并支持后续任务相似召回。现有 C
 
 已实现 MVP：
 
-- Server 内部模块 `server/src/stores/memory_store.rs`、`server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`。
-- SQLite Memory 主库，路径为 `storage.data_dir/memory/memory.sqlite`。
-- legacy JSON Case 文件保留在 `storage.data_dir/cases/`，启动时按 `caseId` idempotent 导入 SQLite，新增和更新 Case 仍同步写 JSON。
 - Python V2 clean-room Server 使用 `LOGAGENT_V2_DATA_DIR/logagent.sqlite`
   的 `cases` 表作为主索引，并保留同级 `cases/*.json` legacy 层；初始化
   时按 `caseId` 幂等 upsert schema v2 JSON，创建或编辑 Case 后先更新

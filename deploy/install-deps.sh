@@ -8,16 +8,13 @@ usage() {
   cat <<'USAGE'
 Usage: ./install-deps.sh [--dry-run] [--no-rustup]
 
-Installs common dependencies needed by deploy/rebuild-install.sh:
+Installs common dependencies needed by deploy/rebuild-v2-install.sh:
   - git, curl, ca-certificates
   - C/C++ build tools and pkg-config
   - nodejs and npm
   - Go toolchain for source-referenced diagnostic tools
-  - Rust toolchain through rustup when cargo is missing
-
-Runtime note:
-  A prebuilt logagent-server binary does not require a separate SQLite install.
-  The Server is built with bundled SQLite support.
+  - Rust toolchain through rustup when cargo is missing, required only when
+    building Flux or InfluxDB source-built analyzer tools
 
 Options:
   --dry-run     Print commands without executing them.

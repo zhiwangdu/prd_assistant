@@ -24,7 +24,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 - 已有 C/C++ 工具可直接复用，通过 Tool Runner 统一调用。
 - Python/Go/Java 主要作为已有生态或历史工具的兼容选项，不作为新模块首选。
 
-V2 重构分支 `rewrite/logagent-v2` 是一个明确例外：为评估小团队内部使用的主流 Agent 技术栈，新增 `server-v2/` clean-room Python 实现。V2 首版采用 FastAPI、LangGraph-oriented Agent runtime、SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL 或 Redis，且不要求兼容当前 Rust Server API。V2 Agent runtime 已按 V1 默认值实现轮次、LLM 调用、动作、重复工具 fingerprint、总 token、单次运行时间、用户追问和审批预算终止；预算耗尽会生成带 `budgetLimited=true` 的低置信度结果，而不是把任务标记为系统失败。
+V2 重构分支 `rewrite/logagent-v2` 是一个明确例外：为评估小团队内部使用的主流 Agent 技术栈，新增 `server-v2/` clean-room Python 实现。V2 首版采用 FastAPI、LangGraph-oriented Agent runtime、SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL 或 Redis，也不要求完全兼容 legacy V1 API。V2 Agent runtime 已按 V1 默认值实现轮次、LLM 调用、动作、重复工具 fingerprint、总 token、单次运行时间、用户追问和审批预算终止；预算耗尽会生成带 `budgetLimited=true` 的低置信度结果，而不是把任务标记为系统失败。
 
 核心链路：
 
@@ -75,7 +75,7 @@ flowchart LR
         Native["Native Agent"]
     end
 
-    subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
+    subgraph ServerBoundary["LogAgent V2 Server（Python/FastAPI 单机进程）"]
         API["API / Auth / Task Manager"]
         ReadonlyMcp["Read-only HTTP MCP<br/>Knowledge resources / tools"]
         Orchestrator["Pipeline / Action Executor"]
@@ -167,18 +167,17 @@ flowchart LR
 
 ## 项目目录
 
-根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Claude Code Session Runner、LogAgent MCP、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
+根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Claude Code Session Runner、LogAgent MCP、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都由 `server-v2/` 的 Python/FastAPI 进程承载；旧 Rust `server/` crate 已从 V2 分支移除。
 
 | 目录 | 职责 | Spec |
 |------|------|------|
 | [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
-| [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志，可配置对接 V1/V2 Server | [SPEC](./native-agent/SPEC.md) |
-| [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、只读 HTTP MCP、导出包和 API | [SPEC](./server/SPEC.md) |
+| [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并默认上传到 V2 Server | [SPEC](./native-agent/SPEC.md) |
 | [server-v2](./server-v2/README.md) | V2 clean-room Python/FastAPI 小团队 Agent Server，SQLite + 本地 artifact store | [SPEC](./server-v2/SPEC.md) |
 | [webui](./webui/README.md) | Vite WebUI、Analyze、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
 | [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
-| [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
-| [scripts](./scripts) | 工作目录初始化、Server/WebUI/V2 快捷编译、服务启停和 smoke 脚本 | - |
+| [examples](./examples) | Native Agent V2 配置样例 | - |
+| [scripts](./scripts) | V2 本地管理、WebUI 构建、源码 analyzer 构建和 smoke 脚本 | - |
 | [testing](./testing/README.md) | 测试 fixture、集成测试和 mock Claude CLI | [SPEC](./testing/SPEC.md) |
 | [third_party](./third_party) | 源码引用的诊断工具 submodules：InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers | - |
 
@@ -216,21 +215,21 @@ Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/REA
 - 代码仓只读检索，不自动改代码。
 - SSH/SCP 只访问配置中的测试环境节点。
 - pgvector 不是第一版硬依赖，Case embedding 可以先用本地文件或 SQLite。
-- MVP 部署形态采用单一 Rust Server binary + Server 内部分层 module；后续确有独立生命周期时再拆 crate 或服务。
+- V2 部署形态采用单一 Python/FastAPI Server 进程 + SQLite + 本地 artifact store；后续确有独立生命周期时再拆服务。
 - Agent 上下文只在当前任务内持久化；跨任务知识只来自人工确认后的 Case。
 - 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
 
 ## 当前优先级
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`，`scripts/smoke-source-built-analyzers.sh` 可聚合验证四个真实 analyzer smoke；InfluxDB analyzer 构建会临时把其 Flux 依赖指向本地 `third_party/flux`，确保 `pkg-config.sh` 用完整 `libflux` Rust 源码而不是 Go module cache，并在未显式设置 `GOSUMDB` 时默认关闭该临时构建的公共 checksum DB 查询。V2 已能把 Flux `metrics/topQueries/parseErrors` stdout 和 InfluxQL Report/Compare stdout 转成 summary/findings。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页、Huawei OBS + GaussDB package sync 内置工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，默认内置 smoke、系统版本、uptime/load、磁盘、内存、进程概览、端口监听，以及 openGemini、Cassandra、RocksDB 基础只读进程/目录候选，V2 审批后的 `collect_environment` 可通过单目标或 `targets[]` 批量目标执行白名单命令 / SCP 拉取有大小上限的远程文件。
+当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，V2 Agent runtime 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；V2 Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`，`scripts/smoke-source-built-analyzers.sh` 可聚合验证四个真实 analyzer smoke；InfluxDB analyzer 构建会临时把其 Flux 依赖指向本地 `third_party/flux`，确保 `pkg-config.sh` 用完整 `libflux` Rust 源码而不是 Go module cache，并在未显式设置 `GOSUMDB` 时默认关闭该临时构建的公共 checksum DB 查询。V2 已能把 Flux `metrics/topQueries/parseErrors` stdout 和 InfluxQL Report/Compare stdout 转成 summary/findings。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页、Huawei OBS + GaussDB package sync 内置工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，默认内置 smoke、系统版本、uptime/load、磁盘、内存、进程概览、端口监听，以及 openGemini、Cassandra、RocksDB 基础只读进程/目录候选，V2 审批后的 `collect_environment` 可通过单目标或 `targets[]` 批量目标执行白名单命令 / SCP 拉取有大小上限的远程文件。
 
-V2 重构分支当前已迁移核心 Server 能力到小团队单机栈：FastAPI、SQLite WAL、本地 artifact、DB-backed jobs、日志解压/搜索、Tool Runner、Metadata（JSON/YAML/CSV/openGemini 导入）、Skills、Case Memory、Fetch、Remote Executor、Environment Collector 单目标、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、只读 Code Evidence worktree cache / 文件级 diff、只读/任务 MCP、Claude runtime contract artifacts，以及拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime。默认 WebUI 路由也已切到 V2 Analyze、Memory、System Context、Metadata、Tools、Fetch、Executors 和 Settings，不再默认渲染旧 Rust 兼容面板。Native Agent 可通过 `server_api=v2` 对接 V2 Session-scoped 上传接口。本地开发可用 `scripts/v2-local.sh build|start|stop|restart|status|logs|smoke-tools` 快速管理 V2 和验证源码 analyzer，runtime 部署继续使用 `deploy/rebuild-v2-install.sh` 和 `deploy/logagent-v2ctl.sh`；两套 `status` 都会在服务可达时用 API Key 查询 tools catalog 并打印 source-built analyzer 注册、可执行性和不可用原因，源码工具可用 `scripts/smoke-source-built-analyzers.sh` 做全量或单工具 smoke。V2 tools catalog 同时返回 `tools` 和兼容 alias `toolPlugins`，并在未显式配置工具目录时扫描当前工作目录和源码目录的标准 tools 路径，避免手工启动或前后端短暂不一致导致 Tool plugins 空列表。该分支仍不追求 Rust V1 API 兼容；后续重点是更多真实领域 fixture 和产品化验证。
+V2 重构分支当前已迁移核心 Server 能力到小团队单机栈：FastAPI、SQLite WAL、本地 artifact、DB-backed jobs、日志解压/搜索、Tool Runner、Metadata（JSON/YAML/CSV/openGemini 导入）、Skills、Case Memory、Fetch、Remote Executor、Environment Collector 单目标、approved `targets[]` 批量采集和多 executor/template 唯一 hint 选型、只读 Code Evidence worktree cache / 文件级 diff、只读/任务 MCP、Claude runtime contract artifacts，以及拆分为 provider/tool/validation/result 节点的 LangGraph Agent runtime。默认 WebUI 路由也已切到 V2 Analyze、Memory、System Context、Metadata、Tools、Fetch、Executors 和 Settings。Native Agent 默认对接 V2 Session-scoped 上传接口。本地开发可用 `scripts/v2-local.sh build|start|stop|restart|status|logs|smoke-tools` 快速管理 V2 和验证源码 analyzer，runtime 部署继续使用 `deploy/rebuild-v2-install.sh` 和 `deploy/logagent-v2ctl.sh`；两套 `status` 都会在服务可达时用 API Key 查询 tools catalog 并打印 source-built analyzer 注册、可执行性和不可用原因，源码工具可用 `scripts/smoke-source-built-analyzers.sh` 做全量或单工具 smoke。V2 tools catalog 同时返回 `tools` 和兼容 alias `toolPlugins`，并在未显式配置工具目录时扫描当前工作目录和源码目录的标准 tools 路径，避免手工启动或前后端短暂不一致导致 Tool plugins 空列表。旧 Rust `server/` crate 和 V1-only 启停/部署脚本已从 V2 分支删除；后续重点是更多真实领域 fixture 和产品化验证。
 
 Code Evidence V2 MVP 已支持通过 `LOGAGENT_V2_CODE_REPOS_JSON` 配置本地 git repo、版本到 ref 映射和 search roots，并通过 `LOGAGENT_V2_CODE_WORKTREE_ROOT` 或默认 `data_dir/code_worktrees` 创建/复用 detached worktree，在固定 commit 内执行 `logagent.search_code` 并写入 `code_evidence/<action_id>.json#matches/<index>` 最终答案证据；`LOGAGENT_V2_CODE_WORKTREE_MAX_PER_REPO` 默认按每个 product 保留 5 个 detached worktree，并在 search 后按 LRU 清理旧缓存，同时把同 product `wt_*` cache 目录中的 invalid/unregistered orphan 扫描结果记录到 `worktree.cleanup.orphanScan`。`logagent.diff_code` 已支持受控 base/target 版本或 ref 的只读 `git diff --numstat` 文件级比较，写入 `code_evidence/<action_id>.json#diffs/<index>` 证据。绑定 Metadata instance 的 run 会继承并校验该 instance 的 product/version，避免 MCP 请求绕过任务上下文；diff 的 target 继承该版本，base 可选择更早的配置版本/ref。Code Investigation 和 Fix 模式的符号级解析、patch hunk / AST diff 和代码修改仍延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的 `collect_environment` 已可选择 Remote Executor 白名单命令、白名单 file template，或用 approved `targets[]` 批量采集，把远程 result/stdout/stderr/collected_file 注册为环境背景证据；`analysis_package.environmentCollection` 会向 Agent 暴露启用 executor 和模板候选，单 executor 场景可自动补齐 `executorId`，多 executor 场景可用唯一 hint 匹配 `target` / `executor` / `node` / `host` 与 `template` / `command` / `file`，无匹配或歧义时拒绝远程执行；没有远程目标时仍保留兼容 mock evidence 路径。
 
 ## 开发约定
 
-后续每开发或修改一个可运行组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`；修改 Server 内部能力时，同步更新 `server/README.md`、`server/SPEC.md`，必要时更新 `docs/modules/` 下对应能力文档。
+后续每开发或修改一个可运行组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`；修改 V2 Server 内部能力时，同步更新 `server-v2/README.md`、`server-v2/SPEC.md`，必要时更新 `docs/modules/` 下对应能力文档。
 
 每次修改完文件，也必须同步更新根目录 [PROGRESS.md](./PROGRESS.md)，记录项目进展、行为变化、验证结果或下一步变化。
 

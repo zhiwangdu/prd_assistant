@@ -2,7 +2,7 @@
 
 ## 当前实现
 
-WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组件。`npm run build` 输出到 `webui/out`，由 Rust Server 静态托管。
+WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组件。`npm run build` 输出到 `webui/out`，由 Python V2 Server 静态托管。
 
 当前页面：
 
@@ -155,7 +155,7 @@ npm run dev
 ```
 
 Vite 开发服务默认把 `/api` 和 `/health` 代理到 V2
-`http://127.0.0.1:50993`。如需临时连接 Rust V1 或其它后端，可设置：
+`http://127.0.0.1:50993`。如需临时连接其它后端，可设置：
 
 ```bash
 VITE_LOGAGENT_API_TARGET=http://127.0.0.1:50992 npm run dev
@@ -179,15 +179,13 @@ http://127.0.0.1:50993/
 API Key: dev-token
 ```
 
-使用工作目录脚本构建并交给 Server 托管：
+使用脚本构建并可选同步到指定静态目录：
 
 ```bash
-export LOGAGENT_WORK_DIR=/tmp/logagent-runtime
-./scripts/init-workdir.sh
-./scripts/build-webui.sh
+./scripts/build-webui.sh --output-dir /tmp/logagent-runtime/webui/out
 ```
 
-`build-webui.sh` 会运行 `npm --prefix webui run build`，并把 `webui/out` 同步到 `$LOGAGENT_WORK_DIR/webui/out`。`server-service.sh` 会从 `$LOGAGENT_WORK_DIR` 作为当前目录启动 Server，因此静态托管路径仍是相对的 `webui/out`。
+`build-webui.sh` 会运行 `npm --prefix webui run build`；不传输出目录时只更新仓库内的 `webui/out`。V2 runtime 部署通常由 `deploy/rebuild-v2-install.sh` 负责构建并同步静态产物。
 
 ## 验证
 

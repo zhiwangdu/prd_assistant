@@ -107,26 +107,28 @@ Mock adapter 必须支持脚本化多轮响应：
 - 固定问题
 - 固定期望证据
 - 检查输出是否引用日志、工具、代码和环境证据
-- 当前使用 `examples/server-llm-openai-compatible.yaml` 验证单次日志结果；不要在自动测试中使用真实模型。
+- 当前使用 V2 `LOGAGENT_V2_AGENT_PROVIDER=openai_compatible` 相关环境变量验证单次日志结果；不要在自动测试中使用真实模型。
 - 手工真实模型验收需要设置 `LOGAGENT_LLM_BASE_URL`、`LOGAGENT_LLM_API_KEY` 和 `LOGAGENT_LLM_MODEL`。
 
 真实工具调用只做手动验收：
 
-- 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
+- 当前使用 V2 Tools 页面或 task MCP 验证 Tool Runner。
 - 单独验证真实工具可使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`；这些脚本会从 submodules 构建对应工具并检查 stdout JSON。
 - 内网环境运行这些 smoke 前可设置 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；所有真实工具 smoke 都通过 `scripts/build-tools.sh` 初始化源码，因此会继承自定义 clone 地址。
-- 单独验证 pprof Tools 页面可使用 `examples/server-pprof-tool.yaml`，需要设置 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`。
+- 单独验证 pprof Tools 页面可设置 `LOGAGENT_V2_PPROF_ENABLED=1` 和 `LOGAGENT_V2_PPROF_GO_COMMAND="$(command -v go)"`。
 - Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只验证低风险 `ls -la /root`；自动测试使用 fake ssh 脚本，不依赖真实 ECS。
-- 手工真实工具验收需要为 `examples/server-tools.yaml` 设置对应 `LOGAGENT_TOOL_*` 路径环境变量，均可指向 `scripts/build-tools.sh` 的 `target/tools/` 产物。
+- 手工真实工具验收可设置对应 `LOGAGENT_V2_TOOL_*_ANALYZER` 路径环境变量，或让 V2 自动发现 `target/tools/`、`$LOGAGENT_APP_DIR/bin/tools/` 中的标准产物。
 - 自动测试使用 fake shell tool，不依赖真实二进制。
 
-完整产品闭环 smoke：
+V2 本地闭环 smoke：
 
 ```bash
-scripts/smoke-product-loop.sh
+./scripts/v2-local.sh build --with-tools
+./scripts/v2-local.sh start
+./scripts/v2-local.sh smoke-tools
 ```
 
-`scripts/smoke-influxql-analyzer.sh` 会从 submodule 构建 analyzer 并验证 CLI Report JSON 与 stderr progress。`scripts/smoke-product-loop.sh` 会临时启动 `examples/server-influxql-tool.yaml` 对应的 50999 Server，生成 InfluxQL JSONL fixture，验证上传、真实源码构建的 InfluxQL Tool Runner、任务成功、Case 保存，以及第二个任务的 `caseContext` 召回。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、`cargo` 和 Go。Flux 和两个 storage smoke 分别验证 `summary/findings/topQueries` 或 storage analyzer tool id / high severity finding。
+`scripts/smoke-influxql-analyzer.sh` 会从 submodule 构建 analyzer 并验证 CLI Report JSON 与 stderr progress。`scripts/smoke-source-built-analyzers.sh` 聚合验证 InfluxQL、Flux、openGemini storage 和 InfluxDB storage analyzer；`v2-local.sh smoke-tools` 复用该入口。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、Go，Flux 和 InfluxDB analyzer 构建还需要 cargo。
 
 ## 验收标准
 

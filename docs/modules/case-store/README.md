@@ -8,7 +8,7 @@
 Rust -> C/C++ -> Go/Python/Java 等
 ```
 
-当前 MVP 已用 Rust Server 内部模块实现 Memory 后端，第一阶段只启用 `memoryType=case`。兼容的 Case API、`CaseRecord`、`CaseSearchHit` 和 `case_context.json` 保持不变；主索引存储在 `storage.data_dir/memory/memory.sqlite`，legacy JSON Case 文件保留在 `storage.data_dir/cases/` 作为迁移和回滚源。Python V2 clean-room Server 额外在本地 SQLite Case 表中维护 `vector_json`，用 dependency-light hash-vector recall 与 FTS/BM25 合并排序，不依赖 PostgreSQL、Redis、pgvector 或外部 embedding 服务。
+当前 V2 MVP 已实现 Memory 后端，第一阶段只启用 `memoryType=case`。兼容的 Case API、`CaseRecord`、`CaseSearchHit` 和 `case_context.json` 保持不变；V2 在本地 SQLite Case 表中维护 `vector_json`，用 dependency-light hash-vector recall 与 FTS/BM25 合并排序，不依赖 PostgreSQL、Redis、pgvector 或外部 embedding 服务。同级 legacy JSON Case 文件保留为迁移和回滚源。
 
 ## Embedding 配置
 
@@ -26,7 +26,7 @@ embedding:
 
 Memory 负责把人工确认后的分析结果沉淀为可复用经验，并在新任务中召回相似历史 Case。Case Store 当前是 Memory 上的兼容 facade。
 
-当前实现位于 `server/src/stores/memory_store.rs`、`server/src/stores/case_store.rs` 和 `server/src/stores/case_import_store.rs`，通过受保护 API 暴露：
+当前实现通过受保护 API 暴露：
 
 - `POST /api/tasks/:task_id/case`：成功任务人工确认后保存为 Case。
 - `POST /api/cases`：手工录入一个不绑定任务的 Case。

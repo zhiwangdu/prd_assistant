@@ -4,6 +4,5 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-"$SCRIPT_DIR/build-server.sh"
-"$SCRIPT_DIR/build-webui.sh"
+"$SCRIPT_DIR/v2-local.sh" build --with-tools
 "$SCRIPT_DIR/auto-deploy-lan.sh"

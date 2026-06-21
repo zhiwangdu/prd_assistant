@@ -35,6 +35,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 已有编译工具可复用，不强制重写。外部工具统一通过白名单配置和 Tool Runner 调用。
 
 V2 重构分支 `rewrite/logagent-v2` 作为 clean-room 架构评估例外，允许以 Python/FastAPI/LangGraph-oriented runtime 重新实现 Server。该分支面向小团队单机部署，默认使用 SQLite WAL、本地 artifact store 和 DB-backed job queue，不引入 PostgreSQL/Redis，也不要求兼容 Rust V1 API。
+当前 V2 分支已经删除旧 Rust `server/` crate；Server 运行入口为 `server-v2/`。
 
 ## 组件和内部能力边界
 
@@ -44,12 +45,11 @@ V2 重构分支 `rewrite/logagent-v2` 作为 clean-room 架构评估例外，允
 |------|------|
 | Chrome Extension | [chrome-extension/SPEC.md](./chrome-extension/SPEC.md) |
 | Native Agent | [native-agent/SPEC.md](./native-agent/SPEC.md) |
-| Server | [server/SPEC.md](./server/SPEC.md) |
 | Server V2 | [server-v2/SPEC.md](./server-v2/SPEC.md) |
 | WebUI | [webui/SPEC.md](./webui/SPEC.md) |
 | Testing | [testing/SPEC.md](./testing/SPEC.md) |
 
-Server 内部能力目前不拆独立目录或 crate，设计文档统一归档在 `docs/modules/`：
+Server V2 内部能力目前不拆独立服务，设计文档统一归档在 `docs/modules/`：
 
 | 能力 | Spec |
 |------|------|
@@ -149,7 +149,7 @@ flowchart TD
 ## 当前已实现
 
 - Chrome Extension 识别下载完成并调用 Native Agent。
-- Native Agent 接收本地导入请求，校验路径、后缀和大小，可配置上传到 Rust V1 Server 或 V2 Session-scoped 上传接口。
+- Native Agent 接收本地导入请求，校验路径、后缀和大小，默认上传到 V2 Session-scoped 上传接口。
 - Server 支持 multipart 上传、分片上传、任务创建、任务产物读取。
 - Server 支持 Log Analysis Session：创建/列表/读取/草稿更新、删除非运行中 Session、附加/移除上传、按 Session 创建多次 task run、统一 timeline。删除 Session 只移除 Session record 和 Session timeline，不级联删除上传、task workspace 或结果产物。
 - Log Analysis Session 支持不上传日志直接启动分析；Task snapshot 的 `uploadIds` 和 `inputs` 为空，pipeline 仍生成 `session_text_input.json`、空 `manifest.json` / `grep_results.json` 并进入 Analysis Orchestrator。
@@ -174,7 +174,7 @@ flowchart TD
 - `pprof_analyzer` 已作为第一个 Tools 插件接入，复用上传、TaskStore、workspace、后台 Executor 和 `tool_results` 目录，通过配置中的 Go 可执行文件运行 `go tool pprof`，生成 top/tree/raw 结果并解析 top 表格。
 - `logagent.huawei_cloud_package_sync` 已作为默认关闭的内置 Tools runnable 接入：启用 `huawei_cloud.package_sync.enabled=true` 后，手动 `tool_run` 必须引用一个已上传包，Server 将包流式 PUT 到配置的 Huawei OBS，执行 GaussDB update SQL，再执行 OBS HEAD 和 GaussDB query SQL，结果写入 `tool_results/<action_id>/result.json`。OBS/GaussDB 密钥只来自环境变量，artifact 只记录环境变量名、对象 key、状态、耗时和 bounded 查询行。
 - Remote Executor MVP 支持 WebUI 纳管 ECS 执行机、读取白名单命令模板、创建 `remote_command_run` task、后台 `EXECUTE_REMOTE_COMMAND` phase 调用系统 `ssh` 执行模板 argv，并通过 `/api/executor-runs` 查询 stdout/stderr/result artifact；V2 默认内置 `smoke_ls_root`、`system_uname`、`uptime_load`、`disk_usage`、`memory_usage`、`process_overview`、`network_listeners`，以及 openGemini、Cassandra、RocksDB 基础只读进程/目录候选模板。V2 审批后的 `collect_environment` 可通过单目标、approved `targets[]` 批量目标或多 executor/template 唯一 hint 选型执行白名单命令 / SCP 拉取有大小上限的远程文件，并把 `remote_result`、`stdout`、`stderr` 和可选 `collected_file` 注册为 support artifact；hint 匹配不到或有歧义时写入 `REMOTE_REJECTED`，不执行 SSH/SCP。
-- 根目录 `deploy/` 提供 runtime 部署模板，包含 `.env.example`、`logagent.example.yaml`、`logagentctl.sh`、`rebuild-install.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
+- 根目录 `deploy/` 提供 V2 runtime 部署模板，包含 `.env.example`、`logagent-v2ctl.sh`、`rebuild-v2-install.sh`、`install-deps.sh` 和 README；脚本可自动加载 runtime `deploy/.env`。
 - `scripts/v2-local.sh` 提供 V2 本地快速 build/start/stop/restart/status/logs/smoke-tools，默认复用 `server-v2/.venv`、`/tmp/logagent-v2-local`、端口 `50993` 和 `target/tools`，显式 `--with-tools` / `--only-tool` 时才构建 source-built analyzers；本地和 runtime `status` 会在服务可达时用 API Key 查询 `/api/v2/tools` 并打印 source-built analyzer 注册状态、命令存在性、可执行性和不可用原因，`deploy/logagent-v2ctl.sh help|--help|-h` 返回成功并打印 usage。`scripts/smoke-source-built-analyzers.sh` 提供全量或单工具 source-built analyzer smoke 入口，`v2-local.sh smoke-tools` 复用该聚合入口。
 - Analysis State Store MVP 已写入 `analysis_state.json` / `analysis_events.jsonl`，并提供 `GET /api/tasks/:task_id/analysis` 读取当前快照和事件流；`PLAN_ANALYSIS` 的 Claude Code session 调用会记录 callId、attempt、session artifact 和完成事件。
 - Log Analysis run 会在 `PLAN_ANALYSIS` 前刷新 `analysis_package.json`、`claude_prompt.md` 和 `claude_mcp_config.json`，随后用短 stdin prompt 调用 Claude Code CLI，并由 Claude 通过任务 MCP `analysis_package` resource 读取证据包；其中 Metadata 只包含 outline/counts，不内联完整 databases/measurements/shards/indexes。`logagent.get_metadata_topology` 作为兼容 alias 返回 outline，`logagent.query_metadata` 会写入 `metadata_slices/<stable_id>.json` 并审计到 `mcp_calls.jsonl`。`logagent.get_metadata_field_types` 查询任意字段类型，`logagent.get_metadata_tag_fields` 只查询 Tag 字段；二者均作为背景上下文。`claude_session.json`、`mcp_calls.jsonl` 和真实 `agent_response.json` 记录 session、MCP 调用和响应。`agent_response.json` 现在表示 Claude Code session response，包含 `runtimeStatus`、`claudeSessionId`、`analysisMode`、`permissionProfile`、`promptDelivery`、`structuredOutput`、usage/cost、耗时、MCP call 路径和错误；V2 会在每次 Claude Code provider 响应后刷新 runtime `claude_session.json`，失败响应即使没有 session id 也会覆盖初始 contract 形成可审计运行态。

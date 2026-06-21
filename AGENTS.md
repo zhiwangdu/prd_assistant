@@ -20,7 +20,7 @@ Rust -> C/C++ -> Go/Python/Java 等
 ```
 
 - 已有编译工具可以直接复用，不强制重写；例如后续 Tool Runner 需要支持 `flux_query_analyzer`、`influxql_analyzer`。
-- WEBUI 使用 React + Next.js + Tailwind CSS，`npm run build` 静态导出到 `webui/out`，由 Rust Server 托管。
+- WEBUI 使用 React + Vite + Tailwind CSS，`npm run build` 静态导出到 `webui/out`，由 Python V2 Server 托管。
 
 ## 当前实现状态
 
@@ -81,31 +81,31 @@ Rust -> C/C++ -> Go/Python/Java 等
 
 ## 常用运行命令
 
-Server 测试配置：
+V2 本地服务：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-server -- --config examples/server-test.yaml
+./scripts/v2-local.sh start
 ```
 
-测试配置端口：
+V2 默认端口：
 
 ```text
-http://127.0.0.1:50992/
+http://127.0.0.1:50993/
 ```
 
-默认配置：
+V2 构建和工具 smoke：
+
+```bash
+./scripts/v2-local.sh build --with-tools
+./scripts/v2-local.sh smoke-tools
+```
+
+Native Agent 对接本地 V2 Server：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-server -- --config examples/logagent.yaml
-```
-
-Native Agent 对接远端测试 Server：
-
-```bash
-export LOGAGENT_NATIVE_API_KEY=dev-token
-cargo run -p logagent-native-agent -- --config examples/native-agent-remote-50992.yaml
+cargo run -p logagent-native-agent -- --config examples/native-agent-v2-50993.yaml
 ```
 
 常用检查：
@@ -181,10 +181,10 @@ data_dir/
       grep_results.json
 ```
 
-测试配置 `examples/server-test.yaml` 使用：
+V2 本地脚本默认数据目录：
 
 ```text
-/tmp/logagent-server-test
+/tmp/logagent-v2-local
 ```
 
 ## 安全边界

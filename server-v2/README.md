@@ -452,8 +452,8 @@ Setting any `LOGAGENT_V2_TOOL_*_ANALYZER` variable, or its Rust/V1
 a configured subprocess tool. The V2-specific name takes precedence. If those
 variables are unset, V2 auto-discovers the standard analyzer filenames from
 `LOGAGENT_V2_TOOLS_DIR`, `$LOGAGENT_V2_APP_DIR/bin/tools`, or
-`$LOGAGENT_APP_DIR/bin/tools`. Both paths use the same args, timeouts,
-`maxInputFiles`, match patterns, and keywords as `examples/server-tools.yaml`.
+`$LOGAGENT_APP_DIR/bin/tools`. Both paths use the same V2 built-in args,
+timeouts, `maxInputFiles`, match patterns, and keywords.
 The storage defaults preserve the wider V1 settings: openGemini storage uses
 `maxInputFiles=10`; InfluxDB storage uses `timeoutSeconds=60` and
 `maxInputFiles=5`. `LOGAGENT_V2_TOOLS_JSON` accepts
