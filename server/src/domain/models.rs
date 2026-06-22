@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::support::config::AnalysisMode;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -60,28 +58,6 @@ pub struct ChunkUploadResponse {
     pub received_bytes: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateTaskRequest {
-    pub upload_id: Option<String>,
-    #[serde(default)]
-    pub upload_ids: Vec<String>,
-    pub session_id: Option<String>,
-    pub source_url: Option<String>,
-    pub question: Option<String>,
-    pub instance_id: Option<String>,
-    pub cluster_id: Option<String>,
-    pub node_id: Option<String>,
-    #[serde(default)]
-    pub analysis_mode: Option<AnalysisMode>,
-    #[serde(default)]
-    pub analysis_language: Option<AnalysisLanguage>,
-    #[serde(default)]
-    pub system_context_ids: Vec<String>,
-    #[serde(default)]
-    pub skill_ids: Vec<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskResponse {
@@ -90,20 +66,12 @@ pub struct TaskResponse {
     pub url: String,
     pub task_kind: TaskKind,
     pub session_id: Option<String>,
-    pub analysis_mode: AnalysisMode,
-    pub analysis_language: AnalysisLanguage,
     pub status: TaskStatus,
     pub phase: Option<TaskPhase>,
     pub created_at: DateTime<Utc>,
 }
 
 pub type TaskSummary = TaskResponse;
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskListResponse {
-    pub tasks: Vec<TaskSummary>,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -280,51 +248,11 @@ pub struct RemoteCommandRunResultResponse {
     pub result: serde_json::Value,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskArtifactsResponse {
-    pub task_id: String,
-    pub manifest_path: String,
-    pub grep_results_path: String,
-    pub manifest: serde_json::Value,
-    pub grep_results: serde_json::Value,
-    pub text_input_path: Option<String>,
-    pub text_input: Option<serde_json::Value>,
-    pub metadata_context_path: Option<String>,
-    pub metadata_context: Option<serde_json::Value>,
-    pub case_context_path: Option<String>,
-    pub case_context: Option<serde_json::Value>,
-    pub system_context_path: Option<String>,
-    pub system_context: Option<serde_json::Value>,
-    pub analysis_package_path: Option<String>,
-    pub analysis_package: Option<serde_json::Value>,
-    pub agent_response_path: Option<String>,
-    pub agent_response: Option<serde_json::Value>,
-    pub claude_mcp_config_path: Option<String>,
-    pub claude_mcp_config: Option<serde_json::Value>,
-    pub claude_session_path: Option<String>,
-    pub claude_session: Option<serde_json::Value>,
-    pub mcp_calls_path: Option<String>,
-    pub mcp_calls: Vec<serde_json::Value>,
-    pub tool_results: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskResultResponse {
-    pub task_id: String,
-    pub result_json_path: String,
-    pub result_markdown_path: String,
-    pub result: AnalysisResult,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
     Queued,
     Running,
-    WaitingForUser,
-    WaitingForApproval,
     Succeeded,
     Failed,
 }
@@ -338,24 +266,19 @@ impl TaskStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskPhase {
-    Extract,
-    SearchLogs,
     RunTool,
     ExecuteRemoteCommand,
-    PlanAnalysis,
-    GenerateResult,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
-    LogAnalysis,
     ToolRun,
     RemoteCommandRun,
 }
 
 pub fn default_task_kind() -> TaskKind {
-    TaskKind::LogAnalysis
+    TaskKind::ToolRun
 }
 
 #[derive(Debug, Serialize)]
@@ -397,10 +320,6 @@ pub struct TaskRecord {
     pub session_id: Option<String>,
     #[serde(default = "default_task_kind")]
     pub task_kind: TaskKind,
-    #[serde(default = "default_analysis_mode")]
-    pub analysis_mode: AnalysisMode,
-    #[serde(default = "default_analysis_language")]
-    pub analysis_language: AnalysisLanguage,
     pub source: TaskSource,
     pub upload_ids: Vec<String>,
     pub inputs: Vec<TaskInput>,
@@ -457,55 +376,11 @@ impl TaskRecord {
             ),
             task_kind: self.task_kind,
             session_id: self.session_id.clone(),
-            analysis_mode: self.analysis_mode,
-            analysis_language: self.analysis_language,
             status: self.status,
             phase: self.phase,
             created_at: self.created_at,
         }
     }
-}
-
-pub fn default_analysis_mode() -> AnalysisMode {
-    AnalysisMode::Diagnose
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AnalysisLanguage {
-    #[serde(rename = "zh-CN")]
-    ZhCn,
-    #[serde(rename = "en-US")]
-    EnUs,
-}
-
-impl AnalysisLanguage {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ZhCn => "zh-CN",
-            Self::EnUs => "en-US",
-        }
-    }
-
-    pub fn prompt_instruction(self) -> &'static str {
-        match self {
-            Self::ZhCn => {
-                "Use Simplified Chinese for all natural-language finalAnswer, pendingPrompt, pendingApproval reason/risk, and user-facing explanations. Keep precise technical terms in English when Chinese would reduce accuracy, including API names, file paths, evidence refs, JSON keys, tool names, protocol/status values, and product names."
-            }
-            Self::EnUs => {
-                "Use English for all natural-language finalAnswer, pendingPrompt, pendingApproval reason/risk, and user-facing explanations. Keep API names, file paths, evidence refs, JSON keys, tool names, protocol/status values, and product names unchanged."
-            }
-        }
-    }
-}
-
-impl Default for AnalysisLanguage {
-    fn default() -> Self {
-        default_analysis_language()
-    }
-}
-
-pub fn default_analysis_language() -> AnalysisLanguage {
-    AnalysisLanguage::ZhCn
 }
 
 pub fn default_task_question() -> String {
@@ -518,144 +393,6 @@ pub fn default_remote_executor_port() -> u16 {
 
 pub fn default_remote_executor_enabled() -> bool {
     true
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AnalysisSessionStatus {
-    Draft,
-    Ready,
-    Running,
-    WaitingForUser,
-    WaitingForApproval,
-    Succeeded,
-    Failed,
-}
-
-impl AnalysisSessionStatus {
-    pub fn from_task_status(status: TaskStatus) -> Self {
-        match status {
-            TaskStatus::Queued => Self::Ready,
-            TaskStatus::Running => Self::Running,
-            TaskStatus::WaitingForUser => Self::WaitingForUser,
-            TaskStatus::WaitingForApproval => Self::WaitingForApproval,
-            TaskStatus::Succeeded => Self::Succeeded,
-            TaskStatus::Failed => Self::Failed,
-        }
-    }
-
-    pub fn is_running_like(self) -> bool {
-        matches!(
-            self,
-            Self::Running | Self::WaitingForUser | Self::WaitingForApproval
-        )
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSessionRecord {
-    pub schema_version: u32,
-    pub session_id: String,
-    pub title: String,
-    pub question: String,
-    pub source_url: Option<String>,
-    pub instance_id: Option<String>,
-    pub node_id: Option<String>,
-    #[serde(default = "default_analysis_language")]
-    pub analysis_language: AnalysisLanguage,
-    #[serde(default)]
-    pub system_context_ids: Vec<String>,
-    #[serde(default)]
-    pub skill_ids: Vec<String>,
-    pub upload_ids: Vec<String>,
-    pub task_ids: Vec<String>,
-    pub active_task_id: Option<String>,
-    pub status: AnalysisSessionStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl AnalysisSessionRecord {
-    pub fn summary(&self) -> AnalysisSessionSummary {
-        AnalysisSessionSummary {
-            session_id: self.session_id.clone(),
-            title: self.title.clone(),
-            source_url: self.source_url.clone(),
-            instance_id: self.instance_id.clone(),
-            node_id: self.node_id.clone(),
-            analysis_language: self.analysis_language,
-            system_context_count: self.system_context_ids.len(),
-            skill_count: self.skill_ids.len(),
-            upload_count: self.upload_ids.len(),
-            task_count: self.task_ids.len(),
-            active_task_id: self.active_task_id.clone(),
-            status: self.status,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSessionSummary {
-    pub session_id: String,
-    pub title: String,
-    pub source_url: Option<String>,
-    pub instance_id: Option<String>,
-    pub node_id: Option<String>,
-    pub analysis_language: AnalysisLanguage,
-    pub system_context_count: usize,
-    pub skill_count: usize,
-    pub upload_count: usize,
-    pub task_count: usize,
-    pub active_task_id: Option<String>,
-    pub status: AnalysisSessionStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSessionListResponse {
-    pub sessions: Vec<AnalysisSessionSummary>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateAnalysisSessionRequest {
-    pub title: Option<String>,
-    pub question: Option<String>,
-    pub source_url: Option<String>,
-    pub instance_id: Option<String>,
-    pub node_id: Option<String>,
-    #[serde(default)]
-    pub analysis_language: Option<AnalysisLanguage>,
-    #[serde(default)]
-    pub system_context_ids: Vec<String>,
-    #[serde(default)]
-    pub skill_ids: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchAnalysisSessionRequest {
-    pub title: Option<String>,
-    pub question: Option<String>,
-    #[serde(default)]
-    pub source_url: Option<Option<String>>,
-    #[serde(default)]
-    pub instance_id: Option<Option<String>>,
-    #[serde(default)]
-    pub node_id: Option<Option<String>>,
-    #[serde(default)]
-    pub analysis_language: Option<AnalysisLanguage>,
-    #[serde(default)]
-    pub system_context_ids: Option<Vec<String>>,
-    #[serde(default)]
-    pub skill_ids: Option<Vec<String>>,
-    pub status: Option<AnalysisSessionStatus>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -966,49 +703,6 @@ pub struct SkillReferenceSummary {
     pub summary: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AttachSessionUploadsRequest {
-    pub upload_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSessionEvent {
-    pub schema_version: u32,
-    pub session_id: String,
-    pub event_type: String,
-    pub task_id: Option<String>,
-    pub upload_id: Option<String>,
-    pub message: String,
-    pub artifact_path: Option<String>,
-    pub details: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionTimelineEvent {
-    pub source: String,
-    pub event_type: String,
-    pub session_id: String,
-    pub task_id: Option<String>,
-    pub phase: Option<TaskPhase>,
-    pub action_id: Option<String>,
-    pub message: String,
-    pub evidence_refs: Vec<String>,
-    pub artifact_path: Option<String>,
-    pub details: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionTimelineResponse {
-    pub session_id: String,
-    pub events: Vec<SessionTimelineEvent>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
@@ -1133,110 +827,4 @@ pub struct GrepMatch {
     pub line: usize,
     pub keyword: String,
     pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RootCause {
-    pub cause: String,
-    pub evidence_refs: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Confidence {
-    Low,
-    Medium,
-    High,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisResult {
-    pub schema_version: u32,
-    pub summary: String,
-    pub symptoms: Vec<String>,
-    pub likely_root_causes: Vec<RootCause>,
-    pub next_checks: Vec<String>,
-    pub fix_suggestions: Vec<String>,
-    pub missing_information: Vec<String>,
-    pub confidence: Confidence,
-}
-
-#[derive(Debug)]
-pub struct ResultOutput {
-    pub result_json_path: PathBuf,
-    pub result_markdown_path: PathBuf,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn old_persisted_session_defaults_to_simplified_chinese() {
-        let session: AnalysisSessionRecord = serde_json::from_value(json!({
-            "schemaVersion": 1,
-            "sessionId": "sess_old",
-            "title": "Old session",
-            "question": "Why did it fail?",
-            "sourceUrl": null,
-            "instanceId": null,
-            "nodeId": null,
-            "systemContextIds": [],
-            "skillIds": [],
-            "uploadIds": [],
-            "taskIds": [],
-            "activeTaskId": null,
-            "status": "draft",
-            "createdAt": "2026-06-16T00:00:00Z",
-            "updatedAt": "2026-06-16T00:00:00Z"
-        }))
-        .unwrap();
-
-        assert_eq!(session.analysis_language, AnalysisLanguage::ZhCn);
-    }
-
-    #[test]
-    fn old_persisted_task_defaults_to_simplified_chinese() {
-        let task: TaskRecord = serde_json::from_value(json!({
-            "schemaVersion": 7,
-            "taskId": "task_old",
-            "alias": null,
-            "sessionId": "sess_old",
-            "taskKind": "log_analysis",
-            "analysisMode": "diagnose",
-            "source": "upload",
-            "uploadIds": [],
-            "inputs": [],
-            "sourceUrl": null,
-            "toolId": null,
-            "toolParams": null,
-            "toolResultPath": null,
-            "remoteExecutorId": null,
-            "remoteCommandId": null,
-            "remoteCommandParams": null,
-            "remoteResultPath": null,
-            "instanceId": null,
-            "clusterId": null,
-            "nodeId": null,
-            "question": "Why did it fail?",
-            "status": "QUEUED",
-            "phase": null,
-            "attempts": 0,
-            "error": null,
-            "manifestPath": null,
-            "grepResultsPath": null,
-            "metadataContextPath": null,
-            "systemContextPath": null,
-            "resultJsonPath": null,
-            "resultMarkdownPath": null,
-            "createdAt": "2026-06-16T00:00:00Z",
-            "updatedAt": "2026-06-16T00:00:00Z"
-        }))
-        .unwrap();
-
-        assert_eq!(task.analysis_language, AnalysisLanguage::ZhCn);
-    }
 }

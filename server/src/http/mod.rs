@@ -38,7 +38,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/uploads/:upload_id/complete",
             post(uploads::complete_upload),
         )
-        .route("/api/tasks/:task_id/case", post(cases::confirm_task_case))
         .route("/api/tools", get(tools::list_tools))
         .route("/api/tools/:tool_id", get(tools::get_tool))
         .route("/api/tools/:tool_id/runs", post(tools::create_tool_run))

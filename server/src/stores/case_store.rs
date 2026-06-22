@@ -4,10 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{
-    domain::models::{AnalysisResult, TaskRecord},
-    stores::memory_store::MemoryStore,
-};
+use crate::stores::memory_store::MemoryStore;
 
 #[derive(Debug, Clone)]
 pub struct CaseStore {
@@ -51,22 +48,6 @@ pub struct CaseSearchHit {
     #[serde(flatten)]
     pub record: CaseRecord,
     pub score: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewCase {
-    pub case_id: String,
-    pub task: TaskRecord,
-    pub result: AnalysisResult,
-    pub source_result_path: String,
-    pub product: Option<String>,
-    pub version: Option<String>,
-    pub environment: Option<String>,
-    pub title: Option<String>,
-    pub symptom: Option<String>,
-    pub root_cause: Option<String>,
-    pub solution: Option<String>,
-    pub evidence_refs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,53 +111,6 @@ impl CaseStore {
             legacy_dir: dir,
             memory,
         })
-    }
-
-    pub async fn create_or_get_for_task(&self, input: NewCase) -> anyhow::Result<CaseRecord> {
-        if let Some(existing) = self.memory.find_task_case(&input.task.task_id)? {
-            return Ok(existing);
-        }
-        let now = Utc::now();
-        let mut record = CaseRecord {
-            schema_version: 2,
-            case_id: input.case_id,
-            source_type: CaseSourceType::Task,
-            task_id: Some(input.task.task_id.clone()),
-            product: input.product,
-            version: input.version,
-            environment: input.environment,
-            instance_id: input.task.instance_id.clone(),
-            node_id: input.task.node_id.clone(),
-            title: input
-                .title
-                .unwrap_or_else(|| default_title(&input.task, &input.result)),
-            symptom: input
-                .symptom
-                .unwrap_or_else(|| join_or_summary(&input.result.symptoms, &input.result.summary)),
-            root_cause: input.root_cause.unwrap_or_else(|| {
-                input
-                    .result
-                    .likely_root_causes
-                    .first()
-                    .map(|cause| cause.cause.clone())
-                    .unwrap_or_else(|| "当前证据不足以确认根因".to_string())
-            }),
-            solution: input.solution.unwrap_or_else(|| {
-                join_or_summary(&input.result.fix_suggestions, &input.result.summary)
-            }),
-            evidence_refs: input
-                .evidence_refs
-                .unwrap_or_else(|| result_evidence_refs(&input.result)),
-            source_result_path: Some(input.source_result_path),
-            enabled: true,
-            created_at: now,
-            updated_at: now,
-        };
-        normalize_case_record(&mut record);
-        validate_case(&record)?;
-        self.memory.upsert_case(&record)?;
-        self.persist_legacy(&record)?;
-        Ok(record)
     }
 
     pub async fn create_manual(&self, input: ManualCase) -> anyhow::Result<CaseRecord> {
@@ -355,35 +289,6 @@ fn normalize_case_record(record: &mut CaseRecord) {
         .collect();
 }
 
-fn default_title(task: &TaskRecord, result: &AnalysisResult) -> String {
-    let summary = result.summary.trim();
-    if !summary.is_empty() {
-        truncate(summary.to_string(), 120)
-    } else {
-        truncate(task.question.clone(), 120)
-    }
-}
-
-fn join_or_summary(items: &[String], summary: &str) -> String {
-    if items.is_empty() {
-        summary.to_string()
-    } else {
-        items.join("\n")
-    }
-}
-
-fn result_evidence_refs(result: &AnalysisResult) -> Vec<String> {
-    let mut refs = Vec::new();
-    for cause in &result.likely_root_causes {
-        for reference in &cause.evidence_refs {
-            if !refs.iter().any(|value| value == reference) {
-                refs.push(reference.clone());
-            }
-        }
-    }
-    refs
-}
-
 pub(crate) fn score_case(record: &CaseRecord, query_tokens: &[String]) -> f64 {
     let text = searchable_text(record);
     let mut hits = 0usize;
@@ -442,84 +347,30 @@ fn truncate(value: String, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::{Confidence, TaskSource, TaskStatus};
-
     #[tokio::test]
     async fn creates_searches_and_updates_case() {
         let dir = std::env::temp_dir().join(format!("logagent-case-store-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = CaseStore::load(dir.clone()).unwrap();
-        let now = Utc::now();
-        let task = TaskRecord {
-            schema_version: 4,
-            task_id: "task_case_test".to_string(),
-            alias: None,
-            session_id: Some("sess_test".to_string()),
-            task_kind: crate::domain::models::TaskKind::LogAnalysis,
-            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
-            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
-            source: TaskSource::Upload,
-            upload_ids: vec!["upl_1".to_string()],
-            inputs: vec![],
-            source_url: None,
-            tool_id: None,
-            tool_params: serde_json::Value::Null,
-            tool_result_path: None,
-            remote_executor_id: None,
-            remote_command_id: None,
-            remote_command_params: serde_json::Value::Null,
-            remote_result_path: None,
-            instance_id: Some("i-1".to_string()),
-            cluster_id: Some("c-1".to_string()),
-            node_id: None,
-            question: "slow query".to_string(),
-            status: TaskStatus::Succeeded,
-            phase: None,
-            attempts: 1,
-            error: None,
-            manifest_path: None,
-            grep_results_path: None,
-            metadata_context_path: None,
-            system_context_path: None,
-            result_json_path: Some("result.json".to_string()),
-            result_markdown_path: Some("result.md".to_string()),
-            created_at: now,
-            updated_at: now,
-        };
-        let result = AnalysisResult {
-            schema_version: 1,
-            summary: "slow query without time filter".to_string(),
-            symptoms: vec!["query latency increased".to_string()],
-            likely_root_causes: vec![crate::domain::models::RootCause {
-                cause: "missing time filter".to_string(),
-                evidence_refs: vec!["tool_results/act/result.json#findings/0".to_string()],
-            }],
-            next_checks: vec![],
-            fix_suggestions: vec!["add time range".to_string()],
-            missing_information: vec![],
-            confidence: Confidence::High,
-        };
         let created = store
-            .create_or_get_for_task(NewCase {
+            .create_manual(ManualCase {
                 case_id: "case_test".to_string(),
-                task,
-                result,
-                source_result_path: "result.json".to_string(),
                 product: Some("opengemini".to_string()),
                 version: Some("1.3.0".to_string()),
                 environment: None,
-                title: None,
-                symptom: None,
-                root_cause: None,
-                solution: None,
-                evidence_refs: None,
+                instance_id: None,
+                node_id: None,
+                title: "slow query".to_string(),
+                symptom: "query latency increased".to_string(),
+                root_cause: "missing time filter".to_string(),
+                solution: "add time range".to_string(),
+                evidence_refs: vec!["tool_results/act/result.json#findings/0".to_string()],
+                enabled: true,
             })
             .await
             .unwrap();
         assert_eq!(created.schema_version, 2);
-        assert_eq!(created.source_type, CaseSourceType::Task);
-        assert_eq!(created.task_id.as_deref(), Some("task_case_test"));
-        assert_eq!(created.source_result_path.as_deref(), Some("result.json"));
+        assert_eq!(created.source_type, CaseSourceType::Manual);
         assert_eq!(created.root_cause, "missing time filter");
         let hits = store.search(Some("time filter"), 5, false).await;
         assert_eq!(hits.len(), 1);

@@ -4,19 +4,12 @@ use std::{fs, path::Path, sync::Arc};
 
 use tokio::task;
 
-use crate::services::llm_gateway::LlmGateway;
 use crate::{
     domain::models::{
-        AnalysisResult, Confidence, GrepResults, LogGroupSummary, Manifest, ManifestFile,
-        ManifestUpload, ResultOutput, SystemContextBundle, TaskInput, TaskRecord, ToolInputEntry,
-        ToolInputIndex, UploadRecord,
+        GrepResults, LogGroupSummary, Manifest, ManifestFile, ManifestUpload, TaskInput,
+        TaskRecord, ToolInputEntry, ToolInputIndex, UploadRecord,
     },
-    services::{
-        log_analyzer::{parse_log_package_filename, LogAnalyzer},
-        metadata::TaskMetadataContext,
-        tool_runner::ToolRunRecord,
-    },
-    stores::{analysis_state, case_store::CaseSearchHit},
+    services::log_analyzer::{parse_log_package_filename, LogAnalyzer},
     support::{
         config::{AppConfig, LogAnalyzerSettings},
         error::AppError,
@@ -54,96 +47,6 @@ pub async fn prepare_raw_snapshot(
         });
     }
     Ok(inputs)
-}
-
-pub async fn write_metadata_context(
-    workspace: &Path,
-    context: &TaskMetadataContext,
-) -> Result<std::path::PathBuf, AppError> {
-    tokio::fs::create_dir_all(workspace)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
-    let path = workspace.join("metadata_context.json");
-    let temp = workspace.join(".metadata_context.json.tmp");
-    let encoded = serde_json::to_vec_pretty(context)
-        .map_err(|err| AppError::internal(format!("failed to encode metadata context: {err}")))?;
-    tokio::fs::write(&temp, encoded)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write metadata context: {err}")))?;
-    tokio::fs::rename(&temp, &path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to persist metadata context: {err}")))?;
-    Ok(path)
-}
-
-pub async fn write_case_context(
-    workspace: &Path,
-    query: &str,
-    cases: &[CaseSearchHit],
-) -> Result<std::path::PathBuf, AppError> {
-    tokio::fs::create_dir_all(workspace)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
-    let path = workspace.join("case_context.json");
-    let temp = workspace.join(".case_context.json.tmp");
-    let context = serde_json::json!({
-        "schemaVersion": 1,
-        "query": query,
-        "cases": cases,
-    });
-    let encoded = serde_json::to_vec_pretty(&context)
-        .map_err(|err| AppError::internal(format!("failed to encode case context: {err}")))?;
-    tokio::fs::write(&temp, encoded)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write case context: {err}")))?;
-    tokio::fs::rename(&temp, &path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to persist case context: {err}")))?;
-    Ok(path)
-}
-
-pub async fn write_system_context(
-    workspace: &Path,
-    context: &SystemContextBundle,
-) -> Result<std::path::PathBuf, AppError> {
-    tokio::fs::create_dir_all(workspace)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
-    let path = workspace.join("system_context.json");
-    let temp = workspace.join(".system_context.json.tmp");
-    let encoded = serde_json::to_vec_pretty(context)
-        .map_err(|err| AppError::internal(format!("failed to encode system context: {err}")))?;
-    tokio::fs::write(&temp, encoded)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write system context: {err}")))?;
-    tokio::fs::rename(&temp, &path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to persist system context: {err}")))?;
-    Ok(path)
-}
-
-pub async fn write_session_text_input(
-    workspace: &Path,
-    question: &str,
-) -> Result<std::path::PathBuf, AppError> {
-    tokio::fs::create_dir_all(workspace)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to create workspace: {err}")))?;
-    let path = workspace.join("session_text_input.json");
-    let temp = workspace.join(".session_text_input.json.tmp");
-    let context = serde_json::json!({
-        "schemaVersion": 1,
-        "question": question,
-    });
-    let encoded = serde_json::to_vec_pretty(&context)
-        .map_err(|err| AppError::internal(format!("failed to encode session text input: {err}")))?;
-    tokio::fs::write(&temp, encoded)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write session text input: {err}")))?;
-    tokio::fs::rename(&temp, &path).await.map_err(|err| {
-        AppError::internal(format!("failed to persist session text input: {err}"))
-    })?;
-    Ok(path)
 }
 
 pub async fn prepare_pipeline_run(workspace: &Path) -> Result<(), AppError> {
@@ -369,203 +272,6 @@ pub async fn search_task_with_settings(
     Ok(())
 }
 
-pub async fn generate_task_result(
-    config: Arc<AppConfig>,
-    gateway: LlmGateway,
-    task: TaskRecord,
-) -> Result<ResultOutput, AppError> {
-    let workspace = config.storage.workspace_dir(&task.task_id);
-    let manifest: Manifest = read_json(&workspace.join("manifest.json")).await?;
-    let grep: GrepResults = read_json(&workspace.join("grep_results.json")).await?;
-    let tool_results = read_tool_results(&workspace).await?;
-    let case_context = read_optional_json(&workspace.join("case_context.json")).await?;
-    let system_context = match task.system_context_path.as_deref() {
-        Some(path) => {
-            let expected = workspace.join("system_context.json");
-            if Path::new(path) != expected {
-                return Err(AppError::internal(
-                    "task contains invalid systemContextPath",
-                ));
-            }
-            Some(read_json(&expected).await?)
-        }
-        None => read_optional_json(&workspace.join("system_context.json")).await?,
-    };
-    let metadata_context = match task.metadata_context_path.as_deref() {
-        Some(path) => {
-            let expected = workspace.join("metadata_context.json");
-            if Path::new(path) != expected {
-                return Err(AppError::internal(
-                    "task contains invalid metadataContextPath",
-                ));
-            }
-            Some(read_json(&expected).await?)
-        }
-        None => None,
-    };
-    let result = gateway
-        .generate_result(
-            &task.question,
-            &manifest,
-            &grep,
-            metadata_context.as_ref(),
-            system_context.as_ref(),
-            case_context.as_ref(),
-            &tool_results,
-        )
-        .await
-        .map_err(|err| AppError::internal(format!("LLM result generation failed: {err}")))?;
-    persist_task_result(&workspace, result).await
-}
-
-async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, AppError> {
-    let raw = tokio::fs::read_to_string(path)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to read {}: {err}", path.display())))?;
-    serde_json::from_str(&raw)
-        .map_err(|err| AppError::internal(format!("failed to parse {}: {err}", path.display())))
-}
-
-pub async fn read_optional_json<T: serde::de::DeserializeOwned>(
-    path: &Path,
-) -> Result<Option<T>, AppError> {
-    match tokio::fs::read_to_string(path).await {
-        Ok(raw) => serde_json::from_str(&raw).map(Some).map_err(|err| {
-            AppError::internal(format!("failed to parse {}: {err}", path.display()))
-        }),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(AppError::internal(format!(
-            "failed to read {}: {err}",
-            path.display()
-        ))),
-    }
-}
-
-pub async fn persist_task_result(
-    workspace: &Path,
-    result: AnalysisResult,
-) -> Result<ResultOutput, AppError> {
-    persist_task_result_inner(workspace, result, true).await
-}
-
-pub async fn persist_final_answer_decision_result(
-    workspace: &Path,
-    result: AnalysisResult,
-) -> Result<ResultOutput, AppError> {
-    persist_task_result_inner(workspace, result, false).await
-}
-
-async fn persist_task_result_inner(
-    workspace: &Path,
-    result: AnalysisResult,
-    increment_llm_calls: bool,
-) -> Result<ResultOutput, AppError> {
-    let result_json_path = workspace.join("result.json");
-    let result_markdown_path = workspace.join("result.md");
-    let json_path = result_json_path.clone();
-    let markdown_path = result_markdown_path.clone();
-    let result_for_state = result.clone();
-    task::spawn_blocking(move || {
-        write_json(&json_path, &result)?;
-        fs::write(&markdown_path, render_result_markdown(&result))?;
-        anyhow::Ok(())
-    })
-    .await
-    .map_err(|err| AppError::internal(format!("result writer panicked: {err}")))?
-    .map_err(|err| AppError::internal(format!("failed to persist LLM result: {err}")))?;
-    if increment_llm_calls {
-        analysis_state::record_final_result(workspace, &result_json_path, &result_for_state)
-            .map_err(|err| {
-                AppError::internal(format!("failed to persist analysis state: {err}"))
-            })?;
-    } else {
-        analysis_state::record_final_answer_decision_result(
-            workspace,
-            &result_json_path,
-            &result_for_state,
-        )
-        .map_err(|err| AppError::internal(format!("failed to persist analysis state: {err}")))?;
-    }
-    Ok(ResultOutput {
-        result_json_path,
-        result_markdown_path,
-    })
-}
-
-pub async fn read_tool_results(workspace: &Path) -> Result<Vec<ToolRunRecord>, AppError> {
-    let root = workspace.join("tool_results");
-    let mut entries = match tokio::fs::read_dir(&root).await {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(AppError::internal(format!(
-                "failed to read tool results: {err}"
-            )))
-        }
-    };
-    let mut paths = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|err| AppError::internal(format!("failed to list tool results: {err}")))?
-    {
-        let path = entry.path().join("result.json");
-        if path.exists() {
-            paths.push(path);
-        }
-    }
-    paths.sort();
-    let mut results = Vec::with_capacity(paths.len());
-    for path in paths {
-        results.push(read_json(&path).await?);
-    }
-    Ok(results)
-}
-
-fn render_result_markdown(result: &AnalysisResult) -> String {
-    let confidence = match result.confidence {
-        Confidence::Low => "low",
-        Confidence::Medium => "medium",
-        Confidence::High => "high",
-    };
-    let mut output = format!(
-        "# Log Analysis Result\n\n## Summary\n\n{}\n\n**Confidence:** `{confidence}`\n",
-        result.summary
-    );
-    append_list(&mut output, "Symptoms", &result.symptoms);
-    output.push_str("\n## Likely Root Causes\n");
-    if result.likely_root_causes.is_empty() {
-        output.push_str("\n- None identified from current evidence.\n");
-    } else {
-        for cause in &result.likely_root_causes {
-            output.push_str(&format!("\n- {}\n", cause.cause));
-            for evidence_ref in &cause.evidence_refs {
-                output.push_str(&format!("  - Evidence: `{evidence_ref}`\n"));
-            }
-        }
-    }
-    append_list(&mut output, "Next Checks", &result.next_checks);
-    append_list(&mut output, "Fix Suggestions", &result.fix_suggestions);
-    append_list(
-        &mut output,
-        "Missing Information",
-        &result.missing_information,
-    );
-    output
-}
-
-fn append_list(output: &mut String, title: &str, items: &[String]) {
-    output.push_str(&format!("\n## {title}\n"));
-    if items.is_empty() {
-        output.push_str("\n- None.\n");
-    } else {
-        for item in items {
-            output.push_str(&format!("\n- {item}"));
-        }
-        output.push('\n');
-    }
-}
-
 fn safe_raw_path(raw_path: &str) -> anyhow::Result<&Path> {
     let path = Path::new(raw_path);
     let safe = !path.is_absolute()
@@ -631,6 +337,7 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> anyhow::Result<()>
 mod tests {
     use super::*;
     use chrono::Utc;
+
     use flate2::{write::GzEncoder, Compression};
 
     use std::{
@@ -640,11 +347,8 @@ mod tests {
     };
 
     use crate::{
-        domain::models::{TaskSource, TaskStatus, UploadStatus},
-        support::config::{
-            AnalysisSettings, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
-            LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
-        },
+        domain::models::{TaskSource, TaskStatus},
+        support::config::{AuthSettings, ServerSettings, StorageSettings, ToolsSettings},
     };
 
     #[tokio::test]
@@ -830,9 +534,7 @@ mod tests {
             task_id: "task_batch".to_string(),
             alias: None,
             session_id: Some("sess_test".to_string()),
-            task_kind: crate::domain::models::TaskKind::LogAnalysis,
-            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
-            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
+            task_kind: crate::domain::models::TaskKind::ToolRun,
             source: TaskSource::Upload,
             upload_ids: inputs.iter().map(|input| input.upload_id.clone()).collect(),
             inputs,
@@ -887,6 +589,7 @@ mod tests {
                     bind: "127.0.0.1:0".to_string(),
                     public_base_url: "http://127.0.0.1:0".to_string(),
                     max_concurrent_tasks: 2,
+                    max_input_chars: 60_000,
                 },
                 auth: AuthSettings { api_keys: vec![] },
                 storage: StorageSettings {
@@ -900,7 +603,7 @@ mod tests {
                     max_skill_chars: 4000,
                     max_reference_chars: 20_000,
                 },
-                log_analyzer: LogAnalyzerSettings {
+                log_analyzer: crate::support::config::LogAnalyzerSettings {
                     keywords: vec!["error".to_string(), "timeout".to_string()],
                     max_matches: 20,
                 },
@@ -908,21 +611,7 @@ mod tests {
                 fetch: crate::support::config::FetchSettings::default(),
                 huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
                 remote_execution: crate::support::config::RemoteExecutionSettings::default(),
-                llm: LlmSettings {
-                    provider: LlmProvider::Stub,
-                    base_url: None,
-                    api_key: None,
-                    binary_path: None,
-                    binary_max_output_bytes: 1024 * 1024,
-                    model: "stub".to_string(),
-                    request_timeout_seconds: 1,
-                    max_input_chars: 60_000,
-                    max_output_tokens: 100,
-                },
-                claude_code: crate::support::config::ClaudeCodeSettings::default(),
                 mcp: crate::support::config::McpSettings::default(),
-                analysis: test_analysis_settings(),
-                embedding: test_embedding_settings(),
             })
         }
 
@@ -996,7 +685,7 @@ mod tests {
                 filename: filename.to_string(),
                 size,
                 expected_size: Some(size),
-                status: UploadStatus::Complete,
+                status: crate::domain::models::UploadStatus::Complete,
                 path: self.uploads.join(filename),
                 created_at: now,
                 updated_at: now,
@@ -1007,25 +696,6 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
-        }
-    }
-
-    fn test_analysis_settings() -> AnalysisSettings {
-        AnalysisSettings {
-            max_rounds: 4,
-            max_llm_calls: 4,
-            max_actions: 6,
-            max_repeated_action_fingerprints: 1,
-        }
-    }
-
-    fn test_embedding_settings() -> EmbeddingSettings {
-        EmbeddingSettings {
-            enabled: false,
-            provider: "openai_compatible".to_string(),
-            model: "text-embedding-3-small".to_string(),
-            api_key_env: None,
-            store: "sqlite".to_string(),
         }
     }
 }

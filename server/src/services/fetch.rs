@@ -17,12 +17,11 @@ use serde_json::{json, Value};
 use crate::{
     app::AppState,
     domain::models::TaskRecord,
-    services::agent_contracts::write_json_atomic,
     stores::fetch_store::FetchStore,
     support::{
         config::{AppConfig, FetchAllowedHost},
         error::AppError,
-        fs_utils::relative_string,
+        fs_utils::{relative_string, write_json_atomic},
     },
 };
 

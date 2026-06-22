@@ -3,16 +3,11 @@ use tracing::{info, warn};
 
 use crate::{
     pipeline::executor::TaskExecutor,
-    services::{
-        agent_backend::AgentBackendRegistry, domain_adapters::DomainAdapterRegistry,
-        llm_gateway::LlmGateway, metadata::MetadataStore, skill_registry::SkillRegistry,
-        tool_runner::ToolRunner,
-    },
+    services::{metadata::MetadataStore, skill_registry::SkillRegistry, tool_runner::ToolRunner},
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
         executor_store::RemoteExecutorStore, fetch_store::FetchStore,
-        session_store::AnalysisSessionStore, system_context_store::SystemContextStore,
-        task_store::TaskStore, upload_store::UploadStore,
+        system_context_store::SystemContextStore, task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -28,12 +23,8 @@ pub struct AppState {
     pub system_context: SystemContextStore,
     pub fetch: FetchStore,
     pub skills: SkillRegistry,
-    pub sessions: AnalysisSessionStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
-    pub llm: LlmGateway,
-    pub agent_backends: AgentBackendRegistry,
-    pub domain_adapters: DomainAdapterRegistry,
     pub tool_runner: ToolRunner,
 }
 
@@ -55,10 +46,6 @@ impl AppState {
         let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
         let fetch = FetchStore::load(config.storage.fetch_dir(), &config.fetch)?;
         let skills = SkillRegistry::load(config.skills.clone())?;
-        let sessions = AnalysisSessionStore::load(
-            config.storage.sessions_dir(),
-            config.storage.session_workspaces_dir(),
-        )?;
         let state = Arc::new(Self {
             metadata: MetadataStore::new(config.clone()),
             cases,
@@ -67,11 +54,7 @@ impl AppState {
             system_context,
             fetch,
             skills,
-            sessions,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
-            llm: LlmGateway::new(config.llm.clone())?,
-            agent_backends: AgentBackendRegistry::new(config.claude_code.clone()),
-            domain_adapters: DomainAdapterRegistry::builtin(),
             tool_runner: ToolRunner::new(config.tools.clone()),
             config,
             uploads,
@@ -108,7 +91,6 @@ impl AppState {
                 attempts = task.attempts,
                 "enqueueing recovered task"
             );
-            self.sessions.sync_task_status(&task).await?;
             self.executor.enqueue(self.clone(), task.task_id);
         }
         Ok(())

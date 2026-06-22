@@ -1,6 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::anyhow;
+use serde::Serialize;
 
 use crate::support::error::AppError;
 
@@ -32,4 +33,18 @@ pub fn relative_string(root: &Path, path: &Path) -> anyhow::Result<String> {
         .strip_prefix(root)?
         .to_string_lossy()
         .replace('\\', "/"))
+}
+
+/// Atomically write `value` as pretty JSON to `path` via a temp file + rename.
+pub async fn write_json_atomic<T: Serialize>(path: PathBuf, value: &T) -> Result<(), AppError> {
+    let tmp = path.with_extension("json.tmp");
+    let encoded = serde_json::to_vec_pretty(value)
+        .map_err(|err| AppError::internal(format!("failed to encode json: {err}")))?;
+    tokio::fs::write(&tmp, encoded)
+        .await
+        .map_err(|err| AppError::internal(format!("failed to write {}: {err}", path.display())))?;
+    tokio::fs::rename(&tmp, &path).await.map_err(|err| {
+        AppError::internal(format!("failed to persist {}: {err}", path.display()))
+    })?;
+    Ok(())
 }

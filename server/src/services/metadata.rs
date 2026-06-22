@@ -2829,8 +2829,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::support::config::{
-        AnalysisSettings, AuthSettings, EmbeddingSettings, LlmProvider, LlmSettings,
-        LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
+        AuthSettings, LogAnalyzerSettings, ServerSettings, StorageSettings, ToolsSettings,
     };
 
     #[tokio::test]
@@ -3903,6 +3902,7 @@ nodes:
                     bind: "127.0.0.1:0".to_string(),
                     public_base_url: "http://127.0.0.1:0".to_string(),
                     max_concurrent_tasks: 2,
+                    max_input_chars: 60_000,
                 },
                 auth: AuthSettings { api_keys: vec![] },
                 storage: StorageSettings {
@@ -3924,41 +3924,8 @@ nodes:
                 fetch: crate::support::config::FetchSettings::default(),
                 huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
                 remote_execution: crate::support::config::RemoteExecutionSettings::default(),
-                llm: LlmSettings {
-                    provider: LlmProvider::Stub,
-                    base_url: None,
-                    api_key: None,
-                    binary_path: None,
-                    binary_max_output_bytes: 1024 * 1024,
-                    model: "stub".to_string(),
-                    request_timeout_seconds: 1,
-                    max_input_chars: 60_000,
-                    max_output_tokens: 100,
-                },
-                claude_code: crate::support::config::ClaudeCodeSettings::default(),
                 mcp: crate::support::config::McpSettings::default(),
-                analysis: test_analysis_settings(),
-                embedding: test_embedding_settings(),
             })
-        }
-    }
-
-    fn test_analysis_settings() -> AnalysisSettings {
-        AnalysisSettings {
-            max_rounds: 4,
-            max_llm_calls: 4,
-            max_actions: 6,
-            max_repeated_action_fingerprints: 1,
-        }
-    }
-
-    fn test_embedding_settings() -> EmbeddingSettings {
-        EmbeddingSettings {
-            enabled: false,
-            provider: "openai_compatible".to_string(),
-            model: "text-embedding-3-small".to_string(),
-            api_key_env: None,
-            store: "sqlite".to_string(),
         }
     }
 

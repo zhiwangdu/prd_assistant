@@ -22,14 +22,13 @@ use tracing::{info, warn};
 use crate::{
     app::AppState,
     domain::models::{TaskInput, TaskRecord},
-    services::agent_contracts::write_json_atomic,
     support::{
         config::{
             validate_huawei_object_key, HuaweiGaussDbSettings, HuaweiObsSettings,
             HuaweiPackageSyncSettings,
         },
         error::AppError,
-        fs_utils::relative_string,
+        fs_utils::{relative_string, write_json_atomic},
     },
 };
 

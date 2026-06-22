@@ -90,12 +90,11 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        domain::models::{AnalysisLanguage, TaskKind, TaskRecord, TaskSource, TaskStatus},
+        domain::models::{TaskKind, TaskRecord, TaskSource, TaskStatus},
         http,
         support::config::{
-            AnalysisMode, AnalysisSettings, AppConfig, AuthSettings, ClaudeCodeSettings,
-            EmbeddingSettings, LlmProvider, LlmSettings, LogAnalyzerSettings, McpSettings,
-            ServerSettings, SkillSettings, StorageSettings, ToolsSettings,
+            AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
+            SkillSettings, StorageSettings, ToolsSettings,
         },
     };
 
@@ -166,8 +165,6 @@ mod tests {
             alias: None,
             session_id: None,
             task_kind: TaskKind::ToolRun,
-            analysis_mode: AnalysisMode::Diagnose,
-            analysis_language: AnalysisLanguage::ZhCn,
             source: TaskSource::Upload,
             upload_ids: Vec::new(),
             inputs: Vec::new(),
@@ -210,6 +207,7 @@ mod tests {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),
                 max_concurrent_tasks: 2,
+                max_input_chars: 60_000,
             },
             auth: AuthSettings {
                 api_keys: vec!["test-key".to_string()],
@@ -235,32 +233,7 @@ mod tests {
             fetch: crate::support::config::FetchSettings::default(),
             huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
-            llm: LlmSettings {
-                provider: LlmProvider::Stub,
-                base_url: None,
-                api_key: None,
-                binary_path: None,
-                binary_max_output_bytes: 1024 * 1024,
-                model: "stub".to_string(),
-                request_timeout_seconds: 1,
-                max_input_chars: 60_000,
-                max_output_tokens: 100,
-            },
-            claude_code: ClaudeCodeSettings::default(),
             mcp: McpSettings::default(),
-            analysis: AnalysisSettings {
-                max_rounds: 4,
-                max_llm_calls: 4,
-                max_actions: 6,
-                max_repeated_action_fingerprints: 1,
-            },
-            embedding: EmbeddingSettings {
-                enabled: false,
-                provider: "openai_compatible".to_string(),
-                model: "text-embedding-3-small".to_string(),
-                api_key_env: None,
-                store: "sqlite".to_string(),
-            },
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)

@@ -77,7 +77,7 @@ pub async fn preview_skills(
     let explicit_skill_ids = normalize_skill_ids(req.skill_ids)?;
     let mut resources = state.skills.resolve_items(ResolveSkillsInput {
         explicit_skill_ids: &explicit_skill_ids,
-        task_kind: TaskKind::LogAnalysis,
+        task_kind: TaskKind::ToolRun,
         product,
         version,
         environment,

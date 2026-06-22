@@ -140,7 +140,7 @@ pub async fn preview(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SystemContextPreviewRequest>,
 ) -> Result<Json<SystemContextPreviewResponse>, AppError> {
-    let task_kind = req.task_kind.unwrap_or(TaskKind::LogAnalysis);
+    let task_kind = req.task_kind.unwrap_or(TaskKind::ToolRun);
     let mut resources = state
         .system_context
         .resolve_items(

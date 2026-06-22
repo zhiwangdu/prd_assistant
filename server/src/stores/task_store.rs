@@ -97,54 +97,6 @@ impl TaskStore {
         .await
     }
 
-    pub async fn advance_phase(
-        &self,
-        task_id: &str,
-        expected: TaskPhase,
-        next: TaskPhase,
-    ) -> anyhow::Result<TaskRecord> {
-        self.update(task_id, |task| {
-            if task.status != TaskStatus::Running {
-                anyhow::bail!("task {task_id} is not running");
-            }
-            if task.phase != Some(expected) {
-                anyhow::bail!(
-                    "task {task_id} phase changed while executing: expected {expected:?}, found {:?}",
-                    task.phase
-                );
-            }
-            task.phase = Some(next);
-            Ok(())
-        })
-        .await
-    }
-
-    pub async fn succeed(
-        &self,
-        task_id: &str,
-        expected: TaskPhase,
-        manifest_path: String,
-        grep_results_path: String,
-        result_json_path: String,
-        result_markdown_path: String,
-        alias: Option<String>,
-    ) -> anyhow::Result<TaskRecord> {
-        self.update(task_id, |task| {
-            ensure_running(task)?;
-            ensure_phase(task, expected)?;
-            task.status = TaskStatus::Succeeded;
-            task.phase = None;
-            task.error = None;
-            task.manifest_path = Some(manifest_path);
-            task.grep_results_path = Some(grep_results_path);
-            task.result_json_path = Some(result_json_path);
-            task.result_markdown_path = Some(result_markdown_path);
-            task.alias = alias;
-            Ok(())
-        })
-        .await
-    }
-
     pub async fn succeed_tool_run(
         &self,
         task_id: &str,
@@ -200,46 +152,6 @@ impl TaskStore {
         .await
     }
 
-    pub async fn wait_for_user(&self, task_id: &str) -> anyhow::Result<TaskRecord> {
-        self.wait(task_id, TaskStatus::WaitingForUser).await
-    }
-
-    pub async fn wait_for_approval(&self, task_id: &str) -> anyhow::Result<TaskRecord> {
-        self.wait(task_id, TaskStatus::WaitingForApproval).await
-    }
-
-    async fn wait(&self, task_id: &str, status: TaskStatus) -> anyhow::Result<TaskRecord> {
-        self.update(task_id, |task| {
-            ensure_running(task)?;
-            ensure_phase(task, TaskPhase::PlanAnalysis)?;
-            task.status = status;
-            task.phase = Some(TaskPhase::PlanAnalysis);
-            task.error = None;
-            Ok(())
-        })
-        .await
-    }
-
-    pub async fn resume_waiting(
-        &self,
-        task_id: &str,
-        expected: TaskStatus,
-    ) -> anyhow::Result<TaskRecord> {
-        self.update(task_id, |task| {
-            if task.status != expected {
-                anyhow::bail!(
-                    "task {task_id} is not in expected waiting status: expected {expected:?}, found {:?}",
-                    task.status
-                );
-            }
-            task.status = TaskStatus::Queued;
-            task.phase = Some(TaskPhase::PlanAnalysis);
-            task.error = None;
-            Ok(())
-        })
-        .await
-    }
-
     pub async fn recover_incomplete(&self) -> anyhow::Result<Vec<TaskRecord>> {
         let mut tasks = self.inner.write().await;
         let mut recovered = Vec::new();
@@ -289,12 +201,6 @@ fn ensure_phase(task: &TaskRecord, expected: TaskPhase) -> anyhow::Result<()> {
 }
 
 fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
-    if task.task_kind == TaskKind::LogAnalysis {
-        match task.session_id.as_deref() {
-            Some(session_id) if session_id.starts_with("sess_") => {}
-            _ => anyhow::bail!("log analysis task {} is missing sessionId", task.task_id),
-        }
-    }
     if task.task_kind == TaskKind::ToolRun && task.tool_id.as_deref().unwrap_or("").is_empty() {
         anyhow::bail!("tool run task {} is missing toolId", task.task_id);
     }
@@ -333,16 +239,6 @@ fn validate_loaded_task(task: &TaskRecord) -> anyhow::Result<()> {
     if task.status == TaskStatus::Running && task.phase.is_none() {
         anyhow::bail!("RUNNING task {} is missing phase", task.task_id);
     }
-    if matches!(
-        task.status,
-        TaskStatus::WaitingForUser | TaskStatus::WaitingForApproval
-    ) && task.phase != Some(TaskPhase::PlanAnalysis)
-    {
-        anyhow::bail!(
-            "waiting task {} must retain PLAN_ANALYSIS phase",
-            task.task_id
-        );
-    }
     if task.status == TaskStatus::Succeeded && task.phase.is_some() {
         anyhow::bail!("SUCCEEDED task {} must not retain phase", task.task_id);
     }
@@ -360,9 +256,7 @@ mod tests {
             task_id: id.to_string(),
             alias: None,
             session_id: Some("sess_test".to_string()),
-            task_kind: crate::domain::models::TaskKind::LogAnalysis,
-            analysis_mode: crate::support::config::AnalysisMode::Diagnose,
-            analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
+            task_kind: crate::domain::models::TaskKind::ToolRun,
             source: TaskSource::Upload,
             upload_ids: vec!["upl_1".to_string()],
             inputs: vec![TaskInput {
@@ -372,7 +266,7 @@ mod tests {
                 raw_path: "raw/upl_1/sample.log".to_string(),
             }],
             source_url: None,
-            tool_id: None,
+            tool_id: Some("tool_test".to_string()),
             tool_params: serde_json::Value::Null,
             tool_result_path: None,
             remote_executor_id: None,
@@ -408,11 +302,7 @@ mod tests {
             .unwrap();
         store.create(task("task_new", Utc::now())).await.unwrap();
         store
-            .start_attempt("task_old", TaskPhase::Extract)
-            .await
-            .unwrap();
-        store
-            .advance_phase("task_old", TaskPhase::Extract, TaskPhase::SearchLogs)
+            .start_attempt("task_old", TaskPhase::RunTool)
             .await
             .unwrap();
 
@@ -428,77 +318,60 @@ mod tests {
         );
         let task_old = reloaded.get("task_old").await.unwrap();
         assert_eq!(task_old.attempts, 1);
-        assert_eq!(task_old.phase, Some(TaskPhase::SearchLogs));
+        assert_eq!(task_old.phase, Some(TaskPhase::RunTool));
         let resumed = reloaded
-            .start_attempt("task_old", TaskPhase::Extract)
+            .start_attempt("task_old", TaskPhase::RunTool)
             .await
             .unwrap();
         assert_eq!(resumed.attempts, 2);
-        assert_eq!(resumed.phase, Some(TaskPhase::SearchLogs));
         reloaded
-            .start_attempt("task_new", TaskPhase::Extract)
+            .start_attempt("task_new", TaskPhase::RunTool)
             .await
             .unwrap();
         reloaded
             .fail(
                 "task_new",
-                Some(TaskPhase::Extract),
+                Some(TaskPhase::RunTool),
                 "expected failure".to_string(),
             )
             .await
             .unwrap();
         assert!(reloaded
-            .succeed(
-                "task_new",
-                TaskPhase::Extract,
-                "manifest.json".to_string(),
-                "grep_results.json".to_string(),
-                "result.json".to_string(),
-                "result.md".to_string(),
-                None,
-            )
+            .succeed_tool_run("task_new", TaskPhase::RunTool, "result.json".to_string())
             .await
             .is_err());
         let _ = fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
-    async fn phase_advancement_rejects_stale_dispatchers() {
+    async fn fail_and_succeed_reject_wrong_phase() {
         let dir = temp_dir("task-store-phase");
         let store = TaskStore::load(dir.clone()).unwrap();
         store.create(task("task_1", Utc::now())).await.unwrap();
         store
-            .start_attempt("task_1", TaskPhase::Extract)
+            .start_attempt("task_1", TaskPhase::RunTool)
             .await
             .unwrap();
 
         assert!(store
-            .advance_phase("task_1", TaskPhase::SearchLogs, TaskPhase::GenerateResult)
-            .await
-            .is_err());
-        assert!(store
             .fail(
                 "task_1",
-                Some(TaskPhase::SearchLogs),
+                Some(TaskPhase::ExecuteRemoteCommand),
                 "stale failure".to_string()
             )
             .await
             .is_err());
         assert!(store
-            .succeed(
+            .succeed_tool_run(
                 "task_1",
-                TaskPhase::SearchLogs,
-                "manifest.json".to_string(),
-                "grep_results.json".to_string(),
-                "result.json".to_string(),
-                "result.md".to_string(),
-                None,
+                TaskPhase::ExecuteRemoteCommand,
+                "result.json".to_string()
             )
             .await
             .is_err());
         assert_eq!(
             store.get("task_1").await.unwrap().phase,
-            Some(TaskPhase::Extract)
+            Some(TaskPhase::RunTool)
         );
         let _ = fs::remove_dir_all(dir);
     }

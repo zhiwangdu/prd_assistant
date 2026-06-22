@@ -73,22 +73,6 @@ impl MemoryStore {
             .transpose()
     }
 
-    pub fn find_task_case(&self, task_id: &str) -> anyhow::Result<Option<CaseRecord>> {
-        let conn = self.lock_conn()?;
-        let raw = conn
-            .query_row(
-                "SELECT record_json FROM memory_items
-                 WHERE memory_type = 'case' AND source_id = ?1
-                 ORDER BY created_at ASC
-                 LIMIT 1",
-                params![task_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        raw.map(|value| parse_case_json(task_id, &value))
-            .transpose()
-    }
-
     pub fn search_cases(
         &self,
         query: Option<&str>,

@@ -416,78 +416,6 @@ impl SkillRegistry {
             .collect())
     }
 
-    pub async fn read_reference_from_snapshot(
-        &self,
-        bundle: &SystemContextBundle,
-        skill_id: &str,
-        reference_id: Option<&str>,
-        reference_path: Option<&str>,
-    ) -> anyhow::Result<SkillReferenceRead> {
-        validate_skill_id_anyhow(skill_id)?;
-        let snapshot_item = bundle
-            .resources
-            .iter()
-            .find(|item| {
-                item.kind == SystemContextKind::DiagnosticSkill
-                    && item.skill_id.as_deref() == Some(skill_id)
-            })
-            .ok_or_else(|| anyhow::anyhow!("skill {skill_id} was not selected for this task"))?;
-        let (skill, max_reference_chars) = {
-            let snapshot = self
-                .inner
-                .read()
-                .expect("skill registry lock poisoned during reference read");
-            let skill =
-                snapshot.skills.get(skill_id).cloned().ok_or_else(|| {
-                    anyhow::anyhow!("skill {skill_id} is not available in registry")
-                })?;
-            (skill, snapshot.max_reference_chars)
-        };
-        if snapshot_item.revision.as_deref() != Some(skill.revision.as_str()) {
-            anyhow::bail!(
-                "skill {skill_id} revision differs from the task snapshot; rerun the task to refresh skill references"
-            );
-        }
-        let requested = match (reference_id, reference_path) {
-            (Some(id), _) => snapshot_item
-                .references
-                .iter()
-                .find(|reference| reference.reference_id == id)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("referenceId {id} is not declared by selected skill")
-                })?,
-            (None, Some(path)) => {
-                validate_reference_path(path)?;
-                snapshot_item
-                    .references
-                    .iter()
-                    .find(|reference| reference.path == path)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("reference path {path} is not declared by selected skill")
-                    })?
-            }
-            (None, None) => anyhow::bail!("referenceId or path is required"),
-        };
-        let reference = skill
-            .references
-            .iter()
-            .find(|reference| reference.summary.reference_id == requested.reference_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("reference {} is not available", requested.reference_id)
-            })?;
-        let raw = tokio::fs::read_to_string(&reference.absolute_path)
-            .await
-            .with_context(|| format!("failed to read skill reference {}", requested.path))?;
-        let (content, truncated) = truncate_chars_with_flag(raw.trim(), max_reference_chars);
-        Ok(SkillReferenceRead {
-            skill_id: skill.skill_id.clone(),
-            skill_revision: skill.revision.clone(),
-            reference: reference.summary.clone(),
-            content,
-            truncated,
-        })
-    }
-
     pub async fn read_reference(
         &self,
         skill_id: &str,
@@ -593,7 +521,7 @@ fn write_imported_skill(
         products: Vec::new(),
         domain_adapters: Vec::new(),
         tool_ids: Vec::new(),
-        task_kinds: vec![task_kind_label(TaskKind::LogAnalysis).to_string()],
+        task_kinds: Vec::new(),
         include_by_default: false,
         priority: 0,
         max_prompt_chars: None,
@@ -1012,7 +940,6 @@ fn matches_task_kind(task_kinds: &[String], task_kind: TaskKind) -> bool {
 
 fn task_kind_label(task_kind: TaskKind) -> &'static str {
     match task_kind {
-        TaskKind::LogAnalysis => "log_analysis",
         TaskKind::ToolRun => "tool_run",
         TaskKind::RemoteCommandRun => "remote_command_run",
     }
@@ -1115,7 +1042,7 @@ mod tests {
         fs::write(skill.join("references/topology.md"), "Topology reference").unwrap();
         fs::write(
             skill.join("logagent.json"),
-            r#"{"schemaVersion":1,"skillId":"opengemini-diagnosis","displayName":"openGemini diagnosis","products":["opengemini"],"taskKinds":["log_analysis"],"includeByDefault":true,"priority":20,"references":[{"path":"references/topology.md","title":"Topology","summary":"Topology rules"}]}"#,
+            r#"{"schemaVersion":1,"skillId":"opengemini-diagnosis","displayName":"openGemini diagnosis","products":["opengemini"],"taskKinds":["tool_run"],"includeByDefault":true,"priority":20,"references":[{"path":"references/topology.md","title":"Topology","summary":"Topology rules"}]}"#,
         )
         .unwrap();
 
@@ -1128,7 +1055,7 @@ mod tests {
         let items = registry
             .resolve_items(ResolveSkillsInput {
                 explicit_skill_ids: &[],
-                task_kind: TaskKind::LogAnalysis,
+                task_kind: TaskKind::ToolRun,
                 product: Some("opengemini"),
                 version: None,
                 environment: None,
@@ -1153,7 +1080,7 @@ mod tests {
         assert!(registry
             .resolve_items(ResolveSkillsInput {
                 explicit_skill_ids: &[],
-                task_kind: TaskKind::LogAnalysis,
+                task_kind: TaskKind::ToolRun,
                 product: Some("opengemini"),
                 version: None,
                 environment: None,
@@ -1164,7 +1091,7 @@ mod tests {
             registry
                 .resolve_items(ResolveSkillsInput {
                     explicit_skill_ids: &["external".to_string()],
-                    task_kind: TaskKind::LogAnalysis,
+                    task_kind: TaskKind::ToolRun,
                     product: None,
                     version: None,
                     environment: None,
@@ -1229,7 +1156,7 @@ mod tests {
         assert_eq!(detail.summary.display_name, "Imported Skill");
         assert!(detail.summary.managed);
         assert!(!detail.summary.include_by_default);
-        assert_eq!(detail.summary.task_kinds, vec!["log_analysis"]);
+        assert_eq!(detail.summary.task_kinds, Vec::<String>::new());
         assert!(detail.injection_content.contains("current task evidence"));
 
         let skill_dir = root.join("imported");
@@ -1241,7 +1168,7 @@ mod tests {
         let items = registry
             .resolve_items(ResolveSkillsInput {
                 explicit_skill_ids: &["imported".to_string()],
-                task_kind: TaskKind::LogAnalysis,
+                task_kind: TaskKind::ToolRun,
                 product: None,
                 version: None,
                 environment: None,

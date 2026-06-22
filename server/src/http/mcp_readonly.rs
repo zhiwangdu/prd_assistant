@@ -125,11 +125,6 @@ async fn resources_list_result(state: &AppState) -> anyhow::Result<Value> {
             "tools_catalog",
             "Configured read-only tool catalog.",
         ),
-        resource(
-            "logagent://domain-adapters",
-            "domain_adapters",
-            "Built-in domain adapter summaries.",
-        ),
     ];
     for skill in state.skills.list() {
         resources.push(resource(
@@ -179,10 +174,6 @@ async fn read_resource_result(state: &AppState, uri: &str) -> anyhow::Result<Val
             "cases": state.cases.search(None, 20, false).await
         }),
         "logagent://tools/catalog" => tool_catalog(state),
-        "logagent://domain-adapters" => json!({
-            "schemaVersion": 1,
-            "domainAdapters": state.domain_adapters.summaries()
-        }),
         _ if uri.starts_with("logagent://skills/") => {
             let skill_id = uri.trim_start_matches("logagent://skills/");
             let skill = state
@@ -296,10 +287,6 @@ fn tools_list_result() -> Value {
             tool_schema("logagent.list_tools", "List configured tool catalog metadata.", json!({
                 "type": "object",
                 "properties": {}
-            })),
-            tool_schema("logagent.list_domain_adapters", "List built-in domain adapters.", json!({
-                "type": "object",
-                "properties": {}
             }))
         ]
     })
@@ -390,9 +377,6 @@ async fn call_tool(state: &AppState, name: &str, arguments: Value) -> anyhow::Re
             json!({ "result": state.metadata.get_metadata_tag_fields(request).await? })
         }
         "logagent.list_tools" => tool_catalog(state),
-        "logagent.list_domain_adapters" => {
-            json!({ "domainAdapters": state.domain_adapters.summaries() })
-        }
         other => anyhow::bail!("unknown or unsupported read-only MCP tool {other}"),
     };
     Ok(json!({
@@ -438,7 +422,7 @@ async fn preview_system_context(
     let explicit_skill_ids = normalize_skill_ids(req.skill_ids)?;
     let mut resources = state.skills.resolve_items(ResolveSkillsInput {
         explicit_skill_ids: &explicit_skill_ids,
-        task_kind: TaskKind::LogAnalysis,
+        task_kind: TaskKind::ToolRun,
         product,
         version,
         environment,
@@ -524,8 +508,7 @@ mod tests {
         services::metadata::MetadataImportRequest,
         stores::case_store::ManualCase,
         support::config::{
-            AnalysisSettings, AppConfig, AuthSettings, ClaudeCodeSettings, EmbeddingSettings,
-            LlmProvider, LlmSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
+            AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
             SkillSettings, StorageSettings, ToolMatchSettings, ToolSettings, ToolsSettings,
         },
     };
@@ -835,6 +818,7 @@ mod tests {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),
                 max_concurrent_tasks: 1,
+                max_input_chars: 60_000,
             },
             auth: AuthSettings {
                 api_keys: vec!["test-key".to_string()],
@@ -858,32 +842,7 @@ mod tests {
             fetch: crate::support::config::FetchSettings::default(),
             huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
-            llm: LlmSettings {
-                provider: LlmProvider::Stub,
-                base_url: None,
-                api_key: None,
-                binary_path: None,
-                binary_max_output_bytes: 1024 * 1024,
-                model: "stub".to_string(),
-                request_timeout_seconds: 1,
-                max_input_chars: 60_000,
-                max_output_tokens: 100,
-            },
-            claude_code: ClaudeCodeSettings::default(),
             mcp: McpSettings::default(),
-            analysis: AnalysisSettings {
-                max_rounds: 4,
-                max_llm_calls: 4,
-                max_actions: 6,
-                max_repeated_action_fingerprints: 1,
-            },
-            embedding: EmbeddingSettings {
-                enabled: false,
-                provider: "openai_compatible".to_string(),
-                model: "text-embedding-3-small".to_string(),
-                api_key_env: None,
-                store: "sqlite".to_string(),
-            },
         });
         config.prepare_dirs().unwrap();
         let state = AppState::new(config).unwrap();

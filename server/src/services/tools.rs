@@ -16,8 +16,8 @@ use crate::{
     domain::{
         contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
         models::{
-            AnalysisLanguage, GrepResults, Manifest, TaskKind, TaskRecord, TaskSource, TaskStatus,
-            ToolDescriptor, ToolInputIndex, ToolSource, UploadStatus,
+            GrepResults, Manifest, TaskKind, TaskRecord, TaskSource, TaskStatus, ToolDescriptor,
+            ToolInputIndex, ToolSource, UploadStatus,
         },
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
@@ -230,8 +230,6 @@ pub async fn build_tool_run_task(
         alias: None,
         session_id: None,
         task_kind: TaskKind::ToolRun,
-        analysis_mode: state.config.claude_code.default_mode,
-        analysis_language: AnalysisLanguage::ZhCn,
         source: TaskSource::Upload,
         upload_ids,
         inputs,

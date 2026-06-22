@@ -1,7 +1,6 @@
 mod app;
 mod domain;
 mod http;
-mod mcp;
 mod mcp_server;
 mod pipeline;
 mod services;
@@ -22,10 +21,7 @@ use tower_http::{
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 
-use crate::{
-    app::AppState,
-    support::config::{load_config, AnalysisMode},
-};
+use crate::{app::AppState, support::config::load_config};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "LogAgent MVP server")]
@@ -38,17 +34,8 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Mcp(McpArgs),
     /// Standalone task-free MCP stdio server for external clients.
     McpServe,
-}
-
-#[derive(Parser, Debug)]
-struct McpArgs {
-    #[arg(long)]
-    task_id: String,
-    #[arg(long, default_value = "diagnose")]
-    mode: AnalysisMode,
 }
 
 #[tokio::main]
@@ -68,9 +55,6 @@ async fn main() -> anyhow::Result<()> {
     config.prepare_dirs()?;
 
     match args.command {
-        Some(Command::Mcp(mcp_args)) => {
-            return mcp::run_stdio(config, mcp_args.task_id, mcp_args.mode).await;
-        }
         Some(Command::McpServe) => return mcp_server::run_stdio(config).await,
         None => {}
     }

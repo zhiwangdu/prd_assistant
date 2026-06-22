@@ -489,7 +489,6 @@ fn bundle_item(
 fn scope_allows_task(scope: SystemContextScope, task_kind: TaskKind) -> bool {
     match (scope, task_kind) {
         (SystemContextScope::Global, _) => true,
-        (SystemContextScope::LogAnalysis, TaskKind::LogAnalysis) => true,
         (SystemContextScope::ToolRun, TaskKind::ToolRun) => true,
         (SystemContextScope::CaseImport, _) => false,
         _ => false,
@@ -619,7 +618,7 @@ mod tests {
             kind: SystemContextKind::ArchitectureDoc,
             title: "openGemini architecture".to_string(),
             description: Some("cluster layout".to_string()),
-            scope: SystemContextScope::LogAnalysis,
+            scope: SystemContextScope::ToolRun,
             enabled: true,
             tags: vec!["opengemini".to_string()],
             product: Some("opengemini".to_string()),
@@ -664,7 +663,7 @@ mod tests {
         let reloaded = SystemContextStore::load(root.clone()).unwrap();
         assert_eq!(reloaded.list().await.len(), 1);
         let items = reloaded
-            .resolve_items(&[], TaskKind::LogAnalysis, Some("opengemini"), None, None)
+            .resolve_items(&[], TaskKind::ToolRun, Some("opengemini"), None, None)
             .await;
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].summary.as_deref(), Some("updated"));
