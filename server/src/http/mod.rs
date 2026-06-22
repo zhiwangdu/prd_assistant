@@ -9,6 +9,7 @@ use axum::{
 
 use crate::{app::AppState, support::auth::require_api_key};
 
+mod artifacts;
 mod cases;
 mod debug;
 mod executors;
@@ -17,6 +18,7 @@ mod fetch;
 mod health;
 mod mcp_readonly;
 mod metadata;
+mod runs;
 mod sessions;
 mod settings;
 mod skills;
@@ -96,6 +98,12 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/tools/runs/:task_id/artifacts",
             get(tools::tool_run_artifacts),
         )
+        .route("/api/runs", get(runs::list_runs))
+        .route("/api/runs/:run_id", get(runs::get_run))
+        .route("/api/runs/:run_id/result", get(runs::run_result))
+        .route("/api/runs/:run_id/artifacts", get(runs::run_artifacts))
+        .route("/api/artifacts/*artifact_id", get(artifacts::get_artifact))
+        .route("/api/mcp", post(mcp_readonly::readonly_mcp))
         .route("/api/fetch/imports/preview", post(fetch::import_preview))
         .route(
             "/api/fetch/endpoints",

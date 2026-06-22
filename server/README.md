@@ -123,6 +123,8 @@ GET /api/artifacts/:artifact_id
 POST /api/mcp
 ```
 
+`/api/runs*`、`/api/artifacts/:artifact_id`、`POST /api/mcp` 已实现（阶段 2）；`/api/tools/runs*` 保留为兼容别名。
+
 能力接口：
 
 ```http
