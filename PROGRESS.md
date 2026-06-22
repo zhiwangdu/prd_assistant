@@ -65,6 +65,12 @@ Historical main-branch progress was archived to
 - 已知依赖：`mcp-serve` 经 `AppState::new` 仍需 `LOGAGENT_CLAUDE_CODE_PATH` + LLM env（fat 配置强制），阶段 5 删除 claude_code/llm 配置块后解除。
 - 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（173 通过，+1 `mcp_server` 单测）；stdio smoke：`mcp-serve` 的 `initialize`/`tools/list`/`resources/list` 正常，`tools/list` 为 runnable catalog，logs 走 stderr；旧 `mcp --task-id` 不回归（executor 测试仍绿）。
 
+## 2026-06-22 删除 fat 代码（阶段 5，进行中）
+
+- **Wave 1（HTTP 分析面）**：删除 `http/sessions.rs`、`http/tasks.rs`、`http/debug.rs`、`http/settings.rs` 及其路由与 mod 声明；移除 `/api/sessions*`、`/api/tasks*`（保留 `/api/tasks/:task_id/case` → cases，待随 LogAnalysis 一并清理）、`/api/debug/llm`、`/api/settings/{llm,agent-backends,domain-adapters}*`。`AppState` 的 `sessions/llm/agent_backends/domain_adapters` 字段仍被 executor 等使用，暂留（Wave B 删）。`pprof` 测试中遗留的 `/api/tasks` 断言已移除。
+- 验证：`cargo test --all` 158 通过（被删模块的测试随文件移除）。`cargo check` 有 ~31 dead_code 警告（session_store/analysis_state 等方法暂成 dead code），Wave B 删除 fat 模块后消除。
+- 待做（Wave B+）：删 LogAnalysis 执行路径 + `analysis_state`/`session_store`/`agent_backend`/`llm_gateway`/`domain_adapters`/旧 `mcp.rs` + `AppState` 字段 + config 块 + `Command::Mcp`；WebUI 删 `OperationsView` + `analysisCopy`。
+
 ## Next Steps
 
 - ✅ WebUI navigation pivot to Tools-first（阶段 1 完成）。

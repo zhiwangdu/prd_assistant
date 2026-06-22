@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 
@@ -11,7 +11,6 @@ use crate::{app::AppState, support::auth::require_api_key};
 
 mod artifacts;
 mod cases;
-mod debug;
 mod executors;
 mod exports;
 mod fetch;
@@ -19,11 +18,8 @@ mod health;
 mod mcp_readonly;
 mod metadata;
 mod runs;
-mod sessions;
-mod settings;
 mod skills;
 mod system_context;
-mod tasks;
 mod tools;
 mod uploads;
 
@@ -42,49 +38,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/uploads/:upload_id/complete",
             post(uploads::complete_upload),
         )
-        .route(
-            "/api/tasks",
-            post(tasks::create_task).get(tasks::list_tasks),
-        )
-        .route(
-            "/api/sessions",
-            post(sessions::create_session).get(sessions::list_sessions),
-        )
-        .route(
-            "/api/sessions/:session_id",
-            get(sessions::get_session)
-                .patch(sessions::patch_session)
-                .delete(sessions::delete_session),
-        )
-        .route(
-            "/api/sessions/:session_id/uploads",
-            post(sessions::attach_uploads),
-        )
-        .route(
-            "/api/sessions/:session_id/uploads/:upload_id",
-            delete(sessions::detach_upload),
-        )
-        .route(
-            "/api/sessions/:session_id/tasks",
-            post(sessions::create_session_task),
-        )
-        .route(
-            "/api/sessions/:session_id/timeline",
-            get(sessions::session_timeline),
-        )
-        .route("/api/tasks/:task_id", get(tasks::get_task))
-        .route("/api/tasks/:task_id/analysis", get(tasks::task_analysis))
-        .route(
-            "/api/tasks/:task_id/messages",
-            post(tasks::post_task_message),
-        )
-        .route(
-            "/api/tasks/:task_id/actions/:action_id/decision",
-            post(tasks::post_action_decision),
-        )
         .route("/api/tasks/:task_id/case", post(cases::confirm_task_case))
-        .route("/api/tasks/:task_id/result", get(tasks::task_result))
-        .route("/api/tasks/:task_id/artifacts", get(tasks::task_artifacts))
         .route("/api/tools", get(tools::list_tools))
         .route("/api/tools/:tool_id", get(tools::get_tool))
         .route("/api/tools/:tool_id/runs", post(tools::create_tool_run))
@@ -166,25 +120,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route(
             "/api/cases/:case_id",
             get(cases::get_case).patch(cases::update_case),
-        )
-        .route(
-            "/api/debug/llm",
-            get(debug::get_llm_debug).put(debug::update_llm_debug),
-        )
-        .route("/api/settings/llm", get(settings::llm_settings))
-        .route("/api/settings/llm/models", get(settings::llm_models))
-        .route("/api/settings/llm/chat", post(settings::llm_chat))
-        .route(
-            "/api/settings/agent-backends",
-            get(settings::agent_backends),
-        )
-        .route(
-            "/api/settings/agent-backends/:backend_id/test",
-            post(settings::agent_backend_test),
-        )
-        .route(
-            "/api/settings/domain-adapters",
-            get(settings::domain_adapters),
         )
         .route("/api/mcp/readonly", post(mcp_readonly::readonly_mcp))
         .route("/api/exports/skills.zip", get(exports::skills_zip))

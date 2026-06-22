@@ -439,18 +439,6 @@ mod tests {
             .unwrap()
             .ends_with("top.txt"));
 
-        let log_tasks = app
-            .oneshot(
-                Request::get("/api/tasks")
-                    .header("authorization", "Bearer test-key")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = to_bytes(log_tasks.into_body(), usize::MAX).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(body["tasks"].as_array().unwrap().is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
 
