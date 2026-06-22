@@ -85,12 +85,12 @@ export function App() {
             );
           })}
         </nav>
-        {view === "tools" ? <ToolsView apiKey={apiKey} />
+        {view === "tools" ? <ToolsView apiKey={apiKey} language={language} />
           : view === "runs" ? <RunsView apiKey={apiKey} />
           : view === "metadata" ? <MetadataDashboard apiKey={apiKey} />
           : view === "fetch" ? <FetchView apiKey={apiKey} />
           : view === "executors" ? <ExecutorsView apiKey={apiKey} />
-          : view === "mcp" ? <McpView apiKey={apiKey} />
+          : view === "mcp" ? <McpView apiKey={apiKey} language={language} />
           : view === "cases" ? <CasesView apiKey={apiKey} />
           : view === "system-context" ? <SystemContextView apiKey={apiKey} />
           : <SettingsView apiKey={apiKey} />}

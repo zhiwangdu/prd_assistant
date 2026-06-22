@@ -20,6 +20,12 @@ Historical main-branch progress was archived to
 - WebUI `McpView` 和 `SettingsView` 从旧 `/api/mcp/readonly` 切换到 `/api/mcp`，页面展示真实 catalog MCP tools/resources。
 - 新增 `mcp_server::tests::http_mcp_respects_disabled_config` 覆盖 HTTP MCP 禁用行为。
 
+## 2026-06-23 WebUI 工具页 / MCP 页中英双语
+
+- `i18n.ts` 新增 `toolsCopy` + `mcpCopy`（zh-CN / en-US），覆盖工具目录、工具详情、运行记录、运行状态、pprof 结果、MCP stdio/tools/resources 等全部可见文案。
+- `ToolsView`（ToolPluginsView）和 `McpView` 接收 `language` prop，按语言切换文案；App.tsx 透传 `language`。FetchView 暂未国际化（独立页面，后续按需）。
+- 验证：`npm run lint` / `typecheck` / `build` 全绿（bundle 318.89→322.66 KB）。
+
 ## 2026-06-22 Documentation Pivot
 
 - Reframed LogAgent from a Claude Code-backed analysis workbench into a local tools and MCP workbench.

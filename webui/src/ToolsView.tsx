@@ -2,6 +2,7 @@ import { FileArchive, Globe2, Play, RefreshCw, Save, Trash2, UploadCloud } from 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { toolsCopy, type ToolsCopy, type UiLanguage } from "./i18n";
 import { uploadFile } from "./upload";
 
 type ToolDescriptor = {
@@ -107,8 +108,8 @@ type FetchPreview = {
   unsupportedWarnings: string[];
 };
 
-export function ToolsView({ apiKey }: { apiKey: string }) {
-  return <ToolPluginsView apiKey={apiKey} />;
+export function ToolsView({ apiKey, language }: { apiKey: string; language: UiLanguage }) {
+  return <ToolPluginsView apiKey={apiKey} language={language} />;
 }
 
 export function FetchView({ apiKey }: { apiKey: string }) {
@@ -444,7 +445,8 @@ export function FetchView({ apiKey }: { apiKey: string }) {
   );
 }
 
-function ToolPluginsView({ apiKey }: { apiKey: string }) {
+function ToolPluginsView({ apiKey, language }: { apiKey: string; language: UiLanguage }) {
+  const copy = toolsCopy[language];
   const [tools, setTools] = useState<ToolDescriptor[]>([]);
   const [selectedToolId, setSelectedToolId] = useState("pprof_analyzer");
   const [runs, setRuns] = useState<ToolRunSummary[]>([]);
@@ -452,7 +454,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
   const [result, setResult] = useState<ToolRunResultResponse | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [paramsText, setParamsText] = useState("{}");
-  const [status, setStatus] = useState("Tools ready");
+  const [status, setStatus] = useState<string>(copy.ready);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -520,34 +522,34 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
 
   async function runTool() {
     if (!apiKey.trim()) {
-      setStatus("API Key required");
+      setStatus(copy.apiKeyRequired);
       return;
     }
     if (!selectedTool) {
-      setStatus("No tool selected");
+      setStatus(copy.noToolSelected);
       return;
     }
     if (!selectedTool.enabled) {
-      setStatus(`${selectedTool.displayName} is disabled in server config`);
+      setStatus(copy.toolDisabled(selectedTool.displayName));
       return;
     }
     if (!selectedTool.runnable) {
-      setStatus(`${selectedTool.displayName} is not available for manual runs`);
+      setStatus(copy.toolNotRunnable(selectedTool.displayName));
       return;
     }
     if (files.length < selectedTool.minFiles || files.length > selectedTool.maxFiles) {
-      setStatus(`Choose ${selectedTool.minFiles}..${selectedTool.maxFiles} file(s)`);
+      setStatus(copy.chooseFiles(selectedTool.minFiles, selectedTool.maxFiles));
       return;
     }
     let params: unknown;
     try {
       params = JSON.parse(paramsText);
     } catch (reason) {
-      setStatus(`Invalid JSON params: ${errorMessage(reason)}`);
+      setStatus(copy.invalidParams(errorMessage(reason)));
       return;
     }
     if (!isJsonObject(params)) {
-      setStatus("Params must be a JSON object");
+      setStatus(copy.paramsNotObject);
       return;
     }
     setLoading(true);
@@ -556,7 +558,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
     try {
       const uploadIds: string[] = [];
       for (const [index, nextFile] of files.entries()) {
-        setStatus(`Uploading ${nextFile.name}`);
+        setStatus(copy.uploading(nextFile.name));
         const upload = await uploadFile(nextFile, apiKey, (value) => {
           const completed = index + value;
           setUploadProgress(Math.round((completed / Math.max(files.length, 1)) * 100));
@@ -564,7 +566,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
         uploadIds.push(upload.uploadId);
       }
       if (!files.length) setUploadProgress(100);
-      setStatus("Starting tool run");
+      setStatus(copy.startingRun);
       const run = await fetchJson<ToolRunSummary>(`/api/tools/${encodeURIComponent(selectedTool.toolId)}/runs`, {
         method: "POST",
         headers: jsonHeaders(apiKey),
@@ -574,7 +576,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           idempotencyKey: `webui-${selectedTool.toolId}-${Date.now()}`
         })
       });
-      setStatus(`Created ${run.taskId}`);
+      setStatus(copy.created(run.taskId));
       await refreshRuns();
       await selectRun(run.taskId);
     } catch (reason) {
@@ -590,8 +592,8 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle>Tool catalog</CardTitle>
-              <CardDescription>Configured and built-in tools exposed by the Rust Server</CardDescription>
+              <CardTitle>{copy.catalogTitle}</CardTitle>
+              <CardDescription>{copy.catalogDesc}</CardDescription>
             </div>
             <Button className="h-8 px-3" variant="outline" onClick={() => void refreshTools()}><RefreshCw className="h-4 w-4" /></Button>
           </div>
@@ -605,14 +607,14 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                   <p className="mt-1 text-xs text-muted-foreground">{tool.toolId} · {tool.backend}</p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Badge variant={tool.enabled ? "success" : "destructive"}>{tool.enabled ? "enabled" : "disabled"}</Badge>
-                  <SourceBadge source={tool.source} />
+                  <Badge variant={tool.enabled ? "success" : "destructive"}>{tool.enabled ? copy.enabledBadge : copy.disabledBadge}</Badge>
+                  <SourceBadge source={tool.source} copy={copy} />
                 </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{tool.description}</p>
               <ToolTagList tags={tool.tags} />
             </button>
-          )) : <EmptyState>No tools loaded.</EmptyState>}
+          )) : <EmptyState>{copy.noTools}</EmptyState>}
         </CardContent>
       </Card>
 
@@ -621,14 +623,14 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle>{selectedTool?.displayName ?? "Tools"}</CardTitle>
-                <CardDescription>{selectedTool ? toolSubtitle(selectedTool) : "Select a tool to inspect"}</CardDescription>
+                <CardTitle>{selectedTool?.displayName ?? copy.toolsFallback}</CardTitle>
+                <CardDescription>{selectedTool ? toolSubtitle(selectedTool, copy) : copy.selectToolHint}</CardDescription>
               </div>
               {selectedTool ? (
                 <div className="flex flex-wrap justify-end gap-2">
-                  <Badge variant={selectedTool.enabled ? "success" : "destructive"}>{selectedTool.enabled ? "ready" : "disabled"}</Badge>
-                  <SourceBadge source={selectedTool.source} />
-                  {selectedTool.readOnly ? <Badge variant="secondary">read-only</Badge> : null}
+                  <Badge variant={selectedTool.enabled ? "success" : "destructive"}>{selectedTool.enabled ? copy.readyBadge : copy.disabledBadge}</Badge>
+                  <SourceBadge source={selectedTool.source} copy={copy} />
+                  {selectedTool.readOnly ? <Badge variant="secondary">{copy.readOnlyBadge}</Badge> : null}
                 </div>
               ) : null}
             </div>
@@ -639,7 +641,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                 {selectedTool.maxFiles > 0 ? (
                   <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50 px-4 text-center text-sm text-muted-foreground">
                     <UploadCloud className="mb-2 h-7 w-7" />
-                    {files.length ? files.map((nextFile) => nextFile.name).join(", ") : filePrompt(selectedTool)}
+                    {files.length ? files.map((nextFile) => nextFile.name).join(", ") : filePrompt(selectedTool, copy)}
                     <input
                       accept={fileAccept(selectedTool)}
                       className="hidden"
@@ -651,8 +653,8 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                 ) : null}
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground">Params JSON</p>
-                    <Button className="h-8 px-3" variant="outline" onClick={() => setParamsText(formatJson(selectedTool.paramsTemplate ?? {}))}><RefreshCw className="mr-2 h-4 w-4" />Reset template</Button>
+                    <p className="text-xs text-muted-foreground">{copy.paramsJson}</p>
+                    <Button className="h-8 px-3" variant="outline" onClick={() => setParamsText(formatJson(selectedTool.paramsTemplate ?? {}))}><RefreshCw className="mr-2 h-4 w-4" />{copy.resetTemplate}</Button>
                   </div>
                   <textarea
                     className="min-h-48 w-full resize-y rounded-md border border-border bg-white p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20"
@@ -662,18 +664,18 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
                   />
                 </div>
                 <div>
-                  <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Upload</span><span>{uploadProgress}%</span></div>
+                  <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{copy.uploadLabel}</span><span>{uploadProgress}%</span></div>
                   <div className="h-2 overflow-hidden rounded bg-slate-100"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <span className="text-sm text-muted-foreground">{status}</span>
-                  <Button disabled={loading || !selectedTool?.enabled || !selectedTool?.runnable} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />Run tool</Button>
+                  <Button disabled={loading || !selectedTool?.enabled || !selectedTool?.runnable} onClick={() => void runTool()}><Play className="mr-2 h-4 w-4" />{copy.runTool}</Button>
                 </div>
               </>
             ) : selectedTool ? (
-              <ToolDescriptorDetails tool={selectedTool} status={status} />
+              <ToolDescriptorDetails tool={selectedTool} status={status} copy={copy} />
             ) : (
-              <EmptyState>Select a tool to inspect.</EmptyState>
+              <EmptyState>{copy.selectToolInspect}</EmptyState>
             )}
           </CardContent>
         </Card>
@@ -682,7 +684,7 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
-                <CardTitle>Tool runs</CardTitle>
+                <CardTitle>{copy.toolRuns}</CardTitle>
                 <Button className="h-8 px-3" variant="outline" onClick={() => void refreshRuns()}><RefreshCw className="h-4 w-4" /></Button>
               </div>
             </CardHeader>
@@ -690,27 +692,27 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
               {runs.length ? runs.map((run) => (
                 <button key={run.taskId} className={`w-full rounded-lg border p-3 text-left ${selectedRun?.taskId === run.taskId ? "border-primary bg-slate-50" : "border-border"}`} onClick={() => void selectRun(run.taskId)}>
                   <div className="flex items-center justify-between gap-2"><span className="font-mono text-xs">{run.taskId}</span><RunStatusBadge status={run.status} /></div>
-                  <p className="mt-1 text-xs text-muted-foreground">{run.phase ?? "No active phase"} · {new Date(run.createdAt).toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{run.phase ?? copy.noActivePhase} · {new Date(run.createdAt).toLocaleString()}</p>
                 </button>
-              )) : <EmptyState>No tool runs yet.</EmptyState>}
+              )) : <EmptyState>{copy.noToolRuns}</EmptyState>}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Run status</CardTitle>
-              <CardDescription>{selectedRun ? `${selectedRun.taskId} · attempt ${selectedRun.attempts ?? 0}` : "Select a run"}</CardDescription>
+              <CardTitle>{copy.runStatus}</CardTitle>
+              <CardDescription>{selectedRun ? `${selectedRun.taskId} · ${copy.attempt(selectedRun.attempts ?? 0)}` : copy.selectRun}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {selectedRun ? (
                 <>
-                  <div className="flex flex-wrap items-center gap-2"><RunStatusBadge status={selectedRun.status} /><span className="text-sm text-muted-foreground">{selectedRun.phase ?? "No active phase"}</span></div>
-                  {selectedRun.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedRun.error?.phase ? `${selectedRun.error.phase}: ` : ""}{selectedRun.error?.message ?? "Tool run failed"}</div> : null}
-                  {!isTerminal(selectedRun.status) ? <p className="text-sm text-muted-foreground">Server is running the tool in the background.</p> : null}
-                  {selectedRun.status === "SUCCEEDED" && !result ? <Button onClick={() => void selectRun(selectedRun.taskId)}>Load result</Button> : null}
-                  {result ? <ToolResultView result={result.result} resultPath={result.resultPath} toolId={result.toolId} /> : null}
+                  <div className="flex flex-wrap items-center gap-2"><RunStatusBadge status={selectedRun.status} /><span className="text-sm text-muted-foreground">{selectedRun.phase ?? copy.noActivePhase}</span></div>
+                  {selectedRun.status === "FAILED" ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{selectedRun.error?.phase ? `${selectedRun.error.phase}: ` : ""}{selectedRun.error?.message ?? copy.toolRunFailed}</div> : null}
+                  {!isTerminal(selectedRun.status) ? <p className="text-sm text-muted-foreground">{copy.runningInBackground}</p> : null}
+                  {selectedRun.status === "SUCCEEDED" && !result ? <Button onClick={() => void selectRun(selectedRun.taskId)}>{copy.loadResult}</Button> : null}
+                  {result ? <ToolResultView result={result.result} resultPath={result.resultPath} toolId={result.toolId} copy={copy} /> : null}
                 </>
-              ) : <EmptyState>Select or create a run to inspect status and artifacts.</EmptyState>}
+              ) : <EmptyState>{copy.selectOrCreateRun}</EmptyState>}
             </CardContent>
           </Card>
         </div>
@@ -800,8 +802,8 @@ function FetchResultView({ result, resultPath }: { result: unknown; resultPath: 
   );
 }
 
-function SourceBadge({ source }: { source: ToolDescriptor["source"] }) {
-  return <Badge variant={source === "built_in" ? "secondary" : "outline"}>{source === "built_in" ? "built-in" : "configured"}</Badge>;
+function SourceBadge({ source, copy }: { source: ToolDescriptor["source"]; copy: ToolsCopy }) {
+  return <Badge variant={source === "built_in" ? "secondary" : "outline"}>{source === "built_in" ? copy.builtIn : copy.configured}</Badge>;
 }
 
 function ToolTagList({ tags }: { tags: string[] }) {
@@ -813,21 +815,21 @@ function ToolTagList({ tags }: { tags: string[] }) {
   );
 }
 
-function ToolDescriptorDetails({ tool, status }: { tool: ToolDescriptor; status: string }) {
+function ToolDescriptorDetails({ tool, status, copy }: { tool: ToolDescriptor; status: string; copy: ToolsCopy }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Source" value={tool.source === "built_in" ? "built-in" : "configured"} />
-        <Metric label="Manual run" value={tool.runnable ? "enabled" : "unavailable"} />
-        <Metric label="Editable" value={tool.editable ? "yes" : "no"} />
-        <Metric label="Exportable" value={tool.exportable ? "yes" : "no"} />
+        <Metric label={copy.source} value={tool.source === "built_in" ? copy.builtIn : copy.configured} />
+        <Metric label={copy.manualRun} value={tool.runnable ? copy.manualEnabled : copy.manualUnavailable} />
+        <Metric label={copy.editable} value={tool.editable ? copy.yes : copy.no} />
+        <Metric label={copy.exportable} value={tool.exportable ? copy.yes : copy.no} />
       </div>
       <div className="rounded-lg border border-border p-3">
-        <p className="text-xs text-muted-foreground">Tags</p>
+        <p className="text-xs text-muted-foreground">{copy.tags}</p>
         <ToolTagList tags={tool.tags} />
       </div>
       <div className="rounded-lg border border-border p-3">
-        <p className="text-xs text-muted-foreground">Input schema</p>
+        <p className="text-xs text-muted-foreground">{copy.inputSchema}</p>
         <pre className="mt-2 max-h-72 overflow-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(tool.paramsSchema ?? {}, null, 2)}</pre>
       </div>
       <p className="text-sm text-muted-foreground">{status}</p>
@@ -835,33 +837,33 @@ function ToolDescriptorDetails({ tool, status }: { tool: ToolDescriptor; status:
   );
 }
 
-function toolSubtitle(tool: ToolDescriptor) {
+function toolSubtitle(tool: ToolDescriptor, copy: ToolsCopy) {
   if (tool.acceptedSuffixes.length) {
     return tool.acceptedSuffixes.join(", ");
   }
-  return `${tool.backend} · no file input`;
+  return copy.noFileInput(tool.backend);
 }
 
-function ToolResultView({ result, resultPath, toolId }: { result: unknown; resultPath: string; toolId: string }) {
+function ToolResultView({ result, resultPath, toolId, copy }: { result: unknown; resultPath: string; toolId: string; copy: ToolsCopy }) {
   if (toolId === "pprof_analyzer" && isPprofResult(result)) {
-    return <PprofResultView result={result} resultPath={resultPath} />;
+    return <PprofResultView result={result} resultPath={resultPath} copy={copy} />;
   }
   return (
     <div className="space-y-3">
-      <ArtifactPath label="Result" value={resultPath} />
+      <ArtifactPath label={copy.result} value={resultPath} />
       <pre className="max-h-[560px] overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{formatJson(result)}</pre>
     </div>
   );
 }
 
-function PprofResultView({ result, resultPath }: { result: PprofResult; resultPath: string }) {
+function PprofResultView({ result, resultPath, copy }: { result: PprofResult; resultPath: string; copy: ToolsCopy }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Status" value={result.status} />
-        <Metric label="Profile" value={result.profileType || "unknown"} />
-        <Metric label="Total" value={result.total ?? "-"} />
-        <Metric label="Duration" value={`${result.durationMs}ms`} />
+        <Metric label={copy.status} value={result.status} />
+        <Metric label={copy.profile} value={result.profileType || copy.unknown} />
+        <Metric label={copy.total} value={result.total ?? "-"} />
+        <Metric label={copy.duration} value={`${result.durationMs}ms`} />
       </div>
       {result.error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div> : null}
       {result.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{result.warnings.join(" · ")}</div> : null}
@@ -869,12 +871,12 @@ function PprofResultView({ result, resultPath }: { result: PprofResult; resultPa
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
             <tr>
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">Flat</th>
-              <th className="px-3 py-2">Flat %</th>
-              <th className="px-3 py-2">Cum</th>
-              <th className="px-3 py-2">Cum %</th>
-              <th className="px-3 py-2">Function</th>
+              <th className="px-3 py-2">{copy.rank}</th>
+              <th className="px-3 py-2">{copy.flat}</th>
+              <th className="px-3 py-2">{copy.flatPercent}</th>
+              <th className="px-3 py-2">{copy.cum}</th>
+              <th className="px-3 py-2">{copy.cumPercent}</th>
+              <th className="px-3 py-2">{copy.function}</th>
             </tr>
           </thead>
           <tbody>
@@ -888,18 +890,18 @@ function PprofResultView({ result, resultPath }: { result: PprofResult; resultPa
                 <td className="px-3 py-2 font-mono text-xs">{entry.function}</td>
               </tr>
             )) : (
-              <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={6}>No parsed top entries. Check raw artifacts.</td></tr>
+              <tr><td className="px-3 py-8 text-center text-sm text-muted-foreground" colSpan={6}>{copy.noTopEntries}</td></tr>
             )}
           </tbody>
         </table>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
-        <ArtifactPath label="Result" value={resultPath} />
-        <ArtifactPath label="Top text" value={result.artifacts.topTextPath} />
-        <ArtifactPath label="Tree text" value={result.artifacts.treeTextPath} />
-        <ArtifactPath label="Raw text" value={result.artifacts.rawTextPath} />
-        <ArtifactPath label="Stderr" value={result.artifacts.stderrPath} />
-        {result.artifacts.svgPath ? <ArtifactPath label="SVG" value={result.artifacts.svgPath} /> : null}
+        <ArtifactPath label={copy.result} value={resultPath} />
+        <ArtifactPath label={copy.topText} value={result.artifacts.topTextPath} />
+        <ArtifactPath label={copy.treeText} value={result.artifacts.treeTextPath} />
+        <ArtifactPath label={copy.rawText} value={result.artifacts.rawTextPath} />
+        <ArtifactPath label={copy.stderr} value={result.artifacts.stderrPath} />
+        {result.artifacts.svgPath ? <ArtifactPath label={copy.svg} value={result.artifacts.svgPath} /> : null}
       </div>
     </div>
   );
@@ -968,11 +970,11 @@ function parseStringMap(text: string, label: string) {
   return output;
 }
 
-function filePrompt(tool: ToolDescriptor) {
+function filePrompt(tool: ToolDescriptor, copy: ToolsCopy) {
   if (tool.minFiles === tool.maxFiles) {
-    return `Choose ${tool.minFiles} file${tool.minFiles === 1 ? "" : "s"}`;
+    return copy.chooseFile(tool.minFiles);
   }
-  return `Choose ${tool.minFiles}..${tool.maxFiles} files`;
+  return copy.chooseFilesRange(tool.minFiles, tool.maxFiles);
 }
 
 function fileAccept(tool: ToolDescriptor) {

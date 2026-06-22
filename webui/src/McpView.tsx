@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
 import { fetchJson, jsonHeaders } from "./metadata/api";
+import { mcpCopy, type UiLanguage } from "./i18n";
 
 type McpTool = { name: string; description?: string };
 type McpResource = { uri: string; name?: string; description?: string };
@@ -26,7 +27,8 @@ const STDIO_CONFIG = `{
   }
 }`;
 
-export function McpView({ apiKey }: { apiKey: string }) {
+export function McpView({ apiKey, language }: { apiKey: string; language: UiLanguage }) {
+  const copy = mcpCopy[language];
   const [tools, setTools] = useState<McpTool[]>([]);
   const [resources, setResources] = useState<McpResource[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,16 +60,16 @@ export function McpView({ apiKey }: { apiKey: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">MCP</h2>
-          <p className="text-sm text-muted-foreground">External clients call the same LocalToolHub tools and resources over MCP.</p>
+          <h2 className="text-lg font-semibold">{copy.title}</h2>
+          <p className="text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <Button className="h-8 px-3" variant="outline" disabled={loading} onClick={() => void refresh()}><RefreshCw className="h-4 w-4" /></Button>
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Card>
         <CardHeader>
-          <CardTitle>Stdio server</CardTitle>
-          <CardDescription>Add LocalToolHub as an MCP server. tools/list stays in sync with the WebUI catalog.</CardDescription>
+          <CardTitle>{copy.stdioTitle}</CardTitle>
+          <CardDescription>{copy.stdioDesc}</CardDescription>
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{STDIO_CONFIG}</pre>
@@ -76,11 +78,11 @@ export function McpView({ apiKey }: { apiKey: string }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Tools ({tools.length})</CardTitle>
-            <CardDescription>Live catalog via /api/mcp</CardDescription>
+            <CardTitle>{copy.toolsTitle(tools.length)}</CardTitle>
+            <CardDescription>{copy.toolsDesc}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {tools.length === 0 ? <EmptyState>No tools.</EmptyState> : tools.map((tool) => (
+            {tools.length === 0 ? <EmptyState>{copy.noTools}</EmptyState> : tools.map((tool) => (
               <div key={tool.name} className="rounded-md border border-border p-3">
                 <p className="font-mono text-xs font-medium">{tool.name}</p>
                 {tool.description ? <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p> : null}
@@ -89,9 +91,9 @@ export function McpView({ apiKey }: { apiKey: string }) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Resources ({resources.length})</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{copy.resourcesTitle(resources.length)}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            {resources.length === 0 ? <EmptyState>No resources.</EmptyState> : resources.map((resource) => (
+            {resources.length === 0 ? <EmptyState>{copy.noResources}</EmptyState> : resources.map((resource) => (
               <div key={resource.uri} className="rounded-md border border-border p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-mono text-xs">{resource.uri}</span>
