@@ -51,6 +51,20 @@ Historical main-branch progress was archived to
 - LogAnalysis 分支仍使用 analysis_state/llm/agent_backend（待阶段 5 删除），本阶段未改动。
 - 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（172 通过）全绿。
 
+## 2026-06-22 MCP 重设计为独立 stdio server（阶段 4）
+
+- 新增 `server/src/mcp_server.rs`：面向外部客户端的独立 MCP server（无 `task_id` 依赖）。
+  - `run_stdio(config)` stdio 入口；`handle_request`/`handle_http` 统一 JSON-RPC handler（单对象或批量）。
+  - `tools/list` = `services::tools::descriptors` 过滤 runnable（与 `/api/tools` 同一 catalog）。
+  - `tools/call` 同步运行目录工具：`build_tool_run_task` → `tasks.create` → `start_attempt` → `run_tool_task` → `succeed_tool_run`，产出 ToolRun 记录（进入 `/api/runs` 历史）；失败经 `tasks.fail` 记录。
+  - `resources/list`+`resources/read` = skills / metadata-instances(+snapshots) / cases-recent / runs-recent / tools-catalog，无 domain-adapters、无 task-workspace artifacts。
+  - 移除 agent-loop 耦合：无 `log_mcp_call` / `waiting_marker_tool` / `request_user_input` / `request_approval` / `analysis_state`。
+- 抽取 `services::tools::build_tool_run_task` 共享 helper（HTTP `create_tool_run` 与 MCP `tools/call` 复用任务构造）；`http/tools.rs::create_tool_run` 改用之。
+- `main.rs` 新增 `Command::McpServe`（→ `mcp-serve`，无参数）调 `mcp_server::run_stdio`；保留旧 `mcp --task-id --mode`（agent_backend 用，阶段 5 删除）。
+- HTTP：`POST /api/mcp` → `mcp_server::http_mcp`（full，可运行工具）；`POST /api/mcp/readonly` 保留（WebUI 只读预览）。WebUI `McpView` stdio 配置示例更新为 `mcp-serve`。
+- 已知依赖：`mcp-serve` 经 `AppState::new` 仍需 `LOGAGENT_CLAUDE_CODE_PATH` + LLM env（fat 配置强制），阶段 5 删除 claude_code/llm 配置块后解除。
+- 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（173 通过，+1 `mcp_server` 单测）；stdio smoke：`mcp-serve` 的 `initialize`/`tools/list`/`resources/list` 正常，`tools/list` 为 runnable catalog，logs 走 stderr；旧 `mcp --task-id` 不回归（executor 测试仍绿）。
+
 ## Next Steps
 
 - ✅ WebUI navigation pivot to Tools-first（阶段 1 完成）。

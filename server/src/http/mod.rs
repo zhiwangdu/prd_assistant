@@ -103,7 +103,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/runs/:run_id/result", get(runs::run_result))
         .route("/api/runs/:run_id/artifacts", get(runs::run_artifacts))
         .route("/api/artifacts/*artifact_id", get(artifacts::get_artifact))
-        .route("/api/mcp", post(mcp_readonly::readonly_mcp))
+        .route("/api/mcp", post(crate::mcp_server::http_mcp))
         .route("/api/fetch/imports/preview", post(fetch::import_preview))
         .route(
             "/api/fetch/endpoints",

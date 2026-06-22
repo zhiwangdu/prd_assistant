@@ -5,19 +5,17 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::Utc;
 use serde::Deserialize;
 use tracing::info;
 
 use crate::{
     app::AppState,
     domain::models::{
-        CreateToolRunRequest, TaskKind, TaskRecord, TaskResponse, TaskSource, TaskStatus,
-        ToolListResponse, ToolRunArtifactsResponse, ToolRunListResponse, UploadStatus,
+        CreateToolRunRequest, TaskKind, TaskRecord, TaskResponse, TaskStatus, ToolListResponse,
+        ToolRunArtifactsResponse, ToolRunListResponse,
     },
-    pipeline::prepare_raw_snapshot,
     services::tools,
-    support::{error::AppError, id::next_id},
+    support::error::AppError,
 };
 
 #[derive(Debug, Deserialize)]
@@ -61,64 +59,8 @@ pub async fn create_tool_run(
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    let normalized_params =
-        tools::validate_tool_run_request(&state.config, &tool_id, upload_ids.len(), &req.params)?;
-
-    let mut uploads = Vec::with_capacity(upload_ids.len());
-    for upload_id in &upload_ids {
-        let upload = state
-            .uploads
-            .get(upload_id)
-            .await
-            .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
-        if upload.status != UploadStatus::Complete {
-            return Err(AppError::bad_request(format!(
-                "uploadId {upload_id} is not complete"
-            )));
-        }
-        uploads.push(upload);
-    }
-
-    let task_id = next_id("task");
-    let workspace = state.config.storage.workspace_dir(&task_id);
-    let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
-    let now = Utc::now();
-    let record = TaskRecord {
-        schema_version: 6,
-        task_id: task_id.clone(),
-        alias: None,
-        session_id: None,
-        task_kind: TaskKind::ToolRun,
-        analysis_mode: state.config.claude_code.default_mode,
-        analysis_language: crate::domain::models::AnalysisLanguage::ZhCn,
-        source: TaskSource::Upload,
-        upload_ids,
-        inputs,
-        source_url: None,
-        tool_id: Some(tool_id),
-        tool_params: normalized_params,
-        tool_result_path: None,
-        remote_executor_id: None,
-        remote_command_id: None,
-        remote_command_params: serde_json::Value::Null,
-        remote_result_path: None,
-        instance_id: None,
-        cluster_id: None,
-        node_id: None,
-        question: "Run selected tool".to_string(),
-        status: TaskStatus::Queued,
-        phase: None,
-        attempts: 0,
-        error: None,
-        manifest_path: None,
-        grep_results_path: None,
-        metadata_context_path: None,
-        system_context_path: None,
-        result_json_path: None,
-        result_markdown_path: None,
-        created_at: now,
-        updated_at: now,
-    };
+    let record = tools::build_tool_run_task(&state, &tool_id, upload_ids, &req.params).await?;
+    let task_id = record.task_id.clone();
     state
         .tasks
         .create(record.clone())
@@ -252,6 +194,7 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
+    use chrono::Utc;
     use std::sync::{
         atomic::{AtomicU64, Ordering},
         Arc,

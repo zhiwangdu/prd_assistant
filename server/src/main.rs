@@ -2,6 +2,7 @@ mod app;
 mod domain;
 mod http;
 mod mcp;
+mod mcp_server;
 mod pipeline;
 mod services;
 mod stores;
@@ -38,6 +39,8 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     Mcp(McpArgs),
+    /// Standalone task-free MCP stdio server for external clients.
+    McpServe,
 }
 
 #[derive(Parser, Debug)]
@@ -64,8 +67,12 @@ async fn main() -> anyhow::Result<()> {
     let config = load_config(&args.config).context("failed to load server config")?;
     config.prepare_dirs()?;
 
-    if let Some(Command::Mcp(mcp_args)) = args.command {
-        return mcp::run_stdio(config, mcp_args.task_id, mcp_args.mode).await;
+    match args.command {
+        Some(Command::Mcp(mcp_args)) => {
+            return mcp::run_stdio(config, mcp_args.task_id, mcp_args.mode).await;
+        }
+        Some(Command::McpServe) => return mcp_server::run_stdio(config).await,
+        None => {}
     }
 
     let bind: SocketAddr = config

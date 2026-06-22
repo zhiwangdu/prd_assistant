@@ -15,9 +15,12 @@ use crate::{
     app::AppState,
     domain::{
         contracts::{ActionKind, ActionRisk, AgentAction, EvidenceProvider, TaskContext},
-        models::{GrepResults, Manifest, TaskRecord, ToolDescriptor, ToolInputIndex, ToolSource},
+        models::{
+            AnalysisLanguage, GrepResults, Manifest, TaskKind, TaskRecord, TaskSource, TaskStatus,
+            ToolDescriptor, ToolInputIndex, ToolSource, UploadStatus,
+        },
     },
-    pipeline::{extract_task, prepare_pipeline_run, search_task},
+    pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
     services::fetch::{FetchRunParams, FETCH_TOOL_ID},
     services::huawei_package_sync::{
         validate_params as validate_huawei_package_sync_params, HUAWEI_PACKAGE_SYNC_TOOL_ID,
@@ -27,6 +30,7 @@ use crate::{
         config::{AppConfig, ToolSettings},
         error::AppError,
         fs_utils::relative_string,
+        id::next_id,
     },
 };
 
@@ -189,6 +193,73 @@ pub fn validate_tool_run_request(
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
+}
+
+/// Build a queued `TaskKind::ToolRun` record for `tool_id` from already-validated
+/// upload ids and params. Shared by the HTTP `POST /api/tools/:id/runs` path (which
+/// then enqueues it) and the MCP `tools/call` path (which runs it synchronously).
+pub async fn build_tool_run_task(
+    state: &Arc<AppState>,
+    tool_id: &str,
+    upload_ids: Vec<String>,
+    params: &serde_json::Value,
+) -> Result<TaskRecord, AppError> {
+    let normalized_params =
+        validate_tool_run_request(&state.config, tool_id, upload_ids.len(), params)?;
+    let mut uploads = Vec::with_capacity(upload_ids.len());
+    for upload_id in &upload_ids {
+        let upload = state
+            .uploads
+            .get(upload_id)
+            .await
+            .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
+        if upload.status != UploadStatus::Complete {
+            return Err(AppError::bad_request(format!(
+                "uploadId {upload_id} is not complete"
+            )));
+        }
+        uploads.push(upload);
+    }
+    let task_id = next_id("task");
+    let workspace = state.config.storage.workspace_dir(&task_id);
+    let inputs = prepare_raw_snapshot(&workspace, &uploads).await?;
+    let now = Utc::now();
+    Ok(TaskRecord {
+        schema_version: 6,
+        task_id,
+        alias: None,
+        session_id: None,
+        task_kind: TaskKind::ToolRun,
+        analysis_mode: state.config.claude_code.default_mode,
+        analysis_language: AnalysisLanguage::ZhCn,
+        source: TaskSource::Upload,
+        upload_ids,
+        inputs,
+        source_url: None,
+        tool_id: Some(tool_id.to_string()),
+        tool_params: normalized_params,
+        tool_result_path: None,
+        remote_executor_id: None,
+        remote_command_id: None,
+        remote_command_params: serde_json::Value::Null,
+        remote_result_path: None,
+        instance_id: None,
+        cluster_id: None,
+        node_id: None,
+        question: "Run selected tool".to_string(),
+        status: TaskStatus::Queued,
+        phase: None,
+        attempts: 0,
+        error: None,
+        manifest_path: None,
+        grep_results_path: None,
+        metadata_context_path: None,
+        system_context_path: None,
+        result_json_path: None,
+        result_markdown_path: None,
+        created_at: now,
+        updated_at: now,
+    })
 }
 
 pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {

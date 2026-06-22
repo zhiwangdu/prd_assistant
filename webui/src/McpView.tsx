@@ -21,7 +21,7 @@ const STDIO_CONFIG = `{
   "mcpServers": {
     "logagent": {
       "command": "logagent-server",
-      "args": ["mcp"]
+      "args": ["mcp-serve"]
     }
   }
 }`;
