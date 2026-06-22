@@ -43,10 +43,10 @@ Analyzer smoke tests against real `third_party/` binaries: `scripts/smoke-*.sh`.
 ## Environment
 
 - `LOGAGENT_NATIVE_API_KEY` — required API key (the `Authorization: Bearer` token). Fallback when no `auth.api_keys` are configured.
-- LLM mode additionally needs `LOGAGENT_LLM_BASE_URL`, `LOGAGENT_LLM_API_KEY`, `LOGAGENT_LLM_MODEL`.
-- `LOGAGENT_CLAUDE_CODE_PATH` — absolute path to `claude` binary (only if `claude_code` is used).
 - `LOGAGENT_FETCH_SECRET_KEY` — base64 of 32 bytes, required only when `fetch.enabled: true`.
 - HuaweiCloud package sync, remote SSH, etc. each pull their own secrets from env **only when their subsystem is `enabled: true`** — disabled subsystems do not require their env vars.
+
+LogAgent is LLM-free by default; no `LOGAGENT_CLAUDE_CODE_PATH` or `LOGAGENT_LLM_*` env vars are required to start.
 
 Config is YAML (`examples/*.yaml`). `${ENV}` placeholders in config values are expanded from the environment (see `expand_env_vars_with` in `support/config.rs`); secrets are never written into config files.
 
@@ -60,14 +60,14 @@ Browser WebUI / External MCP client / Chrome Ext → Native Agent
 
 **Server (`server/src/`)** — layered:
 
-- `main.rs` — parses config, creates `AppState`, mounts `http::router` + a `ServeDir` fallback to `webui/out`. Also has a `mcp` subcommand: `logagent-server mcp --task-id <id> --mode diagnose|code_investigation|fix` speaks JSON-RPC over stdio (logs forced to stderr).
+- `main.rs` — parses config, creates `AppState`, mounts `http::router` + a `ServeDir` fallback to `webui/out`. Also has a `mcp-serve` subcommand: `logagent-server mcp-serve` speaks JSON-RPC over stdio for external MCP clients (task-free; logs forced to stderr).
 - `app.rs` — `AppState` is the god-object holding every store and service, constructed from `AppConfig`. `recover_tasks()` re-enqueues incomplete tasks on startup.
 - `http/` — Axum handlers, one file per resource (`tools`, `fetch`, `executors`, `metadata`, `cases`, `skills`, `settings`, `sessions`, `tasks`, `uploads`, `mcp_readonly`, …). `http/mod.rs::router` is the single route table; everything under `/api/*` is behind the `require_api_key` middleware except `/health`.
-- `services/` — business logic: `tool_runner` (allowlisted external binary exec with timeout/output limits), `fetch`, `remote_execution` (SSH/SCP via templated commands only), `metadata`, `log_analyzer`, `skill_registry`, plus the now-optional `llm_gateway`, `agent_backend`, `domain_adapters`, `agent_contracts`.
+- `services/` — business logic: `tool_runner` (allowlisted external binary exec with timeout/output limits), `fetch`, `remote_execution` (SSH/SCP via templated commands only), `metadata`, `log_analyzer`, `skill_registry`. (The legacy `llm_gateway`/`agent_backend`/`domain_adapters`/`agent_contracts` analysis-agent modules were removed in Phase 5.)
 - `stores/` — persistence: JSON files per record + SQLite (`rusqlite` bundled, e.g. `memory.sqlite`). No Postgres/Redis/ES. `pipeline/executor.rs` runs async tasks with a concurrency cap.
 - `support/` — `config.rs` (the large config loader/resolver), `auth.rs` (bearer-token middleware), `error.rs` (`AppError` → HTTP), `fs_utils.rs` (logical path safety), `id.rs`.
 - `domain/` — shared `contracts` and `models` types.
-- `mcp.rs` — the MCP server (stdio JSON-RPC). Reuses the same `ToolRunner`, registry, allowlists, and artifact store as the HTTP path — MCP tool calls and WebUI tool runs share one execution boundary.
+- `mcp_server.rs` — the task-free MCP server (stdio JSON-RPC via `mcp-serve`, also exposed at `POST /api/mcp`). Reuses the same `ToolRunner`, registry, allowlists, and artifact store as the HTTP path — MCP tool calls and WebUI tool runs share one execution boundary. (`http/mcp_readonly.rs` provides the read-only `/api/mcp/readonly` preview.)
 
 **Tool Runner** — tools are external binaries configured in the `tools:` map (name → path/args/timeout/limits/match-patterns). Paths must be absolute. `{input_file}` is substituted in args. Source-built analyzers live in `third_party/` git submodules (influxql, flux, openGemini, influxdb) and are built to `bin/tools/` by `scripts/build-tools.sh`.
 

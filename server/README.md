@@ -82,7 +82,7 @@ server/src
     id.rs
 ```
 
-旧 `tasks.rs`、`agent_backend.rs`、`llm_gateway.rs`、`analysis_state.rs` 等可以在迁移期存在，但新开发应优先落在工具工作台语义的模块中。
+旧分析 Agent 模块（`agent_backend.rs`、`llm_gateway.rs`、`analysis_state.rs`、`session_store.rs`、`agent_contracts.rs`、`domain_adapters.rs`、旧 `mcp.rs`、`http/{sessions,tasks,debug,settings}.rs`）已在阶段 5 删除；运行时只剩工具工作台语义（tools / runs / artifacts / metadata / fetch / executors / MCP / cases / system_context）。
 
 ## 数据目录
 

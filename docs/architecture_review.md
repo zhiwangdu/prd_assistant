@@ -2,6 +2,11 @@
 
 Review date: 2026-06-14
 
+> **Historical snapshot.** This review describes the pre-pivot analysis-agent
+> architecture (Sessions, Claude Code task-scoped MCP, analysis_state, LLM
+> gateway, domain adapters). Phase 5 deleted that surface; see `PROGRESS.md`
+> for the current Tools/MCP-workbench architecture.
+
 This review is based on the current repository implementation, not only the planning documents. It covers the root `README.md`, `SPEC.md`, `PROGRESS.md`, module roadmap, component README/SPEC files, and the current server, webui, native-agent, log-analyzer, metadata, tool-runner and analysis-loop code.
 
 ## 1. Current Real Architecture

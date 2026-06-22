@@ -65,18 +65,28 @@ Historical main-branch progress was archived to
 - 已知依赖：`mcp-serve` 经 `AppState::new` 仍需 `LOGAGENT_CLAUDE_CODE_PATH` + LLM env（fat 配置强制），阶段 5 删除 claude_code/llm 配置块后解除。
 - 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（173 通过，+1 `mcp_server` 单测）；stdio smoke：`mcp-serve` 的 `initialize`/`tools/list`/`resources/list` 正常，`tools/list` 为 runnable catalog，logs 走 stderr；旧 `mcp --task-id` 不回归（executor 测试仍绿）。
 
-## 2026-06-22 删除 fat 代码（阶段 5，进行中）
+## 2026-06-22 删除 fat 代码（阶段 5）
 
-- **Wave 1（HTTP 分析面）**：删除 `http/sessions.rs`、`http/tasks.rs`、`http/debug.rs`、`http/settings.rs` 及其路由与 mod 声明；移除 `/api/sessions*`、`/api/tasks*`（保留 `/api/tasks/:task_id/case` → cases，待随 LogAnalysis 一并清理）、`/api/debug/llm`、`/api/settings/{llm,agent-backends,domain-adapters}*`。`AppState` 的 `sessions/llm/agent_backends/domain_adapters` 字段仍被 executor 等使用，暂留（Wave B 删）。`pprof` 测试中遗留的 `/api/tasks` 断言已移除。
-- 验证：`cargo test --all` 158 通过（被删模块的测试随文件移除）。`cargo check` 有 ~31 dead_code 警告（session_store/analysis_state 等方法暂成 dead code），Wave B 删除 fat 模块后消除。
-- 待做（Wave B+）：删 LogAnalysis 执行路径 + `analysis_state`/`session_store`/`agent_backend`/`llm_gateway`/`domain_adapters`/旧 `mcp.rs` + `AppState` 字段 + config 块 + `Command::Mcp`；WebUI 删 `OperationsView` + `analysisCopy`。
+- **Wave 1（HTTP 分析面）**：删除 `http/sessions.rs`、`http/tasks.rs`、`http/debug.rs`、`http/settings.rs` 及其路由与 mod 声明；移除 `/api/sessions*`、`/api/tasks*`、`/api/debug/llm`、`/api/settings/{llm,agent-backends,domain-adapters}*`。`pprof` 测试中遗留的 `/api/tasks` 断言已移除。
+- **Wave 2（执行路径 + fat 模块 + 数据模型，Level 2 purge）**：
+  - 删除 fat 模块（~8.8k 行）：`services/{llm_gateway,agent_backend,agent_contracts,domain_adapters}`、`stores/{analysis_state,session_store}`、旧 `mcp.rs`（task-bound MCP，被 `mcp_server.rs` 取代）。
+  - 精简 `pipeline/executor.rs`：只保留 ToolRun + RemoteCommandRun 单阶段执行（无 agent loop、无 analysis_state）；`pipeline/mod.rs` 保留 extract/search/prepare（`logagent.preprocess_log_package` 工具依赖），删 generate/persist/render LLM 辅助。
+  - 精简 `domain/models.rs`：purge `TaskKind::LogAnalysis`、`TaskStatus::Waiting*`、LogAnalysis-only `TaskPhase` 变体、`AnalysisMode`、`AnalysisLanguage`、`AnalysisSession*` 类型、`AnalysisResult`/`RootCause`/`Confidence`、`TaskRecord.analysis_mode/language`、`CreateTaskRequest`、`TaskListResponse`、`TaskArtifactsResponse`；`default_task_kind`→`ToolRun`。保留 `SystemContextScope::LogAnalysis` 变体（on-disk 兼容，仅删 match arm）。
+  - 精简 `support/config.rs`：删 `llm`/`claude_code`/`analysis`/`embedding` 配置块 + 结构 + resolver + 默认值；新增 `ServerSettings.max_input_chars`（keeper 文本上限，从 llm 配置迁入）。`examples/logagent.yaml` 同步。
+  - `app.rs`：删 `sessions/llm/agent_backends/domain_adapters` 字段。`main.rs`：删 `Command::Mcp`+`McpArgs`（保留 `mcp-serve`）。
+  - `http/cases.rs`：case import 改为 manual-first（无 LLM 抽取）；删 `confirm_task_case` + task→case helper + `/api/tasks/:task_id/case` 路由。`http/mcp_readonly.rs`：删 `list_domain_adapters` 工具/资源。
+  - `write_json_atomic` 移到 `support/fs_utils`（fetch + huawei_package_sync 共享，原经 agent_contracts）。
+  - 删 `task_store` 的 `succeed`/`advance_phase`/`wait_for_user`/`wait_for_approval`/`resume_waiting`（dead after LogAnalysis 删除）。
+  - WebUI：删 `OperationsView.tsx`（孤儿）；`i18n.ts` 删 `analysisCopy`+5 helper；`SettingsView.tsx` 精简为 external-MCP/exports 卡片（LLM/agent-backends/domain-adapters 面板删除）。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（91 通过）；`npm run lint`/`typecheck`/`build` 全绿（bundle 329→318.89 KB）。Smoke：server 无 `LOGAGENT_CLAUDE_CODE_PATH`/LLM env 即可启动，`/health` ok、`/api/tools` 7 工具、`POST /api/mcp` tools/list 5、`mcp-serve` stdio 正常。
+- 残留：`services/metadata.rs` 中 ~35 dead-code 警告（retired analysis-agent 的 metadata-context-outline 子系统，与 keeper metadata 端点交织），留作后续 focused 清理（Wave C）。`SystemContextScope::LogAnalysis` 变体保留（on-disk 兼容）。
 
 ## Next Steps
 
 - ✅ WebUI navigation pivot to Tools-first（阶段 1 完成）。
-- Split or hide Agent/Analyze-only UI paths behind optional workflow mode.（OperationsView 已从导航降级，视图待阶段 5 删除）
+- ✅ OperationsView/analysisCopy 删除（阶段 5 Wave 2 完成）。
 - ✅ Consolidate HTTP APIs around tools, runs, artifacts, metadata, fetch, executors, MCP and settings.（阶段 2 完成；fetch run 合并待后续）
-- Keep old session/task analysis code only as a migration source until replaced.
+- 清理 `services/metadata.rs` 的 metadata-context-outline dead code（Wave C）。
 - Add a local-toolhub config example and deployment smoke.
 
 ## Verification
