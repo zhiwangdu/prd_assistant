@@ -1,8 +1,10 @@
 import { FileArchive, Globe2, Play, RefreshCw, Save, Server, Trash2, UploadCloud, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
+import { errorMessage } from "./errors";
 import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { startPolling } from "./polling";
 import { uploadFile } from "./upload";
 import { V2FetchBridge } from "./V2FetchBridge";
 import { V2ToolsBridge } from "./V2ToolsBridge";
@@ -191,13 +193,12 @@ function FetchView({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!apiKey.trim()) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void refreshFetchRuns().catch(() => undefined);
       if (selectedRun && !isTerminal(selectedRun.status)) {
         void selectRun(selectedRun.taskId).catch((reason) => setStatus(errorMessage(reason)));
       }
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [apiKey, refreshFetchRuns, selectedRun, selectRun]);
 
   async function previewCurl() {
@@ -527,13 +528,12 @@ function ToolPluginsView({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!apiKey.trim()) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void refreshRuns().catch(() => undefined);
       if (selectedRun && !isTerminal(selectedRun.status)) {
         void selectRun(selectedRun.taskId).catch((reason) => setStatus(errorMessage(reason)));
       }
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [apiKey, refreshRuns, selectedRun, selectRun]);
 
   async function runTool() {
@@ -947,9 +947,6 @@ function formatPercent(value?: number | null) {
   return typeof value === "number" ? `${value.toFixed(2)}%` : "-";
 }
 
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
-}
 
 function isPprofResult(value: unknown): value is PprofResult {
   if (!isJsonObject(value)) return false;

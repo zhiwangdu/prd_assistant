@@ -49,6 +49,12 @@ Server 不负责：
 - `/api/v2/tools` 同时返回 `tools` 和兼容 alias `toolPlugins`。
 - run/task scoped API 必须校验 action、artifact 和 workspace 属于当前 run/task。
 
+维护约束：
+
+- 新 endpoint 必须优先放入领域 APIRouter，不应继续扩大单体 `api.py`。
+- `/api/*` alias 必须说明兼容对象；新 WebUI 和 Server 内部调用默认使用 `/api/v2/*`。
+- 大型请求/响应模型应逐步从路由注册文件拆出，保持路由文件只承担 HTTP 映射、鉴权和错误转换。
+
 ## 数据存储
 
 `LOGAGENT_V2_DATA_DIR` 下的关键目录：
@@ -65,6 +71,13 @@ code_worktrees/
 每个 run/task workspace 必须只写入自身目录。artifact path 对外使用 workspace-relative 逻辑路径，不能暴露任意本机路径。
 
 SQLite 必须启用 WAL 或等价单机并发策略。Job 和 run 状态必须支持进程重启后的恢复或安全终止。
+
+Store 连接生命周期要求：
+
+- 每个 `Store` 实例应复用受锁保护的 SQLite connection，避免每次 DAO 操作都 connect/close。
+- FastAPI lifespan shutdown 必须关闭 Store connection。
+- schema 初始化必须记录当前 `PRAGMA user_version` 和 `schema_migrations` 基线。
+- 后续 schema 变化必须以版本化 migration 表达；兼容性 `ALTER TABLE ADD COLUMN` 只能作为迁移实现细节，不能成为无版本补丁堆。
 
 ## Run Pipeline
 
@@ -288,3 +301,4 @@ logagent-v2://run/<run_id>/<resource>
 - budget-limited run 以低置信度结果成功结束。
 - 只读 MCP 不写入数据，task MCP 只影响当前 run。
 - Server 重启后可恢复 queued/running/waiting jobs 或给出安全终态。
+- Store maintenance pytest 覆盖 SQLite 连接复用和 schema version 记录。

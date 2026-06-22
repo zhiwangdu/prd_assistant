@@ -1,8 +1,11 @@
 import { BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileArchive, ListChecks, Plus, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import { analysisCopy, confidenceLabel, eventTypeLabel, sessionStatusLabel, taskPhaseLabel, taskStatusLabel, type AnalysisCopy, type UiLanguage } from "./i18n";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { setNativeCurrentSession } from "./native-agent";
+import { startPolling } from "./polling";
 import { type UploadResponse, uploadFile } from "./upload";
 import { V2AnalyzeBridge } from "./V2AnalyzeBridge";
 
@@ -458,11 +461,10 @@ export function OperationsView({ apiKey, language }: { apiKey: string; language:
 
   useEffect(() => {
     if (!apiKey.trim() || !selectedSession) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void refreshSessions().catch(() => undefined);
       void selectSession(selectedSession.sessionId, false, selectedTask?.taskId).catch(() => undefined);
     }, selectedTask && !isTerminal(selectedTask.status) ? 1000 : 3000);
-    return () => window.clearInterval(timer);
   }, [apiKey, refreshSessions, selectSession, selectedSession, selectedTask]);
 
   async function createSession() {
@@ -941,9 +943,6 @@ function timelineTaskLabel(taskId: string, selectedTask: TaskRecord | null, lang
   return analysisCopy[language].historyRun;
 }
 
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
-}
 
 function toggleString(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
@@ -1183,13 +1182,4 @@ async function fetchTaskAnalysis(taskId: string, apiKey: string) {
   } catch {
     return null;
   }
-}
-
-async function setNativeCurrentSession(sessionId: string) {
-  const response = await fetch("http://127.0.0.1:17321/workspace/current", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId })
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }

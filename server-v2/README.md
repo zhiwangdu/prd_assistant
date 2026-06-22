@@ -2,6 +2,8 @@
 
 `server-v2/` 是 V2 分支的当前 Server 实现：一个单进程 Python/FastAPI 应用，使用 SQLite WAL、本地 artifact store 和 DB-backed jobs 承载 Log Analysis、Tools、Metadata、System Context、Memory、MCP、Code Evidence 和 Remote Executor。
 
+当前 `api.py` 和 `store.py` 仍是重构过程中的大文件。新功能不应继续扩大这两个文件：API 应优先拆到领域 APIRouter，Store 应继续拆到 schema/migration 与 focused repository 模块。当前整改已先收敛 Store 连接生命周期和 schema version 记录，完整拆分仍列为后续维护项。
+
 旧 Rust `server/` crate 已从 V2 分支移除。V2 的权威 API 前缀是 `/api/v2`；少量 `/api/*` alias 仅用于 Native Agent、WebUI 或历史 taskId 语义兼容，新功能应优先接入 `/api/v2`。
 
 ## 当前架构
@@ -30,6 +32,8 @@ FastAPI app
 ```
 
 V2 Server owns every execution boundary. Agent providers only return structured outcomes; tools, Fetch, SSH/SCP, code search, Metadata reads and Case recall all go through Server-side schemas, allowlists, budgets and approval checks.
+
+SQLite 使用 WAL，并由每个 `Store` 实例复用受锁保护的连接；FastAPI lifespan 结束时关闭连接。Schema 初始化仍保持幂等 `CREATE TABLE IF NOT EXISTS` / compatibility `ALTER TABLE ADD COLUMN`，并额外写入 `PRAGMA user_version` 和 `schema_migrations` 记录，作为后续版本化 migration 拆分的基线。
 
 ## 核心模型
 
@@ -217,6 +221,20 @@ npm run lint
 npm run typecheck
 npm run build
 ```
+
+Store 或 schema 生命周期改动至少补充/运行 focused pytest，例如：
+
+```bash
+server-v2/.venv/bin/python -m pytest -q server-v2/tests/test_store_maintenance.py
+```
+
+## 维护边界
+
+- `/api/v2` 是唯一新功能入口；新增 `/api/*` alias 需要明确兼容对象和退出条件。
+- 新 API 应拆入领域 router，避免继续扩大 `api.py`。
+- 新持久化逻辑应优先进入 focused store/repository 模块，避免继续扩大 `store.py`。
+- 新 schema 变更需要记录 migration 版本，不能只堆叠无说明的 `ALTER TABLE`。
+- 新测试不要继续塞进 `test_store.py`，按能力域创建 focused test file。
 
 ## 安全边界
 

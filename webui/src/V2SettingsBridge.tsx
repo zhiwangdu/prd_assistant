@@ -1,6 +1,7 @@
 import { Bot, Boxes, CheckCircle2, Copy, Download, MessageSquareText, Network, PlugZap, RefreshCw, Send, ServerCog, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import {
   downloadV2SkillsZip,
   downloadV2ToolsZip,
@@ -359,8 +360,4 @@ function GraphRuntimeView({ runtime }: { runtime: V2GraphRuntime }) {
       </div>
     </div>
   );
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

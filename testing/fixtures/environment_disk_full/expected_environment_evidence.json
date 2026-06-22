@@ -1,0 +1,5 @@
+{
+  "fixture": "environment_disk_full",
+  "expectedEvidenceKind": "environment",
+  "expectedKeywords": ["Use%", "99%", "/"]
+}

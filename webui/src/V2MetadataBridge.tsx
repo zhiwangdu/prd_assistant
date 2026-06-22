@@ -1,6 +1,7 @@
 import { Boxes, CheckCircle2, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import {
   confirmV2MetadataImport,
   deleteV2MetadataInstance,
@@ -339,8 +340,4 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 
 function JsonBlock({ title, value }: { title: string; value: unknown }) {
   return <div><p className="mb-2 text-xs text-muted-foreground">{title}</p><pre className="max-h-96 overflow-auto rounded-lg border border-border bg-slate-50 p-3 text-xs">{JSON.stringify(value, null, 2)}</pre></div>;
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

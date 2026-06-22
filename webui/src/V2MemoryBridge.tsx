@@ -1,6 +1,7 @@
 import { BookOpenCheck, CheckCircle2, FileText, History, MessageSquare, RefreshCw, Save, Search, Send, UploadCloud, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import {
   appendV2CaseImportMessage,
   confirmV2CaseImport,
@@ -558,8 +559,4 @@ function hasRequiredFields(draft: UiCaseDraft) {
 function optionalString(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

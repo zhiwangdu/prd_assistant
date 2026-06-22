@@ -1,6 +1,8 @@
 import { Download, Globe2, Play, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
+import { startPolling } from "./polling";
 import {
   createV2FetchEndpointRun,
   deleteV2FetchEndpoint,
@@ -119,10 +121,9 @@ export function V2FetchBridge({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!selectedFetchRunId || !selectedFetchRun || isTerminalToolRun(selectedFetchRun.status)) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void loadFetchRun(selectedFetchRunId).catch(() => undefined);
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [loadFetchRun, selectedFetchRun, selectedFetchRunId]);
 
   async function previewCurl() {
@@ -616,8 +617,4 @@ function artifactCount(artifacts: V2ToolRunArtifacts | null) {
 
 function upsertRun(runs: V2ToolRun[], run: V2ToolRun) {
   return [run, ...runs.filter((item) => item.id !== run.id)];
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

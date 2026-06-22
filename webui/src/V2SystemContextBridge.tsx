@@ -1,6 +1,7 @@
 import { BookOpenCheck, Boxes, BrainCircuit, CheckCircle2, Download, FileText, Layers, Plus, RefreshCw, Save, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import {
   activateV2SystemContextVersion,
   createV2SystemContextResource,
@@ -1057,8 +1058,4 @@ function titleFromFilename(filename: string) {
 
 function toggleString(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

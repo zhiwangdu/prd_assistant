@@ -139,7 +139,8 @@ GENERATE_RESULT
 
 ## 全局验收
 
-- 本地 Rust workspace：`cargo fmt --check`、`cargo check`、`cargo test`。
+- Rust checks only apply when modifying remaining Rust components such as
+  `native-agent/`: `cargo fmt --check`、`cargo check`、`cargo test`。
 - V2 Server：`ruff check` 和相关 pytest。
 - WebUI：`npm run lint`、`npm run typecheck`、`npm run build`。
 - WebUI 能创建 Session、上传或 question-only run、查看 timeline/result。

@@ -1,0 +1,5 @@
+{
+  "fixture": "redis_timeout",
+  "expectedKeywords": ["timeout", "redis", "retrying"],
+  "expectedSeverity": "error"
+}

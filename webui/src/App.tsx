@@ -1,6 +1,7 @@
 import { Activity, BookOpenCheck, Boxes, BrainCircuit, FileSearch, Globe2, KeyRound, Layers3, Server, Settings, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui";
+import { errorMessage } from "./errors";
 import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 import { V2AnalyzeBridge } from "./V2AnalyzeBridge";
@@ -147,9 +148,6 @@ function V2ToolsWorkbench({ apiKey }: { apiKey: string }) {
   );
 }
 
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
-}
 
 function initialApiKey() {
   const stored = localStorage.getItem(API_KEY_STORAGE)?.trim();

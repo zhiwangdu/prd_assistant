@@ -1,0 +1,4 @@
+{
+  "fixture": "influxql_slow_query",
+  "keywords": ["influxql", "slow query", "duration", "group by"]
+}

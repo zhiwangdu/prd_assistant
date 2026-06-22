@@ -1,6 +1,8 @@
 import { Download, Play, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
+import { startPolling } from "./polling";
 import {
   createV2Executor,
   createV2ExecutorRun,
@@ -110,13 +112,12 @@ export function V2ExecutorsBridge({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!apiKey.trim()) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void refreshRuns().catch(() => undefined);
       if (selectedRun && !isTerminal(selectedRun.status)) {
         void selectRun(selectedRun.taskId).catch((reason) => setStatus(errorMessage(reason)));
       }
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [apiKey, refreshRuns, selectedRun, selectRun]);
 
   function selectExecutor(executor: V2RemoteExecutorRecord) {
@@ -456,8 +457,4 @@ function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

@@ -1,0 +1,2 @@
+2026-06-22T10:15:03Z ERROR cache client timeout after 3000ms command=GET key=session:123
+2026-06-22T10:15:04Z WARN retrying redis request attempt=2 host=redis-1.local

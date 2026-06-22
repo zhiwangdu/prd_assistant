@@ -24,6 +24,9 @@ WebUI 使用 React 18、Vite、TypeScript、Tailwind CSS 和 shadcn/ui 组合组
 - `Tools / Executors`：已切换为 V2 Executors 工作台，调用 Python V2 `/api/v2/executors*` 和 `/api/v2/executor-runs*`：支持 V2 executor 新增/编辑/禁用、白名单命令模板选择、DB-backed remote command run 创建/轮询、stdout/stderr/result 路径和预览展示，并通过受保护的 `/api/v2/executor-runs/:run_id/files/result|stdout|stderr` 下载三类结果文件；同时显示 executor last check、模板 description/timeout、run attempts、executor/command IDs、created/updated timestamps、SSH argv preview 和 started/completed timestamps。旧 Rust Executors 页面不再默认渲染。
 - `Settings`：已切换为 V2 Settings 工作台，调用 Python V2 `/api/v2/settings/*` 和 `/api/v2/debug/llm`：支持 V2 Agent provider 摘要、模型列表和消息测试、Agent backend dry-run、LangGraph runtime 节点展示、Domain Adapter 摘要、response-content debug 开关、V2 只读 MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载。旧 Rust Settings 页面不再默认渲染。
 - 默认 V2 页面用户可见标题使用 `Workbench` / `Console`，不再把页面称为临时 `Bridge`；源码文件名仍保留 `V2*Bridge.tsx`，避免一次性重命名造成无关 churn。
+- WebUI 公共错误展示、轮询 timer 和本机 Native Agent 地址分别集中在
+  `errors.ts`、`polling.ts` 和 `native-agent.ts`。新增页面不能继续复制
+  `errorMessage` 或手写 `setInterval` 清理样板。
 - `Settings / Personal Claude Code` 展示只读 MCP HTTP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，并通过带 API Key header 的下载按钮获取 `skills.zip` 和 `tools.zip`；不提供一键安装、本地 bootstrap 或个人 Claude Code 配置写入。
 - `Analyze` 从 Server 加载持久化 Session history，支持新建和删除非运行中 Session；选择 Session 后展示草稿、optional uploads、active run 和历史 runs；活动 run 每秒轮询，成功后读取 artifacts，失败时展示阶段和错误。删除 Session 前会二次确认，删除后只清理 Session 历史项，关联上传、任务和结果产物由 Server 保留。
 - `Analyze` Session draft 可选择 Diagnostic Skills；创建 run 后展示本次固化的 `system_context.json` 中的 Diagnostic Skills 和 Metadata Context 摘要。
@@ -123,6 +126,9 @@ webui/
     V2SettingsBridge.tsx
     V2SystemContextBridge.tsx
     V2ToolsBridge.tsx
+    errors.ts
+    native-agent.ts
+    polling.ts
     upload.ts
     v2-api.ts
     styles.css

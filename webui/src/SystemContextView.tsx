@@ -1,6 +1,7 @@
 import { Boxes, BrainCircuit, FileText, RefreshCw, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui";
+import { errorMessage } from "./errors";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { MetadataDashboard } from "./metadata/MetadataDashboard";
 import { V2MetadataBridge } from "./V2MetadataBridge";
@@ -327,8 +328,4 @@ function slugFromFilename(filename: string) {
 function titleFromFilename(filename: string) {
   const base = filename.replace(/\.(markdown|md)$/i, "").replace(/[-_]+/g, " ").trim();
   return base || "Imported Skill";
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

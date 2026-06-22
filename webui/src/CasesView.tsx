@@ -1,6 +1,7 @@
 import { BookOpenCheck, CheckCircle2, FileText, MessageSquare, RefreshCw, Save, Search, Send, UploadCloud, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { V2MemoryBridge } from "./V2MemoryBridge";
 
@@ -531,8 +532,4 @@ async function uploadCaseImportFile(file: File, apiKey: string) {
 function optionalString(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

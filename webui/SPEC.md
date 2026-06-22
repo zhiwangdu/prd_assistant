@@ -143,6 +143,13 @@ Database
 - V2 Settings 页面必须调用 `/api/v2/settings/domain-adapters` 展示 `opengemini_influxdb` active，以及 `cassandra`、`rocksdb` skeleton；并调用 `/api/v2/debug/llm` 读取/切换 V2 response-content debug 开关。
 - V2 Settings 页面必须展示 `/api/v2/mcp/readonly` HTTP MCP 配置示例，并通过带 Authorization header 的请求下载 `/api/v2/exports/skills.zip` 和 `/api/v2/exports/tools.zip`。
 
+## 维护约束
+
+- 页面错误消息必须复用 `errors.ts#errorMessage`，不能在每个页面复制同名 helper。
+- 定时轮询必须复用 `polling.ts#startPolling` 或后续统一 hook，不能散落手写 `setInterval` / `clearInterval` 样板。
+- 本机 Native Agent endpoint 必须通过 `native-agent.ts` 管理，不能在页面组件内硬编码 `127.0.0.1:17321`。
+- 新 V2 页面默认调用 `v2-api.ts` 或能力域 API helper；只有 health check、binary download、Native Agent 本地调用等非 JSON 场景可以直接 `fetch()`。
+
 ## Diagnostics
 
 - Data/SQL 节点离线。

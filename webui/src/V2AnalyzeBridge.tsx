@@ -1,7 +1,9 @@
 import { BookOpenCheck, CheckCircle2, Cpu, Download, FileArchive, FileJson, MessageSquare, Network, Play, PlusCircle, RefreshCw, Save, Trash2, UploadCloud, Workflow, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
+import { errorMessage } from "./errors";
 import type { UiLanguage } from "./i18n";
+import { startPolling } from "./polling";
 import {
   createV2Run,
   createV2Workspace,
@@ -444,10 +446,9 @@ export function V2AnalyzeBridge({ apiKey, language }: { apiKey: string; language
 
   useEffect(() => {
     if (!apiKey.trim() || !selectedRunId || !analysis || isTerminal(analysis.run.status)) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void loadWorkspace(selectedWorkspaceId, selectedRunId).catch(() => undefined);
     }, 1500);
-    return () => window.clearInterval(timer);
   }, [analysis, apiKey, loadWorkspace, selectedRunId, selectedWorkspaceId]);
 
   async function createWorkspaceAndRun() {
@@ -1776,8 +1777,4 @@ function isCaseDraftComplete(draft: RunCaseDraft) {
     draft.rootCause.trim() &&
     draft.solution.trim()
   );
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

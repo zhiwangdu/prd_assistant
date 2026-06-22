@@ -4,6 +4,7 @@ import json
 import math
 import re
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -20,6 +21,7 @@ DEFAULT_FETCH_REFRESH_POLICY: JsonObject = {
     "tokenRefreshSupported": False,
 }
 CASE_VECTOR_DIMS = 64
+SCHEMA_VERSION = 1
 UNSET = object()
 RUN_TERMINAL_STATUSES = {"succeeded", "failed"}
 REMOTE_RUN_TERMINAL_STATUSES = {"SUCCEEDED", "FAILED"}
@@ -245,21 +247,38 @@ class Store:
         self.sqlite_path = sqlite_path
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self.legacy_cases_dir = self.sqlite_path.parent / "cases"
+        self._connection: sqlite3.Connection | None = None
+        self._connection_lock = threading.RLock()
 
-    @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.sqlite_path)
+    def _open_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.sqlite_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return conn
+
+    def _get_connection(self) -> sqlite3.Connection:
+        if self._connection is None:
+            self._connection = self._open_connection()
+        return self._connection
+
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        with self._connection_lock:
+            conn = self._get_connection()
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+    def close(self) -> None:
+        with self._connection_lock:
+            if self._connection is None:
+                return
+            self._connection.close()
+            self._connection = None
 
     def initialize(self) -> None:
         with self.connect() as conn:
@@ -494,6 +513,12 @@ class Store:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                  version INTEGER PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  applied_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_workspace_id ON runs(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_events_workspace_run
                   ON timeline_events(workspace_id, run_id, created_at);
@@ -578,7 +603,20 @@ class Store:
             self._ensure_case_fts_tx(conn)
             self._backfill_case_vectors_tx(conn)
             self._backfill_workspace_upload_ids_tx(conn)
+            self._record_schema_version_tx(conn)
         self.import_legacy_cases()
+
+    def _record_schema_version_tx(self, conn: sqlite3.Connection) -> None:
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
+        if current < SCHEMA_VERSION:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO schema_migrations(version, name, applied_at)
+            VALUES (?, ?, ?)
+            """,
+            (SCHEMA_VERSION, "baseline_idempotent_sqlite_schema", now_iso()),
+        )
 
     def _ensure_column_tx(
         self, conn: sqlite3.Connection, table: str, column: str, definition: str

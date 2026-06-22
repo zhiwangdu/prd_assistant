@@ -1,7 +1,9 @@
 import { Play, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
+import { startPolling } from "./polling";
 import { V2ExecutorsBridge } from "./V2ExecutorsBridge";
 
 type RunStatus = "QUEUED" | "RUNNING" | "WAITING_FOR_USER" | "WAITING_FOR_APPROVAL" | "SUCCEEDED" | "FAILED";
@@ -158,13 +160,12 @@ export function ExecutorsView({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!apiKey.trim()) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void refreshRuns().catch(() => undefined);
       if (selectedRun && !isTerminal(selectedRun.status)) {
         void selectRun(selectedRun.taskId).catch((reason) => setStatus(errorMessage(reason)));
       }
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [apiKey, refreshRuns, selectedRun, selectRun]);
 
   function selectExecutor(executor: RemoteExecutorRecord) {
@@ -465,8 +466,4 @@ function isTerminal(status: RunStatus) {
 
 function parseTags(value: string) {
   return value.split(",").map((tag) => tag.trim()).filter(Boolean);
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

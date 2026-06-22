@@ -1,0 +1,9 @@
+{
+  "summary": "slow query detected",
+  "findings": [
+    {
+      "severity": "warning",
+      "message": "aggregate query scans a one hour window grouped by host"
+    }
+  ]
+}

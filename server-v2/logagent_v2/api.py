@@ -956,6 +956,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await runner.start()
         yield
         await runner.stop()
+        store.close()
 
     app = FastAPI(title="LogAgent V2", version="0.1.0", lifespan=lifespan)
     require_auth = auth_dependency(settings)

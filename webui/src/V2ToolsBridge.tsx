@@ -1,6 +1,8 @@
 import { Download, FileArchive, Play, RefreshCw, UploadCloud, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
+import { errorMessage } from "./errors";
+import { startPolling } from "./polling";
 import {
   callV2TaskTool,
   createV2ToolRun,
@@ -307,10 +309,9 @@ export function V2ToolsBridge({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     if (!selectedManualRunId || !selectedManualRun || isTerminalToolRun(selectedManualRun.status)) return;
-    const timer = window.setInterval(() => {
+    return startPolling(() => {
       void loadManualRun(selectedManualRunId).catch(() => undefined);
     }, 1000);
-    return () => window.clearInterval(timer);
   }, [loadManualRun, selectedManualRun, selectedManualRunId]);
 
   useEffect(() => {
@@ -1563,8 +1564,4 @@ function upsertRun(runs: V2ToolRun[], run: V2ToolRun) {
 function filenameFromPath(path: string) {
   const value = path.split("/").filter(Boolean).pop();
   return value || "artifact";
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

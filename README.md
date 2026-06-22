@@ -157,21 +157,31 @@ deploy/logagent-v2ctl.sh start
 deploy/logagent-v2ctl.sh status
 ```
 
-检查：
+V2 Server 检查：
+
+```bash
+server-v2/.venv/bin/python -m ruff check server-v2/logagent_v2 server-v2/tests
+server-v2/.venv/bin/python -m pytest -q server-v2/tests
+```
+
+WebUI 检查：
+
+```bash
+cd webui && npm run lint && npm run typecheck && npm run build
+```
+
+Rust 检查只在修改仍存在的 Rust 组件时运行，例如 `native-agent/`：
 
 ```bash
 cargo fmt --check
 cargo check
 cargo test
-server-v2/.venv/bin/python -m ruff check server-v2/logagent_v2 server-v2/tests
-server-v2/.venv/bin/python -m pytest -q server-v2/tests
-cd webui && npm run lint && npm run typecheck && npm run build
 ```
 
 ## 开发约定
 
 后续每开发或修改一个可运行组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`；修改 V2 Server 内部能力时，同步更新 `server-v2/README.md`、`server-v2/SPEC.md`，必要时更新 `docs/modules/` 下对应能力文档。
 
-每次修改完文件，也必须同步更新根目录 [PROGRESS.md](./PROGRESS.md)，记录项目进展、行为变化、验证结果或下一步变化。
+每次修改完文件，也必须同步更新根目录 [PROGRESS.md](./PROGRESS.md)，记录项目进展、行为变化、验证结果或下一步变化。历史流水日志已归档到 [docs/archive](./docs/archive/PROGRESS-history-2026-06-22.md)，根进度文件只保留当前态、最近变更和下一步。
 
 完成实现后自动提交并 push。

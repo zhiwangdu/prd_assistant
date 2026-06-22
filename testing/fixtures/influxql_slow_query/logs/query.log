@@ -1,0 +1,1 @@
+2026-06-22T11:02:17Z WARN influxql query exceeded threshold duration=18.4s statement="select mean(value) from cpu where time > now() - 1h group by host"
