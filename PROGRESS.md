@@ -42,6 +42,15 @@ Historical main-branch progress was archived to
 - 已知缺口：`/api/runs` 暂只聚合 `task_store`（tool/remote_command/log_analysis）；FetchStore 的 fetch run 仍走 `/api/fetch/runs`，后续再合并。
 - 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（172 通过，+2 新增）全绿。
 
+## 2026-06-22 服务端解耦 ToolRun 路径（阶段 3）
+
+- 探勘确认：ToolRun（RunTool 阶段）与 RemoteCommandRun（ExecuteRemoteCommand 阶段）本就通过 `task_store` 完成、早返回，不走 analysis_state；二者与 fat 模块的实际运行时耦合只有两处。
+- 3.1 `pipeline/executor.rs` 错误处理：捕获 `task_kind`，仅 `LogAnalysis` 调用 `analysis_state::record_failure`；ToolRun/RemoteCommandRun 失败只经 `task_store.fail` 记录错误。
+- 3.2 `sync_session_status` 对非 `LogAnalysis` 任务直接返回，ToolRun/RemoteCommandRun 路径不再静态调用 `session_store`（`sync_task_status` 本就 no-op，现显式跳过，为阶段 5 删除 session_store 铺路）。
+- keeper 模块（http/tools、services/tools、services/tool_runner、services/fetch、http/runs、http/artifacts）本就不 import analysis_state/llm_gateway/agent_backend/session_store，grep 确认 0 命中。
+- LogAnalysis 分支仍使用 analysis_state/llm/agent_backend（待阶段 5 删除），本阶段未改动。
+- 验证：`cargo fmt --all --check`、`cargo check`、`cargo test --all`（172 通过）全绿。
+
 ## Next Steps
 
 - ✅ WebUI navigation pivot to Tools-first（阶段 1 完成）。

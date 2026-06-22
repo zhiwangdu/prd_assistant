@@ -90,6 +90,9 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
         let phase = task
             .phase
             .ok_or_else(|| anyhow::anyhow!("running task {task_id} has no phase"))?;
+        // Capture the kind before `task` is moved into `dispatch_phase` so the error
+        // path can decide whether to record analysis state.
+        let task_kind = task.task_kind;
         task = match dispatch_phase(state.clone(), task, phase).await {
             Ok(DispatchOutcome::Continue(task)) => task,
             Ok(DispatchOutcome::Complete) => return Ok(()),
@@ -101,10 +104,15 @@ async fn execute(state: Arc<AppState>, task_id: &str) -> anyhow::Result<()> {
                     error = %err,
                     "task phase failed"
                 );
-                if let Err(record_err) =
-                    analysis_state::record_failure(&workspace, Some(phase), err.to_string())
-                {
-                    warn!(task_id, "failed to record analysis failure: {record_err}");
+                // Only the LogAnalysis pipeline owns an analysis_state snapshot. Tool and
+                // remote-command runs record their failure solely via the task store, so
+                // they no longer touch analysis_state on the failure path.
+                if task_kind == TaskKind::LogAnalysis {
+                    if let Err(record_err) =
+                        analysis_state::record_failure(&workspace, Some(phase), err.to_string())
+                    {
+                        warn!(task_id, "failed to record analysis failure: {record_err}");
+                    }
                 }
                 let failed = state
                     .tasks
@@ -912,6 +920,12 @@ async fn continue_with(
 }
 
 async fn sync_session_status(state: &AppState, task: &TaskRecord) {
+    // Only LogAnalysis tasks participate in the session analysis model. Tool and
+    // remote-command runs are independent of sessions, so skip the session store
+    // entirely for them (keeps the core run paths off the session fat module).
+    if task.task_kind != TaskKind::LogAnalysis {
+        return;
+    }
     if let Err(err) = state.sessions.sync_task_status(task).await {
         warn!(
             task_id = %task.task_id,
