@@ -1,135 +1,60 @@
-# Testing 方案
+# Testing
 
-## 目标
+Testing 目录保存本地 Tool/MCP Workbench 的 fixture、smoke 策略和验收说明。测试重点从 Agent 分析闭环切换为工具运行、MCP、artifact 和安全边界。
 
-MVP 至少覆盖核心分析链路，避免只靠人工跑 demo。
+## 测试重点
 
-## 测试层次
+- Tool Catalog descriptor 完整性。
+- Tool Runner 参数校验、timeout、stdout/stderr、result artifact。
+- Built-in tools：日志包预处理、metadata 查询、Fetch、Executor、Code Evidence。
+- MCP tools/list 与 WebUI catalog 一致。
+- Artifact path 安全和下载鉴权。
+- Fetch credential 脱敏。
+- Executor 禁止自由 shell。
+- Metadata 导入、刷新、查询。
+- WebUI Tools-first 页面构建和类型正确。
 
-### 单元测试
-
-- 日志行归一化
-- 错误模式计数
-- Tool Runner 参数模板替换
-- Code Evidence 关键词提取
-- Token 预算裁剪
-- Agent action schema 和 fingerprint
-- 状态 revision、幂等 message/decision
-- 分析预算和终止条件
-- Case 相似度计算
-
-### Fixture 测试
-
-准备固定样例：
+## Fixture
 
 ```text
-fixtures/
+testing/fixtures/
+  downloads/sample.log
   redis_timeout/
-    logs/
-    expected_error_summary.json
   influxql_slow_query/
-    logs/
-    tool_outputs/
-    expected_code_keywords.json
   environment_disk_full/
-    collected/
-    expected_environment_evidence.json
 ```
 
-### 集成测试
+fixture 应包含原始输入和 expected JSON。第三方真实工具 smoke 可以继续使用 `scripts/smoke-*.sh`。
 
-覆盖 upload 来源：
-
-```text
-upload -> extract -> rg -> Agent -> action -> evidence -> mock Claude SDK adapter -> result
-```
-
-覆盖 environment 来源：
-
-```text
-environment approval -> mock environment evidence -> Agent continuation -> result
-```
-
-当前任务系统测试覆盖：
-
-- Upload Store 创建、原子持久化、重新加载、损坏 JSON 启动失败和中断进度校正。
-- 分片 offset、预期大小、完成状态以及未完成上传创建任务的拒绝路径。
-- `/api/uploads` 和 `/api/uploads/batch` multipart 路径覆盖 payload flush 后再持久化记录。
-- Upload API 并发测试使用进程内原子序号隔离临时数据目录，避免目录碰撞导致 payload 被其他测试清理。
-- Metadata task context 的 ID 推导、冲突拒绝、workspace 快照、artifact API 和 Prompt 摘要。
-- Task Store 创建、更新、重新加载、倒序列表、损坏 JSON 失败和终态保护。
-- `RUNNING -> QUEUED` 启动恢复、phase/attempt 保留和阶段级幂等继续执行。
-- expected phase 推进校验和损坏状态启动失败。
-- Analysis State Store 覆盖 state/event 持久化、pipeline 写入和 `/api/tasks/:task_id/analysis` 读取。
-- Task API 覆盖 `WAITING_FOR_USER` 的 pending prompt、message 提交、幂等 key 和恢复到 `PLAN_ANALYSIS`。
-- Task API 覆盖 `WAITING_FOR_APPROVAL` 的 pending approval、批准决策、mock environment evidence 和恢复到 `PLAN_ANALYSIS`。
-- Analysis State Store 覆盖 Agent backend call started/completed 事件和 callId 详情。
-- LLM Gateway 测试覆盖 runtime response logging debug 开关的默认关闭和进程内切换。
-- raw 快照重复执行、派生产物清理和结果重建。
-- API `202` 创建、列表、详情、404 和 artifacts 409。
-- mock Claude SDK adapter 单次任务闭环和 result API。
-- Task API 并发测试使用进程内原子序号隔离临时数据目录，避免目录碰撞导致后台任务误删数据。
-- Prompt 裁剪、Chat Completions 内容解析、Provider 状态分类和 evidence ref 校验。
-- LLM evidence ref 覆盖 canonical refs、裸日志行号/范围、索引范围和无法映射引用的拒绝路径。
-- LLM root cause 解析覆盖真实模型返回的字符串数组形态，并抽取内嵌 `evidenceRefs`。
-- LLM 列表字段解析覆盖真实模型返回的单字符串 `missingInformation` 并规范化为数组。
-- Chat Completions 解析覆盖纯 JSON、完整 JSON 代码围栏、自然语言包裹的唯一 JSON object，以及多个 JSON object 的拒绝路径。
-- LLM Gateway 测试覆盖 schema 修正重试提示，以及解析错误中包含具体字段/类型原因。
-- LLM Gateway 测试覆盖 action decision 修正重试提示，要求顶层 `type` 和合法 `action | final_answer` schema。
-- LLM Gateway 测试覆盖 AgentDecision / FinalAnswer 双模式解析、裸最终结果 JSON 和常见最终结果包裹变体包装为 `final_answer`、mock action decision、未开放 action 拒绝和 action input 校验。
-- WebUI 检查覆盖 Task execution analysis loop 摘要、backend callId 展示和顶部 LLM debug 开关的类型/构建正确性。
-- WebUI 检查覆盖等待用户输入和等待审批控件的类型/构建正确性。
-- Executor 测试覆盖 `PLAN_ANALYSIS` 多轮 mock Claude SDK `search_logs` action、action keywords 重建 grep evidence、重复 fingerprint 防护和预算终止结果生成。
-- Tool Runner 覆盖配置校验、规则 action、多输入文件选择、稳定 action id、fake tool 执行、timeout、幂等复用、dispatcher 接入和 artifacts API。
-- Tool Runner 配置测试覆盖 `path` 的 `${ENV}` 展开、`path_env`、`max_input_files`、禁用工具不读取 env、缺失/空 env 启动失败。
-- Tool Runner 单测覆盖真实 `influxql-analyzer` Report stdout 到 summary/findings 的转换，以及 compare report 的基础 delta findings。
-- Tools API 单测覆盖 `pprof_analyzer` 目录发现、上传复用、`tool_run` task 创建、后台执行、结果 API，以及 `/api/tasks` 不混入工具运行。
-- Remote Executor API 单测覆盖执行机创建、白名单模板列表、`remote_command_run` task 创建、fake ssh 后台执行、result API，以及 `/api/tasks` 不混入 remote command run。
-- pprof parser 单测覆盖 `go tool pprof -top` 文本到结构化 top 函数表的转换。
-
-### Agent Backend 测试策略
-
-开发和 CI 中默认使用 mock Claude SDK adapter，不直接调用真实模型或真实 Claude 服务。
-
-Mock adapter 必须支持脚本化多轮响应：
-
-- 首轮请求日志搜索，次轮输出结论。
-- 请求用户信息，回答后恢复。
-- 请求环境采集，批准和拒绝分支。
-- 重复 action、预算耗尽和无效 schema。
-- Server 重启后从 state/event 恢复。
-
-真实模型调用只做手动验收：
-
-- 小日志包
-- 固定问题
-- 固定期望证据
-- 检查输出是否引用日志、工具、代码和环境证据
-- 当前使用 `examples/server-llm-openai-compatible.yaml` 验证单次日志结果；不要在自动测试中使用真实模型。
-- 手工真实模型验收需要设置 `LOGAGENT_LLM_BASE_URL`、`LOGAGENT_LLM_API_KEY` 和 `LOGAGENT_LLM_MODEL`。
-
-真实工具调用只做手动验收：
-
-- 当前使用 `examples/server-tools.yaml` 验证 Tool Runner。
-- 单独验证真实工具可使用 `scripts/smoke-flux-query-analyzer.sh`、`scripts/smoke-influxql-analyzer.sh`、`scripts/smoke-opengemini-storage-analyzer.sh` 和 `scripts/smoke-influxdb-storage-analyzer.sh`；这些脚本会从 submodules 构建对应工具并检查 stdout JSON。
-- 内网环境运行这些 smoke 前可设置 `LOGAGENT_SUBMODULE_BASE_URL` 或单仓库 `LOGAGENT_SUBMODULE_*_URL`；所有真实工具 smoke 都通过 `scripts/build-tools.sh` 初始化源码，因此会继承自定义 clone 地址。
-- 单独验证 pprof Tools 页面可使用 `examples/server-pprof-tool.yaml`，需要设置 `LOGAGENT_TOOL_PPROF_GO="$(command -v go)"`。
-- Remote Executor 真实 smoke 使用 WebUI `Tools / Executors` 新增 `root@112.74.50.120:22`，运行内置 `smoke_ls_root`，只验证低风险 `ls -la /root`；自动测试使用 fake ssh 脚本，不依赖真实 ECS。
-- 手工真实工具验收需要为 `examples/server-tools.yaml` 设置对应 `LOGAGENT_TOOL_*` 路径环境变量，均可指向 `scripts/build-tools.sh` 的 `target/tools/` 产物。
-- 自动测试使用 fake shell tool，不依赖真实二进制。
-
-完整产品闭环 smoke：
+## 常用检查
 
 ```bash
-scripts/smoke-product-loop.sh
+cargo fmt --check
+cargo check
+cargo test
+cd webui && npm run lint
+cd webui && npm run typecheck
+cd webui && npm run build
+git diff --check
 ```
 
-`scripts/smoke-influxql-analyzer.sh` 会从 submodule 构建 analyzer 并验证 CLI Report JSON 与 stderr progress。`scripts/smoke-product-loop.sh` 会临时启动 `examples/server-influxql-tool.yaml` 对应的 50999 Server，生成 InfluxQL JSONL fixture，验证上传、真实源码构建的 InfluxQL Tool Runner、任务成功、Case 保存，以及第二个任务的 `caseContext` 召回。脚本使用 `LOGAGENT_NATIVE_API_KEY`，未设置时默认 `dev-token`；依赖 `curl`、`jq`、`cargo` 和 Go。Flux 和两个 storage smoke 分别验证 `summary/findings/topQueries` 或 storage analyzer tool id / high severity finding。
+## 手工 Smoke
 
-## 验收标准
+目标 smoke：
 
-- 任务失败时有明确错误原因。
-- LLM 输入不会超过配置的 token 预算。
-- 输出结论必须能追溯到证据文件。
-- 外部工具失败不会导致整个任务无结果，除非工具标记为必需。
-- 不保存或快照测试隐藏思维链。
+```bash
+cargo run -p logagent-server -- --config examples/local-toolhub.yaml
+curl http://127.0.0.1:50992/health
+curl -H "Authorization: Bearer $LOGAGENT_NATIVE_API_KEY" http://127.0.0.1:50992/api/tools
+```
+
+真实 analyzer smoke：
+
+```bash
+scripts/smoke-flux-query-analyzer.sh
+scripts/smoke-influxql-analyzer.sh
+scripts/smoke-opengemini-storage-analyzer.sh
+scripts/smoke-influxdb-storage-analyzer.sh
+```
+
+自动测试不得依赖真实模型、真实 SSH 节点、真实密钥或外网。

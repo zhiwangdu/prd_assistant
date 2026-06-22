@@ -1,254 +1,114 @@
-# LogAgent MVP 总览
+# LogAgent Local Tool/MCP Workbench
 
-当前权威文档入口是本总览、[SPEC.md](./SPEC.md)、各可运行组件目录，以及 [docs/modules](./docs/modules/README.md) 中的 Server 内部能力文档。
+LogAgent 在本分支重新定位为个人本地部署的工具工作台和 MCP 工具合集。目标是提高运维、开发和测试效率，而不是自研一个通用 Agent。
 
-## 目标
+## 产品目标
 
-LogAgent 是面向开发和运维诊断的证据工作台，也是 Claude Code 的领域诊断增强层。主入口是团队共享 Server 的 WebUI `Analyze`，用户通过浏览器完成日志、流水线和问题分析；高级入口是只读 HTTP MCP，个人本地 Claude Code 可连接共享 Server 读取 Skills、Metadata、Case、工具目录和领域能力摘要，用于纯本地分析。
+LogAgent 应该开箱即用地提供：
 
-LogAgent 不接管个人本地 Claude Code 环境。Server 只提供受保护的只读 MCP endpoint、Skills 全量 zip、Tools 二进制快照 zip 和配置示例；本地 Claude Code 的安装、注册、API Key header 注入和工具包引用由个人环境处理。
+- Web 管理页面：配置工具、运行工具、查看结果、管理 Metadata、Fetch、Executor、Case 和 MCP 配置。
+- 本地 Tool Hub：统一管理内置工具、源码构建工具和用户配置工具。
+- MCP Server：让 Claude Code、Codex、Cursor、OpenCode 等外部客户端调用同一套受控 tools/resources。
+- Artifact 和 Run History：每次工具运行都有输入、输出、stdout/stderr、结构化结果和下载入口。
+- 单机部署体验：Rust Server 单二进制 + `webui/out` + `bin/tools` + 本地 data 目录。
 
-当前重点场景是快速问题分析、日志分析、日常测试流水线失败分析和数据库/存储系统专项诊断。第一批领域继续覆盖 openGemini/InfluxDB，并新增 Cassandra、RocksDB 的 Domain Adapter 骨架。
+LogAgent 不再把 Claude Code、LangChain/LangGraph 或任何模型编排作为核心后端。外部 Agent 可以通过 MCP 使用 LogAgent；Server 自身只负责工具、上下文、执行边界和审计。
 
-## 技术选型原则
-
-能用 Rust 实现的模块优先使用 Rust。整体语言优先级：
-
-```text
-Rust -> C/C++ -> Go/Python/Java 等
-```
-
-默认建议：
-
-- 本地 Agent、服务端 API、日志分析器、工具调度器、代码证据、环境采集优先使用 Rust。
-- 已有 C/C++ 工具可直接复用，通过 Tool Runner 统一调用。
-- Python/Go/Java 主要作为已有生态或历史工具的兼容选项，不作为新模块首选。
-
-核心链路：
+## 核心架构
 
 ```text
-日志来源
-  - 浏览器下载 / 手动上传
-  - 测试环境 SSH/SCP 采集
-    |
-    v
-基础证据提取
-  - rg 日志检索
-  - Skill-backed System Context 背景资源
-  - 实例和集群元数据
-  - 外部工具调用
-  - 对应版本代码检索
-  - 环境状态采集
-    |
-    v
-Analysis Orchestrator
-  - 汇总任务证据、领域上下文和预算
-  - 生成 Claude MCP 配置
-  - 启动或恢复 Claude Code session
-    |
-    v
-Claude Code session
-  - 通过 LogAgent MCP resources/tools 获取证据
-  - 按权限模式使用允许的 native tools
-  - 返回结构化 session outcome
-    |
-    v
-人工确认
-    |
-    v
-Case 沉淀与召回
+Browser WebUI / External MCP Client / Optional Chrome Extension
+  -> Rust local server
+    -> Auth and local settings
+    -> Tools catalog
+    -> Tool runner and built-in tools
+    -> Fetch manager
+    -> SSH/SCP executor manager
+    -> Metadata manager
+    -> Log analyzer and package preprocessing
+    -> Code evidence search
+    -> Case notes and skills/system context
+    -> Artifact store and run history
+    -> MCP resources/tools
+  -> Local data dir + tools dir
 ```
 
-## 规划架构图
+## 运行形态
 
-```mermaid
-flowchart LR
-    subgraph Inputs["用户与数据来源"]
-        User["用户 / WebUI"]
-        Chrome["Chrome Extension"]
-        TestEnv["测试环境"]
-    end
-
-    subgraph Local["用户本机"]
-        Native["Native Agent"]
-    end
-
-    subgraph ServerBoundary["LogAgent Server（单 Rust 进程）"]
-        API["API / Auth / Task Manager"]
-        ReadonlyMcp["Read-only HTTP MCP<br/>Knowledge resources / tools"]
-        Orchestrator["Pipeline / Action Executor"]
-        Agent["Analysis Orchestrator<br/>证据包、MCP 配置、等待态"]
-        Gateway["Claude Code Session Runner<br/>CLI + MCP config"]
-        Mcp["LogAgent MCP Server<br/>Resources / Tools"]
-
-        subgraph Evidence["受控证据能力"]
-            Domains["Domain Adapters<br/>openGemini/InfluxDB、Cassandra、RocksDB"]
-            SysCtx["System Context<br/>Diagnostic Skills、Metadata adapter"]
-            Log["Log Analyzer"]
-            Tool["Tool Runner"]
-            Code["Code Evidence"]
-            Env["Environment Collector"]
-            Meta["Metadata"]
-            Cases["Memory<br/>Case Store compatibility"]
-        end
-
-        Store[("Session Store / Task Store / Workspace<br/>session、runs、events、evidence、result")]
-    end
-
-    Model["Claude Code CLI"]
-    Repos["已配置代码仓"]
-    Tools["白名单诊断工具"]
-
-    Chrome --> Native
-    Native -->|"上传日志 / 附加到当前 Session"| API
-    User -->|"创建 Session、可选上传、启动 run、回答、审批"| API
-    User -.->|"个人 Claude Code 只读知识入口"| ReadonlyMcp
-    API --> Orchestrator
-    Orchestrator --> Agent
-    Agent --> Gateway
-    Gateway -->|"--mcp-config"| Model
-    Model --> Gateway
-    Model --> Mcp
-    Mcp --> Domains
-    ReadonlyMcp --> SysCtx
-    ReadonlyMcp --> Meta
-    ReadonlyMcp --> Cases
-    ReadonlyMcp --> Tool
-
-    Orchestrator --> Domains
-    Orchestrator --> Log
-    Orchestrator --> SysCtx
-    Orchestrator --> Tool
-    Orchestrator --> Code
-    Orchestrator -->|"批准后"| Env
-    Orchestrator --> Meta
-    Orchestrator --> Cases
-
-    Tool --> Tools
-    Code --> Repos
-    Env --> TestEnv
-
-    API <--> Store
-    Orchestrator <--> Store
-    Agent <--> Store
-    Evidence --> Store
-
-    Agent -->|"pending prompt / approval"| API
-    API -->|"时间线、问题、审批、最终结果"| User
-    Agent -->|"structured outcome"| Store
-    Store -->|"人工确认后沉淀"| Cases
+```text
+$LOGAGENT_APP_DIR/
+  bin/logagent-local
+  bin/tools/
+  data/
+    logagent.sqlite or json stores
+    artifacts/
+    uploads/
+    runs/
+    metadata/
+    cases/
+  webui/out/
+  deploy/logagent.yaml
 ```
 
-关键控制边界：
+第一阶段可以继续复用 main 分支现有 `logagent-server` crate 和 API 资产，但后续命名和文档应收敛到 Local Tool/MCP Workbench。旧 Log Analysis Agent 相关代码只作为迁移来源，不作为目标架构。
 
-- Analysis Orchestrator、LLM Gateway 和 Claude Code 都不能绕过 LogAgent MCP/Server 边界直接执行领域工具、读取任意任务外路径或连接 SSH。
-- Server Action Executor 是唯一执行入口，负责 schema、白名单、预算、幂等和审批检查。
-- 日志搜索、白名单工具和只读代码检索可自动执行；环境 SSH/SCP 采集默认等待用户批准。
-- `LOGAGENT_CLAUDE_CODE_PATH` 是默认 Claude Code CLI 路径来源。Log Analysis run 会写出 `analysis_package.json`、`claude_prompt.md`、`claude_mcp_config.json`、`claude_session.json`、`mcp_calls.jsonl` 和 Claude session 语义的 `agent_response.json`。Claude CLI 只接收短 stdin 启动 prompt，证据包通过任务专属 MCP `analysis_package` resource 读取，避免大 prompt 进入 argv 或 stdin；完整 `metadata_context.json` 不进入该 package，Claude 初始只看到 `metadataContextOutline`，需要细节时通过 `logagent.query_metadata` 按 section/filter/分页读取。未配置或调用失败时任务失败，不自动 fallback。
-- Log Analysis 公开入口是可恢复的 Session；每次分析 run 仍创建一个 Server task workspace 快照。用户可从 WebUI 删除非运行中的 Session 以清理历史列表，删除只移除 Session 记录和 Session timeline，不级联删除上传、task workspace 或结果产物。
-- WebUI 主入口显示为 `Analyze`，仍使用 Session-first 分析能力，并继续默认调用 Server 机器上的 Claude Code、任务专属 stdio MCP 和 Server 本地 workspace。
-- 个人高级入口是 `POST /api/mcp/readonly`，只读返回 Skills、Metadata、Case、Tools catalog 和 Domain Adapter 等共享知识；不读取/启动/恢复 Session，不上传文件，不审批，不运行远程工具，不写入 Server 数据。
-- Fetch endpoint 只在 `fetch.enabled=true` 且配置 allowlist 和 32-byte base64 secret key 后可用。Server 从 DevTools bash cURL 导入 endpoint，Authorization、Cookie、token/api_key 类 query/body 字段进入加密 credential set；WebUI、API、日志和 artifact 只展示脱敏值。任务 MCP 可调用 `logagent.fetch`，只读 HTTP MCP 不开放 fetch 执行。
-- Log Analyzer 会自动识别节点日志包 `<packageId>_<instanceId>_<nodeId>_<timestamp>_logs.tar.gz`，按 `extracted/<nodeId>/<timestamp>/{tsdb,stream,agent}/` 展开三类日志目录；archive 内允许存在顶层包装目录和 `./` 等目录项，只要文件路径中包含 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 即可归类。轮转 gzip 透明读取，并生成 `tool_inputs/index.json` 供 `influxql_analyzer` 等工具作为独占自动输入消费。
-- 任务 MCP `logagent.search_logs` 不覆盖初始 `grep_results.json`；每次后续搜索写入稳定 `log_searches/logsearch_*.json`，返回命中行正文、按关键词计数、未命中关键词和 `log_searches/...#matches/<index>` evidence ref。Claude Code prompt 要求检查命中行正文，不能只按 `totalMatches` 推断异常类型或技术栈。
-- `logagent.huawei_cloud_package_sync` 是默认关闭的内置手动工具；启用后只接受一个已上传包，把包流式 PUT 到配置的 Huawei OBS，再执行用户提交的 GaussDB update/query SQL，并把 OBS HEAD 与查询摘要写入 `tool_results/<action_id>/result.json`。OBS/GaussDB 密钥只从环境变量读取，不进入 artifact。
-- Settings 提供只读 MCP URL、Authorization header 提示、Claude Code HTTP MCP 配置示例，以及 `skills.zip` / `tools.zip` 下载入口。
-- Session 可以只包含用户问题而不包含上传日志；这种 run 会生成 `session_text_input.json`、空 raw/input 快照、空 manifest 文件列表和空 grep evidence，再由 Analysis Orchestrator 基于问题、Metadata、Case 和后续交互继续分析。
-- `WAITING_FOR_USER` 支持用户提交补充信息，也支持声明没有更多信息并请求基于当前证据直接生成最终结果；该意图会写入 `analysis_state.json` 并通过 `analysis_package.json` 约束下一轮 Claude Code 不再继续追问。
-- Log Analysis run 会固化 `system_context.json`，把已选择或自动匹配的 Diagnostic Skills 和 Metadata adapter 摘要作为背景参考带入 Prompt；System Context 和 Skill reference 不能替代当前任务证据。
-- 成功的 Log Analysis run 会在最终结果生成后静默调用 LLM Gateway 生成短 alias，用于 WebUI 展示；该命名调用不写入 Session timeline 或 analysis events。
-- 所有 Session、任务上下文、事件、证据和结果都持久化到 Session Store / Task Store / Workspace，支持重启恢复。
-- WebUI 可实时展示 Task execution、Claude Code session、MCP calls 和 evidence artifact；LLM response content 日志只能通过顶部 debug 开关手动开启。
-- Memory 当前只激活 `memoryType=case`，通过兼容的 Case API 接收人工确认后的 Case，包括成功任务最终结果确认和用户通过 LLM-assisted 文本导入确认的手工 Case。
+## 组件
 
-## 项目目录
-
-根目录只保留当前真实可运行的组件和工程支撑目录。日志分析、Metadata、Tool Runner、Analysis Orchestrator、Claude Code Session Runner、LogAgent MCP、Domain Adapters、LLM Gateway、Memory/Case Store 等能力目前都作为 `server` crate 的内部模块实现；后续确实需要独立发布或部署时，再从 Server 内部迁出。
-
-| 目录 | 职责 | Spec |
+| 目录 | 职责 | 文档 |
 |------|------|------|
-| [chrome-extension](./chrome-extension/README.md) | Chrome 插件，识别下载并触发上传 | [SPEC](./chrome-extension/SPEC.md) |
-| [native-agent](./native-agent/README.md) | 本地 Rust Agent，接收插件请求并上传日志 | [SPEC](./native-agent/SPEC.md) |
-| [server](./server/README.md) | Rust 服务端，任务、上传、证据流水线、只读 HTTP MCP、导出包和 API | [SPEC](./server/SPEC.md) |
-| [webui](./webui/README.md) | Vite WebUI、Analyze、任务证据、Memory、Skill-backed System Context、Metadata、Tools 和 Settings 可视化 | [SPEC](./webui/SPEC.md) |
-| [deploy](./deploy/README.md) | Runtime 部署模板、环境变量示例、服务控制和重建安装脚本 | [Deployment SPEC](./docs/modules/deployment/SPEC.md) |
-| [examples](./examples) | 本地配置样例和工具 smoke 配置 | - |
-| [scripts](./scripts) | 工作目录初始化、Server/WebUI 快捷编译、服务启停和 smoke 脚本 | - |
-| [testing](./testing/README.md) | 测试 fixture、集成测试和 mock Claude CLI | [SPEC](./testing/SPEC.md) |
-| [third_party](./third_party) | 源码引用的诊断工具 submodules：InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers | - |
+| `server/` | Rust 本地 Server、工具运行、MCP、artifact、配置和静态 WebUI 托管 | [README](./server/README.md) / [SPEC](./server/SPEC.md) |
+| `webui/` | 本地管理页面，Tools-first 工作台 | [README](./webui/README.md) / [SPEC](./webui/SPEC.md) |
+| `native-agent/` | 可选本机文件导入桥，用于 Chrome Extension 传递下载文件 | [README](./native-agent/README.md) / [SPEC](./native-agent/SPEC.md) |
+| `chrome-extension/` | 可选 Chrome 下载监听和导入确认 | [README](./chrome-extension/README.md) / [SPEC](./chrome-extension/SPEC.md) |
+| `deploy/` | 单机 runtime 部署、重建和控制脚本 | [README](./deploy/README.md) |
+| `testing/` | fixture、smoke 和测试策略 | [README](./testing/README.md) / [SPEC](./testing/SPEC.md) |
+| `docs/modules/` | Server 内部能力边界和后续开发约束 | [README](./docs/modules/README.md) |
+| `third_party/` | 上游诊断工具源码引用；不改写上游 README | - |
 
-Server 内部能力的设计文档已归档到 [docs/modules](./docs/modules/README.md)：
+## 模块边界
 
-| 能力 | 文档 |
-|------|------|
-| Claude Code Session Runner | [README](./docs/modules/agent-backends/README.md) / [SPEC](./docs/modules/agent-backends/SPEC.md) |
-| Log Analyzer | [README](./docs/modules/log-analyzer/README.md) / [SPEC](./docs/modules/log-analyzer/SPEC.md) |
-| Tool Runner / Fetch / Huawei Package Sync | [README](./docs/modules/tool-runner/README.md) / [SPEC](./docs/modules/tool-runner/SPEC.md) |
-| Domain Adapters | [README](./docs/modules/domain-adapters/README.md) / [SPEC](./docs/modules/domain-adapters/SPEC.md) |
-| Metadata | [README](./docs/modules/metadata/README.md) / [SPEC](./docs/modules/metadata/SPEC.md) |
-| Skills | [README](./docs/modules/skills/README.md) / [SPEC](./docs/modules/skills/SPEC.md) |
-| System Context | [README](./docs/modules/system-context/README.md) / [SPEC](./docs/modules/system-context/SPEC.md) |
-| Analysis Agent | [README](./docs/modules/analysis-agent/README.md) / [SPEC](./docs/modules/analysis-agent/SPEC.md) |
-| LLM Gateway | [README](./docs/modules/llm-gateway/README.md) / [SPEC](./docs/modules/llm-gateway/SPEC.md) |
-| Memory / Case Store compatibility | [README](./docs/modules/case-store/README.md) / [SPEC](./docs/modules/case-store/SPEC.md) |
-| Memory | [README](./docs/modules/memory/README.md) / [SPEC](./docs/modules/memory/SPEC.md) |
-| Code Evidence | [README](./docs/modules/code-evidence/README.md) / [SPEC](./docs/modules/code-evidence/SPEC.md) |
-| Environment Collector | [README](./docs/modules/environment-collector/README.md) / [SPEC](./docs/modules/environment-collector/SPEC.md) |
-| Config / Interfaces / Security / Deployment / Roadmap | [docs/modules](./docs/modules/README.md) |
+Server 内部能力以本地工具平台为中心：
 
-## MVP 边界
+- Tool Runner / Fetch / Executor 是核心。
+- Metadata / Skills / System Context / Case 是上下文和管理能力。
+- Log Analyzer / Code Evidence 是工具输入和证据能力。
+- MCP 是外部 Agent 的集成入口。
+- LLM Gateway、Analysis Agent、Claude Code runner 只保留为可选自动化，不作为默认主线。
 
-第一版不做企业级日志平台，不引入 Elasticsearch/OpenSearch、CMDB、监控接入、通用远程运维、复杂权限体系和 Multi-Agent 编排，也不尝试替代 Codex、Claude Code 或 OpenCode。
+## API 原则
 
-关键边界：
+- 新接口优先使用 `/api/tools*`、`/api/runs*`、`/api/artifacts*`、`/api/mcp*`、`/api/settings*` 等工具工作台语义。
+- 旧 `/api/sessions*`、`/api/tasks*` 可在迁移期保留，但不作为新功能设计入口。
+- 所有受保护接口使用 `Authorization: Bearer <api-key>`。
+- MCP resources/tools 与 WebUI 使用同一个 registry 和同一套执行边界。
 
-- 外部工具只允许白名单配置调用。
-- Fetch endpoint 默认关闭；启用后只允许访问 `fetch.allowed_hosts` 中的 `http/https` 目标，redirect 每跳重新校验，跨 host 不转发 Authorization/Cookie。
-- LLM Gateway 不能直接执行任意命令。
-- Claude Code 只能按 `analysisMode` permission profile 使用 native tools；领域证据和工具执行必须经过 LogAgent MCP/Server。
-- Server 会在每个 Claude Code permission profile 中自动允许任务专属 LogAgent MCP 工具命名空间 `mcp__logagent__*`；`diagnose` 仍通过 `--tools ""` 禁用 native tools。用户审批只控制 LogAgent 内部 approval-gated action，不能替代 Claude CLI 的 `allowedTools` 白名单。
-- 安全只读动作可自动执行，SSH/SCP 远程采集默认需要用户批准。
-- 代码仓只读检索，不自动改代码。
-- SSH/SCP 只访问配置中的测试环境节点。
-- pgvector 不是第一版硬依赖，Case embedding 可以先用本地文件或 SQLite。
-- MVP 部署形态采用单一 Rust Server binary + Server 内部分层 module；后续确有独立生命周期时再拆 crate 或服务。
-- Agent 上下文只在当前任务内持久化；跨任务知识只来自人工确认后的 Case。
-- 统一配置使用 `logagent.yaml`，密钥只引用环境变量。
+## 安全边界
 
-## 当前优先级
+- API Key 只从环境变量或本地 secret 配置读取。
+- 不把密钥、Cookie、Authorization header 写入日志、artifact 或导出包。
+- Tool Runner、Fetch、SSH/SCP、Code Evidence 都必须有 allowlist。
+- Fetch 默认关闭，启用时必须配置 allowed hosts 和 credential secret。
+- SSH/SCP 只允许配置内 executor、命令模板和文件模板。
+- MCP client 不能绕过 Server 直接执行本机命令或读取任意路径。
+- Artifact path 对外使用逻辑路径，不暴露任意本机路径。
 
-当前阶段优先把 LogAgent 重构为“诊断证据工作台 + Claude Code MCP 增强层 + Domain Adapter”：保留 Session-first Log Analysis、Skill-backed System Context、上传、Metadata、Tool Runner、Fetch endpoint、Tools 页面和 Case Store，`PLAN_ANALYSIS` 生成证据包和 MCP 配置后启动或恢复 Claude Code session。Claude Code 通过 LogAgent MCP tools 请求日志搜索、日志切片、领域工具、受控 Fetch endpoint、按需分页 Metadata slice、Skill reference、Case recall、用户追问和审批；Server 继续负责白名单、allowlist、审批、证据持久化和最终 evidence ref 校验。InfluxQL、Flux、openGemini storage 和 InfluxDB 1.x storage analyzers 已通过 `third_party/` submodules 引用，`scripts/build-tools.sh` 构建并安装到 `target/tools`、`$LOGAGENT_WORK_DIR/bin/tools` 或 runtime `bin/tools`；部署样例默认启用这些源码构建产物。内网环境可通过 `LOGAGENT_SUBMODULE_BASE_URL` 或各 `LOGAGENT_SUBMODULE_*_URL` 手动指定 submodule clone 地址，构建脚本会写入本地 Git submodule config 且不修改 `.gitmodules` 或顶层仓库 `origin`；只有已初始化的 submodule worktree 会同步更新其自身 `origin`。Tools 页面已接入 `pprof_analyzer` 示例工具、Fetch 子页、Huawei OBS + GaussDB package sync 内置工具和 Remote Executor 执行机纳管；Remote Executor 通过白名单 SSH 模板创建 `remote_command_run`，首个 smoke 模板执行低风险 `ls -la /root`。
+## 近期路线
 
-Code Investigation 和 Fix 模式的真实代码 worktree、以及完整 SSH/SCP Environment Collector 延后到产品闭环稳定后实现；当前 WebUI 显式执行机命令已有通用 Remote Executor 框架，Analysis Agent 审批后的远程采集仍通过 LogAgent approval gate 进入等待态并使用 mock evidence。
+1. 文档和产品定位切换为 Local Tool/MCP Workbench。
+2. 裁剪 WebUI 首屏和导航：Tools、Runs、Metadata、Fetch、Executors、MCP、Settings。
+3. 收敛 Server API：保留工具运行、artifact、metadata、fetch、executor、MCP，弱化 Agent/Analyze。
+4. 统一 Tool Catalog，source-built analyzers 和内置工具都进入同一个 registry。
+5. 打包 Rust binary + WebUI static + tools dir 的本地部署路径。
+6. 最后再按需要恢复可选诊断 workflow，而不是默认 Agent 后端。
 
-## 开发约定
+## 验证
 
-后续每开发或修改一个可运行组件，都必须同步更新该组件目录下的 `README.md` 和 `SPEC.md`；修改 Server 内部能力时，同步更新 `server/README.md`、`server/SPEC.md`，必要时更新 `docs/modules/` 下对应能力文档。
+```bash
+cargo fmt --check
+cargo check
+cargo test
+cd webui && npm run lint && npm run typecheck && npm run build
+git diff --check
+```
 
-每次修改完文件，也必须同步更新根目录 [PROGRESS.md](./PROGRESS.md)，记录项目进展、行为变化、验证结果或下一步变化。
-
-`README.md` 至少包含：
-
-- 当前实现状态
-- 配置项
-- 本地运行方式
-- 部署方式
-- 健康检查或验证方式
-- 与上下游组件的接口约定
-
-`SPEC.md` 至少包含：
-
-- 目标和职责边界
-- 输入输出
-- API 或数据产物
-- 配置和安全约束
-- 验收标准
-
-已经写好的可运行组件：
-
-- `chrome-extension`
-- `native-agent`
-- `server`
-- `webui`
-
-这些组件的 README 需要随着代码变化持续维护。
+每次修改后必须同步更新对应 README/SPEC 和 [PROGRESS.md](./PROGRESS.md)。历史进展已归档到 `docs/archive/`。
