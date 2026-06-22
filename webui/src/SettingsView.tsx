@@ -7,13 +7,13 @@ type Props = { apiKey: string };
 
 export function SettingsView({ apiKey }: Props) {
   const [status, setStatus] = useState("Ready");
-  const readonlyMcpUrl = `${window.location.origin}/api/mcp/readonly`;
+  const mcpUrl = `${window.location.origin}/api/mcp`;
   const claudeConfigExample = JSON.stringify(
     {
       mcpServers: {
-        "logagent-readonly": {
+        localtoolhub: {
           type: "http",
-          url: readonlyMcpUrl,
+          url: mcpUrl,
           headers: {
             Authorization: "Bearer <LOGAGENT_API_KEY>"
           }
@@ -67,16 +67,16 @@ export function SettingsView({ apiKey }: Props) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle>External MCP client</CardTitle>
-              <CardDescription>只读 MCP 入口与 Skills/Tools 导出，供外部 Agent 客户端集成。</CardDescription>
+              <CardDescription>LocalToolHub MCP 入口与 Skills/Tools 导出，供外部 Agent 客户端集成。</CardDescription>
             </div>
             <Network className="h-5 w-5 text-muted-foreground" />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-3">
-            <SettingMetric label="Read-only MCP URL" value={readonlyMcpUrl} />
+            <SettingMetric label="MCP URL" value={mcpUrl} />
             <SettingMetric label="Header" value="Authorization: Bearer <api-key>" />
-            <SettingMetric label="Mode" value="read-only knowledge" />
+            <SettingMetric label="Mode" value="catalog tools and resources" />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void downloadExport("/api/exports/skills.zip", "skills.zip")}>

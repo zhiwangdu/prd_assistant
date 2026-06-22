@@ -14,7 +14,7 @@ export const languageOptions: Array<{ value: UiLanguage; label: string }> = [
 
 export const appCopy = {
   "zh-CN": {
-    productName: "LogAgent 工具工作台",
+    productName: "LocalToolHub",
     productSubtitle: "本地工具、运行记录、Artifact 与 MCP",
     serverHealthy: "Server 正常",
     serverUnavailable: "Server 不可用",
@@ -33,7 +33,7 @@ export const appCopy = {
     languageLabel: "语言"
   },
   "en-US": {
-    productName: "LogAgent Tool Workbench",
+    productName: "LocalToolHub",
     productSubtitle: "Local tools, runs, artifacts, and MCP",
     serverHealthy: "Server healthy",
     serverUnavailable: "Server unavailable",

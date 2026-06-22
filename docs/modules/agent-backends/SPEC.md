@@ -2,15 +2,16 @@
 
 ## Contract
 
-外部 Agent 通过 MCP 使用 LogAgent：
+外部 Agent 通过 MCP 使用 LocalToolHub：
 
 ```text
-MCP client -> LogAgent MCP -> shared tool/context services -> artifacts
+MCP client -> LocalToolHub MCP -> shared tool/context services -> artifacts
 ```
 
 ## Requirements
 
 - MCP tools/list 与 WebUI Tool Catalog 一致。
+- `mcp.enabled=false` 时 HTTP 和 stdio MCP 都不可用。
 - tools/call 复用 Server allowlist、schema、timeout 和 artifact store。
 - resources/read 只返回 bounded、脱敏内容。
 - 不保存外部 Agent 隐藏思维链。

@@ -1,6 +1,6 @@
 # Interfaces
 
-LogAgent 对外接口包括 WebUI HTTP API、MCP JSON-RPC、Native Agent import API 和 artifact download API。
+LocalToolHub 对外接口包括 WebUI HTTP API、MCP JSON-RPC、Native Agent import API 和 artifact download API。
 
 ## 原则
 

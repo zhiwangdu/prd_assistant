@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-22
+Last updated: 2026-06-23
 
 Historical main-branch progress was archived to
 `docs/archive/PROGRESS-history-main-2026-06-22.md`.
@@ -9,8 +9,16 @@ Historical main-branch progress was archived to
 
 - Branch: `rewrite/local-toolhub-rust`
 - Base: `origin/main`
-- Product direction: Local Tool/MCP Workbench
+- Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-23 LocalToolHub 命名与 MCP P1 修复
+
+- 产品可见名称从 LogAgent Tool Workbench 收敛为 `LocalToolHub`；WebUI 标题、Settings/MCP 页面文案、MCP `serverInfo.name` 和根/组件文档已更新。
+- 保留 `logagent-server` crate/binary、`LOGAGENT_*` 环境变量、`logagent.*` tool id 和 `logagent://` resource URI 作为兼容 namespace，避免打断已有配置和外部客户端。
+- 修复 HTTP MCP 配置开关：`mcp.enabled=false` 时 `/api/mcp` 返回 JSON-RPC error；stdio `mcp-serve` 继续在启动时拒绝服务。
+- WebUI `McpView` 和 `SettingsView` 从旧 `/api/mcp/readonly` 切换到 `/api/mcp`，页面展示真实 catalog MCP tools/resources。
+- 新增 `mcp_server::tests::http_mcp_respects_disabled_config` 覆盖 HTTP MCP 禁用行为。
 
 ## 2026-06-22 Documentation Pivot
 

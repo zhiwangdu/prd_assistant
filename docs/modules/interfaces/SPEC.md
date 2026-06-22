@@ -15,6 +15,8 @@ Core endpoints:
 /api/settings
 ```
 
+`/api/mcp` respects `mcp.enabled`; when disabled it returns a JSON-RPC error instead of listing resources or tools.
+
 ## MCP
 
 Must support:

@@ -67,6 +67,10 @@ pub async fn http_mcp(State(state): State<Arc<AppState>>, body: Bytes) -> Json<V
 
 /// Handle a single request or a batch array. Reused by stdio and HTTP.
 pub async fn handle_http(state: &Arc<AppState>, body: Value) -> Value {
+    if !state.config.mcp.enabled {
+        let id = body.get("id").cloned();
+        return json_rpc_error(id, -32000, "MCP is disabled by configuration");
+    }
     if let Some(items) = body.as_array() {
         let mut responses = Vec::with_capacity(items.len());
         for item in items {
@@ -131,7 +135,7 @@ fn initialize_result() -> Value {
     json!({
         "protocolVersion": "2025-06-18",
         "capabilities": { "resources": {}, "tools": {} },
-        "serverInfo": { "name": "logagent-mcp", "version": env!("CARGO_PKG_VERSION") }
+        "serverInfo": { "name": "localtoolhub-mcp", "version": env!("CARGO_PKG_VERSION") }
     })
 }
 
@@ -367,7 +371,10 @@ mod tests {
         let (state, root) = test_state("mcp-server");
 
         let initialized = handle_request(&state, &request(1, "initialize", json!({}))).await;
-        assert_eq!(initialized["result"]["serverInfo"]["name"], "logagent-mcp");
+        assert_eq!(
+            initialized["result"]["serverInfo"]["name"],
+            "localtoolhub-mcp"
+        );
 
         let listed = handle_request(&state, &request(2, "tools/list", json!({}))).await;
         let names: Vec<&str> = listed["result"]["tools"]
@@ -441,7 +448,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[tokio::test]
+    async fn http_mcp_respects_disabled_config() {
+        let (state, root) = test_state_with_mcp_enabled("mcp-server-disabled", false);
+
+        let response = handle_http(&state, request(1, "tools/list", json!({}))).await;
+        assert_eq!(response["error"]["code"], -32000);
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("disabled"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn test_state(prefix: &str) -> (Arc<AppState>, std::path::PathBuf) {
+        test_state_with_mcp_enabled(prefix, true)
+    }
+
+    fn test_state_with_mcp_enabled(
+        prefix: &str,
+        mcp_enabled: bool,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "logagent-{prefix}-{}-{}",
             std::process::id(),
@@ -479,7 +507,10 @@ mod tests {
             fetch: crate::support::config::FetchSettings::default(),
             huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
-            mcp: McpSettings::default(),
+            mcp: McpSettings {
+                enabled: mcp_enabled,
+                ..McpSettings::default()
+            },
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)

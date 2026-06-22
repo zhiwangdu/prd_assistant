@@ -24,7 +24,7 @@ use tracing_subscriber::EnvFilter;
 use crate::{app::AppState, support::config::load_config};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "LogAgent MVP server")]
+#[command(author, version, about = "LocalToolHub server")]
 struct Args {
     #[arg(long, global = true, default_value = "logagent.yaml")]
     config: PathBuf,

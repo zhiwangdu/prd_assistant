@@ -1,6 +1,6 @@
 # Tool Runner
 
-Tool Runner 是 LogAgent 的核心。所有内置工具、配置工具、source-built analyzer、Fetch、Executor 和 Code Evidence 都应以统一 run/artifact 模型呈现。
+Tool Runner 是 LocalToolHub 的核心。所有内置工具、配置工具、source-built analyzer、Fetch、Executor 和 Code Evidence 都应以统一 run/artifact 模型呈现。
 
 ## 职责
 

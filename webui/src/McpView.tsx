@@ -7,7 +7,7 @@ type McpTool = { name: string; description?: string };
 type McpResource = { uri: string; name?: string; description?: string };
 
 async function mcpCall<T>(apiKey: string, method: string, params: Record<string, unknown> = {}): Promise<T> {
-  const body = await fetchJson<{ jsonrpc: string; result?: T; error?: { message?: string } }>("/api/mcp/readonly", {
+  const body = await fetchJson<{ jsonrpc: string; result?: T; error?: { message?: string } }>("/api/mcp", {
     method: "POST",
     headers: jsonHeaders(apiKey),
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
@@ -19,7 +19,7 @@ async function mcpCall<T>(apiKey: string, method: string, params: Record<string,
 
 const STDIO_CONFIG = `{
   "mcpServers": {
-    "logagent": {
+    "localtoolhub": {
       "command": "logagent-server",
       "args": ["mcp-serve"]
     }
@@ -59,7 +59,7 @@ export function McpView({ apiKey }: { apiKey: string }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">MCP</h2>
-          <p className="text-sm text-muted-foreground">External clients call the same tools and resources over MCP.</p>
+          <p className="text-sm text-muted-foreground">External clients call the same LocalToolHub tools and resources over MCP.</p>
         </div>
         <Button className="h-8 px-3" variant="outline" disabled={loading} onClick={() => void refresh()}><RefreshCw className="h-4 w-4" /></Button>
       </div>
@@ -67,7 +67,7 @@ export function McpView({ apiKey }: { apiKey: string }) {
       <Card>
         <CardHeader>
           <CardTitle>Stdio server</CardTitle>
-          <CardDescription>Add LogAgent as an MCP server. tools/list stays in sync with the WebUI catalog.</CardDescription>
+          <CardDescription>Add LocalToolHub as an MCP server. tools/list stays in sync with the WebUI catalog.</CardDescription>
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{STDIO_CONFIG}</pre>
@@ -77,7 +77,7 @@ export function McpView({ apiKey }: { apiKey: string }) {
         <Card>
           <CardHeader>
             <CardTitle>Tools ({tools.length})</CardTitle>
-            <CardDescription>Read-only preview via /api/mcp/readonly</CardDescription>
+            <CardDescription>Live catalog via /api/mcp</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {tools.length === 0 ? <EmptyState>No tools.</EmptyState> : tools.map((tool) => (

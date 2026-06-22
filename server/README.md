@@ -1,6 +1,6 @@
 # Server
 
-`server/` 是 LogAgent Local Tool/MCP Workbench 的 Rust/Axum 服务端。目标交付形态是一个本地单二进制，托管 WebUI，管理工具目录，执行受控工具，保存 run/artifact，并提供 MCP Server 给外部客户端使用。
+`server/` 是 LocalToolHub 的 Rust/Axum 服务端。目标交付形态是一个本地单二进制，托管 WebUI，管理工具目录，执行受控工具，保存 run/artifact，并提供 MCP Server 给外部客户端使用。
 
 ## 目标职责
 
@@ -11,7 +11,7 @@ Server 负责：
 - Tool Catalog 和 Tool Runner。
 - 统一 Run History 和 Artifact Store。
 - Metadata、Fetch、Executor、Code Evidence、Log Analyzer、Skills/System Context 和 Case Notes。
-- MCP resources/tools。
+- MCP resources/tools；`mcp.enabled=false` 时 `/api/mcp` 与 `mcp-serve` 均拒绝服务。
 - 配置加载、路径安全、敏感信息脱敏、timeout、allowlist 和审计。
 
 Server 不负责：
@@ -82,7 +82,7 @@ server/src
     id.rs
 ```
 
-旧分析 Agent 模块（`agent_backend.rs`、`llm_gateway.rs`、`analysis_state.rs`、`session_store.rs`、`agent_contracts.rs`、`domain_adapters.rs`、旧 `mcp.rs`、`http/{sessions,tasks,debug,settings}.rs`）已在阶段 5 删除；运行时只剩工具工作台语义（tools / runs / artifacts / metadata / fetch / executors / MCP / cases / system_context）。
+旧分析 Agent 模块（`agent_backend.rs`、`llm_gateway.rs`、`analysis_state.rs`、`session_store.rs`、`agent_contracts.rs`、`domain_adapters.rs`、旧 `mcp.rs`、`http/{sessions,tasks,debug,settings}.rs`）已在阶段 5 删除；运行时只剩工具工作台语义（tools / runs / artifacts / metadata / fetch / executors / MCP / cases / system_context）。现阶段 crate、binary、配置文件和 MCP namespace 仍保留 `logagent` 兼容命名，用户可见产品名使用 LocalToolHub。
 
 ## 数据目录
 

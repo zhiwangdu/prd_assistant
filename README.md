@@ -1,10 +1,10 @@
-# LogAgent Local Tool/MCP Workbench
+# LocalToolHub
 
-LogAgent 在本分支重新定位为个人本地部署的工具工作台和 MCP 工具合集。目标是提高运维、开发和测试效率，而不是自研一个通用 Agent。
+LocalToolHub 是个人本地部署的工具工作台和 MCP 工具合集。目标是提高运维、开发和测试效率，而不是自研一个通用 Agent。项目代码和兼容命令仍保留部分 `logagent` 命名，后续可逐步迁移。
 
 ## 产品目标
 
-LogAgent 应该开箱即用地提供：
+LocalToolHub 应该开箱即用地提供：
 
 - Web 管理页面：配置工具、运行工具、查看结果、管理 Metadata、Fetch、Executor、Case 和 MCP 配置。
 - 本地 Tool Hub：统一管理内置工具、源码构建工具和用户配置工具。
@@ -12,7 +12,7 @@ LogAgent 应该开箱即用地提供：
 - Artifact 和 Run History：每次工具运行都有输入、输出、stdout/stderr、结构化结果和下载入口。
 - 单机部署体验：Rust Server 单二进制 + `webui/out` + `bin/tools` + 本地 data 目录。
 
-LogAgent 不再把 Claude Code、LangChain/LangGraph 或任何模型编排作为核心后端。外部 Agent 可以通过 MCP 使用 LogAgent；Server 自身只负责工具、上下文、执行边界和审计。
+LocalToolHub 不再把 Claude Code、LangChain/LangGraph 或任何模型编排作为核心后端。外部 Agent 可以通过 MCP 使用 LocalToolHub；Server 自身只负责工具、上下文、执行边界和审计。
 
 ## 核心架构
 
@@ -36,7 +36,7 @@ Browser WebUI / External MCP Client / Optional Chrome Extension
 ## 运行形态
 
 ```text
-$LOGAGENT_APP_DIR/
+$LOCALTOOLHUB_APP_DIR/
   bin/logagent-local
   bin/tools/
   data/
@@ -50,7 +50,7 @@ $LOGAGENT_APP_DIR/
   deploy/logagent.yaml
 ```
 
-第一阶段可以继续复用 main 分支现有 `logagent-server` crate 和 API 资产，但后续命名和文档应收敛到 Local Tool/MCP Workbench。旧 Log Analysis Agent 相关代码只作为迁移来源，不作为目标架构。
+当前阶段继续复用 main 分支现有 `logagent-server` crate、`LOGAGENT_*` 环境变量、`logagent.*` tool id 和 `logagent://` MCP resource namespace，作为兼容层保留。产品和用户可见名称收敛到 LocalToolHub。旧 Log Analysis Agent 相关代码只作为迁移来源，不作为目标架构。
 
 ## 组件
 
@@ -80,7 +80,7 @@ Server 内部能力以本地工具平台为中心：
 - 新接口优先使用 `/api/tools*`、`/api/runs*`、`/api/artifacts*`、`/api/mcp*`、`/api/settings*` 等工具工作台语义。
 - 旧 `/api/sessions*`、`/api/tasks*` 可在迁移期保留，但不作为新功能设计入口。
 - 所有受保护接口使用 `Authorization: Bearer <api-key>`。
-- MCP resources/tools 与 WebUI 使用同一个 registry 和同一套执行边界。
+- MCP resources/tools 与 WebUI 使用同一个 registry 和同一套执行边界；`mcp.enabled=false` 时 HTTP `/api/mcp` 与 stdio `mcp-serve` 都必须拒绝服务。
 
 ## 安全边界
 

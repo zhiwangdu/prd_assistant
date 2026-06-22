@@ -2,7 +2,7 @@
 
 ## 目标
 
-Rust Server 是本地 Tool/MCP Workbench 的唯一执行边界。它接收 WebUI 和 MCP 请求，校验参数和权限，执行受控工具，保存 artifact，并返回结构化结果。
+Rust Server 是 LocalToolHub 的唯一执行边界。它接收 WebUI 和 MCP 请求，校验参数和权限，执行受控工具，保存 artifact，并返回结构化结果。
 
 ## 职责边界
 
@@ -94,6 +94,7 @@ WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
 ## MCP
 
 MCP endpoint 可以先使用 HTTP JSON-RPC，后续可增加 stdio。MCP tools 必须复用 Tool Runner 和各能力模块，不得另开执行通道。
+`mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
 
 最低方法：
 
@@ -128,6 +129,7 @@ mcp.enabled
 - `/health` 无鉴权可用。
 - `/` 返回 WebUI 静态页面。
 - `/api/tools` 与 MCP tools/list 一致。
+- `mcp.enabled=false` 时 `/api/mcp` 返回 JSON-RPC error，`mcp-serve` 启动失败。
 - 手动 tool run 生成 result/stdout/stderr artifacts。
 - Fetch/Executor/Code Evidence 默认关闭或受 allowlist 限制。
 - 旧 Agent/Analyze 路径不再是新开发主线。

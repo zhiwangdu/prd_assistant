@@ -1,10 +1,10 @@
-# LogAgent Local Tool/MCP Workbench Spec
+# LocalToolHub Spec
 
 ## 目标
 
-LogAgent 是面向个人本地部署的运维、开发和测试效率工具。Server 提供 Web 管理页、工具目录、工具运行、artifact/run history、Metadata、Fetch、SSH/SCP Executor、Code Evidence 和 MCP Server。
+LocalToolHub 是面向个人本地部署的运维、开发和测试效率工具。Server 提供 Web 管理页、工具目录、工具运行、artifact/run history、Metadata、Fetch、SSH/SCP Executor、Code Evidence 和 MCP Server。
 
-目标不是自研通用 Agent。外部 Agent 可以作为 MCP client 使用 LogAgent；LogAgent 不把 Claude Code、Codex、LangChain 或模型服务作为默认运行依赖。
+目标不是自研通用 Agent。外部 Agent 可以作为 MCP client 使用 LocalToolHub；LocalToolHub 不把 Claude Code、Codex、LangChain 或模型服务作为默认运行依赖。
 
 ## 非目标
 
@@ -99,6 +99,9 @@ GET /api/settings/*
 ## MCP 要求
 
 MCP 是外部智能客户端集成入口。MCP tool 调用必须与 WebUI tool run 共享同一 registry、schema、allowlist、timeout、artifact store 和审计逻辑。
+`mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
+
+当前保留 `logagent.*` tool id 和 `logagent://` resource URI 作为兼容 namespace，产品显示名使用 LocalToolHub。
 
 资源示例：
 
@@ -126,7 +129,7 @@ logagent.search_cases
 
 ## 配置
 
-配置文件保留 `logagent.yaml`，但语义调整为本地工具平台：
+配置文件暂保留 `logagent.yaml`，但语义调整为本地工具平台：
 
 ```yaml
 server:
