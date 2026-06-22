@@ -4,11 +4,13 @@ WebUI 是 LogAgent Local Tool/MCP Workbench 的本地管理页面。它应该以
 
 ## 目标页面
 
-顶部导航建议：
+顶部导航（已实现，默认进入 Tools）：
 
 ```text
-Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | Settings
+Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | SystemContext | Settings
 ```
+
+Analyze/Operations 页面已降级，默认不在导航中；旧视图文件将在服务端 fat 代码删除阶段一并清理。
 
 页面职责：
 

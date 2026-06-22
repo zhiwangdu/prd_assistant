@@ -1,24 +1,26 @@
-import { Activity, BookOpenCheck, BrainCircuit, FileSearch, KeyRound, Layers3, Settings, Wrench } from "lucide-react";
+import { Activity, BookOpenCheck, Boxes, BrainCircuit, Cable, Globe2, History, KeyRound, Layers3, Server, Settings, Wrench, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
-import { fetchJson, jsonHeaders, authHeaders } from "./metadata/api";
 import { CasesView } from "./CasesView";
-import { OperationsView } from "./OperationsView";
-import { ToolsView } from "./ToolsView";
+import { ExecutorsView } from "./ExecutorsView";
+import { McpView } from "./McpView";
+import { RunsView } from "./RunsView";
+import { FetchView, ToolsView } from "./ToolsView";
+import { MetadataDashboard } from "./metadata/MetadataDashboard";
 import { SystemContextView } from "./SystemContextView";
 import { SettingsView } from "./SettingsView";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
+type ViewKey = "tools" | "runs" | "metadata" | "fetch" | "executors" | "mcp" | "cases" | "system-context" | "settings";
+
 export function App() {
   const [apiKey, setApiKey] = useState("");
   const [healthy, setHealthy] = useState<boolean | null>(null);
-  const [llmDebugEnabled, setLlmDebugEnabled] = useState(false);
   const [language, setLanguage] = useState<UiLanguage>(DEFAULT_UI_LANGUAGE);
   const copy = appCopy[language];
-  const [llmDebugStatus, setLlmDebugStatus] = useState<string>(copy.llmLogsOff);
-  const [view, setView] = useState<"operations" | "cases" | "system-context" | "tools" | "settings">("operations");
+  const [view, setView] = useState<ViewKey>("tools");
 
   useEffect(() => {
     setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? "");
@@ -34,40 +36,17 @@ export function App() {
     localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
-  useEffect(() => {
-    if (!apiKey.trim()) {
-      setLlmDebugEnabled(false);
-      setLlmDebugStatus(copy.apiKeyRequired);
-      return;
-    }
-    void fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", { headers: authHeaders(apiKey) })
-      .then((response) => {
-        setLlmDebugEnabled(response.llmOutputLogging);
-        setLlmDebugStatus(response.llmOutputLogging ? copy.llmLogsOn : copy.llmLogsOff);
-      })
-      .catch((reason) => setLlmDebugStatus(errorMessage(reason)));
-  }, [apiKey, copy.apiKeyRequired, copy.llmLogsOff, copy.llmLogsOn]);
-
-  async function toggleLlmDebug(enabled: boolean) {
-    if (!apiKey.trim()) {
-      setLlmDebugStatus(copy.apiKeyRequired);
-      return;
-    }
-    setLlmDebugEnabled(enabled);
-    setLlmDebugStatus(enabled ? copy.enablingLlmLogs : copy.disablingLlmLogs);
-    try {
-      const response = await fetchJson<{ llmOutputLogging: boolean }>("/api/debug/llm", {
-        method: "PUT",
-        headers: jsonHeaders(apiKey),
-        body: JSON.stringify({ llmOutputLogging: enabled })
-      });
-      setLlmDebugEnabled(response.llmOutputLogging);
-      setLlmDebugStatus(response.llmOutputLogging ? copy.llmLogsOn : copy.llmLogsOff);
-    } catch (reason) {
-      setLlmDebugEnabled(!enabled);
-      setLlmDebugStatus(errorMessage(reason));
-    }
-  }
+  const navItems: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
+    { key: "tools", label: copy.navTools, icon: Wrench },
+    { key: "runs", label: copy.navRuns, icon: History },
+    { key: "metadata", label: copy.navMetadata, icon: Boxes },
+    { key: "fetch", label: copy.navFetch, icon: Globe2 },
+    { key: "executors", label: copy.navExecutors, icon: Server },
+    { key: "mcp", label: copy.navMcp, icon: Cable },
+    { key: "cases", label: copy.navCases, icon: BookOpenCheck },
+    { key: "system-context", label: copy.navSystemContext, icon: BrainCircuit },
+    { key: "settings", label: copy.navSettings, icon: Settings }
+  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -79,7 +58,7 @@ export function App() {
             <Badge variant={healthy ? "success" : healthy === false ? "destructive" : "secondary"}><Activity className="mr-1 h-3 w-3" />{healthy ? copy.serverHealthy : healthy === false ? copy.serverUnavailable : copy.checking}</Badge>
           </div>
           <Card className="shadow-none lg:w-[560px]">
-            <CardContent className="grid gap-3 p-3 md:grid-cols-[1fr_auto_auto] md:items-center">
+            <CardContent className="grid gap-3 p-3 md:grid-cols-[1fr_auto] md:items-center">
               <div className="relative">
                 <KeyRound className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input className="border-0 pl-9 shadow-none" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={copy.apiKeyPlaceholder} />
@@ -90,29 +69,32 @@ export function App() {
                   {languageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-              <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
-                <input className="h-4 w-4 accent-teal-700" type="checkbox" checked={llmDebugEnabled} onChange={(event) => void toggleLlmDebug(event.target.checked)} />
-                <span className="whitespace-nowrap">{copy.llmDebug}</span>
-                <span className="hidden max-w-40 truncate text-slate-400 xl:inline" title={llmDebugStatus}>{llmDebugStatus}</span>
-              </label>
             </CardContent>
           </Card>
         </div>
       </header>
       <main className="mx-auto max-w-[1680px] px-5 py-6">
-        <nav className="mb-5 flex gap-2">
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "operations" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("operations")}><FileSearch className="mr-2 inline h-4 w-4" />{copy.navAnalyze}</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "cases" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("cases")}><BookOpenCheck className="mr-2 inline h-4 w-4" />{copy.navMemory}</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "system-context" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("system-context")}><BrainCircuit className="mr-2 inline h-4 w-4" />{copy.navSystemContext}</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "tools" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("tools")}><Wrench className="mr-2 inline h-4 w-4" />{copy.navTools}</button>
-          <button className={`rounded-lg px-4 py-2 text-sm font-medium ${view === "settings" ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView("settings")}><Settings className="mr-2 inline h-4 w-4" />{copy.navSettings}</button>
+        <nav className="mb-5 flex flex-wrap gap-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = view === item.key;
+            return (
+              <button key={item.key} className={`rounded-lg px-4 py-2 text-sm font-medium ${active ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView(item.key)}>
+                <Icon className="mr-2 inline h-4 w-4" />{item.label}
+              </button>
+            );
+          })}
         </nav>
-        {view === "operations" ? <OperationsView apiKey={apiKey} language={language} /> : view === "cases" ? <CasesView apiKey={apiKey} /> : view === "system-context" ? <SystemContextView apiKey={apiKey} /> : view === "tools" ? <ToolsView apiKey={apiKey} /> : <SettingsView apiKey={apiKey} />}
+        {view === "tools" ? <ToolsView apiKey={apiKey} />
+          : view === "runs" ? <RunsView apiKey={apiKey} />
+          : view === "metadata" ? <MetadataDashboard apiKey={apiKey} />
+          : view === "fetch" ? <FetchView apiKey={apiKey} />
+          : view === "executors" ? <ExecutorsView apiKey={apiKey} />
+          : view === "mcp" ? <McpView apiKey={apiKey} />
+          : view === "cases" ? <CasesView apiKey={apiKey} />
+          : view === "system-context" ? <SystemContextView apiKey={apiKey} />
+          : <SettingsView apiKey={apiKey} />}
       </main>
     </div>
   );
-}
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
 }

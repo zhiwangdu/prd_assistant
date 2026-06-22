@@ -1,7 +1,6 @@
-import { FileArchive, Globe2, Play, RefreshCw, Save, Server, Trash2, UploadCloud, Wrench } from "lucide-react";
+import { FileArchive, Globe2, Play, RefreshCw, Save, Trash2, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
-import { ExecutorsView } from "./ExecutorsView";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { uploadFile } from "./upload";
 
@@ -109,21 +108,10 @@ type FetchPreview = {
 };
 
 export function ToolsView({ apiKey }: { apiKey: string }) {
-  const [section, setSection] = useState<"tools" | "fetch" | "executors">("tools");
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <Button variant={section === "tools" ? "default" : "outline"} onClick={() => setSection("tools")}><Wrench className="mr-2 h-4 w-4" />Tool plugins</Button>
-        <Button variant={section === "fetch" ? "default" : "outline"} onClick={() => setSection("fetch")}><Globe2 className="mr-2 h-4 w-4" />Fetch</Button>
-        <Button variant={section === "executors" ? "default" : "outline"} onClick={() => setSection("executors")}><Server className="mr-2 h-4 w-4" />Executors</Button>
-      </div>
-      {section === "tools" ? <ToolPluginsView apiKey={apiKey} /> : section === "fetch" ? <FetchView apiKey={apiKey} /> : <ExecutorsView apiKey={apiKey} />}
-    </div>
-  );
+  return <ToolPluginsView apiKey={apiKey} />;
 }
 
-function FetchView({ apiKey }: { apiKey: string }) {
+export function FetchView({ apiKey }: { apiKey: string }) {
   const [endpoints, setEndpoints] = useState<FetchEndpoint[]>([]);
   const [selectedFetchId, setSelectedFetchId] = useState("");
   const [curlText, setCurlText] = useState("");
