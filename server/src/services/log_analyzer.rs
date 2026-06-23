@@ -169,7 +169,8 @@ impl LogAnalyzer {
     }
 }
 
-pub fn read_log_slice(
+#[cfg(test)]
+fn read_log_slice(
     path: &Path,
     start_line: usize,
     end_line: usize,

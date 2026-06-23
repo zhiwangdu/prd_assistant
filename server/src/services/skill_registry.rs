@@ -12,8 +12,8 @@ use tracing::warn;
 
 use crate::{
     domain::models::{
-        SkillReferenceSummary, SystemContextBundle, SystemContextBundleItem,
-        SystemContextContentType, SystemContextKind, TaskKind,
+        SkillReferenceSummary, SystemContextBundleItem, SystemContextContentType,
+        SystemContextKind, TaskKind,
     },
     support::{config::SkillSettings, error::AppError},
 };

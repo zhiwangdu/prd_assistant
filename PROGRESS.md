@@ -12,6 +12,17 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 清理所有 Rust warning（Wave C dead-code 清理）
+
+目标：`cargo check --all-targets` 零 warning。
+
+- **metadata.rs dead-code 清理（Wave C）**：删除 retired analysis-agent 的 metadata-context-outline 子系统（~850 行）：`MetadataSection` enum + impl、`MetadataSliceQuery`/`MetadataSliceResult`/`MetadataCounts` 结构、`metadata_context_outline`/`metadata_slice_query_from_value`/`query_metadata_context`、以及 `section_outline`/`metadata_counts`/`optional_*_filter`/`validate_metadata_query_filters`/`metadata_query_filters`/`metadata_items_for_section`/`metadata_*_items`/`*_matches`/`shard_ids_for_group`/`pt_owner_filters_match` 等全部 helper。保留 keeper metadata 端点（`get_metadata_field_types`/`get_metadata_tag_fields` 等）和它们依赖的 `measurement_name_matches`/`databases` 视图函数。误删的 `fetch_metadata_content`（async fn，被 import 预览使用）已恢复。同步删除 3 个只测试已删函数的 test（`metadata_outline_*`/`metadata_query_filters_*`/`metadata_query_rejects_*`）及仅被它们使用的 `metadata_context_fixture`。移除随之 unused 的 `serde_json::{json, Value}` import（文件改用 `serde_json::` 全限定）。
+- **config.rs**：删除从未读取的 `AppConfig.config_path` 字段（及 11 处 test 构造赋值）和 `McpSettings.transport` 字段（值恒为 "stdio"，`resolve_mcp` 仍校验输入 transport；`rejects_unknown_mcp_transport` 测试不变）。
+- **log_analyzer.rs**：`read_log_slice` 仅被一个 test 使用，改用 `#[cfg(test)]` 限定为 test-only（非测试构建不再编译，消除 "never used" warning）。
+- **skill_registry.rs**：移除 unused import `SystemContextBundle`。
+- **tool_runner.rs 测试**：`action()`/`Fixture::context()`/`EvidenceProvider` import 仅被 3 个 `#[cfg(unix)]` async 测试使用，加 `#[cfg(unix)]` 守卫，消除 Windows `--tests` 下的 dead-code warning。
+- 验证：`cargo fmt --check`、`cargo check --all-targets`（零 code warning，唯一 warning 是环境级 `~/.cargo/config` deprecation）、`cargo test -p logagent-server`（89 通过，原 92 删 3 dead test）；Windows 交叉编译 `cargo check --tests --target x86_64-pc-windows-gnu` 同样零 code warning。
+
 ## 2026-06-23 WebUI 拆分 System Context 集合页
 
 - 移除 WebUI 顶层 "系统上下文 / System Context" 集合标签页（`SystemContextView`，内部用 Tabs 聚合 Skills + Metadata，其中 Metadata 与已有顶层 Metadata 标签页重复）。

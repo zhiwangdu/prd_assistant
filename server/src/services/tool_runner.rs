@@ -1149,12 +1149,11 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
+    #[cfg(unix)]
+    use crate::domain::contracts::EvidenceProvider;
     use crate::{
-        domain::{
-            contracts::EvidenceProvider,
-            models::{
-                GrepMatch, ManifestFile, ManifestUpload, TaskSource, ToolInputEntry, ToolInputIndex,
-            },
+        domain::models::{
+            GrepMatch, ManifestFile, ManifestUpload, TaskSource, ToolInputEntry, ToolInputIndex,
         },
         support::config::{ToolMatchSettings, ToolSettings, ToolsSettings},
     };
@@ -1546,6 +1545,7 @@ JSON
         }
     }
 
+    #[cfg(unix)]
     fn action(action_id: &str, tool: &str, input_file: Option<&str>) -> AgentAction {
         AgentAction {
             schema_version: 1,
@@ -1629,6 +1629,7 @@ JSON
             path
         }
 
+        #[cfg(unix)]
         fn context(&self) -> TaskContext {
             TaskContext {
                 task_id: "task_1".to_string(),

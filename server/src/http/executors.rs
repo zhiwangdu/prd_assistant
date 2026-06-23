@@ -554,7 +554,6 @@ mod tests {
         ));
         let ssh_binary = write_fake_ssh(&root);
         let config = Arc::new(AppConfig {
-            config_path: root.join("logagent-test.yaml"),
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),

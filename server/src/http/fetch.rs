@@ -468,7 +468,6 @@ mod tests {
     fn test_state(port: u16) -> (Arc<AppState>, PathBuf) {
         let root = test_root("fetch-http");
         let config = Arc::new(AppConfig {
-            config_path: root.join("logagent-test.yaml"),
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
                 public_base_url: "http://127.0.0.1:0".to_string(),

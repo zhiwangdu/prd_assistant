@@ -6,7 +6,6 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub config_path: PathBuf,
     pub server: ServerSettings,
     pub auth: AuthSettings,
     pub storage: StorageSettings,
@@ -252,15 +251,11 @@ impl Default for RemoteExecutionSettings {
 #[derive(Debug, Clone)]
 pub struct McpSettings {
     pub enabled: bool,
-    pub transport: String,
 }
 
 impl Default for McpSettings {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            transport: "stdio".to_string(),
-        }
+        Self { enabled: true }
     }
 }
 
@@ -624,7 +619,6 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
     }
 
     Ok(Arc::new(AppConfig {
-        config_path,
         server: ServerSettings {
             bind: server.bind,
             public_base_url: server.public_base_url,
@@ -661,7 +655,6 @@ fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
     }
     Ok(McpSettings {
         enabled: raw.enabled,
-        transport: transport.to_string(),
     })
 }
 
