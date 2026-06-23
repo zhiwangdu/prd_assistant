@@ -12,6 +12,20 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 WebUI Tools 目录页重设计（搜索/筛选/分组）
+
+目标：Tools 页 catalog 列表信息杂乱、且工具增长到几十个后「依次排开」不可用。结合工具市场/命令面板的业界实践重做左侧 catalog 卡片，右侧 detail+run 面板不变。
+
+- `ToolsView.tsx` `ToolPluginsView`：左侧 catalog 卡片改为可搜索、可筛选、按类别分组的紧凑列表。
+  - 新增状态 `query` / `sourceFilter`(all|built_in|configured) / `runnableOnly`；用 `useMemo` 派生 `filtered`（按 displayName/toolId/description/tags 过滤）与 `groups`。
+  - 派生功能类别 `categoryOf`（Analyzers/Metadata/Fetch/Sync/Other，由 tags+toolId+backend 推导，避开冗余 tag）；无搜索时按 `CATEGORY_ORDER` 分组带计数，空组隐藏；搜索时切扁平 `Results (N)`（按 displayName 排序）。
+  - 紧凑 `ToolRow`：状态点（绿=enabled&runnable、琥珀=enabled 非 runnable、灰=disabled）+ 名称 + 来源标签；选中高亮。去掉列表里冗余的 `toolId · backend`、双 badge、描述、tags 行（这些已在右侧详情面板）。
+  - 头部计数 `toolCount(shown,total)`；空状态 `noTools`/`noMatches`。左列 340px→380px。
+  - 右侧 detail/run 面板、`runTool`/`refreshTools`/`refreshRuns`/`selectRun`/轮询 全部不变；`ToolDescriptor` 类型与 `/api/tools` 响应不变（纯前端，无 server 改动）。
+- `i18n.ts` `toolsCopy`（中英）：新增 `searchPlaceholder`/`filterAll`/`filterBuiltIn`/`filterConfigured`/`runnableOnly`/`groupAnalyzers`/`groupMetadata`/`groupFetch`/`groupSync`/`groupOther`/`noMatches`/`resultsLabel(n)`/`toolCount(shown,total)`；删除随之 dead 的 `enabledBadge`。
+- 文档：`webui/SPEC.md` `### Tools` 补搜索/筛选/分组要求；`webui/README.md` Tools bullet 更新；本条 PROGRESS。
+- 验证：`npm run lint` / `typecheck` / `build` 全绿（bundle 325.53 KB）。
+
 ## 2026-06-23 WebUI 顶层导航改英文 + Runs 收纳为 Tools 子项
 
 - 顶层导航标签页改为纯英文展示，不再随语言切换中英双语（页面内部文案仍随语言切换）。导航顺序调整为 `Tools → Skills → MCP → Metadata → Fetch → Executors → Cases → Settings`。

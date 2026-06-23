@@ -1,6 +1,6 @@
-import { FileArchive, Globe2, Play, RefreshCw, Save, Trash2, UploadCloud } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from "./components/ui";
+import { FileArchive, Globe2, Play, RefreshCw, Save, Search, Trash2, UploadCloud } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
 import { toolsCopy, type ToolsCopy, type UiLanguage } from "./i18n";
 import { uploadFile } from "./upload";
@@ -107,6 +107,38 @@ type FetchPreview = {
   detectedSensitiveFields: { location: string; name: string }[];
   unsupportedWarnings: string[];
 };
+
+// Derived functional category for grouping the tool catalog. Tags are noisy
+// ("configured"/"manual-run"/"tool-runner"/"external" always clump), so we
+// derive a clean category from tags + toolId + backend instead of grouping by
+// raw tags.
+const CATEGORY_ORDER = ["analyzers", "metadata", "fetch", "sync", "other"] as const;
+type Category = (typeof CATEGORY_ORDER)[number];
+
+function categoryOf(tool: ToolDescriptor): Category {
+  const tags = tool.tags.map((tag) => tag.toLowerCase());
+  const id = tool.toolId.toLowerCase();
+  if (tags.includes("metadata")) return "metadata";
+  if (tags.includes("fetch") || tool.backend === "fetch") return "fetch";
+  if (id.includes("sync") || id.includes("huawei")) return "sync";
+  if (tags.includes("log") || id.includes("analyzer") || id.includes("pprof") || id.includes("preprocess")) return "analyzers";
+  return "other";
+}
+
+function categoryLabel(category: Category, copy: ToolsCopy): string {
+  switch (category) {
+    case "analyzers":
+      return copy.groupAnalyzers;
+    case "metadata":
+      return copy.groupMetadata;
+    case "fetch":
+      return copy.groupFetch;
+    case "sync":
+      return copy.groupSync;
+    default:
+      return copy.groupOther;
+  }
+}
 
 export function ToolsView({ apiKey, language }: { apiKey: string; language: UiLanguage }) {
   return <ToolPluginsView apiKey={apiKey} language={language} />;
@@ -457,8 +489,35 @@ function ToolPluginsView({ apiKey, language }: { apiKey: string; language: UiLan
   const [status, setStatus] = useState<string>(copy.ready);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "built_in" | "configured">("all");
+  const [runnableOnly, setRunnableOnly] = useState(false);
 
   const selectedTool = tools.find((tool) => tool.toolId === selectedToolId) ?? tools[0] ?? null;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tools.filter((tool) => {
+      if (sourceFilter !== "all" && tool.source !== sourceFilter) return false;
+      if (runnableOnly && !tool.runnable) return false;
+      if (!q) return true;
+      return (
+        tool.displayName.toLowerCase().includes(q) ||
+        tool.toolId.toLowerCase().includes(q) ||
+        tool.description.toLowerCase().includes(q) ||
+        tool.tags.some((tag) => tag.toLowerCase().includes(q))
+      );
+    });
+  }, [tools, query, sourceFilter, runnableOnly]);
+
+  // Group by category only when not searching; while searching, render a flat
+  // ranked list (command-palette style).
+  const groups = useMemo(() => {
+    if (query.trim()) return null;
+    const buckets = new Map<Category, ToolDescriptor[]>(CATEGORY_ORDER.map((category) => [category, [] as ToolDescriptor[]]));
+    for (const tool of filtered) buckets.get(categoryOf(tool))?.push(tool);
+    return CATEGORY_ORDER.map((category) => ({ category, tools: buckets.get(category) ?? [] })).filter((group) => group.tools.length > 0);
+  }, [filtered, query]);
 
   const refreshTools = useCallback(async () => {
     if (!apiKey.trim()) {
@@ -587,34 +646,65 @@ function ToolPluginsView({ apiKey, language }: { apiKey: string; language: UiLan
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
+    <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle>{copy.catalogTitle}</CardTitle>
+              <CardTitle className="flex items-center gap-2">{copy.catalogTitle}<Badge variant="secondary">{copy.toolCount(filtered.length, tools.length)}</Badge></CardTitle>
               <CardDescription>{copy.catalogDesc}</CardDescription>
             </div>
             <Button className="h-8 px-3" variant="outline" onClick={() => void refreshTools()}><RefreshCw className="h-4 w-4" /></Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {tools.length ? tools.map((tool) => (
-            <button key={tool.toolId} className={`w-full rounded-lg border p-3 text-left ${selectedToolId === tool.toolId ? "border-primary bg-slate-50" : "border-border"}`} onClick={() => setSelectedToolId(tool.toolId)}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">{tool.displayName}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{tool.toolId} · {tool.backend}</p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Badge variant={tool.enabled ? "success" : "destructive"}>{tool.enabled ? copy.enabledBadge : copy.disabledBadge}</Badge>
-                  <SourceBadge source={tool.source} copy={copy} />
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">{tool.description}</p>
-              <ToolTagList tags={tool.tags} />
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+            <Input className="pl-9" placeholder={copy.searchPlaceholder} value={query} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["all", "built_in", "configured"] as const).map((value) => (
+              <button
+                key={value}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium ${sourceFilter === value ? "bg-primary text-white" : "border border-border bg-white text-slate-600 hover:bg-slate-50"}`}
+                onClick={() => setSourceFilter(value)}
+              >
+                {value === "all" ? copy.filterAll : value === "built_in" ? copy.filterBuiltIn : copy.filterConfigured}
+              </button>
+            ))}
+            <button
+              className={`rounded-md px-2.5 py-1 text-xs font-medium ${runnableOnly ? "bg-primary text-white" : "border border-border bg-white text-slate-600 hover:bg-slate-50"}`}
+              onClick={() => setRunnableOnly((value) => !value)}
+            >
+              {copy.runnableOnly}
             </button>
-          )) : <EmptyState>{copy.noTools}</EmptyState>}
+          </div>
+          <div className="space-y-3">
+            {tools.length === 0 ? (
+              <EmptyState>{copy.noTools}</EmptyState>
+            ) : filtered.length === 0 ? (
+              <EmptyState>{copy.noMatches}</EmptyState>
+            ) : groups ? (
+              groups.map((group) => (
+                <div key={group.category} className="space-y-1">
+                  <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{categoryLabel(group.category, copy)} · {group.tools.length}</p>
+                  {group.tools.map((tool) => (
+                    <ToolRow key={tool.toolId} tool={tool} selected={selectedToolId === tool.toolId} onSelect={() => setSelectedToolId(tool.toolId)} copy={copy} />
+                  ))}
+                </div>
+              ))
+            ) : (
+              <div className="space-y-1">
+                <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{copy.resultsLabel(filtered.length)}</p>
+                {filtered
+                  .slice()
+                  .sort((a, b) => a.displayName.localeCompare(b.displayName))
+                  .map((tool) => (
+                    <ToolRow key={tool.toolId} tool={tool} selected={selectedToolId === tool.toolId} onSelect={() => setSelectedToolId(tool.toolId)} copy={copy} />
+                  ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -804,6 +894,17 @@ function FetchResultView({ result, resultPath }: { result: unknown; resultPath: 
 
 function SourceBadge({ source, copy }: { source: ToolDescriptor["source"]; copy: ToolsCopy }) {
   return <Badge variant={source === "built_in" ? "secondary" : "outline"}>{source === "built_in" ? copy.builtIn : copy.configured}</Badge>;
+}
+
+function ToolRow({ tool, selected, onSelect, copy }: { tool: ToolDescriptor; selected: boolean; onSelect: () => void; copy: ToolsCopy }) {
+  const dotClass = !tool.enabled ? "bg-slate-300" : tool.runnable ? "bg-emerald-500" : "bg-amber-500";
+  return (
+    <button className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left ${selected ? "border-primary bg-slate-50" : "border-transparent hover:bg-slate-50"}`} onClick={onSelect}>
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+      <span className="truncate text-sm font-medium">{tool.displayName}</span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">{tool.source === "built_in" ? copy.builtIn : copy.configured}</span>
+    </button>
+  );
 }
 
 function ToolTagList({ tags }: { tags: string[] }) {

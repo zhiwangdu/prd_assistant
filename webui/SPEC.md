@@ -11,7 +11,13 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 ### Tools
 
 - 从 `GET /api/tools` 读取 catalog。
-- 展示 toolId、来源、backend、runnable、输入文件限制、参数模板、不可用原因。
+- 左侧 catalog 为可搜索、可筛选、按类别分组紧凑列表（适配几十个工具）：
+  - 搜索框按 displayName / toolId / description / tags 过滤；搜索时切换为扁平「Results (N)」结果列表。
+  - Source 分段筛选（All / Built-in / Configured）与「仅可运行」开关。
+  - 无搜索时按派生功能类别分组（Analyzers / Metadata / Fetch / Sync / Other），每组带计数，空组隐藏。
+  - 紧凑行：状态点（绿=可运行、琥珀=启用但不可运行、灰=禁用）+ 名称 + 来源标签；选中高亮，其余详情在右侧面板。
+  - 顶部计数 `shown / total`；无工具 / 无匹配各有空状态。
+- 展示 toolId、来源、backend、runnable、输入文件限制、参数模板、不可用原因（右侧详情面板）。
 - 支持上传或选择已有 artifact 作为输入。
 - 调用 `POST /api/tools/:tool_id/runs` 创建 run。
 - 轮询 run 状态并展示 result/stdout/stderr/artifacts。
