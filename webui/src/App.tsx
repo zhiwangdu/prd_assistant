@@ -1,5 +1,5 @@
 import { Activity, BookOpenCheck, Boxes, BrainCircuit, Cable, Globe2, History, KeyRound, Layers3, Server, Settings, Wrench, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
 import { CasesView } from "./CasesView";
 import { ExecutorsView } from "./ExecutorsView";
@@ -14,6 +14,22 @@ import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions,
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
 type ViewKey = "tools" | "runs" | "metadata" | "fetch" | "executors" | "mcp" | "cases" | "skills" | "settings";
+
+// Top-level navigation is English-only (no bilingual labels). "Runs History" is
+// a sub-item nested under Tools rather than a standalone top-level tab.
+type NavChild = { key: ViewKey; label: string; icon: LucideIcon };
+type NavItem = { key: ViewKey; label: string; icon: LucideIcon; children?: NavChild[] };
+
+const navItems: NavItem[] = [
+  { key: "tools", label: "Tools", icon: Wrench, children: [{ key: "runs", label: "Runs History", icon: History }] },
+  { key: "skills", label: "Skills", icon: BrainCircuit },
+  { key: "mcp", label: "MCP", icon: Cable },
+  { key: "metadata", label: "Metadata", icon: Boxes },
+  { key: "fetch", label: "Fetch", icon: Globe2 },
+  { key: "executors", label: "Executors", icon: Server },
+  { key: "cases", label: "Cases", icon: BookOpenCheck },
+  { key: "settings", label: "Settings", icon: Settings }
+];
 
 export function App() {
   const [apiKey, setApiKey] = useState("");
@@ -35,18 +51,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
   }, [language]);
-
-  const navItems: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
-    { key: "tools", label: copy.navTools, icon: Wrench },
-    { key: "runs", label: copy.navRuns, icon: History },
-    { key: "metadata", label: copy.navMetadata, icon: Boxes },
-    { key: "fetch", label: copy.navFetch, icon: Globe2 },
-    { key: "executors", label: copy.navExecutors, icon: Server },
-    { key: "mcp", label: copy.navMcp, icon: Cable },
-    { key: "cases", label: copy.navCases, icon: BookOpenCheck },
-    { key: "skills", label: copy.navSkills, icon: BrainCircuit },
-    { key: "settings", label: copy.navSettings, icon: Settings }
-  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -74,14 +78,29 @@ export function App() {
         </div>
       </header>
       <main className="mx-auto max-w-[1680px] px-5 py-6">
-        <nav className="mb-5 flex flex-wrap gap-2">
+        <nav className="mb-5 flex flex-wrap items-center gap-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = view === item.key;
             return (
-              <button key={item.key} className={`rounded-lg px-4 py-2 text-sm font-medium ${active ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView(item.key)}>
-                <Icon className="mr-2 inline h-4 w-4" />{item.label}
-              </button>
+              <Fragment key={item.key}>
+                <button className={`rounded-lg px-4 py-2 text-sm font-medium ${active ? "bg-primary text-white" : "bg-white text-slate-600"}`} onClick={() => setView(item.key)}>
+                  <Icon className="mr-2 inline h-4 w-4" />{item.label}
+                </button>
+                {item.children?.map((child) => {
+                  const ChildIcon = child.icon;
+                  const childActive = view === child.key;
+                  return (
+                    <button
+                      key={child.key}
+                      className={`ml-1 rounded-lg px-3 py-1.5 text-xs font-medium ${childActive ? "bg-primary text-white" : "border border-dashed border-border bg-white text-slate-500"}`}
+                      onClick={() => setView(child.key)}
+                    >
+                      <ChildIcon className="mr-1.5 inline h-3.5 w-3.5" />{child.label}
+                    </button>
+                  );
+                })}
+              </Fragment>
             );
           })}
         </nav>

@@ -6,6 +6,8 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 
 ## 页面要求
 
+顶部导航顺序为 `Tools → Skills → MCP → Metadata → Fetch → Executors → Cases → Settings`，默认进入 Tools。顶层标签页只用英文展示（不再中英双语）；页面内部文案仍随语言切换。Runs 不再是独立顶层标签，而是 Tools 的子项「Runs History」（缩进虚框小标签）。
+
 ### Tools
 
 - 从 `GET /api/tools` 读取 catalog。
@@ -14,11 +16,22 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 - 调用 `POST /api/tools/:tool_id/runs` 创建 run。
 - 轮询 run 状态并展示 result/stdout/stderr/artifacts。
 
-### Runs
+#### Runs History（Tools 子项）
 
 - 展示所有工具、Fetch、Executor、Log preprocess 和 Code Evidence run。
 - 支持按类型、状态、工具和时间筛选。
 - 支持 artifact 下载和 result JSON 展开。
+
+### Skills
+
+- 展示可复用 Skills / runbook 资源，作为工具运行的背景能力。
+- Skills 从 System Context 集合页拆出为独立导航项；Metadata 已是独立导航项。
+
+### MCP
+
+- 展示 `/api/mcp` endpoint、Authorization header 示例、客户端配置示例。
+- 展示 resources 和 tools 列表。
+- 不写入用户本地 Claude Code/Codex/Cursor 配置。
 
 ### Metadata
 
@@ -39,16 +52,9 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 - 不提供自由 shell 输入。
 - 展示 stdout/stderr/result artifact。
 
-### MCP
+### Cases
 
-- 展示 `/api/mcp` endpoint、Authorization header 示例、客户端配置示例。
-- 展示 resources 和 tools 列表。
-- 不写入用户本地 Claude Code/Codex/Cursor 配置。
-
-### Skills
-
-- 展示可复用 Skills / runbook 资源，作为工具运行的背景能力。
-- Skills 从 System Context 集合页拆出为独立导航项；Metadata 已是独立导航项。
+- 管理人工经验记录的增删改查与搜索。
 
 ### Settings
 

@@ -12,6 +12,14 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 WebUI 顶层导航改英文 + Runs 收纳为 Tools 子项
+
+- 顶层导航标签页改为纯英文展示，不再随语言切换中英双语（页面内部文案仍随语言切换）。导航顺序调整为 `Tools → Skills → MCP → Metadata → Fetch → Executors → Cases → Settings`。
+- Runs 不再作为独立顶层标签页，改为 Tools 的子项「Runs History」（缩进虚框小标签，点击仍渲染原 `RunsView`）。`App.tsx` 导航数据改为带 `children` 的 `NavItem[]`，用 `Fragment` 渲染父项 + 缩进子项；`navItems` 提为模块级常量（不再依赖 `copy`）。
+- `i18n.ts`：删除 `appCopy` 中随之 dead 的 `navTools`/`navRuns`/`navMetadata`/`navFetch`/`navExecutors`/`navMcp`/`navCases`/`navSkills`/`navSettings` 与本就未使用的 `apiKeyRequired`。
+- 同步更新 `webui/README.md`（导航顺序图 + 页面职责）、`webui/SPEC.md`（页面要求节重排为 Tools/Runs History/Skills/MCP/Metadata/Fetch/Executors/Cases/Settings，补 Cases，注明顶层英文-only 与 Runs 子项）。
+- 验证：`npm run lint` / `npm run typecheck` / `npm run build` 全绿（bundle 322.26 KB）。
+
 ## 2026-06-23 清理所有 Rust warning（Wave C dead-code 清理）
 
 目标：`cargo check --all-targets` 零 warning。

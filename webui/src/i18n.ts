@@ -19,17 +19,7 @@ export const appCopy = {
     serverHealthy: "Server 正常",
     serverUnavailable: "Server 不可用",
     checking: "检查中",
-    apiKeyRequired: "需要 API Key",
     apiKeyPlaceholder: "API Key",
-    navTools: "工具",
-    navRuns: "运行记录",
-    navMetadata: "Metadata",
-    navFetch: "Fetch",
-    navExecutors: "Executors",
-    navMcp: "MCP",
-    navCases: "Cases",
-    navSkills: "技能",
-    navSettings: "设置",
     languageLabel: "语言"
   },
   "en-US": {
@@ -38,17 +28,7 @@ export const appCopy = {
     serverHealthy: "Server healthy",
     serverUnavailable: "Server unavailable",
     checking: "Checking",
-    apiKeyRequired: "API Key required",
     apiKeyPlaceholder: "API Key",
-    navTools: "Tools",
-    navRuns: "Runs",
-    navMetadata: "Metadata",
-    navFetch: "Fetch",
-    navExecutors: "Executors",
-    navMcp: "MCP",
-    navCases: "Cases",
-    navSkills: "Skills",
-    navSettings: "Settings",
     languageLabel: "Language"
   }
 } as const;
