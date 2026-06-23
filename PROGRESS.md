@@ -12,6 +12,16 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 WebUI 拆分 System Context 集合页
+
+- 移除 WebUI 顶层 "系统上下文 / System Context" 集合标签页（`SystemContextView`，内部用 Tabs 聚合 Skills + Metadata，其中 Metadata 与已有顶层 Metadata 标签页重复）。
+- 把 Skills 拆为独立顶层导航项：新增 `webui/src/SkillsView.tsx`（从 `SystemContextView` 提取 Skills 列表/详情/导入，去掉 Tabs 包装与 Metadata 子页）；`App.tsx` 导航 `system-context` → `skills`，渲染 `SkillsView`；`i18n.ts` `navSystemContext` → `navSkills`（zh "技能" / en "Skills"）。
+- 删除 `webui/src/SystemContextView.tsx`。
+- 导航收敛为 `Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | Skills | Settings`。
+- 后端 `system_context_store` / `/api/system-context/*` 资源 store 与本变更无关（`SystemContextView` 本就未调用该 API），保留不动。
+- 文档同步：`webui/README.md`、`webui/SPEC.md`、根 `README.md`、根 `SPEC.md`、`CLAUDE.md`、`docs/modules/README.md`。
+- 验证：`npm run lint` / `typecheck` / `build` 全绿（bundle 322.27 KB）。
+
 ## 2026-06-23 Server 跨平台 (Linux/Windows) 与全工具 catalog
 
 目标：server 包括所有 tools，兼容 Windows 和 Linux 双平台。

@@ -7,7 +7,7 @@ WebUI 是 LocalToolHub 的本地管理页面。它应该以工具使用和配置
 顶部导航（已实现，默认进入 Tools）：
 
 ```text
-Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | SystemContext | Settings
+Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | Skills | Settings
 ```
 
 Analyze/Operations 页面已降级，默认不在导航中；旧视图文件将在服务端 fat 代码删除阶段一并清理。

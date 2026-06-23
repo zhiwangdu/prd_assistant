@@ -28,7 +28,7 @@ export const appCopy = {
     navExecutors: "Executors",
     navMcp: "MCP",
     navCases: "Cases",
-    navSystemContext: "系统上下文",
+    navSkills: "技能",
     navSettings: "设置",
     languageLabel: "语言"
   },
@@ -47,7 +47,7 @@ export const appCopy = {
     navExecutors: "Executors",
     navMcp: "MCP",
     navCases: "Cases",
-    navSystemContext: "System Context",
+    navSkills: "Skills",
     navSettings: "Settings",
     languageLabel: "Language"
   }

@@ -45,10 +45,10 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 - 展示 resources 和 tools 列表。
 - 不写入用户本地 Claude Code/Codex/Cursor 配置。
 
-### System Context
+### Skills
 
-- 展示可复用 Skills / runbook 和系统上下文资源，作为工具运行的背景能力。
-- 属于核心上下文能力，保留在导航中。
+- 展示可复用 Skills / runbook 资源，作为工具运行的背景能力。
+- Skills 从 System Context 集合页拆出为独立导航项；Metadata 已是独立导航项。
 
 ### Settings
 

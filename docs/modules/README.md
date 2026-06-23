@@ -11,7 +11,7 @@
 | Environment Collector | SSH/SCP Executor 模板化远程采集。 |
 | Code Evidence | 本地代码仓只读检索。 |
 | Log Analyzer | 日志包预处理和工具输入索引。 |
-| Skills/System Context | 可复用说明、runbook 和工具背景资源。 |
+| Skills | 可复用说明、runbook 和工具背景资源。 |
 | Memory/Case | 人工经验记录和召回。 |
 | LLM Gateway / Analysis Agent / Agent Backends | 可选自动化，不是默认后端。 |
 | Config / Security / Deployment / Roadmap | 本地部署、配置、安全和路线约束。 |

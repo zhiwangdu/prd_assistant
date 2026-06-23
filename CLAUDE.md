@@ -71,7 +71,7 @@ Browser WebUI / External MCP client / Chrome Ext → Native Agent
 
 **Tool Runner** — tools are external binaries configured in the `tools:` map (name → path/args/timeout/limits/match-patterns). Paths must be absolute. `{input_file}` is substituted in args. Source-built analyzers live in `third_party/` git submodules (influxql, flux, openGemini, influxdb) and are built to `bin/tools/` by `scripts/build-tools.sh`.
 
-**WebUI (`webui/`)** — Tools-first nav (`Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | SystemContext | Settings`, default Tools): `ToolsView`, `RunsView`, `FetchView`, `McpView`, `ExecutorsView`, `MetadataDashboard`, `CasesView`, `SystemContextView`, `SettingsView`. The legacy `OperationsView` (Analyze) is demoted out of nav pending removal. Vite config rewrites `/api` to the server. All artifact downloads must carry the `Authorization` header; sensitive fields render masked.
+**WebUI (`webui/`)** — Tools-first nav (`Tools | Runs | Metadata | Fetch | Executors | MCP | Cases | Skills | Settings`, default Tools): `ToolsView`, `RunsView`, `FetchView`, `McpView`, `ExecutorsView`, `MetadataDashboard`, `CasesView`, `SkillsView`, `SettingsView`. The legacy `OperationsView` (Analyze) is demoted out of nav pending removal. Vite config rewrites `/api` to the server. All artifact downloads must carry the `Authorization` header; sensitive fields render masked.
 
 **Native Agent (`native-agent/`)** — optional localhost-only (`127.0.0.1:17321`) import bridge: Chrome extension hands it a local file path, it validates `allowed_dirs`/`allowed_suffixes`/size, then uploads to the server. It never holds the server API key in plaintext.
 

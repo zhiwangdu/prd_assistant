@@ -1,8 +1,7 @@
-import { Boxes, BrainCircuit, FileText, RefreshCw, Upload, X } from "lucide-react";
+import { FileText, RefreshCw, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input } from "./components/ui";
 import { authHeaders, fetchJson, jsonHeaders } from "./metadata/api";
-import { MetadataDashboard } from "./metadata/MetadataDashboard";
 
 type SkillReference = {
   referenceId: string;
@@ -50,7 +49,7 @@ const emptyImportForm: ImportForm = {
   filename: ""
 };
 
-export function SystemContextView({ apiKey }: { apiKey: string }) {
+export function SkillsView({ apiKey }: { apiKey: string }) {
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillDetail | null>(null);
@@ -157,75 +156,62 @@ export function SystemContextView({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="space-y-5">
-      <Tabs defaultValue="skills">
-        <TabsList>
-          <TabsTrigger value="skills"><BrainCircuit className="mr-2 h-4 w-4" />Skills</TabsTrigger>
-          <TabsTrigger value="metadata"><Boxes className="mr-2 h-4 w-4" />Metadata</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="skills">
-          <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle>Diagnostic Skills</CardTitle>
-                    <CardDescription>{status}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button className="h-8 px-3" variant="outline" onClick={() => setImportOpen((value) => !value)} aria-label={importOpen ? "Close import" : "Import skill"}>
-                      {importOpen ? <X className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-                    </Button>
-                    <Button className="h-8 px-3" variant="outline" onClick={() => void refresh()} aria-label="Refresh skills"><RefreshCw className="h-4 w-4" /></Button>
-                  </div>
+      <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Diagnostic Skills</CardTitle>
+                <CardDescription>{status}</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button className="h-8 px-3" variant="outline" onClick={() => setImportOpen((value) => !value)} aria-label={importOpen ? "Close import" : "Import skill"}>
+                  {importOpen ? <X className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                </Button>
+                <Button className="h-8 px-3" variant="outline" onClick={() => void refresh()} aria-label="Refresh skills"><RefreshCw className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {importOpen ? (
+              <div className="mb-4 space-y-3 rounded-lg border border-border bg-slate-50 p-3">
+                <div className="grid gap-2">
+                  <Input value={importForm.skillId} onChange={(event) => setImportForm({ ...importForm, skillId: event.target.value })} placeholder="Skill ID" />
+                  <Input value={importForm.name} onChange={(event) => setImportForm({ ...importForm, name: event.target.value })} placeholder="Name" />
+                  <Input value={importForm.description} onChange={(event) => setImportForm({ ...importForm, description: event.target.value })} placeholder="Description" />
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {importOpen ? (
-                  <div className="mb-4 space-y-3 rounded-lg border border-border bg-slate-50 p-3">
-                    <div className="grid gap-2">
-                      <Input value={importForm.skillId} onChange={(event) => setImportForm({ ...importForm, skillId: event.target.value })} placeholder="Skill ID" />
-                      <Input value={importForm.name} onChange={(event) => setImportForm({ ...importForm, name: event.target.value })} placeholder="Name" />
-                      <Input value={importForm.description} onChange={(event) => setImportForm({ ...importForm, description: event.target.value })} placeholder="Description" />
-                    </div>
-                    <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-white px-3 text-center text-sm text-muted-foreground transition hover:border-primary">
-                      <Upload className="mb-2 h-4 w-4" />
-                      {importForm.filename || "Select Markdown file"}
-                      <input className="hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={(event) => void handleFileSelected(event.target.files?.[0])} />
-                    </label>
-                    <textarea
-                      className="min-h-40 w-full rounded-md border border-border bg-white px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20"
-                      value={importForm.markdown}
-                      onChange={(event) => setImportForm({ ...importForm, markdown: event.target.value })}
-                      placeholder="Markdown"
-                    />
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button className="h-8 px-3" variant="outline" disabled={importing} onClick={() => { setImportForm(emptyImportForm); setImportOpen(false); }}>Cancel</Button>
-                      <Button className="h-8 px-3" disabled={importDisabled} onClick={() => void submitImport()}><Upload className="mr-2 h-4 w-4" />Import</Button>
-                    </div>
-                  </div>
-                ) : null}
-                {skills.length ? skills.map((skill) => (
-                  <button className={`w-full rounded-lg border p-3 text-left ${selectedSkillId === skill.skillId ? "border-primary bg-slate-50" : "border-border"}`} key={skill.skillId} onClick={() => void loadSkill(skill.skillId)}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium">{skill.displayName}</span>
-                      <Badge variant={skill.managed ? "secondary" : "outline"}>{skill.managed ? "managed" : "external"}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{skill.skillId} · priority {skill.priority} · rev {skill.revision.slice(0, 8)}</p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.description}</p>
-                  </button>
-                )) : <EmptyState>暂无 Skill。</EmptyState>}
-              </CardContent>
-            </Card>
+                <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-white px-3 text-center text-sm text-muted-foreground transition hover:border-primary">
+                  <Upload className="mb-2 h-4 w-4" />
+                  {importForm.filename || "Select Markdown file"}
+                  <input className="hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={(event) => void handleFileSelected(event.target.files?.[0])} />
+                </label>
+                <textarea
+                  className="min-h-40 w-full rounded-md border border-border bg-white px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-teal-600/20"
+                  value={importForm.markdown}
+                  onChange={(event) => setImportForm({ ...importForm, markdown: event.target.value })}
+                  placeholder="Markdown"
+                />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button className="h-8 px-3" variant="outline" disabled={importing} onClick={() => { setImportForm(emptyImportForm); setImportOpen(false); }}>Cancel</Button>
+                  <Button className="h-8 px-3" disabled={importDisabled} onClick={() => void submitImport()}><Upload className="mr-2 h-4 w-4" />Import</Button>
+                </div>
+              </div>
+            ) : null}
+            {skills.length ? skills.map((skill) => (
+              <button className={`w-full rounded-lg border p-3 text-left ${selectedSkillId === skill.skillId ? "border-primary bg-slate-50" : "border-border"}`} key={skill.skillId} onClick={() => void loadSkill(skill.skillId)}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium">{skill.displayName}</span>
+                  <Badge variant={skill.managed ? "secondary" : "outline"}>{skill.managed ? "managed" : "external"}</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{skill.skillId} · priority {skill.priority} · rev {skill.revision.slice(0, 8)}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.description}</p>
+              </button>
+            )) : <EmptyState>暂无 Skill。</EmptyState>}
+          </CardContent>
+        </Card>
 
-            <SkillDetailPanel skill={selectedSkill} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="metadata">
-          <MetadataDashboard apiKey={apiKey} />
-        </TabsContent>
-      </Tabs>
+        <SkillDetailPanel skill={selectedSkill} />
+      </div>
     </div>
   );
 }

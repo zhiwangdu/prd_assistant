@@ -70,7 +70,7 @@ $LOCALTOOLHUB_APP_DIR/
 Server 内部能力以本地工具平台为中心：
 
 - Tool Runner / Fetch / Executor 是核心。
-- Metadata / Skills / System Context / Case 是上下文和管理能力。
+- Metadata / Skills / Case 是上下文和管理能力。
 - Log Analyzer / Code Evidence 是工具输入和证据能力。
 - MCP 是外部 Agent 的集成入口。
 - LLM Gateway、Analysis Agent、Claude Code runner 只保留为可选自动化，不作为默认主线。

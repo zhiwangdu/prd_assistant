@@ -7,13 +7,13 @@ import { McpView } from "./McpView";
 import { RunsView } from "./RunsView";
 import { FetchView, ToolsView } from "./ToolsView";
 import { MetadataDashboard } from "./metadata/MetadataDashboard";
-import { SystemContextView } from "./SystemContextView";
+import { SkillsView } from "./SkillsView";
 import { SettingsView } from "./SettingsView";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
-type ViewKey = "tools" | "runs" | "metadata" | "fetch" | "executors" | "mcp" | "cases" | "system-context" | "settings";
+type ViewKey = "tools" | "runs" | "metadata" | "fetch" | "executors" | "mcp" | "cases" | "skills" | "settings";
 
 export function App() {
   const [apiKey, setApiKey] = useState("");
@@ -44,7 +44,7 @@ export function App() {
     { key: "executors", label: copy.navExecutors, icon: Server },
     { key: "mcp", label: copy.navMcp, icon: Cable },
     { key: "cases", label: copy.navCases, icon: BookOpenCheck },
-    { key: "system-context", label: copy.navSystemContext, icon: BrainCircuit },
+    { key: "skills", label: copy.navSkills, icon: BrainCircuit },
     { key: "settings", label: copy.navSettings, icon: Settings }
   ];
 
@@ -92,7 +92,7 @@ export function App() {
           : view === "executors" ? <ExecutorsView apiKey={apiKey} />
           : view === "mcp" ? <McpView apiKey={apiKey} language={language} />
           : view === "cases" ? <CasesView apiKey={apiKey} />
-          : view === "system-context" ? <SystemContextView apiKey={apiKey} />
+          : view === "skills" ? <SkillsView apiKey={apiKey} />
           : <SettingsView apiKey={apiKey} />}
       </main>
     </div>
