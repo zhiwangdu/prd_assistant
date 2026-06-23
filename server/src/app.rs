@@ -6,8 +6,9 @@ use crate::{
     services::{metadata::MetadataStore, skill_registry::SkillRegistry, tool_runner::ToolRunner},
     stores::{
         case_import_store::CaseImportStore, case_store::CaseStore,
-        executor_store::RemoteExecutorStore, fetch_store::FetchStore,
-        system_context_store::SystemContextStore, task_store::TaskStore, upload_store::UploadStore,
+        dev_selftest_store::DevSelftestStore, executor_store::RemoteExecutorStore,
+        fetch_store::FetchStore, system_context_store::SystemContextStore, task_store::TaskStore,
+        upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -20,6 +21,7 @@ pub struct AppState {
     pub cases: CaseStore,
     pub case_imports: CaseImportStore,
     pub executors: RemoteExecutorStore,
+    pub dev_selftest: DevSelftestStore,
     pub system_context: SystemContextStore,
     pub fetch: FetchStore,
     pub skills: SkillRegistry,
@@ -43,6 +45,7 @@ impl AppState {
         )?;
         let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         let executors = RemoteExecutorStore::load(config.storage.executors_dir())?;
+        let dev_selftest = DevSelftestStore::load(config.storage.dev_selftest_dir())?;
         let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
         let fetch = FetchStore::load(config.storage.fetch_dir(), &config.fetch)?;
         let skills = SkillRegistry::load(config.skills.clone())?;
@@ -51,6 +54,7 @@ impl AppState {
             cases,
             case_imports,
             executors,
+            dev_selftest,
             system_context,
             fetch,
             skills,

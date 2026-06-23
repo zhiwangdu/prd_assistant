@@ -222,6 +222,64 @@ pub struct RemoteCommandTemplateListResponse {
     pub commands: Vec<RemoteCommandTemplateDescriptor>,
 }
 
+// ---------------------------------------------------------------------------
+// Dev self-test pipeline (P1: docker self-test closed loop). A "run" is a
+// persistent workspace shared across multiple tool calls (sync -> build ->
+// deploy -> run_tests -> report). The record is the index; files live under
+// the run workspace dir. See `services/dev_selftest` and `skills/dev-selftest`.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DevSelftestRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DevSelftestDeployTarget {
+    Docker {
+        cluster: String,
+        exposed_port: Option<u16>,
+    },
+    Ssh {
+        executor_id: String,
+    },
+    Instance {
+        instance_id: String,
+        endpoint: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSelftestStep {
+    pub step: String,
+    pub status: String,
+    pub duration_ms: u128,
+    pub error: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSelftestRunRecord {
+    pub schema_version: u32,
+    pub run_id: String,
+    pub label: Option<String>,
+    pub source_ref: Option<String>,
+    pub build_artifacts: Vec<String>,
+    pub deploy_target: Option<DevSelftestDeployTarget>,
+    pub test_run_id: Option<String>,
+    pub steps: Vec<DevSelftestStep>,
+    pub status: DevSelftestRunStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRemoteCommandRunRequest {

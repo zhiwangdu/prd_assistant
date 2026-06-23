@@ -842,6 +842,7 @@ mod tests {
             huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
+            dev_selftest: crate::support::config::DevSelftestSettings::default(),
         });
         config.prepare_dirs().unwrap();
         let state = AppState::new(config).unwrap();

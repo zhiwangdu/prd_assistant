@@ -1574,6 +1574,7 @@ mod tests {
             huawei_cloud: HuaweiCloudSettings::default(),
             remote_execution: RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
+            dev_selftest: crate::support::config::DevSelftestSettings::default(),
         }
     }
 

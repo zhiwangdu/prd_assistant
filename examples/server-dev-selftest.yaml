@@ -1,0 +1,81 @@
+# LocalToolHub server config for the dev self-test pipeline (P1: docker closed loop).
+# Drive from a remote MCP client (e.g. Claude Code on Windows over an SSH tunnel):
+#   sync_workspace -> build -> deploy (docker_cluster) -> run_tests -> runs.get -> report.
+#
+# All commands/binaries/compose paths must be absolute and are allowlisted here. Tool params
+# only select profile ids and carry a runId. Source ingest is a tarball upload or an
+# allowlisted git repo+ref; SFTP is not supported.
+
+server:
+  bind: "127.0.0.1:50994"
+  public_base_url: "http://127.0.0.1:50994"
+  max_concurrent_tasks: 2
+  max_input_chars: 60000
+
+auth:
+  api_keys:
+    - name: "native-agent"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+storage:
+  data_dir: "./data/logagent"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+skills:
+  enabled: true
+  roots:
+    - skills
+  max_skill_chars: 4000
+  max_reference_chars: 20000
+
+log_analyzer:
+  max_matches: 200
+  keywords: ["error", "exception", "timeout", "fail", "failed", "panic", "fatal"]
+
+remote_execution:
+  enabled: false
+  ssh_binary: "/usr/bin/ssh"
+
+# Dev self-test pipeline. Disabled by default; flip `enabled: true` and fill in real
+# absolute paths to use it.
+dev_selftest:
+  enabled: true
+  build_timeout_seconds: 600
+  max_output_bytes: 8388608
+  git:
+    enabled: false
+    binary: "/usr/bin/git"
+    repos:
+      - url: "https://example.invalid/influxql-analyzer.git"
+        refs: ["main", "release/*"]
+  builds:
+    influxql_analyzer:
+      display_name: "Build influxql_analyzer (cargo)"
+      command: ["cargo", "build", "--release"]
+      working_dir: "source/influxql-analyzer"
+      artifact_globs: ["target/release/influxql-analyzer"]
+      timeout_seconds: 600
+  docker:
+    binary: "/usr/bin/docker"
+    clusters:
+      local_cluster:
+        compose_file: "/opt/dev_selftest/docker-compose.yml"
+        exposed_port: 8086
+        health_check:
+          cmd: ["curl", "-sf", "http://127.0.0.1:8086/health"]
+          timeout_seconds: 60
+  test_suites:
+    influxql_smoke:
+      display_name: "InfluxQL smoke"
+      # P1 stub runner: a local command. Real executor-dispatched test framework lands in P2.
+      argv: ["/opt/testfw/bin/runner", "--host", "127.0.0.1", "--port", "8086"]
+      timeout_seconds: 300
+      env: {}
+
+mcp:
+  enabled: true
+  transport: "stdio"
+  # For direct remote exposure (not SSH tunnel): set TLS upstream and list allowed origins.
+  # allowed_origins:
+  #   - "https://mcp.example.invalid"

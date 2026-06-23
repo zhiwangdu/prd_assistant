@@ -1021,6 +1021,7 @@ mod tests {
                 enabled: mcp_enabled,
                 allowed_origins,
             },
+            dev_selftest: crate::support::config::DevSelftestSettings::default(),
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)

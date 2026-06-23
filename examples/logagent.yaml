@@ -202,3 +202,12 @@ huawei_cloud:
 mcp:
   enabled: true
   transport: "stdio"
+  # When exposing /api/mcp directly (not over an SSH tunnel), require TLS upstream and
+  # list allowed browser origins here; empty disables the Origin check (localhost/tunnel).
+  # allowed_origins:
+  #   - "https://mcp.example.invalid"
+
+# Dev self-test pipeline (P1: docker closed loop). Disabled by default — flip enabled and
+# see examples/server-dev-selftest.yaml for the full profile shape.
+dev_selftest:
+  enabled: false

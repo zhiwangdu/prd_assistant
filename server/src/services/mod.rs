@@ -1,3 +1,4 @@
+pub mod dev_selftest;
 pub mod fetch;
 pub mod gemini_db;
 pub mod huawei_package_sync;

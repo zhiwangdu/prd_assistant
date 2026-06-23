@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "skillId": "dev-selftest-pipeline",
+  "displayName": "Dev self-test pipeline",
+  "products": ["dev-selftest", "docker"],
+  "toolIds": [
+    "logagent.dev_selftest.sync_workspace",
+    "logagent.dev_selftest.build",
+    "logagent.dev_selftest.deploy",
+    "logagent.dev_selftest.run_tests",
+    "logagent.dev_selftest.report",
+    "logagent.runs.get",
+    "logagent.runs.result"
+  ],
+  "includeByDefault": true,
+  "priority": 60,
+  "maxPromptChars": 4000,
+  "references": [
+    {
+      "path": "references/workflow.md",
+      "title": "Dev self-test workflow and result shapes",
+      "summary": "Per-step params, runMode/polling, and result.json shapes for the dev self-test pipeline (P1 docker closed loop)."
+    }
+  ]
+}

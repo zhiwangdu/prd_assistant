@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub huawei_cloud: HuaweiCloudSettings,
     pub remote_execution: RemoteExecutionSettings,
     pub mcp: McpSettings,
+    pub dev_selftest: DevSelftestSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -316,6 +317,109 @@ impl Default for McpSettings {
     }
 }
 
+/// Dev self-test pipeline settings (P1: docker self-test closed loop). All
+/// commands/binaries/paths are allowlisted here; tool params only select profile
+/// ids and carry a `runId`. Disabled by default.
+#[derive(Debug, Clone)]
+pub struct DevSelftestSettings {
+    pub enabled: bool,
+    pub build_timeout_seconds: u64,
+    pub max_output_bytes: usize,
+    pub git: DevSelftestGitSettings,
+    pub builds: BTreeMap<String, DevSelftestBuildProfile>,
+    pub docker: DevSelftestDockerSettings,
+    pub test_suites: BTreeMap<String, DevSelftestTestSuite>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestGitSettings {
+    pub enabled: bool,
+    pub binary: PathBuf,
+    /// Allowlist of clone-able repos + refs.
+    pub repos: Vec<DevSelftestGitRepo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestGitRepo {
+    pub url: String,
+    pub refs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestBuildProfile {
+    #[allow(dead_code)]
+    pub display_name: String,
+    /// First element is the binary, the rest are args. Run with `working_dir` as cwd.
+    pub command: Vec<String>,
+    /// Working dir relative to the run's `source/` (empty = `source/`).
+    pub working_dir: String,
+    pub artifact_globs: Vec<String>,
+    pub timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestDockerSettings {
+    pub binary: PathBuf,
+    pub clusters: BTreeMap<String, DevSelftestDockerCluster>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestDockerCluster {
+    pub compose_file: PathBuf,
+    pub exposed_port: Option<u16>,
+    pub health_check: Option<DevSelftestHealthCheck>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestHealthCheck {
+    pub cmd: Vec<String>,
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevSelftestTestSuite {
+    #[allow(dead_code)]
+    pub display_name: String,
+    /// First element is the binary, the rest are args. Run locally against the
+    /// deployed target (P1 stub; real executor dispatch lands in P2).
+    pub argv: Vec<String>,
+    pub timeout_seconds: Option<u64>,
+    pub env: BTreeMap<String, String>,
+}
+
+impl Default for DevSelftestSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            build_timeout_seconds: default_dev_selftest_build_timeout(),
+            max_output_bytes: default_dev_selftest_max_output_bytes(),
+            git: DevSelftestGitSettings::default(),
+            builds: BTreeMap::new(),
+            docker: DevSelftestDockerSettings::default(),
+            test_suites: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for DevSelftestGitSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            binary: default_git_binary(),
+            repos: Vec::new(),
+        }
+    }
+}
+
+impl Default for DevSelftestDockerSettings {
+    fn default() -> Self {
+        Self {
+            binary: default_docker_binary(),
+            clusters: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigFile {
     server: Option<ServerConfig>,
@@ -329,6 +433,7 @@ struct ConfigFile {
     huawei_cloud: Option<HuaweiCloudConfig>,
     remote_execution: Option<RemoteExecutionConfig>,
     mcp: Option<McpConfig>,
+    dev_selftest: Option<DevSelftestConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -544,6 +649,90 @@ struct McpConfig {
     allowed_origins: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+struct DevSelftestConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_dev_selftest_build_timeout")]
+    build_timeout_seconds: u64,
+    #[serde(default = "default_dev_selftest_max_output_bytes")]
+    max_output_bytes: usize,
+    #[serde(default)]
+    git: DevSelftestGitConfig,
+    #[serde(default)]
+    builds: BTreeMap<String, DevSelftestBuildConfig>,
+    #[serde(default)]
+    docker: DevSelftestDockerConfig,
+    #[serde(default)]
+    test_suites: BTreeMap<String, DevSelftestTestSuiteConfig>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct DevSelftestGitConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_git_binary")]
+    binary: PathBuf,
+    #[serde(default)]
+    repos: Vec<DevSelftestGitRepoConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DevSelftestGitRepoConfig {
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DevSelftestBuildConfig {
+    #[serde(default)]
+    display_name: Option<String>,
+    command: Vec<String>,
+    #[serde(default)]
+    working_dir: String,
+    #[serde(default)]
+    artifact_globs: Vec<String>,
+    #[serde(default)]
+    timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct DevSelftestDockerConfig {
+    #[serde(default = "default_docker_binary")]
+    binary: PathBuf,
+    #[serde(default)]
+    clusters: BTreeMap<String, DevSelftestDockerClusterConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DevSelftestDockerClusterConfig {
+    compose_file: PathBuf,
+    #[serde(default)]
+    exposed_port: Option<u16>,
+    #[serde(default)]
+    health_check: Option<DevSelftestHealthCheckConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DevSelftestHealthCheckConfig {
+    cmd: Vec<String>,
+    #[serde(default = "default_dev_selftest_health_timeout")]
+    timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DevSelftestTestSuiteConfig {
+    #[serde(default)]
+    display_name: Option<String>,
+    argv: Vec<String>,
+    #[serde(default)]
+    timeout_seconds: Option<u64>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+}
+
 impl AppConfig {
     pub fn prepare_dirs(&self) -> anyhow::Result<()> {
         fs::create_dir_all(self.storage.uploads_dir())?;
@@ -559,6 +748,8 @@ impl AppConfig {
         fs::create_dir_all(self.storage.metadata_imports_dir())?;
         fs::create_dir_all(self.storage.system_context_dir())?;
         fs::create_dir_all(self.storage.fetch_dir())?;
+        fs::create_dir_all(self.storage.dev_selftest_dir())?;
+        fs::create_dir_all(self.storage.dev_selftest_runs_dir())?;
         Ok(())
     }
 }
@@ -627,6 +818,18 @@ impl StorageSettings {
     pub fn fetch_dir(&self) -> PathBuf {
         self.data_dir.join("fetch")
     }
+
+    pub fn dev_selftest_dir(&self) -> PathBuf {
+        self.data_dir.join("dev_selftest")
+    }
+
+    pub fn dev_selftest_runs_dir(&self) -> PathBuf {
+        self.dev_selftest_dir().join("runs")
+    }
+
+    pub fn dev_selftest_run_dir(&self, run_id: &str) -> PathBuf {
+        self.dev_selftest_runs_dir().join(run_id)
+    }
 }
 
 pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
@@ -643,6 +846,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             huawei_cloud: None,
             remote_execution: None,
             mcp: None,
+            dev_selftest: None,
         }
     } else {
         serde_yaml::from_str(&raw).context("invalid YAML")?
@@ -680,6 +884,11 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
             .unwrap_or_else(default_remote_execution_config),
     )?;
     let mcp = resolve_mcp(parsed.mcp.unwrap_or_else(default_mcp_config))?;
+    let dev_selftest = resolve_dev_selftest(
+        parsed
+            .dev_selftest
+            .unwrap_or_else(default_dev_selftest_config),
+    )?;
 
     let mut api_keys = Vec::new();
     for api_key in auth.api_keys {
@@ -722,6 +931,7 @@ pub fn load_config(path: &std::path::Path) -> anyhow::Result<Arc<AppConfig>> {
         huawei_cloud,
         remote_execution,
         mcp,
+        dev_selftest,
     }))
 }
 
@@ -734,6 +944,210 @@ fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
         enabled: raw.enabled,
         allowed_origins: raw.allowed_origins,
     })
+}
+
+fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSettings> {
+    let enabled = raw.enabled;
+    let git = resolve_dev_selftest_git(raw.git)?;
+    let docker = resolve_dev_selftest_docker(raw.docker)?;
+    let builds = raw
+        .builds
+        .into_iter()
+        .map(|(id, build)| {
+            validate_dev_selftest_profile_id(&id)?;
+            let command = build
+                .command
+                .into_iter()
+                .map(|arg| arg.trim().to_string())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>();
+            if command.is_empty() {
+                anyhow::bail!("dev_selftest.builds.{id}.command must not be empty");
+            }
+            let display_name = build.display_name.unwrap_or_else(|| id.clone());
+            Ok((
+                id,
+                DevSelftestBuildProfile {
+                    display_name,
+                    command,
+                    working_dir: build.working_dir.trim().to_string(),
+                    artifact_globs: build.artifact_globs,
+                    timeout_seconds: build.timeout_seconds.map(|value| value.max(1)),
+                },
+            ))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+    let test_suites = raw
+        .test_suites
+        .into_iter()
+        .map(|(id, suite)| {
+            validate_dev_selftest_profile_id(&id)?;
+            let argv = suite
+                .argv
+                .into_iter()
+                .map(|arg| arg.trim().to_string())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>();
+            if argv.is_empty() {
+                anyhow::bail!("dev_selftest.test_suites.{id}.argv must not be empty");
+            }
+            let display_name = suite.display_name.unwrap_or_else(|| id.clone());
+            Ok((
+                id,
+                DevSelftestTestSuite {
+                    display_name,
+                    argv,
+                    timeout_seconds: suite.timeout_seconds.map(|value| value.max(1)),
+                    env: suite.env,
+                },
+            ))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+    Ok(DevSelftestSettings {
+        enabled,
+        build_timeout_seconds: raw.build_timeout_seconds.max(1),
+        max_output_bytes: raw.max_output_bytes.max(1024),
+        git,
+        builds,
+        docker,
+        test_suites,
+    })
+}
+
+fn resolve_dev_selftest_git(raw: DevSelftestGitConfig) -> anyhow::Result<DevSelftestGitSettings> {
+    if raw.enabled && !raw.binary.is_absolute() {
+        anyhow::bail!("dev_selftest.git.binary must be absolute when enabled");
+    }
+    let repos = raw
+        .repos
+        .into_iter()
+        .map(|repo| {
+            let url = repo.url.trim().to_string();
+            if url.is_empty() {
+                anyhow::bail!("dev_selftest.git.repos[].url must not be empty");
+            }
+            if !matches!(
+                reqwest::Url::parse(&url).map(|u| u.scheme().to_ascii_lowercase()),
+                Ok(scheme) if matches!(scheme.as_str(), "http" | "https" | "ssh" | "git")
+            ) {
+                anyhow::bail!("dev_selftest.git.repos[].url must use http, https, ssh or git");
+            }
+            let refs = repo
+                .refs
+                .into_iter()
+                .map(|r| r.trim().to_string())
+                .filter(|r| !r.is_empty())
+                .collect::<Vec<_>>();
+            if refs.is_empty() {
+                anyhow::bail!("dev_selftest.git.repos[].refs must not be empty");
+            }
+            Ok(DevSelftestGitRepo { url, refs })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(DevSelftestGitSettings {
+        enabled: raw.enabled,
+        binary: raw.binary,
+        repos,
+    })
+}
+
+fn resolve_dev_selftest_docker(
+    raw: DevSelftestDockerConfig,
+) -> anyhow::Result<DevSelftestDockerSettings> {
+    if !raw.binary.is_absolute() {
+        anyhow::bail!("dev_selftest.docker.binary must be absolute");
+    }
+    let clusters = raw
+        .clusters
+        .into_iter()
+        .map(|(id, cluster)| {
+            validate_dev_selftest_profile_id(&id)?;
+            if !cluster.compose_file.is_absolute() {
+                anyhow::bail!("dev_selftest.docker.clusters.{id}.compose_file must be absolute");
+            }
+            let health_check = cluster.health_check.map(|hc| {
+                let cmd = hc
+                    .cmd
+                    .into_iter()
+                    .map(|c| c.trim().to_string())
+                    .filter(|c| !c.is_empty())
+                    .collect::<Vec<_>>();
+                DevSelftestHealthCheck {
+                    cmd,
+                    timeout_seconds: hc.timeout_seconds.max(1),
+                }
+            });
+            if health_check.as_ref().is_some_and(|hc| hc.cmd.is_empty()) {
+                anyhow::bail!(
+                    "dev_selftest.docker.clusters.{id}.health_check.cmd must not be empty"
+                );
+            }
+            Ok((
+                id,
+                DevSelftestDockerCluster {
+                    compose_file: cluster.compose_file,
+                    exposed_port: cluster.exposed_port,
+                    health_check,
+                },
+            ))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+    Ok(DevSelftestDockerSettings {
+        binary: raw.binary,
+        clusters,
+    })
+}
+
+fn validate_dev_selftest_profile_id(id: &str) -> anyhow::Result<()> {
+    let valid = !id.is_empty()
+        && id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        anyhow::bail!("invalid dev_selftest profile id {id}")
+    }
+}
+
+fn default_dev_selftest_config() -> DevSelftestConfig {
+    DevSelftestConfig {
+        enabled: false,
+        build_timeout_seconds: default_dev_selftest_build_timeout(),
+        max_output_bytes: default_dev_selftest_max_output_bytes(),
+        git: DevSelftestGitConfig::default(),
+        builds: BTreeMap::new(),
+        docker: DevSelftestDockerConfig::default(),
+        test_suites: BTreeMap::new(),
+    }
+}
+
+fn default_dev_selftest_build_timeout() -> u64 {
+    600
+}
+
+fn default_dev_selftest_max_output_bytes() -> usize {
+    8 * 1024 * 1024
+}
+
+fn default_dev_selftest_health_timeout() -> u64 {
+    60
+}
+
+fn default_git_binary() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("git.exe")
+    } else {
+        PathBuf::from("/usr/bin/git")
+    }
+}
+
+fn default_docker_binary() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("docker.exe")
+    } else {
+        PathBuf::from("/usr/bin/docker")
+    }
 }
 
 fn resolve_fetch(raw: FetchConfig) -> anyhow::Result<FetchSettings> {

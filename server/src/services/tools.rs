@@ -21,6 +21,7 @@ use crate::{
         },
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
+    services::dev_selftest,
     services::fetch::{FetchRunParams, FETCH_TOOL_ID},
     services::gemini_db,
     services::huawei_package_sync::{
@@ -198,6 +199,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     descriptors.push(fetch_descriptor(config));
     descriptors.push(huawei_package_sync_descriptor(config));
     descriptors.extend(gemini_db::descriptors(config));
+    descriptors.extend(dev_selftest::descriptors(config));
     descriptors.extend(platform_run_descriptors());
     descriptors
 }
@@ -217,6 +219,9 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
         return Some(batch_influxql_analysis_descriptor(config));
     }
     if let Some(descriptor) = gemini_db::get_descriptor(config, tool_id) {
+        return Some(descriptor);
+    }
+    if let Some(descriptor) = dev_selftest::get_descriptor(config, tool_id) {
         return Some(descriptor);
     }
     if tool_id == RUNS_GET_ID || tool_id == RUNS_RESULT_ID {
@@ -274,6 +279,9 @@ pub fn validate_tool_run_request(
         HUAWEI_PACKAGE_SYNC_TOOL_ID => validate_huawei_package_sync_run_params(config, params),
         id if gemini_db::is_gemini_db_tool(id) => {
             gemini_db::validate_run_params(config, id, params)
+        }
+        id if dev_selftest::is_dev_selftest_tool(id) => {
+            dev_selftest::validate_run_params(config, id, params)
         }
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
@@ -362,6 +370,9 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
         }
         Some(tool_id) if gemini_db::is_gemini_db_tool(tool_id) => {
             gemini_db::run_gemini_db_task(state, task).await
+        }
+        Some(tool_id) if dev_selftest::is_dev_selftest_tool(tool_id) => {
+            dev_selftest::run_dev_selftest_task(state, task).await
         }
         Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
             run_configured_tool_task(state, task).await
@@ -2065,6 +2076,7 @@ Showing nodes accounting for 970ms, 100% of 970ms total
             huawei_cloud: HuaweiCloudSettings::default(),
             remote_execution: RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
+            dev_selftest: crate::support::config::DevSelftestSettings::default(),
         }
     }
 

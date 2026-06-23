@@ -12,6 +12,27 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 Dev self-test pipeline P1：dev_selftest 工具组 + Docker 自测闭环
+
+目标：在 P0（MCP 传输 + 异步 run 模型）之上落地开发自测流水线的第一刀可执行切片——`logagent.dev_selftest.*` 内置工具组，跑通 sync → build → deploy(docker_cluster) → run_tests(桩) → report 闭环。SSH 二进制替换（P2）和打包+云实例（P3）为后续蓝图。
+
+- `server/src/services/dev_selftest.rs`（新）：5 个内置工具（sync_workspace / build / deploy / run_tests / report），镜像 `gemini_db` 的自包含工具组结构（descriptors/get_descriptor/is_dev_selftest_tool/validate_run_params/run_dev_selftest_task）。run = 持久工作区 `data/dev_selftest/runs/{runId}/`（source/ artifacts/ logs/ progress.json report.md/json）+ `DevSelftestRunRecord` 索引；每步追加 progress，写各自 result.json。
+  - sync_workspace：tarball 上传解包（复用 `log_analyzer::extract_upload`）/ allowlisted git clone / 空 source（桩）。
+  - build：配置式 `command` 在 `source/{working_dir}` 执行（`run_bounded_command`，timeout + 输出上限），按 `artifact_globs`（单层 `*` glob）收集到 artifacts/。
+  - deploy（P1 仅 docker_cluster）：`<docker> compose -p devselftest_<run>_<cluster> -f <compose> up -d` + 声明式 health check；记录 Docker target。
+  - run_tests（P1 桩）：本地跑配置式 `argv`，注入 `DEVSELFTEST_HOST/PORT`；支持 `runMode:"queued"`。
+  - report：聚合 progress.json 生成 report.md + report.json（状态/时长/错误/evidence/失败步骤）。
+- `server/src/stores/dev_selftest_store.rs`（新）：`DevSelftestStore`（JSON-per-run + 内存 map），镜像 `RemoteExecutorStore`。
+- `server/src/support/config.rs`：`DevSelftestSettings` + 子结构（git/builds/docker/test_suites，含 health_check）+ resolver（绝对路径校验、profile id 校验、git repo+ref allowlist）+ `StorageSettings::dev_selftest_dir/dev_selftest_runs_dir/dev_selftest_run_dir` + `prepare_dirs`；`AppConfig` 新增 `dev_selftest` 字段。
+- `server/src/domain/models.rs`：`DevSelftestRunRecord` / `DevSelftestDeployTarget`（Docker/Ssh/Instance，P1 仅用 Docker）/ `DevSelftestStep` / `DevSelftestRunStatus`。
+- `server/src/app.rs`：`AppState` 新增 `dev_selftest: DevSelftestStore` + load。
+- `server/src/services/tools.rs`：dev_selftest 接入 4 个注册点（descriptors/get_descriptor/validate_tool_run_request/run_tool_task）。
+- `skills/dev-selftest-pipeline/`（新）：SKILL.md + logagent.json + references/workflow.md（P1 docker 闭环 runbook + runMode/轮询 + 结果形状）。
+- `examples/server-dev-selftest.yaml`（新）+ `examples/logagent.yaml` 增 `dev_selftest:` 禁用块。
+- `docs/modules/dev-selftest/README.md`（新）+ `server/SPEC.md` 增 Dev Self-Test 章节。
+- 同步为所有测试 `AppConfig { ... }` 字面量补 `dev_selftest` 字段（14 处）。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（116 通过，+7 dev_selftest/store）均通过；`docker_selftest_closed_loop` 集成测试用 fake docker 跑通全链路并校验 report.md + 5 步 progress。本地 MCP 冒烟：`tools/list` 含 5 个 dev_selftest 工具，`tools/call sync_workspace` 返回 runId。
+
 ## 2026-06-23 Dev self-test pipeline P0：MCP streamable-http + 异步 run 模型
 
 目标：为「Windows ClaudeCode → Linux LocalToolHub MCP」的开发自测流水线打底：合规的远程 MCP 传输 + 通用的异步 run 模型 + 不污染历史的 run 查询。这是分阶段方案（P0 传输/run 模型 → P1 Docker 自测闭环 → P2 SSH 二进制替换 → P3 打包+云实例）的第一刀。
