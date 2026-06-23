@@ -33,8 +33,12 @@ use crate::{
         DevSelftestDeployTarget, DevSelftestRunRecord, DevSelftestRunStatus, DevSelftestStep,
         TaskRecord, ToolDescriptor, ToolSource,
     },
+    services::remote_execution::{self, ExecutorRunInput, ExecutorRunStatus, ExecutorTarget},
     support::{
-        config::{AppConfig, DevSelftestBuildProfile, DevSelftestSettings, DevSelftestTestSuite},
+        config::{
+            AppConfig, DevSelftestBuildProfile, DevSelftestSettings, DevSelftestTestDocker,
+            DevSelftestTestSuite,
+        },
         error::AppError,
         fs_utils::{relative_string, safe_join, sanitize_filename},
         id::next_id,
@@ -962,20 +966,27 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         .clone();
 
     let run_root = run_dir(&state, &record.run_id);
-    let env = target_env(&record, &suite);
-    let (binary, argv) = split_command(&suite.argv)?;
     let started = Instant::now();
-    let run = run_bounded_command(
-        &binary,
-        &argv,
-        &run_root,
-        &env,
-        suite
-            .timeout_seconds
-            .unwrap_or(state.config.dev_selftest.build_timeout_seconds),
-        state.config.dev_selftest.max_output_bytes,
-    )
-    .await;
+    // Docker test suites dispatch through the executor docker runner (`docker run --rm
+    // --network ... <image> <argv>`); suites without a `docker` block keep the P1 local
+    // stub. Both produce a BoundedRun so the log/step/result handling below is shared.
+    let run = if let Some(docker) = &suite.docker {
+        run_docker_test(&state, &record, &suite, docker, &run_root).await?
+    } else {
+        let env = target_env(&record, &suite);
+        let (binary, argv) = split_command(&suite.argv)?;
+        run_bounded_command(
+            &binary,
+            &argv,
+            &run_root,
+            &env,
+            suite
+                .timeout_seconds
+                .unwrap_or(state.config.dev_selftest.build_timeout_seconds),
+            state.config.dev_selftest.max_output_bytes,
+        )
+        .await
+    };
     let duration = started.elapsed().as_millis();
 
     let logs_dir = run_root.join("logs");
@@ -1012,6 +1023,13 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         mark_failed(&state, &record.run_id).await;
     }
 
+    let executor_info = suite.docker.as_ref().map(|docker| {
+        json!({
+            "kind": "docker",
+            "image": docker.image,
+            "network": docker.network.clone().unwrap_or_else(|| "host".to_string()),
+        })
+    });
     let action_id = task_action_id(RUN_TESTS_ID, &task.task_id);
     let result = json!({
         "schemaVersion": 1,
@@ -1021,6 +1039,7 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         "testSuite": params.test_suite,
         "status": status,
         "exitCode": run.exit_code,
+        "executor": executor_info,
         "stdoutPath": "logs/tests.stdout.txt",
         "stderrPath": "logs/tests.stderr.txt",
         "error": error,
@@ -1032,6 +1051,119 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         &action_id,
         &result,
     )
+}
+
+/// Dispatch a docker test suite through the executor docker runner. argv/timeout come from
+/// the referenced `remote_execution.commands` template (`suite.command`) or, failing that,
+/// `suite.argv`. Volume host sides are interpolated from the run-directory env
+/// (`${DEVSELFTEST_*}`); system env (run dirs + `DEVSELFTEST_HOST/PORT`) is injected with
+/// final priority so a misconfigured user env cannot redirect the test at the wrong target.
+async fn run_docker_test(
+    state: &AppState,
+    record: &DevSelftestRunRecord,
+    suite: &DevSelftestTestSuite,
+    docker: &DevSelftestTestDocker,
+    run_root: &Path,
+) -> Result<BoundedRun, AppError> {
+    let (argv, timeout_seconds) = match suite.command.as_deref() {
+        Some(command_id) => {
+            let template = remote_execution::command_template(&state.config, command_id)
+                .ok_or_else(|| AppError::bad_request(format!("unknown command {command_id}")))?;
+            if !template.enabled {
+                return Err(AppError::bad_request(format!(
+                    "command {command_id} is disabled"
+                )));
+            }
+            (template.argv, template.timeout_seconds)
+        }
+        None => (suite.argv.clone(), suite.timeout_seconds),
+    };
+    if argv.is_empty() {
+        return Err(AppError::bad_request("docker test suite has empty argv"));
+    }
+
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
+    let cluster = match &record.deploy_target {
+        Some(DevSelftestDeployTarget::Docker { cluster, .. }) => cluster.clone(),
+        _ => String::new(),
+    };
+    let project_name = if cluster.is_empty() {
+        format!("devselftest_{}", sanitize_filename(&record.run_id)?)
+    } else {
+        format!(
+            "devselftest_{}_{}",
+            sanitize_filename(&record.run_id)?,
+            sanitize_filename(&cluster)?
+        )
+    };
+    let env_map = deploy_env(run_root, &source_dir, &artifacts_dir, &project_name);
+
+    // Interpolate ${DEVSELFTEST_*} in volume host sides; the host must be absolute after.
+    let mut volumes = Vec::with_capacity(docker.volumes.len());
+    for volume in &docker.volumes {
+        volumes.push(interpolate_volume(volume, &env_map)?);
+    }
+
+    // User env: suite.env then docker.env (docker.env wins). System env below wins over both.
+    let mut user_env = suite.env.clone();
+    for (key, value) in &docker.env {
+        user_env.insert(key.clone(), value.clone());
+    }
+    let mut extra_env = env_map.clone();
+    extra_env.insert("DEVSELFTEST_HOST".to_string(), "127.0.0.1".to_string());
+    if let Some(DevSelftestDeployTarget::Docker {
+        exposed_port: Some(port),
+        ..
+    }) = &record.deploy_target
+    {
+        extra_env.insert("DEVSELFTEST_PORT".to_string(), port.to_string());
+    }
+
+    let target = ExecutorTarget::Docker {
+        image: docker.image.clone(),
+        network: docker.network.clone(),
+        workdir: docker.workdir.clone(),
+        volumes,
+        env: user_env,
+    };
+    let input = ExecutorRunInput {
+        target: &target,
+        argv: &argv,
+        timeout_seconds: timeout_seconds.unwrap_or(state.config.dev_selftest.build_timeout_seconds),
+        extra_env,
+        server_cwd: run_root.to_path_buf(),
+        launcher: state.config.dev_selftest.docker.binary.clone(),
+        max_output_bytes: state.config.dev_selftest.max_output_bytes,
+    };
+    let outcome = remote_execution::run_executor_command(input).await;
+    Ok(BoundedRun {
+        ok: outcome.status == ExecutorRunStatus::Ok,
+        exit_code: outcome.exit_code,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+        duration_ms: outcome.duration_ms,
+        error: outcome.error,
+    })
+}
+
+/// Replace `${DEVSELFTEST_*}` placeholders in a volume spec using the run-directory env,
+/// then assert the host side (before the first `:`) is an absolute path.
+fn interpolate_volume(
+    volume: &str,
+    env_map: &BTreeMap<String, String>,
+) -> Result<String, AppError> {
+    let mut result = volume.to_string();
+    for (key, value) in env_map {
+        result = result.replace(&format!("${{{key}}}"), value);
+    }
+    let host = result.split(':').next().unwrap_or("");
+    if !host.starts_with('/') {
+        return Err(AppError::bad_request(format!(
+            "docker volume host must be an absolute path after interpolation: {volume}"
+        )));
+    }
+    Ok(result)
 }
 
 fn target_env(
@@ -1468,8 +1600,10 @@ mod tests {
             DevSelftestTestSuite {
                 display_name: "stub".to_string(),
                 argv: vec!["true".to_string()],
+                command: None,
                 timeout_seconds: None,
                 env: BTreeMap::new(),
+                docker: None,
             },
         );
         AppConfig {
@@ -1602,6 +1736,94 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(run_dir.join(PROGRESS_FILE)).unwrap())
                 .unwrap();
         assert_eq!(progress.steps.len(), 5);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(all(test, unix))]
+    fn test_state_with_docker_suite(
+        prefix: &str,
+    ) -> (Arc<crate::app::AppState>, std::path::PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "logagent-{prefix}-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        // Fake docker echoes its argv (so the test can inspect the run_tests dispatch) and
+        // exits 0 (success).
+        let fake_docker = root.join("fake-docker.sh");
+        std::fs::write(
+            &fake_docker,
+            "#!/usr/bin/env bash\nprintf 'ARGS:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; echo\nexit 0\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_docker).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_docker, perms).unwrap();
+
+        let mut config = test_config(true);
+        config.storage.data_dir = root.join("data");
+        config.dev_selftest.docker.binary = fake_docker;
+        config.dev_selftest.test_suites.insert(
+            "smoke".to_string(),
+            DevSelftestTestSuite {
+                display_name: "smoke".to_string(),
+                argv: vec!["sh".to_string(), "/tests/smoke.sh".to_string()],
+                command: None,
+                timeout_seconds: Some(30),
+                env: BTreeMap::new(),
+                docker: Some(DevSelftestTestDocker {
+                    image: "alpine:3.20".to_string(),
+                    network: Some("host".to_string()),
+                    workdir: None,
+                    volumes: vec!["/repo/tests:/tests:ro".to_string()],
+                    env: BTreeMap::new(),
+                }),
+            },
+        );
+        let config = Arc::new(config);
+        config.prepare_dirs().unwrap();
+        (crate::app::AppState::new(config).unwrap(), root)
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn docker_executor_test_dispatch() {
+        let (state, root) = test_state_with_docker_suite("dev-selftest-docker-exec");
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, json!({"label":"docker-exec"})).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+
+        // run_tests dispatches the smoke suite through the executor docker runner. The fake
+        // docker echoes its argv into the captured tests stdout.
+        let tests = run_tool(
+            &state,
+            RUN_TESTS_ID,
+            json!({"runId":run_id,"testSuite":"smoke"}),
+        )
+        .await;
+        assert_eq!(tests.status, "OK");
+
+        let run_dir = state.config.storage.dev_selftest_run_dir(&run_id);
+        let stdout = std::fs::read_to_string(run_dir.join("logs/tests.stdout.txt")).unwrap();
+        assert!(
+            stdout.contains("run --rm --network host"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--volume /repo/tests:/tests:ro alpine:3.20 sh /tests/smoke.sh"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--env DEVSELFTEST_HOST=127.0.0.1"),
+            "stdout: {stdout}"
+        );
+
+        let report = run_tool(&state, REPORT_ID, json!({"runId":run_id})).await;
+        assert_eq!(report.status, "SUCCEEDED");
 
         let _ = std::fs::remove_dir_all(root);
     }

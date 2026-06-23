@@ -36,6 +36,16 @@ log_analyzer:
 remote_execution:
   enabled: false
   ssh_binary: "/usr/bin/ssh"
+  # Command template reused by dev_selftest test suites (docker mode). dev_selftest reads
+  # templates via command_template() regardless of remote_execution.enabled, so SSH can stay
+  # disabled for a docker-only self-test.
+  commands:
+    opengemini_smoke:
+      display_name: "openGemini smoke (in-container)"
+      description: "Run the smoke shell script inside the docker test container."
+      enabled: true
+      argv: ["sh", "/tests/smoke.sh"]
+      timeout_seconds: 180
 
 # Dev self-test pipeline — openGemini docker demo (the validated default).
 # Disabled by default so this example loads without docker. To run:
@@ -72,9 +82,18 @@ dev_selftest:
           timeout_seconds: 180
   test_suites:
     opengemini_smoke:
-      argv: ["curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"]
-      timeout_seconds: 60
+      # Docker-executor mode: run_tests dispatches this suite through the executor docker
+      # runner (docker run --rm --network host <image> <argv>). argv/timeout come from the
+      # referenced command template above; the cluster address is injected as system env
+      # (DEVSELFTEST_HOST/PORT, final priority).
+      command: opengemini_smoke
+      timeout_seconds: 180
       env: {}
+      docker:
+        image: "alpine:3.20"          # intranet: set image: "${DEVSELFTEST_TEST_IMAGE}" + export it
+        network: "host"               # reaches the host-exposed ts-sql port 127.0.0.1:8086
+        volumes:
+          - "/path/to/repo/deploy/devselftest/opengemini/tests:/tests:ro"
 
 mcp:
   enabled: true

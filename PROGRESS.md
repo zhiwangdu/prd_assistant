@@ -12,6 +12,18 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 P2 docker 切片：executor runner 抽通 SSH/Docker target + dev_selftest 内联 Docker target
+
+目标：推进 P2「真实测试分发」，仍聚焦本地 docker 部署路径——把 executor 执行逻辑抽成可复用 runner 支持 SSH/Docker 两种 target；`run_tests` 对带 `docker` 块的测试套件内联构建 Docker target 跑真实 smoke（临时容器 + shell 脚本连接集群 CREATE/INSERT/SELECT）。**不**实现 Docker executor record / `/api/executors` docker CRUD / run history 纳管（显式 deferred）。
+
+- `server/src/services/remote_execution.rs`：新增 `pub` 类型 `ExecutorRunStatus::{Ok,Failed,TimedOut,SpawnFailed}`、`ExecutorTarget::{Ssh,Docker}`、`ExecutorRunInput`、`ExecutorOutcome`、`pub async fn run_executor_command`。SSH 分支与原 `run_remote_command_task` 逐字一致；Docker 分支 `docker run --rm --network <net|"host"> [--workdir] [--env] [--volume] <image> <argv>`，`extra_env`（系统 env）后置覆盖 `target.env`。runner 不检查 `remote_execution.enabled`（开关在任务/handler 入口）。`run_remote_command_task` 改用它并映射 `ExecutorRunStatus→RemoteCommandStatus`（保留 TimedOut）。
+- `server/src/services/dev_selftest.rs`：`run_run_tests` 对 `suite.docker` 内联构建 `ExecutorTarget::Docker` 派发（无 docker 块则走原 P1 桩）。argv/timeout 取自 `suite.command` 引用的 `remote_execution.commands` 模板（无则 `suite.argv`）；volume host 侧 `${DEVSELFTEST_*}` 经 `deploy_env` 插值并断言绝对；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 4 var）最终优先。新增 `run_docker_test` + `interpolate_volume`。
+- `server/src/support/config.rs`：`DevSelftestTestSuite` 增 `command`/`docker`；新增 `DevSelftestTestDocker` + 校验（image 不以 `-` 开头、network `host`|安全标识符、workdir 绝对无 `..`、volume `host:absolute|${DEVSELFTEST_*}:container:absolute[:ro|rw]`、env 键 `^[A-Z_][A-Z0-9_]*$`）；command/argv 互斥且至少一个、command 须配 docker 块。`DevSelftestDockerConfig` 改手写 `Default`（binary 用 `default_docker_binary()`，修 omit docker 块时 binary 空导致 enabled 校验失败）。
+- demo：`deploy/devselftest/opengemini/tests/smoke.sh`（`/bin/sh`，curl 优先 else busybox wget，SHOW/CREATE/write/SELECT，无 apt/外网依赖）；`examples/server-dev-selftest.yaml` 增 `remote_execution.commands.opengemini_smoke` + `test_suites.opengemini_smoke`（command + docker 块 alpine:3.20 host 网络）；`deploy/devselftest/opengemini/README.md` 补「Test execution (docker executor)」+ `DEVSELFTEST_TEST_IMAGE` 内网覆盖。
+- 验证：`cargo fmt --check` + `cargo check` + `cargo test -p logagent-server` 全绿（123 测试，含新增 `run_executor_command_docker_target`（Ok/Failed/TimedOut/SpawnFailed + 完整 argv/env/volume/network）、`dev_selftest_test_suite_command_argv_rules`、`dev_selftest_test_docker_security_validation`、`docker_executor_test_dispatch`，及 SSH fake 回归 `executor_api_runs_configured_command_through_fake_ssh` 与原 `docker_selftest_closed_loop`）。example 配置 `enabled:false` 与 `enabled:true` 均可加载并服务 `/health`。
+- 文档同步：`server/SPEC.md`、`docs/modules/dev-selftest/README.md`、`skills/dev-selftest-pipeline/SKILL.md`、`deploy/devselftest/opengemini/README.md`。
+- 仍 deferred：参数化 executor 命令模板（`{var}`+小 JSON Schema）、Docker executor 纳管（record+CRUD+run history）、`ssh_binary_replace` 部署 + SCP、P3 package_sync。
+
 ## 2026-06-23 openGemini docker 集群 artifact 纳入仓库 + 内网可配置
 
 目标：把跑通的 openGemini docker 集群 artifact 从本地 scratch 纳入仓库作为默认 demo，并做成内网可配置（换镜像名 + 换源）。

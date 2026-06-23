@@ -158,6 +158,15 @@ tool run 的 params 中用 `endpoint` / `projectId` 覆盖配置默认值。
 只有当 `dev_selftest.enabled=true` 时，Docker binary、compose 文件和 build/test
 profile 才进入严格 allowlist 校验；执行参数仍只能选择配置好的 profile id。
 
+测试套件（`dev_selftest.test_suites.*`）支持两种模式：带 `docker` 块的套件经 executor
+docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm
+--network host <image> <argv>`）内联派发，临时容器通过宿主暴露端口访问已部署集群；无
+`docker` 块则走 P1 本地桩。`command`（引用 `remote_execution.commands` 模板）与非空 `argv`
+互斥；docker target（image/network/workdir/volumes/env）做安全校验；系统 env
+（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先，用户 env 不可覆盖。本切片不实现 Docker
+executor record / `/api/executors` docker CRUD / run history 纳管（deferred）。详见
+`server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
+
 ## 本地运行
 
 当前 main 代码仍使用原命令，后续实现会收敛配置名：

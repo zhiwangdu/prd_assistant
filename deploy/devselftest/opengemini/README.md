@@ -20,6 +20,8 @@ binaries into the run's `source/build/`, which the compose mounts via
   its own `OG_ADDR/OG_ID` + the shared `OG_META_*`.
 - `entrypoint-meta.sh` / `entrypoint-sqlstore.sh` — per-node config substitution + startup
   gating (meta → store → sql; `depends_on` only orders, the entrypoint waits for readiness).
+- `tests/smoke.sh` — smoke test case run by `logagent.dev_selftest.run_tests` inside an
+  ephemeral docker container (SHOW DATABASES → CREATE DATABASE → write → SELECT).
 
 ## Wire it into a server config
 
@@ -47,11 +49,40 @@ dev_selftest:
         health_check: { cmd: ["curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"], timeout_seconds: 180 }
   test_suites:
     opengemini_smoke:
-      argv: ["curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"]
+      command: opengemini_smoke              # references remote_execution.commands (argv + timeout)
+      timeout_seconds: 180
+      docker:                                # docker-executor mode (see "Test execution" below)
+        image: "alpine:3.20"
+        network: "host"
+        volumes:
+          - "<repo>/deploy/devselftest/opengemini/tests:/tests:ro"
+remote_execution:
+  enabled: false                             # SSH stays off; dev_selftest reads templates anyway
+  commands:
+    opengemini_smoke:
+      enabled: true
+      argv: ["sh", "/tests/smoke.sh"]
+      timeout_seconds: 180
 ```
 
 `<repo>` = absolute path to this repo (dev_selftest requires absolute paths). The server
 process must have docker access (be in the `docker` group, or start via `sg docker -c`).
+
+## Test execution (docker executor)
+
+`run_tests` for a suite with a `docker` block dispatches through the executor docker runner:
+`docker run --rm --network host -v <tests>:/tests:ro -e DEVSELFTEST_HOST=127.0.0.1 -e
+DEVSELFTEST_PORT=8086 ... alpine:3.20 sh /tests/smoke.sh`. The container is ephemeral
+(`--rm`) and reaches the cluster over the host network via the host-exposed ts-sql port
+(`sqlstore-1` maps `8086:8086`). argv/timeout come from the referenced `remote_execution
+.commands` template; `command` and a non-empty `argv` are mutually exclusive.
+
+System env (`DEVSELFTEST_HOST/PORT` + the run-directory vars) is injected with **final
+priority** — a misconfigured `env` in the suite cannot redirect the test at the wrong target.
+Suite docker fields are allowlist-validated (image not starting with `-`, `network` is `host`
+or a safe identifier, `volumes` are `host:absolute-or-${DEVSELFTEST_*}:container:absolute[:ro|rw]`,
+`env` keys uppercase). The default `alpine:3.20` image ships busybox `wget`, so `smoke.sh`
+needs no apt/network. Suites without a `docker` block keep the P1 local stub.
 
 ## Intranet / air-gapped overrides
 
@@ -65,8 +96,12 @@ children — no code change):
   `GOSUMDB=off`. The build script respects both.
 - **openGemini source** (`源`): set `dev_selftest.git.repos` to your internal git mirror
   (the allowlist entry).
+- **Test image** (`测试镜像`): the `test_suites.*.docker.image` is a server config value, so
+  set `image: "${DEVSELFTEST_TEST_IMAGE}"` and `export DEVSELFTEST_TEST_IMAGE=<registry>/alpine:3.20`
+  on the server process (the config loader expands bare `${ENV}` only — no `${ENV:-default}`,
+  so the env var must be set). Or edit the literal image in the config.
 
-Example: `OG_BASE_IMAGE=registry.intranet:5000/ubuntu:24.04 GOPROXY=https://goproxy.intranet,direct GOSUMDB=off sg docker -c 'logagent-server --config ...'`
+Example: `OG_BASE_IMAGE=registry.intranet:5000/ubuntu:24.04 GOPROXY=https://goproxy.intranet,direct GOSUMDB=off DEVSELFTEST_TEST_IMAGE=registry.intranet:5000/alpine:3.20 sg docker -c 'logagent-server --config ...'`
 
 ## Why static IPs / ubuntu:24.04 / gating (gotchas)
 

@@ -32,7 +32,7 @@ tool call**. Each tool appends a step to `progress.json` and writes its own `res
 | 1. sync | `logagent.dev_selftest.sync_workspace` | `{label}`, plus one source: `{uploadId}` (a source tarball) **or** `{gitRepo, gitRef}` (must be in the configured allowlist) **or** omit for an empty stub source. Returns `{runId, status, sourceRef}`. |
 | 2. build | `logagent.dev_selftest.build` | `{runId, buildProfile}`. Runs the configured build command in `source/{working_dir}`, collects `artifact_globs` into `artifacts/`. Returns `{status, exitCode, artifacts}`. |
 | 3. deploy | `logagent.dev_selftest.deploy` | `{runId, profile}`. P1: `docker_cluster` — `docker compose -p <project> -f <compose> up -d` + declared health check. Records the deploy target. Returns `{status, projectName, deployTarget}`. |
-| 4. run tests | `logagent.dev_selftest.run_tests` | `{runId, testSuite}`. P1 **stub** runner: runs the configured `argv` locally with the deploy target's exposed port in env (`DEVSELFTEST_HOST`, `DEVSELFTEST_PORT`). Returns `{status, exitCode, stdoutPath, stderrPath}`. |
+| 4. run tests | `logagent.dev_selftest.run_tests` | `{runId, testSuite}`. A suite with a `docker` block dispatches through the executor docker runner (`docker run --rm --network host <image> <argv>`); a suite without one uses the P1 local stub (runs `argv` on the server host). Either way `DEVSELFTEST_HOST`/`DEVSELFTEST_PORT` are injected as system env (final priority). Returns `{status, exitCode, executor, stdoutPath, stderrPath}`. |
 | 5. poll | `logagent.runs.get` | `{runId}` — the `runId` returned by any `runMode:"queued"` call (e.g. `run_tests`). Side-effect-free: creates no run record. Returns `{status, phase, resultAvailable}`. |
 | 6. result | `logagent.runs.result` | `{runId}` — reads the structured result of a successful run. Side-effect-free. |
 | 7. report | `logagent.dev_selftest.report` | `{runId}`. Aggregates `progress.json` + step evidence into `report.md` + `report.json`. Returns `{status, reportPath, failedSteps, steps}`. |
@@ -62,13 +62,22 @@ with `failedSteps` listed. In P1, a failed docker health check does **not** roll
 
 ## Roadmap (later phases)
 
-- **P2** `ssh_binary_replace` deploy profile + parameterized executor templates + controlled
-  SCP: deploy the built binary to a GeminiDB Influx instance node, swap + restart, health
-  check, rollback. `run_tests` then dispatches the real test framework to the executor.
+- **P2 docker slice (done)**: the executor execution engine is extracted into a reusable
+  `run_executor_command` supporting `Ssh` and `Docker` targets; `run_tests` dispatches a
+  `docker` test suite through it as an ephemeral `docker run --rm` container (replacing the
+  P1 local stub for docker suites). System env (`DEVSELFTEST_HOST/PORT` + run dirs) is
+  injected with final priority; the docker target (image/network/volumes/env) is
+  config-allowlisted and validated.
+- **P2 still deferred**: parameterized executor command templates (`{var}` + small JSON
+  Schema); Docker executor 纳管 (executor record docker kind + `/api/executors` CRUD +
+  run history); `ssh_binary_replace` deploy profile + controlled SCP (deploy the built
+  binary to a GeminiDB Influx node, swap + restart, health check, rollback).
 - **P3** `package_create_instance` deploy profile: publish the binary via Huawei OBS package
   sync, then `logagent.geminidb.create_instance` + poll-until-ready.
 
-Until those land, only the `docker_cluster` deploy profile is available.
+Until the deferred P2/P3 pieces land, only the `docker_cluster` deploy profile is available,
+and the docker test target is declared inline in the test suite config (not via an executor
+record).
 
 ## Notes
 

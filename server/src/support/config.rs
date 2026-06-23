@@ -380,10 +380,32 @@ pub struct DevSelftestHealthCheck {
 pub struct DevSelftestTestSuite {
     #[allow(dead_code)]
     pub display_name: String,
-    /// First element is the binary, the rest are args. Run locally against the
-    /// deployed target (P1 stub; real executor dispatch lands in P2).
+    /// Local command (binary + args) run on the server host when `docker` is absent (P1
+    /// stub). When `docker` is set, this is the in-container command instead. Mutually
+    /// exclusive with `command`.
     pub argv: Vec<String>,
+    /// Optional id of a `remote_execution.commands` template supplying argv + timeout for
+    /// the docker run (docker mode only). Mutually exclusive with a non-empty `argv`.
+    pub command: Option<String>,
     pub timeout_seconds: Option<u64>,
+    pub env: BTreeMap<String, String>,
+    /// When set, `run_tests` dispatches the suite through the executor docker runner
+    /// (`docker run --rm --network ... <image> <argv>`) instead of the local stub.
+    pub docker: Option<DevSelftestTestDocker>,
+}
+
+/// Inline docker target for a dev_selftest test suite. The executor runner
+/// (`run_executor_command`) launches an ephemeral `docker run --rm` container from this
+/// spec; every field is config-allowlisted and validated (`validate_dev_selftest_test_docker`).
+#[derive(Debug, Clone)]
+pub struct DevSelftestTestDocker {
+    pub image: String,
+    /// `None` (default) ⇒ `host`. Otherwise a safe network identifier.
+    pub network: Option<String>,
+    pub workdir: Option<String>,
+    /// `host:container[:ro|rw]`; the host side may be an absolute path or a
+    /// `${DEVSELFTEST_*}` placeholder (interpolated at run time).
+    pub volumes: Vec<String>,
     pub env: BTreeMap<String, String>,
 }
 
@@ -698,12 +720,21 @@ struct DevSelftestBuildConfig {
     timeout_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct DevSelftestDockerConfig {
     #[serde(default = "default_docker_binary")]
     binary: PathBuf,
     #[serde(default)]
     clusters: BTreeMap<String, DevSelftestDockerClusterConfig>,
+}
+
+impl Default for DevSelftestDockerConfig {
+    fn default() -> Self {
+        Self {
+            binary: default_docker_binary(),
+            clusters: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -726,9 +757,28 @@ struct DevSelftestHealthCheckConfig {
 struct DevSelftestTestSuiteConfig {
     #[serde(default)]
     display_name: Option<String>,
+    #[serde(default)]
     argv: Vec<String>,
     #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
     timeout_seconds: Option<u64>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    docker: Option<DevSelftestTestDockerConfig>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct DevSelftestTestDockerConfig {
+    #[serde(default)]
+    image: String,
+    #[serde(default)]
+    network: Option<String>,
+    #[serde(default)]
+    workdir: Option<String>,
+    #[serde(default)]
+    volumes: Vec<String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
 }
@@ -988,8 +1038,41 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .map(|arg| arg.trim().to_string())
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>();
-            if enabled && argv.is_empty() {
-                anyhow::bail!("dev_selftest.test_suites.{id}.argv must not be empty");
+            let command = suite
+                .command
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let docker = suite
+                .docker
+                .map(|raw| resolve_dev_selftest_test_docker(&id, raw, enabled))
+                .transpose()?;
+            let has_argv = !argv.is_empty();
+            let has_command = command.is_some();
+            // command and a non-empty argv are mutually exclusive; exactly one is required.
+            if has_command && has_argv {
+                anyhow::bail!(
+                    "dev_selftest.test_suites.{id}: command and argv are mutually exclusive"
+                );
+            }
+            if !has_command && !has_argv {
+                anyhow::bail!(
+                    "dev_selftest.test_suites.{id}: either command or argv is required"
+                );
+            }
+            // command references a remote_execution command template run inside the
+            // container, so it is only meaningful in docker mode.
+            if has_command && docker.is_none() {
+                anyhow::bail!("dev_selftest.test_suites.{id}: command requires a docker block");
+            }
+            if let Some(cmd) = command.as_deref() {
+                let valid = cmd
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+                if !valid {
+                    anyhow::bail!(
+                        "dev_selftest.test_suites.{id}: command must be a template id (alphanumeric, '_', '-')"
+                    );
+                }
             }
             let display_name = suite.display_name.unwrap_or_else(|| id.clone());
             Ok((
@@ -997,8 +1080,10 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 DevSelftestTestSuite {
                     display_name,
                     argv,
+                    command,
                     timeout_seconds: suite.timeout_seconds.map(|value| value.max(1)),
                     env: suite.env,
+                    docker,
                 },
             ))
         })
@@ -1100,6 +1185,121 @@ fn resolve_dev_selftest_docker(
         binary: raw.binary,
         clusters,
     })
+}
+
+fn resolve_dev_selftest_test_docker(
+    suite_id: &str,
+    raw: DevSelftestTestDockerConfig,
+    enabled: bool,
+) -> anyhow::Result<DevSelftestTestDocker> {
+    let docker = DevSelftestTestDocker {
+        image: raw.image.trim().to_string(),
+        network: raw
+            .network
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        workdir: raw
+            .workdir
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        volumes: raw
+            .volumes
+            .into_iter()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect(),
+        env: raw.env,
+    };
+    if enabled {
+        validate_dev_selftest_test_docker(suite_id, &docker)?;
+    }
+    Ok(docker)
+}
+
+/// Validate an inline docker test target. Enforces the allowlist/path-safety model so the
+/// general docker runner cannot mount arbitrary host paths or inject flags.
+fn validate_dev_selftest_test_docker(
+    suite_id: &str,
+    docker: &DevSelftestTestDocker,
+) -> anyhow::Result<()> {
+    let prefix = format!("dev_selftest.test_suites.{suite_id}.docker");
+    if docker.image.is_empty() {
+        anyhow::bail!("{prefix}.image must not be empty");
+    }
+    if docker.image.starts_with('-') {
+        anyhow::bail!("{prefix}.image must not start with '-'");
+    }
+    if let Some(network) = docker.network.as_deref() {
+        if !is_safe_docker_network(network) {
+            anyhow::bail!("{prefix}.network must be 'host' or a safe identifier");
+        }
+    }
+    if let Some(workdir) = docker.workdir.as_deref() {
+        if !is_safe_container_path(workdir) {
+            anyhow::bail!("{prefix}.workdir must be an absolute path without '..'");
+        }
+    }
+    for volume in &docker.volumes {
+        validate_dev_selftest_test_volume(suite_id, volume)?;
+    }
+    for key in docker.env.keys() {
+        if !is_safe_env_name(key) {
+            anyhow::bail!("{prefix}.env has invalid key '{key}'");
+        }
+    }
+    Ok(())
+}
+
+fn validate_dev_selftest_test_volume(suite_id: &str, volume: &str) -> anyhow::Result<()> {
+    let prefix = format!("dev_selftest.test_suites.{suite_id}.docker.volumes");
+    let parts: Vec<&str> = volume.splitn(3, ':').collect();
+    let (host, container, mode) = match parts.as_slice() {
+        [host, container] => (*host, *container, None),
+        [host, container, mode] => (*host, *container, Some(*mode)),
+        _ => {
+            anyhow::bail!("{prefix}: '{volume}' must be host:container[:ro|rw]");
+        }
+    };
+    if host.is_empty() {
+        anyhow::bail!("{prefix}: host must not be empty");
+    }
+    // Host side: an absolute path, or a ${DEVSELFTEST_*} placeholder (interpolated at run
+    // time, then re-checked absolute). Anything else (relative path, flag-like token) is
+    // rejected to prevent over-broad host mounts.
+    let host_ok = host.starts_with('/') || host.starts_with("${DEVSELFTEST_");
+    if !host_ok {
+        anyhow::bail!(
+            "{prefix}: host must be an absolute path or a ${{DEVSELFTEST_*}} placeholder"
+        );
+    }
+    if !is_safe_container_path(container) {
+        anyhow::bail!("{prefix}: container path must be absolute without '..'");
+    }
+    if let Some(m) = mode {
+        if !matches!(m, "ro" | "rw") {
+            anyhow::bail!("{prefix}: mode must be ro or rw");
+        }
+    }
+    Ok(())
+}
+
+fn is_safe_docker_network(value: &str) -> bool {
+    if value == "host" {
+        return true;
+    }
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(b) if b.is_ascii_alphanumeric())
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'-')
+}
+
+fn is_safe_container_path(value: &str) -> bool {
+    value.starts_with('/') && !value.contains("..")
+}
+
+fn is_safe_env_name(key: &str) -> bool {
+    let mut bytes = key.bytes();
+    matches!(bytes.next(), Some(b) if b == b'_' || b.is_ascii_uppercase())
+        && bytes.all(|b| b == b'_' || b.is_ascii_uppercase() || b.is_ascii_digit())
 }
 
 fn validate_dev_selftest_profile_id(id: &str) -> anyhow::Result<()> {
@@ -2472,6 +2672,147 @@ huawei_cloud:
                 .to_string()
                 .contains("auth_token_env is required"));
         });
+    }
+
+    #[test]
+    fn dev_selftest_test_suite_command_argv_rules() {
+        fn resolve(yaml: &str) -> anyhow::Result<DevSelftestSettings> {
+            let raw: DevSelftestConfig = serde_yaml::from_str(yaml).unwrap();
+            resolve_dev_selftest(raw)
+        }
+        // docker + command -> ok
+        assert!(resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    command: opengemini_smoke
+    docker: { image: "alpine:3.20", volumes: ["/repo/tests:/tests:ro"] }
+"#
+        )
+        .is_ok());
+        // docker + argv (no command) -> ok
+        assert!(resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    argv: ["sh", "/tests/smoke.sh"]
+    docker: { image: "alpine:3.20" }
+"#
+        )
+        .is_ok());
+        // no docker + argv -> ok (P1 stub)
+        assert!(resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    argv: ["curl", "http://127.0.0.1:8086"]
+"#
+        )
+        .is_ok());
+        // command + argv both -> rejected
+        let err = resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    argv: ["sh", "/t.sh"]
+    command: opengemini_smoke
+    docker: { image: "alpine:3.20" }
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("mutually exclusive"), "{err}");
+        // neither command nor argv -> rejected
+        let err = resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    docker: { image: "alpine:3.20" }
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("either command or argv is required"), "{err}");
+        // command without docker block -> rejected
+        let err = resolve(
+            r#"
+enabled: true
+test_suites:
+  smoke:
+    command: opengemini_smoke
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("command requires a docker block"), "{err}");
+    }
+
+    #[test]
+    fn dev_selftest_test_docker_security_validation() {
+        fn resolve(yaml: &str) -> anyhow::Result<DevSelftestSettings> {
+            let raw: DevSelftestConfig = serde_yaml::from_str(yaml).unwrap();
+            resolve_dev_selftest(raw)
+        }
+        let suite = |docker_block: &str| -> String {
+            format!(
+                "enabled: true\ntest_suites:\n  smoke:\n    argv: [\"sh\", \"/tests/smoke.sh\"]\n    docker:\n{docker_block}"
+            )
+        };
+        let err = |docker_block: &str| resolve(&suite(docker_block)).unwrap_err().to_string();
+        // valid baseline (absolute + ${DEVSELFTEST_*} host, host/bridge network)
+        assert!(resolve(&suite(
+            "      image: \"alpine:3.20\"\n      network: host\n      volumes:\n        - \"/repo/tests:/tests:ro\"\n        - \"${DEVSELFTEST_SOURCE_DIR}/build:/build:ro\"\n      env: { OK_VAR: v }\n"
+        ))
+        .is_ok());
+        assert!(resolve(&suite(
+            "      image: \"alpine:3.20\"\n      network: bridge\n"
+        ))
+        .is_ok());
+        // image empty / leading dash
+        assert!(err("      image: \"\"\n").contains("image must not be empty"));
+        assert!(err("      image: \"-flag\"\n").contains("must not start with '-'"));
+        // network bad
+        assert!(
+            err("      image: \"alpine:3.20\"\n      network: \"bad net\"\n").contains("network")
+        );
+        assert!(err("      image: \"alpine:3.20\"\n      network: \"-x\"\n").contains("network"));
+        // workdir relative / with ..
+        assert!(
+            err("      image: \"alpine:3.20\"\n      workdir: \"relative\"\n").contains("workdir")
+        );
+        assert!(
+            err("      image: \"alpine:3.20\"\n      workdir: \"/foo/../bar\"\n")
+                .contains("workdir")
+        );
+        // volume host relative / container .. / bad mode / missing colon
+        assert!(
+            err("      image: \"alpine:3.20\"\n      volumes: [\"relative:/c:ro\"]\n")
+                .contains("host must be an absolute path")
+        );
+        assert!(
+            err("      image: \"alpine:3.20\"\n      volumes: [\"/h:/c/../d\"]\n")
+                .contains("container path")
+        );
+        assert!(
+            err("      image: \"alpine:3.20\"\n      volumes: [\"/h:/c:rx\"]\n")
+                .contains("mode must be ro or rw")
+        );
+        assert!(
+            err("      image: \"alpine:3.20\"\n      volumes: [\"nope\"]\n")
+                .contains("must be host:container")
+        );
+        // env bad key (lowercase / leading digit)
+        assert!(
+            err("      image: \"alpine:3.20\"\n      env: { lower: v }\n").contains("invalid key")
+        );
+        assert!(
+            err("      image: \"alpine:3.20\"\n      env: { 1BAD: v }\n").contains("invalid key")
+        );
     }
 
     fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {
