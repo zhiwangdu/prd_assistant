@@ -37,40 +37,43 @@ remote_execution:
   enabled: false
   ssh_binary: "/usr/bin/ssh"
 
-# Dev self-test pipeline. Disabled by default; flip `enabled: true` and fill in real
-# absolute paths to use it.
+# Dev self-test pipeline — openGemini docker demo (the validated default).
+# Disabled by default so this example loads without docker. To run:
+#   1. set enabled: true
+#   2. replace /path/to/repo below with the absolute path to this repo
+#   3. start the server with docker access (docker group, or `sg docker -c '...'`)
+# Intranet overrides (env on the server process): OG_BASE_IMAGE (image name),
+# GOPROXY/GOSUMDB (go module source); for an air-gapped git mirror, set the repo
+# url below to your internal mirror. See deploy/devselftest/opengemini/README.md.
 dev_selftest:
-  enabled: true
-  build_timeout_seconds: 600
+  enabled: false
+  build_timeout_seconds: 1800
   max_output_bytes: 8388608
   git:
-    enabled: false
+    enabled: true
     binary: "/usr/bin/git"
     repos:
-      - url: "https://example.invalid/influxql-analyzer.git"
-        refs: ["main", "release/*"]
+      - url: "https://github.com/openGemini/openGemini.git"   # intranet: internal git mirror
+        refs: ["main"]
   builds:
-    influxql_analyzer:
-      display_name: "Build influxql_analyzer (cargo)"
-      command: ["cargo", "build", "--release"]
-      working_dir: "source/influxql-analyzer"
-      artifact_globs: ["target/release/influxql-analyzer"]
-      timeout_seconds: 600
+    opengemini:
+      command: ["/path/to/repo/deploy/devselftest/opengemini/build-opengemini.sh"]
+      working_dir: ""                                          # source/ is the openGemini root
+      artifact_globs: ["build/ts-meta", "build/ts-store", "build/ts-sql"]
+      timeout_seconds: 1800
   docker:
     binary: "/usr/bin/docker"
     clusters:
-      local_cluster:
-        compose_file: "/opt/dev_selftest/docker-compose.yml"
+      opengemini_cluster:
+        compose_file: "/path/to/repo/deploy/devselftest/opengemini/docker-compose.yml"
         exposed_port: 8086
         health_check:
-          cmd: ["curl", "-sf", "http://127.0.0.1:8086/health"]
-          timeout_seconds: 60
+          cmd: ["curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"]
+          timeout_seconds: 180
   test_suites:
-    influxql_smoke:
-      display_name: "InfluxQL smoke"
-      # P1 stub runner: a local command. Real executor-dispatched test framework lands in P2.
-      argv: ["/opt/testfw/bin/runner", "--host", "127.0.0.1", "--port", "8086"]
-      timeout_seconds: 300
+    opengemini_smoke:
+      argv: ["curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"]
+      timeout_seconds: 60
       env: {}
 
 mcp:

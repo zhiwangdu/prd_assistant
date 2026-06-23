@@ -12,6 +12,20 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 openGemini docker 集群 artifact 纳入仓库 + 内网可配置
+
+目标：把跑通的 openGemini docker 集群 artifact 从本地 scratch 纳入仓库作为默认 demo，并做成内网可配置（换镜像名 + 换源）。
+
+- 新增 `deploy/devselftest/opengemini/`：`build-opengemini.sh`（go1.26+sonic 升级 + `go build`，`GOPROXY` 默认 `https://goproxy.cn,direct`，可 env 覆盖）、`docker-compose.yml`（6 service，`image: ${OG_BASE_IMAGE:-ubuntu:24.04}`，静态 IP，自定义 bridge 网络）、`config/openGemini.conf.template`（上游模板，含 `{{addr}}/{{id}}/{{meta_addr_*}}` 占位符）+ `entrypoint-meta.sh`/`entrypoint-sqlstore.sh`（容器启动时按 `OG_ADDR/OG_ID/OG_META_*` env 替换占位符 + 顺序门控）+ `README.md`。
+  - 用单模板 + entrypoint 替换（而非 6 份硬编码配置），减少冗余、IP 集中可改。
+- 内网可配置（均经 server 进程 env，由 deploy/build 子进程继承，**无代码改动**）：
+  - 镜像名：`OG_BASE_IMAGE=<registry>/ubuntu:24.04`（compose 用 `${OG_BASE_IMAGE:-ubuntu:24.04}`）。
+  - Go 模块源：`GOPROXY=<内部代理>`（默认 goproxy.cn），`GOSUMDB=off`（内部代理无法访问 sum.golang.org 时）。
+  - openGemini 源码：server 配置 `dev_selftest.git.repos` 换成内部 git 镜像。
+- `examples/server-dev-selftest.yaml` 改为 openGemini demo（build/docker/test profile 指向 `deploy/devselftest/opengemini/*`，`enabled: false` 默认可加载，注释说明启用步骤 + 内网覆盖）。
+- 验证：用 `deploy/devselftest/opengemini/docker-compose.yml` 单独起 6 容器，meta-1 选主成功（`election won`）、`curl SHOW DATABASES` 返回合法 JSON、~6s 就绪、`down` 干净。example 配置 `enabled:false` 可加载并服务 `/health`。
+- 文档同步：`deploy/devselftest/opengemini/README.md`、`server/SPEC.md`、`docs/modules/dev-selftest/README.md`、`skills/dev-selftest-pipeline/SKILL.md`。
+
 ## 2026-06-23 Dev self-test Docker 路径跑通：真实 openGemini 3meta+3(sql+store) 集群
 
 目标：把 Path 1（Docker 部署）对着真实 openGemini 集群端到端跑通——`sync → build → deploy → run_tests → report` 全链路对 `openGemini.git` 真实生效，3 meta + 3 (sql+store) = 6 容器 / 9 进程，直到 `report` 状态 `SUCCEEDED`。已达成。

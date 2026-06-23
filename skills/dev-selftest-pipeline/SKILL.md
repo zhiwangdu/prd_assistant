@@ -78,9 +78,12 @@ Until those land, only the `docker_cluster` deploy profile is available.
   always top-level. `logagent.runs.get`/`runs.result` take `runId` top-level.
 - **Docker path validated**: the `docker_cluster` profile has been run end-to-end
   against a real **openGemini** 3 meta + 3 (sql+store) cluster (sync→build→deploy→
-  run_tests→report, all SUCCEEDED). Cluster artifacts (compose/config/entrypoint/
-  build script) live in a local scratch dir referenced by absolute path — they are
-  NOT part of the repo. Key requirements for an openGemini-style cluster compose:
+  run_tests→report, all SUCCEEDED). The default demo cluster artifacts (compose /
+  config template / entrypoints / build script) are in the repo under
+  `deploy/devselftest/opengemini/` — see its README. They are intranet-configurable
+  via server-process env: `OG_BASE_IMAGE` (image name / registry mirror),
+  `GOPROXY`/`GOSUMDB` (Go module source), and `dev_selftest.git.repos` (openGemini
+  source mirror). Key requirements for an openGemini-style cluster compose:
   **static IPs** (the DB's raft uses the bind-address string as the node ID, so
   hostnames break leader election), a recent base image (e.g. `ubuntu:24.04` for
   libstdc++), and sequential startup gating in the entrypoint (meta → store → sql;

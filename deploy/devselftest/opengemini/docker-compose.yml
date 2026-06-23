@@ -1,0 +1,114 @@
+# openGemini 3meta + 3(sql+store) dev_selftest cluster (default demo).
+#
+# Configurable for intranet via environment variables (inherited by the
+# dev_selftest deploy tool's `docker compose` child from the server process):
+#   OG_BASE_IMAGE  base image (default ubuntu:24.04). Intranet: point at your
+#                  registry mirror, e.g. OG_BASE_IMAGE=registry.intranet:5000/ubuntu:24.04
+#   DEVSELFTEST_SOURCE_DIR  injected by dev_selftest deploy (run's source/); the
+#                  built binaries live at ${DEVSELFTEST_SOURCE_DIR}/build.
+#
+# Static IPs are REQUIRED: openGemini's raft uses rpc-bind-address as the Server
+# ID, so hostnames (which resolve to a different IP string) break leader
+# election. This mirrors the official install_cluster.sh (127.0.0.1/2/3).
+# To change topology/IPs, edit ipv4_address + OG_ADDR/OG_META_* below.
+services:
+  meta-1:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.11"
+      OG_ID: "1"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-meta.sh:/opt/entrypoint.sh:ro
+    networks:
+      opengemini: { ipv4_address: 172.28.0.11 }
+  meta-2:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.12"
+      OG_ID: "2"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-meta.sh:/opt/entrypoint.sh:ro
+    networks:
+      opengemini: { ipv4_address: 172.28.0.12 }
+  meta-3:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.13"
+      OG_ID: "3"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-meta.sh:/opt/entrypoint.sh:ro
+    networks:
+      opengemini: { ipv4_address: 172.28.0.13 }
+  sqlstore-1:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.21"
+      OG_ID: "1"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-sqlstore.sh:/opt/entrypoint.sh:ro
+    ports: ["8086:8086"]
+    depends_on: [meta-1, meta-2, meta-3]
+    networks:
+      opengemini: { ipv4_address: 172.28.0.21 }
+  sqlstore-2:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.22"
+      OG_ID: "2"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-sqlstore.sh:/opt/entrypoint.sh:ro
+    depends_on: [meta-1, meta-2, meta-3]
+    networks:
+      opengemini: { ipv4_address: 172.28.0.22 }
+  sqlstore-3:
+    image: ${OG_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    environment:
+      OG_META_1: "172.28.0.11"
+      OG_META_2: "172.28.0.12"
+      OG_META_3: "172.28.0.13"
+      OG_ADDR: "172.28.0.23"
+      OG_ID: "3"
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/openGemini/build:ro
+      - ./config/openGemini.conf.template:/etc/openGemini/openGemini.conf.template:ro
+      - ./entrypoint-sqlstore.sh:/opt/entrypoint.sh:ro
+    depends_on: [meta-1, meta-2, meta-3]
+    networks:
+      opengemini: { ipv4_address: 172.28.0.23 }
+networks:
+  opengemini:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
