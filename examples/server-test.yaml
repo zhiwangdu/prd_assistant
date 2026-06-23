@@ -36,7 +36,6 @@ log_analyzer:
 
 remote_execution:
   enabled: true
-  ssh_binary: "/usr/bin/ssh"
   host_key_policy: "accept-new"
   connect_timeout_seconds: 10
   command_timeout_seconds: 30

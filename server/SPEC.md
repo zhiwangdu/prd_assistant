@@ -79,6 +79,8 @@ unavailableReason
 
 WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
 
+`examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、metadata ×4、fetch、huawei package sync）始终在 catalog 中，按各自子系统开关启用。
+
 ## Tool Runner
 
 执行要求：

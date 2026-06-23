@@ -53,9 +53,108 @@ log_analyzer:
     - denied
     - verify
 
+# Tool catalog. Every tool is declared here so the server's catalog includes
+# all tools out of the box on both Linux and Windows. Tools are disabled by
+# default so this example loads without the external binaries present.
+# To enable a tool: set its `path_env` env var to the absolute binary path
+# (append `.exe` on Windows) and flip `enabled: true`.
+tools:
+  pprof_analyzer:
+    # path_env points at the Go binary (`go`), used to run `go tool pprof`.
+    enabled: false
+    path_env: LOGAGENT_GO_BINARY
+    timeout_seconds: 60
+    max_output_bytes: 1048576
+    max_input_files: 1
+    args: []
+    match:
+      file_patterns: ["*.pprof", "*.prof", "*.profile", "*.pb.gz"]
+      keywords: []
+
+  flux_query_analyzer:
+    enabled: false
+    path_env: LOGAGENT_FLUX_QUERY_ANALYZER_PATH
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 3
+    args:
+      - "--input"
+      - "{input_file}"
+      - "--format"
+      - "json"
+      - "--top-k"
+      - "20"
+      - "--max-input-lines"
+      - "100000"
+      - "--max-error-findings"
+      - "20"
+    match:
+      file_patterns: ["*.jsonl", "*.ndjson"]
+      keywords: ["flux", "\"query\"", "duration_ms"]
+
+  influxql_analyzer:
+    enabled: false
+    path_env: LOGAGENT_INFLUXQL_ANALYZER_PATH
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 3
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-output"
+      - "json"
+      - "-detail-limit"
+      - "5"
+    match:
+      file_patterns: ["*.jsonl"]
+      keywords: ["influxql", "\"query\"", "select", "show series", "show measurements"]
+
+  opengemini_storage_analyzer:
+    enabled: false
+    path_env: LOGAGENT_OPENGEMINI_STORAGE_ANALYZER_PATH
+    timeout_seconds: 30
+    max_output_bytes: 1048576
+    max_input_files: 10
+    args:
+      - "--input"
+      - "{input_file}"
+      - "--format"
+      - "json"
+    match:
+      file_patterns:
+        - "*.tssp"
+        - "*.tssp.init"
+        - "metadata.json"
+        - "metaindex.bin"
+        - "index.bin"
+        - "items.bin"
+        - "lens.bin"
+        - "*_mergeset.bf"
+        - "*_mergeset.bf.last"
+        - "*_mergeset.bf.init"
+      keywords: ["tssp", "mergeset", "metadata.json", "invalid file", "open tssp"]
+
+  influxdb_storage_analyzer:
+    enabled: false
+    path_env: LOGAGENT_INFLUXDB_STORAGE_ANALYZER_PATH
+    timeout_seconds: 60
+    max_output_bytes: 1048576
+    max_input_files: 5
+    args:
+      - "-input"
+      - "{input_file}"
+      - "-kind"
+      - "auto"
+      - "-max-samples"
+      - "10"
+    match:
+      file_patterns: ["*.tsm", "*.tsi"]
+      keywords: ["_series", "tsm", "tsi", "series file"]
+
 remote_execution:
   enabled: true
-  ssh_binary: "/usr/bin/ssh"
+  # ssh_binary defaults to /usr/bin/ssh on Linux and
+  # C:\Windows\System32\OpenSSH\ssh.exe on Windows; set explicitly to override.
   host_key_policy: "accept-new"
   connect_timeout_seconds: 10
   command_timeout_seconds: 30

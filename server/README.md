@@ -153,6 +153,28 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 cargo run -p logagent-server -- --config examples/local-toolhub.yaml
 ```
 
+## 平台兼容性 (Linux / Windows)
+
+Server 的非测试代码不依赖任何 Unix-only API，可在 Linux 和 Windows 上编译运行：
+
+- `tokio::signal::ctrl_c`、`tokio::process::Command`、`std::env::temp_dir()` 等均为跨平台 API。
+- 所有 `std::os::unix` 调用都在 `#[cfg(unix)]` 守卫下（非测试代码）或位于 `#[cfg(all(test, unix))]` 的测试模块中（依赖 bash/可执行权限的集成测试只在 Unix 运行；纯解析测试在所有平台运行）。
+- `remote_execution.ssh_binary` 默认值按平台选择：Linux `/usr/bin/ssh`，Windows `C:\Windows\System32\OpenSSH\ssh.exe`；可在配置中显式覆盖。
+- `examples/logagent.yaml` 的 `tools:` 段声明全部工具（pprof + 4 个 analyzer），默认 `enabled: false` 并使用 `path_env`，因此无需外部二进制即可在两个平台加载，catalog 即包含全部工具。启用时把对应 `path_env` 指向绝对二进制路径（Windows 上带 `.exe`）并把 `enabled` 改为 `true`。
+
+Windows 上构建源码 analyzer 使用 `scripts/build-tools.ps1`（对应 Linux/macOS 的 `scripts/build-tools.sh`），产物为 `bin/tools/*.exe`。
+
+跨平台编译校验（在 Linux 上交叉编译检查 Windows 目标，需要 mingw-w64）：
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+export CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+export AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+cargo check --target x86_64-pc-windows-gnu -p logagent-server
+cargo check --tests --target x86_64-pc-windows-gnu -p logagent-server
+```
+
 ## 验证
 
 ```bash

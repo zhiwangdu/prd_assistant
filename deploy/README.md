@@ -58,7 +58,7 @@ LLM/Claude Code 相关变量不再是默认部署必需项，只能用于可选 
 
 - 构建 Rust Server binary。
 - 构建 WebUI 到 `webui/out`。
-- 按需构建 `third_party/` source-built analyzers 到 `bin/tools/`。
+- 按需构建 `third_party/` source-built analyzers 到 `bin/tools/`（Linux/macOS 用 `scripts/build-tools.sh`，Windows 用 `scripts/build-tools.ps1`，产物分别为 `bin/tools/<name>` 与 `bin/tools/<name>.exe`）。
 - 创建 data 子目录。
 - 不删除已有运行数据。
 

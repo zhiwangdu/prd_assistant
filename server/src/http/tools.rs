@@ -187,7 +187,10 @@ fn validate_task_id(task_id: &str) -> Result<(), AppError> {
     }
 }
 
-#[cfg(test)]
+// These integration tests spawn fake `bash` tool wrappers and set Unix exec
+// permissions, so they only compile/run on Unix. The non-test tool handlers are
+// cross-platform; pure-logic tests live alongside the services they exercise.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use axum::{

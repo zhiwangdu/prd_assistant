@@ -1255,7 +1255,14 @@ fn default_remote_execution_enabled() -> bool {
 }
 
 fn default_ssh_binary() -> PathBuf {
-    PathBuf::from("/usr/bin/ssh")
+    // Platform-aware default. Both are absolute so the allowlist validation
+    // (`ssh_binary must be absolute when enabled`) passes out of the box.
+    // Override `remote_execution.ssh_binary` if your OpenSSH install differs.
+    if cfg!(windows) {
+        PathBuf::from(r"C:\Windows\System32\OpenSSH\ssh.exe")
+    } else {
+        PathBuf::from("/usr/bin/ssh")
+    }
 }
 
 fn default_remote_host_key_policy() -> String {

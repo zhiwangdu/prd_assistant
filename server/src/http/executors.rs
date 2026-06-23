@@ -436,7 +436,10 @@ fn validate_port_anyhow(port: u16) -> anyhow::Result<u16> {
     Ok(port)
 }
 
-#[cfg(test)]
+// The executor test spawns a fake `bash` ssh wrapper and sets Unix exec
+// permissions, so it only compiles/runs on Unix. The non-test executor
+// handlers are cross-platform.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use axum::{

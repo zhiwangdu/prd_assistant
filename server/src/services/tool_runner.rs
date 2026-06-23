@@ -1144,7 +1144,7 @@ fn stable_input_hash(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, path::PathBuf};
+    use std::path::PathBuf;
 
     use chrono::Utc;
 
@@ -1159,6 +1159,7 @@ mod tests {
         support::config::{ToolMatchSettings, ToolSettings, ToolsSettings},
     };
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn executes_configured_tool_and_reuses_existing_result() {
         let fixture = Fixture::new("tool-runner-ok");
@@ -1188,6 +1189,7 @@ mod tests {
         assert_eq!(reused.artifact_path, artifact.artifact_path);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn parses_json_summary_and_findings_from_stdout() {
         let fixture = Fixture::new("tool-runner-json");
@@ -1360,6 +1362,7 @@ JSON
         assert!(parsed.findings.is_empty());
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn records_timeout_as_tool_evidence() {
         let fixture = Fixture::new("tool-runner-timeout");
@@ -1614,7 +1617,10 @@ JSON
             Self { root, workspace }
         }
 
+        #[cfg(unix)]
         fn write_tool(&self, filename: &str, content: &str) -> PathBuf {
+            use std::os::unix::fs::PermissionsExt;
+
             let path = self.root.join(filename);
             std::fs::write(&path, content).unwrap();
             let mut permissions = std::fs::metadata(&path).unwrap().permissions();

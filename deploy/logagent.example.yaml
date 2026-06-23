@@ -43,6 +43,9 @@ log_analyzer:
     - large_limit
     - no_time_filter
 
+# Tool binaries are built by scripts/build-tools.sh (Linux/macOS) or
+# scripts/build-tools.ps1 (Windows). On Windows the binaries carry a `.exe`
+# suffix, so append it to each `path` below (or switch a tool to `path_env`).
 tools:
   flux_query_analyzer:
     enabled: true
@@ -148,7 +151,8 @@ tools:
 
 remote_execution:
   enabled: true
-  ssh_binary: "/usr/bin/ssh"
+  # ssh_binary defaults to /usr/bin/ssh on Linux and
+  # C:\Windows\System32\OpenSSH\ssh.exe on Windows; set explicitly to override.
   host_key_policy: "accept-new"
   connect_timeout_seconds: 10
   command_timeout_seconds: 30

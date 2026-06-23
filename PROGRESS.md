@@ -12,6 +12,17 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 Server 跨平台 (Linux/Windows) 与全工具 catalog
+
+目标：server 包括所有 tools，兼容 Windows 和 Linux 双平台。
+
+- **非测试代码已跨平台**：审计确认 server/native-agent 非测试代码无未守护的 Unix-only API；`tokio::signal::ctrl_c`、`tokio::process::Command`、`std::env::temp_dir()` 均跨平台。`exports.rs::is_executable` 已有 `#[cfg(unix)]`/`#[cfg(not(unix))]` 双分支。
+- **测试模块 Windows 可编译**：`http/tools.rs`、`http/executors.rs` 整个测试模块依赖 bash 假工具 + Unix 可执行权限，改为 `#[cfg(all(test, unix))]`；`services/tool_runner.rs` 把 `PermissionsExt` 从模块级 `use` 移入 `#[cfg(unix)] fn write_tool`，3 个 bash 异步测试加 `#[cfg(unix)]`，纯解析测试仍全平台运行。
+- **ssh_binary 默认值跨平台**：`default_ssh_binary()` 改为 Linux `/usr/bin/ssh`、Windows `C:\Windows\System32\OpenSSH\ssh.exe`；`examples/logagent.yaml`、`examples/server-test.yaml`、`deploy/logagent.example.yaml` 移除硬编码 `/usr/bin/ssh`，改用平台默认 + 注释。
+- **全工具 catalog**：`examples/logagent.yaml` 新增 `tools:` 段，声明 `pprof_analyzer` + 4 个 analyzer（`flux_query_analyzer` / `influxql_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），全部 `enabled: false` + `path_env`，使配置在两平台无需外部二进制即可加载，catalog 即包含全部 12 个工具（5 configured + 7 built-in）。
+- **Windows 工具构建脚本**：新增 `scripts/build-tools.ps1`，对应 `build-tools.sh`，构建 Go/Rust analyzer 到 `bin/tools/*.exe`。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（92 通过）全绿；**Windows 交叉编译校验通过**——`cargo check --target x86_64-pc-windows-gnu -p logagent-server`（非测试）与 `cargo check --tests --target x86_64-pc-windows-gnu -p logagent-server`（测试）均 Finished（仅原有 dead-code 警告，无 `std::os::unix` 错误）；`logagent-native-agent` 同样通过 Windows 交叉编译。运行时校验：`examples/logagent.yaml` 加载成功，`/api/tools` 返回 12 个工具。
+
 ## 2026-06-23 LocalToolHub 命名与 MCP P1 修复
 
 - 产品可见名称从 LogAgent Tool Workbench 收敛为 `LocalToolHub`；WebUI 标题、Settings/MCP 页面文案、MCP `serverInfo.name` 和根/组件文档已更新。
