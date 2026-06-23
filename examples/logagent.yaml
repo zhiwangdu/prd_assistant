@@ -188,8 +188,9 @@ huawei_cloud:
       sslmode: "disable"
   # GeminiDB Influx (NoSQL) instance-management tools: create / delete / list /
   # rename / toggle-SSL / restart. Disabled by default. endpoint + project_id are
-  # config defaults and may be overridden per run via each tool's params; the
-  # X-Auth-Token is read from env only. See skills/geminidb-influx-instance-mgmt.
+  # config defaults and may be overridden per run via each tool's params. Request
+  # paths and bodies follow HuaweiCloud NoSQL API v3; X-Auth-Token is read from
+  # env only. See skills/geminidb-influx-instance-mgmt.
   gemini_db:
     enabled: false
     timeout_seconds: 60

@@ -9,8 +9,9 @@
 //! - Auth: `X-Auth-Token` header, resolved from env only (`huawei_cloud.gemini_db.auth_token_env`).
 //! - Endpoint: `huawei_cloud.gemini_db.endpoint` + `project_id` are config defaults;
 //!   each run may override them via `endpoint` / `projectId` params (dynamic config).
-//! - Bodies: create / SSL / restart forward the caller-supplied `body` verbatim
-//!   (the tool owns method + path + auth + endpoint, not field names).
+//! - Request params are mapped to the documented HuaweiCloud NoSQL API fields.
+//!   `body` remains accepted for create as an advanced escape hatch, but the
+//!   catalog template uses the official GeminiDB Influx fields.
 
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
@@ -18,7 +19,7 @@ use anyhow::Context;
 use chrono::Utc;
 use reqwest::{header::HeaderValue, Method};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use tokio::time::Duration;
 use tracing::{info, warn};
 
@@ -49,25 +50,62 @@ const MAX_RESPONSE_CHARS: usize = 65_536;
 pub struct GeminiDbParams {
     #[serde(default)]
     pub endpoint: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "project_id")]
     pub project_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "instance_id")]
     pub instance_id: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub body: Option<Value>,
+    // Create-instance body fields (canonical params mirror the HuaweiCloud API).
+    #[serde(default)]
+    pub datastore: Option<Value>,
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default, alias = "availability_zone")]
+    pub availability_zone: Option<String>,
+    #[serde(default, alias = "vpc_id")]
+    pub vpc_id: Option<String>,
+    #[serde(default, alias = "subnet_id")]
+    pub subnet_id: Option<String>,
+    #[serde(default, alias = "security_group_id")]
+    pub security_group_id: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub flavor: Option<Value>,
+    #[serde(default, alias = "product_type")]
+    pub product_type: Option<String>,
+    #[serde(default, alias = "disk_encryption_id")]
+    pub disk_encryption_id: Option<String>,
+    #[serde(default, alias = "configuration_id")]
+    pub configuration_id: Option<String>,
+    #[serde(default, alias = "backup_strategy")]
+    pub backup_strategy: Option<Value>,
+    #[serde(default, alias = "enterprise_project_id")]
+    pub enterprise_project_id: Option<String>,
+    #[serde(default, alias = "ssl_option")]
+    pub ssl_option: Option<String>,
+    #[serde(default, alias = "charge_info")]
+    pub charge_info: Option<Value>,
+    #[serde(default, alias = "dedicated_resource_id")]
+    pub dedicated_resource_id: Option<String>,
+    #[serde(default)]
+    pub port: Option<String>,
+    #[serde(default, alias = "restore_info")]
+    pub restore_info: Option<Value>,
+    #[serde(default, alias = "availability_zone_detail")]
+    pub availability_zone_detail: Option<Value>,
+    #[serde(default, alias = "node_id")]
+    pub node_id: Option<String>,
     // List filters (all optional).
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
     pub mode: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "datastore_type")]
     pub datastore_type: Option<String>,
-    #[serde(default)]
-    pub vpc_id: Option<String>,
-    #[serde(default)]
-    pub subnet_id: Option<String>,
     #[serde(default)]
     pub offset: Option<u32>,
     #[serde(default)]
@@ -156,7 +194,9 @@ pub fn validate_run_params(
     }
     let params = parse_params(value)?;
     match tool_id {
-        CREATE_INSTANCE_ID => require_body_object(&params)?,
+        CREATE_INSTANCE_ID => {
+            build_create_body(&params)?;
+        }
         DELETE_INSTANCE_ID => {
             require_instance_id(&params)?;
         }
@@ -167,17 +207,11 @@ pub fn validate_run_params(
         }
         TOGGLE_SSL_ID => {
             require_instance_id(&params)?;
-            require_body_object(&params)?;
+            build_ssl_body(&params)?;
         }
         RESTART_INSTANCE_ID => {
             require_instance_id(&params)?;
-            if let Some(body) = params.body.as_ref() {
-                if !body.is_object() {
-                    return Err(AppError::bad_request(
-                        "body must be a JSON object for restart",
-                    ));
-                }
-            }
+            build_restart_body(&params)?;
         }
         _ => return Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
@@ -346,7 +380,7 @@ fn build_plan(
     let base = format!("/v3/{project_id}/instances");
     match tool_id {
         CREATE_INSTANCE_ID => {
-            let body = params.body.clone().unwrap_or_else(|| json!({}));
+            let body = build_create_body(params)?;
             Ok(GeminiDbPlan {
                 tool_id: tool_id.to_string(),
                 method: Method::POST,
@@ -370,7 +404,7 @@ fn build_plan(
             })
         }
         LIST_INSTANCES_ID => {
-            let query = collect_list_query(params);
+            let query = collect_list_query(params)?;
             Ok(GeminiDbPlan {
                 tool_id: tool_id.to_string(),
                 method: Method::GET,
@@ -397,11 +431,11 @@ fn build_plan(
         }
         TOGGLE_SSL_ID => {
             let id = require_instance_id(params)?;
-            let body = params.body.clone().unwrap_or_else(|| json!({}));
+            let body = build_ssl_body(params)?;
             Ok(GeminiDbPlan {
                 tool_id: tool_id.to_string(),
-                method: Method::PUT,
-                path: format!("{base}/{id}/ssl"),
+                method: Method::POST,
+                path: format!("{base}/{id}/ssl-option"),
                 query: Vec::new(),
                 body: Some(body.to_string()),
                 stored_body: redact_sensitive(&body),
@@ -410,14 +444,14 @@ fn build_plan(
         }
         RESTART_INSTANCE_ID => {
             let id = require_instance_id(params)?;
-            let body = params.body.clone().unwrap_or_else(|| json!({}));
+            let body = build_restart_body(params)?;
             Ok(GeminiDbPlan {
                 tool_id: tool_id.to_string(),
                 method: Method::POST,
                 path: format!("{base}/{id}/restart"),
                 query: Vec::new(),
-                body: Some(body.to_string()),
-                stored_body: redact_sensitive(&body),
+                body: body.as_ref().map(Value::to_string),
+                stored_body: body.as_ref().map(redact_sensitive).unwrap_or(Value::Null),
                 summary_label: "restart GeminiDB Influx instance or node",
             })
         }
@@ -425,30 +459,169 @@ fn build_plan(
     }
 }
 
-fn collect_list_query(params: &GeminiDbParams) -> Vec<(String, String)> {
+fn collect_list_query(params: &GeminiDbParams) -> Result<Vec<(String, String)>, AppError> {
     let mut query = Vec::new();
-    let mut push = |key: &str, value: &Option<String>| {
-        if let Some(value) = value
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            query.push((key.to_string(), value.to_string()));
-        }
-    };
-    push("id", &params.id);
-    push("name", &params.name);
-    push("mode", &params.mode);
-    push("datastore_type", &params.datastore_type);
-    push("vpc_id", &params.vpc_id);
-    push("subnet_id", &params.subnet_id);
+    query.push((
+        "datastore_type".to_string(),
+        list_datastore_type(params)?.unwrap_or_else(|| "influxdb".to_string()),
+    ));
+    push_query_string(&mut query, "id", &params.id);
+    push_query_string(&mut query, "name", &params.name);
+    push_query_string(&mut query, "mode", &params.mode);
+    push_query_string(&mut query, "vpc_id", &params.vpc_id);
+    push_query_string(&mut query, "subnet_id", &params.subnet_id);
     if let Some(offset) = params.offset {
         query.push(("offset".to_string(), offset.to_string()));
     }
     if let Some(limit) = params.limit {
         query.push(("limit".to_string(), limit.to_string()));
     }
-    query
+    Ok(query)
+}
+
+fn push_query_string(query: &mut Vec<(String, String)>, key: &str, value: &Option<String>) {
+    if let Some(value) = value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push((key.to_string(), value.to_string()));
+    }
+}
+
+fn build_create_body(params: &GeminiDbParams) -> Result<Value, AppError> {
+    if let Some(body) = params.body.as_ref() {
+        if !body.is_object() {
+            return Err(AppError::bad_request("body must be a JSON object"));
+        }
+        validate_create_body_is_influx(body)?;
+        return Ok(body.clone());
+    }
+
+    let mut body = Map::new();
+    body.insert(
+        "name".to_string(),
+        Value::String(require_instance_name(params.name.as_deref(), "name")?),
+    );
+    let datastore = require_object_value(params.datastore.as_ref(), "datastore")?;
+    validate_create_body_datastore_is_influx(datastore)?;
+    body.insert("datastore".to_string(), datastore.clone());
+    insert_required_string(&mut body, "region", params.region.as_deref())?;
+    insert_required_string(
+        &mut body,
+        "availability_zone",
+        params.availability_zone.as_deref(),
+    )?;
+    insert_required_string(&mut body, "vpc_id", params.vpc_id.as_deref())?;
+    insert_required_string(&mut body, "subnet_id", params.subnet_id.as_deref())?;
+    insert_required_string(
+        &mut body,
+        "security_group_id",
+        params.security_group_id.as_deref(),
+    )?;
+    let password = required_trimmed(params.password.as_deref(), "password")?;
+    let password_len = password.as_bytes().len();
+    if !(8..=32).contains(&password_len) {
+        return Err(AppError::bad_request(
+            "password must be 8..32 bytes per HuaweiCloud GeminiDB API",
+        ));
+    }
+    body.insert("password".to_string(), Value::String(password));
+    let mode = required_trimmed(params.mode.as_deref(), "mode")?;
+    validate_influx_mode(&mode)?;
+    body.insert("mode".to_string(), Value::String(mode));
+    let flavor = require_array_value(params.flavor.as_ref(), "flavor")?;
+    body.insert("flavor".to_string(), flavor.clone());
+
+    insert_optional_string(&mut body, "product_type", params.product_type.as_deref());
+    insert_optional_string(
+        &mut body,
+        "disk_encryption_id",
+        params.disk_encryption_id.as_deref(),
+    );
+    insert_optional_string(
+        &mut body,
+        "configuration_id",
+        params.configuration_id.as_deref(),
+    );
+    insert_optional_value(
+        &mut body,
+        "backup_strategy",
+        params.backup_strategy.as_ref(),
+    )?;
+    insert_optional_string(
+        &mut body,
+        "enterprise_project_id",
+        params.enterprise_project_id.as_deref(),
+    );
+    if let Some(ssl_option) = params.ssl_option.as_deref().and_then(optional_trimmed) {
+        validate_create_ssl_option(&ssl_option)?;
+        body.insert("ssl_option".to_string(), Value::String(ssl_option));
+    }
+    insert_optional_value(&mut body, "charge_info", params.charge_info.as_ref())?;
+    insert_optional_string(
+        &mut body,
+        "dedicated_resource_id",
+        params.dedicated_resource_id.as_deref(),
+    );
+    insert_optional_string(&mut body, "port", params.port.as_deref());
+    insert_optional_value(&mut body, "restore_info", params.restore_info.as_ref())?;
+    insert_optional_value(
+        &mut body,
+        "availability_zone_detail",
+        params.availability_zone_detail.as_ref(),
+    )?;
+
+    Ok(Value::Object(body))
+}
+
+fn build_ssl_body(params: &GeminiDbParams) -> Result<Value, AppError> {
+    if let Some(ssl_option) = params.ssl_option.as_deref().and_then(optional_trimmed) {
+        validate_toggle_ssl_option(&ssl_option)?;
+        return Ok(json!({ "ssl_option": ssl_option }));
+    }
+    if let Some(body) = params.body.as_ref() {
+        if !body.is_object() {
+            return Err(AppError::bad_request("body must be a JSON object"));
+        }
+        let ssl_option = body
+            .get("ssl_option")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AppError::bad_request("sslOption is required and maps to body.ssl_option")
+            })?;
+        validate_toggle_ssl_option(ssl_option)?;
+        return Ok(body.clone());
+    }
+    Err(AppError::bad_request(
+        "sslOption is required and must be 'on' or 'off'",
+    ))
+}
+
+fn build_restart_body(params: &GeminiDbParams) -> Result<Option<Value>, AppError> {
+    if let Some(body) = params.body.as_ref() {
+        if !body.is_object() {
+            return Err(AppError::bad_request(
+                "body must be a JSON object for restart",
+            ));
+        }
+        if params
+            .node_id
+            .as_deref()
+            .and_then(optional_trimmed)
+            .is_some()
+        {
+            return Err(AppError::bad_request(
+                "restart accepts either nodeId or body, not both",
+            ));
+        }
+        return Ok(Some(body.clone()));
+    }
+    let Some(node_id) = params.node_id.as_deref().and_then(optional_trimmed) else {
+        return Ok(None);
+    };
+    validate_idish(&node_id, "nodeId")?;
+    Ok(Some(json!({ "node_id": node_id })))
 }
 
 fn parse_params(value: &Value) -> Result<GeminiDbParams, AppError> {
@@ -471,24 +644,7 @@ fn require_instance_id(params: &GeminiDbParams) -> Result<String, AppError> {
 }
 
 fn require_name(params: &GeminiDbParams) -> Result<String, AppError> {
-    let name = params
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::bad_request("name is required"))?;
-    if name.len() > 128 {
-        return Err(AppError::bad_request("name must be at most 128 characters"));
-    }
-    Ok(name.to_string())
-}
-
-fn require_body_object(params: &GeminiDbParams) -> Result<(), AppError> {
-    match params.body.as_ref() {
-        Some(Value::Object(_)) => Ok(()),
-        Some(_) => Err(AppError::bad_request("body must be a JSON object")),
-        None => Err(AppError::bad_request("body is required")),
-    }
+    require_instance_name(params.name.as_deref(), "name")
 }
 
 fn validate_list_params(params: &GeminiDbParams) -> Result<(), AppError> {
@@ -498,7 +654,225 @@ fn validate_list_params(params: &GeminiDbParams) -> Result<(), AppError> {
             return Err(AppError::bad_request("list does not accept a body"));
         }
     }
+    if let Some(mode) = params.mode.as_deref().and_then(optional_trimmed) {
+        validate_influx_mode(&mode)?;
+    }
+    list_datastore_type(params)?;
+    if let Some(limit) = params.limit {
+        if !(1..=100).contains(&limit) {
+            return Err(AppError::bad_request("limit must be between 1 and 100"));
+        }
+    }
     Ok(())
+}
+
+fn list_datastore_type(params: &GeminiDbParams) -> Result<Option<String>, AppError> {
+    let Some(datastore_type) = params.datastore_type.as_deref().and_then(optional_trimmed) else {
+        return Ok(None);
+    };
+    if datastore_type.eq_ignore_ascii_case("influxdb") {
+        Ok(Some("influxdb".to_string()))
+    } else {
+        Err(AppError::bad_request(
+            "datastoreType must be 'influxdb' for GeminiDB Influx tools",
+        ))
+    }
+}
+
+fn required_trimmed(value: Option<&str>, field: &str) -> Result<String, AppError> {
+    value
+        .and_then(optional_trimmed)
+        .ok_or_else(|| AppError::bad_request(format!("{field} is required")))
+}
+
+fn optional_trimmed(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn require_instance_name(value: Option<&str>, field: &str) -> Result<String, AppError> {
+    let name = required_trimmed(value, field)?;
+    let len = name.as_bytes().len();
+    if !(4..=64).contains(&len) {
+        return Err(AppError::bad_request(format!(
+            "{field} must be 4..64 bytes per HuaweiCloud GeminiDB API"
+        )));
+    }
+    Ok(name)
+}
+
+fn insert_required_string(
+    body: &mut Map<String, Value>,
+    key: &str,
+    value: Option<&str>,
+) -> Result<(), AppError> {
+    body.insert(
+        key.to_string(),
+        Value::String(required_trimmed(value, key)?),
+    );
+    Ok(())
+}
+
+fn insert_optional_string(body: &mut Map<String, Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.and_then(optional_trimmed) {
+        body.insert(key.to_string(), Value::String(value));
+    }
+}
+
+fn insert_optional_value(
+    body: &mut Map<String, Value>,
+    key: &str,
+    value: Option<&Value>,
+) -> Result<(), AppError> {
+    if let Some(value) = value {
+        if value.is_null() {
+            return Ok(());
+        }
+        if !value.is_object() {
+            return Err(AppError::bad_request(format!(
+                "{key} must be a JSON object"
+            )));
+        }
+        body.insert(key.to_string(), value.clone());
+    }
+    Ok(())
+}
+
+fn require_object_value<'a>(value: Option<&'a Value>, field: &str) -> Result<&'a Value, AppError> {
+    let value = value.ok_or_else(|| AppError::bad_request(format!("{field} is required")))?;
+    if value.is_object() {
+        Ok(value)
+    } else {
+        Err(AppError::bad_request(format!(
+            "{field} must be a JSON object"
+        )))
+    }
+}
+
+fn require_array_value<'a>(value: Option<&'a Value>, field: &str) -> Result<&'a Value, AppError> {
+    let value = value.ok_or_else(|| AppError::bad_request(format!("{field} is required")))?;
+    match value.as_array() {
+        Some(items) if !items.is_empty() => Ok(value),
+        Some(_) => Err(AppError::bad_request(format!("{field} must not be empty"))),
+        None => Err(AppError::bad_request(format!(
+            "{field} must be a JSON array"
+        ))),
+    }
+}
+
+fn validate_create_body_is_influx(body: &Value) -> Result<(), AppError> {
+    let object = body
+        .as_object()
+        .ok_or_else(|| AppError::bad_request("body must be a JSON object"))?;
+    for field in [
+        "region",
+        "availability_zone",
+        "vpc_id",
+        "subnet_id",
+        "security_group_id",
+    ] {
+        let value = object
+            .get(field)
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::bad_request(format!("body.{field} is required")))?;
+        required_trimmed(Some(value), &format!("body.{field}"))?;
+    }
+    let name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::bad_request("body.name is required"))?;
+    require_instance_name(Some(name), "body.name")?;
+    let password = object
+        .get("password")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::bad_request("body.password is required"))?;
+    let password = required_trimmed(Some(password), "body.password")?;
+    if !(8..=32).contains(&password.as_bytes().len()) {
+        return Err(AppError::bad_request(
+            "body.password must be 8..32 bytes per HuaweiCloud GeminiDB API",
+        ));
+    }
+    let mode = object
+        .get("mode")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::bad_request("body.mode is required"))?;
+    validate_influx_mode(mode)?;
+    let Some(datastore) = body.get("datastore") else {
+        return Err(AppError::bad_request("body.datastore is required"));
+    };
+    validate_create_body_datastore_is_influx(datastore)?;
+    if let Some(flavor) = body.get("flavor") {
+        require_array_value(Some(flavor), "body.flavor")?;
+    } else {
+        return Err(AppError::bad_request("body.flavor is required"));
+    }
+    Ok(())
+}
+
+fn validate_create_body_datastore_is_influx(datastore: &Value) -> Result<(), AppError> {
+    let object = datastore
+        .as_object()
+        .ok_or_else(|| AppError::bad_request("datastore must be a JSON object"))?;
+    let datastore_type = object
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::bad_request("datastore.type is required"))?;
+    if datastore_type.eq_ignore_ascii_case("influxdb") {
+        Ok(())
+    } else {
+        Err(AppError::bad_request(
+            "datastore.type must be 'influxdb' for GeminiDB Influx tools",
+        ))
+    }
+}
+
+fn validate_influx_mode(value: &str) -> Result<(), AppError> {
+    if matches!(
+        value,
+        "Cluster" | "CloudNativeCluster" | "EnhancedCluster" | "InfluxdbSingle"
+    ) {
+        Ok(())
+    } else {
+        Err(AppError::bad_request(
+            "mode must be one of Cluster, CloudNativeCluster, EnhancedCluster, InfluxdbSingle",
+        ))
+    }
+}
+
+fn validate_create_ssl_option(value: &str) -> Result<(), AppError> {
+    if matches!(value, "0" | "1") {
+        Ok(())
+    } else {
+        Err(AppError::bad_request(
+            "sslOption for create must be '0' or '1'",
+        ))
+    }
+}
+
+fn validate_toggle_ssl_option(value: &str) -> Result<(), AppError> {
+    if matches!(value, "on" | "off") {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("sslOption must be 'on' or 'off'"))
+    }
+}
+
+fn validate_idish(value: &str, field: &str) -> Result<(), AppError> {
+    let valid = !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request(format!(
+            "{field} must contain only letters, digits, '_' or '-'"
+        )))
+    }
 }
 
 fn validate_instance_id(value: &str) -> Result<(), AppError> {
@@ -694,7 +1068,7 @@ fn create_instance_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         CREATE_INSTANCE_ID,
         "GeminiDB Influx: Create instance",
-        "Create a GeminiDB Influx instance (POST /v3/{projectId}/instances). The request body is forwarded verbatim per the HuaweiCloud NoSQL API.",
+        "Create a GeminiDB Influx instance (POST /v3/{projectId}/instances) using documented HuaweiCloud NoSQL API fields.",
         enabled,
     );
     d.params_schema = json!({
@@ -702,11 +1076,73 @@ fn create_instance_descriptor(enabled: bool) -> ToolDescriptor {
         "properties": {
             "endpoint": { "type": "string" },
             "projectId": { "type": "string" },
-            "body": { "type": "object", "description": "Full create-instance request body per the HuaweiCloud NoSQL API (name, datastore, flavor_ref, volume, region, vpc_id, subnet_id, security_group_id, password, mode, ...)." }
+            "body": { "type": "object", "description": "Advanced: exact documented create-instance request body. When provided, structured create fields are ignored." },
+            "name": { "type": "string", "description": "Instance name, 4..64 bytes." },
+            "datastore": {
+                "type": "object",
+                "properties": {
+                    "type": { "type": "string", "const": "influxdb" },
+                    "version": { "type": "string" },
+                    "storage_engine": { "type": "string" }
+                },
+                "required": ["type"]
+            },
+            "region": { "type": "string" },
+            "availabilityZone": { "type": "string", "description": "Maps to request body availability_zone." },
+            "vpcId": { "type": "string", "description": "Maps to request body vpc_id." },
+            "subnetId": { "type": "string", "description": "Maps to request body subnet_id." },
+            "securityGroupId": { "type": "string", "description": "Maps to request body security_group_id." },
+            "password": { "type": "string", "description": "Database password; stored result is redacted." },
+            "mode": {
+                "type": "string",
+                "enum": ["Cluster", "CloudNativeCluster", "EnhancedCluster", "InfluxdbSingle"]
+            },
+            "flavor": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "num": { "type": ["integer", "string"] },
+                        "size": { "type": ["integer", "string"] },
+                        "storage": { "type": "string" },
+                        "spec_code": { "type": "string" }
+                    }
+                },
+                "description": "Official request body flavor array."
+            },
+            "productType": { "type": "string" },
+            "diskEncryptionId": { "type": "string" },
+            "configurationId": { "type": "string" },
+            "backupStrategy": { "type": "object" },
+            "enterpriseProjectId": { "type": "string" },
+            "sslOption": { "type": "string", "enum": ["0", "1"], "description": "Create-time SSL option, maps to ssl_option." },
+            "chargeInfo": { "type": "object" },
+            "dedicatedResourceId": { "type": "string" },
+            "port": { "type": "string" },
+            "restoreInfo": { "type": "object" },
+            "availabilityZoneDetail": { "type": "object" }
         },
-        "required": ["body"]
+        "anyOf": [
+            { "required": ["body"] },
+            { "required": ["name", "datastore", "region", "availabilityZone", "vpcId", "subnetId", "securityGroupId", "password", "mode", "flavor"] }
+        ]
     });
-    d.params_template = json!({ "endpoint": "", "projectId": "", "body": {} });
+    d.params_template = json!({
+        "endpoint": "",
+        "projectId": "",
+        "name": "",
+        "datastore": { "type": "influxdb", "version": "1.8", "storage_engine": "rocksDB" },
+        "region": "",
+        "availabilityZone": "",
+        "vpcId": "",
+        "subnetId": "",
+        "securityGroupId": "",
+        "password": "",
+        "mode": "Cluster",
+        "flavor": [{ "num": 3, "size": 100, "storage": "ULTRAHIGH", "spec_code": "" }],
+        "sslOption": "0",
+        "backupStrategy": { "start_time": "00:00-01:00", "keep_days": 7 }
+    });
     d
 }
 
@@ -745,17 +1181,20 @@ fn list_instances_descriptor(enabled: bool) -> ToolDescriptor {
             "projectId": { "type": "string" },
             "id": { "type": "string" },
             "name": { "type": "string" },
-            "mode": { "type": "string" },
-            "datastoreType": { "type": "string" },
+            "mode": {
+                "type": "string",
+                "enum": ["Cluster", "CloudNativeCluster", "EnhancedCluster", "InfluxdbSingle"]
+            },
+            "datastoreType": { "type": "string", "const": "influxdb" },
             "vpcId": { "type": "string" },
             "subnetId": { "type": "string" },
             "offset": { "type": "integer", "minimum": 0 },
-            "limit": { "type": "integer", "minimum": 1 }
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
         }
     });
     d.params_template = json!({
         "endpoint": "", "projectId": "",
-        "id": "", "name": "", "mode": "", "datastoreType": "",
+        "id": "", "name": "", "mode": "", "datastoreType": "influxdb",
         "vpcId": "", "subnetId": "", "offset": 0, "limit": 100
     });
     d
@@ -786,7 +1225,7 @@ fn toggle_ssl_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         TOGGLE_SSL_ID,
         "GeminiDB Influx: Toggle SSL",
-        "Enable or disable SSL on a GeminiDB Influx instance (PUT /v3/{projectId}/instances/{instanceId}/ssl). The request body is forwarded verbatim per the HuaweiCloud NoSQL API.",
+        "Enable or disable SSL on a GeminiDB Influx instance (POST /v3/{projectId}/instances/{instanceId}/ssl-option).",
         enabled,
     );
     d.params_schema = json!({
@@ -795,11 +1234,16 @@ fn toggle_ssl_descriptor(enabled: bool) -> ToolDescriptor {
             "endpoint": { "type": "string" },
             "projectId": { "type": "string" },
             "instanceId": { "type": "string" },
-            "body": { "type": "object", "description": "SSL toggle request body per the HuaweiCloud NoSQL API." }
+            "sslOption": {
+                "type": "string",
+                "enum": ["on", "off"],
+                "description": "Maps to request body ssl_option."
+            }
         },
-        "required": ["instanceId", "body"]
+        "required": ["instanceId", "sslOption"]
     });
-    d.params_template = json!({ "endpoint": "", "projectId": "", "instanceId": "", "body": {} });
+    d.params_template =
+        json!({ "endpoint": "", "projectId": "", "instanceId": "", "sslOption": "on" });
     d
 }
 
@@ -807,7 +1251,7 @@ fn restart_instance_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         RESTART_INSTANCE_ID,
         "GeminiDB Influx: Restart instance/node",
-        "Restart a GeminiDB Influx instance or a single node (POST /v3/{projectId}/instances/{instanceId}/restart). The optional body is forwarded verbatim per the HuaweiCloud NoSQL API.",
+        "Restart a GeminiDB Influx instance (POST /v3/{projectId}/instances/{instanceId}/restart). nodeId maps to documented node_id where the service supports node restart.",
         enabled,
     );
     d.params_schema = json!({
@@ -816,11 +1260,11 @@ fn restart_instance_descriptor(enabled: bool) -> ToolDescriptor {
             "endpoint": { "type": "string" },
             "projectId": { "type": "string" },
             "instanceId": { "type": "string" },
-            "body": { "type": "object", "description": "Optional restart body per the HuaweiCloud NoSQL API (e.g. node targeting). Omit to restart the whole instance." }
+            "nodeId": { "type": "string", "description": "Optional. Maps to request body node_id; omit to restart the whole instance." }
         },
         "required": ["instanceId"]
     });
-    d.params_template = json!({ "endpoint": "", "projectId": "", "instanceId": "", "body": {} });
+    d.params_template = json!({ "endpoint": "", "projectId": "", "instanceId": "", "nodeId": "" });
     d
 }
 
@@ -926,19 +1370,6 @@ mod tests {
         }
     }
 
-    fn enabled_settings() -> GeminiDbSettings {
-        GeminiDbSettings {
-            enabled: true,
-            timeout_seconds: 5,
-            endpoint: "https://nosql.cn-north-4.myhuaweicloud.com".to_string(),
-            project_id: "pid-123".to_string(),
-            project_id_env: Some("LOGAGENT_TEST_GEMINI_PID".to_string()),
-            auth_token_env: Some("LOGAGENT_TEST_GEMINI_TOKEN".to_string()),
-            auth_token: Some("secret-token".to_string()),
-            region: "cn-north-4".to_string(),
-        }
-    }
-
     async fn run_plan(plan: GeminiDbPlan, client: &FakeClient) -> (PathBuf, serde_json::Value) {
         let root = std::env::temp_dir().join(format!("gemini-db-test-{}", std::process::id()));
         let workspace = root.join(&plan.tool_id);
@@ -959,6 +1390,29 @@ mod tests {
 
     fn plan_for(tool_id: &str, params: &GeminiDbParams) -> GeminiDbPlan {
         build_plan(tool_id, params, "pid-123").unwrap()
+    }
+
+    fn create_params() -> GeminiDbParams {
+        GeminiDbParams {
+            name: Some("influx-test".to_string()),
+            datastore: Some(json!({
+                "type": "influxdb",
+                "version": "1.8",
+                "storage_engine": "rocksDB"
+            })),
+            region: Some("cn-north-4".to_string()),
+            availability_zone: Some("cn-north-4a".to_string()),
+            vpc_id: Some("vpc-1".to_string()),
+            subnet_id: Some("subnet-1".to_string()),
+            security_group_id: Some("sg-1".to_string()),
+            password: Some("Secret_123".to_string()),
+            mode: Some("Cluster".to_string()),
+            flavor: Some(json!([
+                { "num": 3, "size": 100, "storage": "ULTRAHIGH", "spec_code": "geminidb.influxdb.large.4" }
+            ])),
+            ssl_option: Some("0".to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -982,15 +1436,36 @@ mod tests {
     }
 
     #[test]
-    fn validates_create_requires_body_object() {
+    fn validates_create_requires_documented_fields_or_raw_body() {
         let mut config = test_config();
         config.huawei_cloud.gemini_db.enabled = true;
         assert!(validate_run_params(&config, CREATE_INSTANCE_ID, &json!({})).is_err());
         assert!(validate_run_params(&config, CREATE_INSTANCE_ID, &json!({"body": [1]})).is_err());
-        assert!(
-            validate_run_params(&config, CREATE_INSTANCE_ID, &json!({"body": {"name": "x"}}))
-                .is_ok()
-        );
+        assert!(validate_run_params(
+            &config,
+            CREATE_INSTANCE_ID,
+            &serde_json::to_value(create_params()).unwrap()
+        )
+        .is_ok());
+        assert!(validate_run_params(
+            &config,
+            CREATE_INSTANCE_ID,
+            &json!({
+                "body": {
+                    "name": "influx-test",
+                    "datastore": { "type": "influxdb" },
+                    "region": "cn-north-4",
+                    "availability_zone": "cn-north-4a",
+                    "vpc_id": "vpc-1",
+                    "subnet_id": "subnet-1",
+                    "security_group_id": "sg-1",
+                    "password": "Secret_123",
+                    "mode": "Cluster",
+                    "flavor": [{ "num": 3, "size": 100, "storage": "ULTRAHIGH", "spec_code": "x" }]
+                }
+            })
+        )
+        .is_ok());
     }
 
     #[test]
@@ -1016,6 +1491,12 @@ mod tests {
             &config,
             TOGGLE_SSL_ID,
             &json!({"instanceId": "inst-1", "body": {"ssl": true}})
+        )
+        .is_err());
+        assert!(validate_run_params(
+            &config,
+            TOGGLE_SSL_ID,
+            &json!({"instanceId": "inst-1", "sslOption": "on"})
         )
         .is_ok());
         assert!(validate_run_params(
@@ -1050,6 +1531,7 @@ mod tests {
             validate_run_params(&config, LIST_INSTANCES_ID, &json!({"id": "x", "limit": 10}))
                 .is_ok()
         );
+        assert!(validate_run_params(&config, LIST_INSTANCES_ID, &json!({"limit": 101})).is_err());
         assert!(
             validate_run_params(&config, LIST_INSTANCES_ID, &json!({"body": {"x": 1}})).is_err()
         );
@@ -1099,18 +1581,14 @@ mod tests {
         let params = GeminiDbParams {
             instance_id: Some("inst-1".to_string()),
             name: Some("new-name".to_string()),
-            body: Some(json!({"ssl": true})),
+            ssl_option: Some("on".to_string()),
             ..Default::default()
         };
-        let create = plan_for(
-            CREATE_INSTANCE_ID,
-            &GeminiDbParams {
-                body: Some(json!({"name":"x"})),
-                ..Default::default()
-            },
-        );
+        let create = plan_for(CREATE_INSTANCE_ID, &create_params());
         assert_eq!(create.method, Method::POST);
         assert_eq!(create.path, "/v3/pid-123/instances");
+        assert_eq!(create.stored_body["datastore"]["type"], "influxdb");
+        assert!(create.stored_body["flavor"].is_array());
 
         let delete = plan_for(DELETE_INSTANCE_ID, &params);
         assert_eq!(delete.method, Method::DELETE);
@@ -1122,12 +1600,25 @@ mod tests {
         assert_eq!(rename.stored_body, json!({"name": "new-name"}));
 
         let ssl = plan_for(TOGGLE_SSL_ID, &params);
-        assert_eq!(ssl.method, Method::PUT);
-        assert_eq!(ssl.path, "/v3/pid-123/instances/inst-1/ssl");
+        assert_eq!(ssl.method, Method::POST);
+        assert_eq!(ssl.path, "/v3/pid-123/instances/inst-1/ssl-option");
+        assert_eq!(ssl.stored_body, json!({"ssl_option": "on"}));
 
         let restart = plan_for(RESTART_INSTANCE_ID, &params);
         assert_eq!(restart.method, Method::POST);
         assert_eq!(restart.path, "/v3/pid-123/instances/inst-1/restart");
+        assert!(restart.body.is_none());
+        assert_eq!(restart.stored_body, Value::Null);
+
+        let restart_node = plan_for(
+            RESTART_INSTANCE_ID,
+            &GeminiDbParams {
+                instance_id: Some("inst-1".to_string()),
+                node_id: Some("node-1".to_string()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(restart_node.stored_body, json!({"node_id": "node-1"}));
 
         let list = plan_for(
             LIST_INSTANCES_ID,
@@ -1142,6 +1633,7 @@ mod tests {
         assert_eq!(
             list.query,
             vec![
+                ("datastore_type".to_string(), "influxdb".to_string()),
                 ("id".to_string(), "inst-1".to_string()),
                 ("limit".to_string(), "10".to_string())
             ]
@@ -1151,23 +1643,19 @@ mod tests {
     #[tokio::test]
     async fn create_writes_ok_result_and_forwards_body() {
         let client = FakeClient::new(200, r#"{"id":"inst-new","job_id":"job-1"}"#);
-        let plan = plan_for(
-            CREATE_INSTANCE_ID,
-            &GeminiDbParams {
-                body: Some(json!({"name":"x","password":"hunter2"})),
-                ..Default::default()
-            },
-        );
+        let mut params = create_params();
+        params.password = Some("hunter2A!".to_string());
+        let plan = plan_for(CREATE_INSTANCE_ID, &params);
         let (_path, result) = run_plan(plan, &client).await;
         assert_eq!(result["status"], "OK");
         assert_eq!(result["http"]["method"], "POST");
         assert_eq!(result["http"]["statusCode"], 200);
         // password is redacted in the stored request body
         assert_eq!(result["request"]["body"]["password"], "<redacted>");
-        assert_eq!(result["request"]["body"]["name"], "x");
+        assert_eq!(result["request"]["body"]["name"], "influx-test");
         // the forwarded body still carries the real password
         let sent = client.last_request();
-        assert!(sent.body.unwrap().contains("hunter2"));
+        assert!(sent.body.unwrap().contains("hunter2A!"));
         // response body captured
         assert!(result["response"]["body"]
             .as_str()
@@ -1210,6 +1698,10 @@ mod tests {
         assert_eq!(result["status"], "OK");
         let sent = client.last_request();
         assert_eq!(sent.method, Method::GET);
+        assert!(sent
+            .query
+            .iter()
+            .any(|(k, v)| k == "datastore_type" && v == "influxdb"));
         assert!(sent
             .query
             .iter()

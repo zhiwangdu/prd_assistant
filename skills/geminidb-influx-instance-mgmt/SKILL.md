@@ -29,17 +29,18 @@ Base path: `{endpoint}/v3/{projectId}/instances`. Auth: `X-Auth-Token` header.
 
 | Tool | Method & path | Key params |
 |---|---|---|
-| `logagent.geminidb.create_instance` | `POST /v3/{pid}/instances` | `body` (full create body, forwarded verbatim) |
+| `logagent.geminidb.create_instance` | `POST /v3/{pid}/instances` | documented create fields: `name`, `datastore`, `region`, `availabilityZone`, `vpcId`, `subnetId`, `securityGroupId`, `password`, `mode`, `flavor`; optional `body` advanced escape hatch |
 | `logagent.geminidb.delete_instance` | `DELETE /v3/{pid}/instances/{instanceId}` | `instanceId` |
-| `logagent.geminidb.list_instances` | `GET /v3/{pid}/instances?id=&name=&mode=&datastore_type=&vpc_id=&subnet_id=&offset=&limit=` | filters all optional; `id` fetches one instance |
+| `logagent.geminidb.list_instances` | `GET /v3/{pid}/instances?datastore_type=influxdb&id=&name=&mode=&vpc_id=&subnet_id=&offset=&limit=` | filters optional; the tool defaults `datastore_type=influxdb`; `id` fetches one instance |
 | `logagent.geminidb.rename_instance` | `PUT /v3/{pid}/instances/{instanceId}/name` | `instanceId`, `name` (sent as `{"name": name}`) |
-| `logagent.geminidb.toggle_ssl` | `PUT /v3/{pid}/instances/{instanceId}/ssl` | `instanceId`, `body` (forwarded verbatim) |
-| `logagent.geminidb.restart_instance` | `POST /v3/{pid}/instances/{instanceId}/restart` | `instanceId`, optional `body` (forwarded verbatim; omit to restart the whole instance) |
+| `logagent.geminidb.toggle_ssl` | `POST /v3/{pid}/instances/{instanceId}/ssl-option` | `instanceId`, `sslOption` (`on` or `off`, sent as `{"ssl_option": ...}`) |
+| `logagent.geminidb.restart_instance` | `POST /v3/{pid}/instances/{instanceId}/restart` | `instanceId`, optional `nodeId` (sent as `{"node_id": ...}`); omit `nodeId` to restart the whole instance with no body |
 
-`create`, `toggle_ssl`, and `restart` **forward the request body verbatim**: you supply
-the exact documented JSON body and the tool sends it unchanged. This avoids field-name
-mismatches and lets you pass any documented field. See `references/api-fields.md` for the
-best-known body fields per operation (verify against the live HuaweiCloud NoSQL API docs).
+`create_instance` maps camelCase tool params to the documented snake_case request body.
+It also accepts an advanced `body` object for exact raw create payloads, but the default
+tool template uses the documented fields. `toggle_ssl` and `restart_instance` build their
+documented request bodies from `sslOption` and `nodeId`; they no longer use guessed
+`ssl` booleans or raw body templates.
 
 `instanceId` is validated to contain only letters, digits, `_`, `-` (path-safe).
 

@@ -79,7 +79,7 @@ unavailableReason
 
 WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
 
-`examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、batch influxql、metadata ×4、fetch、huawei package sync、GeminiDB Influx 实例管理 ×6：create/delete/list/rename/toggle_ssl/restart）始终在 catalog 中，按各自子系统开关启用。GeminiDB Influx 工具组用 `X-Auth-Token` 鉴权（token 仅来自 env），endpoint/projectId 支持配置默认 + 每次运行 params 覆盖，create/toggle_ssl/restart 的请求体透传调用方 body。
+`examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、batch influxql、metadata ×4、fetch、huawei package sync、GeminiDB Influx 实例管理 ×6：create/delete/list/rename/toggle_ssl/restart）始终在 catalog 中，按各自子系统开关启用。GeminiDB Influx 工具组用 `X-Auth-Token` 鉴权（token 仅来自 env），endpoint/projectId 支持配置默认 + 每次运行 params 覆盖；请求方法、路径和参数映射以 HuaweiCloud NoSQL API v3 文档为准：创建实例使用官方 create body 字段和 `flavor` 数组，列表默认 `datastore_type=influxdb`，SSL 使用 `POST .../ssl-option` + `ssl_option=on|off`，重启实例不带 body、仅可选 `node_id`。
 
 ## Tool Runner
 

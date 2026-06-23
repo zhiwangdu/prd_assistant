@@ -12,7 +12,25 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 GeminiDB Influx tool 组按官方 API 文档修整
+
+目标：用户指出现有 GeminiDB Influx tools 的请求路径和参数曾由其他模型猜测生成，不可信；本次按 HuaweiCloud NoSQL API v3 实例管理官方文档重新核对并修整。参考页面：实例管理索引 `topic_300000002.html`，创建/删除/查询/改名/SSL/重启分别为 `nosql_05_0014.html`、`nosql_05_0015.html`、`nosql_05_0016.html`、`nosql_05_0102.html`、`nosql_05_0107.html`、`nosql_05_0108.html`（用户给的 `nosql_05_0007.html` 是“如何调用 API”，用于确认调用方式/鉴权背景）。
+
+- `server/src/services/gemini_db.rs`：
+  - 保留 6 个 tool 单独分组和 `endpoint` / `projectId` 单次 run 覆盖能力，继续使用配置中的 `X-Auth-Token` env 注入，token 不进 params/result。
+  - create 从“body 透传猜字段”改为按官方字段构造请求 body：`name`、`datastore.type=influxdb`、`region`、`availability_zone`、`vpc_id`、`subnet_id`、`security_group_id`、`password`、`mode`、`flavor[]` 等；`flavor_ref`/`volume` 等旧猜测字段不再作为模板；保留高级 `body` 逃生口但要求 `datastore.type=influxdb` 和非空 `flavor`。
+  - list 默认追加 `datastore_type=influxdb`，并校验 `mode` 仅允许 Influx 相关值；`datastoreType` 显式传非 `influxdb` 会拒绝。
+  - SSL 从错误的 `PUT /instances/{id}/ssl` + 猜测 body 改为官方 `POST /instances/{id}/ssl-option`，params `sslOption=on|off` 映射为 body `{"ssl_option":"on|off"}`。
+  - restart 改为官方 `POST /instances/{id}/restart`；无 `nodeId` 时不发送 body，传 `nodeId` 时映射为 `{"node_id":...}`；文档注明当前官方约束里 `node_id` 仅 Redis 云原生集群节点重启支持。
+  - rename 保持官方 `PUT /instances/{id}/name` + `{"name": ...}`，名称长度校验收紧到 4..64 bytes。
+  - 单测更新覆盖官方路径/方法、create 官方 body、list 默认 Influx 过滤、SSL body、restart 无 body/node body、敏感字段脱敏与原始转发。
+- `server/src/http/tools.rs`：扩大 tool run 测试 helper 的轮询窗口并输出最后状态/error，修复完整并行测试下 pprof HTTP 集成测试偶发超 1s 的时序失败。
+- 文档同步：`server/README.md`、`server/SPEC.md`、根 `SPEC.md`、`examples/logagent.yaml`、`skills/geminidb-influx-instance-mgmt/SKILL.md`、`references/api-fields.md`、`logagent.json`。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（105 通过）均通过；定向 `cargo test -p logagent-server gemini_db -- --nocapture` 也通过（11 通过）。
+
 ## 2026-06-23 GeminiDB Influx 实例管理内置 tool 组 + Skill
+
+历史记录：该初版在当时文档无法在线核实时采用 body 透传策略；当前行为已由上方“按官方 API 文档修整”条目替代。
 
 目标：参考华为云 NoSQL(GeminiDB Influx) API，实现一组 6 个实例生命周期管理内置 tool（创建/删除/查询列表详情/改名/切换 SSL/重启实例或节点），在 catalog 中单独归为「GeminiDB Influx」一组；请求 endpoint 支持灵活动态配置（配置默认 + 每次运行可覆盖）。鉴权用 `X-Auth-Token`（仅从环境变量读）。文档 URL 在本环境被 WAF 拦截无法在线核实，故 create/SSL/restart 的请求体**透传**调用方按文档传入的 body，工具只负责 method+路径+鉴权+endpoint 解析，避免字段名猜错。
 

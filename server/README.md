@@ -138,6 +138,19 @@ POST /api/mcp
 
 旧 Session/Task API 只作迁移兼容，不作为新功能入口。
 
+## GeminiDB Influx 工具组
+
+Server 内置 6 个 GeminiDB Influx 实例管理工具：create / delete / list /
+rename / toggle SSL / restart。工具通过 `huawei_cloud.gemini_db` 配置开关启用，
+使用 `X-Auth-Token` 鉴权（token 只从 `auth_token_env` 读取），并支持在每次
+tool run 的 params 中用 `endpoint` / `projectId` 覆盖配置默认值。
+
+这些工具的 HTTP 方法、路径和参数映射按 HuaweiCloud NoSQL API v3 文档实现：
+创建实例使用官方 create body 字段和 `flavor` 数组，列表默认追加
+`datastore_type=influxdb`，SSL 切换调用 `POST .../ssl-option` 并发送
+`ssl_option=on|off`，重启整实例时不发送 body（传 `nodeId` 时映射为
+`node_id`）。运行结果会保存请求摘要、响应、状态码和脱敏后的 request body。
+
 ## 本地运行
 
 当前 main 代码仍使用原命令，后续实现会收敛配置名：

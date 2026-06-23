@@ -18,7 +18,7 @@
     {
       "path": "references/api-fields.md",
       "title": "GeminiDB Influx API request fields",
-      "summary": "Best-known request body fields per operation (create/ssl/restart) and path/query params, with the HuaweiCloud NoSQL API doc URLs to verify against."
+      "summary": "Documented request fields, paths, query params, and operation notes for the six GeminiDB Influx API tools."
     }
   ]
 }

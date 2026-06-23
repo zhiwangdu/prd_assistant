@@ -715,7 +715,9 @@ printf '{"summary":"manual ok","findings":[{"message":"checked input"}]}\n'
     }
 
     async fn wait_for_tool_run(app: &axum::Router, task_id: &str, expected_status: &str) {
-        for _ in 0..100 {
+        let mut last_status = serde_json::Value::Null;
+        let mut last_error = serde_json::Value::Null;
+        for _ in 0..500 {
             let response = app
                 .clone()
                 .oneshot(
@@ -728,11 +730,15 @@ printf '{"summary":"manual ok","findings":[{"message":"checked input"}]}\n'
                 .unwrap();
             let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
             let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            last_status = body["status"].clone();
+            last_error = body["error"].clone();
             if body["status"] == expected_status {
                 return;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        panic!("tool run did not reach {expected_status}");
+        panic!(
+            "tool run did not reach {expected_status}; last status={last_status}, error={last_error}"
+        );
     }
 }

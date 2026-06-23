@@ -134,6 +134,13 @@ logagent.geminidb.toggle_ssl
 logagent.geminidb.restart_instance
 ```
 
+GeminiDB Influx tool 组必须按 HuaweiCloud NoSQL API v3 文档映射请求：
+`endpoint` / `projectId` 支持配置默认和单次 run 覆盖，鉴权只通过配置中的
+`X-Auth-Token` 环境变量；创建实例使用官方 create body 字段和 `flavor` 数组，
+列表默认限定 `datastore_type=influxdb`，SSL 切换使用
+`POST /v3/{project_id}/instances/{instance_id}/ssl-option` 和
+`ssl_option=on|off`，重启实例时默认不发送 body、可选 `node_id`。
+
 ## 配置
 
 配置文件暂保留 `logagent.yaml`，但语义调整为本地工具平台：
