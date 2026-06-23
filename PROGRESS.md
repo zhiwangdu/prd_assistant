@@ -12,6 +12,23 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 Dev self-test pipeline P0：MCP streamable-http + 异步 run 模型
+
+目标：为「Windows ClaudeCode → Linux LocalToolHub MCP」的开发自测流水线打底：合规的远程 MCP 传输 + 通用的异步 run 模型 + 不污染历史的 run 查询。这是分阶段方案（P0 传输/run 模型 → P1 Docker 自测闭环 → P2 SSH 二进制替换 → P3 打包+云实例）的第一刀。
+
+- `server/src/mcp_server.rs`：
+  - `POST /api/mcp` 升级为 stateless streamable-http：按 `Accept` 返回 `application/json` 或单帧 SSE `event: message`，回显 `MCP-Protocol-Version`，**不签发 `Mcp-Session-Id`**（无状态服务器）。新增 `GET /api/mcp` → 405（本服务无服务端推送通知）。
+  - `tools/call` 支持可选 `runMode: "sync"|"queued"`（默认 sync，原同步行为不变）。`queued` 创建**一个** ToolRun 经 `TaskExecutor` 入队并立即返回 `{runId,status:"QUEUED",url}`，不等待、不产生子 run、不引入隐藏 worker tool id。
+  - 新增 MCP 原生 platform 工具 `logagent.runs.get` / `logagent.runs.result`：`call_tool` 直接读 `TaskStore`，**不创建 ToolRun**，避免轮询污染 run history。
+- `server/src/domain/models.rs`：`ToolDescriptor` 新增 `platform: bool`（`#[serde(default)]`），标记 side-effect-free 查询工具，`tools/list` 以 `runnable || platform` 过滤。
+- `server/src/services/tools.rs`：新增 `platform_run_descriptors()`（`logagent.runs.get/result`，`platform=true`、`runnable=false`、`read_only=true`），接入 `descriptors()` / `get_descriptor()`；所有现有 ToolDescriptor 构造点补 `platform: false`。
+- `server/src/support/config.rs`：`McpSettings` / `McpConfig` 新增 `allowed_origins`；`resolve_mcp` 透传。
+- `server/src/mcp_server.rs`：`check_origin` 按 `mcp.allowed_origins` 校验 `Origin`（空列表跳过；无 Origin 头放行；非浏览器/隧道场景不受限）。
+- `server/src/main.rs`：`cors_layer` 接受 `allowed_origins`，非空时收紧 CORS 到指定来源（替代无条件 `allow_origin(Any)`）。
+- `server/src/http/mod.rs`：`/api/mcp` 增加 `GET`（405）。
+- 文档：`server/SPEC.md` MCP 章节更新。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（109 通过）均通过；新增 4 个 mcp_server 测试（queued 可轮询、platform 工具不建 run 记录、streamable JSON/SSE/protocol-version、Origin 拒绝）。本地 `curl` 冒烟：initialize 返回 JSON + 回显 protocol-version、`tools/list` 含 `runs.*`、`Accept: text/event-stream` 返回 SSE、GET 返回 405。
+
 ## 2026-06-23 GeminiDB Influx tool 组按官方 API 文档修整
 
 目标：用户指出现有 GeminiDB Influx tools 的请求路径和参数曾由其他模型猜测生成，不可信；本次按 HuaweiCloud NoSQL API v3 实例管理官方文档重新核对并修整。参考页面：实例管理索引 `topic_300000002.html`，创建/删除/查询/改名/SSL/重启分别为 `nosql_05_0014.html`、`nosql_05_0015.html`、`nosql_05_0016.html`、`nosql_05_0102.html`、`nosql_05_0107.html`、`nosql_05_0108.html`（用户给的 `nosql_05_0007.html` 是“如何调用 API”，用于确认调用方式/鉴权背景）。

@@ -95,8 +95,13 @@ WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
 
 ## MCP
 
-MCP endpoint 可以先使用 HTTP JSON-RPC，后续可增加 stdio。MCP tools 必须复用 Tool Runner 和各能力模块，不得另开执行通道。
+MCP endpoint 支持两种传输：HTTP（`POST /api/mcp`，stateless streamable-http：按 `Accept` 返回 `application/json` 或单帧 SSE `event: message`，回显 `MCP-Protocol-Version`，不签发 `Mcp-Session-Id`）和 stdio（`mcp-serve` 子命令）。MCP tools 必须复用 Tool Runner 和各能力模块，不得另开执行通道。
 `mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
+跨域：`mcp.allowed_origins` 非空时校验 `Origin`（仅放行列表内来源，浏览器跨域请求拒绝；无 `Origin` 头的非浏览器/隧道客户端始终放行）；为空则不校验（localhost / SSH 隧道场景）。Windows 远程连 Linux 优先 SSH 隧道；直接暴露需 TLS + API key + `allowed_origins`。
+
+`tools/call` 支持可选 `runMode: "sync"|"queued"`（默认 `sync`）。`queued` 创建一个 `ToolRun` 经 `TaskExecutor` 入队并立即返回 `{runId, status:"QUEUED", url}`，不等待执行；长任务用 `queued`，再用 `logagent.runs.get` / `logagent.runs.result` 轮询。
+
+`logagent.runs.get` / `logagent.runs.result` 是 MCP 原生 platform 工具（`ToolDescriptor.platform=true`，`runnable=false`）：`tools/call` 直接读 `TaskStore`，**不创建 ToolRun**，避免轮询污染 run history。HTTP 端等价能力仍由 `/api/runs/*` 提供。
 
 最低方法：
 

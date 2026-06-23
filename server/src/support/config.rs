@@ -301,11 +301,18 @@ impl Default for RemoteExecutionSettings {
 #[derive(Debug, Clone)]
 pub struct McpSettings {
     pub enabled: bool,
+    /// When non-empty, cross-origin browser requests to `POST /api/mcp` are rejected
+    /// unless their `Origin` header is in this list (tightens CORS for direct remote
+    /// exposure). Empty ⇒ check disabled (localhost / SSH-tunnel usage).
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for McpSettings {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            allowed_origins: Vec::new(),
+        }
     }
 }
 
@@ -533,6 +540,8 @@ struct McpConfig {
     enabled: bool,
     #[serde(default = "default_mcp_transport")]
     transport: String,
+    #[serde(default)]
+    allowed_origins: Vec<String>,
 }
 
 impl AppConfig {
@@ -723,6 +732,7 @@ fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
     }
     Ok(McpSettings {
         enabled: raw.enabled,
+        allowed_origins: raw.allowed_origins,
     })
 }
 
@@ -1330,6 +1340,7 @@ fn default_mcp_config() -> McpConfig {
     McpConfig {
         enabled: default_mcp_enabled(),
         transport: default_mcp_transport(),
+        allowed_origins: Vec::new(),
     }
 }
 
@@ -1537,6 +1548,7 @@ mod tests {
         assert!(resolve_mcp(McpConfig {
             enabled: true,
             transport: "http".to_string(),
+            allowed_origins: Vec::new(),
         })
         .unwrap_err()
         .to_string()

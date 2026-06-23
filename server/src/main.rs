@@ -10,7 +10,7 @@ mod support;
 use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
-use axum::Router;
+use axum::{http::HeaderValue, Router};
 use clap::{Parser, Subcommand};
 use tokio::net::TcpListener;
 use tower_http::{
@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .merge(http::router(state.clone()))
         .fallback_service(ServeDir::new("webui/out").append_index_html_on_directories(true))
-        .layer(cors_layer())
+        .layer(cors_layer(&state.config.mcp.allowed_origins))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
@@ -92,9 +92,18 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
-fn cors_layer() -> CorsLayer {
-    CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any)
+/// CORS layer. When `mcp.allowed_origins` is empty, origins are unrestricted
+/// (localhost dev / SSH-tunnel use). When populated (direct remote MCP exposure),
+/// CORS is tightened to only those origins so browser-based MCP clients are scoped.
+fn cors_layer(allowed_origins: &[String]) -> CorsLayer {
+    let cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    if allowed_origins.is_empty() {
+        cors.allow_origin(Any)
+    } else {
+        let origins: Vec<HeaderValue> = allowed_origins
+            .iter()
+            .filter_map(|origin| HeaderValue::from_str(origin).ok())
+            .collect();
+        cors.allow_origin(origins)
+    }
 }

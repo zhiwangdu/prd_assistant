@@ -46,6 +46,68 @@ pub const BATCH_INFLUXQL_ANALYSIS_ID: &str = "logagent.batch_influxql_analysis";
 /// The configured analyzer binary this orchestrator drives.
 const INFLUXQL_ANALYZER_ID: &str = "influxql_analyzer";
 
+/// MCP-native platform tool ids. Side-effect-free run queries served directly from
+/// `TaskStore` (no `ToolRun` created) — see `mcp_server::platform_tool_result`.
+pub const RUNS_GET_ID: &str = "logagent.runs.get";
+pub const RUNS_RESULT_ID: &str = "logagent.runs.result";
+
+fn platform_run_descriptors() -> Vec<ToolDescriptor> {
+    let tags = vec![
+        "built-in".to_string(),
+        "platform".to_string(),
+        "runs".to_string(),
+        "read-only".to_string(),
+    ];
+    let params_schema = serde_json::json!({
+        "type": "object",
+        "properties": { "runId": { "type": "string" } },
+        "required": ["runId"]
+    });
+    let params_template = serde_json::json!({ "runId": "" });
+    vec![
+        ToolDescriptor {
+            tool_id: RUNS_GET_ID.to_string(),
+            display_name: "Runs: get status".to_string(),
+            description: "Read one run's status by runId. MCP-native and side-effect-free: no run record is created, so polling does not pollute run history. Use after a runMode:'queued' tools/call.".to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: false,
+            platform: true,
+            tags: tags.clone(),
+            backend: "platform".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema: params_schema.clone(),
+            params_template: params_template.clone(),
+            output_views: vec!["json".to_string()],
+        },
+        ToolDescriptor {
+            tool_id: RUNS_RESULT_ID.to_string(),
+            display_name: "Runs: get result".to_string(),
+            description: "Read one successful run's structured result by runId. MCP-native and side-effect-free: no run record is created.".to_string(),
+            enabled: true,
+            source: ToolSource::BuiltIn,
+            read_only: true,
+            editable: false,
+            exportable: false,
+            runnable: false,
+            platform: true,
+            tags,
+            backend: "platform".to_string(),
+            accepted_suffixes: Vec::new(),
+            min_files: 0,
+            max_files: 0,
+            params_schema,
+            params_template,
+            output_views: vec!["json".to_string()],
+        },
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PprofParams {
@@ -136,6 +198,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     descriptors.push(fetch_descriptor(config));
     descriptors.push(huawei_package_sync_descriptor(config));
     descriptors.extend(gemini_db::descriptors(config));
+    descriptors.extend(platform_run_descriptors());
     descriptors
 }
 
@@ -155,6 +218,11 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     }
     if let Some(descriptor) = gemini_db::get_descriptor(config, tool_id) {
         return Some(descriptor);
+    }
+    if tool_id == RUNS_GET_ID || tool_id == RUNS_RESULT_ID {
+        return platform_run_descriptors()
+            .into_iter()
+            .find(|descriptor| descriptor.tool_id == tool_id);
     }
     metadata_descriptors()
         .into_iter()
@@ -306,6 +374,7 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
 fn preprocess_log_package_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         tool_id: PREPROCESS_LOG_PACKAGE_ID.to_string(),
+        platform: false,
         display_name: "Log package preprocessor".to_string(),
         description:
             "Expand node log packages, normalize rotated logs, and materialize analyzer inputs."
@@ -350,6 +419,7 @@ fn batch_influxql_analysis_descriptor(config: &AppConfig) -> ToolDescriptor {
         .unwrap_or(false);
     ToolDescriptor {
         tool_id: BATCH_INFLUXQL_ANALYSIS_ID.to_string(),
+        platform: false,
         display_name: "Batch InfluxQL log analysis".to_string(),
         description: "Upload a batch of node log packages, unpack + preprocess, and run the InfluxQL analyzer across every materialized query input."
             .to_string(),
@@ -396,6 +466,7 @@ fn pprof_descriptor(config: &AppConfig) -> ToolDescriptor {
         .unwrap_or(false);
     ToolDescriptor {
         tool_id: PPROF_ANALYZER_ID.to_string(),
+        platform: false,
         display_name: "Golang pprof Analyzer".to_string(),
         description: "Upload a Go pprof profile and inspect top functions plus raw/tree output."
             .to_string(),
@@ -438,6 +509,7 @@ fn pprof_descriptor(config: &AppConfig) -> ToolDescriptor {
 fn configured_tool_descriptor(tool: &ToolSettings) -> ToolDescriptor {
     ToolDescriptor {
         tool_id: tool.name.clone(),
+        platform: false,
         display_name: display_name_from_id(&tool.name),
         description: format!(
             "Configured Tool Runner command with up to {} input file(s).",
@@ -498,6 +570,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
     vec![
         ToolDescriptor {
             tool_id: METADATA_LIST_INSTANCES_ID.to_string(),
+            platform: false,
             display_name: "Metadata instances".to_string(),
             description: "List imported metadata instance summaries.".to_string(),
             enabled: true,
@@ -520,6 +593,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
         },
         ToolDescriptor {
             tool_id: METADATA_GET_SNAPSHOT_ID.to_string(),
+            platform: false,
             display_name: "Metadata snapshot".to_string(),
             description: "Read one imported metadata snapshot by instance id.".to_string(),
             enabled: true,
@@ -547,6 +621,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
         },
         ToolDescriptor {
             tool_id: METADATA_GET_FIELD_TYPES_ID.to_string(),
+            platform: false,
             display_name: "Metadata field types".to_string(),
             description:
                 "Look up field type metadata for one imported instance, database and measurement."
@@ -593,6 +668,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
         },
         ToolDescriptor {
             tool_id: METADATA_GET_TAG_FIELDS_ID.to_string(),
+            platform: false,
             display_name: "Metadata tag fields".to_string(),
             description:
                 "List Tag type fields for one imported instance, database and measurement."
@@ -632,6 +708,7 @@ fn metadata_descriptors() -> Vec<ToolDescriptor> {
 fn fetch_descriptor(config: &AppConfig) -> ToolDescriptor {
     ToolDescriptor {
         tool_id: FETCH_TOOL_ID.to_string(),
+        platform: false,
         display_name: "Fetch endpoint".to_string(),
         description: "Run a managed HTTP endpoint imported from a browser DevTools curl command."
             .to_string(),
@@ -680,6 +757,7 @@ fn huawei_package_sync_descriptor(config: &AppConfig) -> ToolDescriptor {
     let enabled = config.huawei_cloud.package_sync.enabled;
     ToolDescriptor {
         tool_id: HUAWEI_PACKAGE_SYNC_TOOL_ID.to_string(),
+        platform: false,
         display_name: "Huawei OBS + GaussDB Package Sync".to_string(),
         description:
             "Upload one package to Huawei OBS, execute a GaussDB update SQL, then query OBS/GaussDB summary."

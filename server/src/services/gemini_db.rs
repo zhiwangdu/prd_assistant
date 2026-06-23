@@ -1048,6 +1048,7 @@ fn base_descriptor(
         editable: false,
         exportable: false,
         runnable: enabled,
+        platform: false,
         tags: common_tags(),
         backend: "gemini_db_influx".to_string(),
         accepted_suffixes: Vec::new(),

@@ -91,6 +91,11 @@ pub struct ToolDescriptor {
     pub editable: bool,
     pub exportable: bool,
     pub runnable: bool,
+    /// Side-effect-free MCP-native platform tools (e.g. `logagent.runs.get`).
+    /// Advertised in `tools/list` but bypass the Tool Runner: `tools/call` serves
+    /// them directly (no `ToolRun` is created, so polling does not pollute history).
+    #[serde(default)]
+    pub platform: bool,
     pub tags: Vec<String>,
     pub backend: String,
     pub accepted_suffixes: Vec<String>,
