@@ -112,7 +112,7 @@ type FetchPreview = {
 // ("configured"/"manual-run"/"tool-runner"/"external" always clump), so we
 // derive a clean category from tags + toolId + backend instead of grouping by
 // raw tags.
-const CATEGORY_ORDER = ["analyzers", "metadata", "fetch", "sync", "other"] as const;
+const CATEGORY_ORDER = ["analyzers", "metadata", "fetch", "sync", "gemini", "other"] as const;
 type Category = (typeof CATEGORY_ORDER)[number];
 
 function categoryOf(tool: ToolDescriptor): Category {
@@ -120,6 +120,7 @@ function categoryOf(tool: ToolDescriptor): Category {
   const id = tool.toolId.toLowerCase();
   if (tags.includes("metadata")) return "metadata";
   if (tags.includes("fetch") || tool.backend === "fetch") return "fetch";
+  if (tags.includes("gemini-db") || tool.backend === "gemini_db_influx") return "gemini";
   if (id.includes("sync") || id.includes("huawei")) return "sync";
   if (tags.includes("log") || id.includes("analyzer") || id.includes("pprof") || id.includes("preprocess")) return "analyzers";
   return "other";
@@ -135,6 +136,8 @@ function categoryLabel(category: Category, copy: ToolsCopy): string {
       return copy.groupFetch;
     case "sync":
       return copy.groupSync;
+    case "gemini":
+      return copy.groupGemini;
     default:
       return copy.groupOther;
   }

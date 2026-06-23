@@ -22,6 +22,7 @@ use crate::{
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
     services::fetch::{FetchRunParams, FETCH_TOOL_ID},
+    services::gemini_db,
     services::huawei_package_sync::{
         validate_params as validate_huawei_package_sync_params, HUAWEI_PACKAGE_SYNC_TOOL_ID,
     },
@@ -134,6 +135,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     descriptors.extend(metadata_descriptors());
     descriptors.push(fetch_descriptor(config));
     descriptors.push(huawei_package_sync_descriptor(config));
+    descriptors.extend(gemini_db::descriptors(config));
     descriptors
 }
 
@@ -150,6 +152,9 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     }
     if tool_id == BATCH_INFLUXQL_ANALYSIS_ID {
         return Some(batch_influxql_analysis_descriptor(config));
+    }
+    if let Some(descriptor) = gemini_db::get_descriptor(config, tool_id) {
+        return Some(descriptor);
     }
     metadata_descriptors()
         .into_iter()
@@ -199,6 +204,9 @@ pub fn validate_tool_run_request(
         METADATA_GET_TAG_FIELDS_ID => validate_metadata_tag_fields_params(params),
         FETCH_TOOL_ID => validate_fetch_params(config, params),
         HUAWEI_PACKAGE_SYNC_TOOL_ID => validate_huawei_package_sync_run_params(config, params),
+        id if gemini_db::is_gemini_db_tool(id) => {
+            gemini_db::validate_run_params(config, id, params)
+        }
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
@@ -283,6 +291,9 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
         Some(FETCH_TOOL_ID) => crate::services::fetch::run_fetch_task(state, task).await,
         Some(HUAWEI_PACKAGE_SYNC_TOOL_ID) => {
             crate::services::huawei_package_sync::run_huawei_package_sync_task(state, task).await
+        }
+        Some(tool_id) if gemini_db::is_gemini_db_tool(tool_id) => {
+            gemini_db::run_gemini_db_task(state, task).await
         }
         Some(tool_id) if state.config.tools.tools.contains_key(tool_id) => {
             run_configured_tool_task(state, task).await

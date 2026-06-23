@@ -79,7 +79,7 @@ unavailableReason
 
 WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
 
-`examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、metadata ×4、fetch、huawei package sync）始终在 catalog 中，按各自子系统开关启用。
+`examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、batch influxql、metadata ×4、fetch、huawei package sync、GeminiDB Influx 实例管理 ×6：create/delete/list/rename/toggle_ssl/restart）始终在 catalog 中，按各自子系统开关启用。GeminiDB Influx 工具组用 `X-Auth-Token` 鉴权（token 仅来自 env），endpoint/projectId 支持配置默认 + 每次运行 params 覆盖，create/toggle_ssl/restart 的请求体透传调用方 body。
 
 ## Tool Runner
 

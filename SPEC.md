@@ -126,6 +126,12 @@ logagent.query_metadata
 logagent.search_code
 logagent.run_executor_template
 logagent.search_cases
+logagent.geminidb.create_instance
+logagent.geminidb.delete_instance
+logagent.geminidb.list_instances
+logagent.geminidb.rename_instance
+logagent.geminidb.toggle_ssl
+logagent.geminidb.restart_instance
 ```
 
 ## 配置

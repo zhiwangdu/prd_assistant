@@ -12,6 +12,23 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 GeminiDB Influx 实例管理内置 tool 组 + Skill
+
+目标：参考华为云 NoSQL(GeminiDB Influx) API，实现一组 6 个实例生命周期管理内置 tool（创建/删除/查询列表详情/改名/切换 SSL/重启实例或节点），在 catalog 中单独归为「GeminiDB Influx」一组；请求 endpoint 支持灵活动态配置（配置默认 + 每次运行可覆盖）。鉴权用 `X-Auth-Token`（仅从环境变量读）。文档 URL 在本环境被 WAF 拦截无法在线核实，故 create/SSL/restart 的请求体**透传**调用方按文档传入的 body，工具只负责 method+路径+鉴权+endpoint 解析，避免字段名猜错。
+
+- 新增自包含服务模块 `server/src/services/gemini_db.rs`：
+  - 6 个 tool id（`logagent.geminidb.{create,delete,list,rename,toggle_ssl,restart}_instance`）；`descriptors(config)`/`get_descriptor()` 产出 6 个 `ToolDescriptor`，`enabled`/`runnable` 跟随 `huawei_cloud.gemini_db.enabled`，默认 disabled 灰显；`backend="gemini_db_influx"`、`tags=[built-in,huawei-cloud,gemini-db,manual-run]`、`min_files=0/max_files=0`。
+  - `validate_run_params`：按工具校验（instanceId 必填且仅 `[A-Za-z0-9_-]`、create/toggle_ssl 的 body 必须是对象、rename 的 name 必填、list 过滤项全可选且拒 body、restart body 可选）；`endpoint`/`projectId` 覆盖项非空时校验（endpoint 走 http/https+host+无 path/凭据/query 的 SSRF 校验，projectId 仅 `[A-Za-z0-9_-]`）。
+  - `run_gemini_db_task`：解析 endpoint（params 覆盖 > 配置默认）、projectId（同）、auth_token（仅配置/env），`build_plan` 构造 method+path（`/v3/{pid}/instances[/{id}[/name|/ssl|/restart]]`）+query+body，trait `GeminiDbHttpClient`（真实实现注入 `X-Auth-Token`+`Content-Type`，单测用 Fake）发送；结果 `result.json`（`write_json_atomic`）：`status`(HTTP 2xx→OK)/`http`/`request.body`(脱敏)/`response.body`(截断 64KiB)/`endpoint`/`credentialMetadata.authTokenEnv`/`timings`。**脱敏**：存储的 request body 对 `password`/`secret`/`token`/`ak`/`sk` 等键替换为 `<redacted>`；token 绝不入 params/logs/result。
+- `server/src/services/tools.rs`：`descriptors()` extend、`get_descriptor()` 解析、`validate_tool_run_request` 与 `run_tool_task` 增加 `gemini_db` 分派（`is_gemini_db_tool` 守卫）；`services/mod.rs` 加 `pub mod gemini_db`。无 HTTP handler/MCP 改动——经 `descriptors()` 自动出现在 `/api/tools`、MCP `tools/list`、WebUI catalog。
+- `server/src/support/config.rs`：新增 `GeminiDbSettings`（enabled/timeout_seconds/endpoint/project_id/project_id_env/auth_token_env/auth_token/region）+ `Default`(disabled) + `Debug`(token 脱敏)；`HuaweiCloudSettings` 加 `gemini_db` 字段；raw `GeminiDbConfig` + `HuaweiCloudConfig.gemini_db`；`resolve_gemini_db`（enabled 时校验 endpoint URL、project_id 取值或 env、`auth_token_env` 必填并 `resolve_required_env`）；default/timeout 函数；config 单测（enabled 门控、缺 endpoint/缺 token 报错、endpoint 带 path 报错、project_id 走 env）。
+- `examples/logagent.yaml`：`huawei_cloud.gemini_db` 禁用示例块（endpoint/project_id_env/auth_token_env/timeout/region）。
+- WebUI：`ToolsView.tsx` `CATEGORY_ORDER` 加 `gemini`，`categoryOf`（tag `gemini-db` 或 `backend==="gemini_db_influx"` → gemini）+ `categoryLabel`；`i18n.ts` 两语言加 `groupGemini: "GeminiDB Influx"`。
+- 新增 managed Skill `skills/geminidb-influx-instance-mgmt/`（`SKILL.md` + `logagent.json` + `references/api-fields.md`）：runbook（前置条件、6 工具、endpoint 动态覆盖、body 透传、读结果、安全）+ 各操作最佳已知请求体字段（附文档 URL，注明以线上文档为准）；`toolIds` 含 6 个工具，`skills.roots: ["skills"]` 自动加载。
+- 单测：`gemini_db::tests`（descriptor 列表/门控、各 validate 分支、build_plan 的 method/path/query、FakeHttpClient 下 create/delete/list 落 `result.json` 且 status/方法/路径/转发的 body 正确、非 2xx→FAILED、password 脱敏且转发 body 仍含明文、token 不入结果）+ config 2 个新测试。
+- 文档：`SPEC.md` 工具示例列表加 6 个 `logagent.geminidb.*`；本条 PROGRESS。
+- 验证：`cargo fmt --check`、`cargo test -p logagent-server`（105 通过）；`webui` `npm run lint`/`typecheck`/`build` 通过。（真实联通由启用 config + 设 token env 后跑 `list_instances` 手测覆盖。）
+
 ## 2026-06-23 批量 InfluxQL 日志分析内置 tool + Skill
 
 目标：把「上传日志 -> 解包/预处理 -> influxql analyzer 分析」做成一个可发现、可批量的一键工具，并配一个内置 Skill 作为 runbook。现状该流程隐式存在但埋在 `influxql_analyzer`（configured，默认 disabled，`max_input_files: 3`）里，无批量入口。

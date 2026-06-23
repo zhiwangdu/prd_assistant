@@ -1,4 +1,5 @@
 pub mod fetch;
+pub mod gemini_db;
 pub mod huawei_package_sync;
 pub mod log_analyzer;
 pub mod metadata;

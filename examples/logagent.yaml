@@ -186,6 +186,17 @@ huawei_cloud:
       user: "gaussdb"
       password_env: "LOGAGENT_HUAWEI_GAUSSDB_PASSWORD"
       sslmode: "disable"
+  # GeminiDB Influx (NoSQL) instance-management tools: create / delete / list /
+  # rename / toggle-SSL / restart. Disabled by default. endpoint + project_id are
+  # config defaults and may be overridden per run via each tool's params; the
+  # X-Auth-Token is read from env only. See skills/geminidb-influx-instance-mgmt.
+  gemini_db:
+    enabled: false
+    timeout_seconds: 60
+    endpoint: "https://nosql.cn-north-4.myhuaweicloud.com"
+    project_id_env: "LOGAGENT_HUAWEI_GEMINI_DB_PROJECT_ID"
+    auth_token_env: "LOGAGENT_HUAWEI_GEMINI_DB_TOKEN"
+    region: "cn-north-4"
 
 mcp:
   enabled: true

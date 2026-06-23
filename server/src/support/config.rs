@@ -113,6 +113,7 @@ impl Default for FetchSettings {
 #[derive(Debug, Clone, Default)]
 pub struct HuaweiCloudSettings {
     pub package_sync: HuaweiPackageSyncSettings,
+    pub gemini_db: GeminiDbSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +210,55 @@ impl std::fmt::Debug for HuaweiGaussDbSettings {
             .field("password_env", &self.password_env)
             .field("password", &self.password.as_ref().map(|_| "<redacted>"))
             .field("sslmode", &self.sslmode)
+            .finish()
+    }
+}
+
+/// GeminiDB Influx (NoSQL) instance-management API settings. The endpoint and
+/// project id are configurable here as defaults and may be overridden per tool
+/// run via the tool params; the auth token is resolved from env only.
+#[derive(Clone)]
+pub struct GeminiDbSettings {
+    pub enabled: bool,
+    pub timeout_seconds: u64,
+    pub endpoint: String,
+    pub project_id: String,
+    pub project_id_env: Option<String>,
+    pub auth_token_env: Option<String>,
+    pub auth_token: Option<String>,
+    pub region: String,
+}
+
+impl Default for GeminiDbSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            timeout_seconds: default_gemini_db_timeout(),
+            endpoint: String::new(),
+            project_id: String::new(),
+            project_id_env: None,
+            auth_token_env: None,
+            auth_token: None,
+            region: String::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for GeminiDbSettings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GeminiDbSettings")
+            .field("enabled", &self.enabled)
+            .field("timeout_seconds", &self.timeout_seconds)
+            .field("endpoint", &self.endpoint)
+            .field("project_id", &self.project_id)
+            .field("project_id_env", &self.project_id_env)
+            .field("auth_token_env", &self.auth_token_env)
+            .field(
+                "auth_token",
+                &self.auth_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("region", &self.region)
             .finish()
     }
 }
@@ -376,6 +426,24 @@ struct FetchConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 struct HuaweiCloudConfig {
     package_sync: Option<HuaweiPackageSyncConfig>,
+    #[serde(default)]
+    gemini_db: Option<GeminiDbConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GeminiDbConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_gemini_db_timeout")]
+    timeout_seconds: u64,
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    project_id: String,
+    project_id_env: Option<String>,
+    auth_token_env: Option<String>,
+    #[serde(default)]
+    region: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -709,7 +777,72 @@ fn resolve_huawei_cloud(raw: HuaweiCloudConfig) -> anyhow::Result<HuaweiCloudSet
         raw.package_sync
             .unwrap_or_else(default_huawei_package_sync_config),
     )?;
-    Ok(HuaweiCloudSettings { package_sync })
+    let gemini_db = resolve_gemini_db(raw.gemini_db.unwrap_or_else(default_gemini_db_config))?;
+    Ok(HuaweiCloudSettings {
+        package_sync,
+        gemini_db,
+    })
+}
+
+fn resolve_gemini_db(raw: GeminiDbConfig) -> anyhow::Result<GeminiDbSettings> {
+    let enabled = raw.enabled;
+    let endpoint = raw.endpoint.trim().trim_end_matches('/').to_string();
+    let project_id = raw.project_id.trim().to_string();
+    let project_id_env = non_empty_optional(raw.project_id_env);
+    let auth_token_env = non_empty_optional(raw.auth_token_env);
+    let region = raw.region.trim().to_string();
+
+    let (resolved_project_id, auth_token) = if enabled {
+        if endpoint.is_empty() {
+            anyhow::bail!("huawei_cloud.gemini_db.endpoint is required when enabled");
+        }
+        let parsed_endpoint = reqwest::Url::parse(&endpoint)
+            .with_context(|| format!("invalid GeminiDB endpoint {endpoint}"))?;
+        if !matches!(parsed_endpoint.scheme(), "http" | "https") {
+            anyhow::bail!("huawei_cloud.gemini_db.endpoint must use http or https");
+        }
+        if parsed_endpoint.host_str().is_none() {
+            anyhow::bail!("huawei_cloud.gemini_db.endpoint must include host");
+        }
+        if parsed_endpoint.path() != "/" {
+            anyhow::bail!("huawei_cloud.gemini_db.endpoint must not include a path");
+        }
+        if !parsed_endpoint.username().is_empty()
+            || parsed_endpoint.password().is_some()
+            || parsed_endpoint.query().is_some()
+            || parsed_endpoint.fragment().is_some()
+        {
+            anyhow::bail!(
+                "huawei_cloud.gemini_db.endpoint must not include credentials, query, or fragment"
+            );
+        }
+        let resolved_project_id = if !project_id.is_empty() {
+            project_id.clone()
+        } else {
+            let env_name = project_id_env.as_deref().context(
+                "huawei_cloud.gemini_db.project_id or project_id_env is required when enabled",
+            )?;
+            resolve_required_env(env_name, "GeminiDB project id")?
+        };
+        let auth_token_env = auth_token_env
+            .as_deref()
+            .context("huawei_cloud.gemini_db.auth_token_env is required when enabled")?;
+        let auth_token = resolve_required_env(auth_token_env, "GeminiDB auth token")?;
+        (resolved_project_id, Some(auth_token))
+    } else {
+        (String::new(), None)
+    };
+
+    Ok(GeminiDbSettings {
+        enabled,
+        timeout_seconds: raw.timeout_seconds.max(1),
+        endpoint,
+        project_id: resolved_project_id,
+        project_id_env,
+        auth_token_env,
+        auth_token,
+        region,
+    })
 }
 
 fn resolve_huawei_package_sync(
@@ -1168,6 +1301,19 @@ fn default_fetch_config() -> FetchConfig {
 fn default_huawei_cloud_config() -> HuaweiCloudConfig {
     HuaweiCloudConfig {
         package_sync: Some(default_huawei_package_sync_config()),
+        gemini_db: Some(default_gemini_db_config()),
+    }
+}
+
+fn default_gemini_db_config() -> GeminiDbConfig {
+    GeminiDbConfig {
+        enabled: false,
+        timeout_seconds: default_gemini_db_timeout(),
+        endpoint: String::new(),
+        project_id: String::new(),
+        project_id_env: None,
+        auth_token_env: None,
+        region: String::new(),
     }
 }
 
@@ -1232,6 +1378,10 @@ fn default_fetch_max_redirects() -> usize {
 }
 
 fn default_huawei_package_sync_timeout() -> u64 {
+    60
+}
+
+fn default_gemini_db_timeout() -> u64 {
     60
 }
 
@@ -1763,6 +1913,105 @@ huawei_cloud:
         assert!(validate_huawei_object_key("prefix/pkg.tar.gz").is_ok());
         assert!(validate_huawei_object_key("../pkg.tar.gz").is_err());
         assert!(validate_huawei_object_key("prefix//pkg.tar.gz").is_err());
+    }
+
+    #[test]
+    fn resolves_gemini_db_config_only_when_enabled() {
+        let disabled = serde_yaml::from_str::<ConfigFile>(
+            r#"
+huawei_cloud:
+  gemini_db:
+    enabled: false
+    auth_token_env: LOGAGENT_TEST_MISSING_GEMINI_TOKEN
+"#,
+        )
+        .unwrap();
+        let settings = resolve_huawei_cloud(disabled.huawei_cloud.unwrap()).unwrap();
+        assert!(!settings.gemini_db.enabled);
+        assert!(settings.gemini_db.auth_token.is_none());
+        assert!(settings.gemini_db.project_id.is_empty());
+
+        temp_env_set("LOGAGENT_TEST_GEMINI_TOKEN", "tok", || {
+            temp_env_set("LOGAGENT_TEST_GEMINI_PID", "pid-123", || {
+                let enabled = serde_yaml::from_str::<ConfigFile>(
+                    r#"
+huawei_cloud:
+  gemini_db:
+    enabled: true
+    timeout_seconds: 9
+    endpoint: "https://nosql.cn-north-4.myhuaweicloud.com"
+    project_id_env: LOGAGENT_TEST_GEMINI_PID
+    auth_token_env: LOGAGENT_TEST_GEMINI_TOKEN
+    region: "cn-north-4"
+"#,
+                )
+                .unwrap();
+                let settings = resolve_huawei_cloud(enabled.huawei_cloud.unwrap()).unwrap();
+                let gemini = settings.gemini_db;
+                assert!(gemini.enabled);
+                assert_eq!(gemini.timeout_seconds, 9);
+                assert_eq!(
+                    gemini.endpoint,
+                    "https://nosql.cn-north-4.myhuaweicloud.com"
+                );
+                assert_eq!(gemini.project_id, "pid-123");
+                assert_eq!(gemini.auth_token.as_deref(), Some("tok"));
+                assert_eq!(gemini.region, "cn-north-4");
+            });
+        });
+    }
+
+    #[test]
+    fn rejects_invalid_gemini_db_config() {
+        let missing_endpoint = serde_yaml::from_str::<ConfigFile>(
+            r#"
+huawei_cloud:
+  gemini_db:
+    enabled: true
+    project_id: "pid"
+    auth_token_env: LOGAGENT_TEST_MISSING_GEMINI_TOKEN
+"#,
+        )
+        .unwrap();
+        assert!(resolve_huawei_cloud(missing_endpoint.huawei_cloud.unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("endpoint is required"));
+
+        temp_env_set("LOGAGENT_TEST_GEMINI_TOKEN2", "tok", || {
+            let endpoint_with_path = serde_yaml::from_str::<ConfigFile>(
+                r#"
+huawei_cloud:
+  gemini_db:
+    enabled: true
+    endpoint: "https://nosql.cn-north-4.myhuaweicloud.com/v3"
+    project_id: "pid"
+    auth_token_env: LOGAGENT_TEST_GEMINI_TOKEN2
+"#,
+            )
+            .unwrap();
+            assert!(
+                resolve_huawei_cloud(endpoint_with_path.huawei_cloud.unwrap())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("must not include a path")
+            );
+
+            let missing_token = serde_yaml::from_str::<ConfigFile>(
+                r#"
+huawei_cloud:
+  gemini_db:
+    enabled: true
+    endpoint: "https://nosql.cn-north-4.myhuaweicloud.com"
+    project_id: "pid"
+"#,
+            )
+            .unwrap();
+            assert!(resolve_huawei_cloud(missing_token.huawei_cloud.unwrap())
+                .unwrap_err()
+                .to_string()
+                .contains("auth_token_env is required"));
+        });
     }
 
     fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {

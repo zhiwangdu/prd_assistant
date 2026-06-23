@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "skillId": "geminidb-influx-instance-mgmt",
+  "displayName": "GeminiDB Influx instance management",
+  "products": ["geminidb", "influxdb"],
+  "toolIds": [
+    "logagent.geminidb.create_instance",
+    "logagent.geminidb.delete_instance",
+    "logagent.geminidb.list_instances",
+    "logagent.geminidb.rename_instance",
+    "logagent.geminidb.toggle_ssl",
+    "logagent.geminidb.restart_instance"
+  ],
+  "includeByDefault": true,
+  "priority": 50,
+  "maxPromptChars": 4000,
+  "references": [
+    {
+      "path": "references/api-fields.md",
+      "title": "GeminiDB Influx API request fields",
+      "summary": "Best-known request body fields per operation (create/ssl/restart) and path/query params, with the HuaweiCloud NoSQL API doc URLs to verify against."
+    }
+  ]
+}
