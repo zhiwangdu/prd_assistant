@@ -12,6 +12,15 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 Server config：dev_selftest 禁用态不再阻断启动
+
+目标：修复 Server 启动加载配置时，即使未启用 `dev_selftest` 也会因为 `dev_selftest.docker.binary` 非绝对路径报错的问题。
+
+- `server/src/support/config.rs`：`resolve_dev_selftest` 增加启用态门控；`dev_selftest.enabled=false` 时允许保留占位 `docker.binary`，不会阻断 Server 启动；`enabled=true` 时仍要求 Docker binary / compose 等路径绝对，build/test profile 仍需完整。
+- 增加配置回归测试 `dev_selftest_disabled_allows_placeholder_docker_binary`，覆盖禁用态允许 `docker` 占位、启用态继续报错。
+- 文档同步：`server/README.md`、`server/SPEC.md`、`docs/modules/dev-selftest/README.md` 说明禁用态和启用态的校验边界。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server dev_selftest_disabled_allows_placeholder_docker_binary`、`cargo test -p logagent-server`（117 通过）、`git diff --check` 均通过；用 `/Users/duzhiwang/workspace/db/prd_assistant_v2/deploy/logagent.yaml` 启动当前二进制已越过配置加载并监听 `0.0.0.0:50992`。
+
 ## 2026-06-23 Dev self-test pipeline P1：dev_selftest 工具组 + Docker 自测闭环
 
 目标：在 P0（MCP 传输 + 异步 run 模型）之上落地开发自测流水线的第一刀可执行切片——`logagent.dev_selftest.*` 内置工具组，跑通 sync → build → deploy(docker_cluster) → run_tests(桩) → report 闭环。SSH 二进制替换（P2）和打包+云实例（P3）为后续蓝图。

@@ -151,6 +151,13 @@ tool run 的 params 中用 `endpoint` / `projectId` 覆盖配置默认值。
 `ssl_option=on|off`，重启整实例时不发送 body（传 `nodeId` 时映射为
 `node_id`）。运行结果会保存请求摘要、响应、状态码和脱敏后的 request body。
 
+## Dev Self-Test 配置门控
+
+`dev_selftest.enabled=false` 是真正的关闭态：配置中未填写或保留占位的
+`docker.binary` 不会阻断 Server 启动，整组 `logagent.dev_selftest.*` 工具保持禁用。
+只有当 `dev_selftest.enabled=true` 时，Docker binary、compose 文件和 build/test
+profile 才进入严格 allowlist 校验；执行参数仍只能选择配置好的 profile id。
+
 ## 本地运行
 
 当前 main 代码仍使用原命令，后续实现会收敛配置名：

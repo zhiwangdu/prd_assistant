@@ -117,7 +117,8 @@ tools/call
 
 开发自测流水线（P1：docker 闭环）。一组内置工具 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report），通过持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）跨多次 tool 调用串联，复用 Tool Runner 同一执行边界。`dev_selftest.enabled=false` 时整组禁用。
 
-- 所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
+- `dev_selftest.enabled=false` 时关闭整组工具，并允许配置中保留未填写或占位的 `docker.binary`，不得阻断 Server 启动。
+- `dev_selftest.enabled=true` 时，所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
 - P1 实现：tarball/git 源码同步、配置式 build + artifact glob 收集、`docker_cluster` 部署（`docker compose -p … up -d` + 声明式 health check）、**桩**测试运行器（真实 executor 分发测试框架在 P2）、规则化 report。P1 不做 health check 失败回滚（P2 的 SSH 二进制替换路径才做）。
 - `run_tests` 支持 `runMode:"queued"`：返回 `{runId,status:"QUEUED"}` 后用 `logagent.runs.get`/`runs.result` 轮询（platform 工具，不建 ToolRun）。
 - 后续：P2 参数化 executor 模板 + 受控 SCP + `ssh_binary_replace` 部署 + 真实测试分发；P3 重构 package-sync core + OBS 发布 + `geminidb.create_instance` + 轮询就绪。

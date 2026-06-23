@@ -948,8 +948,8 @@ fn resolve_mcp(raw: McpConfig) -> anyhow::Result<McpSettings> {
 
 fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSettings> {
     let enabled = raw.enabled;
-    let git = resolve_dev_selftest_git(raw.git)?;
-    let docker = resolve_dev_selftest_docker(raw.docker)?;
+    let git = resolve_dev_selftest_git(raw.git, enabled)?;
+    let docker = resolve_dev_selftest_docker(raw.docker, enabled)?;
     let builds = raw
         .builds
         .into_iter()
@@ -961,7 +961,7 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .map(|arg| arg.trim().to_string())
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>();
-            if command.is_empty() {
+            if enabled && command.is_empty() {
                 anyhow::bail!("dev_selftest.builds.{id}.command must not be empty");
             }
             let display_name = build.display_name.unwrap_or_else(|| id.clone());
@@ -988,7 +988,7 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .map(|arg| arg.trim().to_string())
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>();
-            if argv.is_empty() {
+            if enabled && argv.is_empty() {
                 anyhow::bail!("dev_selftest.test_suites.{id}.argv must not be empty");
             }
             let display_name = suite.display_name.unwrap_or_else(|| id.clone());
@@ -1014,8 +1014,11 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
     })
 }
 
-fn resolve_dev_selftest_git(raw: DevSelftestGitConfig) -> anyhow::Result<DevSelftestGitSettings> {
-    if raw.enabled && !raw.binary.is_absolute() {
+fn resolve_dev_selftest_git(
+    raw: DevSelftestGitConfig,
+    dev_selftest_enabled: bool,
+) -> anyhow::Result<DevSelftestGitSettings> {
+    if dev_selftest_enabled && raw.enabled && !raw.binary.is_absolute() {
         anyhow::bail!("dev_selftest.git.binary must be absolute when enabled");
     }
     let repos = raw
@@ -1053,8 +1056,9 @@ fn resolve_dev_selftest_git(raw: DevSelftestGitConfig) -> anyhow::Result<DevSelf
 
 fn resolve_dev_selftest_docker(
     raw: DevSelftestDockerConfig,
+    dev_selftest_enabled: bool,
 ) -> anyhow::Result<DevSelftestDockerSettings> {
-    if !raw.binary.is_absolute() {
+    if dev_selftest_enabled && !raw.binary.is_absolute() {
         anyhow::bail!("dev_selftest.docker.binary must be absolute");
     }
     let clusters = raw
@@ -1062,7 +1066,7 @@ fn resolve_dev_selftest_docker(
         .into_iter()
         .map(|(id, cluster)| {
             validate_dev_selftest_profile_id(&id)?;
-            if !cluster.compose_file.is_absolute() {
+            if dev_selftest_enabled && !cluster.compose_file.is_absolute() {
                 anyhow::bail!("dev_selftest.docker.clusters.{id}.compose_file must be absolute");
             }
             let health_check = cluster.health_check.map(|hc| {
@@ -2128,6 +2132,36 @@ tools:
                 .to_string()
                 .contains("must not be empty"));
         });
+    }
+
+    #[test]
+    fn dev_selftest_disabled_allows_placeholder_docker_binary() {
+        let disabled = serde_yaml::from_str::<ConfigFile>(
+            r#"
+dev_selftest:
+  enabled: false
+  docker:
+    binary: docker
+"#,
+        )
+        .unwrap();
+        let settings = resolve_dev_selftest(disabled.dev_selftest.unwrap()).unwrap();
+        assert!(!settings.enabled);
+        assert_eq!(settings.docker.binary, PathBuf::from("docker"));
+
+        let enabled = serde_yaml::from_str::<ConfigFile>(
+            r#"
+dev_selftest:
+  enabled: true
+  docker:
+    binary: docker
+"#,
+        )
+        .unwrap();
+        assert!(resolve_dev_selftest(enabled.dev_selftest.unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("dev_selftest.docker.binary must be absolute"));
     }
 
     #[test]
