@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "skillId": "influxql-batch-analysis",
+  "displayName": "InfluxQL batch log analysis",
+  "products": ["opengemini", "influxdb"],
+  "domainAdapters": ["opengemini_influxdb"],
+  "toolIds": [
+    "logagent.batch_influxql_analysis",
+    "influxql_analyzer",
+    "logagent.preprocess_log_package"
+  ],
+  "taskKinds": ["log_analysis"],
+  "includeByDefault": true,
+  "priority": 55,
+  "maxPromptChars": 2400,
+  "references": [
+    {
+      "path": "references/batch-result.md",
+      "title": "Batch analysis result",
+      "summary": "Shape of result.json: preprocessSummary, findings[], warnings[], status."
+    }
+  ]
+}

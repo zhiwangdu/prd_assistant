@@ -119,6 +119,7 @@ logagent://skills
 ```text
 logagent.run_tool
 logagent.preprocess_log_package
+logagent.batch_influxql_analysis
 logagent.search_logs
 logagent.fetch
 logagent.query_metadata

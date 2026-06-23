@@ -40,6 +40,10 @@ pub const METADATA_LIST_INSTANCES_ID: &str = "logagent.list_metadata_instances";
 pub const METADATA_GET_SNAPSHOT_ID: &str = "logagent.get_metadata_snapshot";
 pub const METADATA_GET_FIELD_TYPES_ID: &str = "logagent.get_metadata_field_types";
 pub const METADATA_GET_TAG_FIELDS_ID: &str = "logagent.get_metadata_tag_fields";
+/// Built-in orchestrator: batch upload -> preprocess -> InfluxQL analyzer.
+pub const BATCH_INFLUXQL_ANALYSIS_ID: &str = "logagent.batch_influxql_analysis";
+/// The configured analyzer binary this orchestrator drives.
+const INFLUXQL_ANALYZER_ID: &str = "influxql_analyzer";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,6 +130,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
         }
     }
     descriptors.push(preprocess_log_package_descriptor());
+    descriptors.push(batch_influxql_analysis_descriptor(config));
     descriptors.extend(metadata_descriptors());
     descriptors.push(fetch_descriptor(config));
     descriptors.push(huawei_package_sync_descriptor(config));
@@ -142,6 +147,9 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     }
     if tool_id == PREPROCESS_LOG_PACKAGE_ID {
         return Some(preprocess_log_package_descriptor());
+    }
+    if tool_id == BATCH_INFLUXQL_ANALYSIS_ID {
+        return Some(batch_influxql_analysis_descriptor(config));
     }
     metadata_descriptors()
         .into_iter()
@@ -184,6 +192,7 @@ pub fn validate_tool_run_request(
                 .map_err(|err| AppError::internal(format!("failed to encode pprof params: {err}")))
         }
         PREPROCESS_LOG_PACKAGE_ID => validate_preprocess_log_package_params(params),
+        BATCH_INFLUXQL_ANALYSIS_ID => validate_batch_influxql_params(params),
         METADATA_LIST_INSTANCES_ID => validate_metadata_list_params(params),
         METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
         METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
@@ -264,6 +273,7 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
     match task.tool_id.as_deref() {
         Some(PPROF_ANALYZER_ID) => run_pprof_task(state.config.clone(), task).await,
         Some(PREPROCESS_LOG_PACKAGE_ID) => run_preprocess_log_package_task(state, task).await,
+        Some(BATCH_INFLUXQL_ANALYSIS_ID) => run_batch_influxql_analysis_task(state, task).await,
         Some(
             METADATA_LIST_INSTANCES_ID
             | METADATA_GET_SNAPSHOT_ID
@@ -315,6 +325,52 @@ fn preprocess_log_package_descriptor() -> ToolDescriptor {
             "nodes".to_string(),
             "log_groups".to_string(),
             "tool_inputs".to_string(),
+            "warnings".to_string(),
+        ],
+    }
+}
+
+fn batch_influxql_analysis_descriptor(config: &AppConfig) -> ToolDescriptor {
+    let influxql_enabled = config
+        .tools
+        .tools
+        .get(INFLUXQL_ANALYZER_ID)
+        .map(|tool| tool.enabled)
+        .unwrap_or(false);
+    ToolDescriptor {
+        tool_id: BATCH_INFLUXQL_ANALYSIS_ID.to_string(),
+        display_name: "Batch InfluxQL log analysis".to_string(),
+        description: "Upload a batch of node log packages, unpack + preprocess, and run the InfluxQL analyzer across every materialized query input."
+            .to_string(),
+        enabled: influxql_enabled,
+        source: ToolSource::BuiltIn,
+        read_only: true,
+        editable: false,
+        exportable: false,
+        runnable: influxql_enabled,
+        tags: vec![
+            "built-in".to_string(),
+            "log".to_string(),
+            "influxql".to_string(),
+            "batch".to_string(),
+        ],
+        backend: "builtin".to_string(),
+        accepted_suffixes: vec![
+            ".tar.gz".to_string(),
+            ".tgz".to_string(),
+            ".tar".to_string(),
+        ],
+        min_files: 1,
+        max_files: 100,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+        params_template: serde_json::json!({}),
+        output_views: vec![
+            "summary".to_string(),
+            "preprocess".to_string(),
+            "findings".to_string(),
             "warnings".to_string(),
         ],
     }
@@ -1207,6 +1263,166 @@ async fn run_preprocess_log_package_task(
     Ok(result_path)
 }
 
+fn validate_batch_influxql_params(
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if !params.is_object() {
+        return Err(AppError::bad_request(
+            "batch influxql analysis params must be a JSON object",
+        ));
+    }
+    Ok(serde_json::json!({}))
+}
+
+/// One run: unpack + preprocess a batch of log packages, then run the InfluxQL
+/// analyzer on every materialized `tool_inputs/influxql_analyzer/*.jsonl` input.
+/// Reuses `extract_task` (preprocess) and `tool_runner.execute` (analyzer binary).
+async fn run_batch_influxql_analysis_task(
+    state: Arc<AppState>,
+    task: TaskRecord,
+) -> Result<PathBuf, AppError> {
+    // The analyzer binary must be configured and enabled; the batch tool mirrors
+    // its enabled state in the descriptor, but re-check here for direct callers.
+    state
+        .config
+        .tools
+        .tools
+        .get(INFLUXQL_ANALYZER_ID)
+        .filter(|tool| tool.enabled)
+        .ok_or_else(|| AppError::bad_request("influxql_analyzer is not configured or enabled"))?;
+    validate_batch_influxql_params(&task.tool_params)?;
+    let workspace = state.config.storage.workspace_dir(&task.task_id);
+    let started = Instant::now();
+    prepare_pipeline_run(&workspace).await?;
+    extract_task(state.config.clone(), task.clone()).await?;
+
+    let manifest: Manifest = read_json_file_sync(&workspace.join("manifest.json"))?;
+    let tool_input_index = manifest
+        .tool_inputs_path
+        .as_deref()
+        .and_then(|path| read_json_file_sync::<ToolInputIndex>(&workspace.join(path)).ok());
+    let influxql_inputs: Vec<_> = tool_input_index
+        .as_ref()
+        .map(|index| {
+            index
+                .inputs
+                .iter()
+                .filter(|input| {
+                    input
+                        .tool_ids
+                        .iter()
+                        .any(|tool_id| tool_id == INFLUXQL_ANALYZER_ID)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    const MAX_INPUTS: usize = 200;
+    let mut warnings = Vec::new();
+    if influxql_inputs.is_empty() {
+        warnings
+            .push("no InfluxQL query inputs materialized from the uploaded packages".to_string());
+    }
+    if influxql_inputs.len() > MAX_INPUTS {
+        warnings.push(format!(
+            "more than {MAX_INPUTS} InfluxQL inputs; analyzing the first {MAX_INPUTS}"
+        ));
+    }
+
+    let context = TaskContext::from_record(&task, workspace.clone(), None);
+    let mut findings = Vec::new();
+    let mut failed = 0usize;
+    for input in influxql_inputs.iter().take(MAX_INPUTS) {
+        let action = AgentAction {
+            schema_version: 1,
+            action_id: format!(
+                "act_tool_batch_influxql_{}_{}",
+                task.task_id,
+                stable_hash_hex(&format!("{}:{}", task.task_id, input.path))
+            ),
+            kind: ActionKind::RunTool,
+            reason: "batch influxql analysis".to_string(),
+            evidence_refs: Vec::new(),
+            input: serde_json::json!({
+                "tool": INFLUXQL_ANALYZER_ID,
+                "inputFile": input.path,
+            }),
+            risk: ActionRisk::SafeReadOnly,
+            fingerprint: format!("batch_influxql:{}:{}", task.task_id, input.path),
+        };
+        match state.tool_runner.execute(&context, &action).await {
+            Ok(artifact) => {
+                let output: serde_json::Value =
+                    read_json_file_sync(&workspace.join(&artifact.artifact_path))?;
+                findings.push(serde_json::json!({
+                    "inputFile": input.path,
+                    "nodeId": input.node_id,
+                    "instanceId": input.instance_id,
+                    "packageTimestamp": input.package_timestamp,
+                    "artifactPath": artifact.artifact_path,
+                    "summary": artifact.summary,
+                    "result": output,
+                }));
+            }
+            Err(err) => {
+                failed += 1;
+                warnings.push(format!(
+                    "influxql analyzer failed for {}: {err:#}",
+                    input.path
+                ));
+            }
+        }
+    }
+
+    let nodes = influxql_inputs
+        .iter()
+        .filter_map(|input| input.node_id.as_deref())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let status = if findings.is_empty() {
+        "FAILED"
+    } else if failed > 0 {
+        "PARTIAL"
+    } else {
+        "OK"
+    };
+    let action_id = format!("act_tool_batch_influxql_{}", task.task_id);
+    let result_dir = workspace.join("tool_results").join(&action_id);
+    fs::create_dir_all(&result_dir)
+        .map_err(|err| AppError::internal(format!("failed to create tool result dir: {err}")))?;
+    let result = serde_json::json!({
+        "schemaVersion": 1,
+        "toolId": BATCH_INFLUXQL_ANALYSIS_ID,
+        "actionId": action_id,
+        "status": status,
+        "preprocessSummary": {
+            "uploads": manifest.uploads.len(),
+            "extractedFiles": manifest.files.len(),
+            "influxqlInputs": influxql_inputs.len(),
+            "nodes": nodes,
+        },
+        "analyzedInputs": findings.len(),
+        "failedCount": failed,
+        "findings": findings,
+        "warnings": warnings,
+        "durationMs": started.elapsed().as_millis(),
+        "createdAt": Utc::now(),
+    });
+    let result_path = result_dir.join("result.json");
+    write_json(&result_path, &result)?;
+    info!(
+        task_id = %task.task_id,
+        action_id = %action_id,
+        status = status,
+        inputs = influxql_inputs.len(),
+        findings = findings.len(),
+        failed = failed,
+        duration_ms = started.elapsed().as_millis(),
+        "batch influxql analysis task completed"
+    );
+    Ok(result_path)
+}
+
 async fn run_metadata_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     let tool_id = task
         .tool_id
@@ -1722,5 +1938,111 @@ Showing nodes accounting for 970ms, 100% of 970ms total
         assert!(params.generate_svg);
 
         assert!(parse_pprof_params(&serde_json::json!({"sampleIndex": "bad/value"})).is_err());
+    }
+
+    use crate::support::config::{
+        AuthSettings, FetchSettings, HuaweiCloudSettings, LogAnalyzerSettings, McpSettings,
+        RemoteExecutionSettings, ServerSettings, SkillSettings, StorageSettings, ToolsSettings,
+    };
+
+    fn test_app_config() -> AppConfig {
+        AppConfig {
+            server: ServerSettings {
+                bind: String::new(),
+                public_base_url: String::new(),
+                max_concurrent_tasks: 1,
+                max_input_chars: 1000,
+            },
+            auth: AuthSettings {
+                api_keys: Vec::new(),
+            },
+            storage: StorageSettings {
+                data_dir: PathBuf::new(),
+                max_upload_bytes: 0,
+                max_chunk_bytes: 0,
+            },
+            skills: SkillSettings {
+                enabled: false,
+                roots: Vec::new(),
+                max_skill_chars: 1000,
+                max_reference_chars: 1000,
+            },
+            log_analyzer: LogAnalyzerSettings {
+                keywords: Vec::new(),
+                max_matches: 0,
+            },
+            tools: ToolsSettings::default(),
+            fetch: FetchSettings::default(),
+            huawei_cloud: HuaweiCloudSettings::default(),
+            remote_execution: RemoteExecutionSettings::default(),
+            mcp: McpSettings::default(),
+        }
+    }
+
+    fn config_with_influxql(enabled: bool) -> AppConfig {
+        let mut config = test_app_config();
+        config.tools.tools.insert(
+            INFLUXQL_ANALYZER_ID.to_string(),
+            ToolSettings {
+                name: INFLUXQL_ANALYZER_ID.to_string(),
+                enabled,
+                path: PathBuf::from("/dev/null/influxql-analyzer"),
+                timeout_seconds: 30,
+                max_output_bytes: 1024,
+                max_input_files: 3,
+                args: vec![
+                    "-input".to_string(),
+                    "{input_file}".to_string(),
+                    "-output".to_string(),
+                    "json".to_string(),
+                ],
+                match_settings: crate::support::config::ToolMatchSettings::default(),
+            },
+        );
+        config
+    }
+
+    #[test]
+    fn batch_influxql_descriptor_disabled_when_influxql_absent() {
+        let descriptor = batch_influxql_analysis_descriptor(&test_app_config());
+        assert_eq!(descriptor.tool_id, BATCH_INFLUXQL_ANALYSIS_ID);
+        assert!(!descriptor.enabled);
+        assert!(!descriptor.runnable);
+    }
+
+    #[test]
+    fn batch_influxql_descriptor_disabled_when_influxql_disabled() {
+        let descriptor = batch_influxql_analysis_descriptor(&config_with_influxql(false));
+        assert!(!descriptor.enabled);
+        assert!(!descriptor.runnable);
+    }
+
+    #[test]
+    fn batch_influxql_descriptor_enabled_when_influxql_enabled() {
+        let descriptor = batch_influxql_analysis_descriptor(&config_with_influxql(true));
+        assert!(descriptor.enabled);
+        assert!(descriptor.runnable);
+        assert!(matches!(descriptor.source, ToolSource::BuiltIn));
+        assert!(descriptor.tags.contains(&"influxql".to_string()));
+    }
+
+    #[test]
+    fn batch_influxql_descriptor_listed_in_catalog() {
+        let config = config_with_influxql(true);
+        let ids: Vec<String> = descriptors(&config)
+            .into_iter()
+            .map(|descriptor| descriptor.tool_id)
+            .collect();
+        assert!(ids.contains(&BATCH_INFLUXQL_ANALYSIS_ID.to_string()));
+        // get_descriptor resolves it too.
+        assert!(get_descriptor(&config, BATCH_INFLUXQL_ANALYSIS_ID).is_some());
+    }
+
+    #[test]
+    fn validates_batch_influxql_params() {
+        assert!(validate_batch_influxql_params(&serde_json::json!({})).is_ok());
+        assert!(validate_batch_influxql_params(&serde_json::json!({"x": 1})).is_ok());
+        assert!(validate_batch_influxql_params(&serde_json::json!([1, 2])).is_err());
+        assert!(validate_batch_influxql_params(&serde_json::json!("oops")).is_err());
     }
 }

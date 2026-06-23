@@ -12,6 +12,20 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 批量 InfluxQL 日志分析内置 tool + Skill
+
+目标：把「上传日志 -> 解包/预处理 -> influxql analyzer 分析」做成一个可发现、可批量的一键工具，并配一个内置 Skill 作为 runbook。现状该流程隐式存在但埋在 `influxql_analyzer`（configured，默认 disabled，`max_input_files: 3`）里，无批量入口。
+
+- 新增内置 tool `logagent.batch_influxql_analysis`（`server/src/services/tools.rs`）：
+  - `descriptors()`/`get_descriptor()`/`validate_tool_run_request()`/`run_tool_task()` 四处接线；`batch_influxql_analysis_descriptor(config)` 的 `enabled`/`runnable` 跟随 `influxql_analyzer` 是否配置+启用（pprof 模式），未启用时 catalog 中灰显。
+  - `run_batch_influxql_analysis_task`：`prepare_pipeline_run` + `extract_task` 解包预处理（复用 `log_analyzer` 已有的 influxql JSONL 物化），读 `Manifest.tool_inputs_path` 的 `ToolInputIndex` 筛出 `tool_ids` 含 `influxql_analyzer` 的输入，对每个输入用 `tool_runner.execute`（action.input=`{tool: influxql_analyzer, inputFile}`，复用 configured tool 的 path/args + `{input_file}` 替换）跑分析，聚合 `findings[]`。200 输入安全上限（超限只警告）。结果 `result.json`：`preprocessSummary`/`analyzedInputs`/`failedCount`/`findings[]`/`warnings[]`/`status`(OK/PARTIAL/FAILED)。`max_files: 100`，`accepted_suffixes: .tar.gz/.tgz/.tar`。
+  - 无 WebUI/MCP 改动：tool 经 `descriptors()` 自动出现在 `/api/tools`、MCP `tools/list`、WebUI Tools「Analyzers」分组（tag `log`）。
+- 新增 managed Skill `skills/influxql-batch-analysis/`（`SKILL.md` + `logagent.json` + `references/batch-result.md`）：流程 runbook + 结果 schema；`toolIds` 含 batch tool / `influxql_analyzer` / `preprocess_log_package`；`skills.roots: ["skills"]` 自动加载。
+- 单测（`tools::tests`）：descriptor 在 influxql 缺失/禁用/启用下的 `enabled`/`runnable` 门控、`descriptors()`/`get_descriptor()` 列出该 tool、`validate_batch_influxql_params` 接受对象/拒绝非对象。（需要真实 binary 的端到端跑由 smoke/手测覆盖。）
+- 文档：`SPEC.md` 工具示例列表加 `logagent.batch_influxql_analysis`；本条 PROGRESS。
+- 验证：`cargo fmt --check`、`cargo test -p logagent-server`（94 通过，含 5 个新测试）。
+- 端到端待跑：`scripts/build-tools.sh --only influxql` + 配置 `influxql_analyzer.enabled: true`，上传含 InfluxQL query 的 `.tar.gz` 跑该 tool，确认 `findings[]` 非空、`status` 正确。
+
 ## 2026-06-23 WebUI Tools 目录页重设计（搜索/筛选/分组）
 
 目标：Tools 页 catalog 列表信息杂乱、且工具增长到几十个后「依次排开」不可用。结合工具市场/命令面板的业界实践重做左侧 catalog 卡片，右侧 detail+run 面板不变。

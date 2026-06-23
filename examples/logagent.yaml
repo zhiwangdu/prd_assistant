@@ -92,6 +92,8 @@ tools:
       file_patterns: ["*.jsonl", "*.ndjson"]
       keywords: ["flux", "\"query\"", "duration_ms"]
 
+  # The built-in `logagent.batch_influxql_analysis` tool drives this analyzer
+  # (batch upload -> preprocess -> analyze). Enable it to make the batch tool runnable.
   influxql_analyzer:
     enabled: false
     path_env: LOGAGENT_INFLUXQL_ANALYZER_PATH
