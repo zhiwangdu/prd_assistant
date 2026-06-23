@@ -15,8 +15,12 @@ The batch tool drives the configured `influxql_analyzer` and bypasses its per-ru
 
 ## Input expectations
 
-- Each upload is a tarball of node logs (e.g. `<node>_logs.tar.gz`). Loose log files are not accepted — package them first.
-- The preprocessor extracts InfluxQL queries from log lines (`select`, `show series`, `show measurements`, …). Packages with no InfluxQL queries produce no findings (status `FAILED`, warning) — that is expected for non-query logs.
+The batch tool reuses the shared log-package preprocessor, so uploads must follow its package contract (same as `logagent.preprocess_log_package`):
+
+- **Package filename**: `<package_id>_<instance_id>_<node_id>_<YYYY>_<MM>_<DD>_<HH>_<MM>_<SS>_<micros>_logs.tar.gz` — `node_id`, `instance_id`, and `package_timestamp` are parsed from the name and attached to each finding. IDs are alphanumeric; the timestamp is 7 numeric fields. Other names are accepted as uploads but yield no parsed node/timestamp metadata.
+- **Log paths inside the tar**: files must live under `var/chroot/gemini/log/tsdb`, `var/chroot/gemini/log/stream`, or `home/Ruby/log` (classified into the `tsdb`, `stream`, or `agent` log group). Files outside these prefixes are ignored.
+- **Query extraction**: each log line is scanned for an InfluxQL query. A line is recognized if it is a JSON object with a `query`/`sql`/`stmt`/`statement` field (e.g. `{"timestamp":"...","query":"select * from cpu limit 100000"}`), or a `query="..."`/`sql="..."` key=value line. Free-text lines with a query embedded in prose are not extracted.
+- Packages with no extractable InfluxQL queries produce no findings (`status: FAILED`, warning) — expected for non-query logs.
 
 ## Prerequisites
 

@@ -24,7 +24,11 @@ Historical main-branch progress was archived to
 - 单测（`tools::tests`）：descriptor 在 influxql 缺失/禁用/启用下的 `enabled`/`runnable` 门控、`descriptors()`/`get_descriptor()` 列出该 tool、`validate_batch_influxql_params` 接受对象/拒绝非对象。（需要真实 binary 的端到端跑由 smoke/手测覆盖。）
 - 文档：`SPEC.md` 工具示例列表加 `logagent.batch_influxql_analysis`；本条 PROGRESS。
 - 验证：`cargo fmt --check`、`cargo test -p logagent-server`（94 通过，含 5 个新测试）。
-- 端到端待跑：`scripts/build-tools.sh --only influxql` + 配置 `influxql_analyzer.enabled: true`，上传含 InfluxQL query 的 `.tar.gz` 跑该 tool，确认 `findings[]` 非空、`status` 正确。
+- 端到端已跑通（Go 1.26.4 构建 `target/tools/influxql-analyzer`，临时配置 `influxql_analyzer.enabled: true`）：
+  - `GET /api/tools` 列出 `logagent.batch_influxql_analysis`（`enabled`/`runnable`=true）；`GET /api/skills` 列出 `influxql-batch-analysis`（toolIds 含 batch tool）；MCP `tools/list` 含该 tool（共 7 个）。
+  - 上传 2 个含 InfluxQL query 的 `_logs.tar.gz`（node1/node2）跑 batch tool → `status: OK`，`influxqlInputs: 2`、`nodes: 2`、`findings[]` 2 条，每条带 `nodeId`/`packageTimestamp` + analyzer 规则（large_limit/has_wildcard/meta_query/no_time_filter）；server 日志无 error/panic。
+  - 上传无 query 的包 → tool `status: FAILED`、`influxqlInputs: 0`、warning 正确。
+  - 发现并补全 Skill「Input expectations」：preprocessor 要求包名 `<pkgid>_<inst>_<node>_<YYYY>_<MM>_<DD>_<HH>_<MM>_<SS>_<micros>_logs.tar.gz`、tar 内日志须在 `var/chroot/gemini/log/{tsdb,stream}` 或 `home/Ruby/log` 下、query 行须为 JSON 对象（`query`/`sql`/`stmt`/`statement`）或 `query="..."`。
 
 ## 2026-06-23 WebUI Tools 目录页重设计（搜索/筛选/分组）
 
