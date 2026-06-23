@@ -749,6 +749,36 @@ fn glob_leaf_matches(pattern: &str, name: &str) -> bool {
     name == pattern
 }
 
+/// Env vars describing the current run's directories, passed to `docker compose` and
+/// the health-check command so a compose file / health cmd can mount or reference the
+/// run's synced source and built artifacts via `${DEVSELFTEST_SOURCE_DIR}` etc. Generic
+/// (not openGemini-specific); values are absolute paths.
+fn deploy_env(
+    run_root: &Path,
+    source_dir: &Path,
+    artifacts_dir: &Path,
+    project_name: &str,
+) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
+    env.insert(
+        "DEVSELFTEST_RUN_DIR".to_string(),
+        run_root.to_string_lossy().into_owned(),
+    );
+    env.insert(
+        "DEVSELFTEST_SOURCE_DIR".to_string(),
+        source_dir.to_string_lossy().into_owned(),
+    );
+    env.insert(
+        "DEVSELFTEST_ARTIFACTS_DIR".to_string(),
+        artifacts_dir.to_string_lossy().into_owned(),
+    );
+    env.insert(
+        "DEVSELFTEST_PROJECT_NAME".to_string(),
+        project_name.to_string(),
+    );
+    env
+}
+
 async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     let params: DeployParams = parse_params(&task.tool_params)?;
     validate_run_id(&params.run_id)?;
@@ -767,11 +797,14 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
         .clone();
 
     let run_root = run_dir(&state, &record.run_id);
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
     let project_name = format!(
         "devselftest_{}_{}",
         sanitize_filename(&record.run_id)?,
         sanitize_filename(&params.profile)?
     );
+    let env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
     let started = Instant::now();
     let run = run_bounded_command(
         &state.config.dev_selftest.docker.binary,
@@ -785,7 +818,7 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
             "-d".to_string(),
         ],
         &run_root,
-        &BTreeMap::new(),
+        &env,
         state.config.dev_selftest.build_timeout_seconds,
         state.config.dev_selftest.max_output_bytes,
     )
@@ -803,7 +836,7 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
     let mut health_error = None::<String>;
     if run.ok {
         if let Some(hc) = &cluster.health_check {
-            match run_health_check(state.clone(), hc, &run_root).await {
+            match run_health_check(state.clone(), hc, &run_root, &env).await {
                 Ok(()) => {}
                 Err(err) => {
                     health_ok = false;
@@ -882,6 +915,7 @@ async fn run_health_check(
     state: Arc<AppState>,
     hc: &crate::support::config::DevSelftestHealthCheck,
     cwd: &Path,
+    env: &BTreeMap<String, String>,
 ) -> Result<(), String> {
     if hc.cmd.is_empty() {
         return Ok(());
@@ -893,7 +927,7 @@ async fn run_health_check(
             &binary,
             &argv,
             cwd,
-            &BTreeMap::new(),
+            env,
             hc.timeout_seconds.max(1),
             state.config.dev_selftest.max_output_bytes,
         )
@@ -1363,6 +1397,30 @@ mod tests {
         assert!(validate_run_id("devselftest_abc-1").is_ok());
         assert!(validate_run_id("task_x").is_err());
         assert!(validate_run_id("devselftest_bad/id").is_err());
+    }
+
+    #[test]
+    fn deploy_env_exposes_run_directories() {
+        let env = deploy_env(
+            std::path::Path::new("/run/root"),
+            std::path::Path::new("/run/root/source"),
+            std::path::Path::new("/run/root/artifacts"),
+            "devselftest_1_local",
+        );
+        assert_eq!(env.get("DEVSELFTEST_RUN_DIR").unwrap(), "/run/root");
+        assert_eq!(
+            env.get("DEVSELFTEST_SOURCE_DIR").unwrap(),
+            "/run/root/source"
+        );
+        assert_eq!(
+            env.get("DEVSELFTEST_ARTIFACTS_DIR").unwrap(),
+            "/run/root/artifacts"
+        );
+        assert_eq!(
+            env.get("DEVSELFTEST_PROJECT_NAME").unwrap(),
+            "devselftest_1_local"
+        );
+        assert_eq!(env.len(), 4);
     }
 
     #[test]

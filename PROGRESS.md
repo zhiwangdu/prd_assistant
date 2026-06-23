@@ -12,6 +12,36 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-23 Dev self-test Docker 路径跑通：真实 openGemini 3meta+3(sql+store) 集群
+
+目标：把 Path 1（Docker 部署）对着真实 openGemini 集群端到端跑通——`sync → build → deploy → run_tests → report` 全链路对 `openGemini.git` 真实生效，3 meta + 3 (sql+store) = 6 容器 / 9 进程，直到 `report` 状态 `SUCCEEDED`。已达成。
+
+代码改动（仓库内）：
+- `server/src/services/dev_selftest.rs`：新增 `deploy_env(run_root, source_dir, artifacts_dir, project_name)`，把 `DEVSELFTEST_RUN_DIR/SOURCE_DIR/ARTIFACTS_DIR/PROJECT_NAME` 注入 `docker compose`（`run_deploy`）**和** health check（`run_health_check` 加 `env` 参数），让 compose 用 `${DEVSELFTEST_SOURCE_DIR}` 挂载本次 run 编译出的二进制。通用、非 openGemini 专属。+ 单测。
+- `server/src/mcp_server.rs`：新增 `mcp_tool_params(arguments)`，`tools/call` 既接受 `{params:{...}}`（HTTP 信封）也接受顶层参数（MCP 规范，`arguments` 即 `inputSchema`），后者剥离 `runMode/uploadIds`。修复「真实 MCP 客户端（Claude Code）按 schema 传顶层参数 → 服务端读 `arguments.params` 为空」的阻塞问题。`run_catalog_tool` / `run_catalog_tool_queued` 复用。+ 单测。
+
+openGemini 集群 artifact（scratch，**不进仓库**，在 `~/dev_selftest/opengemini/`）：
+- `build-opengemini.sh`：go1.26 兼容（`go mod edit -go=1.26` + 升级 `bytedance/sonic` 到最新 + `go mod tidy`）+ `go build -o build/ts-{meta,store,sql} ./app/ts-*`（绕开 `build.py` 的 click/vet 开销）。产物 `build/ts-meta/ts-store/ts-sql`。
+- `docker-compose.yml`：6 service（meta-1/2/3、sqlstore-1/2/3），`ubuntu:24.04` 基础镜像（22.04 的 libstdc++ 过旧，缺 `GLIBCXX_3.4.32`），**静态 IP**（172.28.0.x），自定义 bridge 网络。挂载 `${DEVSELFTEST_SOURCE_DIR}/build`（二进制）+ per-node 配置 + entrypoint。
+- `config/{meta,sqlstore}-{1,2,3}.conf`：从仓库 `config/openGemini.conf` 派生（**不是** `conf/`），用静态 IP 替换 `{{addr}}/{{id}}/{{meta_addr_*}}`。
+- `entrypoint-meta.sh`、`entrypoint-sqlstore.sh`：顺序门控——sqlstore 等 3 个 meta:8091 就绪 → 起 ts-store → 等 ts-store:8400（**用容器自身 IP，非 127.0.0.1**，因 store 按配置 IP 绑定）→ 起 ts-sql。
+- `~/dev_selftest/server-opengemini.yaml`：dev_selftest 配置（openGemini git repo、build profile 指向 build 脚本、docker cluster、test suite 用 curl `SHOW DATABASES`）。
+
+跑通过程中解决的关键坑（执行时细化，记录以便复现）：
+1. **go1.26 不兼容**：openGemini go.mod 是 1.24 + sonic v1.13.3，需升 go.mod 到 1.26 + sonic 到最新，否则编译失败（build 脚本内处理）。
+2. **raft 选主失败**：openGemini meta 用 `rpc-bind-address` 字符串作为 raft Server ID；用容器**主机名**时，节点绑定的解析 IP 与配置里的主机名串不匹配 → hashicorp raft 判定「not part of a stable configuration」不选主。改用**静态 IP**（对齐官方 `install_cluster.sh` 用 127.0.0.1/2/3）后 meta-1 正常 bootstrap 选主。
+3. **libstdc++ 过旧**：ubuntu:22.04 缺 `GLIBCXX_3.4.32`，ts-meta 启动即退；改 `ubuntu:24.04`。
+4. **ts-store 端口检查**：store 按 `store-ingest-addr`（容器 IP:8400）绑定，entrypoint 不能用 `127.0.0.1:8400` 探活，须用 `hostname -I` 的容器 IP。
+5. **MCP 参数信封**：catalog 工具经 MCP 需把 tool 参数放 `arguments.params`（HTTP 信封），真实 MCP 客户端按 schema 传顶层参数会拿空 → 已用 `mcp_tool_params` 修成两者兼容。
+
+验证（端到端跑通）：
+- `cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（118 通过，+1 `mcp_tool_params`、+1 `deploy_env`）。
+- 起 server（`sg docker -c` 激活 docker 组，使 deploy 的 `docker compose` 子进程可用），经 `POST /api/mcp` 驱动：`sync_workspace{gitRepo,gitRef:main}`（41s 克隆）→ `build{buildProfile:opengemini}` runMode:queued（30s 编译出 ts-meta/ts-store/ts-sql，`runs.get` 轮询到 SUCCEEDED）→ `deploy{profile:opengemini_cluster}` runMode:queued（466ms 起 6 容器 + health check `curl SHOW DATABASES`，SUCCEEDED）→ `run_tests{testSuite:opengemini_smoke}`（exit 0）→ `report`（**status SUCCEEDED**，4 步全 OK，`report.md` + `progress.json` + artifacts 齐全）。
+- `docker ps` 见 6 个 openGemini 容器；`curl http://127.0.0.1:8086/query?q=SHOW+DATABASES` 返回合法 JSON；`CREATE DATABASE` + `SHOW DATABASES` 验证集群可写可读。
+- 文档同步：`server/SPEC.md`、`docs/modules/dev-selftest/README.md`、`skills/dev-selftest-pipeline/SKILL.md`。
+
+不在本里程碑范围：P2（参数化 executor + SCP + ssh_binary_replace）、P3（package-sync core + geminidb create/poll）；把 compose/配置/build 脚本纳入仓库（用户明确不要，scratch 在 `~/dev_selftest/`）。
+
 ## 2026-06-23 Server config：dev_selftest 禁用态不再阻断启动
 
 目标：修复 Server 启动加载配置时，即使未启用 `dev_selftest` 也会因为 `dev_selftest.docker.binary` 非绝对路径报错的问题。

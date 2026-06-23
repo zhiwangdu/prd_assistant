@@ -69,3 +69,19 @@ with `failedSteps` listed. In P1, a failed docker health check does **not** roll
   sync, then `logagent.geminidb.create_instance` + poll-until-ready.
 
 Until those land, only the `docker_cluster` deploy profile is available.
+
+## Notes
+
+- **MCP arguments**: tool params may be sent either nested under `params`
+  (`{params: {runId, buildProfile}}`) or as top-level arguments per the tool's
+  `inputSchema` (`{runId, buildProfile}`) — both work. `runMode`/`uploadIds` are
+  always top-level. `logagent.runs.get`/`runs.result` take `runId` top-level.
+- **Docker path validated**: the `docker_cluster` profile has been run end-to-end
+  against a real **openGemini** 3 meta + 3 (sql+store) cluster (sync→build→deploy→
+  run_tests→report, all SUCCEEDED). Cluster artifacts (compose/config/entrypoint/
+  build script) live in a local scratch dir referenced by absolute path — they are
+  NOT part of the repo. Key requirements for an openGemini-style cluster compose:
+  **static IPs** (the DB's raft uses the bind-address string as the node ID, so
+  hostnames break leader election), a recent base image (e.g. `ubuntu:24.04` for
+  libstdc++), and sequential startup gating in the entrypoint (meta → store → sql;
+  `depends_on` only orders, it does not wait for readiness).

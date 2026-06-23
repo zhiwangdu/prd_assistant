@@ -295,6 +295,23 @@ fn tool_call_content(outcome: anyhow::Result<Value>) -> Value {
     }
 }
 
+/// Extract tool params from a `tools/call` arguments object. Accepts either
+/// `{params: {...}}` (the HTTP `POST /api/tools/:id/runs` envelope) or top-level
+/// tool params (MCP-spec, where `arguments` IS the tool input per `inputSchema`),
+/// stripping the envelope fields `runMode`/`uploadIds` in the latter case. This
+/// lets real MCP clients (Claude Code) call params-taking tools without nesting.
+fn mcp_tool_params(arguments: &Value) -> Value {
+    if let Some(params) = arguments.get("params") {
+        return params.clone();
+    }
+    let mut params = arguments.clone();
+    if let Some(obj) = params.as_object_mut() {
+        obj.remove("runMode");
+        obj.remove("uploadIds");
+    }
+    params
+}
+
 /// Run a catalog tool by toolId synchronously and persist a `ToolRun` record.
 async fn run_catalog_tool(
     state: &Arc<AppState>,
@@ -316,10 +333,7 @@ async fn run_catalog_tool(
                 .collect()
         })
         .unwrap_or_default();
-    let params = arguments
-        .get("params")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let params = mcp_tool_params(&arguments);
     let task = services::tools::build_tool_run_task(state, tool_id, upload_ids, &params).await?;
     let task_id = task.task_id.clone();
     state
@@ -386,10 +400,7 @@ async fn run_catalog_tool_queued(
                 .collect()
         })
         .unwrap_or_default();
-    let params = arguments
-        .get("params")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let params = mcp_tool_params(&arguments);
     let task = services::tools::build_tool_run_task(state, tool_id, upload_ids, &params).await?;
     let task_id = task.task_id.clone();
     state
@@ -633,6 +644,26 @@ mod tests {
 
     fn request(id: i64, method: &str, params: Value) -> Value {
         json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
+    }
+
+    #[test]
+    fn mcp_tool_params_accepts_envelope_and_top_level() {
+        // HTTP-style envelope: {params: {...}} wins.
+        assert_eq!(
+            mcp_tool_params(&json!({"params": {"a": 1}, "runMode": "queued"})),
+            json!({"a": 1})
+        );
+        // MCP-spec top-level args: runMode/uploadIds stripped, rest kept.
+        assert_eq!(
+            mcp_tool_params(&json!({"a": 1, "runMode": "queued"})),
+            json!({"a": 1})
+        );
+        assert_eq!(
+            mcp_tool_params(&json!({"a": 1, "uploadIds": ["upl_1"]})),
+            json!({"a": 1})
+        );
+        // Empty arguments -> empty params.
+        assert_eq!(mcp_tool_params(&json!({})), json!({}));
     }
 
     /// Decode the `tools/call` text content payload into its JSON value.
