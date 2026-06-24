@@ -51,6 +51,19 @@ impl RemoteExecutorStore {
         Ok(())
     }
 
+    /// Seed a config-declared executor at startup: validate, then insert only if no record
+    /// with the same id exists (never overwrites an API-created/modified one).
+    pub async fn create_if_absent(&self, executor: RemoteExecutorRecord) -> anyhow::Result<()> {
+        validate_executor(&executor)?;
+        let mut executors = self.inner.write().await;
+        if executors.contains_key(&executor.executor_id) {
+            return Ok(());
+        }
+        self.persist(&executor)?;
+        executors.insert(executor.executor_id.clone(), executor);
+        Ok(())
+    }
+
     pub async fn get(&self, executor_id: &str) -> Option<RemoteExecutorRecord> {
         self.inner.read().await.get(executor_id).cloned()
     }
@@ -108,13 +121,28 @@ impl RemoteExecutorStore {
     }
 }
 
-fn validate_executor(executor: &RemoteExecutorRecord) -> anyhow::Result<()> {
+pub fn validate_executor(executor: &RemoteExecutorRecord) -> anyhow::Result<()> {
+    use crate::domain::models::ExecutorKind;
     validate_executor_id(&executor.executor_id)?;
     validate_non_empty("name", &executor.name, 120)?;
-    validate_non_empty("host", &executor.host, 255)?;
-    validate_non_empty("user", &executor.user, 64)?;
-    if executor.port == 0 {
-        anyhow::bail!("executor port must be greater than zero");
+    match executor.kind {
+        ExecutorKind::Ssh => {
+            validate_non_empty("host", &executor.host, 255)?;
+            validate_non_empty("user", &executor.user, 64)?;
+            if executor.port == 0 {
+                anyhow::bail!("executor port must be greater than zero");
+            }
+        }
+        ExecutorKind::Docker => {
+            let docker = executor.docker.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "docker executor {} is missing its docker spec",
+                    executor.executor_id
+                )
+            })?;
+            let context = format!("executor {}", executor.executor_id);
+            crate::support::docker_target::validate_docker_target(docker, &context, false)?;
+        }
     }
     if executor.tags.len() > 20 {
         anyhow::bail!("executor tags exceed maximum length of 20");
@@ -151,4 +179,106 @@ fn validate_non_empty(field: &str, value: &str, max_chars: usize) -> anyhow::Res
         anyhow::bail!("executor {field} exceeds maximum length of {max_chars}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{domain::models::ExecutorKind, support::docker_target::DockerTargetSpec};
+    use std::collections::BTreeMap;
+
+    fn ssh_record() -> RemoteExecutorRecord {
+        RemoteExecutorRecord {
+            schema_version: 1,
+            executor_id: "executor_ssh_1".to_string(),
+            name: "ssh".to_string(),
+            kind: ExecutorKind::Ssh,
+            host: "h".to_string(),
+            port: 22,
+            user: "u".to_string(),
+            docker: None,
+            tags: Vec::new(),
+            enabled: true,
+            notes: None,
+            last_check: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn docker_record(spec: Option<DockerTargetSpec>) -> RemoteExecutorRecord {
+        RemoteExecutorRecord {
+            schema_version: 1,
+            executor_id: "executor_docker_1".to_string(),
+            name: "docker".to_string(),
+            kind: ExecutorKind::Docker,
+            host: String::new(),
+            port: 0,
+            user: String::new(),
+            docker: spec,
+            tags: Vec::new(),
+            enabled: true,
+            notes: None,
+            last_check: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn spec(image: &str) -> DockerTargetSpec {
+        DockerTargetSpec {
+            image: image.to_string(),
+            network: Some("host".to_string()),
+            workdir: None,
+            volumes: vec!["/h:/c:ro".to_string()],
+            env: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn validate_ssh_record_branch() {
+        assert!(validate_executor(&ssh_record()).is_ok());
+        let mut bad = ssh_record();
+        bad.host = String::new();
+        assert!(validate_executor(&bad)
+            .unwrap_err()
+            .to_string()
+            .contains("host"));
+    }
+
+    #[test]
+    fn validate_docker_record_branch() {
+        assert!(validate_executor(&docker_record(Some(spec("alpine:3.20")))).is_ok());
+        // missing docker spec
+        assert!(validate_executor(&docker_record(None))
+            .unwrap_err()
+            .to_string()
+            .contains("missing its docker spec"));
+        // invalid image (flag-like)
+        let err = validate_executor(&docker_record(Some(spec("-flag"))))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must not start with '-'"));
+    }
+
+    #[tokio::test]
+    async fn create_if_absent_does_not_overwrite() {
+        let root = std::env::temp_dir().join(format!(
+            "logagent-exec-store-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let store = RemoteExecutorStore::load(root.clone()).unwrap();
+        let mut rec = ssh_record();
+        rec.executor_id = "executor_x".to_string();
+        store.create(rec.clone()).await.unwrap();
+        // seed with a different host — create_if_absent must keep the original.
+        let mut seed = rec.clone();
+        seed.host = "other".to_string();
+        store.create_if_absent(seed).await.unwrap();
+        let got = store.get("executor_x").await.unwrap();
+        assert_eq!(got.host, "h");
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

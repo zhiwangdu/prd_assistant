@@ -232,24 +232,32 @@ flowchart TD
 > 关键约束（openGemini）：容器需**静态 IP**（raft 用 `rpc-bind-address` 串作 Server ID，主机名会不选主）、
 > `ubuntu:24.04`（22.04 libstdc++ 过旧）、顺序门控（`depends_on` 仅排序，entrypoint 须等就绪）。
 
-### 5.4 run_tests（P2 双模式）
+### 5.4 run_tests（三模式，按优先级派发）
 
 ```mermaid
 flowchart TD
-    RT["run_tests {testSuite}"] --> Dec{suite.docker?}
-    Dec -- "存在（docker 模式）" --> DV["经 executor docker runner 派发"]
-    Dec -- "无（stub 模式）" --> ST["P1 本地桩<br/>server 主机跑 suite.argv"]
-    DV --> Argv["argv/timeout ← suite.command 模板<br/>（无则 suite.argv）"]
-    Argv --> Vol["volume ${DEVSELFTEST_*} 插值<br/>断言 host 绝对"]
-    Vol --> Env["env 合并：<br/>user=suite.env ∪ docker.env<br/>system=DEVSELFTEST_HOST/PORT+run目录（最终优先）"]
-    Env --> Run["docker run --rm --network host<br/>[-v tests:/tests:ro] [-e ...]<br/>alpine:3.20 sh /tests/smoke.sh"]
+    RT["run_tests {testSuite}"] --> Dec1{suite.executor?}
+    Dec1 -- "存在（executor-record 模式）" --> ER["查 docker-kind executor record<br/>从 record.docker 构建 target"]
+    Dec1 -- "无" --> Dec2{suite.docker?}
+    Dec2 -- "存在（inline docker 模式）" --> DV["内联构建 Docker target"]
+    Dec2 -- "无（stub 模式）" --> ST["P1 本地桩<br/>server 主机跑 suite.argv"]
+    ER --> Argv["argv/timeout ← suite.command 模板<br/>（无则 suite.argv）"]
+    DV --> Argv
+    Argv --> Env["系统 env=DEVSELFTEST_HOST/PORT+run目录<br/>（最终优先）"]
+    Env --> Run["docker run --rm --network host<br/>[-v ...] [-e ...]<br/>alpine:3.20 sh /tests/smoke.sh"]
     Run --> Log["写 logs/tests.{stdout,stderr}.txt<br/>result.json 带 executor 字段"]
     ST --> Log
 ```
 
-docker 模式下，测试容器用 `--network host` 经宿主暴露端口 `127.0.0.1:8086` 访问 ts-sql。系统 env
-**最终优先**——用户 `env` 不能把测试悄悄打到错误目标。`smoke.sh` 默认用 busybox `wget`（alpine 预装），
-无 apt/外网依赖；curl 优先。
+派发优先级：`executor`（managed docker-kind record）> inline `docker` > P1 本地桩。`executor` 与
+`docker` 互斥。executor-record 模式下，docker target 来自托管 record（volumes 原样，不插值）；inline
+模式下 volume host 侧 `${DEVSELFTEST_*}` 经 `deploy_env` 插值并断言绝对。两种 docker 模式都：测试容器用
+`--network host` 经宿主暴露端口 `127.0.0.1:8086` 访问 ts-sql；系统 env **最终优先**——用户 `env` 不能把测试
+悄悄打到错误目标。`smoke.sh` 默认用 busybox `wget`（alpine 预装），无 apt/外网依赖；curl 优先。
+
+> 托管 record 由 `remote_execution.executors` 配置 seeding（启动 create-if-absent）或 `POST /api/executors`
+> 创建；也可经 `POST /api/executor-runs` 直接对 docker-kind executor 跑命令（计入 run history）。ssh-kind
+> record 的测试分发 deferred（属 `ssh_binary_replace` 路径）。
 
 ### 5.5 executor runner（P2 抽通）
 

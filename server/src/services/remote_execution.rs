@@ -6,7 +6,7 @@ use tokio::{process::Command, time::Duration};
 use tracing::info;
 
 use crate::{
-    domain::models::{RemoteExecutorRecord, TaskRecord},
+    domain::models::{ExecutorKind, RemoteExecutorRecord, TaskRecord},
     support::{
         config::{AppConfig, RemoteCommandTemplateSettings},
         error::AppError,
@@ -19,9 +19,11 @@ struct RemoteCommandRunRecord {
     schema_version: u32,
     executor_id: String,
     executor_name: String,
+    kind: ExecutorKind,
     host: String,
     port: u16,
     user: String,
+    docker_image: Option<String>,
     command_id: String,
     command_display_name: String,
     command_argv: Vec<String>,
@@ -308,12 +310,39 @@ pub async fn run_remote_command_task(
         .timeout_seconds
         .unwrap_or(config.remote_execution.command_timeout_seconds)
         .max(1);
-    let target = ExecutorTarget::Ssh {
-        host: executor.host.clone(),
-        port: executor.port,
-        user: executor.user.clone(),
-        connect_timeout_seconds: config.remote_execution.connect_timeout_seconds,
-        host_key_policy: config.remote_execution.host_key_policy.clone(),
+    // Build the target + launcher per executor kind. SSH uses the ssh binary; Docker runs
+    // `docker run --rm ... <image> <argv>` via the shared runner, with the record's docker
+    // spec taken literally (no run-directory interpolation — a managed executor is not bound
+    // to a dev_selftest run).
+    let (target, launcher) = match executor.kind {
+        ExecutorKind::Ssh => (
+            ExecutorTarget::Ssh {
+                host: executor.host.clone(),
+                port: executor.port,
+                user: executor.user.clone(),
+                connect_timeout_seconds: config.remote_execution.connect_timeout_seconds,
+                host_key_policy: config.remote_execution.host_key_policy.clone(),
+            },
+            config.remote_execution.ssh_binary.clone(),
+        ),
+        ExecutorKind::Docker => {
+            let docker = executor.docker.clone().ok_or_else(|| {
+                AppError::bad_request(format!(
+                    "executor {} is missing its docker spec",
+                    executor.executor_id
+                ))
+            })?;
+            (
+                ExecutorTarget::Docker {
+                    image: docker.image.clone(),
+                    network: docker.network.clone(),
+                    workdir: docker.workdir.clone(),
+                    volumes: docker.volumes.clone(),
+                    env: docker.env.clone(),
+                },
+                config.remote_execution.docker_binary.clone(),
+            )
+        }
     };
     let input = ExecutorRunInput {
         target: &target,
@@ -321,7 +350,7 @@ pub async fn run_remote_command_task(
         timeout_seconds,
         extra_env: BTreeMap::new(),
         server_cwd: workspace.clone(),
-        launcher: config.remote_execution.ssh_binary.clone(),
+        launcher,
         max_output_bytes: config.remote_execution.max_output_bytes,
     };
     let outcome = run_executor_command(input).await;
@@ -350,13 +379,16 @@ pub async fn run_remote_command_task(
         ExecutorRunStatus::TimedOut => RemoteCommandStatus::TimedOut,
         ExecutorRunStatus::Failed | ExecutorRunStatus::SpawnFailed => RemoteCommandStatus::Failed,
     };
+    let docker_image = executor.docker.as_ref().map(|d| d.image.clone());
     let record = RemoteCommandRunRecord {
-        schema_version: 1,
+        schema_version: 2,
         executor_id: executor.executor_id,
         executor_name: executor.name,
+        kind: executor.kind,
         host: executor.host,
         port: executor.port,
         user: executor.user,
+        docker_image,
         command_id: template.command_id,
         command_display_name: template.display_name,
         command_argv: template.argv,

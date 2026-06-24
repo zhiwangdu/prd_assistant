@@ -12,10 +12,10 @@ use tracing::info;
 use crate::{
     app::AppState,
     domain::models::{
-        CreateRemoteCommandRunRequest, CreateRemoteExecutorRequest, PatchRemoteExecutorRequest,
-        RemoteCommandRunListResponse, RemoteCommandRunResultResponse, RemoteCommandRunsQuery,
-        RemoteCommandTemplateListResponse, RemoteExecutorListResponse, RemoteExecutorRecord,
-        TaskKind, TaskRecord, TaskResponse, TaskSource, TaskStatus,
+        CreateRemoteCommandRunRequest, CreateRemoteExecutorRequest, ExecutorKind,
+        PatchRemoteExecutorRequest, RemoteCommandRunListResponse, RemoteCommandRunResultResponse,
+        RemoteCommandRunsQuery, RemoteCommandTemplateListResponse, RemoteExecutorListResponse,
+        RemoteExecutorRecord, TaskKind, TaskRecord, TaskResponse, TaskSource, TaskStatus,
     },
     services::remote_execution,
     support::{error::AppError, id::next_id},
@@ -34,13 +34,26 @@ pub async fn create_executor(
     Json(req): Json<CreateRemoteExecutorRequest>,
 ) -> Result<(StatusCode, Json<RemoteExecutorRecord>), AppError> {
     let now = Utc::now();
+    // SSH targets require host/user/port; docker targets carry a `docker` spec instead
+    // (host/user left empty, port 0 — both ignored for kind=Docker, enforced by the store).
+    let (host, port, user, docker) = match req.kind {
+        ExecutorKind::Ssh => (
+            normalize_required(req.host, "host", 255)?,
+            validate_port(req.port)?,
+            normalize_required(req.user, "user", 64)?,
+            None,
+        ),
+        ExecutorKind::Docker => (String::new(), 0, String::new(), req.docker),
+    };
     let executor = RemoteExecutorRecord {
         schema_version: 1,
         executor_id: next_id("executor"),
         name: normalize_required(req.name, "name", 120)?,
-        host: normalize_required(req.host, "host", 255)?,
-        port: validate_port(req.port)?,
-        user: normalize_required(req.user, "user", 64)?,
+        kind: req.kind,
+        host,
+        port,
+        user,
+        docker,
         tags: normalize_tags(req.tags)?,
         enabled: req.enabled,
         notes: normalize_optional(req.notes, 500)?,
@@ -52,9 +65,10 @@ pub async fn create_executor(
         .executors
         .create(executor.clone())
         .await
-        .map_err(|err| AppError::internal(format!("failed to persist executor: {err}")))?;
+        .map_err(|err| AppError::bad_request(format!("failed to persist executor: {err}")))?;
     info!(
         executor_id = %executor.executor_id,
+        kind = ?executor.kind,
         host = %executor.host,
         user = %executor.user,
         "remote executor created"
@@ -87,6 +101,9 @@ pub async fn patch_executor(
             if let Some(name) = req.name {
                 executor.name = normalize_required_anyhow(name, "name", 120)?;
             }
+            if let Some(kind) = req.kind {
+                executor.kind = kind;
+            }
             if let Some(host) = req.host {
                 executor.host = normalize_required_anyhow(host, "host", 255)?;
             }
@@ -95,6 +112,9 @@ pub async fn patch_executor(
             }
             if let Some(user) = req.user {
                 executor.user = normalize_required_anyhow(user, "user", 64)?;
+            }
+            if let Some(docker) = req.docker {
+                executor.docker = docker;
             }
             if let Some(tags) = req.tags {
                 executor.tags = normalize_tags_anyhow(tags)?;
@@ -545,6 +565,75 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[tokio::test]
+    async fn executor_api_runs_docker_kind_through_fake_docker() {
+        let (state, root) = test_state();
+        let app = http::router(state.clone()).with_state(state.clone());
+
+        // Create a docker-kind executor (no host/user/port needed).
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/executors")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name":"docker-smoke","kind":"docker","enabled":true,"docker":{"image":"alpine:3.20","network":"host","volumes":["/h:/c:ro"]}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let executor_id = body["executorId"].as_str().unwrap();
+        assert_eq!(body["kind"], "docker");
+        assert_eq!(body["docker"]["image"], "alpine:3.20");
+
+        // Run the smoke_ls_root command template on it — dispatches `docker run --rm ...
+        // alpine:3.20 ls -la /root` through the fake docker binary (echoes + exit 0).
+        let run = app
+            .clone()
+            .oneshot(
+                Request::post("/api/executor-runs")
+                    .header("authorization", "Bearer test-key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"executorId":"{executor_id}","commandId":"smoke_ls_root","idempotencyKey":"idem-docker"}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(run.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(run.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let task_id = body["taskId"].as_str().unwrap();
+
+        wait_for_remote_run(&app, task_id, "SUCCEEDED").await;
+        let result = app
+            .oneshot(
+                Request::get(format!("/api/executor-runs/{task_id}/result"))
+                    .header("authorization", "Bearer test-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = to_bytes(result.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["result"]["status"], "OK");
+        assert_eq!(body["result"]["kind"], "docker");
+        assert_eq!(body["result"]["dockerImage"], "alpine:3.20");
+        assert!(body["result"]["stdoutPreview"]
+            .as_str()
+            .unwrap()
+            .contains("run --rm --network host"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn test_state() -> (Arc<AppState>, std::path::PathBuf) {
         static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(1);
         let root = std::env::temp_dir().join(format!(
@@ -553,6 +642,7 @@ mod tests {
             NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         let ssh_binary = write_fake_ssh(&root);
+        let docker_binary = write_fake_docker(&root);
         let config = Arc::new(AppConfig {
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
@@ -584,6 +674,7 @@ mod tests {
             remote_execution: RemoteExecutionSettings {
                 enabled: true,
                 ssh_binary,
+                docker_binary,
                 host_key_policy: "accept-new".to_string(),
                 connect_timeout_seconds: 2,
                 command_timeout_seconds: 5,
@@ -599,6 +690,7 @@ mod tests {
                         timeout_seconds: Some(5),
                     },
                 )]),
+                executors: Vec::new(),
             },
             mcp: McpSettings::default(),
             dev_selftest: crate::support::config::DevSelftestSettings::default(),
@@ -620,6 +712,19 @@ done
 printf '\n'
 printf 'fake stderr\n' >&2
 "#,
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    fn write_fake_docker(root: &std::path::Path) -> std::path::PathBuf {
+        let path = root.join("fake-docker.sh");
+        std::fs::write(
+            &path,
+            "#!/usr/bin/env bash\nprintf 'fake docker args:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; printf '\\n'\nexit 0\n",
         )
         .unwrap();
         let mut permissions = std::fs::metadata(&path).unwrap().permissions();

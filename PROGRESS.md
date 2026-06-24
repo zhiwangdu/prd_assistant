@@ -12,6 +12,23 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 P2 Docker executor 纳管：record docker kind + CRUD + 执行/run history + seeding + dev_selftest 消费
+
+目标：让 executor record 支持 docker kind，成为可被 API/配置纳管、可执行、有 run history 的托管实体，并让 dev_selftest 能引用一个 docker-kind executor record 派发测试（「纳管 + 指定执行」）。inline `docker` 块保留。对应 plan 问答选定的「完整纳管 + dev_selftest 消费」范围。
+
+- `server/src/support/docker_target.rs`（新）：共享 `DockerTargetSpec`（image/network/workdir/volumes/env，字段全小写单词，yaml+JSON 同型）+ `validate_docker_target(spec, context, allow_devselftest_placeholders)` + `validate_docker_volume` + helper。config.rs 的 `DevSelftestTestDocker` 改为 `pub use DockerTargetSpec` 别名，迁移原校验逻辑。
+- `server/src/domain/models.rs`：`ExecutorKind::{Ssh(default), Docker}`（serde snake_case，旧 record 向后兼容）；`RemoteExecutorRecord` 增 `kind`+`docker: Option<DockerTargetSpec>`；`Create/PatchRemoteExecutorRequest` 增 `kind`+`docker`（host/user 改 `#[serde(default)]`）；`RemoteCommandRunRecord` 增 `kind`+`dockerImage`，schema_version 2。
+- `server/src/stores/executor_store.rs`：`validate_executor` 改 pub + 按 kind 分支（Ssh⇒host/user/port；Docker⇒docker spec + `validate_docker_target`，host 仅绝对路径）；新增 `create_if_absent`（seeding 用，不覆盖既有）。
+- `server/src/http/executors.rs`：`create_executor`/`patch_executor` 按 `kind` 分支（Docker 不要求 host/user）；新增 `executor_api_runs_docker_kind_through_fake_docker` 测试（create docker executor → `/api/executor-runs` → result `kind=docker`/`dockerImage`/stdout 含 `run --rm --network host`）。
+- `server/src/services/remote_execution.rs`：`run_remote_command_task` 按 `executor.kind` 分支构建 `ExecutorTarget`（Docker 从 `record.docker` 原样、`launcher=remote_execution.docker_binary`），docker run 计入 `/api/executor-runs` run history。
+- `server/src/support/config.rs`：`RemoteExecutionSettings` 增 `docker_binary` + `executors: Vec<SeededExecutor>`；`SeededExecutorConfig`+`resolve_seeded_executors`（load 时 `validate_executor` 校验）；`RemoteExecutionConfig` 增 `docker_binary`+`executors`。
+- `server/src/app.rs`/`main.rs`：`seed_executors`（遍历 `config.remote_execution.executors`，`create_if_absent`，persist 失败 warn+skip），`main.rs` `recover_tasks` 后调用。
+- `server/src/services/dev_selftest.rs`：`DevSelftestTestSuite` 增 `executor: Option<String>`（与 `docker` 互斥；id `executor_…`）；`run_run_tests` 派发优先级 `executor` > inline `docker` > P1 桩；新增 `run_executor_record_test`（查 record 须 enabled+`kind=Docker`，从 `record.docker` 构建 target，volumes 原样，系统 env 最终优先；ssh-kind 报未支持）。新增 `docker_executor_record_test_dispatch` 测试。
+- demo：`examples/server-dev-selftest.yaml` 增 `remote_execution.docker_binary` + `executors` seed（`executor_opengemini_smoke`）+ `test_suites.opengemini_smoke_exec`（`executor` 引用）；`deploy/devselftest/opengemini/README.md` 增「Docker executor 纳管」段。
+- 验证：`cargo fmt --check` + `cargo check` + `cargo test -p logagent-server` 全绿（133 测试，含 `validate_ssh/docker_record_branch`、`create_if_absent_does_not_overwrite`、`executor_api_runs_docker_kind_through_fake_docker`、`docker_executor_record_test_dispatch`、`resolves_seeded_executors`，及 SSH fake 回归 + 既有 docker 用例）；example 配置 `enabled:false`/`true` 均加载并服务 `/health`。
+- 文档同步：`server/SPEC.md`、`server/README.md`、`docs/modules/dev-selftest/README.md`、`skills/dev-selftest-pipeline/SKILL.md`、`deploy/devselftest/opengemini/README.md`、`docs/modules/dev-selftest/usage-claude-code.md`。
+- 仍 deferred：参数化 executor 命令模板（`{var}`+小 JSON Schema）、ssh-kind executor 的 dev_selftest 测试分发（受控 SCP + `ssh_binary_replace`）、P3 package_sync。
+
 ## 2026-06-24 Server 部署手册
 
 目标：补齐面向 Linux Server 的完整部署手册，覆盖从源码 checkout 到 runtime 目录、配置、构建安装、启停、MCP 接入、systemd 托管、升级、备份、回滚和排障的可执行步骤。

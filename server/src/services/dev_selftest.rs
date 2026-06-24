@@ -967,10 +967,12 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
 
     let run_root = run_dir(&state, &record.run_id);
     let started = Instant::now();
-    // Docker test suites dispatch through the executor docker runner (`docker run --rm
-    // --network ... <image> <argv>`); suites without a `docker` block keep the P1 local
-    // stub. Both produce a BoundedRun so the log/step/result handling below is shared.
-    let run = if let Some(docker) = &suite.docker {
+    // Dispatch priority: a managed executor record (`suite.executor`) > an inline docker
+    // target (`suite.docker`) > the P1 local stub. All produce a BoundedRun so the
+    // log/step/result handling below is shared.
+    let run = if let Some(executor_id) = &suite.executor {
+        run_executor_record_test(&state, &record, &suite, executor_id, &run_root).await?
+    } else if let Some(docker) = &suite.docker {
         run_docker_test(&state, &record, &suite, docker, &run_root).await?
     } else {
         let env = target_env(&record, &suite);
@@ -1126,6 +1128,107 @@ async fn run_docker_test(
         workdir: docker.workdir.clone(),
         volumes,
         env: user_env,
+    };
+    let input = ExecutorRunInput {
+        target: &target,
+        argv: &argv,
+        timeout_seconds: timeout_seconds.unwrap_or(state.config.dev_selftest.build_timeout_seconds),
+        extra_env,
+        server_cwd: run_root.to_path_buf(),
+        launcher: state.config.dev_selftest.docker.binary.clone(),
+        max_output_bytes: state.config.dev_selftest.max_output_bytes,
+    };
+    let outcome = remote_execution::run_executor_command(input).await;
+    Ok(BoundedRun {
+        ok: outcome.status == ExecutorRunStatus::Ok,
+        exit_code: outcome.exit_code,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+        duration_ms: outcome.duration_ms,
+        error: outcome.error,
+    })
+}
+
+/// Dispatch a test suite through a **managed docker-kind executor record** (the "纳管 +
+/// 指定执行" path). The record supplies the docker target (image/network/workdir/volumes/env,
+/// used as-is — no run-directory interpolation, since a managed executor is not bound to a
+/// dev_selftest run); argv/timeout come from `suite.command` template or `suite.argv`. System
+/// env (run dirs + `DEVSELFTEST_HOST/PORT`) is injected with final priority, exactly like the
+/// inline docker path. ssh-kind records are rejected (ssh test dispatch is deferred).
+async fn run_executor_record_test(
+    state: &AppState,
+    record: &DevSelftestRunRecord,
+    suite: &DevSelftestTestSuite,
+    executor_id: &str,
+    run_root: &Path,
+) -> Result<BoundedRun, AppError> {
+    let executor = state
+        .executors
+        .get(executor_id)
+        .await
+        .ok_or_else(|| AppError::bad_request(format!("unknown executor {executor_id}")))?;
+    if !executor.enabled {
+        return Err(AppError::bad_request(format!(
+            "executor {executor_id} is disabled"
+        )));
+    }
+    if executor.kind != crate::domain::models::ExecutorKind::Docker {
+        return Err(AppError::bad_request(format!(
+            "executor {executor_id} is not a docker executor (ssh-kind test dispatch is not supported)"
+        )));
+    }
+    let docker = executor.docker.clone().ok_or_else(|| {
+        AppError::bad_request(format!("executor {executor_id} is missing its docker spec"))
+    })?;
+
+    let (argv, timeout_seconds) = match suite.command.as_deref() {
+        Some(command_id) => {
+            let template = remote_execution::command_template(&state.config, command_id)
+                .ok_or_else(|| AppError::bad_request(format!("unknown command {command_id}")))?;
+            if !template.enabled {
+                return Err(AppError::bad_request(format!(
+                    "command {command_id} is disabled"
+                )));
+            }
+            (template.argv, template.timeout_seconds)
+        }
+        None => (suite.argv.clone(), suite.timeout_seconds),
+    };
+    if argv.is_empty() {
+        return Err(AppError::bad_request("docker test suite has empty argv"));
+    }
+
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
+    let cluster = match &record.deploy_target {
+        Some(DevSelftestDeployTarget::Docker { cluster, .. }) => cluster.clone(),
+        _ => String::new(),
+    };
+    let project_name = if cluster.is_empty() {
+        format!("devselftest_{}", sanitize_filename(&record.run_id)?)
+    } else {
+        format!(
+            "devselftest_{}_{}",
+            sanitize_filename(&record.run_id)?,
+            sanitize_filename(&cluster)?
+        )
+    };
+    let mut extra_env = deploy_env(run_root, &source_dir, &artifacts_dir, &project_name);
+    extra_env.insert("DEVSELFTEST_HOST".to_string(), "127.0.0.1".to_string());
+    if let Some(DevSelftestDeployTarget::Docker {
+        exposed_port: Some(port),
+        ..
+    }) = &record.deploy_target
+    {
+        extra_env.insert("DEVSELFTEST_PORT".to_string(), port.to_string());
+    }
+
+    let target = ExecutorTarget::Docker {
+        image: docker.image.clone(),
+        network: docker.network.clone(),
+        workdir: docker.workdir.clone(),
+        volumes: docker.volumes.clone(),
+        env: docker.env.clone(),
     };
     let input = ExecutorRunInput {
         target: &target,
@@ -1604,6 +1707,7 @@ mod tests {
                 timeout_seconds: None,
                 env: BTreeMap::new(),
                 docker: None,
+                executor: None,
             },
         );
         AppConfig {
@@ -1781,6 +1885,7 @@ mod tests {
                     volumes: vec!["/repo/tests:/tests:ro".to_string()],
                     env: BTreeMap::new(),
                 }),
+                executor: None,
             },
         );
         let config = Arc::new(config);
@@ -1803,6 +1908,110 @@ mod tests {
             &state,
             RUN_TESTS_ID,
             json!({"runId":run_id,"testSuite":"smoke"}),
+        )
+        .await;
+        assert_eq!(tests.status, "OK");
+
+        let run_dir = state.config.storage.dev_selftest_run_dir(&run_id);
+        let stdout = std::fs::read_to_string(run_dir.join("logs/tests.stdout.txt")).unwrap();
+        assert!(
+            stdout.contains("run --rm --network host"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--volume /repo/tests:/tests:ro alpine:3.20 sh /tests/smoke.sh"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--env DEVSELFTEST_HOST=127.0.0.1"),
+            "stdout: {stdout}"
+        );
+
+        let report = run_tool(&state, REPORT_ID, json!({"runId":run_id})).await;
+        assert_eq!(report.status, "SUCCEEDED");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn docker_executor_record_test_dispatch() {
+        use crate::domain::models::{ExecutorKind, RemoteExecutorRecord};
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "logagent-dev-selftest-exec-rec-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let fake_docker = root.join("fake-docker.sh");
+        std::fs::write(
+            &fake_docker,
+            "#!/usr/bin/env bash\nprintf 'ARGS:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; echo\nexit 0\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_docker).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_docker, perms).unwrap();
+
+        let mut config = test_config(true);
+        config.storage.data_dir = root.join("data");
+        config.dev_selftest.docker.binary = fake_docker;
+        config.dev_selftest.test_suites.insert(
+            "executor_smoke".to_string(),
+            DevSelftestTestSuite {
+                display_name: "executor_smoke".to_string(),
+                argv: vec!["sh".to_string(), "/tests/smoke.sh".to_string()],
+                command: None,
+                timeout_seconds: Some(30),
+                env: BTreeMap::new(),
+                docker: None,
+                executor: Some("executor_smoke_docker".to_string()),
+            },
+        );
+        let config = Arc::new(config);
+        config.prepare_dirs().unwrap();
+        let state = crate::app::AppState::new(config).unwrap();
+
+        // Seed a managed docker-kind executor record (the "纳管" entity the suite references).
+        state
+            .executors
+            .create(RemoteExecutorRecord {
+                schema_version: 1,
+                executor_id: "executor_smoke_docker".to_string(),
+                name: "smoke docker".to_string(),
+                kind: ExecutorKind::Docker,
+                host: String::new(),
+                port: 0,
+                user: String::new(),
+                docker: Some(DevSelftestTestDocker {
+                    image: "alpine:3.20".to_string(),
+                    network: Some("host".to_string()),
+                    workdir: None,
+                    volumes: vec!["/repo/tests:/tests:ro".to_string()],
+                    env: BTreeMap::new(),
+                }),
+                tags: Vec::new(),
+                enabled: true,
+                notes: None,
+                last_check: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, json!({"label":"exec-rec"})).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+
+        // run_tests dispatches through the managed executor record (volumes as-is, system env
+        // injected). The fake docker echoes its argv into the captured tests stdout.
+        let tests = run_tool(
+            &state,
+            RUN_TESTS_ID,
+            json!({"runId":run_id,"testSuite":"executor_smoke"}),
         )
         .await;
         assert_eq!(tests.status, "OK");

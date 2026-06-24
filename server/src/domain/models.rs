@@ -3,6 +3,19 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::support::docker_target::DockerTargetSpec;
+
+/// Where a `RemoteExecutorRecord` runs its commands. `Ssh` is the original SSH target
+/// (host/port/user); `Docker` runs `docker run --rm ... <image> <argv>` via the shared
+/// `run_executor_command`. Existing records deserialize without `kind` as `Ssh`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutorKind {
+    #[default]
+    Ssh,
+    Docker,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -144,9 +157,14 @@ pub struct RemoteExecutorRecord {
     pub schema_version: u32,
     pub executor_id: String,
     pub name: String,
+    /// `Ssh` ⇒ host/port/user; `Docker` ⇒ `docker`. Defaults to `Ssh` for legacy records.
+    #[serde(default)]
+    pub kind: ExecutorKind,
     pub host: String,
     pub port: u16,
     pub user: String,
+    #[serde(default)]
+    pub docker: Option<DockerTargetSpec>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub enabled: bool,
@@ -181,10 +199,16 @@ pub struct RemoteExecutorListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CreateRemoteExecutorRequest {
     pub name: String,
+    #[serde(default)]
+    pub kind: ExecutorKind,
+    #[serde(default)]
     pub host: String,
     #[serde(default = "default_remote_executor_port")]
     pub port: u16,
+    #[serde(default)]
     pub user: String,
+    #[serde(default)]
+    pub docker: Option<DockerTargetSpec>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default = "default_remote_executor_enabled")]
@@ -196,9 +220,11 @@ pub struct CreateRemoteExecutorRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PatchRemoteExecutorRequest {
     pub name: Option<String>,
+    pub kind: Option<ExecutorKind>,
     pub host: Option<String>,
     pub port: Option<u16>,
     pub user: Option<String>,
+    pub docker: Option<Option<DockerTargetSpec>>,
     pub tags: Option<Vec<String>>,
     pub enabled: Option<bool>,
     #[serde(default)]

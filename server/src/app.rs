@@ -99,4 +99,18 @@ impl AppState {
         }
         Ok(())
     }
+
+    /// Seed config-declared executor records (`remote_execution.executors`) at startup,
+    /// creating each only if no record with that id already exists (never overwrites an
+    /// API-created/modified one). Validation already ran at config load; a persist failure
+    /// is logged and skipped rather than aborting startup.
+    pub async fn seed_executors(self: &Arc<Self>) -> anyhow::Result<()> {
+        for seeded in &self.config.remote_execution.executors {
+            let executor_id = seeded.executor_id.clone();
+            if let Err(err) = self.executors.create_if_absent(seeded.record.clone()).await {
+                warn!(executor_id = %executor_id, error = %err, "failed to seed executor; skipping");
+            }
+        }
+        Ok(())
+    }
 }
