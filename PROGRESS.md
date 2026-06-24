@@ -12,6 +12,31 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 本机 runtime dev_selftest 配置覆盖
+
+目标：根据 `examples/server-dev-selftest.yaml` 生成本机可用配置，并直接覆盖
+`/Users/duzhiwang/workspace/db/prd_assistant_v2/deploy/logagent.yaml`。
+
+- Runtime 配置保留当前 50992 实例的 `server`、`storage`、`auth`、skills、
+  analyzer tools、`remote_execution.enabled=true`、MCP 和 HuaweiCloud package-sync
+  disabled 配置。
+- 从 dev_selftest 示例合入 openGemini Docker demo，并打开
+  `dev_selftest.enabled=true`。
+- 本机路径替换：repo 为 `/Users/duzhiwang/workspace/vibe/prd_assistant`，
+  Docker 为 `/usr/local/bin/docker`，Git 为 `/opt/homebrew/bin/git`，compose/build/test
+  assets 均使用仓库内 `deploy/devselftest/opengemini/*` 绝对路径。
+- `remote_execution.commands.opengemini_smoke`、seeded docker executor
+  `executor_opengemini_smoke`、inline suite `opengemini_smoke` 和 executor-record suite
+  `opengemini_smoke_exec` 均已写入 runtime 配置。
+- Runtime 操作：重启 `com.logagent.server` 时发现 50992 被旧 orphan
+  `logagent-server` 进程占用，结束该进程后重新 `launchctl kickstart`，当前 pid 为
+  90345。
+- 验证：`GET /health` 返回 ok；`GET /api/tools` 中 5 个
+  `logagent.dev_selftest.*` 均 `runnable=true` 且无 unavailable reason；MCP
+  `tools/list` 暴露 5 个 dev_selftest tools 且 `inputSchema.type=object`；MCP
+  `tools/call logagent.dev_selftest.sync_workspace` 空参数 stub 返回 `isError=false`，
+  runId 为 `devselftest_1782286800110_2`。
+
 ## 2026-06-24 MCP tools/list inputSchema 根对象兼容修复
 
 目标：修复 Claude Code 连接 `/api/mcp` 时 `tools fetch failed`，报
