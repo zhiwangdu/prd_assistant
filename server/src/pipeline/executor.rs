@@ -116,41 +116,11 @@ async fn dispatch_phase(
             Ok(())
         }
         TaskPhase::ExecuteRemoteCommand => {
-            if task.task_kind != TaskKind::RemoteCommandRun {
-                anyhow::bail!("EXECUTE_REMOTE_COMMAND phase requires a remote command task");
-            }
-            let executor_id = task
-                .remote_executor_id
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("remote command task is missing executor id"))?;
-            let executor = state
-                .executors
-                .get(executor_id)
-                .await
-                .ok_or_else(|| anyhow::anyhow!("unknown executor {executor_id}"))?;
-            let result_path = crate::services::remote_execution::run_remote_command_task(
-                state.config.clone(),
-                executor,
-                task.clone(),
-            )
-            .await?
-            .display()
-            .to_string();
-            let completed = state
-                .tasks
-                .succeed_remote_command_run(
-                    &task.task_id,
-                    TaskPhase::ExecuteRemoteCommand,
-                    result_path,
-                )
-                .await?;
-            info!(
-                task_id = %completed.task_id,
-                executor_id = ?completed.remote_executor_id,
-                command_id = ?completed.remote_command_id,
-                "remote command task succeeded"
-            );
-            Ok(())
+            // Remote command execution (SSH/SCP + managed docker executor) has been
+            // removed. The variant and phase are retained only so old persisted task
+            // records still deserialize; such a task can no longer be executed.
+            let _ = (state, task);
+            anyhow::bail!("remote command execution has been removed")
         }
     }
 }

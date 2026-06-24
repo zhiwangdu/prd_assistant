@@ -115,24 +115,6 @@ impl TaskStore {
         .await
     }
 
-    pub async fn succeed_remote_command_run(
-        &self,
-        task_id: &str,
-        expected: TaskPhase,
-        remote_result_path: String,
-    ) -> anyhow::Result<TaskRecord> {
-        self.update(task_id, |task| {
-            ensure_running(task)?;
-            ensure_phase(task, expected)?;
-            task.status = TaskStatus::Succeeded;
-            task.phase = None;
-            task.error = None;
-            task.remote_result_path = Some(remote_result_path);
-            Ok(())
-        })
-        .await
-    }
-
     pub async fn fail(
         &self,
         task_id: &str,

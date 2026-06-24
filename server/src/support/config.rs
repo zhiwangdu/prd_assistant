@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use chrono::Utc;
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
@@ -68,52 +67,26 @@ pub struct ToolMatchSettings {
 
 #[derive(Debug, Clone)]
 pub struct RemoteExecutionSettings {
-    pub enabled: bool,
-    pub ssh_binary: PathBuf,
-    /// Docker binary used by the docker executor kind (`run_remote_command_task` docker
-    /// branch). Required absolute when `enabled` (the SSH task path gates on enabled).
-    pub docker_binary: PathBuf,
-    pub host_key_policy: String,
-    pub connect_timeout_seconds: u64,
-    pub command_timeout_seconds: u64,
-    pub max_output_bytes: usize,
     pub commands: BTreeMap<String, RemoteCommandTemplateSettings>,
-    /// Config-seeded executor records, created at startup (create-if-absent).
-    pub executors: Vec<SeededExecutor>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RemoteCommandTemplateSettings {
+    #[allow(dead_code)]
     pub command_id: String,
+    #[allow(dead_code)]
     pub display_name: String,
+    #[allow(dead_code)]
     pub description: String,
     pub enabled: bool,
     pub argv: Vec<String>,
     pub timeout_seconds: Option<u64>,
 }
 
-/// A config-seeded executor record, created at startup via `RemoteExecutorStore::create_if_absent`
-/// (never overwrites an existing/API-created record). `record` is fully validated by the executor
-/// store at load and again at seed time.
-#[derive(Debug, Clone)]
-pub struct SeededExecutor {
-    #[allow(dead_code)]
-    pub executor_id: String,
-    pub record: crate::domain::models::RemoteExecutorRecord,
-}
-
 impl Default for RemoteExecutionSettings {
     fn default() -> Self {
         Self {
-            enabled: default_remote_execution_enabled(),
-            ssh_binary: default_ssh_binary(),
-            docker_binary: default_docker_binary(),
-            host_key_policy: default_remote_host_key_policy(),
-            connect_timeout_seconds: default_remote_connect_timeout(),
-            command_timeout_seconds: default_remote_command_timeout(),
-            max_output_bytes: default_remote_max_output_bytes(),
             commands: default_remote_command_templates(),
-            executors: Vec::new(),
         }
     }
 }
@@ -211,10 +184,6 @@ pub struct DevSelftestTestSuite {
     /// When set, `run_tests` dispatches the suite through the executor docker runner
     /// (`docker run --rm --network ... <image> <argv>`) instead of the local stub.
     pub docker: Option<DevSelftestTestDocker>,
-    /// When set, `run_tests` looks up a managed docker-kind executor record by id and
-    /// dispatches through it (the "纳管 + 指定执行" path). Mutually exclusive with `docker`
-    /// (inline). The record must exist, be enabled, and be `kind=docker` at run time.
-    pub executor: Option<String>,
 }
 
 /// Inline docker target for a dev_selftest test suite — shared `DockerTargetSpec`
@@ -340,50 +309,8 @@ struct ToolMatchConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 struct RemoteExecutionConfig {
-    #[serde(default = "default_remote_execution_enabled")]
-    enabled: bool,
-    #[serde(default = "default_ssh_binary")]
-    ssh_binary: PathBuf,
-    #[serde(default = "default_docker_binary")]
-    docker_binary: PathBuf,
-    #[serde(default = "default_remote_host_key_policy")]
-    host_key_policy: String,
-    #[serde(default = "default_remote_connect_timeout")]
-    connect_timeout_seconds: u64,
-    #[serde(default = "default_remote_command_timeout")]
-    command_timeout_seconds: u64,
-    #[serde(default = "default_remote_max_output_bytes")]
-    max_output_bytes: usize,
     #[serde(default)]
     commands: BTreeMap<String, RemoteCommandTemplateConfig>,
-    #[serde(default)]
-    executors: Vec<SeededExecutorConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct SeededExecutorConfig {
-    executor_id: String,
-    name: String,
-    #[serde(default)]
-    kind: crate::domain::models::ExecutorKind,
-    #[serde(default)]
-    host: String,
-    #[serde(default = "default_seed_executor_port")]
-    port: u16,
-    #[serde(default)]
-    user: String,
-    #[serde(default)]
-    docker: Option<crate::support::docker_target::DockerTargetSpec>,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default = "crate::domain::models::default_remote_executor_enabled")]
-    enabled: bool,
-    #[serde(default)]
-    notes: Option<String>,
-}
-
-fn default_seed_executor_port() -> u16 {
-    22
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -502,8 +429,6 @@ struct DevSelftestTestSuiteConfig {
     env: BTreeMap<String, String>,
     #[serde(default)]
     docker: Option<crate::support::docker_target::DockerTargetSpec>,
-    #[serde(default)]
-    executor: Option<String>,
 }
 
 impl AppConfig {
@@ -511,7 +436,6 @@ impl AppConfig {
         fs::create_dir_all(self.storage.uploads_dir())?;
         fs::create_dir_all(self.storage.workspaces_dir())?;
         fs::create_dir_all(self.storage.tasks_dir())?;
-        fs::create_dir_all(self.storage.executors_dir())?;
         fs::create_dir_all(self.storage.dev_selftest_dir())?;
         fs::create_dir_all(self.storage.dev_selftest_runs_dir())?;
         Ok(())
@@ -537,10 +461,6 @@ impl StorageSettings {
 
     pub fn tasks_dir(&self) -> PathBuf {
         self.data_dir.join("tasks")
-    }
-
-    pub fn executors_dir(&self) -> PathBuf {
-        self.data_dir.join("executors")
     }
 
     pub fn dev_selftest_dir(&self) -> PathBuf {
@@ -695,20 +615,9 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .docker
                 .map(|raw| resolve_dev_selftest_test_docker(&id, raw, enabled))
                 .transpose()?;
-            let executor = suite
-                .executor
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty());
             let has_argv = !argv.is_empty();
             let has_command = command.is_some();
             let has_docker = docker.is_some();
-            let has_executor = executor.is_some();
-            // executor (managed record) and docker (inline) are mutually exclusive targets.
-            if has_executor && has_docker {
-                anyhow::bail!(
-                    "dev_selftest.test_suites.{id}: executor and docker are mutually exclusive"
-                );
-            }
             // command and a non-empty argv are mutually exclusive; exactly one is required.
             if has_command && has_argv {
                 anyhow::bail!(
@@ -721,11 +630,9 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 );
             }
             // command references a remote_execution command template run inside the
-            // container, so it is only meaningful with a docker target (inline or managed).
-            if has_command && !has_docker && !has_executor {
-                anyhow::bail!(
-                    "dev_selftest.test_suites.{id}: command requires a docker block or executor"
-                );
+            // container, so it is only meaningful with a docker target.
+            if has_command && !has_docker {
+                anyhow::bail!("dev_selftest.test_suites.{id}: command requires a docker block");
             }
             if let Some(cmd) = command.as_deref() {
                 let valid = cmd
@@ -734,17 +641,6 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 if !valid {
                     anyhow::bail!(
                         "dev_selftest.test_suites.{id}: command must be a template id (alphanumeric, '_', '-')"
-                    );
-                }
-            }
-            if let Some(exec_id) = executor.as_deref() {
-                let valid = exec_id.starts_with("executor_")
-                    && exec_id
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-                if !valid {
-                    anyhow::bail!(
-                        "dev_selftest.test_suites.{id}: executor must be an executor id (executor_...)"
                     );
                 }
             }
@@ -758,7 +654,6 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                     timeout_seconds: suite.timeout_seconds.map(|value| value.max(1)),
                     env: suite.env,
                     docker,
-                    executor,
                 },
             ))
         })
@@ -985,16 +880,6 @@ fn resolve_tools(raw: BTreeMap<String, ToolConfig>) -> anyhow::Result<ToolsSetti
 }
 
 fn resolve_remote_execution(raw: RemoteExecutionConfig) -> anyhow::Result<RemoteExecutionSettings> {
-    if raw.enabled && !raw.ssh_binary.is_absolute() {
-        anyhow::bail!("remote_execution.ssh_binary must be absolute when enabled");
-    }
-    if raw.enabled && !raw.docker_binary.is_absolute() {
-        anyhow::bail!("remote_execution.docker_binary must be absolute when enabled");
-    }
-    let host_key_policy = raw.host_key_policy.trim();
-    if !matches!(host_key_policy, "accept-new" | "strict" | "no") {
-        anyhow::bail!("remote_execution.host_key_policy must be one of accept-new, strict, or no");
-    }
     let commands = if raw.commands.is_empty() {
         default_remote_command_templates()
     } else {
@@ -1027,47 +912,7 @@ fn resolve_remote_execution(raw: RemoteExecutionConfig) -> anyhow::Result<Remote
             })
             .collect::<anyhow::Result<BTreeMap<_, _>>>()?
     };
-    let executors = resolve_seeded_executors(raw.executors)?;
-    Ok(RemoteExecutionSettings {
-        enabled: raw.enabled,
-        ssh_binary: raw.ssh_binary,
-        docker_binary: raw.docker_binary,
-        host_key_policy: host_key_policy.to_string(),
-        connect_timeout_seconds: raw.connect_timeout_seconds.max(1),
-        command_timeout_seconds: raw.command_timeout_seconds.max(1),
-        max_output_bytes: raw.max_output_bytes.max(1024),
-        commands,
-        executors,
-    })
-}
-
-fn resolve_seeded_executors(raw: Vec<SeededExecutorConfig>) -> anyhow::Result<Vec<SeededExecutor>> {
-    raw.into_iter()
-        .map(|e| {
-            let now = Utc::now();
-            let record = crate::domain::models::RemoteExecutorRecord {
-                schema_version: 1,
-                executor_id: e.executor_id.clone(),
-                name: e.name,
-                kind: e.kind,
-                host: e.host,
-                port: e.port,
-                user: e.user,
-                docker: e.docker,
-                tags: e.tags,
-                enabled: e.enabled,
-                notes: e.notes,
-                last_check: None,
-                created_at: now,
-                updated_at: now,
-            };
-            crate::stores::executor_store::validate_executor(&record)?;
-            Ok(SeededExecutor {
-                executor_id: e.executor_id,
-                record,
-            })
-        })
-        .collect()
+    Ok(RemoteExecutionSettings { commands })
 }
 
 fn resolve_tool_path(name: &str, tool: &ToolConfig) -> anyhow::Result<PathBuf> {
@@ -1176,15 +1021,7 @@ fn default_mcp_config() -> McpConfig {
 
 fn default_remote_execution_config() -> RemoteExecutionConfig {
     RemoteExecutionConfig {
-        enabled: default_remote_execution_enabled(),
-        ssh_binary: default_ssh_binary(),
-        docker_binary: default_docker_binary(),
-        host_key_policy: default_remote_host_key_policy(),
-        connect_timeout_seconds: default_remote_connect_timeout(),
-        command_timeout_seconds: default_remote_command_timeout(),
-        max_output_bytes: default_remote_max_output_bytes(),
         commands: BTreeMap::new(),
-        executors: Vec::new(),
     }
 }
 
@@ -1202,37 +1039,6 @@ fn default_tool_max_output_bytes() -> usize {
 
 fn default_tool_max_input_files() -> usize {
     1
-}
-
-fn default_remote_execution_enabled() -> bool {
-    true
-}
-
-fn default_ssh_binary() -> PathBuf {
-    // Platform-aware default. Both are absolute so the allowlist validation
-    // (`ssh_binary must be absolute when enabled`) passes out of the box.
-    // Override `remote_execution.ssh_binary` if your OpenSSH install differs.
-    if cfg!(windows) {
-        PathBuf::from(r"C:\Windows\System32\OpenSSH\ssh.exe")
-    } else {
-        PathBuf::from("/usr/bin/ssh")
-    }
-}
-
-fn default_remote_host_key_policy() -> String {
-    "accept-new".to_string()
-}
-
-fn default_remote_connect_timeout() -> u64 {
-    10
-}
-
-fn default_remote_command_timeout() -> u64 {
-    30
-}
-
-fn default_remote_max_output_bytes() -> usize {
-    1024 * 1024
 }
 
 fn default_remote_command_enabled() -> bool {
@@ -1669,65 +1475,6 @@ test_suites:
         assert!(
             err("      image: \"alpine:3.20\"\n      env: { 1BAD: v }\n").contains("invalid key")
         );
-    }
-
-    #[test]
-    fn resolves_seeded_executors() {
-        let raw: RemoteExecutionConfig = serde_yaml::from_str(
-            r#"
-enabled: true
-ssh_binary: /usr/bin/ssh
-docker_binary: /usr/bin/docker
-executors:
-  - executor_id: executor_smoke
-    name: smoke
-    kind: docker
-    enabled: true
-    docker: { image: "alpine:3.20", network: host, volumes: ["/h:/c:ro"] }
-"#,
-        )
-        .unwrap();
-        let settings = resolve_remote_execution(raw).unwrap();
-        assert_eq!(settings.executors.len(), 1);
-        assert_eq!(
-            settings.executors[0].record.kind,
-            crate::domain::models::ExecutorKind::Docker
-        );
-
-        // docker kind without a docker spec -> rejected at load.
-        let bad: RemoteExecutionConfig = serde_yaml::from_str(
-            r#"
-enabled: true
-ssh_binary: /usr/bin/ssh
-docker_binary: /usr/bin/docker
-executors:
-  - executor_id: executor_bad
-    name: bad
-    kind: docker
-    enabled: true
-"#,
-        )
-        .unwrap();
-        let err = resolve_remote_execution(bad).unwrap_err().to_string();
-        assert!(err.contains("missing its docker spec"), "{err}");
-
-        // bad executor_id format -> rejected.
-        let bad_id: RemoteExecutionConfig = serde_yaml::from_str(
-            r#"
-enabled: true
-ssh_binary: /usr/bin/ssh
-docker_binary: /usr/bin/docker
-executors:
-  - executor_id: not-prefix
-    name: bad
-    kind: docker
-    enabled: true
-    docker: { image: "alpine:3.20" }
-"#,
-        )
-        .unwrap();
-        let err = resolve_remote_execution(bad_id).unwrap_err().to_string();
-        assert!(err.contains("invalid executor id"), "{err}");
     }
 
     fn temp_env_set(name: &str, value: &str, test: impl FnOnce()) {

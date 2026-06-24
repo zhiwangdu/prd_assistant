@@ -67,7 +67,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(config)?;
     state.recover_tasks().await?;
-    state.seed_executors().await?;
     let app = Router::new()
         .merge(http::router(state.clone()))
         .fallback_service(ServeDir::new("webui/out").append_index_html_on_directories(true))

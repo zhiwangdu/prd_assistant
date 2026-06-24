@@ -10,7 +10,6 @@ use axum::{
 use crate::{app::AppState, support::auth::require_api_key};
 
 mod artifacts;
-mod executors;
 mod health;
 mod runs;
 mod tools;
@@ -52,32 +51,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route(
             "/api/mcp",
             post(crate::mcp_server::http_mcp).get(crate::mcp_server::get_mcp),
-        )
-        .route(
-            "/api/executors",
-            get(executors::list_executors).post(executors::create_executor),
-        )
-        .route(
-            "/api/executors/:executor_id",
-            get(executors::get_executor)
-                .patch(executors::patch_executor)
-                .delete(executors::delete_executor),
-        )
-        .route(
-            "/api/executor-command-templates",
-            get(executors::list_command_templates),
-        )
-        .route(
-            "/api/executor-runs",
-            get(executors::list_remote_runs).post(executors::create_remote_run),
-        )
-        .route(
-            "/api/executor-runs/:task_id",
-            get(executors::get_remote_run),
-        )
-        .route(
-            "/api/executor-runs/:task_id/result",
-            get(executors::remote_run_result),
         )
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .route_layer(middleware::from_fn_with_state(

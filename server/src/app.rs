@@ -6,8 +6,7 @@ use crate::{
     pipeline::executor::TaskExecutor,
     services::tool_runner::ToolRunner,
     stores::{
-        dev_selftest_store::DevSelftestStore, executor_store::RemoteExecutorStore,
-        task_store::TaskStore, upload_store::UploadStore,
+        dev_selftest_store::DevSelftestStore, task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -16,7 +15,6 @@ use crate::{
 pub struct AppState {
     pub config: Arc<AppConfig>,
     pub uploads: UploadStore,
-    pub executors: RemoteExecutorStore,
     pub dev_selftest: DevSelftestStore,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
@@ -32,10 +30,8 @@ impl AppState {
         );
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
-        let executors = RemoteExecutorStore::load(config.storage.executors_dir())?;
         let dev_selftest = DevSelftestStore::load(config.storage.dev_selftest_dir())?;
         let state = Arc::new(Self {
-            executors,
             dev_selftest,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             tool_runner: ToolRunner::new(config.tools.clone()),
@@ -75,20 +71,6 @@ impl AppState {
                 "enqueueing recovered task"
             );
             self.executor.enqueue(self.clone(), task.task_id);
-        }
-        Ok(())
-    }
-
-    /// Seed config-declared executor records (`remote_execution.executors`) at startup,
-    /// creating each only if no record with that id already exists (never overwrites an
-    /// API-created/modified one). Validation already ran at config load; a persist failure
-    /// is logged and skipped rather than aborting startup.
-    pub async fn seed_executors(self: &Arc<Self>) -> anyhow::Result<()> {
-        for seeded in &self.config.remote_execution.executors {
-            let executor_id = seeded.executor_id.clone();
-            if let Err(err) = self.executors.create_if_absent(seeded.record.clone()).await {
-                warn!(executor_id = %executor_id, error = %err, "failed to seed executor; skipping");
-            }
         }
         Ok(())
     }

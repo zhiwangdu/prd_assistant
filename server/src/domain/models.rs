@@ -3,19 +3,6 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::support::docker_target::DockerTargetSpec;
-
-/// Where a `RemoteExecutorRecord` runs its commands. `Ssh` is the original SSH target
-/// (host/port/user); `Docker` runs `docker run --rm ... <image> <argv>` via the shared
-/// `run_executor_command`. Existing records deserialize without `kind` as `Ssh`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutorKind {
-    #[default]
-    Ssh,
-    Docker,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -151,103 +138,6 @@ pub struct ToolRunArtifactsResponse {
     pub result: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteExecutorRecord {
-    pub schema_version: u32,
-    pub executor_id: String,
-    pub name: String,
-    /// `Ssh` ⇒ host/port/user; `Docker` ⇒ `docker`. Defaults to `Ssh` for legacy records.
-    #[serde(default)]
-    pub kind: ExecutorKind,
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    #[serde(default)]
-    pub docker: Option<DockerTargetSpec>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    pub enabled: bool,
-    pub notes: Option<String>,
-    pub last_check: Option<RemoteExecutorCheck>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteExecutorCheck {
-    pub checked_at: DateTime<Utc>,
-    pub status: RemoteExecutorCheckStatus,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RemoteExecutorCheckStatus {
-    Ok,
-    Failed,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteExecutorListResponse {
-    pub executors: Vec<RemoteExecutorRecord>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateRemoteExecutorRequest {
-    pub name: String,
-    #[serde(default)]
-    pub kind: ExecutorKind,
-    #[serde(default)]
-    pub host: String,
-    #[serde(default = "default_remote_executor_port")]
-    pub port: u16,
-    #[serde(default)]
-    pub user: String,
-    #[serde(default)]
-    pub docker: Option<DockerTargetSpec>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default = "default_remote_executor_enabled")]
-    pub enabled: bool,
-    pub notes: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchRemoteExecutorRequest {
-    pub name: Option<String>,
-    pub kind: Option<ExecutorKind>,
-    pub host: Option<String>,
-    pub port: Option<u16>,
-    pub user: Option<String>,
-    pub docker: Option<Option<DockerTargetSpec>>,
-    pub tags: Option<Vec<String>>,
-    pub enabled: Option<bool>,
-    #[serde(default)]
-    pub notes: Option<Option<String>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteCommandTemplateDescriptor {
-    pub command_id: String,
-    pub display_name: String,
-    pub description: String,
-    pub enabled: bool,
-    pub argv: Vec<String>,
-    pub timeout_seconds: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteCommandTemplateListResponse {
-    pub commands: Vec<RemoteCommandTemplateDescriptor>,
-}
-
 // ---------------------------------------------------------------------------
 // Dev self-test pipeline (P1: docker self-test closed loop). A "run" is a
 // persistent workspace shared across multiple tool calls (sync -> build ->
@@ -306,37 +196,6 @@ pub struct DevSelftestRunRecord {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateRemoteCommandRunRequest {
-    pub executor_id: String,
-    pub command_id: String,
-    pub idempotency_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteCommandRunsQuery {
-    pub executor_id: Option<String>,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteCommandRunListResponse {
-    pub runs: Vec<TaskSummary>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteCommandRunResultResponse {
-    pub task_id: String,
-    pub executor_id: String,
-    pub command_id: String,
-    pub result_path: String,
-    pub result: serde_json::Value,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
@@ -361,6 +220,7 @@ pub enum TaskPhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)] // RemoteCommandRun retained for on-disk deserialization of legacy task records
 pub enum TaskKind {
     ToolRun,
     RemoteCommandRun,
@@ -377,6 +237,7 @@ pub struct HealthResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)] // RemoteExecutor retained for on-disk deserialization of legacy task records
 pub enum TaskSource {
     Upload,
     RemoteExecutor,
@@ -474,14 +335,6 @@ impl TaskRecord {
 
 pub fn default_task_question() -> String {
     "分析日志中的主要异常、可能原因和建议检查项。".to_string()
-}
-
-pub fn default_remote_executor_port() -> u16 {
-    22
-}
-
-pub fn default_remote_executor_enabled() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

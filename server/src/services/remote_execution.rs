@@ -1,74 +1,9 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
-use chrono::Utc;
 use serde::Serialize;
 use tokio::{process::Command, time::Duration};
-use tracing::info;
 
-use crate::{
-    domain::models::{ExecutorKind, RemoteExecutorRecord, TaskRecord},
-    support::{
-        config::{AppConfig, RemoteCommandTemplateSettings},
-        error::AppError,
-    },
-};
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteCommandRunRecord {
-    schema_version: u32,
-    executor_id: String,
-    executor_name: String,
-    kind: ExecutorKind,
-    host: String,
-    port: u16,
-    user: String,
-    docker_image: Option<String>,
-    command_id: String,
-    command_display_name: String,
-    command_argv: Vec<String>,
-    status: RemoteCommandStatus,
-    exit_code: Option<i32>,
-    duration_ms: u128,
-    stdout_path: String,
-    stderr_path: String,
-    stdout_preview: String,
-    stderr_preview: String,
-    warnings: Vec<String>,
-    error: Option<String>,
-    started_at: chrono::DateTime<Utc>,
-    completed_at: chrono::DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-enum RemoteCommandStatus {
-    Ok,
-    Failed,
-    TimedOut,
-}
-
-pub fn command_templates(
-    config: &AppConfig,
-) -> Vec<crate::domain::models::RemoteCommandTemplateDescriptor> {
-    config
-        .remote_execution
-        .commands
-        .values()
-        .map(
-            |command| crate::domain::models::RemoteCommandTemplateDescriptor {
-                command_id: command.command_id.clone(),
-                display_name: command.display_name.clone(),
-                description: command.description.clone(),
-                enabled: config.remote_execution.enabled && command.enabled,
-                argv: command.argv.clone(),
-                timeout_seconds: command
-                    .timeout_seconds
-                    .unwrap_or(config.remote_execution.command_timeout_seconds),
-            },
-        )
-        .collect()
-}
+use crate::support::config::{AppConfig, RemoteCommandTemplateSettings};
 
 pub fn command_template(
     config: &AppConfig,
@@ -78,8 +13,8 @@ pub fn command_template(
 }
 
 /// Outcome of running one command on an executor target. `status` preserves the
-/// Ok/Failed/TimedOut/SpawnFailed distinction so callers (e.g. the SSH task path) can map
-/// it without losing timeout semantics.
+/// Ok/Failed/TimedOut/SpawnFailed distinction so callers can map it without losing
+/// timeout semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ExecutorRunStatus {
@@ -89,18 +24,11 @@ pub enum ExecutorRunStatus {
     SpawnFailed,
 }
 
-/// Where a command runs. `Ssh` is the existing remote-execution target; `Docker` launches
-/// an ephemeral `docker run --rm` container (used by dev_selftest's inline docker test
-/// target). Neither variant opens a free shell — argv is supplied by the caller.
+/// Where a command runs. `Docker` launches an ephemeral `docker run --rm` container
+/// (used by dev_selftest's inline docker test target). argv is supplied by the caller —
+/// no free shell is opened.
 #[derive(Debug, Clone)]
 pub enum ExecutorTarget {
-    Ssh {
-        host: String,
-        port: u16,
-        user: String,
-        connect_timeout_seconds: u64,
-        host_key_policy: String,
-    },
     Docker {
         image: String,
         /// `None` (default) ⇒ `host`.
@@ -116,15 +44,14 @@ pub enum ExecutorTarget {
 #[derive(Debug, Clone)]
 pub struct ExecutorRunInput<'a> {
     pub target: &'a ExecutorTarget,
-    /// Ssh: remote argv; Docker: in-container command (binary + args).
+    /// In-container command (binary + args).
     pub argv: &'a [String],
     pub timeout_seconds: u64,
-    /// Docker only: appended as `--env` **after** `target.env`, so system vars win.
-    /// Ignored for Ssh (ssh does not inherit env).
+    /// Appended as `--env` **after** `target.env`, so system vars win.
     pub extra_env: BTreeMap<String, String>,
-    /// Spawn cwd on the server host (docker run only; Ssh ignores it).
+    /// Spawn cwd on the server host.
     pub server_cwd: PathBuf,
-    /// Program to exec: ssh binary (Ssh) or docker binary (Docker).
+    /// Program to exec: the docker binary.
     pub launcher: PathBuf,
     pub max_output_bytes: usize,
 }
@@ -135,15 +62,13 @@ pub struct ExecutorOutcome {
     pub exit_code: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    pub stdout_truncated: bool,
-    pub stderr_truncated: bool,
     pub duration_ms: u128,
     pub error: Option<String>,
 }
 
 /// Run `argv` on `target` with a hard timeout and output cap. Pure utility — does NOT
-/// check `remote_execution.enabled` (the gate lives at the task/handler entry), so
-/// dev_selftest can reuse the docker branch even when remote SSH execution is disabled.
+/// check any enable flag (the gate lives at the caller), so dev_selftest can reuse the
+/// docker branch directly.
 pub async fn run_executor_command(input: ExecutorRunInput<'_>) -> ExecutorOutcome {
     let started = Instant::now();
     let timeout_seconds = input.timeout_seconds.max(1);
@@ -152,31 +77,6 @@ pub async fn run_executor_command(input: ExecutorRunInput<'_>) -> ExecutorOutcom
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     match input.target {
-        ExecutorTarget::Ssh {
-            host,
-            port,
-            user,
-            connect_timeout_seconds,
-            host_key_policy,
-        } => {
-            // Bit-for-bit the same ssh invocation the old run_remote_command_task built.
-            command
-                .arg("-o")
-                .arg("BatchMode=yes")
-                .arg("-o")
-                .arg(format!("ConnectTimeout={connect_timeout_seconds}"))
-                .arg("-o")
-                .arg(format!(
-                    "StrictHostKeyChecking={}",
-                    strict_host_key_checking_value(host_key_policy)
-                ))
-                .arg("-p")
-                .arg(port.to_string())
-                .arg(format!("{user}@{host}"));
-            for arg in input.argv {
-                command.arg(arg);
-            }
-        }
         ExecutorTarget::Docker {
             image,
             network,
@@ -219,15 +119,13 @@ pub async fn run_executor_command(input: ExecutorRunInput<'_>) -> ExecutorOutcom
             } else {
                 ExecutorRunStatus::Failed
             };
-            let (stdout, stdout_truncated) = cap_output(output.stdout, input.max_output_bytes);
-            let (stderr, stderr_truncated) = cap_output(output.stderr, input.max_output_bytes);
+            let stdout = cap_output(output.stdout, input.max_output_bytes);
+            let stderr = cap_output(output.stderr, input.max_output_bytes);
             ExecutorOutcome {
                 status,
                 exit_code: output.status.code(),
                 stdout,
                 stderr,
-                stdout_truncated,
-                stderr_truncated,
                 duration_ms,
                 error: None,
             }
@@ -237,8 +135,6 @@ pub async fn run_executor_command(input: ExecutorRunInput<'_>) -> ExecutorOutcom
             exit_code: None,
             stdout: Vec::new(),
             stderr: err.to_string().into_bytes(),
-            stdout_truncated: false,
-            stderr_truncated: false,
             duration_ms,
             error: Some(format!(
                 "failed to spawn {}: {err}",
@@ -250,189 +146,17 @@ pub async fn run_executor_command(input: ExecutorRunInput<'_>) -> ExecutorOutcom
             exit_code: None,
             stdout: Vec::new(),
             stderr: Vec::new(),
-            stdout_truncated: false,
-            stderr_truncated: false,
             duration_ms,
             error: Some(format!("command timed out after {timeout_seconds}s")),
         },
     }
 }
 
-pub async fn run_remote_command_task(
-    config: Arc<AppConfig>,
-    executor: RemoteExecutorRecord,
-    task: TaskRecord,
-) -> Result<PathBuf, AppError> {
-    if !config.remote_execution.enabled {
-        return Err(AppError::bad_request("remote execution is disabled"));
+fn cap_output(mut output: Vec<u8>, max_bytes: usize) -> Vec<u8> {
+    if output.len() > max_bytes {
+        output.truncate(max_bytes);
     }
-    if !executor.enabled {
-        return Err(AppError::bad_request(format!(
-            "executor {} is disabled",
-            executor.executor_id
-        )));
-    }
-    let command_id = task
-        .remote_command_id
-        .as_deref()
-        .ok_or_else(|| AppError::bad_request("remote command run is missing commandId"))?;
-    let template = command_template(&config, command_id)
-        .ok_or_else(|| AppError::bad_request(format!("unknown commandId {command_id}")))?;
-    if !template.enabled {
-        return Err(AppError::bad_request(format!(
-            "remote command {command_id} is disabled"
-        )));
-    }
-    if template.argv.is_empty() {
-        return Err(AppError::bad_request(format!(
-            "remote command {command_id} has empty argv"
-        )));
-    }
-
-    let workspace = config.storage.workspace_dir(&task.task_id);
-    let result_dir = workspace.join("remote_command");
-    tokio::fs::create_dir_all(&result_dir)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to create remote result dir: {err}")))?;
-    let stdout_path = result_dir.join("stdout.txt");
-    let stderr_path = result_dir.join("stderr.txt");
-    let result_path = result_dir.join("result.json");
-
-    let started_at = Utc::now();
-    info!(
-        task_id = %task.task_id,
-        executor_id = %executor.executor_id,
-        host = %executor.host,
-        command_id = %template.command_id,
-        "starting remote command run"
-    );
-    let timeout_seconds = template
-        .timeout_seconds
-        .unwrap_or(config.remote_execution.command_timeout_seconds)
-        .max(1);
-    // Build the target + launcher per executor kind. SSH uses the ssh binary; Docker runs
-    // `docker run --rm ... <image> <argv>` via the shared runner, with the record's docker
-    // spec taken literally (no run-directory interpolation — a managed executor is not bound
-    // to a dev_selftest run).
-    let (target, launcher) = match executor.kind {
-        ExecutorKind::Ssh => (
-            ExecutorTarget::Ssh {
-                host: executor.host.clone(),
-                port: executor.port,
-                user: executor.user.clone(),
-                connect_timeout_seconds: config.remote_execution.connect_timeout_seconds,
-                host_key_policy: config.remote_execution.host_key_policy.clone(),
-            },
-            config.remote_execution.ssh_binary.clone(),
-        ),
-        ExecutorKind::Docker => {
-            let docker = executor.docker.clone().ok_or_else(|| {
-                AppError::bad_request(format!(
-                    "executor {} is missing its docker spec",
-                    executor.executor_id
-                ))
-            })?;
-            (
-                ExecutorTarget::Docker {
-                    image: docker.image.clone(),
-                    network: docker.network.clone(),
-                    workdir: docker.workdir.clone(),
-                    volumes: docker.volumes.clone(),
-                    env: docker.env.clone(),
-                },
-                config.remote_execution.docker_binary.clone(),
-            )
-        }
-    };
-    let input = ExecutorRunInput {
-        target: &target,
-        argv: &template.argv,
-        timeout_seconds,
-        extra_env: BTreeMap::new(),
-        server_cwd: workspace.clone(),
-        launcher,
-        max_output_bytes: config.remote_execution.max_output_bytes,
-    };
-    let outcome = run_executor_command(input).await;
-    let completed_at = Utc::now();
-    let mut warnings = Vec::new();
-    if outcome.stdout_truncated {
-        warnings.push(format!(
-            "stdout truncated to {} bytes",
-            config.remote_execution.max_output_bytes
-        ));
-    }
-    if outcome.stderr_truncated {
-        warnings.push(format!(
-            "stderr truncated to {} bytes",
-            config.remote_execution.max_output_bytes
-        ));
-    }
-    tokio::fs::write(&stdout_path, &outcome.stdout)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write remote stdout: {err}")))?;
-    tokio::fs::write(&stderr_path, &outcome.stderr)
-        .await
-        .map_err(|err| AppError::internal(format!("failed to write remote stderr: {err}")))?;
-    let status = match outcome.status {
-        ExecutorRunStatus::Ok => RemoteCommandStatus::Ok,
-        ExecutorRunStatus::TimedOut => RemoteCommandStatus::TimedOut,
-        ExecutorRunStatus::Failed | ExecutorRunStatus::SpawnFailed => RemoteCommandStatus::Failed,
-    };
-    let docker_image = executor.docker.as_ref().map(|d| d.image.clone());
-    let record = RemoteCommandRunRecord {
-        schema_version: 2,
-        executor_id: executor.executor_id,
-        executor_name: executor.name,
-        kind: executor.kind,
-        host: executor.host,
-        port: executor.port,
-        user: executor.user,
-        docker_image,
-        command_id: template.command_id,
-        command_display_name: template.display_name,
-        command_argv: template.argv,
-        status,
-        exit_code: outcome.exit_code,
-        duration_ms: outcome.duration_ms,
-        stdout_path: stdout_path.display().to_string(),
-        stderr_path: stderr_path.display().to_string(),
-        stdout_preview: preview(&outcome.stdout),
-        stderr_preview: preview(&outcome.stderr),
-        warnings,
-        error: outcome.error,
-        started_at,
-        completed_at,
-    };
-    tokio::fs::write(
-        &result_path,
-        serde_json::to_vec_pretty(&record)
-            .map_err(|err| AppError::internal(format!("failed to encode remote result: {err}")))?,
-    )
-    .await
-    .map_err(|err| AppError::internal(format!("failed to write remote result: {err}")))?;
-    Ok(result_path)
-}
-
-fn strict_host_key_checking_value(policy: &str) -> &'static str {
-    match policy {
-        "strict" => "yes",
-        "no" => "no",
-        _ => "accept-new",
-    }
-}
-
-fn cap_output(mut output: Vec<u8>, max_bytes: usize) -> (Vec<u8>, bool) {
-    if output.len() <= max_bytes {
-        return (output, false);
-    }
-    output.truncate(max_bytes);
-    (output, true)
-}
-
-fn preview(output: &[u8]) -> String {
-    let text = String::from_utf8_lossy(output);
-    text.chars().take(4000).collect()
+    output
 }
 
 #[cfg(all(test, unix))]
