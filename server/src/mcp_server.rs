@@ -254,11 +254,35 @@ fn tools_list(state: &Arc<AppState>) -> Value {
             json!({
                 "name": descriptor.tool_id,
                 "description": descriptor.description,
-                "inputSchema": descriptor.params_schema,
+                "inputSchema": mcp_input_schema(&descriptor.params_schema),
             })
         })
         .collect();
     json!({ "tools": tools })
+}
+
+/// MCP clients such as Claude Code validate `inputSchema` as a JSON Schema whose
+/// root is always an object. Older configured-tool descriptors stored a
+/// property map at the root, so adapt that legacy shape only at the MCP boundary.
+fn mcp_input_schema(schema: &Value) -> Value {
+    let Some(object) = schema.as_object() else {
+        return json!({ "type": "object", "properties": {} });
+    };
+    match object.get("type").and_then(Value::as_str) {
+        Some("object") => schema.clone(),
+        Some(_) => json!({ "type": "object", "properties": {} }),
+        None if object.contains_key("properties")
+            || object.contains_key("required")
+            || object.contains_key("additionalProperties")
+            || object.contains_key("oneOf")
+            || object.contains_key("anyOf") =>
+        {
+            let mut normalized = object.clone();
+            normalized.insert("type".to_string(), Value::String("object".to_string()));
+            Value::Object(normalized)
+        }
+        None => json!({ "type": "object", "properties": schema.clone() }),
+    }
 }
 
 async fn call_tool(state: &Arc<AppState>, name: &str, arguments: Value) -> Value {
@@ -638,7 +662,7 @@ mod tests {
         domain::models::TaskKind,
         support::config::{
             AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
-            SkillSettings, StorageSettings, ToolsSettings,
+            SkillSettings, StorageSettings, ToolMatchSettings, ToolSettings, ToolsSettings,
         },
     };
 
@@ -664,6 +688,18 @@ mod tests {
         );
         // Empty arguments -> empty params.
         assert_eq!(mcp_tool_params(&json!({})), json!({}));
+    }
+
+    #[test]
+    fn mcp_input_schema_wraps_legacy_property_map() {
+        let schema = mcp_input_schema(&json!({
+            "sampleIndex": { "type": "string", "default": "samples" },
+            "nodeCount": { "type": "integer", "default": 50 }
+        }));
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["properties"]["sampleIndex"]["type"], "string");
+        assert_eq!(schema["properties"]["nodeCount"]["type"], "integer");
+        assert!(schema.get("sampleIndex").is_none());
     }
 
     /// Decode the `tools/call` text content payload into its JSON value.
@@ -789,6 +825,49 @@ mod tests {
             .collect();
         assert!(names.contains(&"logagent.runs.get"));
         assert!(names.contains(&"logagent.runs.result"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn tools_list_advertises_object_input_schemas_for_configured_tools() {
+        let mut tools = BTreeMap::new();
+        tools.insert(
+            "echo_checker".to_string(),
+            ToolSettings {
+                name: "echo_checker".to_string(),
+                enabled: true,
+                path: std::path::PathBuf::from("/tmp/echo-checker"),
+                timeout_seconds: 5,
+                max_output_bytes: 1024,
+                max_input_files: 2,
+                args: vec!["--input".to_string(), "{input_file}".to_string()],
+                match_settings: ToolMatchSettings {
+                    file_patterns: vec!["*.log".to_string()],
+                    keywords: vec!["error".to_string()],
+                },
+            },
+        );
+        let (state, root) = test_state_with_tools("mcp-schema", tools);
+
+        let listed = handle_request(&state, &request(1, "tools/list", json!({}))).await;
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        let configured = tools
+            .iter()
+            .find(|tool| tool["name"] == "echo_checker")
+            .expect("configured tool should be listed");
+        assert_eq!(configured["inputSchema"]["type"], "object");
+        assert_eq!(
+            configured["inputSchema"]["properties"]["configuredArgs"]["type"],
+            "array"
+        );
+        assert_eq!(
+            configured["inputSchema"]["properties"]["match"]["type"],
+            "object"
+        );
+        assert!(tools
+            .iter()
+            .all(|tool| tool["inputSchema"]["type"] == "object"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1012,6 +1091,22 @@ mod tests {
         mcp_enabled: bool,
         allowed_origins: Vec<String>,
     ) -> (Arc<AppState>, std::path::PathBuf) {
+        test_state_with_tools_and_mcp(prefix, mcp_enabled, allowed_origins, BTreeMap::new())
+    }
+
+    fn test_state_with_tools(
+        prefix: &str,
+        tools: BTreeMap<String, ToolSettings>,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
+        test_state_with_tools_and_mcp(prefix, true, Vec::new(), tools)
+    }
+
+    fn test_state_with_tools_and_mcp(
+        prefix: &str,
+        mcp_enabled: bool,
+        allowed_origins: Vec<String>,
+        tools: BTreeMap<String, ToolSettings>,
+    ) -> (Arc<AppState>, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "logagent-{prefix}-{}-{}",
             std::process::id(),
@@ -1042,9 +1137,7 @@ mod tests {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
             },
-            tools: ToolsSettings {
-                tools: BTreeMap::new(),
-            },
+            tools: ToolsSettings { tools },
             fetch: crate::support::config::FetchSettings::default(),
             huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),

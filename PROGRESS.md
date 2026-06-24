@@ -12,6 +12,32 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 MCP tools/list inputSchema 根对象兼容修复
+
+目标：修复 Claude Code 连接 `/api/mcp` 时 `tools fetch failed`，报
+`tools[*].inputSchema.type` 期望 `"object"` 的问题。根因是 configured analyzer tool
+和 pprof descriptor 的内部 `paramsSchema` 使用早期「根部属性 map」形状，主 MCP
+`tools/list` 原样暴露后不满足 MCP client 对 JSON Schema 根对象的校验。
+
+- `server/src/mcp_server.rs`：新增 `mcp_input_schema`，在 MCP 边界把缺少根 `type` 的
+  legacy property-map schema 包装为 `{type:"object", properties:{...}}`；已有 object
+  schema 原样保留，非对象/非 object 根 schema 降级为空 object schema。
+- `tools/list` 改为使用规范化后的 `inputSchema`，不改变 `/api/tools` catalog 中 WebUI
+  展示的内部 `paramsSchema`。
+- 增加回归测试：覆盖 legacy property-map 包装，以及 configured tool 经 `tools/list`
+  暴露时所有 tool 的 `inputSchema.type` 都是 `"object"`。
+- 本地复现：当前 50992 返回的前 4 个 analyzer tool（`flux_query_analyzer`、
+  `influxdb_storage_analyzer`、`influxql_analyzer`、`opengemini_storage_analyzer`）
+  均缺少根 `inputSchema.type`，与 Claude Code 报错路径一致。
+- Runtime 修复：重建 `target/debug/logagent-server` 并替换
+  `/Users/duzhiwang/workspace/db/prd_assistant_v2/bin/logagent-server`；修正本机
+  `com.logagent.server` LaunchAgent 指向 `_v2` runtime，并用 `_v2/deploy/.env`
+  提供必要环境变量。当前 50992 由 LaunchAgent 托管，`/health` 返回 ok。
+- Runtime 验证：`POST /api/mcp tools/list` 全量断言 `.result.tools |
+  all(.inputSchema.type == "object")` 为 `true`；前 4 个 analyzer tool 的
+  `inputSchema.properties` 为 `configuredArgs` / `match`。
+- 文档同步：`server/README.md`、`server/SPEC.md`。
+
 ## 2026-06-24 产品架构和使用流程总览（本地待确认）
 
 目标：根据当前仓库文档和代码，结合官方行业实践，推导一套完整的 LocalToolHub 产品架构和使用流程，先落到本地文档供确认，暂不 push。

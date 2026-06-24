@@ -143,6 +143,14 @@ POST /api/mcp
 
 旧 Session/Task API 只作迁移兼容，不作为新功能入口。
 
+## MCP schema 兼容
+
+`POST /api/mcp` 的 `tools/list` 会把每个 tool 的 `inputSchema` 规范化为根部
+`type: "object"` 的 JSON Schema。早期 configured tool/pprof descriptor 曾把参数属性
+直接放在 schema 根部；MCP 边界会把这种旧形状包装到 `properties` 下，避免 Claude Code
+等严格 MCP client 在抓取 tools 时因 `inputSchema.type` 缺失而失败。WebUI 的 `/api/tools`
+catalog 仍展示内部 `paramsSchema` 原始形状，方便继续兼容现有工具详情页。
+
 ## GeminiDB Influx 工具组
 
 Server 内置 6 个 GeminiDB Influx 实例管理工具：create / delete / list /

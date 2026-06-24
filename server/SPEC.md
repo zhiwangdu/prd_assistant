@@ -104,6 +104,12 @@ MCP endpoint 支持两种传输：HTTP（`POST /api/mcp`，stateless streamable-
 `mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
 跨域：`mcp.allowed_origins` 非空时校验 `Origin`（仅放行列表内来源，浏览器跨域请求拒绝；无 `Origin` 头的非浏览器/隧道客户端始终放行）；为空则不校验（localhost / SSH 隧道场景）。Windows 远程连 Linux 优先 SSH 隧道；直接暴露需 TLS + API key + `allowed_origins`。
 
+`tools/list` 对外返回的每个 `inputSchema` 必须是根部 `type: "object"` 的 JSON Schema。
+如果内部 `ToolDescriptor.params_schema` 仍是早期 configured tool 使用的「根部属性 map」形状，
+MCP 边界必须把它包装成 `{type:"object", properties:{...}}`；非对象或非 object 根 schema
+必须降级为空 object schema。该兼容层只影响 MCP 输出，不改变 `/api/tools` catalog 的内部
+`paramsSchema` 展示。
+
 `tools/call` 支持可选 `runMode: "sync"|"queued"`（默认 `sync`）。`queued` 创建一个 `ToolRun` 经 `TaskExecutor` 入队并立即返回 `{runId, status:"QUEUED", url}`，不等待执行；长任务用 `queued`，再用 `logagent.runs.get` / `logagent.runs.result` 轮询。
 
 `logagent.runs.get` / `logagent.runs.result` 是 MCP 原生 platform 工具（`ToolDescriptor.platform=true`，`runnable=false`）：`tools/call` 直接读 `TaskStore`，**不创建 ToolRun**，避免轮询污染 run history。HTTP 端等价能力仍由 `/api/runs/*` 提供。
