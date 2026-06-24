@@ -1,5 +1,11 @@
 # Roadmap
 
+## Phase 0: Product Architecture Baseline
+
+- 以 `docs/product-architecture-and-flows.md` 作为目标产品架构和使用流程入口。
+- 明确当前产品是本地开发者门户 + 受控 runbook/job runner + MCP tool server。
+- 将 `docs/architecture_review.md` 只保留为 pre-pivot 历史快照。
+
 ## Phase 1: Documentation Pivot
 
 - 产品定位切换为 Local Tool/MCP Workbench。

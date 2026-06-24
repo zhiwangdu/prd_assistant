@@ -2,6 +2,11 @@
 
 WebUI 是 LocalToolHub 的本地管理页面。它应该以工具使用和配置管理为第一屏，而不是以 Agent 分析为第一屏。
 
+WebUI 是目标产品架构中的人工控制面，负责把
+[`docs/product-architecture-and-flows.md`](../docs/product-architecture-and-flows.md)
+定义的 catalog -> run -> artifact -> history 流程可视化。MCP 页面展示外部
+client 如何复用同一套能力边界。
+
 ## 目标页面
 
 顶部导航（已实现，默认进入 Tools）。顶层标签页只用英文展示，不再中英双语：

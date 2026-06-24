@@ -14,6 +14,17 @@ LocalToolHub 应该开箱即用地提供：
 
 LocalToolHub 不再把 Claude Code、LangChain/LangGraph 或任何模型编排作为核心后端。外部 Agent 可以通过 MCP 使用 LocalToolHub；Server 自身只负责工具、上下文、执行边界和审计。
 
+## 产品架构和使用流程
+
+完整产品架构、行业实践映射和端到端使用流程见
+[docs/product-architecture-and-flows.md](./docs/product-architecture-and-flows.md)。
+该文档是当前重构分支的目标架构入口：
+
+- 产品形态：本地开发者门户 + 受控 runbook/job runner + MCP tool server。
+- 核心闭环：catalog -> run -> artifact -> history -> MCP/WebUI 复用。
+- 默认路径：用户显式选择工具和配置，不依赖模型服务或自研多轮 Agent。
+- 高风险能力：Fetch、Executor、Code Evidence、dev_selftest 只通过 allowlist、schema、timeout 和 artifact 审计进入执行边界。
+
 ## 核心架构
 
 ```text
@@ -64,6 +75,8 @@ $LOCALTOOLHUB_APP_DIR/
 | `testing/` | fixture、smoke 和测试策略 | [README](./testing/README.md) / [SPEC](./testing/SPEC.md) |
 | `docs/modules/` | Server 内部能力边界和后续开发约束 | [README](./docs/modules/README.md) |
 | `third_party/` | 上游诊断工具源码引用；不改写上游 README | - |
+
+其中 `docs/architecture_review.md` 是 2026-06-14 pre-pivot Analysis Agent 架构历史快照，不作为当前 Tools/MCP Workbench 的目标架构依据。
 
 ## 模块边界
 

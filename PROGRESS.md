@@ -12,6 +12,16 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 产品架构和使用流程总览（本地待确认）
+
+目标：根据当前仓库文档和代码，结合官方行业实践，推导一套完整的 LocalToolHub 产品架构和使用流程，先落到本地文档供确认，暂不 push。
+
+- 新增 `docs/product-architecture-and-flows.md`（中文正文）：定义 LocalToolHub 是本地开发者门户 + 受控 runbook/job runner + MCP tool server 的组合；按行业实践映射 Backstage catalog、GitHub Actions run/log/artifact、Rundeck audit、MCP tools/resources/transport security；给出目标用户与典型任务、产品架构、核心领域契约、9 条端到端使用流程、流程验收信号、信息架构、能力完整性矩阵、产品不变量和 P0-P3 roadmap。
+- 根 `README.md`/`SPEC.md` 增加产品架构入口和不变量，明确 `docs/architecture_review.md` 是 pre-pivot Analysis Agent 历史快照，不作为当前目标架构依据。
+- `docs/modules/README.md`、`docs/modules/roadmap/README.md`、`docs/modules/roadmap/SPEC.md` 增加目标架构基线和验收入口。
+- `server/README.md`、`server/SPEC.md`、`webui/README.md`、`webui/SPEC.md` 同步说明 Server/WebUI 在目标架构中的位置和边界。
+- 用户后续指示：结果先输出到本地，确认后再推送；因此本轮不会执行 `git push`。
+
 ## 2026-06-24 P2 Docker executor 纳管：record docker kind + CRUD + 执行/run history + seeding + dev_selftest 消费
 
 目标：让 executor record 支持 docker kind，成为可被 API/配置纳管、可执行、有 run history 的托管实体，并让 dev_selftest 能引用一个 docker-kind executor record 派发测试（「纳管 + 指定执行」）。inline `docker` 块保留。对应 plan 问答选定的「完整纳管 + dev_selftest 消费」范围。

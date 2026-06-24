@@ -2,6 +2,10 @@
 
 这些文档定义 Local Tool/MCP Workbench 的内部能力边界。目录名沿用 main 分支历史结构，但目标定位已经从 Agent 分析系统切换为本地工具平台。
 
+目标产品架构和完整使用流程入口：
+[../product-architecture-and-flows.md](../product-architecture-and-flows.md)。
+`../architecture_review.md` 是 pre-pivot 历史快照，只用于理解旧 Analysis Agent 迁移来源。
+
 | 能力 | 目标状态 |
 |------|----------|
 | Tool Runner | 核心执行面，所有工具共享 registry、schema、artifact 和审计。 |

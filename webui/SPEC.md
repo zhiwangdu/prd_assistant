@@ -4,6 +4,11 @@
 
 WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖任何 Agent，直接完成工具配置、运行、结果查看和 MCP 配置复制。
 
+WebUI 信息架构必须与
+[`docs/product-architecture-and-flows.md`](../docs/product-architecture-and-flows.md)
+一致：Tools 是主入口，Runs History 是执行审计入口，MCP 是外部 client 接入说明，
+Metadata/Skills/Cases 是上下文入口，Fetch/Executors 是受控外部动作入口。
+
 ## 页面要求
 
 顶部导航顺序为 `Tools → Skills → MCP → Metadata → Fetch → Executors → Cases → Settings`，默认进入 Tools。顶层标签页只用英文展示（不再中英双语）；页面内部文案仍随语言切换。Runs 不再是独立顶层标签，而是 Tools 的子项「Runs History」（缩进虚框小标签）。

@@ -4,6 +4,11 @@
 
 Rust Server 是 LocalToolHub 的唯一执行边界。它接收 WebUI 和 MCP 请求，校验参数和权限，执行受控工具，保存 artifact，并返回结构化结果。
 
+Server 必须实现
+[`docs/product-architecture-and-flows.md`](../docs/product-architecture-and-flows.md)
+定义的控制面和执行面：所有工具、Fetch、Executor、dev_selftest 和 MCP
+调用共享 catalog/run/artifact/history 语义；任何新增执行能力不得绕过该边界。
+
 ## 职责边界
 
 必须提供：

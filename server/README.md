@@ -2,6 +2,11 @@
 
 `server/` 是 LocalToolHub 的 Rust/Axum 服务端。目标交付形态是一个本地单二进制，托管 WebUI，管理工具目录，执行受控工具，保存 run/artifact，并提供 MCP Server 给外部客户端使用。
 
+Server 在目标产品架构中是唯一执行边界：WebUI、MCP client、Fetch、Executor
+和 dev_selftest 都必须通过同一套 registry、schema、allowlist、run history
+和 artifact 审计。完整架构和使用流程见
+[`docs/product-architecture-and-flows.md`](../docs/product-architecture-and-flows.md)。
+
 ## 目标职责
 
 Server 负责：
