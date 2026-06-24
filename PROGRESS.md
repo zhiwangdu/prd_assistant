@@ -7,10 +7,37 @@ Historical main-branch progress was archived to
 
 ## Current Branch
 
-- Branch: `rewrite/local-toolhub-rust`
+- Branch: `converge/two-modules`（从 `rewrite/local-toolhub-rust` 切出）
 - Base: `origin/main`
-- Product direction: LocalToolHub local Tool/MCP Workbench
+- Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-24 收敛为两模块：dev_selftest + 日志分析
+
+动机：原 server 挂了 9 类工具（fetch / gemini_db / huawei_package_sync / metadata / cases / system_context / skills / executors + dev_selftest/日志分析），功能杂、维护面大，且大部分在「纯本地个人用」场景被本地 skill 秒杀。收敛为 server 唯二不可被本地 skill 替代的两模块：dev_selftest（Windows Claude Code → Linux docker/build/test 跨机远程执行 + run history）与日志分析（一组编译好的 Linux analyzer + 预处理，MCP 连上上传日志即用）。三个收敛决策（问答确认）：丢纳管 executor、砍华为云工具、skills 改本地 Claude Code skill。
+
+Step 1 — 砍 leaf 模块（fetch/gemini_db/huawei_package_sync/metadata/cases/system_context/skills）：
+- 删 services/{fetch,gemini_db,huawei_package_sync,metadata,skill_registry}、stores/{fetch_store,case_store,case_import_store,memory_store,system_context_store}、http/{fetch,cases,system_context,metadata,skills,exports,mcp_readonly}。
+- `services/tools.rs`：descriptors/get_descriptor/validate/run 删对应分支 + 常量；`domain/contracts.rs` 去掉 `services::metadata::TaskMetadataContext` 依赖（`from_record` 不再取 metadata 参数）。`mcp_server.rs` resources 收敛为 `logagent://runs/recent` + `logagent://tools/catalog`。
+- `support/config.rs`：删 SkillSettings/FetchSettings/HuaweiCloud*/GeminiDb* + raw config + resolver + 默认值 + 测试；AppConfig/ConfigFile/load_config/prepare_dirs/StorageSettings 同步瘦身。`app.rs` AppState 13→7 字段。
+- 存活 catalog：configured analyzer(5) + preprocess_log_package + batch_influxql_analysis + dev_selftest(5) + platform runs.get/result(2)。
+
+Step 2 — 砍 executors/纳管 + 瘦身 remote_execution（docker runner only）：
+- `services/remote_execution.rs` 只留 `run_executor_command`/`ExecutorTarget::Docker`/`ExecutorRunInput`/`ExecutorRunStatus`/`ExecutorOutcome`/`command_template`；删 `run_remote_command_task`/Ssh 分支/`command_templates` 列表。
+- 删 `stores/executor_store.rs`、`http/executors.rs`（+ `/api/executors*`、`/api/executor-runs*` 路由）；`app.rs` 删 `executors` 字段 + `seed_executors`；`main.rs` 删调用。
+- `services/dev_selftest.rs`：删 `run_executor_record_test` + `suite.executor` 派发；`run_tests` 派发收敛为 inline docker > P1 桩。
+- `support/config.rs`：`RemoteExecutionSettings` 瘦身为 `{ commands }`；删 SeededExecutor*/resolve_seeded_executors/ssh 默认值/ssh 校验。
+- `domain/models.rs`：删孤立的 RemoteExecutor*/RemoteCommand*/ExecutorKind 类型；保留 `TaskKind::RemoteCommandRun`/`TaskSource::RemoteExecutor`/`remote_*` TaskRecord 字段 + `TaskPhase::ExecuteRemoteCommand` 供旧 task 记录反序列化（`#[allow(dead_code)]`），`pipeline/executor` 的 ExecuteRemoteCommand 派发臂 bail。
+
+Step 3 — examples/deploy 同步：`examples/logagent.yaml`+`server-dev-selftest.yaml`+`deploy/logagent.example.yaml` 删 skills/fetch/huawei_cloud 块、remote_execution 瘦身为 `{ commands }`、删 seeded-executor 纳管块 + opengemini_smoke_exec suite；per-tool example yaml 剥离 stale llm/claude_code/analysis 块；删 `server-fetch.yaml`+`server-llm-openai-compatible.yaml`；`scripts/start-local.sh` 去掉死掉的 `--llm` 模式；`deploy/SERVER_DEPLOYMENT.md`+`devselftest/opengemini/README.md` 删 Fetch/SSH-SCP/纳管 段。
+
+Step 4 — WebUI 瘦身：导航收敛为 `Tools(含 Runs History) | MCP | Settings`；删 CasesView/ExecutorsView/SkillsView/metadata/MetadataDashboard（+ dashboard-only metadata/*），`metadata/api.ts` 瘦身为共享 HTTP helper；ToolsView 删 FetchView 组件 + 类型/helper；SettingsView 收敛为 API-key + MCP + Skills 说明。bundle 325KB→239KB。
+
+Step 5 — skills 迁本地 + 文档同步：`skills/` 不再被 server 加载（SkillRegistry/config.skills 已删）；runbook 移到 `docs/runbooks/` 作本地 Claude Code skill 作者参考，删 geminidb skill；根 README/SPEC/CLAUDE.md 改写两模块定位；docs/modules 删 cut 模块目录。
+
+验证：`cargo fmt --check` + `cargo check --all-targets`（零 warning，除环境级 deprecation）+ `cargo test -p logagent-server`（76 passed）；`webui` npm lint/typecheck/build 绿；MCP 冒烟 `tools/list` 仅两模块工具 + `resources/list` 仅 runs/tools-catalog；`scripts/start-local.sh` → `/health` ok。
+
+仍 deferred：`max_input_chars` 为 vestigial（`#[allow(dead_code)]`，待后续清理）；`TaskKind::RemoteCommandRun` 等兼容变体待旧数据清退后移除；docs/modules 部分模块文档待按两模块重写。
 
 ## 2026-06-24 P2 Docker executor 纳管：record docker kind + CRUD + 执行/run history + seeding + dev_selftest 消费
 

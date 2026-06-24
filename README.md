@@ -1,34 +1,35 @@
 # LocalToolHub
 
-LocalToolHub 是个人本地部署的工具工作台和 MCP 工具合集。目标是提高运维、开发和测试效率，而不是自研一个通用 Agent。项目代码和兼容命令仍保留部分 `logagent` 命名，后续可逐步迁移。
+LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析），通过 MCP 暴露给外部客户端（Claude Code / Codex / Cursor / OpenCode）。它**不是**通用 Agent，不把 LLM 作为默认后端。项目代码和兼容命令仍保留部分 `logagent` 命名。
+
+## 为什么是这两个模块
+
+这两个模块对应 server 唯二**不可被本地 skill 替代**的场景：
+
+- **dev_selftest** —— 刚需 Linux 环境（docker / go 构建工具链 / DB 集群），而 IDE 与部分内部 MCP 只能在 Windows 端跑。这条是「Windows Claude Code → Linux server 跨机远程执行 + run history」，本地 skill 做不到。
+- **日志分析** —— 一组编译好的 Linux analyzer 二进制（influxql / flux / openGemini / influxdb / pprof）+ 预处理。MCP 连上后上传日志即用，产出结构化 findings + run history。日志包大、analyzer 是 Linux 二进制、要历史回看 —— 也 genuinely 需要一个 server。
+
+其余「通用本地工具」面（fetch / executor / metadata / cases / skills 等）已收敛移除 —— 它们要么不被两模块依赖，要么在纯本地场景被本地 skill 秒杀。
 
 ## 产品目标
 
-LocalToolHub 应该开箱即用地提供：
+LocalToolHub 开箱即用地提供：
 
-- Web 管理页面：配置工具、运行工具、查看结果、管理 Metadata、Fetch、Executor、Case 和 MCP 配置。
-- 本地 Tool Hub：统一管理内置工具、源码构建工具和用户配置工具。
-- MCP Server：让 Claude Code、Codex、Cursor、OpenCode 等外部客户端调用同一套受控 tools/resources。
-- Artifact 和 Run History：每次工具运行都有输入、输出、stdout/stderr、结构化结果和下载入口。
-- 单机部署体验：Rust Server 单二进制 + `webui/out` + `bin/tools` + 本地 data 目录。
-
-LocalToolHub 不再把 Claude Code、LangChain/LangGraph 或任何模型编排作为核心后端。外部 Agent 可以通过 MCP 使用 LocalToolHub；Server 自身只负责工具、上下文、执行边界和审计。
+- **dev_selftest**：`sync → build → deploy(docker) → run_tests → report` 流水线，每次 run 有持久工作区 + progress + report + run history。从 Windows 经 MCP 驱动 Linux 上的 docker 集群。
+- **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
+- **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端。
+- **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。
+- **单机部署**：Rust 单二进制 + `webui/out` + `bin/tools` + 本地 data 目录。
 
 ## 核心架构
 
 ```text
-Browser WebUI / External MCP Client / Optional Chrome Extension
-  -> Rust local server
-    -> Auth and local settings
-    -> Tools catalog
-    -> Tool runner and built-in tools
-    -> Fetch manager
-    -> SSH/SCP executor manager
-    -> Metadata manager
-    -> Log analyzer and package preprocessing
-    -> Code evidence search
-    -> Case notes and skills/system context
-    -> Artifact store and run history
+Browser WebUI / External MCP Client
+  -> Rust local server (Axum)
+    -> Auth (Bearer)
+    -> Tool catalog + Tool runner（日志分析 analyzers + 内置工具）
+    -> dev_selftest pipeline（sync/build/deploy/run_tests/report + docker runner）
+    -> Uploads + Run history + Artifact store
     -> MCP resources/tools
   -> Local data dir + tools dir
 ```
@@ -37,48 +38,44 @@ Browser WebUI / External MCP Client / Optional Chrome Extension
 
 ```text
 $LOCALTOOLHUB_APP_DIR/
-  bin/logagent-local
+  bin/logagent-server
   bin/tools/
   data/
-    logagent.sqlite or json stores
-    artifacts/
     uploads/
-    runs/
-    metadata/
-    cases/
+    workspaces/
+    runs/            # task records
+    dev_selftest/    # dev_selftest run workspaces
   webui/out/
   deploy/logagent.yaml
 ```
 
-当前阶段继续复用 main 分支现有 `logagent-server` crate、`LOGAGENT_*` 环境变量、`logagent.*` tool id 和 `logagent://` MCP resource namespace，作为兼容层保留。产品和用户可见名称收敛到 LocalToolHub。旧 Log Analysis Agent 相关代码只作为迁移来源，不作为目标架构。
+当前阶段继续复用 `logagent-server` crate、`LOGAGENT_*` 环境变量、`logagent.*` tool id 和 `logagent://` MCP resource namespace 作为兼容层。产品可见名使用 LocalToolHub。
 
-## 组件
+## 模块
 
 | 目录 | 职责 | 文档 |
 |------|------|------|
-| `server/` | Rust 本地 Server、工具运行、MCP、artifact、配置和静态 WebUI 托管 | [README](./server/README.md) / [SPEC](./server/SPEC.md) |
-| `webui/` | 本地管理页面，Tools-first 工作台 | [README](./webui/README.md) / [SPEC](./webui/SPEC.md) |
-| `native-agent/` | 可选本机文件导入桥，用于 Chrome Extension 传递下载文件 | [README](./native-agent/README.md) / [SPEC](./native-agent/SPEC.md) |
+| `server/` | Rust 本地 Server、dev_selftest 流水线、日志分析工具运行、MCP、artifact、配置和静态 WebUI 托管 | [README](./server/README.md) / [SPEC](./server/SPEC.md) |
+| `webui/` | 本地管理页面（Tools / Runs History / MCP / Settings） | [README](./webui/README.md) / [SPEC](./webui/SPEC.md) |
+| `native-agent/` | 可选本机文件导入桥（Chrome Extension 传递下载文件 → 上传） | [README](./native-agent/README.md) / [SPEC](./native-agent/SPEC.md) |
 | `chrome-extension/` | 可选 Chrome 下载监听和导入确认 | [README](./chrome-extension/README.md) / [SPEC](./chrome-extension/SPEC.md) |
 | `deploy/` | 单机 runtime 部署、重建和控制脚本 | [README](./deploy/README.md) |
-| `testing/` | fixture、smoke 和测试策略 | [README](./testing/README.md) / [SPEC](./testing/SPEC.md) |
+| `docs/runbooks/` | 诊断 runbook（本地 Claude Code skill 作者参考，不再由 server 托管） | [README](./docs/runbooks/README.md) |
 | `docs/modules/` | Server 内部能力边界和后续开发约束 | [README](./docs/modules/README.md) |
 | `third_party/` | 上游诊断工具源码引用；不改写上游 README | - |
 
 ## 模块边界
 
-Server 内部能力以本地工具平台为中心：
+Server 内部能力以两模块为中心：
 
-- Tool Runner / Fetch / Executor 是核心。
-- Metadata / Skills / Case 是上下文和管理能力。
-- Log Analyzer / Code Evidence 是工具输入和证据能力。
+- **dev_selftest** 与 **日志分析** 是核心。
+- `remote_execution` 只保留 docker runner（dev_selftest 的 inline docker test 复用）+ command 模板；SSH/SCP executor 与「纳管」executor record 已移除。
 - MCP 是外部 Agent 的集成入口。
-- LLM Gateway、Analysis Agent、Claude Code runner 只保留为可选自动化，不作为默认主线。
+- 旧 Log Analysis Agent / LLM Gateway / Claude Code runner / fetch / metadata / cases / skills / executors 模块已移除，不再作为目标架构。
 
 ## API 原则
 
-- 新接口优先使用 `/api/tools*`、`/api/runs*`、`/api/artifacts*`、`/api/mcp*`、`/api/settings*` 等工具工作台语义。
-- 旧 `/api/sessions*`、`/api/tasks*` 可在迁移期保留，但不作为新功能设计入口。
+- 接口使用 `/api/tools*`、`/api/runs*`、`/api/artifacts*`、`/api/mcp*`、`/api/settings*` 等工具工作台语义。
 - 所有受保护接口使用 `Authorization: Bearer <api-key>`。
 - MCP resources/tools 与 WebUI 使用同一个 registry 和同一套执行边界；`mcp.enabled=false` 时 HTTP `/api/mcp` 与 stdio `mcp-serve` 都必须拒绝服务。
 
@@ -86,20 +83,9 @@ Server 内部能力以本地工具平台为中心：
 
 - API Key 只从环境变量或本地 secret 配置读取。
 - 不把密钥、Cookie、Authorization header 写入日志、artifact 或导出包。
-- Tool Runner、Fetch、SSH/SCP、Code Evidence 都必须有 allowlist。
-- Fetch 默认关闭，启用时必须配置 allowed hosts 和 credential secret。
-- SSH/SCP 只允许配置内 executor、命令模板和文件模板。
+- dev_selftest 的 docker target、git repo、build/test profile 都走配置 allowlist；tool params 只选 profile id + 携带 runId。
 - MCP client 不能绕过 Server 直接执行本机命令或读取任意路径。
 - Artifact path 对外使用逻辑路径，不暴露任意本机路径。
-
-## 近期路线
-
-1. 文档和产品定位切换为 Local Tool/MCP Workbench。
-2. 裁剪 WebUI 首屏和导航：Tools、Runs、Metadata、Fetch、Executors、MCP、Settings。
-3. 收敛 Server API：保留工具运行、artifact、metadata、fetch、executor、MCP，弱化 Agent/Analyze。
-4. 统一 Tool Catalog，source-built analyzers 和内置工具都进入同一个 registry。
-5. 打包 Rust binary + WebUI static + tools dir 的本地部署路径。
-6. 最后再按需要恢复可选诊断 workflow，而不是默认 Agent 后端。
 
 ## 验证
 

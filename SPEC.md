@@ -2,42 +2,39 @@
 
 ## 目标
 
-LocalToolHub 是面向个人本地部署的运维、开发和测试效率工具。Server 提供 Web 管理页、工具目录、工具运行、artifact/run history、Metadata、Fetch、SSH/SCP Executor、Code Evidence 和 MCP Server。
+LocalToolHub 收敛为两个模块的本地工具工作台：
 
-目标不是自研通用 Agent。外部 Agent 可以作为 MCP client 使用 LocalToolHub；LocalToolHub 不把 Claude Code、Codex、LangChain 或模型服务作为默认运行依赖。
+- **dev_selftest**：在 Linux server 上跑 `sync → build → deploy(docker) → run_tests → report` 自测流水线，由外部 MCP 客户端（如 Windows 上的 Claude Code）驱动，每次 run 有持久工作区 + run history。
+- **日志分析**：上传日志包 → 预处理 → 跑一组编译配置好的 analyzer（influxql/flux/openGemini/influxdb/pprof）→ 结构化 findings + artifact + run history。
+
+Server 提供 Web 管理页、工具目录、工具运行、artifact/run history 和 MCP Server。它不把 Claude Code / Codex / LangChain 或模型服务作为默认运行依赖。
 
 ## 非目标
 
-- 不做企业级日志平台。
-- 不做通用远程运维平台。
-- 不做自研多轮 Agent 后端。
-- 不要求共享团队 Server 才能使用。
-- 不引入 PostgreSQL、Redis、Elasticsearch 作为 MVP 依赖。
+- 不做自研通用 Agent / 多轮推理状态机。
+- 不做企业级日志平台、通用远程运维平台。
+- 不引入 PostgreSQL、Redis、Elasticsearch 作为依赖。
 - 不自动修改用户代码或远程机器。
+- 不再做 fetch / metadata / cases / skills / SSH-SCP executor / 云实例管理等通用本地工具面（已收敛移除）。
 
 ## 核心能力
 
 | 能力 | 要求 |
 |------|------|
-| Tool Catalog | 展示内置、配置和源码构建工具，含参数 schema、输入约束、输出视图和可用性。 |
+| Tool Catalog | 展示内置工具与配置的 analyzer，含参数 schema、输入约束、输出视图和可用性。 |
 | Tool Runner | 执行白名单工具，保存 stdout/stderr/result/artifacts，支持 timeout 和幂等。 |
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
-| Run History | 工具运行、fetch run、executor run、preprocess run 都进入统一历史。 |
-| Metadata | 管理 openGemini/InfluxDB 等实例快照，供 WebUI 和 MCP 查询。 |
-| Fetch | 从 cURL 导入 endpoint，保存脱敏配置，加密凭据，受控执行 HTTP 请求。 |
-| Executor | 管理 SSH/SCP executor 和命令/文件模板，禁止自由 shell。 |
-| Code Evidence | 只读检索本地配置代码仓，输出文件/行号/diff 证据。 |
-| Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引。 |
-| Skills | 管理可复用诊断说明、runbook、工具说明和 MCP 资源。 |
-| Case Notes | 保存人工确认的经验记录和关键词/FTS 召回。 |
+| Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
+| Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
+| Dev Self-Test | sync/build/deploy(docker)/run_tests/report 流水线，docker runner 复用 remote_execution 的 docker 分支。 |
 | MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端。 |
-| WebUI | Tools-first 管理页面，负责配置、运行、查看和导出。 |
+| WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
 ## 数据流
 
 ```text
 WebUI or MCP client
-  -> tool/fetch/executor/code/log request
+  -> tool / dev_selftest request
   -> Server validates auth, schema, allowlist, budget and paths
   -> Server executes controlled action
   -> stdout/stderr/raw output parsed into structured result
@@ -57,17 +54,9 @@ FAILED
 CANCELLED
 ```
 
-可选等待状态只用于需要人审批的远程采集或危险动作：
-
-```text
-WAITING_FOR_APPROVAL
-```
-
 工具工作台不以 `WAITING_FOR_USER` 作为默认分析循环状态；用户输入应体现在显式参数、配置或重新运行。
 
 ## API 方向
-
-保留并强化：
 
 ```http
 GET /health
@@ -80,21 +69,11 @@ GET /api/runs/:run_id
 GET /api/runs/:run_id/result
 GET /api/runs/:run_id/artifacts
 GET /api/artifacts/:artifact_id
-GET /api/metadata/*
-GET /api/fetch/*
-POST /api/fetch/*
-GET /api/executors/*
-POST /api/executors/*
 POST /api/mcp
 GET /api/settings/*
 ```
 
-迁移期兼容但不新增能力：
-
-```http
-/api/sessions/*
-/api/tasks/*
-```
+旧 `/api/sessions/*`、`/api/tasks/*` 仅作迁移兼容（如有），不作为新功能入口。
 
 ## MCP 要求
 
@@ -106,44 +85,29 @@ MCP 是外部智能客户端集成入口。MCP tool 调用必须与 WebUI tool r
 资源示例：
 
 ```text
-logagent://tools/catalog
 logagent://runs/recent
-logagent://metadata/instances
-logagent://metadata/instances/<id>/snapshot
-logagent://cases/recent
-logagent://skills
+logagent://tools/catalog
 ```
 
 工具示例：
 
 ```text
-logagent.run_tool
 logagent.preprocess_log_package
 logagent.batch_influxql_analysis
-logagent.search_logs
-logagent.fetch
-logagent.query_metadata
-logagent.search_code
-logagent.run_executor_template
-logagent.search_cases
-logagent.geminidb.create_instance
-logagent.geminidb.delete_instance
-logagent.geminidb.list_instances
-logagent.geminidb.rename_instance
-logagent.geminidb.toggle_ssl
-logagent.geminidb.restart_instance
+logagent.dev_selftest.sync_workspace
+logagent.dev_selftest.build
+logagent.dev_selftest.deploy
+logagent.dev_selftest.run_tests
+logagent.dev_selftest.report
+logagent.runs.get
+logagent.runs.result
+# + 配置的 analyzer: pprof_analyzer / influxql_analyzer / flux_query_analyzer /
+#   opengemini_storage_analyzer / influxdb_storage_analyzer
 ```
-
-GeminiDB Influx tool 组必须按 HuaweiCloud NoSQL API v3 文档映射请求：
-`endpoint` / `projectId` 支持配置默认和单次 run 覆盖，鉴权只通过配置中的
-`X-Auth-Token` 环境变量；创建实例使用官方 create body 字段和 `flavor` 数组，
-列表默认限定 `datastore_type=influxdb`，SSL 切换使用
-`POST /v3/{project_id}/instances/{instance_id}/ssl-option` 和
-`ssl_option=on|off`，重启实例时默认不发送 body、可选 `node_id`。
 
 ## 配置
 
-配置文件暂保留 `logagent.yaml`，但语义调整为本地工具平台：
+配置文件暂保留 `logagent.yaml`，语义为本地两模块平台：
 
 ```yaml
 server:
@@ -151,14 +115,15 @@ server:
 storage:
   data_dir: ${LOGAGENT_APP_DIR}/data
 tools:
-  directories:
-    - ${LOGAGENT_APP_DIR}/bin/tools
-fetch:
-  enabled: false
-executors:
-  enabled: false
+  influxql_analyzer:
+    enabled: false
+    path_env: LOGAGENT_INFLUXQL_ANALYZER_PATH
+remote_execution:
+  commands: {}      # dev_selftest test suite 引用的命令模板
 mcp:
   enabled: true
+dev_selftest:
+  enabled: false
 ```
 
 所有 secret 必须通过环境变量引用，不写入配置样例。
@@ -168,9 +133,9 @@ mcp:
 - Rust checks 通过：`cargo fmt --check`、`cargo check`、`cargo test`。
 - WebUI checks 通过：`npm run lint`、`npm run typecheck`、`npm run build`。
 - 本机启动后 `/` 打开管理页面，`/health` 返回 ok。
-- Tool Catalog 能显示内置和源码构建工具可用性。
+- Tool Catalog 能显示内置工具和 analyzer 可用性。
 - 任一工具运行能生成 run record、result 和 artifact。
-- MCP `tools/list` 与 WebUI catalog 一致。
-- Fetch/Executor/Code Evidence 默认关闭或受 allowlist 控制。
+- MCP `tools/list` 与 WebUI catalog 一致（仅两模块工具）。
+- dev_selftest 默认关闭或受 allowlist 控制。
 - 日志、artifact、导出包不包含密钥原文。
 - README/SPEC/PROGRESS 随行为变化同步更新。

@@ -4,29 +4,20 @@ WebUI 是 LocalToolHub 的本地管理页面。它应该以工具使用和配置
 
 ## 目标页面
 
-顶部导航（已实现，默认进入 Tools）。顶层标签页只用英文展示，不再中英双语：
+顶部导航（已实现，默认进入 Tools）。顶层标签页只用英文展示：
 
 ```text
 Tools            ← 顶层
   Runs History   ← Tools 的子项（缩进虚框小标签）
-Skills | MCP | Metadata | Fetch | Executors | Cases | Settings
+MCP | Settings
 ```
-
-Analyze/Operations 页面已降级，默认不在导航中；旧视图文件将在服务端 fat 代码删除阶段一并清理。
 
 页面职责：
 
-- Tools：查看工具目录（可搜索、按 Source/可运行筛选、按功能类别分组紧凑列表，适配几十个工具）、参数 schema、可用性，运行工具并查看结果。
-  - Runs History（Tools 子项）：统一查看 tool/fetch/executor/preprocess/code evidence 的运行历史和 artifacts。
-- Skills：管理 Skills 目录。
+- Tools：查看工具目录（可搜索、按 Source/可运行筛选、按功能类别分组紧凑列表）、参数 schema、可用性，运行工具并查看结果。
+  - Runs History（Tools 子项）：统一查看 tool/dev_selftest/preprocess 的运行历史和 artifacts。
 - MCP：集中展示 `/api/mcp` streamable-http endpoint、stdio 配置示例、Authorization / protocol header、支持的 JSON-RPC 方法、tools/resources 搜索，以及 `resources/read` preview；长任务示例使用 `runMode:"queued"` + `logagent.runs.get/result` 轮询。
-- Metadata：导入、刷新和浏览 openGemini/InfluxDB 元数据。
-- Fetch：从 cURL 导入 endpoint，管理凭据和手动运行。
-- Executors：管理 SSH/SCP executor、命令模板和远程采集结果。
-- Cases：管理人工经验记录和搜索。
-- Settings：API Key、本地路径、工具目录、source-built analyzer 状态、安全开关和 Skills/Tools 导出；MCP 接入配置不在 Settings 重复展示。
-
-旧 `Analyze` 页面可以在迁移期保留，但不再是目标主入口。
+- Settings：API Key 状态、MCP 接入说明、Skills（本地 Claude Code skill）说明。
 
 ## 技术栈
 

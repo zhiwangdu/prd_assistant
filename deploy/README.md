@@ -19,9 +19,8 @@ $LOGAGENT_APP_DIR/
     uploads/
     runs/
     artifacts/
-    metadata/
-    cases/
-    code_worktrees/
+    workspaces/
+    dev_selftest/
   webui/out/
   deploy/
     logagent.yaml
