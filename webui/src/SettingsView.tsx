@@ -1,4 +1,4 @@
-import { Copy, Download, Network } from "lucide-react";
+import { Download } from "lucide-react";
 import { useState } from "react";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui";
 import { authHeaders } from "./metadata/api";
@@ -7,31 +7,6 @@ type Props = { apiKey: string };
 
 export function SettingsView({ apiKey }: Props) {
   const [status, setStatus] = useState("Ready");
-  const mcpUrl = `${window.location.origin}/api/mcp`;
-  const claudeConfigExample = JSON.stringify(
-    {
-      mcpServers: {
-        localtoolhub: {
-          type: "http",
-          url: mcpUrl,
-          headers: {
-            Authorization: "Bearer <LOGAGENT_API_KEY>"
-          }
-        }
-      }
-    },
-    null,
-    2
-  );
-
-  async function copyConfig() {
-    try {
-      await navigator.clipboard.writeText(claudeConfigExample);
-      setStatus("Config example copied");
-    } catch (reason) {
-      setStatus(formatError(reason));
-    }
-  }
 
   async function downloadExport(path: string, filename: string) {
     if (!apiKey.trim()) {
@@ -64,19 +39,14 @@ export function SettingsView({ apiKey }: Props) {
     <div className="space-y-5">
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle>External MCP client</CardTitle>
-              <CardDescription>LocalToolHub MCP 入口与 Skills/Tools 导出，供外部 Agent 客户端集成。</CardDescription>
-            </div>
-            <Network className="h-5 w-5 text-muted-foreground" />
-          </div>
+          <CardTitle>Export bundles</CardTitle>
+          <CardDescription>MCP 连接配置已统一移到 MCP 页面；这里仅保留 Skills/Tools 导出。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-3">
-            <SettingMetric label="MCP URL" value={mcpUrl} />
-            <SettingMetric label="Header" value="Authorization: Bearer <api-key>" />
-            <SettingMetric label="Mode" value="catalog tools and resources" />
+            <SettingMetric label="MCP config" value="See MCP page" />
+            <SettingMetric label="Skills export" value="/api/exports/skills.zip" />
+            <SettingMetric label="Tools export" value="/api/exports/tools.zip" />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void downloadExport("/api/exports/skills.zip", "skills.zip")}>
@@ -87,14 +57,7 @@ export function SettingsView({ apiKey }: Props) {
               <Download className="mr-2 h-4 w-4" />
               Tools ZIP
             </Button>
-            <Button variant="outline" onClick={() => void copyConfig()}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy config
-            </Button>
           </div>
-          <pre className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">
-            {claudeConfigExample}
-          </pre>
           <p className="text-xs text-muted-foreground">{status}</p>
         </CardContent>
       </Card>

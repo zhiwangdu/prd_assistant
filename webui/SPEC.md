@@ -36,7 +36,10 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 ### MCP
 
 - 展示 `/api/mcp` endpoint、Authorization header 示例、客户端配置示例。
-- 展示 resources 和 tools 列表。
+- 同时展示 streamable-http 与 stdio 两种接入配置；HTTP 示例必须包含 `Authorization` 和 `MCP-Protocol-Version` header。
+- 展示当前 server 支持的 MCP JSON-RPC 方法：`initialize`、`ping`、`tools/list`、`tools/call`、`resources/list`、`resources/read`。
+- 展示 tools 和 resources 列表，支持搜索；选中 tool 时展示 `inputSchema` 和同步/queued `tools/call` 示例，选中 resource 时调用 `resources/read` 并预览 JSON 文本。
+- 长任务示例使用 `runMode:"queued"`，轮询示例使用 platform 工具 `logagent.runs.get` / `logagent.runs.result`，并注明轮询不创建 ToolRun。
 - 不写入用户本地 Claude Code/Codex/Cursor 配置。
 
 ### Metadata
@@ -65,6 +68,7 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 ### Settings
 
 - 展示 API health、工具目录、source-built analyzer 状态、本地数据目录、安全开关。
+- Skills/Tools ZIP 导出可保留在 Settings；MCP client 接入配置统一放在 MCP 页面，避免重复和过期。
 - LLM/Agent 设置只作为可选 automation，不是默认必填项。
 
 ## 构建和部署

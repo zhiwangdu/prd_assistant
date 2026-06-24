@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 Historical main-branch progress was archived to
 `docs/archive/PROGRESS-history-main-2026-06-22.md`.
@@ -11,6 +11,17 @@ Historical main-branch progress was archived to
 - Base: `origin/main`
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-24 WebUI MCP 页面接口整理
+
+目标：把 MCP 页面从零散 tools/resources 列表整理成完整的接入与调试参考页，避免 Settings 中重复展示 MCP client 配置。
+
+- `webui/src/McpView.tsx`：重做 MCP 页面结构，启动时调用 `initialize` / `ping` / `tools/list` / `resources/list`，展示 endpoint、protocol、连接状态、tools/resources 计数；新增 streamable-http 与 stdio 配置示例、Authorization / `MCP-Protocol-Version` header、支持方法清单、可复制 JSON-RPC 示例。
+- MCP tools/resources 浏览增强：tools/resources 支持搜索；选中 tool 展示 `inputSchema`、同步 `tools/call` 示例和 `runMode:"queued"` 示例；选中 resource 调用 `resources/read` 并预览 JSON 文本；新增 `logagent.runs.get/result` 轮询示例，说明 platform 查询工具不创建运行记录。
+- `webui/src/SettingsView.tsx`：移除重复的 MCP HTTP client config 代码块与复制按钮，Settings 仅保留 Skills/Tools ZIP 导出和指向 MCP 页面的说明。
+- `webui/src/i18n.ts`：补齐 MCP 页面中英文文案。
+- 文档同步：`webui/README.md`、`webui/SPEC.md`。
+- 验证：`cd webui && npm run lint`、`cd webui && npm run typecheck`、`cd webui && npm run build`、`git diff --check` 均通过。
 
 ## 2026-06-23 P2 docker 切片：executor runner 抽通 SSH/Docker target + dev_selftest 内联 Docker target
 
