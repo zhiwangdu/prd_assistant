@@ -1,14 +1,13 @@
 use std::sync::Arc;
+
 use tracing::{info, warn};
 
 use crate::{
     pipeline::executor::TaskExecutor,
-    services::{metadata::MetadataStore, skill_registry::SkillRegistry, tool_runner::ToolRunner},
+    services::tool_runner::ToolRunner,
     stores::{
-        case_import_store::CaseImportStore, case_store::CaseStore,
         dev_selftest_store::DevSelftestStore, executor_store::RemoteExecutorStore,
-        fetch_store::FetchStore, system_context_store::SystemContextStore, task_store::TaskStore,
-        upload_store::UploadStore,
+        task_store::TaskStore, upload_store::UploadStore,
     },
     support::config::AppConfig,
 };
@@ -17,14 +16,8 @@ use crate::{
 pub struct AppState {
     pub config: Arc<AppConfig>,
     pub uploads: UploadStore,
-    pub metadata: MetadataStore,
-    pub cases: CaseStore,
-    pub case_imports: CaseImportStore,
     pub executors: RemoteExecutorStore,
     pub dev_selftest: DevSelftestStore,
-    pub system_context: SystemContextStore,
-    pub fetch: FetchStore,
-    pub skills: SkillRegistry,
     pub tasks: TaskStore,
     pub executor: TaskExecutor,
     pub tool_runner: ToolRunner,
@@ -39,25 +32,11 @@ impl AppState {
         );
         let tasks = TaskStore::load(config.storage.tasks_dir())?;
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
-        let cases = CaseStore::load_with_memory(
-            config.storage.cases_dir(),
-            config.storage.memory_db_path(),
-        )?;
-        let case_imports = CaseImportStore::load(config.storage.case_imports_dir())?;
         let executors = RemoteExecutorStore::load(config.storage.executors_dir())?;
         let dev_selftest = DevSelftestStore::load(config.storage.dev_selftest_dir())?;
-        let system_context = SystemContextStore::load(config.storage.system_context_dir())?;
-        let fetch = FetchStore::load(config.storage.fetch_dir(), &config.fetch)?;
-        let skills = SkillRegistry::load(config.skills.clone())?;
         let state = Arc::new(Self {
-            metadata: MetadataStore::new(config.clone()),
-            cases,
-            case_imports,
             executors,
             dev_selftest,
-            system_context,
-            fetch,
-            skills,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             tool_runner: ToolRunner::new(config.tools.clone()),
             config,

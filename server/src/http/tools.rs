@@ -207,7 +207,6 @@ mod tests {
     use crate::{
         domain::models::{UploadRecord, UploadStatus},
         http,
-        services::metadata::MetadataImportRequest,
         support::config::{
             AppConfig, AuthSettings, LogAnalyzerSettings, ServerSettings, StorageSettings,
             ToolMatchSettings, ToolSettings, ToolsSettings,
@@ -242,163 +241,6 @@ mod tests {
         assert_eq!(pprof["source"], "configured");
         assert_eq!(pprof["runnable"], true);
         assert_eq!(pprof["exportable"], true);
-        let metadata_field_types = tools
-            .iter()
-            .find(|tool| tool["toolId"] == "logagent.get_metadata_field_types")
-            .unwrap();
-        assert_eq!(metadata_field_types["source"], "built_in");
-        assert_eq!(metadata_field_types["readOnly"], true);
-        assert_eq!(metadata_field_types["editable"], false);
-        assert_eq!(metadata_field_types["exportable"], false);
-        assert_eq!(metadata_field_types["runnable"], true);
-        assert!(metadata_field_types["paramsTemplate"].is_object());
-        assert!(metadata_field_types["tags"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tag| tag == "metadata"));
-        let metadata_tag_fields = tools
-            .iter()
-            .find(|tool| tool["toolId"] == "logagent.get_metadata_tag_fields")
-            .unwrap();
-        assert_eq!(metadata_tag_fields["source"], "built_in");
-        assert_eq!(metadata_tag_fields["readOnly"], true);
-        assert_eq!(metadata_tag_fields["editable"], false);
-        assert_eq!(metadata_tag_fields["exportable"], false);
-        assert_eq!(metadata_tag_fields["runnable"], true);
-        assert_eq!(metadata_tag_fields["minFiles"], 0);
-        assert_eq!(metadata_tag_fields["maxFiles"], 0);
-        assert!(metadata_tag_fields["paramsTemplate"].is_object());
-        assert!(metadata_tag_fields["paramsTemplate"].get("field").is_none());
-        let huawei_package_sync = tools
-            .iter()
-            .find(|tool| tool["toolId"] == "logagent.huawei_cloud_package_sync")
-            .unwrap();
-        assert_eq!(huawei_package_sync["source"], "built_in");
-        assert_eq!(huawei_package_sync["backend"], "huawei_cloud_package_sync");
-        assert_eq!(huawei_package_sync["enabled"], false);
-        assert_eq!(huawei_package_sync["runnable"], false);
-        assert_eq!(huawei_package_sync["minFiles"], 1);
-        assert_eq!(huawei_package_sync["maxFiles"], 1);
-
-        let metadata_created = app
-            .clone()
-            .oneshot(
-                Request::post("/api/tools/logagent.list_metadata_instances/runs")
-                    .header("authorization", "Bearer test-key")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"params":{}}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(metadata_created.status(), StatusCode::ACCEPTED);
-        let metadata_body = to_bytes(metadata_created.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata_body: serde_json::Value = serde_json::from_slice(&metadata_body).unwrap();
-        let metadata_task_id = metadata_body["taskId"].as_str().unwrap();
-        wait_for_tool_run(&app, metadata_task_id, "SUCCEEDED").await;
-        let metadata_result = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/api/tools/runs/{metadata_task_id}/result"))
-                    .header("authorization", "Bearer test-key")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(metadata_result.status(), StatusCode::OK);
-        let metadata_result = to_bytes(metadata_result.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata_result: serde_json::Value = serde_json::from_slice(&metadata_result).unwrap();
-        assert_eq!(
-            metadata_result["toolId"],
-            "logagent.list_metadata_instances"
-        );
-        assert_eq!(metadata_result["result"]["status"], "OK");
-        assert!(metadata_result["result"]["result"]["instances"].is_array());
-
-        let preview = state
-            .metadata
-            .create_import_preview(MetadataImportRequest {
-                template_type: "json".to_string(),
-                filename: Some("metadata.json".to_string()),
-                instance_id: None,
-                remark: None,
-                content: serde_json::json!({
-                    "instances": [{
-                        "instanceId": "inst-tools",
-                        "clusterId": "inst-tools"
-                    }],
-                    "clusters": [{
-                        "clusterId": "inst-tools",
-                        "databases": [{
-                            "name": "mydb",
-                            "defaultRetentionPolicy": "autogen",
-                            "retentionPolicies": [{
-                                "name": "autogen",
-                                "measurements": [{
-                                    "name": "cpu",
-                                    "schema": [
-                                        { "name": "host", "typ": 6 },
-                                        { "name": "usage", "typ": 3 }
-                                    ]
-                                }]
-                            }]
-                        }]
-                    }]
-                })
-                .to_string(),
-            })
-            .await
-            .unwrap();
-        state
-            .metadata
-            .confirm_import(&preview.import_id)
-            .await
-            .unwrap();
-        let tag_created = app
-            .clone()
-            .oneshot(
-                Request::post("/api/tools/logagent.get_metadata_tag_fields/runs")
-                    .header("authorization", "Bearer test-key")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"params":{"instanceId":"inst-tools","database":"mydb","measurement":"cpu"}}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(tag_created.status(), StatusCode::ACCEPTED);
-        let tag_body = to_bytes(tag_created.into_body(), usize::MAX).await.unwrap();
-        let tag_body: serde_json::Value = serde_json::from_slice(&tag_body).unwrap();
-        let tag_task_id = tag_body["taskId"].as_str().unwrap();
-        wait_for_tool_run(&app, tag_task_id, "SUCCEEDED").await;
-        let tag_result = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/api/tools/runs/{tag_task_id}/result"))
-                    .header("authorization", "Bearer test-key")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(tag_result.status(), StatusCode::OK);
-        let tag_result = to_bytes(tag_result.into_body(), usize::MAX).await.unwrap();
-        let tag_result: serde_json::Value = serde_json::from_slice(&tag_result).unwrap();
-        assert_eq!(tag_result["toolId"], "logagent.get_metadata_tag_fields");
-        assert_eq!(tag_result["result"]["status"], "OK");
-        let fields = tag_result["result"]["result"]["result"]["fields"]
-            .as_array()
-            .unwrap();
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0]["name"], "host");
-        assert_eq!(fields[0]["typeLabel"], "Tag");
 
         let created = app
             .clone()
@@ -601,19 +443,11 @@ mod tests {
                 max_upload_bytes: 1024 * 1024,
                 max_chunk_bytes: 512 * 1024,
             },
-            skills: crate::support::config::SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 4000,
-                max_reference_chars: 20_000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
             },
             tools: ToolsSettings { tools },
-            fetch: crate::support::config::FetchSettings::default(),
-            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             mcp: crate::support::config::McpSettings::default(),
             dev_selftest: crate::support::config::DevSelftestSettings::default(),

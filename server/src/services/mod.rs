@@ -1,10 +1,5 @@
 pub mod dev_selftest;
-pub mod fetch;
-pub mod gemini_db;
-pub mod huawei_package_sync;
 pub mod log_analyzer;
-pub mod metadata;
 pub mod remote_execution;
-pub mod skill_registry;
 pub mod tool_runner;
 pub mod tools;

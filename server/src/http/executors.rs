@@ -480,7 +480,7 @@ mod tests {
         http,
         support::config::{
             AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings,
-            RemoteCommandTemplateSettings, RemoteExecutionSettings, ServerSettings, SkillSettings,
+            RemoteCommandTemplateSettings, RemoteExecutionSettings, ServerSettings,
             StorageSettings, ToolsSettings,
         },
     };
@@ -658,19 +658,11 @@ mod tests {
                 max_upload_bytes: 1024 * 1024,
                 max_chunk_bytes: 512 * 1024,
             },
-            skills: SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 4000,
-                max_reference_chars: 20_000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
             },
             tools: ToolsSettings::default(),
-            fetch: crate::support::config::FetchSettings::default(),
-            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: RemoteExecutionSettings {
                 enabled: true,
                 ssh_binary,

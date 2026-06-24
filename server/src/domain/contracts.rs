@@ -8,10 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    domain::models::{TaskRecord, TaskSource},
-    services::metadata::TaskMetadataContext,
-};
+use crate::domain::models::{TaskRecord, TaskSource};
 
 #[derive(Debug, Clone)]
 pub struct TaskContext {
@@ -27,16 +24,12 @@ pub struct TaskContext {
 }
 
 impl TaskContext {
-    pub fn from_record(
-        task: &TaskRecord,
-        workspace: PathBuf,
-        metadata: Option<&TaskMetadataContext>,
-    ) -> Self {
+    pub fn from_record(task: &TaskRecord, workspace: PathBuf) -> Self {
         Self {
             task_id: task.task_id.clone(),
             source: task.source.clone(),
-            product: metadata.and_then(|context| context.product.clone()),
-            version: metadata.and_then(|context| context.version.clone()),
+            product: None,
+            version: None,
             instance_id: task.instance_id.clone(),
             cluster_id: task.cluster_id.clone(),
             node_id: task.node_id.clone(),

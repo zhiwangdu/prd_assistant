@@ -1671,9 +1671,8 @@ mod tests {
         use crate::support::config::{
             AuthSettings, DevSelftestBuildProfile, DevSelftestDockerCluster,
             DevSelftestDockerSettings, DevSelftestGitSettings, DevSelftestSettings,
-            DevSelftestTestSuite, FetchSettings, HuaweiCloudSettings, LogAnalyzerSettings,
-            McpSettings, RemoteExecutionSettings, ServerSettings, SkillSettings, StorageSettings,
-            ToolsSettings,
+            DevSelftestTestSuite, LogAnalyzerSettings, McpSettings, RemoteExecutionSettings,
+            ServerSettings, StorageSettings, ToolsSettings,
         };
         use std::collections::BTreeMap;
         use std::path::PathBuf;
@@ -1725,19 +1724,11 @@ mod tests {
                 max_upload_bytes: 0,
                 max_chunk_bytes: 0,
             },
-            skills: SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 1000,
-                max_reference_chars: 1000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: Vec::new(),
                 max_matches: 0,
             },
             tools: ToolsSettings::default(),
-            fetch: FetchSettings::default(),
-            huawei_cloud: HuaweiCloudSettings::default(),
             remote_execution: RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
             dev_selftest: DevSelftestSettings {

@@ -94,7 +94,7 @@ mod tests {
         http,
         support::config::{
             AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
-            SkillSettings, StorageSettings, ToolsSettings,
+            StorageSettings, ToolsSettings,
         },
     };
 
@@ -216,12 +216,6 @@ mod tests {
                 max_upload_bytes: 1024 * 1024,
                 max_chunk_bytes: 512 * 1024,
             },
-            skills: SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 4000,
-                max_reference_chars: 20_000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
@@ -229,8 +223,6 @@ mod tests {
             tools: ToolsSettings {
                 tools: BTreeMap::new(),
             },
-            fetch: crate::support::config::FetchSettings::default(),
-            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
             dev_selftest: crate::support::config::DevSelftestSettings::default(),

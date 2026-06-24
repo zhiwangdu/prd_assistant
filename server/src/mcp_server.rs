@@ -211,7 +211,7 @@ pub async fn handle_request(state: &Arc<AppState>, request: &Value) -> Value {
                 .unwrap_or_else(|| json!({}));
             Ok(call_tool(state, name, arguments).await)
         }
-        "resources/list" => resources_list(state).await,
+        "resources/list" => resources_list().await,
         "resources/read" => {
             let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
             resources_read(state, uri).await
@@ -508,19 +508,8 @@ fn validate_run_id(run_id: &str) -> anyhow::Result<()> {
     }
 }
 
-async fn resources_list(state: &Arc<AppState>) -> anyhow::Result<Value> {
-    let mut resources = vec![
-        resource("logagent://skills", "skills", "Indexed diagnostic skills."),
-        resource(
-            "logagent://metadata/instances",
-            "metadata_instances",
-            "Imported metadata instance summaries.",
-        ),
-        resource(
-            "logagent://cases/recent",
-            "cases_recent",
-            "Recent enabled memory cases.",
-        ),
+async fn resources_list() -> anyhow::Result<Value> {
+    let resources = vec![
         resource(
             "logagent://runs/recent",
             "runs_recent",
@@ -532,23 +521,6 @@ async fn resources_list(state: &Arc<AppState>) -> anyhow::Result<Value> {
             "Configured tool catalog.",
         ),
     ];
-    for skill in state.skills.list() {
-        resources.push(resource(
-            format!("logagent://skills/{}", skill.skill_id),
-            format!("skill_{}", skill.skill_id),
-            format!("Diagnostic skill {}", skill.display_name),
-        ));
-    }
-    for instance in state.metadata.list_instances().await {
-        resources.push(resource(
-            format!(
-                "logagent://metadata/instances/{}/snapshot",
-                instance.instance_id
-            ),
-            format!("metadata_snapshot_{}", instance.instance_id),
-            format!("Metadata snapshot for instance {}", instance.instance_id),
-        ));
-    }
     Ok(json!({ "resources": resources }))
 }
 
@@ -567,13 +539,6 @@ fn resource(
 
 async fn resources_read(state: &Arc<AppState>, uri: &str) -> anyhow::Result<Value> {
     let value = match uri {
-        "logagent://skills" => json!({ "schemaVersion": 1, "skills": state.skills.list() }),
-        "logagent://metadata/instances" => {
-            json!({ "schemaVersion": 1, "instances": state.metadata.list_instances().await })
-        }
-        "logagent://cases/recent" => {
-            json!({ "schemaVersion": 1, "cases": state.cases.search(None, 20, false).await })
-        }
         "logagent://runs/recent" => {
             let runs: Vec<Value> = state
                 .tasks
@@ -595,21 +560,6 @@ async fn resources_read(state: &Arc<AppState>, uri: &str) -> anyhow::Result<Valu
         }
         "logagent://tools/catalog" => {
             json!({ "schemaVersion": 1, "tools": services::tools::descriptors(&state.config) })
-        }
-        _ if uri.starts_with("logagent://skills/") => {
-            let skill_id = uri.trim_start_matches("logagent://skills/");
-            let skill = state
-                .skills
-                .get(skill_id)
-                .ok_or_else(|| anyhow::anyhow!("unknown skillId {skill_id}"))?;
-            serde_json::to_value(skill)?
-        }
-        _ if uri.starts_with("logagent://metadata/instances/") && uri.ends_with("/snapshot") => {
-            let instance_id = uri
-                .strip_prefix("logagent://metadata/instances/")
-                .and_then(|value| value.strip_suffix("/snapshot"))
-                .ok_or_else(|| anyhow::anyhow!("invalid metadata snapshot URI"))?;
-            serde_json::to_value(state.metadata.get_instance_snapshot(instance_id).await?)?
         }
         _ => anyhow::bail!("unknown resource URI {uri}"),
     };
@@ -638,7 +588,7 @@ mod tests {
         domain::models::TaskKind,
         support::config::{
             AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
-            SkillSettings, StorageSettings, ToolsSettings,
+            StorageSettings, ToolsSettings,
         },
     };
 
@@ -682,8 +632,8 @@ mod tests {
                 1,
                 "tools/call",
                 json!({
-                    "name": "logagent.list_metadata_instances",
-                    "arguments": { "runMode": "queued" }
+                    "name": "logagent.dev_selftest.sync_workspace",
+                    "arguments": { "label": "queued", "runMode": "queued" }
                 }),
             ),
         )
@@ -917,7 +867,7 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
             .collect();
-        assert!(names.contains(&"logagent.list_metadata_instances"));
+        assert!(names.contains(&"logagent.dev_selftest.sync_workspace"));
 
         // tools/call a runnable built-in that needs no uploads.
         let called = handle_request(
@@ -925,7 +875,7 @@ mod tests {
             &request(
                 3,
                 "tools/call",
-                json!({ "name": "logagent.list_metadata_instances", "arguments": {} }),
+                json!({ "name": "logagent.dev_selftest.sync_workspace", "arguments": { "label": "mcp" } }),
             ),
         )
         .await;
@@ -957,15 +907,14 @@ mod tests {
             .iter()
             .map(|entry| entry["uri"].as_str().unwrap())
             .collect();
-        for expected in [
-            "logagent://skills",
-            "logagent://metadata/instances",
-            "logagent://cases/recent",
-            "logagent://runs/recent",
-            "logagent://tools/catalog",
-        ] {
+        for expected in ["logagent://runs/recent", "logagent://tools/catalog"] {
             assert!(uris.contains(&expected), "missing resource {expected}");
         }
+        assert_eq!(
+            uris.len(),
+            2,
+            "only runs/recent and tools/catalog resources remain"
+        );
 
         // Batch over HTTP.
         let batch = handle_http(
@@ -1032,12 +981,6 @@ mod tests {
                 max_upload_bytes: 1024 * 1024,
                 max_chunk_bytes: 512 * 1024,
             },
-            skills: SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 4000,
-                max_reference_chars: 20_000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: vec!["error".to_string()],
                 max_matches: 20,
@@ -1045,14 +988,15 @@ mod tests {
             tools: ToolsSettings {
                 tools: BTreeMap::new(),
             },
-            fetch: crate::support::config::FetchSettings::default(),
-            huawei_cloud: crate::support::config::HuaweiCloudSettings::default(),
             remote_execution: crate::support::config::RemoteExecutionSettings::default(),
             mcp: McpSettings {
                 enabled: mcp_enabled,
                 allowed_origins,
             },
-            dev_selftest: crate::support::config::DevSelftestSettings::default(),
+            dev_selftest: crate::support::config::DevSelftestSettings {
+                enabled: true,
+                ..crate::support::config::DevSelftestSettings::default()
+            },
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)

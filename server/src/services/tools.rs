@@ -22,12 +22,6 @@ use crate::{
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
     services::dev_selftest,
-    services::fetch::{FetchRunParams, FETCH_TOOL_ID},
-    services::gemini_db,
-    services::huawei_package_sync::{
-        validate_params as validate_huawei_package_sync_params, HUAWEI_PACKAGE_SYNC_TOOL_ID,
-    },
-    services::metadata::{MetadataFieldTypesRequest, MetadataTagFieldsRequest},
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -38,10 +32,6 @@ use crate::{
 
 pub const PPROF_ANALYZER_ID: &str = "pprof_analyzer";
 pub const PREPROCESS_LOG_PACKAGE_ID: &str = "logagent.preprocess_log_package";
-pub const METADATA_LIST_INSTANCES_ID: &str = "logagent.list_metadata_instances";
-pub const METADATA_GET_SNAPSHOT_ID: &str = "logagent.get_metadata_snapshot";
-pub const METADATA_GET_FIELD_TYPES_ID: &str = "logagent.get_metadata_field_types";
-pub const METADATA_GET_TAG_FIELDS_ID: &str = "logagent.get_metadata_tag_fields";
 /// Built-in orchestrator: batch upload -> preprocess -> InfluxQL analyzer.
 pub const BATCH_INFLUXQL_ANALYSIS_ID: &str = "logagent.batch_influxql_analysis";
 /// The configured analyzer binary this orchestrator drives.
@@ -195,10 +185,6 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     }
     descriptors.push(preprocess_log_package_descriptor());
     descriptors.push(batch_influxql_analysis_descriptor(config));
-    descriptors.extend(metadata_descriptors());
-    descriptors.push(fetch_descriptor(config));
-    descriptors.push(huawei_package_sync_descriptor(config));
-    descriptors.extend(gemini_db::descriptors(config));
     descriptors.extend(dev_selftest::descriptors(config));
     descriptors.extend(platform_run_descriptors());
     descriptors
@@ -218,9 +204,6 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     if tool_id == BATCH_INFLUXQL_ANALYSIS_ID {
         return Some(batch_influxql_analysis_descriptor(config));
     }
-    if let Some(descriptor) = gemini_db::get_descriptor(config, tool_id) {
-        return Some(descriptor);
-    }
     if let Some(descriptor) = dev_selftest::get_descriptor(config, tool_id) {
         return Some(descriptor);
     }
@@ -229,13 +212,7 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
             .into_iter()
             .find(|descriptor| descriptor.tool_id == tool_id);
     }
-    metadata_descriptors()
-        .into_iter()
-        .chain([
-            fetch_descriptor(config),
-            huawei_package_sync_descriptor(config),
-        ])
-        .find(|descriptor| descriptor.tool_id == tool_id)
+    None
 }
 
 pub fn validate_tool_run_request(
@@ -271,15 +248,6 @@ pub fn validate_tool_run_request(
         }
         PREPROCESS_LOG_PACKAGE_ID => validate_preprocess_log_package_params(params),
         BATCH_INFLUXQL_ANALYSIS_ID => validate_batch_influxql_params(params),
-        METADATA_LIST_INSTANCES_ID => validate_metadata_list_params(params),
-        METADATA_GET_SNAPSHOT_ID => validate_metadata_snapshot_params(params),
-        METADATA_GET_FIELD_TYPES_ID => validate_metadata_field_types_params(params),
-        METADATA_GET_TAG_FIELDS_ID => validate_metadata_tag_fields_params(params),
-        FETCH_TOOL_ID => validate_fetch_params(config, params),
-        HUAWEI_PACKAGE_SYNC_TOOL_ID => validate_huawei_package_sync_run_params(config, params),
-        id if gemini_db::is_gemini_db_tool(id) => {
-            gemini_db::validate_run_params(config, id, params)
-        }
         id if dev_selftest::is_dev_selftest_tool(id) => {
             dev_selftest::validate_run_params(config, id, params)
         }
@@ -358,19 +326,6 @@ pub async fn run_tool_task(state: Arc<AppState>, task: TaskRecord) -> Result<Pat
         Some(PPROF_ANALYZER_ID) => run_pprof_task(state.config.clone(), task).await,
         Some(PREPROCESS_LOG_PACKAGE_ID) => run_preprocess_log_package_task(state, task).await,
         Some(BATCH_INFLUXQL_ANALYSIS_ID) => run_batch_influxql_analysis_task(state, task).await,
-        Some(
-            METADATA_LIST_INSTANCES_ID
-            | METADATA_GET_SNAPSHOT_ID
-            | METADATA_GET_FIELD_TYPES_ID
-            | METADATA_GET_TAG_FIELDS_ID,
-        ) => run_metadata_task(state, task).await,
-        Some(FETCH_TOOL_ID) => crate::services::fetch::run_fetch_task(state, task).await,
-        Some(HUAWEI_PACKAGE_SYNC_TOOL_ID) => {
-            crate::services::huawei_package_sync::run_huawei_package_sync_task(state, task).await
-        }
-        Some(tool_id) if gemini_db::is_gemini_db_tool(tool_id) => {
-            gemini_db::run_gemini_db_task(state, task).await
-        }
         Some(tool_id) if dev_selftest::is_dev_selftest_tool(tool_id) => {
             dev_selftest::run_dev_selftest_task(state, task).await
         }
@@ -577,260 +532,6 @@ fn configured_tool_descriptor(tool: &ToolSettings) -> ToolDescriptor {
     }
 }
 
-fn metadata_descriptors() -> Vec<ToolDescriptor> {
-    vec![
-        ToolDescriptor {
-            tool_id: METADATA_LIST_INSTANCES_ID.to_string(),
-            platform: false,
-            display_name: "Metadata instances".to_string(),
-            description: "List imported metadata instance summaries.".to_string(),
-            enabled: true,
-            source: ToolSource::BuiltIn,
-            read_only: true,
-            editable: false,
-            exportable: false,
-            runnable: true,
-            tags: metadata_tags(),
-            backend: "builtin".to_string(),
-            accepted_suffixes: Vec::new(),
-            min_files: 0,
-            max_files: 0,
-            params_schema: serde_json::json!({
-                "type": "object",
-                "properties": {}
-            }),
-            params_template: serde_json::json!({}),
-            output_views: vec!["json".to_string()],
-        },
-        ToolDescriptor {
-            tool_id: METADATA_GET_SNAPSHOT_ID.to_string(),
-            platform: false,
-            display_name: "Metadata snapshot".to_string(),
-            description: "Read one imported metadata snapshot by instance id.".to_string(),
-            enabled: true,
-            source: ToolSource::BuiltIn,
-            read_only: true,
-            editable: false,
-            exportable: false,
-            runnable: true,
-            tags: metadata_tags(),
-            backend: "builtin".to_string(),
-            accepted_suffixes: Vec::new(),
-            min_files: 0,
-            max_files: 0,
-            params_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "instanceId": { "type": "string" }
-                },
-                "required": ["instanceId"]
-            }),
-            params_template: serde_json::json!({
-                "instanceId": ""
-            }),
-            output_views: vec!["json".to_string()],
-        },
-        ToolDescriptor {
-            tool_id: METADATA_GET_FIELD_TYPES_ID.to_string(),
-            platform: false,
-            display_name: "Metadata field types".to_string(),
-            description:
-                "Look up field type metadata for one imported instance, database and measurement."
-                    .to_string(),
-            enabled: true,
-            source: ToolSource::BuiltIn,
-            read_only: true,
-            editable: false,
-            exportable: false,
-            runnable: true,
-            tags: metadata_tags(),
-            backend: "builtin".to_string(),
-            accepted_suffixes: Vec::new(),
-            min_files: 0,
-            max_files: 0,
-            params_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "instanceId": { "type": "string" },
-                    "database": { "type": "string" },
-                    "measurement": { "type": "string" },
-                    "retentionPolicy": { "type": "string" },
-                    "field": {
-                        "oneOf": [
-                            { "type": "string" },
-                            {
-                                "type": "array",
-                                "items": { "type": "string" },
-                                "minItems": 1
-                            }
-                        ]
-                    }
-                },
-                "required": ["instanceId", "database", "measurement"]
-            }),
-            params_template: serde_json::json!({
-                "instanceId": "",
-                "database": "",
-                "measurement": "",
-                "retentionPolicy": "",
-                "field": []
-            }),
-            output_views: vec!["json".to_string()],
-        },
-        ToolDescriptor {
-            tool_id: METADATA_GET_TAG_FIELDS_ID.to_string(),
-            platform: false,
-            display_name: "Metadata tag fields".to_string(),
-            description:
-                "List Tag type fields for one imported instance, database and measurement."
-                    .to_string(),
-            enabled: true,
-            source: ToolSource::BuiltIn,
-            read_only: true,
-            editable: false,
-            exportable: false,
-            runnable: true,
-            tags: metadata_tags(),
-            backend: "builtin".to_string(),
-            accepted_suffixes: Vec::new(),
-            min_files: 0,
-            max_files: 0,
-            params_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "instanceId": { "type": "string" },
-                    "database": { "type": "string" },
-                    "measurement": { "type": "string" },
-                    "retentionPolicy": { "type": "string" }
-                },
-                "required": ["instanceId", "database", "measurement"]
-            }),
-            params_template: serde_json::json!({
-                "instanceId": "",
-                "database": "",
-                "measurement": "",
-                "retentionPolicy": ""
-            }),
-            output_views: vec!["json".to_string()],
-        },
-    ]
-}
-
-fn fetch_descriptor(config: &AppConfig) -> ToolDescriptor {
-    ToolDescriptor {
-        tool_id: FETCH_TOOL_ID.to_string(),
-        platform: false,
-        display_name: "Fetch endpoint".to_string(),
-        description: "Run a managed HTTP endpoint imported from a browser DevTools curl command."
-            .to_string(),
-        enabled: config.fetch.enabled,
-        source: ToolSource::BuiltIn,
-        read_only: false,
-        editable: false,
-        exportable: false,
-        runnable: config.fetch.enabled,
-        tags: vec![
-            "built-in".to_string(),
-            "fetch".to_string(),
-            "http".to_string(),
-            "manual-run".to_string(),
-        ],
-        backend: "fetch".to_string(),
-        accepted_suffixes: Vec::new(),
-        min_files: 0,
-        max_files: 0,
-        params_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "fetchId": { "type": "string" },
-                "variables": { "type": "object", "additionalProperties": { "type": "string" } },
-                "headers": { "type": "object", "additionalProperties": { "type": "string" } },
-                "body": { "type": "string" }
-            },
-            "required": ["fetchId"]
-        }),
-        params_template: serde_json::json!({
-            "fetchId": "",
-            "variables": {},
-            "headers": {},
-            "body": null
-        }),
-        output_views: vec![
-            "summary".to_string(),
-            "request".to_string(),
-            "response".to_string(),
-            "body_artifact".to_string(),
-        ],
-    }
-}
-
-fn huawei_package_sync_descriptor(config: &AppConfig) -> ToolDescriptor {
-    let enabled = config.huawei_cloud.package_sync.enabled;
-    ToolDescriptor {
-        tool_id: HUAWEI_PACKAGE_SYNC_TOOL_ID.to_string(),
-        platform: false,
-        display_name: "Huawei OBS + GaussDB Package Sync".to_string(),
-        description:
-            "Upload one package to Huawei OBS, execute a GaussDB update SQL, then query OBS/GaussDB summary."
-                .to_string(),
-        enabled,
-        source: ToolSource::BuiltIn,
-        read_only: false,
-        editable: false,
-        exportable: false,
-        runnable: enabled,
-        tags: vec![
-            "built-in".to_string(),
-            "huawei-cloud".to_string(),
-            "obs".to_string(),
-            "gaussdb".to_string(),
-            "manual-run".to_string(),
-        ],
-        backend: "huawei_cloud_package_sync".to_string(),
-        accepted_suffixes: vec!["*".to_string()],
-        min_files: 1,
-        max_files: 1,
-        params_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "objectKey": {
-                    "type": "string",
-                    "description": "Optional OBS object key. Leave blank to use configured prefix plus uploaded filename."
-                },
-                "updateSql": {
-                    "type": "string",
-                    "description": "GaussDB SQL executed after OBS PUT."
-                },
-                "querySql": {
-                    "type": "string",
-                    "description": "GaussDB query SQL executed after OBS HEAD."
-                }
-            },
-            "required": ["updateSql", "querySql"]
-        }),
-        params_template: serde_json::json!({
-            "objectKey": "",
-            "updateSql": "",
-            "querySql": ""
-        }),
-        output_views: vec![
-            "summary".to_string(),
-            "obs".to_string(),
-            "gaussdb".to_string(),
-            "json".to_string(),
-        ],
-    }
-}
-
-fn metadata_tags() -> Vec<String> {
-    vec![
-        "built-in".to_string(),
-        "metadata".to_string(),
-        "read-only".to_string(),
-        "manual-run".to_string(),
-    ]
-}
-
 fn pprof_params_template() -> serde_json::Value {
     serde_json::json!({
         "sampleIndex": default_sample_index(),
@@ -880,148 +581,6 @@ fn validate_preprocess_log_package_params(
     value: &serde_json::Value,
 ) -> Result<serde_json::Value, AppError> {
     validate_metadata_list_params(value)
-}
-
-fn validate_metadata_snapshot_params(
-    value: &serde_json::Value,
-) -> Result<serde_json::Value, AppError> {
-    let instance_id = required_string_param(value, "instanceId")?;
-    Ok(serde_json::json!({ "instanceId": instance_id }))
-}
-
-fn validate_metadata_field_types_params(
-    value: &serde_json::Value,
-) -> Result<serde_json::Value, AppError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| AppError::bad_request("metadata field type params must be an object"))?;
-    let instance_id = required_string_param(value, "instanceId")?;
-    let database = required_string_param(value, "database")?;
-    let measurement = required_string_param(value, "measurement")?;
-    let mut normalized = serde_json::Map::new();
-    normalized.insert("instanceId".to_string(), serde_json::json!(instance_id));
-    normalized.insert("database".to_string(), serde_json::json!(database));
-    normalized.insert("measurement".to_string(), serde_json::json!(measurement));
-    if let Some(retention_policy) = object
-        .get("retentionPolicy")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        normalized.insert(
-            "retentionPolicy".to_string(),
-            serde_json::json!(retention_policy),
-        );
-    }
-    if let Some(field) = object.get("field") {
-        match field {
-            serde_json::Value::String(value) => {
-                let value = value.trim();
-                if !value.is_empty() {
-                    normalized.insert("field".to_string(), serde_json::json!(value));
-                }
-            }
-            serde_json::Value::Array(values) => {
-                let fields = values
-                    .iter()
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .ok_or_else(|| {
-                                AppError::bad_request("field entries must be non-empty strings")
-                            })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                if !fields.is_empty() {
-                    normalized.insert("field".to_string(), serde_json::json!(fields));
-                }
-            }
-            serde_json::Value::Null => {}
-            _ => {
-                return Err(AppError::bad_request(
-                    "field must be a string or string array",
-                ))
-            }
-        }
-    }
-    Ok(serde_json::Value::Object(normalized))
-}
-
-fn validate_metadata_tag_fields_params(
-    value: &serde_json::Value,
-) -> Result<serde_json::Value, AppError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| AppError::bad_request("metadata tag field params must be an object"))?;
-    if object.contains_key("field") {
-        return Err(AppError::bad_request(
-            "metadata tag field params do not support field",
-        ));
-    }
-    let instance_id = required_string_param(value, "instanceId")?;
-    let database = required_string_param(value, "database")?;
-    let measurement = required_string_param(value, "measurement")?;
-    let mut normalized = serde_json::Map::new();
-    normalized.insert("instanceId".to_string(), serde_json::json!(instance_id));
-    normalized.insert("database".to_string(), serde_json::json!(database));
-    normalized.insert("measurement".to_string(), serde_json::json!(measurement));
-    if let Some(retention_policy) = object
-        .get("retentionPolicy")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        normalized.insert(
-            "retentionPolicy".to_string(),
-            serde_json::json!(retention_policy),
-        );
-    }
-    Ok(serde_json::Value::Object(normalized))
-}
-
-fn validate_fetch_params(
-    config: &AppConfig,
-    value: &serde_json::Value,
-) -> Result<serde_json::Value, AppError> {
-    if !config.fetch.enabled {
-        return Err(AppError::bad_request("fetch is disabled by server config"));
-    }
-    let params: FetchRunParams = serde_json::from_value(value.clone())
-        .map_err(|err| AppError::bad_request(format!("invalid fetch params: {err}")))?;
-    if params.fetch_id.trim().is_empty() {
-        return Err(AppError::bad_request("fetchId is required"));
-    }
-    serde_json::to_value(params)
-        .map_err(|err| AppError::internal(format!("failed to encode fetch params: {err}")))
-}
-
-fn validate_huawei_package_sync_run_params(
-    config: &AppConfig,
-    value: &serde_json::Value,
-) -> Result<serde_json::Value, AppError> {
-    if !config.huawei_cloud.package_sync.enabled {
-        return Err(AppError::bad_request(
-            "Huawei package sync is disabled by server config",
-        ));
-    }
-    let params = validate_huawei_package_sync_params(value)?;
-    serde_json::to_value(params).map_err(|err| {
-        AppError::internal(format!(
-            "failed to encode Huawei package sync params: {err}"
-        ))
-    })
-}
-
-fn required_string_param(value: &serde_json::Value, key: &str) -> Result<String, AppError> {
-    value
-        .get(key)
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .ok_or_else(|| AppError::bad_request(format!("{key} is required")))
 }
 
 fn safe_action_suffix(value: &str) -> String {
@@ -1429,7 +988,7 @@ async fn run_batch_influxql_analysis_task(
         ));
     }
 
-    let context = TaskContext::from_record(&task, workspace.clone(), None);
+    let context = TaskContext::from_record(&task, workspace.clone());
     let mut findings = Vec::new();
     let mut failed = 0usize;
     for input in influxql_inputs.iter().take(MAX_INPUTS) {
@@ -1523,66 +1082,6 @@ async fn run_batch_influxql_analysis_task(
     Ok(result_path)
 }
 
-async fn run_metadata_task(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
-    let tool_id = task
-        .tool_id
-        .as_deref()
-        .ok_or_else(|| AppError::bad_request("tool run task is missing toolId"))?;
-    let tool_id = tool_id.to_string();
-    let workspace = state.config.storage.workspace_dir(&task.task_id);
-    let action_id = format!(
-        "act_tool_metadata_{}_{}",
-        safe_action_suffix(&tool_id),
-        task.task_id
-    );
-    let result_dir = workspace.join("tool_results").join(&action_id);
-    fs::create_dir_all(&result_dir)
-        .map_err(|err| AppError::internal(format!("failed to create tool result dir: {err}")))?;
-    let started = Instant::now();
-    let result = match tool_id.as_str() {
-        METADATA_LIST_INSTANCES_ID => {
-            validate_metadata_list_params(&task.tool_params)?;
-            serde_json::json!({ "instances": state.metadata.list_instances().await })
-        }
-        METADATA_GET_SNAPSHOT_ID => {
-            let instance_id = required_string_param(&task.tool_params, "instanceId")?;
-            serde_json::json!({ "snapshot": state.metadata.get_instance_snapshot(&instance_id).await? })
-        }
-        METADATA_GET_FIELD_TYPES_ID => {
-            let request: MetadataFieldTypesRequest =
-                serde_json::from_value(task.tool_params.clone()).map_err(|err| {
-                    AppError::bad_request(format!("invalid metadata field type params: {err}"))
-                })?;
-            serde_json::json!({ "result": state.metadata.get_metadata_field_types(request).await? })
-        }
-        METADATA_GET_TAG_FIELDS_ID => {
-            let request: MetadataTagFieldsRequest =
-                serde_json::from_value(task.tool_params.clone()).map_err(|err| {
-                    AppError::bad_request(format!("invalid metadata tag field params: {err}"))
-                })?;
-            serde_json::json!({ "result": state.metadata.get_metadata_tag_fields(request).await? })
-        }
-        _ => {
-            return Err(AppError::bad_request(format!(
-                "unknown metadata tool {tool_id}"
-            )))
-        }
-    };
-    let record = serde_json::json!({
-        "schemaVersion": 1,
-        "toolId": tool_id,
-        "actionId": action_id,
-        "status": "OK",
-        "params": task.tool_params,
-        "result": result,
-        "durationMs": started.elapsed().as_millis(),
-        "createdAt": Utc::now()
-    });
-    let result_path = result_dir.join("result.json");
-    write_json(&result_path, &record)?;
-    Ok(result_path)
-}
-
 async fn run_configured_tool_task(
     state: Arc<AppState>,
     task: TaskRecord,
@@ -1642,7 +1141,7 @@ async fn run_configured_tool_task(
     }
 
     let mut results = Vec::new();
-    let context = TaskContext::from_record(&task, workspace.clone(), None);
+    let context = TaskContext::from_record(&task, workspace.clone());
     for input_file in normalized_input_files(input_files, &workspace)? {
         let action = AgentAction {
             schema_version: 1,
@@ -2041,8 +1540,8 @@ Showing nodes accounting for 970ms, 100% of 970ms total
     }
 
     use crate::support::config::{
-        AuthSettings, FetchSettings, HuaweiCloudSettings, LogAnalyzerSettings, McpSettings,
-        RemoteExecutionSettings, ServerSettings, SkillSettings, StorageSettings, ToolsSettings,
+        AuthSettings, LogAnalyzerSettings, McpSettings, RemoteExecutionSettings, ServerSettings,
+        StorageSettings, ToolsSettings,
     };
 
     fn test_app_config() -> AppConfig {
@@ -2061,19 +1560,11 @@ Showing nodes accounting for 970ms, 100% of 970ms total
                 max_upload_bytes: 0,
                 max_chunk_bytes: 0,
             },
-            skills: SkillSettings {
-                enabled: false,
-                roots: Vec::new(),
-                max_skill_chars: 1000,
-                max_reference_chars: 1000,
-            },
             log_analyzer: LogAnalyzerSettings {
                 keywords: Vec::new(),
                 max_matches: 0,
             },
             tools: ToolsSettings::default(),
-            fetch: FetchSettings::default(),
-            huawei_cloud: HuaweiCloudSettings::default(),
             remote_execution: RemoteExecutionSettings::default(),
             mcp: McpSettings::default(),
             dev_selftest: crate::support::config::DevSelftestSettings::default(),

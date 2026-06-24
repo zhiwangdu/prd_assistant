@@ -1,9 +1,4 @@
-pub mod case_import_store;
-pub mod case_store;
 pub mod dev_selftest_store;
 pub mod executor_store;
-pub mod fetch_store;
-pub mod memory_store;
-pub mod system_context_store;
 pub mod task_store;
 pub mod upload_store;
