@@ -27,4 +27,5 @@ outputViews
 
 - fake tool 单测覆盖成功、失败、timeout。
 - 真实 analyzer smoke 有脚本。
-- `/api/tools` 与 MCP `tools/list` 一致。
+- `/api/tools` 与 MCP `tools/list` 复用同一 descriptor/schema；MCP 只列 enabled/runnable
+  tools 和 platform tools。

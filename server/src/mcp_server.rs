@@ -2,8 +2,8 @@
 //!
 //! Unlike `mcp.rs` (task-scoped, drives the analysis agent loop), this module
 //! exposes the tool catalog and context resources with no `task_id` dependency:
-//! - `tools/list` mirrors `services::tools::descriptors` (full catalog, including
-//!   disabled tools for discovery; `tools/call` still enforces enabled/runnable gates).
+//! - `tools/list` exposes enabled/runnable catalog tools plus MCP-native platform
+//!   tools; disabled tools stay hidden from external clients.
 //! - `tools/call` runs a catalog tool synchronously and persists a `ToolRun`
 //!   record (shared with `/api/runs`), reusing `build_tool_run_task` + `run_tool_task`.
 //! - `resources/list` + `resources/read` serve skills / metadata / cases / runs /
@@ -250,11 +250,11 @@ fn initialize_result() -> Value {
 fn tools_list(state: &Arc<AppState>) -> Value {
     let tools: Vec<Value> = services::tools::descriptors(&state.config)
         .into_iter()
+        .filter(|descriptor| descriptor.runnable || descriptor.platform)
         .map(|descriptor| {
-            let description = mcp_tool_description(&descriptor);
             json!({
                 "name": descriptor.tool_id,
-                "description": description,
+                "description": descriptor.description,
                 "inputSchema": mcp_input_schema(&descriptor.params_schema),
             })
         })
@@ -283,16 +283,6 @@ fn mcp_input_schema(schema: &Value) -> Value {
             Value::Object(normalized)
         }
         None => json!({ "type": "object", "properties": schema.clone() }),
-    }
-}
-
-fn mcp_tool_description(descriptor: &ToolDescriptor) -> String {
-    if !descriptor.enabled {
-        format!("[disabled by server config] {}", descriptor.description)
-    } else if !descriptor.runnable && !descriptor.platform {
-        format!("[not manually runnable] {}", descriptor.description)
-    } else {
-        descriptor.description.clone()
     }
 }
 
@@ -890,7 +880,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_advertises_disabled_dev_selftest_tools_without_running_them() {
+    async fn tools_list_hides_disabled_dev_selftest_tools_and_calls_remain_rejected() {
         let (state, root) = test_state("mcp-dev-selftest-catalog");
         let listed = handle_request(&state, &request(1, "tools/list", json!({}))).await;
         let tools = listed["result"]["tools"].as_array().unwrap();
@@ -905,17 +895,11 @@ mod tests {
             "logagent.dev_selftest.run_tests",
             "logagent.dev_selftest.report",
         ] {
-            assert!(names.contains(&expected), "missing {expected}");
+            assert!(
+                !names.contains(&expected),
+                "disabled tool leaked: {expected}"
+            );
         }
-        let sync = tools
-            .iter()
-            .find(|tool| tool["name"] == "logagent.dev_selftest.sync_workspace")
-            .unwrap();
-        assert_eq!(sync["inputSchema"]["type"], "object");
-        assert!(sync["description"]
-            .as_str()
-            .unwrap()
-            .starts_with("[disabled by server config]"));
 
         let before = state.tasks.list().await.len();
         let called = handle_request(

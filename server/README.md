@@ -145,10 +145,11 @@ POST /api/mcp
 
 ## MCP schema 兼容
 
-`POST /api/mcp` 的 `tools/list` 暴露完整 tool catalog（含 disabled tool），与
-`/api/tools` 的可发现范围保持一致。disabled tool 的 MCP description 会带
-`[disabled by server config]` 前缀；`tools/call` 仍会在创建 run 前拒绝 disabled 或
-non-runnable tool，因此 MCP client 不能绕过 `dev_selftest.enabled=false`、
+`POST /api/mcp` 的 `tools/list` 从同一 tool catalog 生成外部 MCP client 可调用视图：
+只暴露 enabled/runnable catalog tools 以及 `logagent.runs.get/result` 这类 MCP-native
+platform tools。`/api/tools` 仍保留完整 catalog 和 unavailable reason 供 WebUI 展示；
+MCP 不暴露 disabled 或 non-runnable catalog tools。`tools/call` 仍会在创建 run 前拒绝
+disabled 或 non-runnable toolId，因此 MCP client 不能绕过 `dev_selftest.enabled=false`、
 `fetch.enabled=false` 等配置门控。
 
 `tools/list` 还会把每个 tool 的 `inputSchema` 规范化为根部 `type: "object"` 的 JSON

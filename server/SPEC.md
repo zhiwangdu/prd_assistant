@@ -82,7 +82,9 @@ timeoutSeconds
 unavailableReason
 ```
 
-WebUI、HTTP API 和 MCP `tools/list` 必须共享同一 catalog。
+WebUI、HTTP API 和 MCP 必须共享同一 catalog、schema 和执行边界。`/api/tools` 可展示完整
+catalog 和 unavailable reason；MCP `tools/list` 只导出 enabled/runnable catalog tools
+以及 MCP-native platform tools。
 
 `examples/logagent.yaml` 的 `tools:` 段声明全部外部工具（`pprof_analyzer` + `influxql_analyzer` / `flux_query_analyzer` / `opengemini_storage_analyzer` / `influxdb_storage_analyzer`），默认 `enabled: false` 且使用 `path_env`，使 catalog 在 Linux/Windows 上无需外部二进制即包含全部工具；启用时由 `path_env` 指向平台对应的绝对二进制路径（Windows 带 `.exe`）。built-in 工具（preprocess、batch influxql、metadata ×4、fetch、huawei package sync、GeminiDB Influx 实例管理 ×6：create/delete/list/rename/toggle_ssl/restart）始终在 catalog 中，按各自子系统开关启用。GeminiDB Influx 工具组用 `X-Auth-Token` 鉴权（token 仅来自 env），endpoint/projectId 支持配置默认 + 每次运行 params 覆盖；请求方法、路径和参数映射以 HuaweiCloud NoSQL API v3 文档为准：创建实例使用官方 create body 字段和 `flavor` 数组，列表默认 `datastore_type=influxdb`，SSL 使用 `POST .../ssl-option` + `ssl_option=on|off`，重启实例不带 body、仅可选 `node_id`。
 
@@ -104,9 +106,10 @@ MCP endpoint 支持两种传输：HTTP（`POST /api/mcp`，stateless streamable-
 `mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
 跨域：`mcp.allowed_origins` 非空时校验 `Origin`（仅放行列表内来源，浏览器跨域请求拒绝；无 `Origin` 头的非浏览器/隧道客户端始终放行）；为空则不校验（localhost / SSH 隧道场景）。Windows 远程连 Linux 优先 SSH 隧道；直接暴露需 TLS + API key + `allowed_origins`。
 
-`tools/list` 必须暴露完整 tool catalog（包括 disabled tool），使 MCP client 与 WebUI
-看到同一组工具接口；disabled tool 的 description 必须标明 disabled 状态，`tools/call`
-必须在创建 run 前拒绝 disabled 或 non-runnable tool，不能绕过配置门控。
+`tools/list` 必须只暴露 enabled/runnable catalog tools，以及 `logagent.runs.get/result`
+这类 MCP-native platform tools。disabled 或 non-runnable catalog tools 只在 `/api/tools`
+中作为 WebUI 可用性信息展示，不对外暴露为 MCP 可调用接口；`tools/call` 必须在创建 run
+前拒绝 disabled 或 non-runnable toolId，不能绕过配置门控。
 
 `tools/list` 对外返回的每个 `inputSchema` 必须是根部 `type: "object"` 的 JSON Schema。
 如果内部 `ToolDescriptor.params_schema` 仍是早期 configured tool 使用的「根部属性 map」形状，
@@ -172,7 +175,8 @@ Server 的正式部署手册维护在 [`deploy/SERVER_DEPLOYMENT.md`](../deploy/
 
 - `/health` 无鉴权可用。
 - `/` 返回 WebUI 静态页面。
-- `/api/tools` 与 MCP tools/list 一致。
+- `/api/tools` 展示完整 catalog；MCP tools/list 只展示 enabled/runnable catalog tools
+  和 platform tools，且二者复用同一 descriptor/schema。
 - `mcp.enabled=false` 时 `/api/mcp` 返回 JSON-RPC error，`mcp-serve` 启动失败。
 - 手动 tool run 生成 result/stdout/stderr artifacts。
 - Fetch/Executor/Code Evidence 默认关闭或受 allowlist 限制。

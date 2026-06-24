@@ -31,5 +31,6 @@ tools/call
 
 ## Acceptance
 
-- MCP tools/list equals WebUI catalog.
+- MCP tools/list uses the same descriptors as WebUI catalog, but only exposes enabled/runnable tools
+  and platform tools.
 - HTTP and MCP errors are structured and do not leak secrets.

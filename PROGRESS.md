@@ -12,6 +12,28 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 MCP tools/list 恢复隐藏 disabled tools
+
+目标：按产品边界恢复 MCP `tools/list` 只暴露已启用可运行工具的逻辑；未启用工具不作为外部
+MCP callable interface 暴露。
+
+- `server/src/mcp_server.rs`：`tools/list` 改回只导出 `descriptor.runnable || descriptor.platform`
+  的工具；disabled 或 non-runnable catalog tools 继续只在 WebUI `/api/tools` 中作为可用性信息
+  展示。
+- 保留 `tools/call` 执行边界：即使客户端直接传入 disabled toolId，仍在创建 run 前返回
+  `tool <id> is disabled by server config`，不污染 run history。
+- 回归测试翻转：默认 disabled 的 `logagent.dev_selftest.*` 不应出现在 MCP `tools/list`；直接
+  调用 disabled `sync_workspace` 仍返回 disabled error，且不创建 task。
+- 文档同步：`SPEC.md`、`server/README.md`、`server/SPEC.md`、
+  `docs/modules/{agent-backends,dev-selftest,interfaces,tool-runner}`，统一说明 MCP 与 WebUI
+  复用同一 descriptor/schema，但 MCP 只导出 enabled/runnable + platform tools。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server` 全绿（136 tests）。
+- Runtime 验证：重建并替换
+  `/Users/duzhiwang/workspace/db/prd_assistant_v2/bin/logagent-server`，重启
+  `com.logagent.server` 后 pid 为 94110；`/health` 返回 ok；当前 disabled/non-runnable catalog
+  tools（如 `logagent.fetch`、GeminiDB 管理工具、Huawei package sync）与 MCP `tools/list`
+  交集为空；直接 `tools/call logagent.fetch` 返回 disabled error。
+
 ## 2026-06-24 本机 runtime dev_selftest 配置覆盖
 
 目标：根据 `examples/server-dev-selftest.yaml` 生成本机可用配置，并直接覆盖

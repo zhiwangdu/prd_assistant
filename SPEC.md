@@ -188,7 +188,8 @@ mcp:
 - 本机启动后 `/` 打开管理页面，`/health` 返回 ok。
 - Tool Catalog 能显示内置和源码构建工具可用性。
 - 任一工具运行能生成 run record、result 和 artifact。
-- MCP `tools/list` 与 WebUI catalog 一致。
+- MCP `tools/list` 使用 WebUI 同一 catalog/schema，但只暴露 enabled/runnable tools 和
+  platform tools；disabled tools 仅在 WebUI `/api/tools` 可见。
 - Fetch/Executor/Code Evidence 默认关闭或受 allowlist 控制。
 - 日志、artifact、导出包不包含密钥原文。
 - README/SPEC/PROGRESS 随行为变化同步更新。
