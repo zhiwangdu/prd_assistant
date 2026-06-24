@@ -1,19 +1,15 @@
-import { Activity, BookOpenCheck, Boxes, BrainCircuit, Cable, Globe2, History, KeyRound, Layers3, Server, Settings, Wrench, type LucideIcon } from "lucide-react";
+import { Activity, Cable, History, KeyRound, Layers3, Settings, Wrench, type LucideIcon } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { Badge, Card, CardContent, Input } from "./components/ui";
-import { CasesView } from "./CasesView";
-import { ExecutorsView } from "./ExecutorsView";
 import { McpView } from "./McpView";
 import { RunsView } from "./RunsView";
-import { FetchView, ToolsView } from "./ToolsView";
-import { MetadataDashboard } from "./metadata/MetadataDashboard";
-import { SkillsView } from "./SkillsView";
+import { ToolsView } from "./ToolsView";
 import { SettingsView } from "./SettingsView";
 import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_STORAGE_KEY, appCopy, languageOptions, normalizeUiLanguage, type UiLanguage } from "./i18n";
 
 const API_KEY_STORAGE = "logagent.webui.apiKey";
 
-type ViewKey = "tools" | "runs" | "metadata" | "fetch" | "executors" | "mcp" | "cases" | "skills" | "settings";
+type ViewKey = "tools" | "runs" | "mcp" | "settings";
 
 // Top-level navigation is English-only (no bilingual labels). "Runs History" is
 // a sub-item nested under Tools rather than a standalone top-level tab.
@@ -22,12 +18,7 @@ type NavItem = { key: ViewKey; label: string; icon: LucideIcon; children?: NavCh
 
 const navItems: NavItem[] = [
   { key: "tools", label: "Tools", icon: Wrench, children: [{ key: "runs", label: "Runs History", icon: History }] },
-  { key: "skills", label: "Skills", icon: BrainCircuit },
   { key: "mcp", label: "MCP", icon: Cable },
-  { key: "metadata", label: "Metadata", icon: Boxes },
-  { key: "fetch", label: "Fetch", icon: Globe2 },
-  { key: "executors", label: "Executors", icon: Server },
-  { key: "cases", label: "Cases", icon: BookOpenCheck },
   { key: "settings", label: "Settings", icon: Settings }
 ];
 
@@ -106,12 +97,7 @@ export function App() {
         </nav>
         {view === "tools" ? <ToolsView apiKey={apiKey} language={language} />
           : view === "runs" ? <RunsView apiKey={apiKey} />
-          : view === "metadata" ? <MetadataDashboard apiKey={apiKey} />
-          : view === "fetch" ? <FetchView apiKey={apiKey} />
-          : view === "executors" ? <ExecutorsView apiKey={apiKey} />
           : view === "mcp" ? <McpView apiKey={apiKey} language={language} />
-          : view === "cases" ? <CasesView apiKey={apiKey} />
-          : view === "skills" ? <SkillsView apiKey={apiKey} />
           : <SettingsView apiKey={apiKey} />}
       </main>
     </div>
