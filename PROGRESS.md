@@ -38,6 +38,26 @@ Historical main-branch progress was archived to
   `inputSchema.properties` 为 `configuredArgs` / `match`。
 - 文档同步：`server/README.md`、`server/SPEC.md`。
 
+## 2026-06-24 MCP 完整 catalog 暴露 dev_selftest 接口
+
+目标：修复 `logagent.dev_selftest.*` 在 MCP `tools/list` 中完全不可见的问题。
+
+- 定位：当前 runtime `/api/tools` 已列出 5 个 `logagent.dev_selftest.*` descriptor，但
+  因配置缺省 `dev_selftest.enabled=false`，descriptor 为 `enabled=false/runnable=false`；
+  主 MCP `tools/list` 又只导出 `runnable || platform`，导致 disabled 的 dev_selftest
+  工具接口在 MCP 中被完全过滤。
+- `server/src/mcp_server.rs`：`tools/list` 改为暴露完整 `services::tools::descriptors`
+  catalog，与 WebUI `/api/tools` 可发现范围一致；disabled tool 的 description 加
+  `[disabled by server config]` 前缀；`tools/call` 在创建 run 前明确拒绝 disabled tool，
+  返回 `tool <id> is disabled by server config`，不污染 run history。
+- 增加回归测试：默认 disabled 的 `logagent.dev_selftest.sync_workspace/build/deploy/run_tests/report`
+  必须出现在 MCP `tools/list`；调用 disabled `sync_workspace` 返回 disabled error，且不创建 task。
+- Runtime 验证：重建并替换 `_v2` runtime server binary，LaunchAgent 重启后 50992 `/health`
+  正常；实际 MCP `tools/list` 已返回 5 个 `logagent.dev_selftest.*`，description 带 disabled
+  前缀；调用 disabled `sync_workspace` 返回 `tool ... is disabled by server config`。
+- 文档同步：根 `SPEC.md`、`server/README.md`、`server/SPEC.md`、
+  `docs/modules/dev-selftest/README.md`。
+
 ## 2026-06-24 产品架构和使用流程总览（本地待确认）
 
 目标：根据当前仓库文档和代码，结合官方行业实践，推导一套完整的 LocalToolHub 产品架构和使用流程，先落到本地文档供确认，暂不 push。

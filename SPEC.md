@@ -145,6 +145,11 @@ logagent.geminidb.list_instances
 logagent.geminidb.rename_instance
 logagent.geminidb.toggle_ssl
 logagent.geminidb.restart_instance
+logagent.dev_selftest.sync_workspace
+logagent.dev_selftest.build
+logagent.dev_selftest.deploy
+logagent.dev_selftest.run_tests
+logagent.dev_selftest.report
 ```
 
 GeminiDB Influx tool 组必须按 HuaweiCloud NoSQL API v3 文档映射请求：

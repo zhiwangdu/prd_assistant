@@ -104,6 +104,10 @@ MCP endpoint 支持两种传输：HTTP（`POST /api/mcp`，stateless streamable-
 `mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
 跨域：`mcp.allowed_origins` 非空时校验 `Origin`（仅放行列表内来源，浏览器跨域请求拒绝；无 `Origin` 头的非浏览器/隧道客户端始终放行）；为空则不校验（localhost / SSH 隧道场景）。Windows 远程连 Linux 优先 SSH 隧道；直接暴露需 TLS + API key + `allowed_origins`。
 
+`tools/list` 必须暴露完整 tool catalog（包括 disabled tool），使 MCP client 与 WebUI
+看到同一组工具接口；disabled tool 的 description 必须标明 disabled 状态，`tools/call`
+必须在创建 run 前拒绝 disabled 或 non-runnable tool，不能绕过配置门控。
+
 `tools/list` 对外返回的每个 `inputSchema` 必须是根部 `type: "object"` 的 JSON Schema。
 如果内部 `ToolDescriptor.params_schema` 仍是早期 configured tool 使用的「根部属性 map」形状，
 MCP 边界必须把它包装成 `{type:"object", properties:{...}}`；非对象或非 object 根 schema

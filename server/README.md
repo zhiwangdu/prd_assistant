@@ -145,11 +145,17 @@ POST /api/mcp
 
 ## MCP schema 兼容
 
-`POST /api/mcp` 的 `tools/list` 会把每个 tool 的 `inputSchema` 规范化为根部
-`type: "object"` 的 JSON Schema。早期 configured tool/pprof descriptor 曾把参数属性
-直接放在 schema 根部；MCP 边界会把这种旧形状包装到 `properties` 下，避免 Claude Code
-等严格 MCP client 在抓取 tools 时因 `inputSchema.type` 缺失而失败。WebUI 的 `/api/tools`
-catalog 仍展示内部 `paramsSchema` 原始形状，方便继续兼容现有工具详情页。
+`POST /api/mcp` 的 `tools/list` 暴露完整 tool catalog（含 disabled tool），与
+`/api/tools` 的可发现范围保持一致。disabled tool 的 MCP description 会带
+`[disabled by server config]` 前缀；`tools/call` 仍会在创建 run 前拒绝 disabled 或
+non-runnable tool，因此 MCP client 不能绕过 `dev_selftest.enabled=false`、
+`fetch.enabled=false` 等配置门控。
+
+`tools/list` 还会把每个 tool 的 `inputSchema` 规范化为根部 `type: "object"` 的 JSON
+Schema。早期 configured tool/pprof descriptor 曾把参数属性直接放在 schema 根部；MCP
+边界会把这种旧形状包装到 `properties` 下，避免 Claude Code 等严格 MCP client 在抓取
+tools 时因 `inputSchema.type` 缺失而失败。WebUI 的 `/api/tools` catalog 仍展示内部
+`paramsSchema` 原始形状，方便继续兼容现有工具详情页。
 
 ## GeminiDB Influx 工具组
 

@@ -2,7 +2,8 @@
 //!
 //! Unlike `mcp.rs` (task-scoped, drives the analysis agent loop), this module
 //! exposes the tool catalog and context resources with no `task_id` dependency:
-//! - `tools/list` mirrors `services::tools::descriptors` (runnable tools only).
+//! - `tools/list` mirrors `services::tools::descriptors` (full catalog, including
+//!   disabled tools for discovery; `tools/call` still enforces enabled/runnable gates).
 //! - `tools/call` runs a catalog tool synchronously and persists a `ToolRun`
 //!   record (shared with `/api/runs`), reusing `build_tool_run_task` + `run_tool_task`.
 //! - `resources/list` + `resources/read` serve skills / metadata / cases / runs /
@@ -25,7 +26,7 @@ use tracing::{info, warn};
 
 use crate::{
     app::AppState,
-    domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus},
+    domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus, ToolDescriptor},
     services,
     support::config::AppConfig,
 };
@@ -249,11 +250,11 @@ fn initialize_result() -> Value {
 fn tools_list(state: &Arc<AppState>) -> Value {
     let tools: Vec<Value> = services::tools::descriptors(&state.config)
         .into_iter()
-        .filter(|descriptor| descriptor.runnable || descriptor.platform)
         .map(|descriptor| {
+            let description = mcp_tool_description(&descriptor);
             json!({
                 "name": descriptor.tool_id,
-                "description": descriptor.description,
+                "description": description,
                 "inputSchema": mcp_input_schema(&descriptor.params_schema),
             })
         })
@@ -282,6 +283,16 @@ fn mcp_input_schema(schema: &Value) -> Value {
             Value::Object(normalized)
         }
         None => json!({ "type": "object", "properties": schema.clone() }),
+    }
+}
+
+fn mcp_tool_description(descriptor: &ToolDescriptor) -> String {
+    if !descriptor.enabled {
+        format!("[disabled by server config] {}", descriptor.description)
+    } else if !descriptor.runnable && !descriptor.platform {
+        format!("[not manually runnable] {}", descriptor.description)
+    } else {
+        descriptor.description.clone()
     }
 }
 
@@ -344,9 +355,7 @@ async fn run_catalog_tool(
 ) -> anyhow::Result<Value> {
     let descriptor = services::tools::get_descriptor(&state.config, tool_id)
         .ok_or_else(|| anyhow::anyhow!("unknown toolId {tool_id}"))?;
-    if !descriptor.runnable {
-        anyhow::bail!("tool {tool_id} is not runnable");
-    }
+    ensure_catalog_tool_runnable(&descriptor, tool_id)?;
     let upload_ids: Vec<String> = arguments
         .get("uploadIds")
         .and_then(|value| value.as_array())
@@ -408,9 +417,7 @@ async fn run_catalog_tool_queued(
 ) -> anyhow::Result<Value> {
     let descriptor = services::tools::get_descriptor(&state.config, tool_id)
         .ok_or_else(|| anyhow::anyhow!("unknown toolId {tool_id}"))?;
-    if !descriptor.runnable {
-        anyhow::bail!("tool {tool_id} is not runnable");
-    }
+    ensure_catalog_tool_runnable(&descriptor, tool_id)?;
     if descriptor.platform {
         anyhow::bail!("platform tools do not support runMode:queued");
     }
@@ -440,6 +447,16 @@ async fn run_catalog_tool_queued(
         "status": "QUEUED",
         "url": format!("{base}/api/runs/{task_id}"),
     }))
+}
+
+fn ensure_catalog_tool_runnable(descriptor: &ToolDescriptor, tool_id: &str) -> anyhow::Result<()> {
+    if !descriptor.enabled {
+        anyhow::bail!("tool {tool_id} is disabled by server config");
+    }
+    if !descriptor.runnable {
+        anyhow::bail!("tool {tool_id} is not runnable");
+    }
+    Ok(())
 }
 
 /// MCP-native platform tools. Returns `Some` only for platform tool names, serving
@@ -868,6 +885,57 @@ mod tests {
         assert!(tools
             .iter()
             .all(|tool| tool["inputSchema"]["type"] == "object"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn tools_list_advertises_disabled_dev_selftest_tools_without_running_them() {
+        let (state, root) = test_state("mcp-dev-selftest-catalog");
+        let listed = handle_request(&state, &request(1, "tools/list", json!({}))).await;
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+        for expected in [
+            "logagent.dev_selftest.sync_workspace",
+            "logagent.dev_selftest.build",
+            "logagent.dev_selftest.deploy",
+            "logagent.dev_selftest.run_tests",
+            "logagent.dev_selftest.report",
+        ] {
+            assert!(names.contains(&expected), "missing {expected}");
+        }
+        let sync = tools
+            .iter()
+            .find(|tool| tool["name"] == "logagent.dev_selftest.sync_workspace")
+            .unwrap();
+        assert_eq!(sync["inputSchema"]["type"], "object");
+        assert!(sync["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("[disabled by server config]"));
+
+        let before = state.tasks.list().await.len();
+        let called = handle_request(
+            &state,
+            &request(
+                2,
+                "tools/call",
+                json!({
+                    "name": "logagent.dev_selftest.sync_workspace",
+                    "arguments": {}
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(called["result"]["isError"], true);
+        assert!(called["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("disabled by server config"));
+        assert_eq!(state.tasks.list().await.len(), before);
 
         let _ = std::fs::remove_dir_all(root);
     }
