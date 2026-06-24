@@ -2,6 +2,8 @@
 
 `deploy/` 保存 LogAgent 本地 Tool/MCP Workbench 的运行时部署模板。目标是把 Rust binary、WebUI 静态文件、工具二进制和本地 data 目录组织成可复制目录。
 
+完整 Server 部署步骤见 [SERVER_DEPLOYMENT.md](./SERVER_DEPLOYMENT.md)，包括运行目录初始化、配置、构建安装、启停、MCP 接入、systemd 托管、升级、备份、回滚和排障。
+
 ## 目标目录
 
 ```text

@@ -12,6 +12,15 @@ Historical main-branch progress was archived to
 - Product direction: LocalToolHub local Tool/MCP Workbench
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-24 Server 部署手册
+
+目标：补齐面向 Linux Server 的完整部署手册，覆盖从源码 checkout 到 runtime 目录、配置、构建安装、启停、MCP 接入、systemd 托管、升级、备份、回滚和排障的可执行步骤。
+
+- 新增 `deploy/SERVER_DEPLOYMENT.md`：以 `/srv/localtoolhub-src/prd_assistant` + `/opt/localtoolhub` 分离部署为主线，说明依赖安装、`.env`、`logagent.yaml`、`deploy/rebuild-install.sh`、`deploy/logagentctl.sh`、WebUI/MCP 验证、可选 systemd unit、source-built analyzer、Fetch/Executor/dev_selftest 可选能力、安全检查、常见故障和最小验收。
+- `deploy/README.md` 增加完整部署手册入口。
+- `server/README.md` 在本地运行章节补充 Server 部署手册链接；`server/SPEC.md` 增加部署文档维护要求。
+- 验证：本次为文档变更，运行 `git diff --check` 确认无 whitespace 问题。
+
 ## 2026-06-24 WebUI MCP 页面接口整理
 
 目标：把 MCP 页面从零散 tools/resources 列表整理成完整的接入与调试参考页，避免 Settings 中重复展示 MCP client 配置。

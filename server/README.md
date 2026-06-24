@@ -182,6 +182,9 @@ cargo run -p logagent-server -- --config examples/server-test.yaml
 cargo run -p logagent-server -- --config examples/local-toolhub.yaml
 ```
 
+面向 Linux 机器的完整 Server 部署、启停、MCP 接入、systemd 托管、升级和回滚流程见
+[`deploy/SERVER_DEPLOYMENT.md`](../deploy/SERVER_DEPLOYMENT.md)。
+
 ## 平台兼容性 (Linux / Windows)
 
 Server 的非测试代码不依赖任何 Unix-only API，可在 Linux 和 Windows 上编译运行：

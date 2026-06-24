@@ -147,6 +147,10 @@ code_evidence.repos
 mcp.enabled
 ```
 
+## 部署文档
+
+Server 的正式部署手册维护在 [`deploy/SERVER_DEPLOYMENT.md`](../deploy/SERVER_DEPLOYMENT.md)。手册必须覆盖源码目录与 runtime 目录分离、`.env` 与 `logagent.yaml` 配置、`rebuild-install.sh` 构建安装、`logagentctl.sh` 启停、WebUI/MCP 验证、systemd 可选托管、升级、备份、回滚和常见排障；不得要求把 secret 写入仓库或配置样例。
+
 ## 验收标准
 
 - `/health` 无鉴权可用。
