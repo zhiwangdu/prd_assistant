@@ -35,9 +35,3 @@ tools:
     max_output_bytes: 1048576
     max_input_files: 1
 
-llm:
-  provider: "stub"
-  model: "stub"
-  request_timeout_seconds: 120
-  max_input_chars: 60000
-  max_output_tokens: 4096

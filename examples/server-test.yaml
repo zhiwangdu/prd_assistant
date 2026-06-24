@@ -8,13 +8,6 @@ storage:
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
-skills:
-  enabled: true
-  roots:
-    - skills
-  max_skill_chars: 4000
-  max_reference_chars: 20000
-
 auth:
   api_keys:
     - name: "native-agent"
@@ -47,38 +40,7 @@ remote_execution:
       argv: ["ls", "-la", "/root"]
       timeout_seconds: 10
 
-llm:
-  provider: "stub"
-  model: "stub"
-  request_timeout_seconds: 120
-  max_input_chars: 60000
-  max_output_tokens: 4096
-
-claude_code:
-  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
-  default_mode: "diagnose"
-  max_session_seconds: 600
-  max_output_bytes: 1048576
-
-huawei_cloud:
-  package_sync:
-    enabled: false
-    timeout_seconds: 60
-    obs:
-      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
-      bucket: "example-bucket"
-      object_prefix: "packages"
-      access_key_env: "LOGAGENT_HUAWEI_OBS_ACCESS_KEY"
-      secret_key_env: "LOGAGENT_HUAWEI_OBS_SECRET_KEY"
-      security_token_env: "LOGAGENT_HUAWEI_OBS_SECURITY_TOKEN"
-    gaussdb:
-      host: "127.0.0.1"
-      port: 8000
-      database: "postgres"
-      user: "gaussdb"
-      password_env: "LOGAGENT_HUAWEI_GAUSSDB_PASSWORD"
-      sslmode: "disable"
-
 mcp:
   enabled: true
   transport: "stdio"
+

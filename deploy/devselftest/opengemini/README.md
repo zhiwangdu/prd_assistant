@@ -84,36 +84,6 @@ or a safe identifier, `volumes` are `host:absolute-or-${DEVSELFTEST_*}:container
 `env` keys uppercase). The default `alpine:3.20` image ships busybox `wget`, so `smoke.sh`
 needs no apt/network. Suites without a `docker` block keep the P1 local stub.
 
-## Docker executor 纳管（managed record）
-
-The docker target can also live on a **managed executor record** (`kind: docker`) instead of
-inline on the test suite — the "纳管 + 指定执行" path:
-
-```yaml
-remote_execution:
-  enabled: false                  # /api/executor-runs needs true; dev_selftest reads records regardless
-  docker_binary: "/usr/bin/docker"
-  executors:                      # seeded at startup (create-if-absent, never overwrites API-created)
-    - executor_id: executor_opengemini_smoke
-      name: "openGemini smoke docker executor"
-      kind: docker
-      enabled: true
-      docker: { image: "alpine:3.20", network: "host", volumes: ["<repo>/.../tests:/tests:ro"] }
-dev_selftest:
-  test_suites:
-    opengemini_smoke_exec:
-      command: opengemini_smoke
-      executor: executor_opengemini_smoke   # references the managed record (mutually exclusive with `docker`)
-```
-
-- `/api/executors` (POST/PATCH) accepts `kind: docker` + a `docker` spec; `/api/executor-runs`
-  runs a docker-kind executor through `run_executor_command` and records it in run history
-  (`kind` + `dockerImage` in the result).
-- `run_tests` dispatch priority: `executor` (managed record) > inline `docker` > P1 stub.
-  The record's `docker.volumes` are used as-is (no `${DEVSELFTEST_*}` interpolation — a managed
-  executor is not bound to a run); system env (`DEVSELFTEST_HOST/PORT` + run dirs) is still
-  injected with final priority. ssh-kind records are rejected (ssh test dispatch is deferred).
-
 ## Intranet / air-gapped overrides
 
 All via environment variables on the **server process** (inherited by the deploy/build

@@ -3,27 +3,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MODE="llm"
 FOREGROUND=false
 
 usage() {
   cat <<'EOF'
-Usage: scripts/start-local.sh [--llm|--stub] [--foreground]
+Usage: scripts/start-local.sh [--foreground]
 
-  --llm         Start with the real OpenAI-compatible provider (default).
-  --stub        Start with the deterministic stub provider.
   --foreground  Keep the server attached to the current terminal.
+
+Starts the LogAgent server on 127.0.0.1:50992 with examples/server-test.yaml.
+Requires LOGAGENT_NATIVE_API_KEY.
 EOF
 }
 
 while (($# > 0)); do
   case "$1" in
-    --llm)
-      MODE="llm"
-      ;;
-    --stub)
-      MODE="stub"
-      ;;
     --foreground)
       FOREGROUND=true
       ;;
@@ -50,19 +44,10 @@ require_env() {
 
 require_env LOGAGENT_NATIVE_API_KEY
 
-if [[ "$MODE" == "llm" ]]; then
-  require_env LOGAGENT_LLM_BASE_URL
-  require_env LOGAGENT_LLM_API_KEY
-  require_env LOGAGENT_LLM_MODEL
-  CONFIG="examples/server-llm-openai-compatible.yaml"
-  PORT="50994"
-else
-  CONFIG="examples/server-test.yaml"
-  PORT="50992"
-fi
-
-PID_FILE="/tmp/logagent-server-${MODE}.pid"
-LOG_FILE="/tmp/logagent-server-${MODE}.log"
+CONFIG="examples/server-test.yaml"
+PORT="50992"
+PID_FILE="/tmp/logagent-server.pid"
+LOG_FILE="/tmp/logagent-server.log"
 URL="http://127.0.0.1:${PORT}"
 
 if [[ -f "$PID_FILE" ]]; then
@@ -85,12 +70,12 @@ printf 'Building LogAgent Server...\n'
 cargo build -p logagent-server
 
 if [[ "$FOREGROUND" == "true" ]]; then
-  printf 'Starting LogAgent in foreground: mode=%s url=%s\n' "$MODE" "$URL"
+  printf 'Starting LogAgent in foreground: url=%s\n' "$URL"
   printf '%s\n' "$$" >"$PID_FILE"
   exec target/debug/logagent-server --config "$CONFIG"
 fi
 
-printf 'Starting LogAgent: mode=%s url=%s log=%s\n' "$MODE" "$URL" "$LOG_FILE"
+printf 'Starting LogAgent: url=%s log=%s\n' "$URL" "$LOG_FILE"
 nohup target/debug/logagent-server --config "$CONFIG" >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 printf '%s\n' "$SERVER_PID" >"$PID_FILE"

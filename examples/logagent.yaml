@@ -27,13 +27,6 @@ storage:
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
-skills:
-  enabled: true
-  roots:
-    - skills
-  max_skill_chars: 4000
-  max_reference_chars: 20000
-
 auth:
   api_keys:
     - name: "native-agent"
@@ -153,51 +146,10 @@ tools:
       file_patterns: ["*.tsm", "*.tsi"]
       keywords: ["_series", "tsm", "tsi", "series file"]
 
+# Command templates referenced by dev_selftest test suites (`suite.command`).
+# See examples/server-dev-selftest.yaml for a populated example.
 remote_execution:
-  enabled: true
-  # ssh_binary defaults to /usr/bin/ssh on Linux and
-  # C:\Windows\System32\OpenSSH\ssh.exe on Windows; set explicitly to override.
-  host_key_policy: "accept-new"
-  connect_timeout_seconds: 10
-  command_timeout_seconds: 30
-  max_output_bytes: 1048576
-  commands:
-    smoke_ls_root:
-      display_name: "Smoke: list /root"
-      description: "Low-risk SSH smoke command for managed ECS executors."
-      argv: ["ls", "-la", "/root"]
-      timeout_seconds: 10
-
-huawei_cloud:
-  package_sync:
-    enabled: false
-    timeout_seconds: 60
-    obs:
-      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
-      bucket: "example-bucket"
-      object_prefix: "packages"
-      access_key_env: "LOGAGENT_HUAWEI_OBS_ACCESS_KEY"
-      secret_key_env: "LOGAGENT_HUAWEI_OBS_SECRET_KEY"
-      security_token_env: "LOGAGENT_HUAWEI_OBS_SECURITY_TOKEN"
-    gaussdb:
-      host: "127.0.0.1"
-      port: 8000
-      database: "postgres"
-      user: "gaussdb"
-      password_env: "LOGAGENT_HUAWEI_GAUSSDB_PASSWORD"
-      sslmode: "disable"
-  # GeminiDB Influx (NoSQL) instance-management tools: create / delete / list /
-  # rename / toggle-SSL / restart. Disabled by default. endpoint + project_id are
-  # config defaults and may be overridden per run via each tool's params. Request
-  # paths and bodies follow HuaweiCloud NoSQL API v3; X-Auth-Token is read from
-  # env only. See skills/geminidb-influx-instance-mgmt.
-  gemini_db:
-    enabled: false
-    timeout_seconds: 60
-    endpoint: "https://nosql.cn-north-4.myhuaweicloud.com"
-    project_id_env: "LOGAGENT_HUAWEI_GEMINI_DB_PROJECT_ID"
-    auth_token_env: "LOGAGENT_HUAWEI_GEMINI_DB_TOKEN"
-    region: "cn-north-4"
+  commands: {}
 
 mcp:
   enabled: true

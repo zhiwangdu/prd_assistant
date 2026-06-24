@@ -58,9 +58,3 @@ tools:
         - "show series"
         - "show measurements"
 
-llm:
-  provider: "stub"
-  model: "stub"
-  request_timeout_seconds: 120
-  max_input_chars: 60000
-  max_output_tokens: 4096

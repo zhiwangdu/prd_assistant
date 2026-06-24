@@ -8,13 +8,6 @@ storage:
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
-skills:
-  enabled: true
-  roots:
-    - "${LOGAGENT_APP_DIR}/skills"
-  max_skill_chars: 4000
-  max_reference_chars: 20000
-
 auth:
   api_keys:
     - name: "webui"
@@ -149,68 +142,18 @@ tools:
         - "tsi"
         - "series file"
 
+# Command templates referenced by dev_selftest test suites (`suite.command`).
 remote_execution:
-  enabled: true
-  # ssh_binary defaults to /usr/bin/ssh on Linux and
-  # C:\Windows\System32\OpenSSH\ssh.exe on Windows; set explicitly to override.
-  host_key_policy: "accept-new"
-  connect_timeout_seconds: 10
-  command_timeout_seconds: 30
-  max_output_bytes: 1048576
-  commands:
-    smoke_ls_root:
-      display_name: "Smoke: list /root"
-      description: "Low-risk SSH smoke command for managed ECS executors."
-      argv: ["ls", "-la", "/root"]
-      timeout_seconds: 10
-
-analysis:
-  max_rounds: 4
-  max_llm_calls: 4
-  max_actions: 6
-  max_repeated_action_fingerprints: 1
-
-embedding:
-  enabled: false
-  provider: "openai_compatible"
-  model: "text-embedding-3-small"
-  api_key_env: "LOGAGENT_EMBEDDING_API_KEY"
-  store: "sqlite"
-
-llm:
-  provider: "openai_compatible"
-  base_url_env: "LOGAGENT_LLM_BASE_URL"
-  api_key_env: "LOGAGENT_LLM_API_KEY"
-  model_env: "LOGAGENT_LLM_MODEL"
-  request_timeout_seconds: 120
-  max_input_chars: 60000
-  max_output_tokens: 4096
-
-claude_code:
-  command_path_env: "LOGAGENT_CLAUDE_CODE_PATH"
-  default_mode: "diagnose"
-  max_session_seconds: 600
-  max_output_bytes: 1048576
-
-huawei_cloud:
-  package_sync:
-    enabled: false
-    timeout_seconds: 60
-    obs:
-      endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
-      bucket: "example-bucket"
-      object_prefix: "packages"
-      access_key_env: "LOGAGENT_HUAWEI_OBS_ACCESS_KEY"
-      secret_key_env: "LOGAGENT_HUAWEI_OBS_SECRET_KEY"
-      security_token_env: "LOGAGENT_HUAWEI_OBS_SECURITY_TOKEN"
-    gaussdb:
-      host: "127.0.0.1"
-      port: 8000
-      database: "postgres"
-      user: "gaussdb"
-      password_env: "LOGAGENT_HUAWEI_GAUSSDB_PASSWORD"
-      sslmode: "disable"
+  commands: {}
 
 mcp:
   enabled: true
   transport: "stdio"
+  # For direct remote exposure (not SSH tunnel): set TLS upstream and list allowed origins.
+  # allowed_origins:
+  #   - "https://mcp.example.invalid"
+
+# Dev self-test pipeline (Linux docker closed loop). Disabled by default — see
+# examples/server-dev-selftest.yaml for the full profile shape.
+dev_selftest:
+  enabled: false

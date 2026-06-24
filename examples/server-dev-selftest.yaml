@@ -22,24 +22,13 @@ storage:
   max_upload_bytes: 2147483648
   max_chunk_bytes: 524288
 
-skills:
-  enabled: true
-  roots:
-    - skills
-  max_skill_chars: 4000
-  max_reference_chars: 20000
-
 log_analyzer:
   max_matches: 200
   keywords: ["error", "exception", "timeout", "fail", "failed", "panic", "fatal"]
 
+# Command templates referenced by dev_selftest test suites (`suite.command`). dev_selftest
+# reads templates via command_template(); remote_execution now holds only these templates.
 remote_execution:
-  enabled: false
-  ssh_binary: "/usr/bin/ssh"
-  docker_binary: "/usr/bin/docker"   # used by docker-kind executor runs (/api/executor-runs)
-  # Command template reused by dev_selftest test suites (docker mode). dev_selftest reads
-  # templates via command_template() regardless of remote_execution.enabled, so SSH can stay
-  # disabled for a docker-only self-test.
   commands:
     opengemini_smoke:
       display_name: "openGemini smoke (in-container)"
@@ -47,19 +36,6 @@ remote_execution:
       enabled: true
       argv: ["sh", "/tests/smoke.sh"]
       timeout_seconds: 180
-  # Config-seeded docker executor record (created at startup, create-if-absent). Referenced
-  # by the opengemini_smoke_exec test suite below (the "纳管 + 指定执行" path). To also drive
-  # it directly via the executor API, set remote_execution.enabled: true.
-  executors:
-    - executor_id: executor_opengemini_smoke
-      name: "openGemini smoke docker executor"
-      kind: docker
-      enabled: true
-      docker:
-        image: "alpine:3.20"          # intranet: set image: "${DEVSELFTEST_TEST_IMAGE}" + export it
-        network: "host"
-        volumes:
-          - "/path/to/repo/deploy/devselftest/opengemini/tests:/tests:ro"
 
 # Dev self-test pipeline — openGemini docker demo (the validated default).
 # Disabled by default so this example loads without docker. To run:
@@ -96,7 +72,7 @@ dev_selftest:
           timeout_seconds: 180
   test_suites:
     opengemini_smoke:
-      # Docker-executor mode: run_tests dispatches this suite through the executor docker
+      # Inline-docker mode: run_tests dispatches this suite through the executor docker
       # runner (docker run --rm --network host <image> <argv>). argv/timeout come from the
       # referenced command template above; the cluster address is injected as system env
       # (DEVSELFTEST_HOST/PORT, final priority).
@@ -108,14 +84,6 @@ dev_selftest:
         network: "host"               # reaches the host-exposed ts-sql port 127.0.0.1:8086
         volumes:
           - "/path/to/repo/deploy/devselftest/opengemini/tests:/tests:ro"
-    # Executor-record mode ("纳管 + 指定执行"): run_tests looks up the seeded
-    # executor_opengemini_smoke record above and dispatches through it. Same smoke script +
-    # system env as the inline suite; the docker target is owned by the managed record.
-    opengemini_smoke_exec:
-      command: opengemini_smoke
-      timeout_seconds: 180
-      env: {}
-      executor: executor_opengemini_smoke
 
 mcp:
   enabled: true

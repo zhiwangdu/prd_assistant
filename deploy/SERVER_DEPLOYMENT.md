@@ -12,7 +12,7 @@ Developer workstation / external MCP client
   -> LocalToolHub Server
     -> WebUI static files
     -> tool catalog and tool runner
-    -> uploads / runs / artifacts / metadata / cases
+    -> uploads / runs / artifacts
     -> MCP /api/mcp
 ```
 
@@ -27,9 +27,8 @@ Developer workstation / external MCP client
     uploads/
     runs/
     artifacts/
-    metadata/
-    cases/
-    code_worktrees/
+    workspaces/
+    dev_selftest/
   deploy/
     logagent.yaml
     .env
@@ -417,15 +416,7 @@ LOGAGENT_SUBMODULE_OPENGEMINI_URL=https://git.example.com/mirrors/openGemini.git
 LOGAGENT_SUBMODULE_INFLUXDB_URL=https://git.example.com/mirrors/influxdb.git
 ```
 
-### 10.2 Fetch
-
-Fetch 默认应保持关闭。启用时必须配置 allowed hosts 和凭据引用，凭据只能来自环境变量，不写入 `logagent.yaml`。
-
-### 10.3 SSH/SCP Executor
-
-`remote_execution.enabled=true` 后，只能执行配置中的 executor 与命令模板；不提供自由 shell。SSH 私钥由系统 `ssh`/`ssh-agent` 管理，LocalToolHub 不保存私钥。
-
-### 10.4 Dev Self-Test Docker
+### 10.2 Dev Self-Test Docker
 
 启用 `dev_selftest` Docker 路径前确认：
 
@@ -528,7 +519,6 @@ tar -xzf /opt/localtoolhub-backup-<timestamp>.tgz -C /opt
 - `deploy/logagent.yaml`
 - `deploy/.env`
 - `data/`
-- 如使用 runtime skills：`skills/`
 - 如手工放置工具二进制：`bin/tools/`
 
 不建议备份：
@@ -559,9 +549,8 @@ tar -czf "/opt/localtoolhub-runtime-$ts.tgz" \
 - `server.bind` 默认用 `127.0.0.1`；跨机器优先 SSH tunnel。
 - 若直接开放 HTTP，必须经 TLS 反向代理，并限制防火墙来源。
 - `mcp.allowed_origins` 仅在确实需要浏览器跨域访问时配置为明确 origin。
-- `fetch`、`remote_execution`、`dev_selftest`、`huawei_cloud` 子系统按需启用；未使用保持 disabled。
+- `dev_selftest` 子系统按需启用；未使用保持 disabled。
 - 所有 secret 通过环境变量引用，不写入 YAML、日志、artifact 或导出包。
-- SSH/SCP 只使用配置内 executor、命令模板和文件模板。
 - Artifact 对外只暴露逻辑 ID，不把任意本机路径交给用户。
 
 ## 15. 常见排障
