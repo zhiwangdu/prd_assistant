@@ -10,9 +10,9 @@
 - WebUI lint/typecheck/build。
 - Tool Runner 成功、失败、timeout、非 JSON 输出和 JSON result 解析。
 - Artifact 逻辑路径、防路径逃逸和鉴权下载。
-- Metadata 导入和查询。
-- Fetch allowlist、credential 脱敏和 response artifact。
-- Executor 模板校验和 fake ssh。
+- Upload 解压和输入文件校验。
+- Log analyzer preprocess / batch analysis / configured analyzer smoke。
+- dev_selftest 配置校验、inline Docker target 校验、fake docker 闭环。
 - MCP resources/tools 基础 JSON-RPC。
 
 ## 不进入自动测试的内容
@@ -20,6 +20,7 @@
 - 真实 LLM 请求。
 - 真实 Claude Code/Codex 调用。
 - 真实生产 SSH 节点。
+- 已移除的 Fetch/Metadata/Case/Skills/Executor API。
 - 需要外网的 Git clone 或工具下载。
 
 ## 验收

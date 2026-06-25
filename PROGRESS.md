@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 Historical main-branch progress was archived to
 `docs/archive/PROGRESS-history-main-2026-06-22.md`.
@@ -11,6 +11,21 @@ Historical main-branch progress was archived to
 - Base: `origin/main`
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-25 文档收敛清理：只保留 dev_selftest + 日志分析
+
+目标：先整理所有文档，把两模块收敛后不相关的 Fetch / Metadata / Case / Skills / SSH-SCP Executor /
+纳管 executor / GeminiDB / Huawei package sync / LLM Agent 叙事从当前文档中清掉，避免产品定位继续发散。
+
+- `docs/modules/config|interfaces|security|roadmap|tool-runner|deployment`：重写为当前配置、接口、安全边界、roadmap、Tool Runner 和部署验收；当前 API 只记录 uploads/tools/runs/artifacts/MCP，明确已移除路径不可作为支持接口。
+- `docs/modules/dev-selftest/README.md`、`usage-claude-code.md`、`docs/runbooks/dev-selftest-pipeline/*`：收敛为当前 Docker 闭环和 inline Docker test 模式，删除 managed executor、`suite.executor`、SSH 二进制替换、Huawei/GeminiDB P3 路线。
+- `testing/README.md`、`testing/SPEC.md`：测试重点改成 dev_selftest、日志分析、MCP、upload/artifact 路径安全和 fake docker；不再要求 Metadata/Fetch/Executor 测试项。
+- `deploy/README.md`、`docs/modules/deployment/SPEC.md`、`deploy/devselftest/opengemini/README.md`：部署形态改成 `logagent-server` + analyzer tools + data；说明 `remote_execution` 只剩 dev_selftest command templates，不保存 SSH 私钥也不提供 SSH/SCP executor。
+- `examples/server-test.yaml`、`examples/server-dev-selftest.yaml`、`examples/logagent.yaml`、`deploy/logagent.example.yaml`：示例注释同步，`server-test.yaml` 删除旧 SSH smoke executor 示例。
+- 删除 `docs/architecture_review.md`，该旧架构评审已不服务当前两模块定位；历史进展仍保留在 `docs/archive/` 和本文件旧条目中。
+- `server/README.md`、`server/SPEC.md`：去掉当前状态模型中的审批等待态和 SSH 回滚叙事，统一称 inline Docker runner。
+
+验证：使用 `rg` 扫描旧模块关键词，剩余命中仅作为“已移除/不要使用”的边界说明或历史记录；后续需跑 `git diff --check` 后提交。
 
 ## 2026-06-24 收敛为两模块：dev_selftest + 日志分析
 

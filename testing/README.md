@@ -1,17 +1,18 @@
 # Testing
 
-Testing 目录保存本地 Tool/MCP Workbench 的 fixture、smoke 策略和验收说明。测试重点从 Agent 分析闭环切换为工具运行、MCP、artifact 和安全边界。
+Testing 目录保存两模块 LocalToolHub 的 fixture、smoke 策略和验收说明。测试重点是
+dev_selftest、日志分析、MCP、run/artifact 和安全边界。
 
 ## 测试重点
 
 - Tool Catalog descriptor 完整性。
 - Tool Runner 参数校验、timeout、stdout/stderr、result artifact。
-- Built-in tools：日志包预处理、metadata 查询、Fetch、Executor、Code Evidence。
+- Built-in tools：日志包预处理、batch InfluxQL 分析、dev_selftest、platform runs 查询。
+- Configured analyzers：pprof、Flux、InfluxQL、openGemini storage、InfluxDB storage。
 - MCP tools/list 与 WebUI catalog 一致。
 - Artifact path 安全和下载鉴权。
-- Fetch credential 脱敏。
-- Executor 禁止自由 shell。
-- Metadata 导入、刷新、查询。
+- Upload 解压路径安全。
+- dev_selftest 禁止自由 shell，inline Docker target 必须通过 allowlist 校验。
 - WebUI Tools-first 页面构建和类型正确。
 
 ## Fixture

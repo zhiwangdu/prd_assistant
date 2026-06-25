@@ -25,7 +25,7 @@ Server 不负责：
 ```text
 server/src
   main.rs              # parse config, AppState, mount router + ServeDir; mcp-serve subcommand
-  app.rs               # AppState god-object (uploads / dev_selftest / tasks / executor / tool_runner)
+  app.rs               # AppState (uploads / dev_selftest / tasks / tool_runner)
   http/                # Axum handlers: health, tools, runs, artifacts, uploads
   services/            # tools, tool_runner, log_analyzer, remote_execution (docker runner), dev_selftest
   stores/              # task_store, upload_store, dev_selftest_store (JSON per record)
@@ -75,7 +75,7 @@ POST /api/mcp
 
 `dev_selftest.enabled=false` 是真正的关闭态：占位的 `docker.binary` 不会阻断 Server 启动，整组 `logagent.dev_selftest.*` 工具保持禁用。只有 `dev_selftest.enabled=true` 时，docker binary、compose 文件和 build/test profile 才进入严格 allowlist 校验；执行参数仍只能选择配置好的 profile id。
 
-测试套件（`dev_selftest.test_suites.*`）：带 `docker` 块的套件经 executor docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm --network host <image> <argv>`）内联派发；无 `docker` 块则走本地桩。`command`（引用 `remote_execution.commands` 模板）与非空 `argv` 互斥。docker target（image/network/workdir/volumes/env）做安全校验；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先。纳管 executor record 路径已移除，dev_selftest 只用 inline docker。详见 `server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
+测试套件（`dev_selftest.test_suites.*`）：带 `docker` 块的套件经 inline Docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm --network host <image> <argv>`）派发；无 `docker` 块则走本地桩。`command`（引用 `remote_execution.commands` 模板）与非空 `argv` 互斥。docker target（image/network/workdir/volumes/env）做安全校验；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先。纳管 executor record 路径已移除，dev_selftest 只用 inline Docker。详见 `server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
 
 ## 本地运行
 

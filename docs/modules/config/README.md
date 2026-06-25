@@ -1,10 +1,13 @@
 # Config
 
-配置目标是本地单机开箱即用。默认只需要 bind、data_dir 和 API Key；高级工具按需启用。
+配置目标是让两模块本地工作台开箱即用。默认只需要 bind、data_dir、API Key 和
+MCP 开关；日志 analyzer、dev_selftest profile 和命令模板按需启用。
 
 ## 原则
 
 - secret 只引用环境变量。
-- 默认关闭高风险能力：Fetch、Executor、Code Evidence 写操作。
-- 工具目录和数据目录可通过环境变量展开。
-- LLM/Agent 配置是可选项。
+- 工具二进制、data 目录、dev_selftest 路径可通过环境变量展开。
+- 日志 analyzer 默认可出现在 catalog 中，但外部二进制未配置时保持不可运行。
+- `dev_selftest.enabled=false` 是关闭态，占位 docker/build 配置不得阻断 Server 启动。
+- `remote_execution` 只保留 dev_selftest 使用的命令模板，不再表示远程 executor 服务。
+- 不配置 LLM、Agent、Fetch、Metadata、Case、Skills 或 SSH/SCP 相关项。

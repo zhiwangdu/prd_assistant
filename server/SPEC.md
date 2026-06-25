@@ -47,13 +47,12 @@ error
 ```text
 QUEUED
 RUNNING
-WAITING_FOR_APPROVAL
 SUCCEEDED
 FAILED
 CANCELLED
 ```
 
-`WAITING_FOR_APPROVAL` 仅用于远程采集、SCP、大范围文件读取等高风险动作。普通工具运行不进入用户追问循环。
+当前两模块没有用户审批等待态；高风险能力必须在配置 allowlist 中提前收敛，而不是运行时追问用户。
 
 ## Tool Catalog
 
@@ -115,19 +114,19 @@ tools/call
 
 ## Dev Self-Test
 
-开发自测流水线（P1：docker 闭环）。一组内置工具 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report），通过持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）跨多次 tool 调用串联，复用 Tool Runner 同一执行边界。`dev_selftest.enabled=false` 时整组禁用。
+开发自测流水线（docker 闭环）。一组内置工具 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report），通过持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）跨多次 tool 调用串联，复用 Tool Runner 同一执行边界。`dev_selftest.enabled=false` 时整组禁用。
 
 - `dev_selftest.enabled=false` 时关闭整组工具，并允许配置中保留未填写或占位的 `docker.binary`，不得阻断 Server 启动。
 - `dev_selftest.enabled=true` 时，所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
-- P1 实现：tarball/git 源码同步、配置式 build + artifact glob 收集、`docker_cluster` 部署（`docker compose -p … up -d` + 声明式 health check）、规则化 report。P1 不做 health check 失败回滚（P2 的 SSH 二进制替换路径才做）。
-- `run_tests` 两种模式：带 `docker` 块的测试套件经 **executor docker runner** 派发（见下）；无 `docker` 块则走 P1 本地桩（在 Server 主机跑配置式 `argv`）。`run_tests` 支持 `runMode:"queued"`：返回 `{runId,status:"QUEUED"}` 后用 `logagent.runs.get`/`runs.result` 轮询（platform 工具，不建 ToolRun）。
-- **docker runner**：可复用的 `run_executor_command` 只支持 `ExecutorTarget::Docker`（构造 `docker run --rm --network <net|"host"> [--workdir] [--env] [--volume] <image> <argv>`，`extra_env` 系统环境变量后置覆盖 `target.env` 用户环境变量，超时映射 `ExecutorRunStatus::{Ok,Failed,TimedOut,SpawnFailed}`）。runner 是纯工具，不检查任何 enable 开关（开关在 dev_selftest 入口），dev_selftest 直接复用。SSH/SCP executor 与「纳管」executor record 路径已移除。
+- 当前实现：tarball/git 源码同步、配置式 build + artifact glob 收集、`docker_cluster` 部署（`docker compose -p … up -d` + 声明式 health check）、规则化 report。health check 失败不做自动回滚，证据写入 logs/report。
+- `run_tests` 两种模式：带 `docker` 块的测试套件经 **inline Docker runner** 派发（见下）；无 `docker` 块则走本地桩（在 Server 主机跑配置式 `argv`）。`run_tests` 支持 `runMode:"queued"`：返回 `{runId,status:"QUEUED"}` 后用 `logagent.runs.get`/`runs.result` 轮询（platform 工具，不建 ToolRun）。
+- **Docker runner**：可复用的 `run_executor_command` 只支持 `ExecutorTarget::Docker`（构造 `docker run --rm --network <net|"host"> [--workdir] [--env] [--volume] <image> <argv>`，`extra_env` 系统环境变量后置覆盖 `target.env` 用户环境变量，超时映射 `ExecutorRunStatus::{Ok,Failed,TimedOut,SpawnFailed}`）。runner 是纯工具，不检查任何 enable 开关（开关在 dev_selftest 入口），dev_selftest 直接复用。SSH/SCP executor 与「纳管」executor record 路径已移除。
 - **dev_selftest 内联 Docker target**：`run_tests` 对 `docker` 块内联构建 `ExecutorTarget::Docker`（image/network/workdir/volumes/env 来自配置），argv/timeout 取自 `suite.command` 引用的 `remote_execution.commands` 模板（无 `command` 则用 `suite.argv`）。volume host 侧 `${DEVSELFTEST_*}` 经 `deploy_env` 插值并断言插值后绝对。系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 4 var）**最终优先**，用户 `env` 不可覆盖。`--network host` 下 `127.0.0.1:<host 暴露端口>` 即 ts-sql。
 - **配置 + 安全校验**：`DevSelftestTestSuite` 有 `command: Option<String>` / `docker: Option<DevSelftestTestDocker>`；`command` 与非空 `argv` 互斥且至少一个；`command` 须配 `docker`。`DockerTargetSpec`（`support::docker_target.rs`）校验：image 非空且不以 `-` 开头；network 为 `host` 或安全标识符；workdir 绝对无 `..`；volume 为 `host:absolute|${DEVSELFTEST_*}:container:absolute[:ro|rw]`；env 键 `^[A-Z_][A-Z0-9_]*$`。
 - `deploy` 把 run 目录环境变量（`DEVSELFTEST_RUN_DIR/SOURCE_DIR/ARTIFACTS_DIR/PROJECT_NAME`）注入 `docker compose` **和** health check 命令，使 compose 可用 `${DEVSELFTEST_SOURCE_DIR}` 挂载本次 run 编译出的二进制（通用，非 openGemini 专属）。
 - MCP `tools/call` 参数：catalog 工具既接受 `{params:{...}}`（HTTP `POST /api/tools/:id/runs` 信封）也接受顶层参数（MCP 规范，`arguments` 即 `inputSchema`），后者自动剥离 `runMode/uploadIds`——真实 MCP 客户端（Claude Code）可按 schema 直接传顶层参数。`logagent.runs.get/result` 等 platform 工具的 `runId` 仍在 `arguments` 顶层。
 - Docker 路径已对真实 **openGemini** 3meta+3(sql+store) 集群端到端跑通（sync→build→deploy→run_tests→report 全 SUCCEEDED）。集群 artifact（compose/模板/entrypoint/build 脚本）作为默认 demo 纳入仓库 `deploy/devselftest/opengemini/`，单模板 + entrypoint 按 `OG_ADDR/OG_ID/OG_META_*` env 替换占位符。内网可配置（经 server 进程 env，无代码改动）：`OG_BASE_IMAGE` 换镜像名、`GOPROXY/GOSUMDB` 换 Go 模块源、`dev_selftest.git.repos` 换 openGemini 源码镜像。关键约束：容器需**静态 IP**（openGemini raft 用 `rpc-bind-address` 串作 Server ID，主机名会与绑定 IP 不匹配导致不选主）、`ubuntu:24.04`（22.04 libstdc++ 过旧）、顺序启动门控（meta→store→sql，`depends_on` 仅排序，entrypoint 须等就绪）、store 探活用容器自身 IP 而非 127.0.0.1。
-- 后续：两模块收敛后，dev_selftest 只保留 inline docker 派发；SSH/SCP executor、纳管 executor record、fetch/metadata/cases/skills/gemini_db/huawei_package_sync 已移除。仍 deferred：参数化命令模板（`{var}` + 小 JSON Schema）、`max_input_chars` 等 vestigial 字段清理、`TaskKind::RemoteCommandRun` 等兼容变体在旧数据清退后移除。
+- 后续：dev_selftest 继续只保留 inline Docker 派发；SSH/SCP executor、纳管 executor record、fetch/metadata/cases/skills/gemini_db/huawei_package_sync 不再回到默认产品面。仍 deferred：参数化命令模板（`{var}` + 小 JSON Schema）、`max_input_chars` 等 vestigial 字段清理、`TaskKind::RemoteCommandRun` 等兼容变体在旧数据清退后移除。
 
 ## 配置
 

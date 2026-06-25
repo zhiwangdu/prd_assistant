@@ -159,7 +159,7 @@ mcp:
   # allowed_origins:
   #   - "https://mcp.example.invalid"
 
-# Dev self-test pipeline (P1: docker closed loop). Disabled by default — flip enabled and
+# Dev self-test pipeline (docker closed loop). Disabled by default — flip enabled and
 # see examples/server-dev-selftest.yaml for the full profile shape.
 dev_selftest:
   enabled: false

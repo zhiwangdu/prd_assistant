@@ -51,13 +51,13 @@ dev_selftest:
     opengemini_smoke:
       command: opengemini_smoke              # references remote_execution.commands (argv + timeout)
       timeout_seconds: 180
-      docker:                                # docker-executor mode (see "Test execution" below)
+      docker:                                # inline Docker test target (see "Test execution" below)
         image: "alpine:3.20"
         network: "host"
         volumes:
           - "<repo>/deploy/devselftest/opengemini/tests:/tests:ro"
 remote_execution:
-  enabled: false                             # SSH stays off; dev_selftest reads templates anyway
+  # This section only provides command templates for dev_selftest suites.
   commands:
     opengemini_smoke:
       enabled: true
@@ -68,9 +68,9 @@ remote_execution:
 `<repo>` = absolute path to this repo (dev_selftest requires absolute paths). The server
 process must have docker access (be in the `docker` group, or start via `sg docker -c`).
 
-## Test execution (docker executor)
+## Test execution (inline Docker)
 
-`run_tests` for a suite with a `docker` block dispatches through the executor docker runner:
+`run_tests` for a suite with a `docker` block dispatches through the inline Docker runner:
 `docker run --rm --network host -v <tests>:/tests:ro -e DEVSELFTEST_HOST=127.0.0.1 -e
 DEVSELFTEST_PORT=8086 ... alpine:3.20 sh /tests/smoke.sh`. The container is ephemeral
 (`--rm`) and reaches the cluster over the host network via the host-exposed ts-sql port
@@ -83,6 +83,10 @@ Suite docker fields are allowlist-validated (image not starting with `-`, `netwo
 or a safe identifier, `volumes` are `host:absolute-or-${DEVSELFTEST_*}:container:absolute[:ro|rw]`,
 `env` keys uppercase). The default `alpine:3.20` image ships busybox `wget`, so `smoke.sh`
 needs no apt/network. Suites without a `docker` block keep the P1 local stub.
+
+There is no managed executor record path in the converged product; `/api/executors`,
+`/api/executor-runs`, `suite.executor`, SSH/SCP deployment, and cloud instance creation
+are intentionally absent.
 
 ## Intranet / air-gapped overrides
 

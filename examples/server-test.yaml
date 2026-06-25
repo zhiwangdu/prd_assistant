@@ -28,19 +28,9 @@ log_analyzer:
     - verify
 
 remote_execution:
-  enabled: true
-  host_key_policy: "accept-new"
-  connect_timeout_seconds: 10
-  command_timeout_seconds: 30
-  max_output_bytes: 1048576
-  commands:
-    smoke_ls_root:
-      display_name: "Smoke: list /root"
-      description: "Low-risk SSH smoke command for managed ECS executors."
-      argv: ["ls", "-la", "/root"]
-      timeout_seconds: 10
+  # Command templates are consumed by dev_selftest test suites only.
+  commands: {}
 
 mcp:
   enabled: true
   transport: "stdio"
-

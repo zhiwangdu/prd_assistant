@@ -1,4 +1,4 @@
-# LocalToolHub server config for the dev self-test pipeline (P1: docker closed loop).
+# LocalToolHub server config for the dev self-test pipeline (docker closed loop).
 # Drive from a remote MCP client (e.g. Claude Code on Windows over an SSH tunnel):
 #   sync_workspace -> build -> deploy (docker_cluster) -> run_tests -> runs.get -> report.
 #
@@ -72,8 +72,8 @@ dev_selftest:
           timeout_seconds: 180
   test_suites:
     opengemini_smoke:
-      # Inline-docker mode: run_tests dispatches this suite through the executor docker
-      # runner (docker run --rm --network host <image> <argv>). argv/timeout come from the
+      # Inline Docker mode: run_tests dispatches this suite through the Docker runner
+      # (docker run --rm --network host <image> <argv>). argv/timeout come from the
       # referenced command template above; the cluster address is injected as system env
       # (DEVSELFTEST_HOST/PORT, final priority).
       command: opengemini_smoke

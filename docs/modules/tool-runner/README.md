@@ -1,6 +1,7 @@
 # Tool Runner
 
-Tool Runner 是 LocalToolHub 的核心。所有内置工具、配置工具、source-built analyzer、Fetch、Executor 和 Code Evidence 都应以统一 run/artifact 模型呈现。
+Tool Runner 是 LocalToolHub 的核心。日志 analyzer、日志包预处理、batch InfluxQL 分析、
+dev_selftest 和 platform run 查询都以统一 tool/run/artifact 模型呈现。
 
 ## 职责
 
@@ -13,7 +14,14 @@ Tool Runner 是 LocalToolHub 的核心。所有内置工具、配置工具、sou
 ## 初始工具
 
 - `logagent.preprocess_log_package`
-- `logagent.fetch`
+- `logagent.batch_influxql_analysis`
+- `logagent.dev_selftest.sync_workspace`
+- `logagent.dev_selftest.build`
+- `logagent.dev_selftest.deploy`
+- `logagent.dev_selftest.run_tests`
+- `logagent.dev_selftest.report`
+- `logagent.runs.get`
+- `logagent.runs.result`
 - `pprof_analyzer`
 - `flux_query_analyzer`
 - `influxql_analyzer`

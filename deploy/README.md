@@ -1,6 +1,7 @@
 # Local Runtime Deploy
 
-`deploy/` 保存 LogAgent 本地 Tool/MCP Workbench 的运行时部署模板。目标是把 Rust binary、WebUI 静态文件、工具二进制和本地 data 目录组织成可复制目录。
+`deploy/` 保存 LogAgent 两模块 LocalToolHub 的运行时部署模板。目标是把 Rust server binary、
+WebUI 静态文件、日志 analyzer 二进制和本地 data 目录组织成可复制目录。
 
 完整 Server 部署步骤见 [SERVER_DEPLOYMENT.md](./SERVER_DEPLOYMENT.md)，包括运行目录初始化、配置、构建安装、启停、MCP 接入、systemd 托管、升级、备份、回滚和排障。
 
@@ -9,7 +10,7 @@
 ```text
 $LOGAGENT_APP_DIR/
   bin/
-    logagent-local
+    logagent-server
     tools/
       flux_query_analyzer
       influxql_analyzer
@@ -17,9 +18,8 @@ $LOGAGENT_APP_DIR/
       influxdb_storage_analyzer
   data/
     uploads/
-    runs/
-    artifacts/
     workspaces/
+    tasks/
     dev_selftest/
   webui/out/
   deploy/
@@ -47,7 +47,7 @@ $LOGAGENT_APP_DIR/
 - `LOGAGENT_SUBMODULE_OPENGEMINI_URL`
 - `LOGAGENT_SUBMODULE_INFLUXDB_URL`
 
-LLM/Claude Code 相关变量不再是默认部署必需项，只能用于可选 automation。
+LLM/Agent/Fetch/Executor/Metadata/Case/Skills 相关变量不再是默认部署项。
 
 ## 构建安装
 
@@ -84,4 +84,4 @@ http://127.0.0.1:50992/
 - `.env` 不提交。
 - secret 只放环境变量。
 - 导出包不包含 API Key、Cookie、Authorization header 或数据目录内容。
-- SSH 私钥不由 LogAgent 保存，复用系统 ssh/agent。
+- 跨机器 MCP 接入优先走 SSH tunnel；LogAgent 不保存 SSH 私钥，也不提供 SSH/SCP executor。
