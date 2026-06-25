@@ -52,9 +52,13 @@ create extra tool runs.
 
 `skills/dev-selftest-pipeline/` is the canonical client workflow for development self-test:
 
-- Claude Code edits code locally, runs local checks when practical, commits, and pushes.
+- Claude Code edits code locally, commits, and pushes; it must not run local compile/build/test
+  steps by default because the client may be Windows or otherwise lack the Linux target toolchain.
 - LocalToolHub Server pulls only allowlisted git repo/ref values through
   `logagent.dev_selftest.sync_workspace`.
+- Remote `build` is the first build authority. On build failure, the client reads MCP result
+  evidence, fixes locally, commits/pushes, calls `sync_workspace` again, and retries remote
+  `build`.
 - The client carries the returned `devselftest_*` workspace id through `build`, `deploy`,
   `run_tests`, and `report`.
 - Queued execution returns `task_*` ids for polling only; a `task_*` id must not be passed as the

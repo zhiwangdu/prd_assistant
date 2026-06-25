@@ -33,7 +33,7 @@ manifests; those belonged to the removed server-side skill registry.
 
 | Skill | Purpose |
 |-------|---------|
-| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: commit/push local code, sync the allowlisted git ref, build, deploy, run tests, poll queued runs, and generate a report. |
+| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: commit/push local code, skip local builds by default, sync the allowlisted git ref, use remote build/deploy/tests, poll queued runs, and generate a report. |
 
 ## Maintenance
 

@@ -12,6 +12,14 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-26 dev_selftest skill 改为远端优先构建反馈循环
+
+- 更新 `skills/dev-selftest-pipeline/`：明确 Claude Code 客户端默认不运行本地 compile/build/test/Docker/cluster checks，
+  因为 Windows 或非目标 OS 经常无法构建 Linux 目标；本地只负责编辑、commit、push 和 MCP 编排。
+- workflow 改为 `edit -> commit/push -> sync_workspace -> remote build`：远端 `build` 是第一构建权威；失败后通过
+  `logagent.runs.result` 和 stdout/stderr evidence 读取错误，再本地修复、commit/push、重复 `sync_workspace` 和远端 `build`。
+- 同步更新 `skills/README.md`、`skills/SPEC.md` 与 dev_selftest 模块说明，避免提示词重复携带这些规则。
+
 ## 2026-06-25 openGemini 配置一键探测生成脚本
 
 - 新增 `deploy/probe-opengemini-config.sh`：探测 `LOGAGENT_APP_DIR` / `LOGAGENT_SRC_DIR`（当前环境优先，非交互场景可直接解析

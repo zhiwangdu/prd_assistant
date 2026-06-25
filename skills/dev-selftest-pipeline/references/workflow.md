@@ -5,6 +5,7 @@
 - Boundary
 - Prerequisites
 - Client-Side Code Phase
+- Remote-First Build Loop
 - MCP Tool Order
 - Queued Calls And IDs
 - Step Parameters
@@ -40,7 +41,6 @@ Before `sync_workspace`, Claude Code should finish local source work:
 
 ```bash
 git status --short
-# run focused checks when practical
 git add <changed-files>
 git commit -m "<type>: <summary>"
 git push
@@ -48,6 +48,31 @@ git push
 
 Do not continue to remote self-test if the relevant branch/ref has not been pushed. The Server
 will clone or pull from git; it will not receive local uncommitted changes.
+
+Do not run local compile, build, unit-test, integration-test, Docker, or cluster checks by
+default. The client may be Windows or otherwise missing the Linux target toolchain. Local checks
+are limited to source inspection and git hygiene unless the user explicitly asks for a local
+check and the environment is known to match the target. Dependency-management commands that are
+part of the requested edit are allowed, but they do not replace the remote build.
+
+## Remote-First Build Loop
+
+Use the MCP Server as the build/test authority:
+
+1. Edit locally.
+2. Commit and push.
+3. Call `logagent.dev_selftest.sync_workspace` for the pushed repo/ref.
+4. Call remote `logagent.dev_selftest.build`.
+5. If `build` fails, read `logagent.runs.result` and the referenced stdout/stderr evidence, then
+   fix locally.
+6. Commit and push the fix.
+7. Call `sync_workspace` again, passing the same `devselftest_*` in `runId` when continuing an
+   existing workspace.
+8. Retry remote `build`.
+
+Only proceed to `deploy`, `run_tests`, and `report` after remote `build` returns `status:"OK"`.
+Do not try to reproduce the build locally unless the user explicitly requests that separate
+diagnostic step.
 
 ## MCP Tool Order
 
@@ -63,7 +88,7 @@ Run the steps in this order:
 
 Recommended flow:
 
-1. Call `sync_workspace` synchronously and capture its returned `devselftest_*` id.
+1. Call `sync_workspace` immediately after commit/push and capture its returned `devselftest_*` id.
 2. Use `runMode:"queued"` for slow `build`, `deploy`, or `run_tests` calls.
 3. Poll queued calls with `logagent.runs.get`.
 4. Read final queued output with `logagent.runs.result`.
@@ -203,6 +228,11 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
 ## Failure Handling
 
 - If local changes are not pushed, stop and push before remote self-test.
+- If local build/test would be useful but the environment is Windows or otherwise not target
+  equivalent, skip it and use remote `build` as the feedback loop.
+- If remote `build` fails, do not switch to local compile by default. Read the remote result and
+  evidence, make a local source fix, commit/push it, call `sync_workspace` again, and retry
+  remote `build`.
 - If a queued `task_*` fails, call `logagent.runs.result` for stdout/stderr artifact refs and the
   structured error.
 - A failed dev_selftest step records evidence in `progress.json` and marks the dev_selftest run
