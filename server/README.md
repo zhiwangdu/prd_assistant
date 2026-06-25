@@ -12,6 +12,7 @@ Server 负责：
 - dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report）+ docker runner。
 - 统一 Run History 和 Artifact Store。
 - MCP resources/tools；`mcp.enabled=false` 时 `/api/mcp` 与 `mcp-serve` 均拒绝服务。
+- MCP `tools/list` 为可运行 catalog tools 显式公开可选 `runMode: "sync"|"queued"`，让 Claude Code 等客户端能走 queued + `logagent.runs.get/result` 轮询路径。
 - 配置加载、路径安全、敏感信息脱敏、timeout、allowlist 和审计。
 
 Server 不负责：

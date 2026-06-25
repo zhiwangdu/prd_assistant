@@ -25,7 +25,7 @@ use tracing::{info, warn};
 
 use crate::{
     app::AppState,
-    domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus},
+    domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus, ToolDescriptor},
     services,
     support::config::AppConfig,
 };
@@ -254,11 +254,32 @@ fn tools_list(state: &Arc<AppState>) -> Value {
             json!({
                 "name": descriptor.tool_id,
                 "description": descriptor.description,
-                "inputSchema": descriptor.params_schema,
+                "inputSchema": mcp_input_schema(&descriptor),
             })
         })
         .collect();
     json!({ "tools": tools })
+}
+
+fn mcp_input_schema(descriptor: &ToolDescriptor) -> Value {
+    let mut schema = descriptor.params_schema.clone();
+    if descriptor.runnable && !descriptor.platform {
+        let obj = match schema.as_object_mut() {
+            Some(obj) => obj,
+            None => return schema,
+        };
+        let properties = obj.entry("properties").or_insert_with(|| json!({}));
+        if let Some(properties) = properties.as_object_mut() {
+            properties.entry("runMode").or_insert_with(|| {
+                json!({
+                    "type": "string",
+                    "enum": ["sync", "queued"],
+                    "description": "Optional execution mode. Defaults to sync; queued returns a task_* runId for polling with logagent.runs.get/result."
+                })
+            });
+        }
+    }
+    schema
 }
 
 async fn call_tool(state: &Arc<AppState>, name: &str, arguments: Value) -> Value {
@@ -617,6 +638,32 @@ mod tests {
         );
         // Empty arguments -> empty params.
         assert_eq!(mcp_tool_params(&json!({})), json!({}));
+    }
+
+    #[tokio::test]
+    async fn tools_list_advertises_run_mode_for_runnable_tools() {
+        let (state, root) = test_state("mcp-runmode-schema");
+        let listed = handle_request(&state, &request(1, "tools/list", json!({}))).await;
+        let tools = listed["result"]["tools"].as_array().unwrap();
+
+        let build = tools
+            .iter()
+            .find(|tool| tool["name"] == "logagent.dev_selftest.build")
+            .unwrap();
+        assert_eq!(
+            build["inputSchema"]["properties"]["runMode"]["enum"],
+            json!(["sync", "queued"])
+        );
+
+        let runs_get = tools
+            .iter()
+            .find(|tool| tool["name"] == "logagent.runs.get")
+            .unwrap();
+        assert!(runs_get["inputSchema"]["properties"]
+            .get("runMode")
+            .is_none());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Decode the `tools/call` text content payload into its JSON value.
