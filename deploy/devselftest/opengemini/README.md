@@ -29,6 +29,16 @@ are NOT here: the pipeline syncs the source from an allowlisted git repo/ref
 
 See `examples/server-dev-selftest.yaml` (the openGemini demo). Key pieces:
 
+For a one-shot environment probe + machine-local config, run:
+
+```bash
+deploy/probe-opengemini-config.sh --git-ref <allowlisted-openGemini-ref> --print
+```
+
+The script writes `$LOGAGENT_APP_DIR/deploy/server-opengemini.yaml` using absolute paths
+for git/docker/curl, this repo's build script, the bundled compose file, and the smoke
+test volume.
+
 ```yaml
 dev_selftest:
   enabled: true

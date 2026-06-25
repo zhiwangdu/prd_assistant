@@ -37,6 +37,7 @@
 - `server/src/domain/models.rs` — dev_selftest run/deploy/step/status 模型。
 - `skills/dev-selftest-pipeline/` — 本地 Claude Code skill，负责编排 MCP step tools。
 - `deploy/devselftest/opengemini/` — 默认 openGemini Docker demo artifact。
+- `deploy/probe-opengemini-config.sh` — 探测 Linux 机器环境并生成 openGemini dev_selftest Server 配置。
 
 ## 当前实现
 

@@ -12,6 +12,19 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-25 openGemini 配置一键探测生成脚本
+
+- 新增 `deploy/probe-opengemini-config.sh`：探测 `LOGAGENT_APP_DIR` / `LOGAGENT_SRC_DIR`（当前环境优先，非交互场景可直接解析
+  `~/.bashrc` export 行）、`git`/`docker`/`curl`、Docker daemon/compose、openGemini demo artifact、`8086` 端口和
+  allowlisted git repo/ref。
+- 脚本默认生成 `$LOGAGENT_APP_DIR/deploy/server-opengemini.yaml`，使用绝对路径写入 `dev_selftest` 的 git/build/docker/test
+  allowlist；默认 repo/ref 为本次已验证的 `ssh://git@github.com/zhiwangdu/openGemini.git` +
+  `devselftest/go126-sonic-latest-20260625-233438`，支持 `--repo-url` / `--git-ref` / `--output` / `--data-dir` 覆盖。
+- 同步更新 `deploy/README.md`、`deploy/devselftest/opengemini/README.md` 和 dev_selftest 模块文档。
+- 验证：`bash -n deploy/probe-opengemini-config.sh`；本机临时 `LOGAGENT_APP_DIR`/`LOGAGENT_SRC_DIR` 生成配置；SSH 到
+  `duzhiwang@192.168.31.128` 后以非交互方式运行脚本，成功解析远端 `.bashrc` 并生成
+  `/home/duzhiwang/workspace/data/prd_assistant/deploy/server-opengemini.yaml`。
+
 ## 2026-06-25 openGemini GitHub 分支真实流程验证
 
 - 按用户指定从 `git@github.com:zhiwangdu/openGemini.git` 拉源码，新建并推送测试分支
