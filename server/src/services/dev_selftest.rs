@@ -33,11 +33,14 @@ use crate::{
         DevSelftestDeployTarget, DevSelftestRunRecord, DevSelftestRunStatus, DevSelftestStep,
         TaskRecord, ToolDescriptor, ToolSource,
     },
-    services::remote_execution::{self, ExecutorRunInput, ExecutorRunStatus, ExecutorTarget},
+    services::{
+        dev_selftest_allowlist,
+        remote_execution::{self, ExecutorRunInput, ExecutorRunStatus, ExecutorTarget},
+    },
     support::{
         config::{
-            AppConfig, DevSelftestBuildProfile, DevSelftestSettings, DevSelftestTestDocker,
-            DevSelftestTestSuite,
+            AppConfig, DevSelftestBuildProfile, DevSelftestGitRepo, DevSelftestSettings,
+            DevSelftestTestDocker, DevSelftestTestSuite,
         },
         error::AppError,
         fs_utils::{relative_string, safe_join, sanitize_filename},
@@ -77,8 +80,18 @@ pub fn is_dev_selftest_tool(tool_id: &str) -> bool {
     )
 }
 
+#[allow(dead_code)]
 pub fn validate_run_params(
     config: &AppConfig,
+    tool_id: &str,
+    value: &Value,
+) -> Result<Value, AppError> {
+    validate_run_params_with_git_repos(config, &config.dev_selftest.git.repos, tool_id, value)
+}
+
+pub fn validate_run_params_with_git_repos(
+    config: &AppConfig,
+    git_repos: &[DevSelftestGitRepo],
     tool_id: &str,
     value: &Value,
 ) -> Result<Value, AppError> {
@@ -101,7 +114,7 @@ pub fn validate_run_params(
             if !config.dev_selftest.git.enabled {
                 return Err(AppError::bad_request("dev_selftest.git is disabled"));
             }
-            if !git_repo_allowed(config, repo, git_ref) {
+            if !dev_selftest_allowlist::repo_ref_allowed(git_repos, repo, git_ref) {
                 return Err(AppError::bad_request(
                     "git repo/ref is not in the configured allowlist",
                 ));
@@ -224,15 +237,6 @@ fn require_profile(config: &AppConfig, id: &str, kind: ProfileKind) -> Result<()
             "unknown dev_selftest profile {id}"
         )))
     }
-}
-
-fn git_repo_allowed(config: &AppConfig, repo: &str, git_ref: &str) -> bool {
-    config
-        .dev_selftest
-        .git
-        .repos
-        .iter()
-        .any(|allowed| allowed.url == repo && allowed.refs.iter().any(|r| r == git_ref))
 }
 
 // ---------- run workspace + progress ----------

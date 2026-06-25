@@ -10,6 +10,7 @@ Server 负责：
 - WebUI 静态托管。
 - Tool Catalog 和 Tool Runner（日志分析 analyzer + 内置工具）。
 - dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report）+ docker runner。
+- dev_selftest git allowlist 发现与热更新：MCP resource / MCP update tool / WebUI settings API 共用同一校验和写回服务。
 - 统一 Run History 和 Artifact Store。
 - MCP resources/tools；`mcp.enabled=false` 时 `/api/mcp` 与 `mcp-serve` 均拒绝服务。
 - MCP `tools/list` 为可运行 catalog tools 显式公开可选 `runMode: "sync"|"queued"`，让 Claude Code 等客户端能走 queued + `logagent.runs.get/result` 轮询路径。
@@ -68,6 +69,8 @@ GET /api/runs/:run_id
 GET /api/runs/:run_id/result
 GET /api/runs/:run_id/artifacts
 GET /api/artifacts/:artifact_id
+GET /api/settings/dev-selftest/git-allowlist
+PUT /api/settings/dev-selftest/git-allowlist
 POST /api/mcp
 ```
 
@@ -76,6 +79,8 @@ POST /api/mcp
 ## Dev Self-Test 配置门控
 
 `dev_selftest.enabled=false` 是真正的关闭态：占位的 `docker.binary` 不会阻断 Server 启动，整组 `logagent.dev_selftest.*` 工具保持禁用。只有 `dev_selftest.enabled=true` 时，docker binary、compose 文件和 build/test profile 才进入严格 allowlist 校验；执行参数仍只能选择配置好的 profile id。
+
+`dev_selftest.git.repos` 在启动时进入运行时 allowlist。后续可通过 `GET/PUT /api/settings/dev-selftest/git-allowlist` 或 MCP `logagent.dev_selftest.allowlist.update` 追加 repo/ref；更新流程要求 `confirmedUserConsent=true`、URL/ref 安全校验和配置的 git binary 执行 `ls-remote` 成功，然后原子写回 `--config` YAML，最后更新内存 allowlist。默认策略为保留旧 allowlist，把新 repo/ref 放到默认位置。热更新只影响后续 `sync_workspace` 校验，已存在的 `devselftest_*` 工作区和正在运行的 task 不被修改。
 
 测试套件（`dev_selftest.test_suites.*`）：带 `docker` 块的套件经 inline Docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm --network host <image> <argv>`）派发；无 `docker` 块则走本地桩。`command`（引用 `remote_execution.commands` 模板）与非空 `argv` 互斥。docker target（image/network/workdir/volumes/env）做安全校验；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先。纳管 executor record 路径已移除，dev_selftest 只用 inline Docker。详见 `server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
 

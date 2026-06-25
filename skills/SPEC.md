@@ -46,7 +46,8 @@ logagent-server mcp-serve
 Skills may ask the client to call `tools/list` before execution and then call only published
 tools with schema-valid arguments. Long-running calls must use `runMode:"queued"` and poll with
 `logagent.runs.get` / `logagent.runs.result`; those platform tools read run records and do not
-create extra tool runs.
+create extra tool runs. dev_selftest skills must read `logagent://dev_selftest/config` through
+`resources/read` before selecting repo/ref/profile ids.
 
 ## Dev Self-Test Skill
 
@@ -55,7 +56,12 @@ create extra tool runs.
 - Claude Code edits code locally, commits, and pushes; it must not run local compile/build/test
   steps by default because the client may be Windows or otherwise lack the Linux target toolchain.
 - LocalToolHub Server pulls only allowlisted git repo/ref values through
-  `logagent.dev_selftest.sync_workspace`.
+  `logagent.dev_selftest.sync_workspace`; the skill must use the MCP config resource as the
+  source of truth for allowed values.
+- If the user asks for a repo/ref not present in `logagent://dev_selftest/config`, the skill must
+  stop, ask for explicit consent, call `logagent.dev_selftest.allowlist.update` with
+  `confirmedUserConsent:true` only after consent, then reread the config resource before
+  continuing.
 - Remote `build` is the first build authority. On build failure, the client reads MCP result
   evidence, fixes locally, commits/pushes, calls `sync_workspace` again, and retries remote
   `build`.
@@ -63,6 +69,9 @@ create extra tool runs.
   `run_tests`, and `report`.
 - Queued execution returns `task_*` ids for polling only; a `task_*` id must not be passed as the
   dev_selftest workspace id.
+- The skill must not SSH to the Server to read config, scan a local `prd_assistant` checkout for
+  Server config, or force-push an old allowlisted branch just to satisfy the allowlist unless the
+  user explicitly asks for that operation.
 
 ## Acceptance
 

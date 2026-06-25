@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     config.prepare_dirs()?;
 
     match args.command {
-        Some(Command::McpServe) => return mcp_server::run_stdio(config).await,
+        Some(Command::McpServe) => return mcp_server::run_stdio(config, Some(args.config)).await,
         None => {}
     }
 
@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid bind address '{}'", config.server.bind))?;
 
-    let state = AppState::new(config)?;
+    let state = AppState::new_with_config_path(config, Some(args.config))?;
     state.recover_tasks().await?;
     let app = Router::new()
         .merge(http::router(state.clone()))

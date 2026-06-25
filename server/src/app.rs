@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use tracing::{info, warn};
 
 use crate::{
     pipeline::executor::TaskExecutor,
-    services::tool_runner::ToolRunner,
+    services::{dev_selftest_allowlist::DevSelftestGitAllowlist, tool_runner::ToolRunner},
     stores::{
         dev_selftest_store::DevSelftestStore, task_store::TaskStore, upload_store::UploadStore,
     },
@@ -14,6 +14,8 @@ use crate::{
 #[derive(Debug)]
 pub struct AppState {
     pub config: Arc<AppConfig>,
+    pub config_path: Option<PathBuf>,
+    pub dev_selftest_git_allowlist: DevSelftestGitAllowlist,
     pub uploads: UploadStore,
     pub dev_selftest: DevSelftestStore,
     pub tasks: TaskStore,
@@ -22,7 +24,15 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[allow(dead_code)]
     pub fn new(config: Arc<AppConfig>) -> anyhow::Result<Arc<Self>> {
+        Self::new_with_config_path(config, None)
+    }
+
+    pub fn new_with_config_path(
+        config: Arc<AppConfig>,
+        config_path: Option<PathBuf>,
+    ) -> anyhow::Result<Arc<Self>> {
         info!(
             data_dir = %config.storage.data_dir.display(),
             max_concurrent_tasks = config.server.max_concurrent_tasks,
@@ -32,6 +42,10 @@ impl AppState {
         let uploads = UploadStore::load(config.storage.uploads_dir())?;
         let dev_selftest = DevSelftestStore::load(config.storage.dev_selftest_dir())?;
         let state = Arc::new(Self {
+            config_path,
+            dev_selftest_git_allowlist: DevSelftestGitAllowlist::new(
+                config.dev_selftest.git.repos.clone(),
+            ),
             dev_selftest,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),
             tool_runner: ToolRunner::new(config.tools.clone()),

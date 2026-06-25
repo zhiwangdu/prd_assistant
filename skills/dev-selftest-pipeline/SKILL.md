@@ -16,11 +16,17 @@ Before calling the remote self-test tools:
    the user explicitly asks for them and the local OS/toolchain is known to match the target.
    Windows clients commonly cannot build the Linux target; remote MCP `build` is the source of
    truth.
-3. Commit and push the branch/ref that LocalToolHub is configured to allow.
-4. Immediately call `sync_workspace`, then rely on remote `build`/`deploy`/`run_tests` results for
+3. Read MCP resource `logagent://dev_selftest/config`; use only the repo/ref/profile ids returned
+   there.
+4. Commit and push the branch/ref that LocalToolHub is configured to allow.
+5. If the needed repo/ref is not in `logagent://dev_selftest/config`, stop and ask the user whether
+   to update the Server allowlist. Only after explicit consent, call
+   `logagent.dev_selftest.allowlist.update` with `confirmedUserConsent:true`, then reread the
+   config resource.
+6. Immediately call `sync_workspace`, then rely on remote `build`/`deploy`/`run_tests` results for
    feedback. If remote `build` fails, read its evidence, fix locally, commit/push again, and call
    `sync_workspace` again before retrying `build`.
-5. Confirm MCP connectivity with `initialize` and `tools/list`.
+7. Confirm MCP connectivity with `initialize` and `tools/list`.
 
 Then run the MCP workflow in `references/workflow.md`. Read that file before executing the
 pipeline or diagnosing a failed step.
@@ -35,3 +41,7 @@ Important ID rule:
 
 Never upload source archives for this workflow. Source enters LocalToolHub only through an
 allowlisted git repo/ref after the local client has pushed the change.
+
+Never SSH to the Server or scan a local `prd_assistant` checkout to discover Server config. Never
+force-push to an old allowlisted branch just to satisfy the allowlist unless the user explicitly
+asks for that operation.

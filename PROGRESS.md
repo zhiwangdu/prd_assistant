@@ -12,6 +12,22 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-26 dev_selftest allowlist 可发现与热更新
+
+- Server 新增运行时 dev_selftest git allowlist：启动时从 `dev_selftest.git.repos` 初始化；`sync_workspace`
+  参数校验改为读取运行时 allowlist，build/docker/test profile 仍保持静态配置。
+- MCP 新增 `logagent://dev_selftest/config` resource，返回脱敏 repo/ref、默认 repo/ref 以及 build/docker/test
+  profile ids；新增 `logagent.dev_selftest.allowlist.update` tool，要求 `confirmedUserConsent:true`，校验 URL/ref，
+  用配置的 git binary 执行 `ls-remote`，写回 `--config` YAML 后再更新内存 allowlist。
+- HTTP 新增受保护接口 `GET/PUT /api/settings/dev-selftest/git-allowlist`，与 MCP update tool 复用同一 service；
+  默认追加并设为默认，旧 allowlist 保留，已存在 `devselftest_*` 工作区和正在运行的 task 不被修改。
+- WebUI Settings 新增 “Dev Self-Test Git Allowlist” 卡片：无 API Key 时提示；有 API Key 时展示默认 repo/ref、
+  全部 allowlisted repo/ref 和 profile ids，可保存新 repo/ref 并刷新显示 Server 返回的结果或错误。
+- Skill 文档要求 workflow 前先读 `logagent://dev_selftest/config`；新分支不在 allowlist 时必须先询问用户，获同意后
+  调 update tool，再重新读取 config resource；明确禁止 SSH 到 Server 读配置、扫描本机配置、或为适配旧 allowlist
+  强推旧分支。
+- 文档同步：根 README/SPEC、server README/SPEC、webui README/SPEC、skills README/SPEC、dev_selftest 模块文档。
+
 ## 2026-06-26 dev_selftest skill 改为远端优先构建反馈循环
 
 - 更新 `skills/dev-selftest-pipeline/`：明确 Claude Code 客户端默认不运行本地 compile/build/test/Docker/cluster checks，

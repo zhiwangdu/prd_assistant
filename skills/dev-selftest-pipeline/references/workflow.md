@@ -4,6 +4,7 @@
 
 - Boundary
 - Prerequisites
+- Config Discovery And Allowlist Updates
 - Client-Side Code Phase
 - Remote-First Build Loop
 - MCP Tool Order
@@ -27,6 +28,7 @@ Claude Code owns the workflow: edit locally, commit, push, then drive Server too
 - Absolute allowlisted command, binary, compose, repository, and ref values.
 - Docker access for the Server process.
 - The MCP client can call `tools/list` and sees:
+  - `logagent.dev_selftest.allowlist.update`
   - `logagent.dev_selftest.sync_workspace`
   - `logagent.dev_selftest.build`
   - `logagent.dev_selftest.deploy`
@@ -34,6 +36,46 @@ Claude Code owns the workflow: edit locally, commit, push, then drive Server too
   - `logagent.dev_selftest.report`
   - `logagent.runs.get`
   - `logagent.runs.result`
+- The MCP client can call `resources/read` for `logagent://dev_selftest/config`.
+
+## Config Discovery And Allowlist Updates
+
+Before selecting any repo/ref/profile, read:
+
+```json
+{
+  "method": "resources/read",
+  "params": { "uri": "logagent://dev_selftest/config" }
+}
+```
+
+Use the returned `gitRepos`, `defaultGitRepo`, `defaultGitRef`, `buildProfiles`,
+`dockerProfiles`, and `testSuites` as the source of truth. Do not infer values from a local
+checkout, SSH into the Server, or read Server config files directly.
+
+If the needed repo/ref is not present:
+
+1. Stop the workflow.
+2. Ask the user whether they approve updating the Server dev_selftest git allowlist.
+3. Only after explicit approval, call:
+
+```json
+{
+  "name": "logagent.dev_selftest.allowlist.update",
+  "arguments": {
+    "repoUrl": "https://github.com/openGemini/openGemini.git",
+    "gitRef": "feature/branch",
+    "setDefault": true,
+    "confirmedUserConsent": true,
+    "reason": "User approved dev_selftest for this branch"
+  }
+}
+```
+
+The Server verifies URL/ref safety and `git ls-remote` reachability, writes the config file, then
+updates the runtime allowlist. After a successful update, reread `logagent://dev_selftest/config`
+and continue using the returned values. Existing `devselftest_*` workspaces are not modified by
+the allowlist update.
 
 ## Client-Side Code Phase
 
@@ -61,14 +103,15 @@ Use the MCP Server as the build/test authority:
 
 1. Edit locally.
 2. Commit and push.
-3. Call `logagent.dev_selftest.sync_workspace` for the pushed repo/ref.
-4. Call remote `logagent.dev_selftest.build`.
-5. If `build` fails, read `logagent.runs.result` and the referenced stdout/stderr evidence, then
+3. Read `logagent://dev_selftest/config` and confirm the pushed repo/ref is allowlisted.
+4. Call `logagent.dev_selftest.sync_workspace` for the pushed repo/ref.
+5. Call remote `logagent.dev_selftest.build`.
+6. If `build` fails, read `logagent.runs.result` and the referenced stdout/stderr evidence, then
    fix locally.
-6. Commit and push the fix.
-7. Call `sync_workspace` again, passing the same `devselftest_*` in `runId` when continuing an
+7. Commit and push the fix.
+8. Call `sync_workspace` again, passing the same `devselftest_*` in `runId` when continuing an
    existing workspace.
-8. Retry remote `build`.
+9. Retry remote `build`.
 
 Only proceed to `deploy`, `run_tests`, and `report` after remote `build` returns `status:"OK"`.
 Do not try to reproduce the build locally unless the user explicitly requests that separate
@@ -121,6 +164,8 @@ workspace id again.
 ### sync_workspace
 
 Use an allowlisted git repo/ref. Prefer synchronous mode so the workspace id is immediately clear.
+The allowed values come from `logagent://dev_selftest/config`; if the desired ref is absent, use
+the allowlist update flow above before calling this tool.
 
 ```json
 {
@@ -228,6 +273,8 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
 ## Failure Handling
 
 - If local changes are not pushed, stop and push before remote self-test.
+- If the desired repo/ref is absent from `logagent://dev_selftest/config`, stop and ask for user
+  consent before calling `logagent.dev_selftest.allowlist.update`.
 - If local build/test would be useful but the environment is Windows or otherwise not target
   equivalent, skip it and use remote `build` as the feedback loop.
 - If remote `build` fails, do not switch to local compile by default. Read the remote result and
@@ -256,3 +303,6 @@ Do not use or describe these as current behavior:
 - SSH/SCP executor or managed executor records.
 - `/api/executors` or `/api/executor-runs`.
 - `suite.executor`, Huawei package sync, GeminiDB create instance, or custom agent loops.
+- SSHing to the Server or scanning local `prd_assistant` config to discover allowlist values.
+- Force-pushing to an old allowlisted branch to avoid updating the allowlist, unless the user
+  explicitly asks for that operation.

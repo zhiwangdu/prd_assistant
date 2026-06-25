@@ -21,7 +21,7 @@ use crate::{
         },
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
-    services::dev_selftest,
+    services::{dev_selftest, dev_selftest_allowlist},
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -37,12 +37,13 @@ pub const BATCH_INFLUXQL_ANALYSIS_ID: &str = "logagent.batch_influxql_analysis";
 /// The configured analyzer binary this orchestrator drives.
 const INFLUXQL_ANALYZER_ID: &str = "influxql_analyzer";
 
-/// MCP-native platform tool ids. Side-effect-free run queries served directly from
-/// `TaskStore` (no `ToolRun` created) — see `mcp_server::platform_tool_result`.
+/// MCP-native platform/config tool ids. They are advertised in the shared catalog but
+/// bypass ordinary ToolRun execution; see `mcp_server::platform_tool_result` and the
+/// allowlist update handler.
 pub const RUNS_GET_ID: &str = "logagent.runs.get";
 pub const RUNS_RESULT_ID: &str = "logagent.runs.result";
 
-fn platform_run_descriptors() -> Vec<ToolDescriptor> {
+fn platform_descriptors() -> Vec<ToolDescriptor> {
     let tags = vec![
         "built-in".to_string(),
         "platform".to_string(),
@@ -55,7 +56,7 @@ fn platform_run_descriptors() -> Vec<ToolDescriptor> {
         "required": ["runId"]
     });
     let params_template = serde_json::json!({ "runId": "" });
-    vec![
+    let mut descriptors = vec![
         ToolDescriptor {
             tool_id: RUNS_GET_ID.to_string(),
             display_name: "Runs: get status".to_string(),
@@ -96,7 +97,66 @@ fn platform_run_descriptors() -> Vec<ToolDescriptor> {
             params_template,
             output_views: vec!["json".to_string()],
         },
-    ]
+    ];
+    descriptors.push(ToolDescriptor {
+        tool_id: dev_selftest_allowlist::ALLOWLIST_UPDATE_TOOL_ID.to_string(),
+        display_name: "Dev self-test: update git allowlist".to_string(),
+        description: "MCP-native settings tool that adds a reachable repo/ref to the dev_selftest git allowlist after explicit user consent. It persists the server config and does not create a ToolRun.".to_string(),
+        enabled: true,
+        source: ToolSource::BuiltIn,
+        read_only: false,
+        editable: false,
+        exportable: false,
+        runnable: false,
+        platform: true,
+        tags: vec![
+            "built-in".to_string(),
+            "platform".to_string(),
+            "dev-selftest".to_string(),
+            "settings".to_string(),
+        ],
+        backend: "platform".to_string(),
+        accepted_suffixes: Vec::new(),
+        min_files: 0,
+        max_files: 0,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "repoUrl": {
+                    "type": "string",
+                    "description": "Git repository URL using http, https, ssh, or git."
+                },
+                "gitRef": {
+                    "type": "string",
+                    "description": "Branch or ref to allow after git ls-remote verification."
+                },
+                "setDefault": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When true, make this repo/ref the default recommendation while preserving older entries."
+                },
+                "confirmedUserConsent": {
+                    "type": "boolean",
+                    "const": true,
+                    "description": "Must be true only after the user explicitly approves this allowlist update."
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Short audit reason for the update."
+                }
+            },
+            "required": ["repoUrl", "gitRef", "confirmedUserConsent"]
+        }),
+        params_template: serde_json::json!({
+            "repoUrl": "",
+            "gitRef": "",
+            "setDefault": true,
+            "confirmedUserConsent": false,
+            "reason": ""
+        }),
+        output_views: vec!["json".to_string()],
+    });
+    descriptors
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,7 +246,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     descriptors.push(preprocess_log_package_descriptor());
     descriptors.push(batch_influxql_analysis_descriptor(config));
     descriptors.extend(dev_selftest::descriptors(config));
-    descriptors.extend(platform_run_descriptors());
+    descriptors.extend(platform_descriptors());
     descriptors
 }
 
@@ -207,19 +267,39 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     if let Some(descriptor) = dev_selftest::get_descriptor(config, tool_id) {
         return Some(descriptor);
     }
-    if tool_id == RUNS_GET_ID || tool_id == RUNS_RESULT_ID {
-        return platform_run_descriptors()
+    if tool_id == RUNS_GET_ID
+        || tool_id == RUNS_RESULT_ID
+        || tool_id == dev_selftest_allowlist::ALLOWLIST_UPDATE_TOOL_ID
+    {
+        return platform_descriptors()
             .into_iter()
             .find(|descriptor| descriptor.tool_id == tool_id);
     }
     None
 }
 
+#[allow(dead_code)]
 pub fn validate_tool_run_request(
     config: &AppConfig,
     tool_id: &str,
     upload_count: usize,
     params: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    validate_tool_run_request_with_git_repos(
+        config,
+        tool_id,
+        upload_count,
+        params,
+        &config.dev_selftest.git.repos,
+    )
+}
+
+fn validate_tool_run_request_with_git_repos(
+    config: &AppConfig,
+    tool_id: &str,
+    upload_count: usize,
+    params: &serde_json::Value,
+    git_repos: &[crate::support::config::DevSelftestGitRepo],
 ) -> Result<serde_json::Value, AppError> {
     let descriptor = get_descriptor(config, tool_id)
         .ok_or_else(|| AppError::not_found(format!("unknown toolId {tool_id}")))?;
@@ -249,7 +329,7 @@ pub fn validate_tool_run_request(
         PREPROCESS_LOG_PACKAGE_ID => validate_preprocess_log_package_params(params),
         BATCH_INFLUXQL_ANALYSIS_ID => validate_batch_influxql_params(params),
         id if dev_selftest::is_dev_selftest_tool(id) => {
-            dev_selftest::validate_run_params(config, id, params)
+            dev_selftest::validate_run_params_with_git_repos(config, git_repos, id, params)
         }
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
@@ -265,8 +345,14 @@ pub async fn build_tool_run_task(
     upload_ids: Vec<String>,
     params: &serde_json::Value,
 ) -> Result<TaskRecord, AppError> {
-    let normalized_params =
-        validate_tool_run_request(&state.config, tool_id, upload_ids.len(), params)?;
+    let git_repos = state.dev_selftest_git_allowlist.snapshot();
+    let normalized_params = validate_tool_run_request_with_git_repos(
+        &state.config,
+        tool_id,
+        upload_ids.len(),
+        params,
+        &git_repos,
+    )?;
     let mut uploads = Vec::with_capacity(upload_ids.len());
     for upload_id in &upload_ids {
         let upload = state

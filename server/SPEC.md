@@ -53,7 +53,7 @@ FAILED
 CANCELLED
 ```
 
-当前两模块没有用户审批等待态；高风险能力必须在配置 allowlist 中提前收敛，而不是运行时追问用户。
+当前两模块没有用户审批等待态；高风险执行能力必须在配置 allowlist 中提前收敛。唯一运行期配置变更入口是 dev_selftest git repo/ref allowlist 热更新：它只在用户明确同意并传入 `confirmedUserConsent=true` 后追加 allowlist，不启动 workflow 或修改既有 run。
 
 ## Tool Catalog
 
@@ -114,12 +114,25 @@ tools/list
 tools/call
 ```
 
+MCP resources 必须包含：
+
+```text
+logagent://runs/recent
+logagent://tools/catalog
+logagent://dev_selftest/config
+```
+
+`logagent://dev_selftest/config` 返回脱敏摘要：`gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`，供客户端 skill 在调用 `sync_workspace` 前发现真实 allowlist，不得猜测或读取 Server 本机配置文件。
+
 ## Dev Self-Test
 
 开发自测能力是一组受控 MCP step tools（docker 闭环）。Server 提供 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report）和持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）；完整 workflow 由外部 MCP client / 本地 skill 串联，Server 不提供 workflow API 或 agent loop。`dev_selftest.enabled=false` 时整组禁用。
 
 - `dev_selftest.enabled=false` 时关闭整组工具，并允许配置中保留未填写或占位的 `docker.binary`，不得阻断 Server 启动。
 - `dev_selftest.enabled=true` 时，所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
+- git repo/ref allowlist 启动时从 `dev_selftest.git.repos` 初始化为运行时状态；`sync_workspace` 参数校验读取运行时 allowlist，build/docker/test profile 仍读取静态配置。
+- 热更新入口：MCP tool `logagent.dev_selftest.allowlist.update` 与 HTTP `PUT /api/settings/dev-selftest/git-allowlist`。参数为 `repoUrl`、`gitRef`、`setDefault`（默认 `true`）、`confirmedUserConsent`、`reason`。若 `confirmedUserConsent` 不为 `true` 必须拒绝。Server 必须校验 URL/ref、用配置的 git binary 执行 `ls-remote --exit-code <repoUrl> <gitRef>`，再结构化更新 `--config` YAML 的 `dev_selftest.git.repos`，写回成功后才更新内存 allowlist。
+- 热更新策略为追加/设默认：旧 repo/ref 保留；`setDefault=true` 时新 repo/ref 排到第一位，成为 `logagent://dev_selftest/config` 的默认推荐。已创建的 `devselftest_*` 工作区、已排队或运行中的 task 不被修改。
 - 当前实现：git-only 源码同步、配置式 build + artifact glob 收集、`docker_cluster` 部署（`docker compose -p … up -d` + 声明式 health check）、规则化 report。`sync_workspace` 必须提供 allowlisted `gitRepo` + `gitRef`；新 run 对 `source/` 执行 clone，复用已有 run 时对已有 git checkout 执行 fast-forward pull。health check 失败不做自动回滚，证据写入 logs/report。
 - `run_tests` 两种模式：带 `docker` 块的测试套件经 **inline Docker runner** 派发（见下）；无 `docker` 块则走本地桩（在 Server 主机跑配置式 `argv`）。`run_tests` 支持 `runMode:"queued"`：返回 `{runId,status:"QUEUED"}` 后用 `logagent.runs.get`/`runs.result` 轮询（platform 工具，不建 ToolRun）。
 - **Docker runner**：可复用的 `run_executor_command` 只支持 `ExecutorTarget::Docker`（构造 `docker run --rm --network <net|"host"> [--workdir] [--env] [--volume] <image> <argv>`，`extra_env` 系统环境变量后置覆盖 `target.env` 用户环境变量，超时映射 `ExecutorRunStatus::{Ok,Failed,TimedOut,SpawnFailed}`）。runner 是纯工具，不检查任何 enable 开关（开关在 dev_selftest 入口），dev_selftest 直接复用。SSH/SCP executor 与「纳管」executor record 路径已移除。

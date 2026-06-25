@@ -10,7 +10,8 @@ not loaded, indexed, served, or installed by the Rust Server.
 - LocalToolHub Server does not scan `skills/`, expose a skill registry, or provide skill
   download/install APIs.
 - Runtime integration goes only through MCP `initialize`, `resources/list`, `resources/read`,
-  `tools/list`, and `tools/call`.
+  `tools/list`, and `tools/call`. dev_selftest workflows must read
+  `logagent://dev_selftest/config` before choosing repo/ref/profile ids.
 - Skill content must not contain secrets, local tokens, generated run data, or machine-specific
   workspaces.
 
@@ -33,7 +34,7 @@ manifests; those belonged to the removed server-side skill registry.
 
 | Skill | Purpose |
 |-------|---------|
-| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: commit/push local code, skip local builds by default, sync the allowlisted git ref, use remote build/deploy/tests, poll queued runs, and generate a report. |
+| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: discover the allowlist from MCP, commit/push local code, skip local builds by default, sync the allowlisted git ref, request user consent before allowlist updates, use remote build/deploy/tests, poll queued runs, and generate a report. |
 
 ## Maintenance
 

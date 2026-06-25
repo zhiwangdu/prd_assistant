@@ -11,6 +11,7 @@
 
 use std::{
     io::{self, BufRead, Write},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -26,17 +27,17 @@ use tracing::{info, warn};
 use crate::{
     app::AppState,
     domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus, ToolDescriptor},
-    services,
+    services::{self, dev_selftest_allowlist},
     support::config::AppConfig,
 };
 
 /// Run the standalone MCP server over stdio. Logs go to stderr (the protocol
 /// owns stdout). Entry: `logagent-server mcp-serve`.
-pub async fn run_stdio(config: Arc<AppConfig>) -> anyhow::Result<()> {
+pub async fn run_stdio(config: Arc<AppConfig>, config_path: Option<PathBuf>) -> anyhow::Result<()> {
     if !config.mcp.enabled {
         anyhow::bail!("MCP is disabled by configuration");
     }
-    let state = AppState::new(config)?;
+    let state = AppState::new_with_config_path(config, config_path)?;
     info!("standalone MCP stdio server started");
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -283,6 +284,9 @@ fn mcp_input_schema(descriptor: &ToolDescriptor) -> Value {
 }
 
 async fn call_tool(state: &Arc<AppState>, name: &str, arguments: Value) -> Value {
+    if name == dev_selftest_allowlist::ALLOWLIST_UPDATE_TOOL_ID {
+        return tool_call_content(call_allowlist_update(state, arguments).await);
+    }
     // MCP-native platform tools bypass the Tool Runner: no ToolRun is created, so
     // polling them never pollutes run history.
     if let Some(outcome) = platform_tool_result(state, name, &arguments).await {
@@ -298,6 +302,14 @@ async fn call_tool(state: &Arc<AppState>, name: &str, arguments: Value) -> Value
         run_catalog_tool(state, name, arguments).await
     };
     tool_call_content(outcome)
+}
+
+async fn call_allowlist_update(state: &Arc<AppState>, arguments: Value) -> anyhow::Result<Value> {
+    let request: dev_selftest_allowlist::AllowlistUpdateRequest = serde_json::from_value(arguments)
+        .map_err(|err| anyhow::anyhow!("invalid allowlist update arguments: {err}"))?;
+    let response = dev_selftest_allowlist::update_allowlist(state, request).await?;
+    serde_json::to_value(response)
+        .map_err(|err| anyhow::anyhow!("failed to encode allowlist update response: {err}"))
 }
 
 fn tool_call_content(outcome: anyhow::Result<Value>) -> Value {
@@ -532,6 +544,11 @@ fn validate_run_id(run_id: &str) -> anyhow::Result<()> {
 async fn resources_list() -> anyhow::Result<Value> {
     let resources = vec![
         resource(
+            dev_selftest_allowlist::CONFIG_RESOURCE_URI,
+            "dev_selftest_config",
+            "Current dev_selftest git allowlist defaults and profile ids.",
+        ),
+        resource(
             "logagent://runs/recent",
             "runs_recent",
             "Recent run records.",
@@ -581,6 +598,10 @@ async fn resources_read(state: &Arc<AppState>, uri: &str) -> anyhow::Result<Valu
         }
         "logagent://tools/catalog" => {
             json!({ "schemaVersion": 1, "tools": services::tools::descriptors(&state.config) })
+        }
+        dev_selftest_allowlist::CONFIG_RESOURCE_URI => {
+            serde_json::to_value(dev_selftest_allowlist::summary_for_state(state))
+                .map_err(|err| anyhow::anyhow!("failed to encode dev_selftest config: {err}"))?
         }
         _ => anyhow::bail!("unknown resource URI {uri}"),
     };
@@ -700,7 +721,8 @@ mod tests {
 
         // Poll logagent.runs.get until SUCCEEDED.
         let mut status = serde_json::Value::Null;
-        for _ in 0..200 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
             let poll = handle_request(
                 &state,
                 &request(
@@ -923,6 +945,7 @@ mod tests {
             .map(|tool| tool["name"].as_str().unwrap())
             .collect();
         assert!(names.contains(&"logagent.dev_selftest.sync_workspace"));
+        assert!(names.contains(&"logagent.dev_selftest.allowlist.update"));
 
         // tools/call a runnable built-in that needs no uploads.
         let called = handle_request(
@@ -961,7 +984,7 @@ mod tests {
         .await;
         assert_eq!(unknown["result"]["isError"], true);
 
-        // resources/list exposes the base context URIs.
+        // resources/list exposes the base context URIs plus dev_selftest config discovery.
         let resources = handle_request(&state, &request(5, "resources/list", json!({}))).await;
         let uris: Vec<&str> = resources["result"]["resources"]
             .as_array()
@@ -969,21 +992,41 @@ mod tests {
             .iter()
             .map(|entry| entry["uri"].as_str().unwrap())
             .collect();
-        for expected in ["logagent://runs/recent", "logagent://tools/catalog"] {
+        for expected in [
+            "logagent://dev_selftest/config",
+            "logagent://runs/recent",
+            "logagent://tools/catalog",
+        ] {
             assert!(uris.contains(&expected), "missing resource {expected}");
         }
         assert_eq!(
             uris.len(),
-            2,
-            "only runs/recent and tools/catalog resources remain"
+            3,
+            "only dev_selftest/config, runs/recent and tools/catalog resources remain"
         );
+
+        let config_resource = handle_request(
+            &state,
+            &request(
+                6,
+                "resources/read",
+                json!({ "uri": "logagent://dev_selftest/config" }),
+            ),
+        )
+        .await;
+        let config_text = config_resource["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap();
+        let config_value: Value = serde_json::from_str(config_text).unwrap();
+        assert_eq!(config_value["defaultGitRepo"], TEST_GIT_REPO);
+        assert_eq!(config_value["defaultGitRef"], TEST_GIT_REF);
 
         // Batch over HTTP.
         let batch = handle_http(
             &state,
             json!([
-                request(6, "ping", json!({})),
-                request(7, "prompts/list", json!({}))
+                request(7, "ping", json!({})),
+                request(8, "prompts/list", json!({}))
             ]),
         )
         .await;

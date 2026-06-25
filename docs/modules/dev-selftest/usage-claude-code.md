@@ -10,7 +10,8 @@
 3. 将 `dev_selftest.enabled` 改为 `true`，并把示例中的 `/path/to/repo` 替换为仓库绝对路径。
 4. 确认 server 进程有 Docker 访问权限。
 5. 在 Windows 端完成代码修改、commit 和 push；ToolHub 只从配置 allowlist 中的 git repo/ref 同步源码。
-6. 启动 server：
+6. 客户端 workflow 开始前读取 MCP resource `logagent://dev_selftest/config`，不要 SSH 到 Server 或扫描本机配置来猜 repo/ref/profile。
+7. 启动 server：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=<your-key>
@@ -30,7 +31,39 @@ http://127.0.0.1:50994/api/mcp
 Authorization: Bearer <your-key>
 ```
 
-## 2. 工具顺序
+## 2. 配置发现与 allowlist 热更新
+
+先读取当前 dev_selftest 摘要：
+
+```json
+{
+  "method": "resources/read",
+  "params": { "uri": "logagent://dev_selftest/config" }
+}
+```
+
+返回内容包含 `gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`。
+客户端只能使用这些值调用 `sync_workspace` / `build` / `deploy` / `run_tests`。
+
+如果用户需要的新分支不在 allowlist 中，先停止 workflow 并询问用户是否允许更新。用户明确同意后再调用：
+
+```json
+{
+  "name": "logagent.dev_selftest.allowlist.update",
+  "arguments": {
+    "repoUrl": "ssh://git@github.com/zhiwangdu/openGemini.git",
+    "gitRef": "feature/dev-selftest",
+    "setDefault": true,
+    "confirmedUserConsent": true,
+    "reason": "User approved dev_selftest for this branch"
+  }
+}
+```
+
+Server 会校验 URL/ref、执行 `git ls-remote`、写回 `--config` YAML，再更新内存 allowlist。成功后重新读取
+`logagent://dev_selftest/config`，再继续 `sync_workspace`。
+
+## 3. 工具顺序
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
@@ -58,7 +91,7 @@ Authorization: Bearer <your-key>
 
 若需要在同一个 dev_selftest run 上重新同步 Windows 端刚 push 的提交，再带上已有 `runId` 调用同一工具。
 
-## 3. Queued 调用
+## 4. Queued 调用
 
 `tools/call` 支持 `runMode: "sync" | "queued"`，默认 `sync`。build 或 run_tests 较慢时使用
 `queued`：
@@ -83,7 +116,7 @@ Authorization: Bearer <your-key>
 
 `logagent.runs.get/result` 是 platform 工具，只读 `TaskStore`，不会污染 run history。
 
-## 4. Inline Docker 测试
+## 5. Inline Docker 测试
 
 当前收敛后的测试派发只保留 inline Docker target：
 
@@ -117,7 +150,7 @@ docker run --rm --network host -v <tests>:/tests:ro \
 
 系统 env（`DEVSELFTEST_HOST`、`DEVSELFTEST_PORT`、run 目录变量）最终优先，用户配置的 env 不能覆盖测试目标。
 
-## 5. Run 工作区
+## 6. Run 工作区
 
 ```text
 data/dev_selftest/runs/{runId}/
@@ -133,7 +166,7 @@ data/dev_selftest/runs/{runId}/
 每个步骤写入结构化 `result.json`，原始 stdout/stderr 写入 `logs/`。artifact 对外只暴露逻辑 ID，
 不暴露任意本地路径。
 
-## 6. 失败处理
+## 7. 失败处理
 
 - 任一步失败会把 dev_selftest run 标记为 `FAILED`，并在 `progress.json` 记录错误和 evidence。
 - 后续仍可调用 `report`，报告会列出 `failedSteps`。
@@ -143,8 +176,10 @@ data/dev_selftest/runs/{runId}/
 docker compose -p devselftest_<runId>_opengemini_cluster down
 ```
 
-## 7. 已移除路径
+## 8. 已移除路径
 
 当前用法不包含 SSH/SCP executor、托管 executor record、`suite.executor`、Huawei package sync、
 GeminiDB create instance、Server 托管 skills 或 Server 侧 workflow API。需要更复杂的自动化时，应放在外部 MCP client/skill 中，
 不能成为 Server 默认依赖。
+
+也不要通过 SSH 读取 Server 配置、扫描本机 `prd_assistant` 配置，或为了匹配旧 allowlist 强推到已有分支；除非用户明确要求强推。

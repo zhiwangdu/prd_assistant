@@ -12,6 +12,7 @@ use crate::{app::AppState, support::auth::require_api_key};
 mod artifacts;
 mod health;
 mod runs;
+mod settings;
 mod tools;
 mod uploads;
 
@@ -48,6 +49,11 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/runs/:run_id/result", get(runs::run_result))
         .route("/api/runs/:run_id/artifacts", get(runs::run_artifacts))
         .route("/api/artifacts/*artifact_id", get(artifacts::get_artifact))
+        .route(
+            "/api/settings/dev-selftest/git-allowlist",
+            get(settings::get_dev_selftest_git_allowlist)
+                .put(settings::put_dev_selftest_git_allowlist),
+        )
         .route(
             "/api/mcp",
             post(crate::mcp_server::http_mcp).get(crate::mcp_server::get_mcp),

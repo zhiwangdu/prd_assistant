@@ -27,8 +27,8 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
 | Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
 | Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
-| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支。 |
-| MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端。 |
+| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支；git repo/ref allowlist 可通过受控热更新追加并设默认。 |
+| MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端；`logagent://dev_selftest/config` 让客户端发现当前 repo/ref/profile。 |
 | WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
 ## 数据流
@@ -72,6 +72,8 @@ GET /api/runs/:run_id/artifacts
 GET /api/artifacts/:artifact_id
 POST /api/mcp
 GET /api/settings/*
+GET /api/settings/dev-selftest/git-allowlist
+PUT /api/settings/dev-selftest/git-allowlist
 ```
 
 旧 `/api/sessions/*`、`/api/tasks/*` 仅作迁移兼容（如有），不作为新功能入口。不得新增 Server 侧 workflow API、skill 下载 API、自动初始化工作区 API 或 agent loop API。
@@ -88,6 +90,7 @@ MCP 是外部智能客户端集成入口。MCP tool 调用必须与 WebUI tool r
 ```text
 logagent://runs/recent
 logagent://tools/catalog
+logagent://dev_selftest/config
 ```
 
 工具示例：
@@ -100,6 +103,7 @@ logagent.dev_selftest.build
 logagent.dev_selftest.deploy
 logagent.dev_selftest.run_tests
 logagent.dev_selftest.report
+logagent.dev_selftest.allowlist.update
 logagent.runs.get
 logagent.runs.result
 # + 配置的 analyzer: pprof_analyzer / influxql_analyzer / flux_query_analyzer /
@@ -138,5 +142,6 @@ dev_selftest:
 - 任一工具运行能生成 run record、result 和 artifact。
 - MCP `tools/list` 与 WebUI catalog 一致（仅两模块工具）。
 - dev_selftest 默认关闭或受 allowlist 控制。
+- dev_selftest git allowlist 热更新要求显式确认、URL/ref 校验和 `git ls-remote` 可达性检查；写回配置后才更新内存状态，旧 allowlist 保留，新 repo/ref 可设为默认。
 - 日志、artifact、导出包不包含密钥原文。
 - README/SPEC/PROGRESS 随行为变化同步更新。

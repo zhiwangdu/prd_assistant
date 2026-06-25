@@ -41,6 +41,8 @@ WebUI 提供 LocalToolHub 的可视化管理能力。用户应该可以不依赖
 
 - 展示 API Key 状态、MCP 接入说明、Skills（本地 Claude Code skill）说明。
 - MCP client 接入配置统一放在 MCP 页面，不在 Settings 重复。
+- 展示 Dev Self-Test Git Allowlist：无 API Key 时提示；有 API Key 时调用 `GET /api/settings/dev-selftest/git-allowlist` 显示默认 repo/ref、全部 allowlisted repo/ref、build/docker/test profile ids。
+- 支持通过 `PUT /api/settings/dev-selftest/git-allowlist` 保存 `repoUrl` + `gitRef`，请求必须携带 `confirmedUserConsent:true` 且默认 `setDefault:true`；保存成功后刷新摘要，失败时显示 Server 返回的校验错误。
 
 ## 构建和部署
 
