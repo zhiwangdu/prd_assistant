@@ -11,9 +11,10 @@ the server never accepts free-form shell or runs an agent loop.
 
 - `dev_selftest.enabled: true` in the server config.
 - At least one configured build profile, docker cluster profile, and test suite.
-- Absolute, allowlisted command/binary/compose paths.
+- Absolute, allowlisted command/binary/compose paths, plus an allowlisted git repo/ref.
 - Docker access for the server process.
 - `mcp.enabled: true`; remote clients normally connect to `POST /api/mcp` over an SSH tunnel.
+- The Windows-side client commits and pushes first; ToolHub only clones or pulls from git.
 
 ## State Model
 
@@ -38,7 +39,7 @@ tool call. Each step appends or replaces its entry in `progress.json` and writes
 
 | Step | Tool | Key params |
 |---|---|---|
-| 1. sync | `logagent.dev_selftest.sync_workspace` | `{label}` plus one source: `{uploadId}` or `{gitRepo, gitRef}`. Git source must match config allowlist. |
+| 1. sync | `logagent.dev_selftest.sync_workspace` | `{label, gitRepo, gitRef}`. Git source must match config allowlist. New runs clone; existing run workspaces pull fast-forward updates. |
 | 2. build | `logagent.dev_selftest.build` | `{runId, buildProfile}`. Runs the configured build command and collects `artifact_globs`. |
 | 3. deploy | `logagent.dev_selftest.deploy` | `{runId, profile}`. Runs `docker compose -p <project> -f <compose> up -d` and the declared health check. |
 | 4. run tests | `logagent.dev_selftest.run_tests` | `{runId, testSuite}`. A suite with `docker` runs through the inline Docker runner; otherwise it uses the local stub `argv`. |

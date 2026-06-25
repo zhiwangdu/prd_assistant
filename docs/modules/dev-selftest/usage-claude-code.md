@@ -9,7 +9,8 @@
 2. 设置 `LOGAGENT_NATIVE_API_KEY`。
 3. 将 `dev_selftest.enabled` 改为 `true`，并把示例中的 `/path/to/repo` 替换为仓库绝对路径。
 4. 确认 server 进程有 Docker 访问权限。
-5. 启动 server：
+5. 在 Windows 端完成代码修改、commit 和 push；ToolHub 只从配置 allowlist 中的 git repo/ref 同步源码。
+6. 启动 server：
 
 ```bash
 export LOGAGENT_NATIVE_API_KEY=<your-key>
@@ -33,7 +34,7 @@ Authorization: Bearer <your-key>
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
-| 1 | `logagent.dev_selftest.sync_workspace` | 从 upload tarball 或 allowlisted git repo/ref 创建 run 工作区，返回 `runId`。 |
+| 1 | `logagent.dev_selftest.sync_workspace` | 从 allowlisted `gitRepo/gitRef` 同步源码，返回 `runId`；新 run clone，已有 run pull。 |
 | 2 | `logagent.dev_selftest.build` | 运行配置好的 build profile，收集 `artifact_globs`。 |
 | 3 | `logagent.dev_selftest.deploy` | 运行 `docker_cluster` profile，执行 compose up 和 health check。 |
 | 4 | `logagent.dev_selftest.run_tests` | 使用 test suite 的 inline Docker target 执行测试；无 docker target 时走本地桩。 |
@@ -41,6 +42,21 @@ Authorization: Bearer <your-key>
 | 查询 | `logagent.runs.get` / `logagent.runs.result` | 轮询 queued run，不创建新的 ToolRun。 |
 
 后续步骤都必须携带 `sync_workspace` 返回的同一个 `runId`。
+
+`sync_workspace` 参数示例：
+
+```json
+{
+  "name": "logagent.dev_selftest.sync_workspace",
+  "arguments": {
+    "label": "pr-123",
+    "gitRepo": "https://github.com/openGemini/openGemini.git",
+    "gitRef": "main"
+  }
+}
+```
+
+若需要在同一个 dev_selftest run 上重新同步 Windows 端刚 push 的提交，再带上已有 `runId` 调用同一工具。
 
 ## 3. Queued 调用
 

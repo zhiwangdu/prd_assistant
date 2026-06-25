@@ -1,4 +1,4 @@
-//! Dev self-test pipeline built-in tool group (P1: docker self-test closed loop).
+//! Dev self-test pipeline built-in tool group (docker self-test closed loop).
 //!
 //! Drives a multi-step run — sync -> build -> deploy -> run_tests -> report —
 //! shared across separate tool calls via a persistent run workspace
@@ -7,11 +7,11 @@
 //! `build_tool_run_task` + `run_tool_task` boundary, so the group auto-appears in
 //! `/api/tools`, MCP `tools/list`, and the WebUI catalog.
 //!
-//! P1 implements: tarball/git source sync, configured build, `docker_cluster`
-//! deploy, a **stub** test runner (the real executor-dispatched test framework is
-//! external code, landed in P2), and a rule-based report. All commands/binaries/
-//! paths/compose files come from the `dev_selftest` config allowlist; tool params
-//! only select profile ids and carry a `runId`.
+//! Implements git-only source sync, configured build, `docker_cluster` deploy,
+//! inline Docker tests (or a local stub when no Docker target is configured), and
+//! a rule-based report. All commands/binaries/paths/compose files come from the
+//! `dev_selftest` config allowlist; tool params only select profile ids and carry
+//! a `runId`.
 
 use std::{
     collections::BTreeMap,
@@ -90,17 +90,21 @@ pub fn validate_run_params(
     let normalized = match tool_id {
         SYNC_WORKSPACE_ID => {
             let params: SyncWorkspaceParams = parse_params(value)?;
-            if let (Some(repo), Some(git_ref)) =
-                (params.git_repo.as_deref(), params.git_ref.as_deref())
-            {
-                if !config.dev_selftest.git.enabled {
-                    return Err(AppError::bad_request("dev_selftest.git is disabled"));
-                }
-                if !git_repo_allowed(config, repo, git_ref) {
-                    return Err(AppError::bad_request(
-                        "git repo/ref is not in the configured allowlist",
-                    ));
-                }
+            let repo = params
+                .git_repo
+                .as_deref()
+                .ok_or_else(|| AppError::bad_request("gitRepo is required"))?;
+            let git_ref = params
+                .git_ref
+                .as_deref()
+                .ok_or_else(|| AppError::bad_request("gitRef is required"))?;
+            if !config.dev_selftest.git.enabled {
+                return Err(AppError::bad_request("dev_selftest.git is disabled"));
+            }
+            if !git_repo_allowed(config, repo, git_ref) {
+                return Err(AppError::bad_request(
+                    "git repo/ref is not in the configured allowlist",
+                ));
             }
             serde_json::to_value(params)
         }
@@ -156,14 +160,13 @@ pub async fn run_dev_selftest_task(
 // ---------- params ----------
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 struct SyncWorkspaceParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     label: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    upload_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     git_repo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -463,27 +466,18 @@ async fn run_sync_workspace(state: Arc<AppState>, task: TaskRecord) -> Result<Pa
     let source_dir = run_dir(&state, &run_id).join("source");
     fs::create_dir_all(&source_dir)
         .map_err(|err| AppError::internal(format!("failed to create source dir: {err}")))?;
-    let (source_ref, status, error) = if let Some(upload_id) = params.upload_id.as_deref() {
-        let upload = state
-            .uploads
-            .get(upload_id)
-            .await
-            .ok_or_else(|| AppError::bad_request(format!("unknown uploadId {upload_id}")))?;
-        let analyzer =
-            crate::services::log_analyzer::LogAnalyzer::new(state.config.log_analyzer.clone());
-        analyzer
-            .extract_upload(&upload.path, &source_dir, None)
-            .map_err(|err| AppError::internal(format!("failed to unpack source: {err}")))?;
-        (format!("upload:{}", upload.filename), "OK", None::<String>)
-    } else if let (Some(repo), Some(git_ref)) =
-        (params.git_repo.as_deref(), params.git_ref.as_deref())
-    {
-        match git_clone(&settings, repo, git_ref, &source_dir).await {
-            Ok(()) => (format!("git:{repo}@{git_ref}"), "OK", None::<String>),
-            Err(err) => (String::new(), "FAILED", Some(err)),
-        }
-    } else {
-        ("empty".to_string(), "OK", None::<String>)
+    let repo = params
+        .git_repo
+        .as_deref()
+        .ok_or_else(|| AppError::bad_request("gitRepo is required"))?;
+    let git_ref = params
+        .git_ref
+        .as_deref()
+        .ok_or_else(|| AppError::bad_request("gitRef is required"))?;
+    let source_ref = format!("git:{repo}@{git_ref}");
+    let (status, error) = match git_sync(settings, repo, git_ref, &source_dir).await {
+        Ok(()) => ("OK", None::<String>),
+        Err(err) => ("FAILED", Some(err)),
     };
     let duration = started.elapsed().as_millis();
 
@@ -530,34 +524,96 @@ async fn run_sync_workspace(state: Arc<AppState>, task: TaskRecord) -> Result<Pa
     )
 }
 
+async fn git_sync(
+    settings: &DevSelftestSettings,
+    repo: &str,
+    git_ref: &str,
+    dest: &Path,
+) -> Result<(), String> {
+    if dest.join(".git").is_dir() {
+        git_pull(settings, repo, git_ref, dest).await
+    } else {
+        let has_files = fs::read_dir(dest)
+            .map_err(|err| format!("failed to inspect source dir: {err}"))?
+            .next()
+            .is_some();
+        if has_files {
+            return Err(
+                "source directory exists but is not a git checkout; create a new runId".to_string(),
+            );
+        }
+        git_clone(settings, repo, git_ref, dest).await
+    }
+}
+
 async fn git_clone(
     settings: &DevSelftestSettings,
     repo: &str,
     git_ref: &str,
     dest: &Path,
 ) -> Result<(), String> {
-    let _run = run_bounded_command(
-        &settings.git.binary,
+    let dest_arg = dest.to_string_lossy().to_string();
+    git_command(
+        settings,
         &[
-            "clone".to_string(),
-            "--depth".to_string(),
-            "1".to_string(),
-            "--branch".to_string(),
-            git_ref.to_string(),
-            repo.to_string(),
-            dest.to_string_lossy().to_string(),
+            "clone", "--depth", "1", "--branch", git_ref, repo, &dest_arg,
         ],
         dest.parent().unwrap_or_else(|| Path::new(".")),
+    )
+    .await
+}
+
+async fn git_pull(
+    settings: &DevSelftestSettings,
+    repo: &str,
+    git_ref: &str,
+    dest: &Path,
+) -> Result<(), String> {
+    git_command(settings, &["remote", "set-url", "origin", repo], dest).await?;
+    git_command(settings, &["fetch", "--prune", "origin", git_ref], dest).await?;
+    if git_command(settings, &["checkout", git_ref], dest)
+        .await
+        .is_err()
+    {
+        let remote_ref = format!("origin/{git_ref}");
+        git_command(
+            settings,
+            &["checkout", "-b", git_ref, "--track", &remote_ref],
+            dest,
+        )
+        .await?;
+    }
+    git_command(settings, &["pull", "--ff-only", "origin", git_ref], dest).await
+}
+
+async fn git_command(
+    settings: &DevSelftestSettings,
+    args: &[&str],
+    cwd: &Path,
+) -> Result<(), String> {
+    let run = run_bounded_command(
+        &settings.git.binary,
+        &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+        cwd,
         &BTreeMap::new(),
         settings.build_timeout_seconds,
         settings.max_output_bytes,
     )
     .await;
-    if _run.ok {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&_run.stderr).trim().to_string())
+    if run.ok {
+        return Ok(());
     }
+    let stderr = String::from_utf8_lossy(&run.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return Err(stderr);
+    }
+    let stdout = String::from_utf8_lossy(&run.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return Err(stdout);
+    }
+    Err(run
+        .error
+        .unwrap_or_else(|| format!("git command failed with exit code {:?}", run.exit_code)))
 }
 
 async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
@@ -835,7 +891,7 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
     write_bytes(&logs_dir.join("deploy.stdout.txt"), &run.stdout)?;
     write_bytes(&logs_dir.join("deploy.stderr.txt"), &run.stderr)?;
 
-    // Health check (declared command, e.g. curl or `true`). Failure does not roll back in P1.
+    // Health check (declared command, e.g. curl or `true`). Failure does not roll back.
     let mut health_ok = run.ok;
     let mut health_error = None::<String>;
     if run.ok {
@@ -967,7 +1023,7 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
 
     let run_root = run_dir(&state, &record.run_id);
     let started = Instant::now();
-    // Dispatch priority: an inline docker target (`suite.docker`) > the P1 local stub.
+    // Dispatch priority: an inline docker target (`suite.docker`) > local stub argv.
     // Both produce a BoundedRun so the log/step/result handling below is shared.
     let run = if let Some(docker) = &suite.docker {
         run_docker_test(&state, &record, &suite, docker, &run_root).await?
@@ -1373,7 +1429,7 @@ fn sync_workspace_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         SYNC_WORKSPACE_ID,
         "Dev self-test: sync workspace",
-        "Create or reuse a dev-self-test run and populate its source/ from an uploaded tarball, a configured git repo+ref, or leave it empty (stub). Returns runId.",
+        "Create or reuse a dev-self-test run and populate source/ from a configured git repo/ref. New runs clone; existing git workspaces pull fast-forward updates. Returns runId.",
         enabled,
     );
     d.params_schema = json!({
@@ -1381,13 +1437,12 @@ fn sync_workspace_descriptor(enabled: bool) -> ToolDescriptor {
         "properties": {
             "runId": { "type": "string", "description": "Omit to create a new run." },
             "label": { "type": "string" },
-            "uploadId": { "type": "string", "description": "An uploaded source tarball (.tar.gz/.tar/.zip) to unpack into source/." },
             "gitRepo": { "type": "string", "description": "Must be in the configured git repos allowlist." },
-            "gitRef": { "type": "string", "description": "Must be in the repo's allowed refs." }
-        }
+            "gitRef": { "type": "string", "description": "Must be in the repo's allowed refs. Usually the branch pushed by the Windows-side MCP client." }
+        },
+        "required": ["gitRepo", "gitRef"]
     });
-    d.params_template =
-        json!({ "runId": "", "label": "", "uploadId": "", "gitRepo": "", "gitRef": "" });
+    d.params_template = json!({ "runId": "", "label": "", "gitRepo": "", "gitRef": "" });
     d
 }
 
@@ -1414,14 +1469,14 @@ fn deploy_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         DEPLOY_ID,
         "Dev self-test: deploy",
-        "Deploy via a configured profile. P1 supports docker_cluster (docker compose up -d + declared health check).",
+        "Deploy via a configured docker_cluster profile (docker compose up -d + declared health check).",
         enabled,
     );
     d.params_schema = json!({
         "type": "object",
         "properties": {
             "runId": { "type": "string" },
-            "profile": { "type": "string", "description": "A configured dev_selftest.docker.clusters profile id (P1)." }
+            "profile": { "type": "string", "description": "A configured dev_selftest.docker.clusters profile id." }
         },
         "required": ["runId", "profile"]
     });
@@ -1433,7 +1488,7 @@ fn run_tests_descriptor(enabled: bool) -> ToolDescriptor {
     let mut d = base_descriptor(
         RUN_TESTS_ID,
         "Dev self-test: run tests",
-        "Run a configured test suite against the run's deployed target. P1 is a stub runner (local command); real executor-dispatched test framework lands in P2. Runnable sync or runMode:'queued'.",
+        "Run a configured test suite against the run's deployed target. Suites with a docker target run in an inline Docker container; others use the local stub argv. Runnable sync or runMode:'queued'.",
         enabled,
     );
     d.params_schema = json!({
@@ -1468,6 +1523,17 @@ fn report_descriptor(enabled: bool) -> ToolDescriptor {
 mod tests {
     use super::*;
 
+    const TEST_GIT_REPO: &str = "https://example.test/project.git";
+    const TEST_GIT_REF: &str = "main";
+
+    fn sync_params(label: &str) -> Value {
+        json!({
+            "label": label,
+            "gitRepo": TEST_GIT_REPO,
+            "gitRef": TEST_GIT_REF,
+        })
+    }
+
     #[test]
     fn descriptors_gated_by_enabled() {
         let config = test_config(false);
@@ -1495,6 +1561,23 @@ mod tests {
     #[test]
     fn validate_requires_known_profiles() {
         let config = test_config(true);
+        assert!(
+            validate_run_params(&config, SYNC_WORKSPACE_ID, &json!({"label":"missing-git"}))
+                .is_err()
+        );
+        assert!(validate_run_params(
+            &config,
+            SYNC_WORKSPACE_ID,
+            &json!({"label":"upload","uploadId":"upl_1"})
+        )
+        .is_err());
+        assert!(validate_run_params(
+            &config,
+            SYNC_WORKSPACE_ID,
+            &json!({"gitRepo":TEST_GIT_REPO,"gitRef":"unknown"})
+        )
+        .is_err());
+        assert!(validate_run_params(&config, SYNC_WORKSPACE_ID, &sync_params("git")).is_ok());
         assert!(validate_run_params(
             &config,
             BUILD_ID,
@@ -1564,9 +1647,9 @@ mod tests {
     fn test_config(enabled: bool) -> AppConfig {
         use crate::support::config::{
             AuthSettings, DevSelftestBuildProfile, DevSelftestDockerCluster,
-            DevSelftestDockerSettings, DevSelftestGitSettings, DevSelftestSettings,
-            DevSelftestTestSuite, LogAnalyzerSettings, McpSettings, RemoteExecutionSettings,
-            ServerSettings, StorageSettings, ToolsSettings,
+            DevSelftestDockerSettings, DevSelftestGitRepo, DevSelftestGitSettings,
+            DevSelftestSettings, DevSelftestTestSuite, LogAnalyzerSettings, McpSettings,
+            RemoteExecutionSettings, ServerSettings, StorageSettings, ToolsSettings,
         };
         use std::collections::BTreeMap;
         use std::path::PathBuf;
@@ -1628,7 +1711,14 @@ mod tests {
                 enabled,
                 build_timeout_seconds: 30,
                 max_output_bytes: 1024,
-                git: DevSelftestGitSettings::default(),
+                git: DevSelftestGitSettings {
+                    enabled: true,
+                    binary: PathBuf::from("/usr/bin/git"),
+                    repos: vec![DevSelftestGitRepo {
+                        url: TEST_GIT_REPO.to_string(),
+                        refs: vec![TEST_GIT_REF.to_string()],
+                    }],
+                },
                 builds,
                 docker: DevSelftestDockerSettings {
                     binary: PathBuf::from("/usr/bin/docker"),
@@ -1637,6 +1727,37 @@ mod tests {
                 test_suites: suites,
             },
         }
+    }
+
+    #[cfg(all(test, unix))]
+    fn write_fake_git(root: &std::path::Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let fake_git = root.join("fake-git.sh");
+        std::fs::write(
+            &fake_git,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "clone" ]; then
+  dest="${@: -1}"
+  mkdir -p "$dest/.git"
+  echo "cloned" > "$dest/SYNCED.txt"
+  exit 0
+fi
+if [ "${1:-}" = "remote" ] || [ "${1:-}" = "fetch" ] || [ "${1:-}" = "checkout" ]; then
+  exit 0
+fi
+if [ "${1:-}" = "pull" ]; then
+  echo "pulled" >> "SYNCED.txt"
+  exit 0
+fi
+exit 0
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_git).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, perms).unwrap();
+        fake_git
     }
 
     #[cfg(all(test, unix))]
@@ -1655,10 +1776,12 @@ mod tests {
         let mut perms = std::fs::metadata(&fake_docker).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake_docker, perms).unwrap();
+        let fake_git = write_fake_git(&root);
 
         let mut config = test_config(true);
         config.storage.data_dir = root.join("data");
         config.dev_selftest.docker.binary = fake_docker;
+        config.dev_selftest.git.binary = fake_git;
         let config = Arc::new(config);
         config.prepare_dirs().unwrap();
         (crate::app::AppState::new(config).unwrap(), root)
@@ -1690,9 +1813,25 @@ mod tests {
     async fn docker_selftest_closed_loop() {
         let (state, root) = test_state_with_dev_selftest("dev-selftest-loop");
 
-        let sync = run_tool(&state, SYNC_WORKSPACE_ID, json!({"label":"loop"})).await;
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("loop")).await;
         assert_eq!(sync.status, "OK");
         let run_id = sync.run_id;
+        let resync = run_tool(
+            &state,
+            SYNC_WORKSPACE_ID,
+            json!({"runId":run_id.clone(),"gitRepo":TEST_GIT_REPO,"gitRef":TEST_GIT_REF}),
+        )
+        .await;
+        assert_eq!(resync.status, "OK");
+        let synced = std::fs::read_to_string(
+            state
+                .config
+                .storage
+                .dev_selftest_run_dir(&run_id)
+                .join("source/SYNCED.txt"),
+        )
+        .unwrap();
+        assert!(synced.contains("pulled"), "synced marker: {synced}");
 
         let build = run_tool(
             &state,
@@ -1754,6 +1893,7 @@ mod tests {
         let mut config = test_config(true);
         config.storage.data_dir = root.join("data");
         config.dev_selftest.docker.binary = fake_docker;
+        config.dev_selftest.git.binary = write_fake_git(&root);
         config.dev_selftest.test_suites.insert(
             "smoke".to_string(),
             DevSelftestTestSuite {
@@ -1781,7 +1921,7 @@ mod tests {
     async fn docker_executor_test_dispatch() {
         let (state, root) = test_state_with_docker_suite("dev-selftest-docker-exec");
 
-        let sync = run_tool(&state, SYNC_WORKSPACE_ID, json!({"label":"docker-exec"})).await;
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("docker-exec")).await;
         assert_eq!(sync.status, "OK");
         let run_id = sync.run_id;
 

@@ -15,7 +15,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 LocalToolHub 开箱即用地提供：
 
-- **dev_selftest**：`sync → build → deploy(docker) → run_tests → report` 流水线，每次 run 有持久工作区 + progress + report + run history。从 Windows 经 MCP 驱动 Linux 上的 docker 集群。
+- **dev_selftest**：`sync → build → deploy(docker) → run_tests → report` 流水线，每次 run 有持久工作区 + progress + report + run history。Windows 端完成 commit/push 后，经 MCP 让 Linux ToolHub 从 allowlisted git repo/ref clone 或 pull。
 - **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
 - **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端。
 - **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。

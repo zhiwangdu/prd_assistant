@@ -1,8 +1,10 @@
 # Dev Self-Test Workflow And Result Shapes
 
-The converged dev_selftest workflow implements a Docker-based self-test loop. All
-commands, binaries, compose files, repositories, and refs come from the `dev_selftest`
-configuration allowlist. Tool parameters only select profile ids and carry `runId`.
+The converged dev_selftest workflow implements a Docker-based self-test loop. Source sync is
+git-only: the Windows-side client commits and pushes first, then ToolHub clones or pulls the
+configured repo/ref. All commands, binaries, compose files, repositories, and refs come from
+the `dev_selftest` configuration allowlist. Tool parameters only select profile ids, carry
+`runId`, and choose an allowlisted `gitRepo` + `gitRef`.
 
 ## Config Shape
 
@@ -62,7 +64,8 @@ does not enable SSH, SCP, managed executor records, or arbitrary remote command 
 }
 ```
 
-Source options are `uploadId`, `gitRepo` + `gitRef`, or an empty stub source.
+`gitRepo` and `gitRef` are required. A new run clones into `source/`; re-running
+`sync_workspace` for an existing `runId` pulls the existing git checkout.
 
 ### build
 

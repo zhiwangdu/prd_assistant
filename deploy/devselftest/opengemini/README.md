@@ -5,8 +5,8 @@ tool's `docker_cluster` profile. This is the validated default demo for the dev_
 Docker path (sync → build → deploy → run_tests → report, all SUCCEEDED).
 
 The cluster artifacts live here in the repo. The openGemini **source** and **binaries**
-are NOT here: the pipeline syncs the source (`dev_selftest.git.repos`) and builds the
-binaries into the run's `source/build/`, which the compose mounts via
+are NOT here: the pipeline syncs the source from an allowlisted git repo/ref
+(`dev_selftest.git.repos`) and builds the binaries into the run's `source/build/`, which the compose mounts via
 `${DEVSELFTEST_SOURCE_DIR}/build`.
 
 ## Files
@@ -67,6 +67,8 @@ remote_execution:
 
 `<repo>` = absolute path to this repo (dev_selftest requires absolute paths). The server
 process must have docker access (be in the `docker` group, or start via `sg docker -c`).
+The development flow is: commit and push from the Windows-side client, then call
+`sync_workspace {gitRepo, gitRef}` so ToolHub clones or pulls the configured ref.
 
 ## Test execution (inline Docker)
 

@@ -3,8 +3,8 @@
 #   sync_workspace -> build -> deploy (docker_cluster) -> run_tests -> runs.get -> report.
 #
 # All commands/binaries/compose paths must be absolute and are allowlisted here. Tool params
-# only select profile ids and carry a runId. Source ingest is a tarball upload or an
-# allowlisted git repo+ref; SFTP is not supported.
+# only select profile ids, carry a runId, and choose an allowlisted git repo+ref.
+# Windows-side clients commit + push first; ToolHub then clones/pulls the configured ref.
 
 server:
   bind: "127.0.0.1:50994"

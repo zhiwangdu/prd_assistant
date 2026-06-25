@@ -109,7 +109,7 @@ impl Default for McpSettings {
     }
 }
 
-/// Dev self-test pipeline settings (P1: docker self-test closed loop). All
+/// Dev self-test pipeline settings (docker self-test closed loop). All
 /// commands/binaries/paths are allowlisted here; tool params only select profile
 /// ids and carry a `runId`. Disabled by default.
 #[derive(Debug, Clone)]
@@ -172,8 +172,8 @@ pub struct DevSelftestHealthCheck {
 pub struct DevSelftestTestSuite {
     #[allow(dead_code)]
     pub display_name: String,
-    /// Local command (binary + args) run on the server host when `docker` is absent (P1
-    /// stub). When `docker`/`executor` is set, this is the in-container command instead.
+    /// Local command (binary + args) run on the server host when `docker` is absent.
+    /// When `docker` is set, this is the in-container command instead.
     /// Mutually exclusive with `command`.
     pub argv: Vec<String>,
     /// Optional id of a `remote_execution.commands` template supplying argv + timeout for
@@ -1364,7 +1364,7 @@ test_suites:
 "#
         )
         .is_ok());
-        // no docker + argv -> ok (P1 stub)
+        // no docker + argv -> ok (local stub)
         assert!(resolve(
             r#"
 enabled: true

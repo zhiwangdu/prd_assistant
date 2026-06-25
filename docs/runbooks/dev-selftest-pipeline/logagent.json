@@ -19,7 +19,7 @@
     {
       "path": "references/workflow.md",
       "title": "Dev self-test workflow and result shapes",
-      "summary": "Per-step params, runMode/polling, and result.json shapes for the dev self-test pipeline (P1 docker closed loop)."
+      "summary": "Per-step params, runMode/polling, and result.json shapes for the git-only dev self-test pipeline."
     }
   ]
 }

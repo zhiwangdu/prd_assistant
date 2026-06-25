@@ -10,7 +10,7 @@
 ## 职责
 
 - 维护 dev_selftest run 工作区和 `DevSelftestRunRecord` 索引。
-- 同步源码：tarball upload 或 allowlisted git repo/ref。
+- 同步源码：只允许 allowlisted git repo/ref。Windows 端先 commit/push，ToolHub 负责 clone 或 pull。
 - 执行配置式 build，并把匹配的产物收集到 run `artifacts/`。
 - 执行 `docker_cluster` 部署：`docker compose up -d` + 声明式 health check。
 - 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。
@@ -20,7 +20,7 @@
 ## 边界
 
 - 所有命令、二进制、路径、compose 文件、repo/ref 都来自 `dev_selftest` 配置 allowlist。
-- tool 参数只能选择 profile id 并携带 `runId`；不得传自由 shell。
+- tool 参数只能选择 profile id、携带 `runId`，并在 `sync_workspace` 里选择 allowlisted `gitRepo/gitRef`；不得传自由 shell 或上传源码包。
 - `remote_execution.commands` 只作为 test suite 的 argv/timeout 模板，不再表示可纳管远程 executor。
 - inline Docker target 只允许受校验的 image/network/workdir/volume/env。
 - 密钥只来自 env；report/artifact 只记录 env 名、状态码和脱敏摘要。
@@ -39,7 +39,7 @@
 
 ## 当前实现
 
-- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个工具。
+- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个工具；`sync_workspace` 为 git-only，新 run clone，已有 run pull。
 - 已实现 `docker_cluster` 部署，默认 demo 为 openGemini 3 meta + 3 (sql+store) 集群。
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。

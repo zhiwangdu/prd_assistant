@@ -12,6 +12,19 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-25 dev_selftest sync_workspace 收敛为 git-only
+
+目标：简化源码同步方案。Windows 端 Claude Code 负责本地修改、commit、push；ToolHub 不再接收源码 tarball
+或创建空 source stub，只从配置 allowlist 中的 git repo/ref 同步源码。
+
+- `logagent.dev_selftest.sync_workspace` 参数收敛为必填 `gitRepo` + `gitRef`（`runId` 仍可选，用于复用已有 dev_selftest run；`label` 仍可选）。`uploadId` 和无源码参数会在参数校验阶段拒绝。
+- 新 run 的 `source/` 为空 git workspace 时执行 `git clone --depth 1 --branch <gitRef> <gitRepo> source/`；已有 run 且 `source/.git` 存在时执行 `remote set-url`、`fetch --prune`、`checkout`、`pull --ff-only origin <gitRef>`，对应“Windows push 后 ToolHub pull”。
+- 为避免误覆盖旧非 git source，若复用 run 时 `source/` 非空但不是 git checkout，`sync_workspace` 返回失败并要求创建新 `runId`。
+- 更新 Tool descriptor / MCP 单测 / dev_selftest 闭环测试：测试使用 fake git，不依赖外网；闭环测试覆盖同一 `runId` 二次 sync 进入 pull 路径。
+- 文档同步：根 README/SPEC、`server/SPEC.md`、dev_selftest 模块文档、runbook、openGemini demo 和 `examples/server-dev-selftest.yaml` 均改为 git-only 流程。
+
+验证计划：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`、示例 YAML 解析、`git diff --check`。
+
 ## 2026-06-25 文档收敛清理：只保留 dev_selftest + 日志分析
 
 目标：先整理所有文档，把两模块收敛后不相关的 Fetch / Metadata / Case / Skills / SSH-SCP Executor /

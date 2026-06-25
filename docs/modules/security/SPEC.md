@@ -7,7 +7,7 @@
 - 解压和 artifact download 防路径逃逸。
 - MCP 不能绕过 Server policy。
 - Tool Runner 只能执行 catalog 中 enabled/runnable 的工具。
-- dev_selftest 参数只能选择配置好的 profile id 和 runId，不能提交自由 shell。
+- dev_selftest 参数只能选择配置好的 profile id、runId 和 allowlisted gitRepo/gitRef，不能提交自由 shell 或源码上传包。
 - Docker test target 的 image/network/workdir/volume/env 必须通过安全校验。
 
 ## Acceptance

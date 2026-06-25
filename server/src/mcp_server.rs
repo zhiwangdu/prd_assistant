@@ -587,10 +587,13 @@ mod tests {
     use crate::{
         domain::models::TaskKind,
         support::config::{
-            AppConfig, AuthSettings, LogAnalyzerSettings, McpSettings, ServerSettings,
-            StorageSettings, ToolsSettings,
+            AppConfig, AuthSettings, DevSelftestGitRepo, DevSelftestGitSettings,
+            LogAnalyzerSettings, McpSettings, ServerSettings, StorageSettings, ToolsSettings,
         },
     };
+
+    const TEST_GIT_REPO: &str = "https://example.test/project.git";
+    const TEST_GIT_REF: &str = "main";
 
     fn request(id: i64, method: &str, params: Value) -> Value {
         json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
@@ -633,7 +636,12 @@ mod tests {
                 "tools/call",
                 json!({
                     "name": "logagent.dev_selftest.sync_workspace",
-                    "arguments": { "label": "queued", "runMode": "queued" }
+                    "arguments": {
+                        "label": "queued",
+                        "gitRepo": TEST_GIT_REPO,
+                        "gitRef": TEST_GIT_REF,
+                        "runMode": "queued"
+                    }
                 }),
             ),
         )
@@ -875,7 +883,14 @@ mod tests {
             &request(
                 3,
                 "tools/call",
-                json!({ "name": "logagent.dev_selftest.sync_workspace", "arguments": { "label": "mcp" } }),
+                json!({
+                    "name": "logagent.dev_selftest.sync_workspace",
+                    "arguments": {
+                        "label": "mcp",
+                        "gitRepo": TEST_GIT_REPO,
+                        "gitRef": TEST_GIT_REF
+                    }
+                }),
             ),
         )
         .await;
@@ -966,6 +981,8 @@ mod tests {
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
+        std::fs::create_dir_all(&root).unwrap();
+        let fake_git = write_fake_git(&root);
         let config = Arc::new(AppConfig {
             server: ServerSettings {
                 bind: "127.0.0.1:0".to_string(),
@@ -995,10 +1012,47 @@ mod tests {
             },
             dev_selftest: crate::support::config::DevSelftestSettings {
                 enabled: true,
+                git: DevSelftestGitSettings {
+                    enabled: true,
+                    binary: fake_git,
+                    repos: vec![DevSelftestGitRepo {
+                        url: TEST_GIT_REPO.to_string(),
+                        refs: vec![TEST_GIT_REF.to_string()],
+                    }],
+                },
                 ..crate::support::config::DevSelftestSettings::default()
             },
         });
         config.prepare_dirs().unwrap();
         (AppState::new(config).unwrap(), root)
+    }
+
+    #[cfg(unix)]
+    fn write_fake_git(root: &std::path::Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let fake_git = root.join("fake-git.sh");
+        std::fs::write(
+            &fake_git,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "clone" ]; then
+  dest="${@: -1}"
+  mkdir -p "$dest/.git"
+fi
+exit 0
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_git).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, perms).unwrap();
+        fake_git
+    }
+
+    #[cfg(windows)]
+    fn write_fake_git(root: &std::path::Path) -> std::path::PathBuf {
+        let fake_git = root.join("fake-git.cmd");
+        std::fs::write(&fake_git, "@echo off\r\nexit /B 0\r\n").unwrap();
+        fake_git
     }
 }

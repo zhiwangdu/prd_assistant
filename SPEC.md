@@ -4,7 +4,7 @@
 
 LocalToolHub 收敛为两个模块的本地工具工作台：
 
-- **dev_selftest**：在 Linux server 上跑 `sync → build → deploy(docker) → run_tests → report` 自测流水线，由外部 MCP 客户端（如 Windows 上的 Claude Code）驱动，每次 run 有持久工作区 + run history。
+- **dev_selftest**：在 Linux server 上跑 `sync → build → deploy(docker) → run_tests → report` 自测流水线，由外部 MCP 客户端（如 Windows 上的 Claude Code）驱动；源码只通过 allowlisted git repo/ref 同步，Windows 端 commit/push 后 ToolHub clone 或 pull，每次 run 有持久工作区 + run history。
 - **日志分析**：上传日志包 → 预处理 → 跑一组编译配置好的 analyzer（influxql/flux/openGemini/influxdb/pprof）→ 结构化 findings + artifact + run history。
 
 Server 提供 Web 管理页、工具目录、工具运行、artifact/run history 和 MCP Server。它不把 Claude Code / Codex / LangChain 或模型服务作为默认运行依赖。
@@ -26,7 +26,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
 | Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
 | Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
-| Dev Self-Test | sync/build/deploy(docker)/run_tests/report 流水线，docker runner 复用 remote_execution 的 docker 分支。 |
+| Dev Self-Test | git-only sync/build/deploy(docker)/run_tests/report 流水线，docker runner 复用 remote_execution 的 docker 分支。 |
 | MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端。 |
 | WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
