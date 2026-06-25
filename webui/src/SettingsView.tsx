@@ -20,12 +20,29 @@ type DevSelftestConfigSummary = {
   buildProfiles: string[];
   dockerProfiles: string[];
   testSuites: string[];
+  buildProfileDetails?: DevSelftestProfileSummary[];
+  testSuiteDetails?: DevSelftestProfileSummary[];
 };
 
 type AllowlistUpdateResponse = {
   updated: boolean;
   summary: DevSelftestConfigSummary;
 };
+
+type DevSelftestProfileSummary = {
+  id: string;
+  kind: "host" | "docker" | string;
+  enabled: boolean;
+  image?: string | null;
+  displayName: string;
+  timeoutSeconds?: number | null;
+};
+
+type ProfileUpsertResponse = {
+  updated: boolean;
+};
+
+type ProfileKind = "build" | "test";
 
 export function SettingsView({ apiKey }: Props) {
   const [summary, setSummary] = useState<DevSelftestConfigSummary | null>(null);
@@ -35,6 +52,20 @@ export function SettingsView({ apiKey }: Props) {
   const [savingAllowlist, setSavingAllowlist] = useState(false);
   const [allowlistError, setAllowlistError] = useState<string | null>(null);
   const [allowlistMessage, setAllowlistMessage] = useState<string | null>(null);
+  const [profileKind, setProfileKind] = useState<ProfileKind>("build");
+  const [profileId, setProfileId] = useState("");
+  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [profileImage, setProfileImage] = useState("");
+  const [profileArgv, setProfileArgv] = useState("");
+  const [profileTimeout, setProfileTimeout] = useState("");
+  const [profileNetwork, setProfileNetwork] = useState("host");
+  const [profileWorkdir, setProfileWorkdir] = useState("/workspace/source");
+  const [profileVolumes, setProfileVolumes] = useState("");
+  const [profileEnv, setProfileEnv] = useState("");
+  const [profileArtifacts, setProfileArtifacts] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
 
   const loadAllowlist = async () => {
     if (!apiKey.trim()) {
@@ -94,6 +125,53 @@ export function SettingsView({ apiKey }: Props) {
       setAllowlistError(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingAllowlist(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!apiKey.trim()) {
+      setProfileError("请先填写 API Key。");
+      return;
+    }
+    if (!profileId.trim() || !profileImage.trim()) {
+      setProfileError("Profile id 和 Docker image 都不能为空。");
+      return;
+    }
+    const argv = lines(profileArgv);
+    if (!argv.length) {
+      setProfileError("Argv 至少需要一行。");
+      return;
+    }
+    setSavingProfile(true);
+    setProfileError(null);
+    setProfileMessage(null);
+    try {
+      const response = await fetchJson<ProfileUpsertResponse>(
+        `/api/settings/dev-selftest/profiles/${profileKind}/${encodeURIComponent(profileId.trim())}`,
+        {
+          method: "PUT",
+          headers: jsonHeaders(apiKey),
+          body: JSON.stringify({
+            displayName: profileDisplayName.trim() || undefined,
+            image: profileImage.trim(),
+            argv,
+            timeoutSeconds: profileTimeout.trim() ? Number(profileTimeout.trim()) : undefined,
+            network: profileNetwork.trim() || undefined,
+            workdir: profileWorkdir.trim() || undefined,
+            volumes: lines(profileVolumes),
+            env: envLines(profileEnv),
+            artifactGlobs: profileKind === "build" ? lines(profileArtifacts) : [],
+            confirmedUserConsent: true,
+            reason: "WebUI Settings profile update"
+          })
+        }
+      );
+      setProfileMessage(response.updated ? "Profile 已保存。" : "Profile 已验证，无需变更。");
+      await loadAllowlist();
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -203,6 +281,85 @@ export function SettingsView({ apiKey }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Dev Self-Test Docker Profiles</CardTitle>
+          <CardDescription>新增或更新 Docker-backed build/test profile；执行时 MCP 客户端仍只选择 profile id。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!apiKey.trim() ? (
+            <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <AlertCircle className="h-4 w-4" />
+              <span>请先填写 API Key 后再读取或保存 profile。</span>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <DetailedProfileList title="Build profile details" items={summary?.buildProfileDetails ?? []} />
+                <DetailedProfileList title="Test suite details" items={summary?.testSuiteDetails ?? []} />
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[150px_180px_1fr]">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Kind</span>
+                  <select
+                    className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-teal-600/20"
+                    value={profileKind}
+                    onChange={(event) => setProfileKind(event.target.value as ProfileKind)}
+                  >
+                    <option value="build">build</option>
+                    <option value="test">test</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Profile id</span>
+                  <Input value={profileId} onChange={(event) => setProfileId(event.target.value)} placeholder="opengemini_ci" />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Display name</span>
+                  <Input value={profileDisplayName} onChange={(event) => setProfileDisplayName(event.target.value)} placeholder="openGemini CI build" />
+                </label>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[1fr_160px_180px_220px]">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Docker image</span>
+                  <Input value={profileImage} onChange={(event) => setProfileImage(event.target.value)} placeholder="registry.local/localtoolhub/opengemini-builder:latest" />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Timeout seconds</span>
+                  <Input type="number" min={1} value={profileTimeout} onChange={(event) => setProfileTimeout(event.target.value)} placeholder="1800" />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Network</span>
+                  <Input value={profileNetwork} onChange={(event) => setProfileNetwork(event.target.value)} placeholder="host" />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Workdir</span>
+                  <Input value={profileWorkdir} onChange={(event) => setProfileWorkdir(event.target.value)} placeholder="/workspace/source" />
+                </label>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <TextAreaField label="Argv（每行一个参数）" value={profileArgv} onChange={setProfileArgv} placeholder={"/usr/local/bin/build-selftest"} />
+                <TextAreaField label="Volumes（每行一个 host:container[:mode]）" value={profileVolumes} onChange={setProfileVolumes} placeholder={"${DEVSELFTEST_SOURCE_DIR}/cache:/cache:rw"} />
+                <TextAreaField label="Env（每行 KEY=VALUE）" value={profileEnv} onChange={setProfileEnv} placeholder={"GOPROXY=https://goproxy.cn,direct"} />
+                <TextAreaField label="Artifact globs（build only）" value={profileArtifacts} onChange={setProfileArtifacts} placeholder={"build/ts-meta\nbuild/ts-store\nbuild/ts-sql"} />
+              </div>
+
+              {profileError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{profileError}</div> : null}
+              {profileMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{profileMessage}</div> : null}
+
+              <div className="flex justify-end">
+                <Button onClick={saveProfile} disabled={loadingAllowlist || savingProfile}>
+                  <Save className="mr-2 h-4 w-4" />保存 profile
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -215,5 +372,67 @@ function ProfileList({ title, items }: { title: string; items: string[] }) {
         {items.length ? items.map((item) => <Badge key={item} variant="outline">{item}</Badge>) : <span className="text-sm text-muted-foreground">未配置</span>}
       </div>
     </div>
+  );
+}
+
+function DetailedProfileList({ title, items }: { title: string; items: DevSelftestProfileSummary[] }) {
+  return (
+    <div className="rounded-md border border-border px-3 py-2">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
+      {items.length ? (
+        <div className="mt-2 space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium">{item.id}</span>
+              <Badge variant={item.kind === "docker" ? "success" : "outline"}>{item.kind}</Badge>
+              {item.image ? <Badge variant="secondary">{item.image}</Badge> : null}
+              {item.timeoutSeconds ? <Badge variant="outline">{item.timeoutSeconds}s</Badge> : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 text-sm text-muted-foreground">未配置</div>
+      )}
+    </div>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  placeholder
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="space-y-1 text-sm">
+      <span className="font-medium">{label}</span>
+      <textarea
+        className="min-h-24 w-full resize-y rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-600/20"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function lines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function envLines(value: string) {
+  return Object.fromEntries(
+    lines(value).map((line) => {
+      const index = line.indexOf("=");
+      return index < 0 ? [line, ""] : [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+    })
   );
 }

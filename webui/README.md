@@ -17,7 +17,7 @@ MCP | Settings
 - Tools：查看工具目录（可搜索、按 Source/可运行筛选、按功能类别分组紧凑列表）、参数 schema、可用性，运行工具并查看结果。
   - Runs History（Tools 子项）：统一查看 tool/dev_selftest/preprocess 的运行历史和 artifacts。
 - MCP：集中展示 `/api/mcp` streamable-http endpoint、stdio 配置示例、Authorization / protocol header、支持的 JSON-RPC 方法、tools/resources 搜索，以及 `resources/read` preview；长任务示例使用 `runMode:"queued"` + `logagent.runs.get/result` 轮询。
-- Settings：API Key 状态、MCP 接入说明、Skills（本地 Claude Code skill）说明，以及 Dev Self-Test Git Allowlist 卡片（读取默认 repo/ref、全部 allowlisted repo/ref 和 profile ids；用户保存后追加 repo/ref、设为默认并热更新 Server）。
+- Settings：API Key 状态、MCP 接入说明、Skills（本地 Claude Code skill）说明、Dev Self-Test Git Allowlist 卡片（读取默认 repo/ref、全部 allowlisted repo/ref 和 profile ids；用户保存后追加 repo/ref、设为默认并热更新 Server），以及 Dev Self-Test Docker Profiles 卡片（查看 host/docker profile 明细，新增或更新 Docker-backed build/test profile）。
 
 ## 技术栈
 

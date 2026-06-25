@@ -15,7 +15,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 LocalToolHub 开箱即用地提供：
 
-- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个 MCP step tools。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 或 WebUI Settings 追加 repo/ref 并写回配置文件。
+- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个 MCP step tools。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 追加 repo/ref，或用 `logagent.dev_selftest.profiles.upsert` / WebUI Settings 新增和更新 Docker-backed build/test profile，并写回配置文件。
 - **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
 - **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端；dev_selftest config resource 用于客户端发现 allowlisted repo/ref 和 profile ids。
 - **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。
@@ -84,7 +84,7 @@ Server 内部能力以两模块为中心：
 
 - API Key 只从环境变量或本地 secret 配置读取。
 - 不把密钥、Cookie、Authorization header 写入日志、artifact 或导出包。
-- dev_selftest 的 docker target、git repo、build/test profile 都走配置 allowlist；tool params 只选 profile id + 携带 runId。git repo/ref allowlist 支持受控热更新：先 `git ls-remote` 验证、原子写回 `--config` YAML，再更新内存状态；已存在的 dev_selftest run 不被改写。
+- dev_selftest 的 docker target、git repo、build/test profile 都走配置/运行时 allowlist；tool params 只选 profile id + 携带 runId，不接受任意 shell。git repo/ref allowlist 支持受控热更新：先 `git ls-remote` 验证、原子写回 `--config` YAML，再更新内存状态。Docker-backed build/test profile 也支持用户确认后的受控 upsert；已排队任务会携带 profile snapshot，已存在的 dev_selftest run 不被改写。
 - MCP client 不能绕过 Server 直接执行本机命令或读取任意路径。
 - Artifact path 对外使用逻辑路径，不暴露任意本机路径。
 

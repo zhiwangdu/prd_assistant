@@ -42,7 +42,8 @@ Authorization: Bearer <your-key>
 }
 ```
 
-返回内容包含 `gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`。
+返回内容包含 `gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`
+以及 `buildProfileDetails` / `testSuiteDetails`（host/docker、image、timeout）。
 客户端只能使用这些值调用 `sync_workspace` / `build` / `deploy` / `run_tests`。
 
 如果用户需要的新分支不在 allowlist 中，先停止 workflow 并询问用户是否允许更新。用户明确同意后再调用：
@@ -63,12 +64,34 @@ Authorization: Bearer <your-key>
 Server 会校验 URL/ref、执行 `git ls-remote`、写回 `--config` YAML，再更新内存 allowlist。成功后重新读取
 `logagent://dev_selftest/config`，再继续 `sync_workspace`。
 
+如果需要新增或调整 Docker-backed build/test profile，先停止 workflow 并询问用户是否允许更新。用户明确同意后再调用：
+
+```json
+{
+  "name": "logagent.dev_selftest.profiles.upsert",
+  "arguments": {
+    "kind": "build",
+    "id": "opengemini_ci",
+    "image": "registry.local/localtoolhub/opengemini-builder:latest",
+    "argv": ["/usr/local/bin/build-selftest"],
+    "timeoutSeconds": 1800,
+    "network": "host",
+    "workdir": "/workspace/source",
+    "artifactGlobs": ["build/ts-meta", "build/ts-store", "build/ts-sql"],
+    "confirmedUserConsent": true,
+    "reason": "User approved Docker build profile for this branch"
+  }
+}
+```
+
+该 tool 只写入受控 Docker profile，不启动 build/test；后续执行仍只传 profile id。
+
 ## 3. 工具顺序
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
 | 1 | `logagent.dev_selftest.sync_workspace` | 从 allowlisted `gitRepo/gitRef` 同步源码，返回 `runId`；新 run clone，已有 run pull。 |
-| 2 | `logagent.dev_selftest.build` | 运行配置好的 build profile，收集 `artifact_globs`。 |
+| 2 | `logagent.dev_selftest.build` | 运行配置好的 build profile；旧 host command 和 Docker build profile 都支持，收集 `artifact_globs`。 |
 | 3 | `logagent.dev_selftest.deploy` | 运行 `docker_cluster` profile，执行 compose up 和 health check。 |
 | 4 | `logagent.dev_selftest.run_tests` | 使用 test suite 的 inline Docker target 执行测试；无 docker target 时走本地桩。 |
 | 5 | `logagent.dev_selftest.report` | 聚合 `progress.json`、日志和结果，生成报告。 |

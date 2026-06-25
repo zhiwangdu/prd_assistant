@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 Historical main-branch progress was archived to
 `docs/archive/PROGRESS-history-main-2026-06-22.md`.
@@ -11,6 +11,24 @@ Historical main-branch progress was archived to
 - Base: `origin/main`
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-26 dev_selftest Docker profile 热更新与 Docker build
+
+- Server 新增运行时 dev_selftest profile registry：启动时从 `dev_selftest.builds` / `dev_selftest.test_suites`
+  初始化；`build` 和 `run_tests` 参数校验改为读取 registry，并把选中的 profile snapshot 写入 queued task params，
+  避免排队后被后续 profile update 改写执行内容。
+- `dev_selftest.builds` 支持 Docker-backed build profile：旧 host command profile 保持兼容；带 `docker` 块的 build
+  通过 inline Docker runner 执行镜像内 `argv`，自动挂载本次 run 的 `source/` 到 `/workspace/source:rw`、
+  `artifacts/` 到 `/workspace/artifacts:rw`，默认 `workdir=/workspace/source`，继续按 `artifact_globs` 收集产物。
+- MCP 新增 `logagent.dev_selftest.profiles.upsert` platform tool；HTTP 新增
+  `GET /api/settings/dev-selftest/profiles` 与 `PUT /api/settings/dev-selftest/profiles/:kind/:id`。更新要求
+  `confirmedUserConsent:true`，校验 profile id、非空 argv 和 Docker target，先原子写回 `--config` YAML，再更新内存
+  registry；执行 step 仍只接收 profile id，不接受任意 shell。
+- `logagent://dev_selftest/config` 继续返回原 profile id 列表，并新增 build/test profile 明细（host/docker、image、
+  timeout）。WebUI Settings 新增 Docker Profiles 卡片，可查看 profile 明细并新增/更新 Docker-backed build/test profile。
+- 文档同步：根 README/SPEC、server README/SPEC、webui README/SPEC、dev_selftest 模块文档和本地 skill 工作流说明。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（83 passed）、
+  `cd webui && npm run lint`、`cd webui && npm run typecheck`、`cd webui && npm run build`。
 
 ## 2026-06-26 dev_selftest allowlist 可发现与热更新
 

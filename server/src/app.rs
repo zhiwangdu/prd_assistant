@@ -4,7 +4,10 @@ use tracing::{info, warn};
 
 use crate::{
     pipeline::executor::TaskExecutor,
-    services::{dev_selftest_allowlist::DevSelftestGitAllowlist, tool_runner::ToolRunner},
+    services::{
+        dev_selftest_allowlist::DevSelftestGitAllowlist,
+        dev_selftest_profiles::DevSelftestProfileRegistry, tool_runner::ToolRunner,
+    },
     stores::{
         dev_selftest_store::DevSelftestStore, task_store::TaskStore, upload_store::UploadStore,
     },
@@ -16,6 +19,7 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub config_path: Option<PathBuf>,
     pub dev_selftest_git_allowlist: DevSelftestGitAllowlist,
+    pub dev_selftest_profiles: DevSelftestProfileRegistry,
     pub uploads: UploadStore,
     pub dev_selftest: DevSelftestStore,
     pub tasks: TaskStore,
@@ -45,6 +49,10 @@ impl AppState {
             config_path,
             dev_selftest_git_allowlist: DevSelftestGitAllowlist::new(
                 config.dev_selftest.git.repos.clone(),
+            ),
+            dev_selftest_profiles: DevSelftestProfileRegistry::new(
+                config.dev_selftest.builds.clone(),
+                config.dev_selftest.test_suites.clone(),
             ),
             dev_selftest,
             executor: TaskExecutor::new(config.server.max_concurrent_tasks),

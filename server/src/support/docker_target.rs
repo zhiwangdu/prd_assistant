@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerTargetSpec {
     pub image: String,
     /// `None` (default) ⇒ `host`. Otherwise a safe network identifier.

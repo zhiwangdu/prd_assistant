@@ -1,12 +1,19 @@
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 
 use crate::{
     app::AppState,
     services::dev_selftest_allowlist::{
         summary_for_state, update_allowlist, AllowlistUpdateRequest, AllowlistUpdateResponse,
         DevSelftestConfigSummary,
+    },
+    services::dev_selftest_profiles::{
+        get_profiles, upsert_profile, DevSelftestProfilesResponse, ProfileKind, ProfileUpsertBody,
+        ProfileUpsertResponse,
     },
     support::error::AppError,
 };
@@ -22,6 +29,23 @@ pub async fn put_dev_selftest_git_allowlist(
     Json(request): Json<AllowlistUpdateRequest>,
 ) -> Result<Json<AllowlistUpdateResponse>, AppError> {
     update_allowlist(&state, request).await.map(Json)
+}
+
+pub async fn get_dev_selftest_profiles(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DevSelftestProfilesResponse>, AppError> {
+    Ok(Json(get_profiles(&state)))
+}
+
+pub async fn put_dev_selftest_profile(
+    State(state): State<Arc<AppState>>,
+    Path((kind, id)): Path<(String, String)>,
+    Json(body): Json<ProfileUpsertBody>,
+) -> Result<Json<ProfileUpsertResponse>, AppError> {
+    let kind = ProfileKind::parse(&kind)?;
+    upsert_profile(&state, body.into_request(kind, id))
+        .await
+        .map(Json)
 }
 
 #[cfg(test)]

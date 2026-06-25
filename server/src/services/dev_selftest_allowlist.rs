@@ -11,6 +11,9 @@ use tokio::{process::Command, time::timeout};
 
 use crate::{
     app::AppState,
+    services::dev_selftest_profiles::{
+        self, DevSelftestProfileSummary, DevSelftestProfilesSnapshot,
+    },
     support::{
         config::{DevSelftestGitRepo, DevSelftestSettings},
         error::AppError,
@@ -71,6 +74,8 @@ pub struct DevSelftestConfigSummary {
     pub build_profiles: Vec<String>,
     pub docker_profiles: Vec<String>,
     pub test_suites: Vec<String>,
+    pub build_profile_details: Vec<DevSelftestProfileSummary>,
+    pub test_suite_details: Vec<DevSelftestProfileSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,12 +119,14 @@ pub fn summary_for_state(state: &AppState) -> DevSelftestConfigSummary {
     summary_for(
         &state.config.dev_selftest,
         &state.dev_selftest_git_allowlist.snapshot(),
+        &state.dev_selftest_profiles.snapshot(),
     )
 }
 
 pub fn summary_for(
     settings: &DevSelftestSettings,
     repos: &[DevSelftestGitRepo],
+    profiles: &DevSelftestProfilesSnapshot,
 ) -> DevSelftestConfigSummary {
     let normalized = normalize_repos(repos.to_vec());
     let default_git_repo = normalized.first().map(|repo| redact_repo_url(&repo.url));
@@ -139,9 +146,11 @@ pub fn summary_for(
             .collect(),
         default_git_repo,
         default_git_ref,
-        build_profiles: settings.builds.keys().cloned().collect(),
+        build_profiles: profiles.builds.keys().cloned().collect(),
         docker_profiles: settings.docker.clusters.keys().cloned().collect(),
-        test_suites: settings.test_suites.keys().cloned().collect(),
+        test_suites: profiles.test_suites.keys().cloned().collect(),
+        build_profile_details: dev_selftest_profiles::build_summaries(profiles),
+        test_suite_details: dev_selftest_profiles::test_summaries(profiles),
     }
 }
 
@@ -189,7 +198,11 @@ pub async fn update_allowlist(
             .filter(|value| !value.is_empty())
             .map(ToString::to_string),
         config_path: Some(config_path.display().to_string()),
-        summary: summary_for(&state.config.dev_selftest, &repos),
+        summary: summary_for(
+            &state.config.dev_selftest,
+            &repos,
+            &state.dev_selftest_profiles.snapshot(),
+        ),
     })
 }
 

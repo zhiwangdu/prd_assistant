@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 
@@ -53,6 +53,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/api/settings/dev-selftest/git-allowlist",
             get(settings::get_dev_selftest_git_allowlist)
                 .put(settings::put_dev_selftest_git_allowlist),
+        )
+        .route(
+            "/api/settings/dev-selftest/profiles",
+            get(settings::get_dev_selftest_profiles),
+        )
+        .route(
+            "/api/settings/dev-selftest/profiles/:kind/:id",
+            put(settings::put_dev_selftest_profile),
         )
         .route(
             "/api/mcp",

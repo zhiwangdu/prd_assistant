@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -137,16 +137,21 @@ pub struct DevSelftestGitRepo {
     pub refs: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DevSelftestBuildProfile {
     #[allow(dead_code)]
     pub display_name: String,
-    /// First element is the binary, the rest are args. Run with `working_dir` as cwd.
+    /// Host profile: first element is the binary, the rest are args. Docker profile:
+    /// in-container argv passed after the image.
     pub command: Vec<String>,
     /// Working dir relative to the run's `source/` (empty = `source/`).
     pub working_dir: String,
     pub artifact_globs: Vec<String>,
     pub timeout_seconds: Option<u64>,
+    /// When present, build runs inside an ephemeral docker container instead of on
+    /// the server host. The synced source and artifacts directories are mounted by
+    /// the runner with standard dev_selftest env.
+    pub docker: Option<DevSelftestTestDocker>,
 }
 
 #[derive(Debug, Clone)]
@@ -168,7 +173,7 @@ pub struct DevSelftestHealthCheck {
     pub timeout_seconds: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DevSelftestTestSuite {
     #[allow(dead_code)]
     pub display_name: String,
@@ -373,13 +378,18 @@ struct DevSelftestGitRepoConfig {
 struct DevSelftestBuildConfig {
     #[serde(default)]
     display_name: Option<String>,
+    #[serde(default)]
     command: Vec<String>,
+    #[serde(default)]
+    argv: Vec<String>,
     #[serde(default)]
     working_dir: String,
     #[serde(default)]
     artifact_globs: Vec<String>,
     #[serde(default)]
     timeout_seconds: Option<u64>,
+    #[serde(default)]
+    docker: Option<crate::support::docker_target::DockerTargetSpec>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -580,8 +590,42 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .map(|arg| arg.trim().to_string())
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>();
+            let argv = build
+                .argv
+                .into_iter()
+                .map(|arg| arg.trim().to_string())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>();
+            let docker = build
+                .docker
+                .map(|raw| {
+                    resolve_dev_selftest_docker_target(
+                        &format!("dev_selftest.builds.{id}.docker"),
+                        raw,
+                        enabled,
+                    )
+                })
+                .transpose()?;
+            let command = if docker.is_some() {
+                if !command.is_empty() && !argv.is_empty() {
+                    anyhow::bail!(
+                        "dev_selftest.builds.{id}: command and argv are mutually exclusive for docker builds"
+                    );
+                }
+                if argv.is_empty() {
+                    command
+                } else {
+                    argv
+                }
+            } else {
+                if !argv.is_empty() {
+                    anyhow::bail!("dev_selftest.builds.{id}: argv requires a docker block");
+                }
+                command
+            };
             if enabled && command.is_empty() {
-                anyhow::bail!("dev_selftest.builds.{id}.command must not be empty");
+                let field = if docker.is_some() { "argv" } else { "command" };
+                anyhow::bail!("dev_selftest.builds.{id}.{field} must not be empty");
             }
             let display_name = build.display_name.unwrap_or_else(|| id.clone());
             Ok((
@@ -592,6 +636,7 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                     working_dir: build.working_dir.trim().to_string(),
                     artifact_globs: build.artifact_globs,
                     timeout_seconds: build.timeout_seconds.map(|value| value.max(1)),
+                    docker,
                 },
             ))
         })
@@ -613,7 +658,13 @@ fn resolve_dev_selftest(raw: DevSelftestConfig) -> anyhow::Result<DevSelftestSet
                 .filter(|value| !value.is_empty());
             let docker = suite
                 .docker
-                .map(|raw| resolve_dev_selftest_test_docker(&id, raw, enabled))
+                .map(|raw| {
+                    resolve_dev_selftest_docker_target(
+                        &format!("dev_selftest.test_suites.{id}.docker"),
+                        raw,
+                        enabled,
+                    )
+                })
                 .transpose()?;
             let has_argv = !argv.is_empty();
             let has_command = command.is_some();
@@ -757,12 +808,10 @@ fn resolve_dev_selftest_docker(
     })
 }
 
-fn resolve_dev_selftest_test_docker(
-    suite_id: &str,
+pub fn normalize_dev_selftest_docker_target(
     raw: crate::support::docker_target::DockerTargetSpec,
-    enabled: bool,
-) -> anyhow::Result<DevSelftestTestDocker> {
-    let docker = crate::support::docker_target::DockerTargetSpec {
+) -> crate::support::docker_target::DockerTargetSpec {
+    crate::support::docker_target::DockerTargetSpec {
         image: raw.image.trim().to_string(),
         network: raw
             .network
@@ -779,15 +828,22 @@ fn resolve_dev_selftest_test_docker(
             .filter(|v| !v.is_empty())
             .collect(),
         env: raw.env,
-    };
+    }
+}
+
+fn resolve_dev_selftest_docker_target(
+    context: &str,
+    raw: crate::support::docker_target::DockerTargetSpec,
+    enabled: bool,
+) -> anyhow::Result<DevSelftestTestDocker> {
+    let docker = normalize_dev_selftest_docker_target(raw);
     if enabled {
-        let context = format!("dev_selftest.test_suites.{suite_id}.docker");
         crate::support::docker_target::validate_docker_target(&docker, &context, true)?;
     }
     Ok(docker)
 }
 
-fn validate_dev_selftest_profile_id(id: &str) -> anyhow::Result<()> {
+pub fn validate_dev_selftest_profile_id(id: &str) -> anyhow::Result<()> {
     let valid = !id.is_empty()
         && id
             .bytes()

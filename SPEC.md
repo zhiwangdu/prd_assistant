@@ -27,7 +27,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
 | Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
 | Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
-| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支；git repo/ref allowlist 可通过受控热更新追加并设默认。 |
+| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支；git repo/ref allowlist 可通过受控热更新追加并设默认；Docker-backed build/test profile 可在用户确认后受控 upsert。 |
 | MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端；`logagent://dev_selftest/config` 让客户端发现当前 repo/ref/profile。 |
 | WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
@@ -104,6 +104,7 @@ logagent.dev_selftest.deploy
 logagent.dev_selftest.run_tests
 logagent.dev_selftest.report
 logagent.dev_selftest.allowlist.update
+logagent.dev_selftest.profiles.upsert
 logagent.runs.get
 logagent.runs.result
 # + 配置的 analyzer: pprof_analyzer / influxql_analyzer / flux_query_analyzer /
@@ -143,5 +144,6 @@ dev_selftest:
 - MCP `tools/list` 与 WebUI catalog 一致（仅两模块工具）。
 - dev_selftest 默认关闭或受 allowlist 控制。
 - dev_selftest git allowlist 热更新要求显式确认、URL/ref 校验和 `git ls-remote` 可达性检查；写回配置后才更新内存状态，旧 allowlist 保留，新 repo/ref 可设为默认。
+- dev_selftest Docker-backed build/test profile 热更新要求显式确认、profile id 与 Docker target 校验、原子写回配置后才更新内存状态；执行工具仍只接收 profile id，不接收任意 shell。
 - 日志、artifact、导出包不包含密钥原文。
 - README/SPEC/PROGRESS 随行为变化同步更新。

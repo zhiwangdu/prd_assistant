@@ -27,7 +27,7 @@ use tracing::{info, warn};
 use crate::{
     app::AppState,
     domain::models::{TaskKind, TaskPhase, TaskRecord, TaskStatus, ToolDescriptor},
-    services::{self, dev_selftest_allowlist},
+    services::{self, dev_selftest_allowlist, dev_selftest_profiles},
     support::config::AppConfig,
 };
 
@@ -287,6 +287,9 @@ async fn call_tool(state: &Arc<AppState>, name: &str, arguments: Value) -> Value
     if name == dev_selftest_allowlist::ALLOWLIST_UPDATE_TOOL_ID {
         return tool_call_content(call_allowlist_update(state, arguments).await);
     }
+    if name == dev_selftest_profiles::PROFILE_UPSERT_TOOL_ID {
+        return tool_call_content(call_profile_upsert(state, arguments).await);
+    }
     // MCP-native platform tools bypass the Tool Runner: no ToolRun is created, so
     // polling them never pollutes run history.
     if let Some(outcome) = platform_tool_result(state, name, &arguments).await {
@@ -310,6 +313,14 @@ async fn call_allowlist_update(state: &Arc<AppState>, arguments: Value) -> anyho
     let response = dev_selftest_allowlist::update_allowlist(state, request).await?;
     serde_json::to_value(response)
         .map_err(|err| anyhow::anyhow!("failed to encode allowlist update response: {err}"))
+}
+
+async fn call_profile_upsert(state: &Arc<AppState>, arguments: Value) -> anyhow::Result<Value> {
+    let request: dev_selftest_profiles::ProfileUpsertRequest = serde_json::from_value(arguments)
+        .map_err(|err| anyhow::anyhow!("invalid profile upsert arguments: {err}"))?;
+    let response = dev_selftest_profiles::upsert_profile(state, request).await?;
+    serde_json::to_value(response)
+        .map_err(|err| anyhow::anyhow!("failed to encode profile upsert response: {err}"))
 }
 
 fn tool_call_content(outcome: anyhow::Result<Value>) -> Value {
@@ -816,6 +827,7 @@ mod tests {
             .collect();
         assert!(names.contains(&"logagent.runs.get"));
         assert!(names.contains(&"logagent.runs.result"));
+        assert!(names.contains(&"logagent.dev_selftest.profiles.upsert"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -946,6 +958,7 @@ mod tests {
             .collect();
         assert!(names.contains(&"logagent.dev_selftest.sync_workspace"));
         assert!(names.contains(&"logagent.dev_selftest.allowlist.update"));
+        assert!(names.contains(&"logagent.dev_selftest.profiles.upsert"));
 
         // tools/call a runnable built-in that needs no uploads.
         let called = handle_request(
@@ -1020,6 +1033,8 @@ mod tests {
         let config_value: Value = serde_json::from_str(config_text).unwrap();
         assert_eq!(config_value["defaultGitRepo"], TEST_GIT_REPO);
         assert_eq!(config_value["defaultGitRef"], TEST_GIT_REF);
+        assert!(config_value["buildProfileDetails"].is_array());
+        assert!(config_value["testSuiteDetails"].is_array());
 
         // Batch over HTTP.
         let batch = handle_http(

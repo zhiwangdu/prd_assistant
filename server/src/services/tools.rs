@@ -21,7 +21,7 @@ use crate::{
         },
     },
     pipeline::{extract_task, prepare_pipeline_run, prepare_raw_snapshot, search_task},
-    services::{dev_selftest, dev_selftest_allowlist},
+    services::{dev_selftest, dev_selftest_allowlist, dev_selftest_profiles},
     support::{
         config::{AppConfig, ToolSettings},
         error::AppError,
@@ -156,6 +156,92 @@ fn platform_descriptors() -> Vec<ToolDescriptor> {
         }),
         output_views: vec!["json".to_string()],
     });
+    descriptors.push(ToolDescriptor {
+        tool_id: dev_selftest_profiles::PROFILE_UPSERT_TOOL_ID.to_string(),
+        display_name: "Dev self-test: upsert Docker profile".to_string(),
+        description: "MCP-native settings tool that adds or updates a Docker-backed dev_selftest build/test profile after explicit user consent. Execution still selects profile ids; this tool does not create a ToolRun.".to_string(),
+        enabled: true,
+        source: ToolSource::BuiltIn,
+        read_only: false,
+        editable: false,
+        exportable: false,
+        runnable: false,
+        platform: true,
+        tags: vec![
+            "built-in".to_string(),
+            "platform".to_string(),
+            "dev-selftest".to_string(),
+            "settings".to_string(),
+        ],
+        backend: "platform".to_string(),
+        accepted_suffixes: Vec::new(),
+        min_files: 0,
+        max_files: 0,
+        params_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["build", "test"],
+                    "description": "Profile group to update."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Safe profile id used by buildProfile/testSuite params."
+                },
+                "displayName": { "type": "string" },
+                "image": {
+                    "type": "string",
+                    "description": "Docker image containing the build/test entrypoint."
+                },
+                "argv": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "In-container argv. No shell string is accepted."
+                },
+                "timeoutSeconds": { "type": "integer", "minimum": 1 },
+                "network": { "type": "string", "description": "host or a safe Docker network name." },
+                "workdir": { "type": "string", "description": "Absolute container workdir without '..'." },
+                "volumes": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "host:absolute or ${DEVSELFTEST_*}:container:absolute[:ro|rw]."
+                },
+                "env": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                },
+                "artifactGlobs": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Build-only artifact globs collected from source/ after Docker exits."
+                },
+                "confirmedUserConsent": {
+                    "type": "boolean",
+                    "const": true,
+                    "description": "Must be true only after the user explicitly approves this profile update."
+                },
+                "reason": { "type": "string" }
+            },
+            "required": ["kind", "id", "image", "argv", "confirmedUserConsent"]
+        }),
+        params_template: serde_json::json!({
+            "kind": "build",
+            "id": "",
+            "displayName": "",
+            "image": "",
+            "argv": [],
+            "timeoutSeconds": 600,
+            "network": "host",
+            "workdir": "/workspace/source",
+            "volumes": [],
+            "env": {},
+            "artifactGlobs": [],
+            "confirmedUserConsent": false,
+            "reason": ""
+        }),
+        output_views: vec!["json".to_string()],
+    });
     descriptors
 }
 
@@ -270,6 +356,7 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
     if tool_id == RUNS_GET_ID
         || tool_id == RUNS_RESULT_ID
         || tool_id == dev_selftest_allowlist::ALLOWLIST_UPDATE_TOOL_ID
+        || tool_id == dev_selftest_profiles::PROFILE_UPSERT_TOOL_ID
     {
         return platform_descriptors()
             .into_iter()
@@ -291,6 +378,10 @@ pub fn validate_tool_run_request(
         upload_count,
         params,
         &config.dev_selftest.git.repos,
+        &dev_selftest_profiles::DevSelftestProfilesSnapshot {
+            builds: config.dev_selftest.builds.clone(),
+            test_suites: config.dev_selftest.test_suites.clone(),
+        },
     )
 }
 
@@ -300,6 +391,7 @@ fn validate_tool_run_request_with_git_repos(
     upload_count: usize,
     params: &serde_json::Value,
     git_repos: &[crate::support::config::DevSelftestGitRepo],
+    profiles: &dev_selftest_profiles::DevSelftestProfilesSnapshot,
 ) -> Result<serde_json::Value, AppError> {
     let descriptor = get_descriptor(config, tool_id)
         .ok_or_else(|| AppError::not_found(format!("unknown toolId {tool_id}")))?;
@@ -329,7 +421,9 @@ fn validate_tool_run_request_with_git_repos(
         PREPROCESS_LOG_PACKAGE_ID => validate_preprocess_log_package_params(params),
         BATCH_INFLUXQL_ANALYSIS_ID => validate_batch_influxql_params(params),
         id if dev_selftest::is_dev_selftest_tool(id) => {
-            dev_selftest::validate_run_params_with_git_repos(config, git_repos, id, params)
+            dev_selftest::validate_run_params_with_git_repos(
+                config, git_repos, profiles, id, params,
+            )
         }
         _ if config.tools.tools.contains_key(tool_id) => validate_configured_tool_params(params),
         _ => Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
@@ -346,12 +440,14 @@ pub async fn build_tool_run_task(
     params: &serde_json::Value,
 ) -> Result<TaskRecord, AppError> {
     let git_repos = state.dev_selftest_git_allowlist.snapshot();
+    let profiles = state.dev_selftest_profiles.snapshot();
     let normalized_params = validate_tool_run_request_with_git_repos(
         &state.config,
         tool_id,
         upload_ids.len(),
         params,
         &git_repos,
+        &profiles,
     )?;
     let mut uploads = Vec::with_capacity(upload_ids.len());
     for upload_id in &upload_ids {

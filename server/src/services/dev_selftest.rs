@@ -35,6 +35,7 @@ use crate::{
     },
     services::{
         dev_selftest_allowlist,
+        dev_selftest_profiles::DevSelftestProfilesSnapshot,
         remote_execution::{self, ExecutorRunInput, ExecutorRunStatus, ExecutorTarget},
     },
     support::{
@@ -86,12 +87,22 @@ pub fn validate_run_params(
     tool_id: &str,
     value: &Value,
 ) -> Result<Value, AppError> {
-    validate_run_params_with_git_repos(config, &config.dev_selftest.git.repos, tool_id, value)
+    validate_run_params_with_git_repos(
+        config,
+        &config.dev_selftest.git.repos,
+        &DevSelftestProfilesSnapshot {
+            builds: config.dev_selftest.builds.clone(),
+            test_suites: config.dev_selftest.test_suites.clone(),
+        },
+        tool_id,
+        value,
+    )
 }
 
 pub fn validate_run_params_with_git_repos(
     config: &AppConfig,
     git_repos: &[DevSelftestGitRepo],
+    profiles: &DevSelftestProfilesSnapshot,
     tool_id: &str,
     value: &Value,
 ) -> Result<Value, AppError> {
@@ -122,18 +133,20 @@ pub fn validate_run_params_with_git_repos(
             serde_json::to_value(params)
         }
         BUILD_ID => {
-            let params: BuildParams = parse_params(value)?;
-            require_profile(config, &params.build_profile, ProfileKind::Build)?;
+            let mut params: BuildParams = parse_params(value)?;
+            let profile = require_build_profile(profiles, &params.build_profile)?;
+            params.profile_snapshot = Some(profile.clone());
             serde_json::to_value(params)
         }
         DEPLOY_ID => {
             let params: DeployParams = parse_params(value)?;
-            require_profile(config, &params.profile, ProfileKind::Docker)?;
+            require_docker_profile(config, &params.profile)?;
             serde_json::to_value(params)
         }
         RUN_TESTS_ID => {
-            let params: RunTestsParams = parse_params(value)?;
-            require_profile(config, &params.test_suite, ProfileKind::Test)?;
+            let mut params: RunTestsParams = parse_params(value)?;
+            let suite = require_test_suite(profiles, &params.test_suite)?;
+            params.profile_snapshot = Some(suite.clone());
             serde_json::to_value(params)
         }
         REPORT_ID => {
@@ -191,6 +204,8 @@ struct SyncWorkspaceParams {
 struct BuildParams {
     run_id: String,
     build_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile_snapshot: Option<DevSelftestBuildProfile>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -205,6 +220,8 @@ struct DeployParams {
 struct RunTestsParams {
     run_id: String,
     test_suite: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile_snapshot: Option<DevSelftestTestSuite>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -213,30 +230,39 @@ struct ReportParams {
     run_id: String,
 }
 
-enum ProfileKind {
-    Build,
-    Docker,
-    Test,
-}
-
 fn parse_params<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, AppError> {
     serde_json::from_value(value.clone())
         .map_err(|err| AppError::bad_request(format!("invalid dev_selftest params: {err}")))
 }
 
-fn require_profile(config: &AppConfig, id: &str, kind: ProfileKind) -> Result<(), AppError> {
-    let exists = match kind {
-        ProfileKind::Build => config.dev_selftest.builds.contains_key(id),
-        ProfileKind::Docker => config.dev_selftest.docker.clusters.contains_key(id),
-        ProfileKind::Test => config.dev_selftest.test_suites.contains_key(id),
-    };
-    if exists {
+fn require_docker_profile(config: &AppConfig, id: &str) -> Result<(), AppError> {
+    if config.dev_selftest.docker.clusters.contains_key(id) {
         Ok(())
     } else {
         Err(AppError::bad_request(format!(
             "unknown dev_selftest profile {id}"
         )))
     }
+}
+
+fn require_build_profile<'a>(
+    profiles: &'a DevSelftestProfilesSnapshot,
+    id: &str,
+) -> Result<&'a DevSelftestBuildProfile, AppError> {
+    profiles
+        .builds
+        .get(id)
+        .ok_or_else(|| AppError::bad_request(format!("unknown dev_selftest profile {id}")))
+}
+
+fn require_test_suite<'a>(
+    profiles: &'a DevSelftestProfilesSnapshot,
+    id: &str,
+) -> Result<&'a DevSelftestTestSuite, AppError> {
+    profiles
+        .test_suites
+        .get(id)
+        .ok_or_else(|| AppError::bad_request(format!("unknown dev_selftest profile {id}")))
 }
 
 // ---------- run workspace + progress ----------
@@ -628,15 +654,20 @@ async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, Ap
         .get(&params.run_id)
         .await
         .ok_or_else(|| AppError::bad_request(format!("unknown runId {}", params.run_id)))?;
-    let profile = state
-        .config
-        .dev_selftest
-        .builds
-        .get(&params.build_profile)
+    let profile = params
+        .profile_snapshot
+        .clone()
+        .or_else(|| {
+            state
+                .dev_selftest_profiles
+                .snapshot()
+                .builds
+                .get(&params.build_profile)
+                .cloned()
+        })
         .ok_or_else(|| {
             AppError::bad_request(format!("unknown build profile {}", params.build_profile))
-        })?
-        .clone();
+        })?;
 
     let run_root = run_dir(&state, &record.run_id);
     let source_dir = run_root.join("source");
@@ -649,19 +680,23 @@ async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, Ap
     fs::create_dir_all(&cwd)
         .map_err(|err| AppError::internal(format!("failed to create build cwd: {err}")))?;
 
-    let (binary, argv) = split_command(&profile.command)?;
     let started = Instant::now();
-    let run = run_bounded_command(
-        &binary,
-        &argv,
-        &cwd,
-        &BTreeMap::new(),
-        profile
-            .timeout_seconds
-            .unwrap_or(state.config.dev_selftest.build_timeout_seconds),
-        state.config.dev_selftest.max_output_bytes,
-    )
-    .await;
+    let run = if let Some(docker) = &profile.docker {
+        run_docker_build(&state, &record, &profile, docker, &run_root).await?
+    } else {
+        let (binary, argv) = split_command(&profile.command)?;
+        run_bounded_command(
+            &binary,
+            &argv,
+            &cwd,
+            &BTreeMap::new(),
+            profile
+                .timeout_seconds
+                .unwrap_or(state.config.dev_selftest.build_timeout_seconds),
+            state.config.dev_selftest.max_output_bytes,
+        )
+        .await
+    };
     let duration = started.elapsed().as_millis();
 
     let logs_dir = run_root.join("logs");
@@ -713,6 +748,13 @@ async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, Ap
         "buildProfile": params.build_profile,
         "status": status,
         "exitCode": run.exit_code,
+        "executor": profile.docker.as_ref().map(|docker| {
+            json!({
+                "kind": "docker",
+                "image": docker.image.clone(),
+                "network": docker.network.clone().unwrap_or_else(|| "host".to_string()),
+            })
+        }),
         "artifacts": artifacts,
         "error": error,
         "durationMs": duration,
@@ -733,6 +775,73 @@ fn split_command(command: &[String]) -> Result<(PathBuf, Vec<String>), AppError>
         .clone();
     let argv = iter.cloned().collect();
     Ok((PathBuf::from(binary), argv))
+}
+
+/// Run a build profile inside a Docker image. The profile argv is an in-container
+/// command, usually a stable script baked into the image. The runner always mounts
+/// the synced source and artifact directories at conventional paths so image
+/// authors can avoid depending on host-specific paths.
+async fn run_docker_build(
+    state: &AppState,
+    record: &DevSelftestRunRecord,
+    profile: &DevSelftestBuildProfile,
+    docker: &DevSelftestTestDocker,
+    run_root: &Path,
+) -> Result<BoundedRun, AppError> {
+    if profile.command.is_empty() {
+        return Err(AppError::bad_request("docker build profile has empty argv"));
+    }
+
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
+    fs::create_dir_all(&artifacts_dir)
+        .map_err(|err| AppError::internal(format!("failed to create artifacts dir: {err}")))?;
+    let project_name = format!("devselftest_{}_build", sanitize_filename(&record.run_id)?);
+    let env_map = deploy_env(run_root, &source_dir, &artifacts_dir, &project_name);
+
+    let mut volumes = Vec::with_capacity(docker.volumes.len() + 2);
+    volumes.push(format!("{}:/workspace/source:rw", source_dir.display()));
+    volumes.push(format!(
+        "{}:/workspace/artifacts:rw",
+        artifacts_dir.display()
+    ));
+    for volume in &docker.volumes {
+        let interpolated = interpolate_volume(volume, &env_map)?;
+        if !volumes.contains(&interpolated) {
+            volumes.push(interpolated);
+        }
+    }
+
+    let target = ExecutorTarget::Docker {
+        image: docker.image.clone(),
+        network: docker.network.clone(),
+        workdir: docker
+            .workdir
+            .clone()
+            .or_else(|| Some("/workspace/source".to_string())),
+        volumes,
+        env: docker.env.clone(),
+    };
+    let input = ExecutorRunInput {
+        target: &target,
+        argv: &profile.command,
+        timeout_seconds: profile
+            .timeout_seconds
+            .unwrap_or(state.config.dev_selftest.build_timeout_seconds),
+        extra_env: env_map,
+        server_cwd: run_root.to_path_buf(),
+        launcher: state.config.dev_selftest.docker.binary.clone(),
+        max_output_bytes: state.config.dev_selftest.max_output_bytes,
+    };
+    let outcome = remote_execution::run_executor_command(input).await;
+    Ok(BoundedRun {
+        ok: outcome.status == ExecutorRunStatus::Ok,
+        exit_code: outcome.exit_code,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+        duration_ms: outcome.duration_ms,
+        error: outcome.error,
+    })
 }
 
 fn collect_artifacts(
@@ -1017,13 +1126,20 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         .get(&params.run_id)
         .await
         .ok_or_else(|| AppError::bad_request(format!("unknown runId {}", params.run_id)))?;
-    let suite = state
-        .config
-        .dev_selftest
-        .test_suites
-        .get(&params.test_suite)
-        .ok_or_else(|| AppError::bad_request(format!("unknown test suite {}", params.test_suite)))?
-        .clone();
+    let suite = params
+        .profile_snapshot
+        .clone()
+        .or_else(|| {
+            state
+                .dev_selftest_profiles
+                .snapshot()
+                .test_suites
+                .get(&params.test_suite)
+                .cloned()
+        })
+        .ok_or_else(|| {
+            AppError::bad_request(format!("unknown test suite {}", params.test_suite))
+        })?;
 
     let run_root = run_dir(&state, &record.run_id);
     let started = Instant::now();
@@ -1085,7 +1201,7 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
     let executor_info = suite.docker.as_ref().map(|docker| {
         json!({
             "kind": "docker",
-            "image": docker.image,
+            "image": docker.image.clone(),
             "network": docker.network.clone().unwrap_or_else(|| "host".to_string()),
         })
     });
@@ -1666,6 +1782,7 @@ mod tests {
                 working_dir: String::new(),
                 artifact_globs: Vec::new(),
                 timeout_seconds: None,
+                docker: None,
             },
         );
         let mut clusters = BTreeMap::new();
@@ -1784,6 +1901,7 @@ exit 0
 
         let mut config = test_config(true);
         config.storage.data_dir = root.join("data");
+        config.dev_selftest.max_output_bytes = 16 * 1024;
         config.dev_selftest.docker.binary = fake_docker;
         config.dev_selftest.git.binary = fake_git;
         let config = Arc::new(config);
@@ -1896,8 +2014,26 @@ exit 0
 
         let mut config = test_config(true);
         config.storage.data_dir = root.join("data");
+        config.dev_selftest.max_output_bytes = 16 * 1024;
         config.dev_selftest.docker.binary = fake_docker;
         config.dev_selftest.git.binary = write_fake_git(&root);
+        config.dev_selftest.builds.insert(
+            "docker_build".to_string(),
+            DevSelftestBuildProfile {
+                display_name: "docker build".to_string(),
+                command: vec!["/usr/local/bin/build-selftest".to_string()],
+                working_dir: String::new(),
+                artifact_globs: Vec::new(),
+                timeout_seconds: Some(30),
+                docker: Some(DevSelftestTestDocker {
+                    image: "selftest-builder:latest".to_string(),
+                    network: Some("host".to_string()),
+                    workdir: None,
+                    volumes: Vec::new(),
+                    env: BTreeMap::new(),
+                }),
+            },
+        );
         config.dev_selftest.test_suites.insert(
             "smoke".to_string(),
             DevSelftestTestSuite {
@@ -1918,6 +2054,51 @@ exit 0
         let config = Arc::new(config);
         config.prepare_dirs().unwrap();
         (crate::app::AppState::new(config).unwrap(), root)
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn docker_build_profile_dispatch() {
+        let (state, root) = test_state_with_docker_suite("dev-selftest-docker-build");
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("docker-build")).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+
+        let build = run_tool(
+            &state,
+            BUILD_ID,
+            json!({"runId":run_id,"buildProfile":"docker_build"}),
+        )
+        .await;
+        assert_eq!(build.status, "OK");
+
+        let run_dir = state.config.storage.dev_selftest_run_dir(&run_id);
+        let stdout = std::fs::read_to_string(run_dir.join("logs/build.stdout.txt")).unwrap();
+        assert!(
+            stdout.contains("run --rm --network host --workdir /workspace/source"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "--volume {}:/workspace/source:rw",
+                run_dir.join("source").display()
+            )),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "--volume {}:/workspace/artifacts:rw",
+                run_dir.join("artifacts").display()
+            )),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("selftest-builder:latest /usr/local/bin/build-selftest"),
+            "stdout: {stdout}"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]

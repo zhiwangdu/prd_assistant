@@ -29,6 +29,7 @@ Claude Code owns the workflow: edit locally, commit, push, then drive Server too
 - Docker access for the Server process.
 - The MCP client can call `tools/list` and sees:
   - `logagent.dev_selftest.allowlist.update`
+  - `logagent.dev_selftest.profiles.upsert`
   - `logagent.dev_selftest.sync_workspace`
   - `logagent.dev_selftest.build`
   - `logagent.dev_selftest.deploy`
@@ -50,8 +51,9 @@ Before selecting any repo/ref/profile, read:
 ```
 
 Use the returned `gitRepos`, `defaultGitRepo`, `defaultGitRef`, `buildProfiles`,
-`dockerProfiles`, and `testSuites` as the source of truth. Do not infer values from a local
-checkout, SSH into the Server, or read Server config files directly.
+`dockerProfiles`, `testSuites`, `buildProfileDetails`, and `testSuiteDetails` as the source of
+truth. Do not infer values from a local checkout, SSH into the Server, or read Server config files
+directly.
 
 If the needed repo/ref is not present:
 
@@ -76,6 +78,35 @@ The Server verifies URL/ref safety and `git ls-remote` reachability, writes the 
 updates the runtime allowlist. After a successful update, reread `logagent://dev_selftest/config`
 and continue using the returned values. Existing `devselftest_*` workspaces are not modified by
 the allowlist update.
+
+If the needed Docker build/test profile is absent or wrong:
+
+1. Stop the workflow.
+2. Ask the user whether they approve updating Server dev_selftest profiles.
+3. Only after explicit approval, call:
+
+```json
+{
+  "name": "logagent.dev_selftest.profiles.upsert",
+  "arguments": {
+    "kind": "build",
+    "id": "opengemini_ci",
+    "image": "registry.local/localtoolhub/opengemini-builder:latest",
+    "argv": ["/usr/local/bin/build-selftest"],
+    "timeoutSeconds": 1800,
+    "network": "host",
+    "workdir": "/workspace/source",
+    "artifactGlobs": ["build/ts-meta", "build/ts-store", "build/ts-sql"],
+    "confirmedUserConsent": true,
+    "reason": "User approved Docker build profile for this branch"
+  }
+}
+```
+
+The Server validates the profile id, Docker target, and argv, writes the config file, then updates
+the runtime profile registry. After a successful update, reread `logagent://dev_selftest/config`
+and continue using the returned profile ids. The upsert does not run build/test, and queued
+build/test tasks keep the profile snapshot selected when they were created.
 
 ## Client-Side Code Phase
 
@@ -124,7 +155,7 @@ Run the steps in this order:
 | Step | Tool | Use |
 |------|------|-----|
 | 1 | `logagent.dev_selftest.sync_workspace` | Create or update the persistent dev_selftest workspace from an allowlisted git repo/ref. |
-| 2 | `logagent.dev_selftest.build` | Run a configured build profile and collect declared artifacts. |
+| 2 | `logagent.dev_selftest.build` | Run a configured host or Docker build profile and collect declared artifacts. |
 | 3 | `logagent.dev_selftest.deploy` | Start the configured Docker cluster and run its health check. |
 | 4 | `logagent.dev_selftest.run_tests` | Run a configured test suite, usually through inline Docker. |
 | 5 | `logagent.dev_selftest.report` | Generate `report.md` and `report.json` from recorded step evidence. |

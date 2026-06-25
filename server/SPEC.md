@@ -53,7 +53,7 @@ FAILED
 CANCELLED
 ```
 
-当前两模块没有用户审批等待态；高风险执行能力必须在配置 allowlist 中提前收敛。唯一运行期配置变更入口是 dev_selftest git repo/ref allowlist 热更新：它只在用户明确同意并传入 `confirmedUserConsent=true` 后追加 allowlist，不启动 workflow 或修改既有 run。
+当前两模块没有用户审批等待态；高风险执行能力必须在配置 allowlist 中提前收敛。运行期配置变更入口仅限 dev_selftest git repo/ref allowlist 热更新和 Docker-backed build/test profile upsert：它们都要求用户明确同意并传入 `confirmedUserConsent=true`，不启动 workflow 或修改既有 run。
 
 ## Tool Catalog
 
@@ -122,7 +122,7 @@ logagent://tools/catalog
 logagent://dev_selftest/config
 ```
 
-`logagent://dev_selftest/config` 返回脱敏摘要：`gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`，供客户端 skill 在调用 `sync_workspace` 前发现真实 allowlist，不得猜测或读取 Server 本机配置文件。
+`logagent://dev_selftest/config` 返回脱敏摘要：`gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites` 以及 build/test profile 明细（host/docker、image、timeout），供客户端 skill 在调用 `sync_workspace` 前发现真实 allowlist，不得猜测或读取 Server 本机配置文件。
 
 ## Dev Self-Test
 
@@ -130,10 +130,13 @@ logagent://dev_selftest/config
 
 - `dev_selftest.enabled=false` 时关闭整组工具，并允许配置中保留未填写或占位的 `docker.binary`，不得阻断 Server 启动。
 - `dev_selftest.enabled=true` 时，所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
-- git repo/ref allowlist 启动时从 `dev_selftest.git.repos` 初始化为运行时状态；`sync_workspace` 参数校验读取运行时 allowlist，build/docker/test profile 仍读取静态配置。
+- git repo/ref allowlist 启动时从 `dev_selftest.git.repos` 初始化为运行时状态；`sync_workspace` 参数校验读取运行时 allowlist。
 - 热更新入口：MCP tool `logagent.dev_selftest.allowlist.update` 与 HTTP `PUT /api/settings/dev-selftest/git-allowlist`。参数为 `repoUrl`、`gitRef`、`setDefault`（默认 `true`）、`confirmedUserConsent`、`reason`。若 `confirmedUserConsent` 不为 `true` 必须拒绝。Server 必须校验 URL/ref、用配置的 git binary 执行 `ls-remote --exit-code <repoUrl> <gitRef>`，再结构化更新 `--config` YAML 的 `dev_selftest.git.repos`，写回成功后才更新内存 allowlist。
 - 热更新策略为追加/设默认：旧 repo/ref 保留；`setDefault=true` 时新 repo/ref 排到第一位，成为 `logagent://dev_selftest/config` 的默认推荐。已创建的 `devselftest_*` 工作区、已排队或运行中的 task 不被修改。
+- build/test profile 启动时从 `dev_selftest.builds` / `dev_selftest.test_suites` 初始化为运行时 registry；`build` 和 `run_tests` 参数校验读取 registry，并把选中的 profile snapshot 写入 queued task params，避免排队后被后续 profile update 改写执行内容。
+- Docker-backed profile 热更新入口：MCP tool `logagent.dev_selftest.profiles.upsert` 与 HTTP `PUT /api/settings/dev-selftest/profiles/:kind/:id`。参数为 `kind: build|test`、`id`、`image`、`argv`、可选 `timeoutSeconds/network/workdir/volumes/env/artifactGlobs/displayName`、`confirmedUserConsent`、`reason`。若 `confirmedUserConsent` 不为 `true` 必须拒绝。Server 必须校验 profile id、Docker target 与非空 argv，结构化更新 `--config` YAML，写回成功后才更新内存 registry。执行工具仍只接收 profile id，不接收任意 shell。
 - 当前实现：git-only 源码同步、配置式 build + artifact glob 收集、`docker_cluster` 部署（`docker compose -p … up -d` + 声明式 health check）、规则化 report。`sync_workspace` 必须提供 allowlisted `gitRepo` + `gitRef`；新 run 对 `source/` 执行 clone，复用已有 run 时对已有 git checkout 执行 fast-forward pull。health check 失败不做自动回滚，证据写入 logs/report。
+- `build` 两种模式：旧 host command profile 继续直接在 run `source/` 中执行；带 `docker` 块的 build profile 通过 Docker runner 执行镜像内 `argv`，默认挂载 `${DEVSELFTEST_SOURCE_DIR}` 到 `/workspace/source:rw`、`${DEVSELFTEST_ARTIFACTS_DIR}` 到 `/workspace/artifacts:rw`，默认 `workdir=/workspace/source`，继续按 `artifact_globs` 从源码目录收集产物。
 - `run_tests` 两种模式：带 `docker` 块的测试套件经 **inline Docker runner** 派发（见下）；无 `docker` 块则走本地桩（在 Server 主机跑配置式 `argv`）。`run_tests` 支持 `runMode:"queued"`：返回 `{runId,status:"QUEUED"}` 后用 `logagent.runs.get`/`runs.result` 轮询（platform 工具，不建 ToolRun）。
 - **Docker runner**：可复用的 `run_executor_command` 只支持 `ExecutorTarget::Docker`（构造 `docker run --rm --network <net|"host"> [--workdir] [--env] [--volume] <image> <argv>`，`extra_env` 系统环境变量后置覆盖 `target.env` 用户环境变量，超时映射 `ExecutorRunStatus::{Ok,Failed,TimedOut,SpawnFailed}`）。runner 是纯工具，不检查任何 enable 开关（开关在 dev_selftest 入口），dev_selftest 直接复用。SSH/SCP executor 与「纳管」executor record 路径已移除。
 - **dev_selftest 内联 Docker target**：`run_tests` 对 `docker` 块内联构建 `ExecutorTarget::Docker`（image/network/workdir/volumes/env 来自配置），argv/timeout 取自 `suite.command` 引用的 `remote_execution.commands` 模板（无 `command` 则用 `suite.argv`）。volume host 侧 `${DEVSELFTEST_*}` 经 `deploy_env` 插值并断言插值后绝对。系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 4 var）**最终优先**，用户 `env` 不可覆盖。`--network host` 下 `127.0.0.1:<host 暴露端口>` 即 ts-sql。
