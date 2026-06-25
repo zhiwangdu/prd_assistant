@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-LogAgent is a **two-module local Tool/MCP Workbench**: a single-binary Rust server that hosts a web admin UI, runs the **dev_selftest** pipeline (Linux docker build/deploy/test) and the **log analysis** toolchain (preprocess + analyzers), stores run/artifact history, and exposes an MCP server so external clients (Claude Code, Codex, Cursor, OpenCode) can call the same tools. It is **not** a general-purpose agent and does **not** use Claude Code / an LLM as its default backend.
+LogAgent is a **two-module local Tool/MCP Workbench**: a single-binary Rust server that hosts a web admin UI, exposes **dev_selftest** MCP step tools (Linux git sync/build/deploy/test/report) and the **log analysis** toolchain (preprocess + analyzers), stores run/artifact history, and exposes an MCP server so external clients (Claude Code, Codex, Cursor, OpenCode) can call the same tools. It is **not** a general-purpose agent and does **not** use Claude Code / an LLM as its default backend.
 
 Convergence work is on branch `converge/two-modules` (from `rewrite/local-toolhub-rust`, base `main`): fetch / gemini_db / huawei_package_sync / metadata / cases / system_context / skills / SSH-SCP executor / 纳管 executor modules have been removed; `remote_execution` is gutted to a docker runner reused by dev_selftest. Read root `README.md`, `SPEC.md`, `AGENTS.md`, and the relevant component `README.md`/`SPEC.md` before starting any work.
 
@@ -62,7 +62,7 @@ Browser WebUI / External MCP client / Chrome Ext → Native Agent
 - `main.rs` — parses config, creates `AppState`, mounts `http::router` + a `ServeDir` fallback to `webui/out`. Also has a `mcp-serve` subcommand: `logagent-server mcp-serve` speaks JSON-RPC over stdio for external MCP clients (task-free; logs forced to stderr).
 - `app.rs` — `AppState` is the god-object holding every store and service, constructed from `AppConfig`. `recover_tasks()` re-enqueues incomplete tasks on startup.
 - `http/` — Axum handlers, one file per resource (`tools`, `runs`, `artifacts`, `uploads`). `http/mod.rs::router` is the single route table; everything under `/api/*` is behind the `require_api_key` middleware except `/health`.
-- `services/` — business logic: `tool_runner` (allowlisted external binary exec with timeout/output limits), `remote_execution` (docker runner only — `run_executor_command` + `ExecutorTarget::Docker` + `command_template`, reused by dev_selftest), `log_analyzer` (preprocess + grep), `tools` (catalog dispatcher), `dev_selftest` (sync/build/deploy/run_tests/report pipeline).
+- `services/` — business logic: `tool_runner` (allowlisted external binary exec with timeout/output limits), `remote_execution` (docker runner only — `run_executor_command` + `ExecutorTarget::Docker` + `command_template`, reused by dev_selftest), `log_analyzer` (preprocess + grep), `tools` (catalog dispatcher), `dev_selftest` (sync_workspace/build/deploy/run_tests/report MCP step tools).
 - `stores/` — persistence: JSON files per record. No Postgres/Redis/ES. `pipeline/executor.rs` runs async tasks with a concurrency cap.
 - `support/` — `config.rs` (the config loader/resolver), `auth.rs` (bearer-token middleware), `error.rs` (`AppError` → HTTP), `fs_utils.rs` (logical path safety), `id.rs`, `docker_target.rs` (DockerTargetSpec + validation, shared by dev_selftest).
 - `domain/` — shared `contracts` and `models` types.
@@ -87,5 +87,5 @@ Browser WebUI / External MCP client / Chrome Ext → Native Agent
 - **After any change, update the touched component's `README.md` + `SPEC.md` AND root `PROGRESS.md`** (behavior changes, verification results, next steps). This is enforced by convention across the repo.
 - **The user requires auto `commit` and `push` after each implementation/modification** (unless explicitly told otherwise). Commit only relevant files — never `.idea/`, temp review inputs, secrets, runtime `data/`, build caches, or `third_party/` generated artifacts.
 - After Rust changes run at least `cargo fmt --check` + `cargo check` (+ `cargo test` when tests cover the change). After WebUI changes run `npm run lint` + `npm run typecheck` + `npm run build`.
-- `third_party/` are upstream submodule sources; do not rewrite their READMEs. Diagnostic runbooks live in `docs/runbooks/` as local Claude Code skill references (the server no longer loads skills).
+- `third_party/` are upstream submodule sources; do not rewrite their READMEs. User-installable Claude Code skills live in `skills/`; legacy diagnostic runbooks in `docs/runbooks/` are references only. The server never loads skills.
 - API direction: prefer `/api/tools*`, `/api/runs*`, `/api/artifacts*`, `/api/mcp*`. Legacy `/api/sessions*`, `/api/tasks*` are migration-compat only — don't add new features there.

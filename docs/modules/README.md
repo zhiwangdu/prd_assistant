@@ -6,7 +6,7 @@
 |------|----------|
 | Tool Runner | 核心执行面，所有工具共享 registry、schema、artifact 和审计。 |
 | Log Analyzer | 日志包预处理和工具输入索引。 |
-| Dev Self-Test | Linux docker 自测流水线（sync/build/deploy/run_tests/report）。 |
+| Dev Self-Test | Linux docker 自测 MCP step tools（sync_workspace/build/deploy/run_tests/report）；workflow 由客户端 skill 编排。 |
 | MCP / Interfaces | 外部客户端入口，复用 Tool Runner 和上下文资源。 |
 | Config / Security / Deployment / Roadmap | 本地部署、配置、安全和路线约束。 |
 

@@ -4,7 +4,7 @@
 
 LocalToolHub 收敛为两个模块的本地工具工作台：
 
-- **dev_selftest**：在 Linux server 上跑 `sync → build → deploy(docker) → run_tests → report` 自测流水线，由外部 MCP 客户端（如 Windows 上的 Claude Code）驱动；源码只通过 allowlisted git repo/ref 同步，Windows 端 commit/push 后 ToolHub clone 或 pull，每次 run 有持久工作区 + run history。
+- **dev_selftest**：在 Linux server 上提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 受控 MCP step tools，由外部 MCP 客户端的本地 skill（如 Windows 上的 Claude Code）编排；源码只通过 allowlisted git repo/ref 同步，Windows 端 commit/push 后 ToolHub clone 或 pull，每次 run 有持久工作区 + run history。
 - **日志分析**：上传日志包 → 预处理 → 跑一组编译配置好的 analyzer（influxql/flux/openGemini/influxdb/pprof）→ 结构化 findings + artifact + run history。
 
 Server 提供 Web 管理页、工具目录、工具运行、artifact/run history 和 MCP Server。它不把 Claude Code / Codex / LangChain 或模型服务作为默认运行依赖。
@@ -12,6 +12,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 ## 非目标
 
 - 不做自研通用 Agent / 多轮推理状态机。
+- 不做 Server 侧 workflow 编排、skill registry、skill 下载 API 或 runbook 兼容入口。
 - 不做企业级日志平台、通用远程运维平台。
 - 不引入 PostgreSQL、Redis、Elasticsearch 作为依赖。
 - 不自动修改用户代码或远程机器。
@@ -26,7 +27,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
 | Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
 | Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
-| Dev Self-Test | git-only sync/build/deploy(docker)/run_tests/report 流水线，docker runner 复用 remote_execution 的 docker 分支。 |
+| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支。 |
 | MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端。 |
 | WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
@@ -34,7 +35,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 
 ```text
 WebUI or MCP client
-  -> tool / dev_selftest request
+  -> tool / dev_selftest step request
   -> Server validates auth, schema, allowlist, budget and paths
   -> Server executes controlled action
   -> stdout/stderr/raw output parsed into structured result
@@ -73,11 +74,11 @@ POST /api/mcp
 GET /api/settings/*
 ```
 
-旧 `/api/sessions/*`、`/api/tasks/*` 仅作迁移兼容（如有），不作为新功能入口。
+旧 `/api/sessions/*`、`/api/tasks/*` 仅作迁移兼容（如有），不作为新功能入口。不得新增 Server 侧 workflow API、skill 下载 API、自动初始化工作区 API 或 agent loop API。
 
 ## MCP 要求
 
-MCP 是外部智能客户端集成入口。MCP tool 调用必须与 WebUI tool run 共享同一 registry、schema、allowlist、timeout、artifact store 和审计逻辑。
+MCP 是外部智能客户端集成入口。MCP tool 调用必须与 WebUI tool run 共享同一 registry、schema、allowlist、timeout、artifact store 和审计逻辑。复杂 workflow 只能存在于客户端 skill 或外部客户端中，Server MCP 只暴露 resources/tools。
 `mcp.enabled=false` 时 HTTP `/api/mcp` 和 stdio `mcp-serve` 必须都拒绝服务。
 
 当前保留 `logagent.*` tool id 和 `logagent://` resource URI 作为兼容 namespace，产品显示名使用 LocalToolHub。

@@ -1,6 +1,6 @@
 # Server
 
-`server/` 是 LocalToolHub 的 Rust/Axum 服务端，收敛为两个模块：**dev_selftest**（Linux 跨机自测流水线）+ **日志分析**（预处理 + analyzer）。目标交付形态是本地单二进制，托管 WebUI，管理工具目录，执行受控工具，保存 run/artifact，并提供 MCP Server 给外部客户端使用。
+`server/` 是 LocalToolHub 的 Rust/Axum 服务端，收敛为两个模块：**dev_selftest**（Linux 跨机自测 step tools）+ **日志分析**（预处理 + analyzer）。目标交付形态是本地单二进制，托管 WebUI，管理工具目录，执行受控工具，保存 run/artifact，并提供 MCP Server 给外部客户端使用。
 
 ## 目标职责
 
@@ -9,7 +9,7 @@ Server 负责：
 - API Key 鉴权和本机 HTTP API。
 - WebUI 静态托管。
 - Tool Catalog 和 Tool Runner（日志分析 analyzer + 内置工具）。
-- dev_selftest 流水线（sync/build/deploy/run_tests/report）+ docker runner。
+- dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report）+ docker runner。
 - 统一 Run History 和 Artifact Store。
 - MCP resources/tools；`mcp.enabled=false` 时 `/api/mcp` 与 `mcp-serve` 均拒绝服务。
 - 配置加载、路径安全、敏感信息脱敏、timeout、allowlist 和审计。
@@ -17,6 +17,7 @@ Server 负责：
 Server 不负责：
 
 - 自研通用 Agent / 复杂多轮推理状态机。
+- Server 侧 workflow 编排、skill registry、skill 下载 API 或 runbook 兼容入口。
 - 任意 shell、任意 SSH 或任意文件读取。
 - fetch / metadata / cases / skills / SSH-SCP executor / 云实例管理（已收敛移除）。
 
@@ -116,4 +117,4 @@ cargo check
 cargo test
 ```
 
-Server 行为变化必须同步更新本 README、[SPEC.md](./SPEC.md)、相关 `docs/modules/*` 文档和根 [PROGRESS.md](../PROGRESS.md)。
+Server 行为变化必须同步更新本 README、[SPEC.md](./SPEC.md)、相关 `docs/modules/*` / `skills/*` 文档和根 [PROGRESS.md](../PROGRESS.md)。

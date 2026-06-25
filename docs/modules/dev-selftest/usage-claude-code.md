@@ -1,7 +1,7 @@
 # dev_selftest 用法（MCP 客户端入口）
 
-本文面向通过外部 MCP 客户端驱动 Linux LocalToolHub 跑开发自测闭环的场景。Server 只提供受控工具，
-不运行自由 shell，不内置 Agent 循环。
+本文面向通过外部 MCP 客户端驱动 Linux LocalToolHub 跑开发自测闭环的场景。Server 只提供受控 MCP step tools，
+不运行自由 shell，不内置 Agent 循环，也不托管 workflow。完整编排应安装或参考 `skills/dev-selftest-pipeline/`。
 
 ## 1. 前置准备
 
@@ -146,5 +146,5 @@ docker compose -p devselftest_<runId>_opengemini_cluster down
 ## 7. 已移除路径
 
 当前用法不包含 SSH/SCP executor、托管 executor record、`suite.executor`、Huawei package sync、
-GeminiDB create instance 或 Server 托管 skills。需要更复杂的自动化时，应放在外部 MCP client/runbook 中，
+GeminiDB create instance、Server 托管 skills 或 Server 侧 workflow API。需要更复杂的自动化时，应放在外部 MCP client/skill 中，
 不能成为 Server 默认依赖。

@@ -24,4 +24,4 @@
 ## Phase 5: MCP Integration Polish
 
 - MCP 文档、示例、资源输出和外部客户端接入保持稳定。
-- 可选 workflow 只能作为外部 MCP client/runbook 示例，不进入 Server 默认依赖。
+- 可选 workflow 只能作为外部 MCP client skill，不进入 Server 默认依赖。

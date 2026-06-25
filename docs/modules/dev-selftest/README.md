@@ -1,11 +1,12 @@
-# Dev Self-Test Pipeline
+# Dev Self-Test Tools
 
-开发自测流水线模块让外部 MCP 客户端驱动 Linux LocalToolHub 完成
-`sync -> build -> deploy -> run_tests -> report`。它服务于本地 skill 不容易替代的场景：
-开发入口在 Windows 或 IDE 侧，但构建、Docker 集群和测试环境必须在 Linux server 上运行。
+开发自测模块让外部 MCP 客户端驱动 Linux LocalToolHub 完成
+`sync_workspace -> build -> deploy -> run_tests -> report`。完整 workflow 不在 Server 内编排，
+而是由客户端本地 skill（如 `skills/dev-selftest-pipeline/`）串联。Server 负责受控 MCP tools、
+持久工作区、artifact、run history 和安全边界。
 
 能力以 `logagent.dev_selftest.*` 内置工具进入 Tool Catalog / Tool Runner / MCP，不开自由 shell，
-不引入 Agent 后端。
+不引入 Agent 后端，也不提供 workflow API、skill registry 或 runbook 兼容入口。
 
 ## 职责
 
@@ -15,7 +16,7 @@
 - 执行 `docker_cluster` 部署：`docker compose up -d` + 声明式 health check。
 - 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。
 - 生成 `report.md` / `report.json`，聚合每步状态和证据。
-- 复用 `TaskExecutor` + `TaskStore` 的 `runMode:"queued"` / `logagent.runs.get/result` 模型。
+- 复用 `TaskExecutor` + `TaskStore` 的 `runMode:"queued"` / `logagent.runs.get/result` 模型；queued 返回的 `task_*` 只用于轮询，`sync_workspace` 返回的 `devselftest_*` 才是后续 step 的工作区 id。
 
 ## 边界
 
@@ -34,7 +35,7 @@
 - `server/src/support/docker_target.rs` — inline Docker target 校验。
 - `server/src/services/remote_execution.rs` — Docker runner 和命令模板读取。
 - `server/src/domain/models.rs` — dev_selftest run/deploy/step/status 模型。
-- `docs/runbooks/dev-selftest-pipeline/` — 本地 MCP client 操作 runbook。
+- `skills/dev-selftest-pipeline/` — 本地 Claude Code skill，负责编排 MCP step tools。
 - `deploy/devselftest/opengemini/` — 默认 openGemini Docker demo artifact。
 
 ## 当前实现
@@ -43,7 +44,7 @@
 - 已实现 `docker_cluster` 部署，默认 demo 为 openGemini 3 meta + 3 (sql+store) 集群。
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
-- 已验证 openGemini demo 的 `sync -> build -> deploy -> run_tests -> report` 闭环。
+- 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环。
 
 ## openGemini Demo 约束
 
@@ -59,6 +60,6 @@
 - SSH/SCP executor、托管 executor record、`/api/executors`、`/api/executor-runs`。
 - `suite.executor` 派发和 ssh-kind 测试分发。
 - `ssh_binary_replace`、Huawei OBS/package sync、GeminiDB create instance。
-- Server 托管 skills；runbook 只作为本地 MCP client 作者参考。
+- Server 托管 skills、Server 侧 workflow API、旧 `docs/runbooks/dev-selftest-pipeline/` 入口。
 
-修改本模块必须同步更新 `server/SPEC.md`、相关 runbook 和根 `PROGRESS.md`。
+修改本模块必须同步更新 `server/SPEC.md`、相关 skill 文档和根 `PROGRESS.md`。

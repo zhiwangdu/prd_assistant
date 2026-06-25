@@ -4,9 +4,9 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 ## 为什么是这两个模块
 
-这两个模块对应 server 唯二**不可被本地 skill 替代**的场景：
+这两个模块对应 server 唯二**不可被纯本地执行替代**的场景：
 
-- **dev_selftest** —— 刚需 Linux 环境（docker / go 构建工具链 / DB 集群），而 IDE 与部分内部 MCP 只能在 Windows 端跑。这条是「Windows Claude Code → Linux server 跨机远程执行 + run history」，本地 skill 做不到。
+- **dev_selftest** —— 刚需 Linux 环境（docker / go 构建工具链 / DB 集群），而 IDE 与部分内部 MCP 只能在 Windows 端跑。这条是「Windows Claude Code 本地 skill 编排 → Linux server 受控执行 + run history」；skill 负责 workflow，Server 负责 MCP tools/resources 与执行边界。
 - **日志分析** —— 一组编译好的 Linux analyzer 二进制（influxql / flux / openGemini / influxdb / pprof）+ 预处理。MCP 连上后上传日志即用，产出结构化 findings + run history。日志包大、analyzer 是 Linux 二进制、要历史回看 —— 也 genuinely 需要一个 server。
 
 其余「通用本地工具」面（fetch / executor / metadata / cases / skills 等）已收敛移除 —— 它们要么不被两模块依赖，要么在纯本地场景被本地 skill 秒杀。
@@ -15,7 +15,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 LocalToolHub 开箱即用地提供：
 
-- **dev_selftest**：`sync → build → deploy(docker) → run_tests → report` 流水线，每次 run 有持久工作区 + progress + report + run history。Windows 端完成 commit/push 后，经 MCP 让 Linux ToolHub 从 allowlisted git repo/ref clone 或 pull。
+- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个 MCP step tools。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。
 - **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
 - **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端。
 - **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。
@@ -28,7 +28,7 @@ Browser WebUI / External MCP Client
   -> Rust local server (Axum)
     -> Auth (Bearer)
     -> Tool catalog + Tool runner（日志分析 analyzers + 内置工具）
-    -> dev_selftest pipeline（sync/build/deploy/run_tests/report + docker runner）
+    -> dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report + docker runner）
     -> Uploads + Run history + Artifact store
     -> MCP resources/tools
   -> Local data dir + tools dir
@@ -55,12 +55,13 @@ $LOCALTOOLHUB_APP_DIR/
 
 | 目录 | 职责 | 文档 |
 |------|------|------|
-| `server/` | Rust 本地 Server、dev_selftest 流水线、日志分析工具运行、MCP、artifact、配置和静态 WebUI 托管 | [README](./server/README.md) / [SPEC](./server/SPEC.md) |
+| `server/` | Rust 本地 Server、dev_selftest step tools、日志分析工具运行、MCP、artifact、配置和静态 WebUI 托管 | [README](./server/README.md) / [SPEC](./server/SPEC.md) |
 | `webui/` | 本地管理页面（Tools / Runs History / MCP / Settings） | [README](./webui/README.md) / [SPEC](./webui/SPEC.md) |
 | `native-agent/` | 可选本机文件导入桥（Chrome Extension 传递下载文件 → 上传） | [README](./native-agent/README.md) / [SPEC](./native-agent/SPEC.md) |
 | `chrome-extension/` | 可选 Chrome 下载监听和导入确认 | [README](./chrome-extension/README.md) / [SPEC](./chrome-extension/SPEC.md) |
 | `deploy/` | 单机 runtime 部署、重建和控制脚本 | [README](./deploy/README.md) |
-| `docs/runbooks/` | 诊断 runbook（本地 Claude Code skill 作者参考，不再由 server 托管） | [README](./docs/runbooks/README.md) |
+| `skills/` | 用户安装到 Claude Code 的本地 skill 分发目录；Server 不加载、不提供 API | [README](./skills/README.md) / [SPEC](./skills/SPEC.md) |
+| `docs/runbooks/` | 诊断 runbook 作者参考（legacy manifest 仅留档，不再由 server 托管） | [README](./docs/runbooks/README.md) |
 | `docs/modules/` | Server 内部能力边界和后续开发约束 | [README](./docs/modules/README.md) |
 | `third_party/` | 上游诊断工具源码引用；不改写上游 README | - |
 
@@ -68,10 +69,10 @@ $LOCALTOOLHUB_APP_DIR/
 
 Server 内部能力以两模块为中心：
 
-- **dev_selftest** 与 **日志分析** 是核心。
+- **dev_selftest** 与 **日志分析** 是核心；dev_selftest 的完整 workflow 由客户端 skill 编排，Server 只提供 MCP step tools。
 - `remote_execution` 只保留 docker runner（dev_selftest 的 inline docker test 复用）+ command 模板；SSH/SCP executor 与「纳管」executor record 已移除。
 - MCP 是外部 Agent 的集成入口。
-- 旧 Log Analysis Agent / LLM Gateway / Claude Code runner / fetch / metadata / cases / skills / executors 模块已移除，不再作为目标架构。
+- 旧 Log Analysis Agent / LLM Gateway / Claude Code runner / fetch / metadata / cases / server-side skills / executors / workflow engine 模块已移除，不再作为目标架构。
 
 ## API 原则
 

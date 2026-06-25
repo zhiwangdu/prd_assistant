@@ -12,6 +12,24 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-25 破坏性边界收敛：Server 只供 MCP，dev_selftest workflow 进本地 skill
+
+目标：消除 dev_selftest workflow 的双重真相。Server 不再被描述为 workflow 编排器，也不恢复 skill registry /
+server 托管 skill / runbook 兼容入口；它只暴露 MCP tools/resources 和受控执行边界。Claude Code 本地负责
+修改代码、commit、push，再通过安装的 skill 编排 Linux ToolHub 上的 `sync_workspace -> build -> deploy -> run_tests -> report`。
+
+- 新增顶层 `skills/README.md`、`skills/SPEC.md`，定义用户安装型 Claude Code skill 分发目录：仓库分发、客户端安装、
+  Server 不扫描、不加载、不提供下载/安装 API，新 skill 不使用 legacy `logagent.json` manifest。
+- 新增 `skills/dev-selftest-pipeline/SKILL.md` 与 `references/workflow.md`：记录 Claude Code 本地改代码并
+  commit/push 的前置动作、MCP step 顺序、queued 调用轮询、`devselftest_*` 工作区 id 与 `task_*` queued run id
+  的区别、失败处理和已移除路径。
+- 删除旧 `docs/runbooks/dev-selftest-pipeline/`（含 legacy `logagent.json`），`docs/runbooks/README.md` 改为仅保留
+  日志分析 runbook 作者参考；新增 workflow 必须放到 `skills/`。
+- 根 `README.md`/`SPEC.md`、`server/README.md`/`server/SPEC.md`、`docs/modules/dev-selftest/*`、`docs/modules/README.md`、
+  `docs/modules/roadmap/README.md`、`CLAUDE.md` 同步改为 “Server 提供 dev_selftest MCP step tools，workflow 由客户端 skill 编排”。
+
+验证：本次为文档/skill-only 改动，`git diff --check`、`git diff --cached --check` 通过；未触碰 Rust/WebUI 代码，不跑 cargo/npm。
+
 ## 2026-06-25 dev_selftest sync_workspace 收敛为 git-only
 
 目标：简化源码同步方案。Windows 端 Claude Code 负责本地修改、commit、push；ToolHub 不再接收源码 tarball

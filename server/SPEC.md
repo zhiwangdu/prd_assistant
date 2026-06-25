@@ -11,7 +11,7 @@ Rust Server 是 LocalToolHub 的唯一执行边界。它接收 WebUI 和 MCP 请
 - 本机 HTTP API 和静态 WebUI。
 - Tool Catalog、Tool Runner 和内置工具。
 - Run History、Artifact Store 和 result API。
-- Dev Self-Test 流水线、Log Analyzer（预处理 + analyzer）。
+- Dev Self-Test MCP step tools、Log Analyzer（预处理 + analyzer）。
 - MCP Server，支持外部客户端读取资源和调用工具。
 - 配置、密钥引用、allowlist、timeout、预算、路径安全和审计。
 
@@ -19,6 +19,7 @@ Rust Server 是 LocalToolHub 的唯一执行边界。它接收 WebUI 和 MCP 请
 
 - Claude Code 作为 Server 后端。
 - 自研 Agent 决策循环。
+- Server 侧 workflow 编排、skill registry、skill 下载 API 或 runbook 兼容入口。
 - 任意 shell 命令输入。
 - 任意远程主机访问。
 - 任意本地路径读取。
@@ -114,7 +115,7 @@ tools/call
 
 ## Dev Self-Test
 
-开发自测流水线（docker 闭环）。一组内置工具 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report），通过持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）跨多次 tool 调用串联，复用 Tool Runner 同一执行边界。`dev_selftest.enabled=false` 时整组禁用。
+开发自测能力是一组受控 MCP step tools（docker 闭环）。Server 提供 `logagent.dev_selftest.*`（sync_workspace / build / deploy / run_tests / report）和持久 run 工作区 `data/dev_selftest/runs/{runId}/`（含 `source/`、`artifacts/`、`logs/`、`progress.json`、`report.md`）；完整 workflow 由外部 MCP client / 本地 skill 串联，Server 不提供 workflow API 或 agent loop。`dev_selftest.enabled=false` 时整组禁用。
 
 - `dev_selftest.enabled=false` 时关闭整组工具，并允许配置中保留未填写或占位的 `docker.binary`，不得阻断 Server 启动。
 - `dev_selftest.enabled=true` 时，所有 build/docker/test 命令、`docker.binary`、`compose_file`、git 仓库+ref 必须来自配置 allowlist 且绝对路径；tool 参数只能选 profile id 并携带 `runId`，不得自由 shell。
@@ -126,7 +127,7 @@ tools/call
 - `deploy` 把 run 目录环境变量（`DEVSELFTEST_RUN_DIR/SOURCE_DIR/ARTIFACTS_DIR/PROJECT_NAME`）注入 `docker compose` **和** health check 命令，使 compose 可用 `${DEVSELFTEST_SOURCE_DIR}` 挂载本次 run 编译出的二进制（通用，非 openGemini 专属）。
 - MCP `tools/call` 参数：catalog 工具既接受 `{params:{...}}`（HTTP `POST /api/tools/:id/runs` 信封）也接受顶层参数（MCP 规范，`arguments` 即 `inputSchema`），后者自动剥离 `runMode/uploadIds`——真实 MCP 客户端（Claude Code）可按 schema 直接传顶层参数。`logagent.runs.get/result` 等 platform 工具的 `runId` 仍在 `arguments` 顶层。
 - Docker 路径已对真实 **openGemini** 3meta+3(sql+store) 集群端到端跑通（sync→build→deploy→run_tests→report 全 SUCCEEDED）。集群 artifact（compose/模板/entrypoint/build 脚本）作为默认 demo 纳入仓库 `deploy/devselftest/opengemini/`，单模板 + entrypoint 按 `OG_ADDR/OG_ID/OG_META_*` env 替换占位符。内网可配置（经 server 进程 env，无代码改动）：`OG_BASE_IMAGE` 换镜像名、`GOPROXY/GOSUMDB` 换 Go 模块源、`dev_selftest.git.repos` 换 openGemini 源码镜像。关键约束：容器需**静态 IP**（openGemini raft 用 `rpc-bind-address` 串作 Server ID，主机名会与绑定 IP 不匹配导致不选主）、`ubuntu:24.04`（22.04 libstdc++ 过旧）、顺序启动门控（meta→store→sql，`depends_on` 仅排序，entrypoint 须等就绪）、store 探活用容器自身 IP 而非 127.0.0.1。
-- 后续：dev_selftest 继续只保留 inline Docker 派发；SSH/SCP executor、纳管 executor record、fetch/metadata/cases/skills/gemini_db/huawei_package_sync 不再回到默认产品面。仍 deferred：参数化命令模板（`{var}` + 小 JSON Schema）、`max_input_chars` 等 vestigial 字段清理、`TaskKind::RemoteCommandRun` 等兼容变体在旧数据清退后移除。
+- 后续：dev_selftest 继续只保留 MCP step tools + inline Docker 派发；workflow 放在客户端 skill。SSH/SCP executor、纳管 executor record、fetch/metadata/cases/server-side skills/gemini_db/huawei_package_sync 不再回到默认产品面。仍 deferred：参数化命令模板（`{var}` + 小 JSON Schema）、`max_input_chars` 等 vestigial 字段清理、`TaskKind::RemoteCommandRun` 等兼容变体在旧数据清退后移除。
 
 ## 配置
 
