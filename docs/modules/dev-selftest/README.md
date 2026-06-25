@@ -45,6 +45,7 @@
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
 - 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环。
+- openGemini demo smoke 在写点后对 SELECT 做短轮询；写接口返回成功后，点可能需要很短时间才对查询可见。
 
 ## openGemini Demo 约束
 

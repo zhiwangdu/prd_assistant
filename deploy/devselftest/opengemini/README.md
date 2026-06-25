@@ -21,7 +21,9 @@ are NOT here: the pipeline syncs the source from an allowlisted git repo/ref
 - `entrypoint-meta.sh` / `entrypoint-sqlstore.sh` — per-node config substitution + startup
   gating (meta → store → sql; `depends_on` only orders, the entrypoint waits for readiness).
 - `tests/smoke.sh` — smoke test case run by `logagent.dev_selftest.run_tests` inside an
-  ephemeral docker container (SHOW DATABASES → CREATE DATABASE → write → SELECT).
+  ephemeral docker container (SHOW DATABASES → CREATE DATABASE → write → SELECT). The
+  SELECT step polls briefly because a successful write can become query-visible a moment
+  after the write endpoint returns.
 
 ## Wire it into a server config
 
@@ -78,6 +80,8 @@ DEVSELFTEST_PORT=8086 ... alpine:3.20 sh /tests/smoke.sh`. The container is ephe
 (`--rm`) and reaches the cluster over the host network via the host-exposed ts-sql port
 (`sqlstore-1` maps `8086:8086`). argv/timeout come from the referenced `remote_execution
 .commands` template; `command` and a non-empty `argv` are mutually exclusive.
+The smoke script does a bounded SELECT retry after writing its point to avoid classifying
+normal write-to-query visibility lag as a workflow failure.
 
 System env (`DEVSELFTEST_HOST/PORT` + the run-directory vars) is injected with **final
 priority** — a misconfigured `env` in the suite cannot redirect the test at the wrong target.

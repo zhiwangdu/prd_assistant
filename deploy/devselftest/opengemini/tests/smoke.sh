@@ -51,13 +51,20 @@ echo "smoke: write point"
 http_post "${BASE}/write?db=${DB}" "smoke,host=t value=1"
 
 echo "smoke: SELECT value FROM smoke"
-out=$(http_get "${BASE}/query?db=${DB}&q=SELECT+value+FROM+smoke")
-echo "${out}"
-# A successful write+read returns a series named "smoke"; an empty result (write failed)
-# has no series name.
-echo "${out}" | grep -q "smoke" || {
-    echo "smoke: SELECT did not return the expected series" >&2
-    exit 1
-}
+deadline=$(( $(date +%s) + 20 ))
+while :; do
+    out=$(http_get "${BASE}/query?db=${DB}&q=SELECT+value+FROM+smoke" || true)
+    echo "${out}"
+    # A successful write+read returns a series named "smoke"; an empty result has no
+    # series name. openGemini may expose the point a moment after the write returns.
+    if echo "${out}" | grep -q "smoke"; then
+        break
+    fi
+    if [ "$(date +%s)" -ge "${deadline}" ]; then
+        echo "smoke: SELECT did not return the expected series" >&2
+        exit 1
+    fi
+    sleep 1
+done
 
 echo "smoke: OK"

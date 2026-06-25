@@ -12,6 +12,26 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-25 openGemini GitHub 分支真实流程验证
+
+- 按用户指定从 `git@github.com:zhiwangdu/openGemini.git` 拉源码，新建并推送测试分支
+  `devselftest/go126-sonic-latest-20260625-233438`（commit `add5057`），改动为 `go 1.26` 和
+  `github.com/bytedance/sonic v1.15.2`（latest）及相应 `go.sum`。
+- 本地完整 server 使用临时配置 `/tmp/localtoolhub-og-gh.Hd3pVl/server-github.yaml` 启动，`dev_selftest.git.repos`
+  allowlist 指向 `ssh://git@github.com/zhiwangdu/openGemini.git`，ref allowlist 指向上述测试分支；MCP
+  `initialize`、`tools/list` 正常，dev_selftest tools 暴露 `runMode:"queued"`。
+- 真实 workflow 已执行到 `sync_workspace`、`build`、`deploy`：`sync_workspace` 从 GitHub SSH 分支 clone 成功；
+  `build` 产出 `ts-meta`、`ts-store`、`ts-sql`；`deploy` 使用仓库 `deploy/devselftest/opengemini/docker-compose.yml`
+  拉起 3 meta + 3(sql+store) openGemini 集群并通过 `SHOW DATABASES` health check。
+- 第一轮 `run_tests` 暴露 smoke 脚本确定性问题：写点后立即 SELECT 偶发只能拿到空 result，手动等待 2 秒后同一集群可查询到写入点。
+  修复 `deploy/devselftest/opengemini/tests/smoke.sh`，SELECT 改为有上限短轮询；同步更新 openGemini demo 文档和 dev_selftest 模块文档。
+- 修复后停掉旧 compose 项目并从同一 GitHub 测试分支重新跑全新 workflow：`devselftest_1782402117507_8`。
+  `sync_workspace` (`task_1782402117506_7`) 从 GitHub SSH 分支同步成功；`build` (`task_1782402127609_9`) 产出三份二进制；
+  `deploy` (`task_1782402147721_10`) 使用 example compose 成功拉起集群；`run_tests` (`task_1782402157823_11`) 通过 alpine
+  inline Docker smoke；`report` (`task_1782402167947_12`) 返回 `SUCCEEDED` 且 `failedSteps: []`。
+- 验证命令：`sh -n deploy/devselftest/opengemini/tests/smoke.sh`、`git diff --check`、真实 MCP queued
+  openGemini workflow fresh run。
+
 ## 2026-06-25 破坏性边界收敛：Server 只供 MCP，dev_selftest workflow 进本地 skill
 
 目标：消除 dev_selftest workflow 的双重真相。Server 不再被描述为 workflow 编排器，也不恢复 skill registry /
