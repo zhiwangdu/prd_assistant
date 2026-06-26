@@ -9,9 +9,10 @@ Server 负责：
 - API Key 鉴权和本机 HTTP API。
 - WebUI 静态托管。
 - Tool Catalog 和 Tool Runner（日志分析 analyzer + 内置工具）。
-- dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report/cleanup）+ docker runner。
+- dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report/cleanup/diagnose）+ docker runner。
 - dev_selftest git allowlist 发现与热更新：MCP resource / MCP update tool / WebUI settings API 共用同一校验和写回服务。
-- dev_selftest Docker-backed build/test profile 发现与热更新：MCP `profiles.upsert` / WebUI settings API 共用同一 Docker target 校验和写回服务；执行时仍只选择 profile id。
+- dev_selftest Docker-backed build/test profile 发现与热更新：MCP `profiles.upsert` / WebUI settings API 共用同一 Docker target 校验和写回服务；执行时仍只选择 profile id。`logagent://dev_selftest/config` 同时暴露 Docker cluster profile 的脱敏明细，供客户端定位 deploy 问题。
+- dev_selftest 失败诊断：`logagent.dev_selftest.diagnose` 读取 run 内 bounded evidence，并对配置化 Docker profile 执行固定只读 probe，返回原因分类、证据片段和 cleanup 建议；不执行恢复动作。
 - 统一 Run History 和 Artifact Store。
 - MCP resources/tools；`mcp.enabled=false` 时 `/api/mcp` 与 `mcp-serve` 均拒绝服务。
 - MCP `tools/list` 为可运行 catalog tools 显式公开可选 `runMode: "sync"|"queued"`，让 Claude Code 等客户端能走 queued + `logagent.runs.get/result` 轮询路径。
@@ -83,7 +84,7 @@ POST /api/mcp
 
 `dev_selftest.git.repos` 在启动时进入运行时 allowlist。后续可通过 `GET/PUT /api/settings/dev-selftest/git-allowlist` 或 MCP `logagent.dev_selftest.allowlist.update` 追加 repo/ref；更新流程要求 `confirmedUserConsent=true`、URL/ref 安全校验和配置的 git binary 执行 `ls-remote` 成功，然后原子写回 `--config` YAML，最后更新内存 allowlist。默认策略为保留旧 allowlist，把新 repo/ref 放到默认位置。热更新只影响后续 `sync_workspace` 校验，已存在的 `devselftest_*` 工作区和正在运行的 task 不被修改。
 
-Build profile 可为旧 host command，也可带 `docker` 块；Docker build profile 经 inline Docker runner 执行镜像内 `argv`，并自动挂载本次 run 的 `source/` 与 `artifacts/` 到 `/workspace/source`、`/workspace/artifacts`。测试套件（`dev_selftest.test_suites.*`）：带 `docker` 块的套件经 inline Docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm --network host <image> <argv>`）派发；无 `docker` 块则走本地桩。`cleanup` 是 report 后显式可选 step，只对本次 run 的配置化 compose project 执行 `docker compose down`，不删除 `source/`、`artifacts/`、`logs/`、`progress.json` 或 `report.*`。docker target（image/network/workdir/volumes/env）做安全校验；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先。纳管 executor record 路径已移除，dev_selftest 只用 inline Docker。详见 `server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
+Build profile 可为旧 host command，也可带 `docker` 块；Docker build profile 经 inline Docker runner 执行镜像内 `argv`，并自动挂载本次 run 的 `source/` 与 `artifacts/` 到 `/workspace/source`、`/workspace/artifacts`。测试套件（`dev_selftest.test_suites.*`）：带 `docker` 块的套件经 inline Docker runner（`run_executor_command` 的 `ExecutorTarget::Docker` 分支，`docker run --rm --network host <image> <argv>`）派发；无 `docker` 块则走本地桩。`cleanup` 是 report 后显式可选 step，只对本次 run 的配置化 compose project 执行 `docker compose down`，不删除 `source/`、`artifacts/`、`logs/`、`progress.json` 或 `report.*`。`diagnose` 是只读 step，读取 `progress.json`、`report.json` 和 step logs 的 bounded tail，必要时运行 `docker compose ps/logs`、`docker ps` 固定只读 probe 来判断端口冲突、残留 compose project、health check 失败或容器异常。docker target（image/network/workdir/volumes/env）做安全校验；系统 env（`DEVSELFTEST_HOST/PORT` + run 目录 var）最终优先。纳管 executor record 路径已移除，dev_selftest 只用 inline Docker。详见 `server/SPEC.md` 与 `deploy/devselftest/opengemini/README.md`。
 
 ## 本地运行
 

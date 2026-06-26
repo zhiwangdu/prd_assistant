@@ -74,6 +74,7 @@ pub struct DevSelftestConfigSummary {
     pub build_profiles: Vec<String>,
     pub docker_profiles: Vec<String>,
     pub test_suites: Vec<String>,
+    pub docker_profile_details: Vec<DevSelftestDockerProfileSummary>,
     pub build_profile_details: Vec<DevSelftestProfileSummary>,
     pub test_suite_details: Vec<DevSelftestProfileSummary>,
 }
@@ -83,6 +84,23 @@ pub struct DevSelftestConfigSummary {
 pub struct DevSelftestConfigRepoSummary {
     pub url: String,
     pub refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSelftestDockerProfileSummary {
+    pub id: String,
+    pub compose_file: String,
+    pub exposed_port: Option<u16>,
+    pub health_check: Option<DevSelftestHealthCheckSummary>,
+    pub project_name_pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSelftestHealthCheckSummary {
+    pub cmd: Vec<String>,
+    pub timeout_seconds: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -149,6 +167,23 @@ pub fn summary_for(
         build_profiles: profiles.builds.keys().cloned().collect(),
         docker_profiles: settings.docker.clusters.keys().cloned().collect(),
         test_suites: profiles.test_suites.keys().cloned().collect(),
+        docker_profile_details: settings
+            .docker
+            .clusters
+            .iter()
+            .map(|(id, cluster)| DevSelftestDockerProfileSummary {
+                id: id.clone(),
+                compose_file: cluster.compose_file.display().to_string(),
+                exposed_port: cluster.exposed_port,
+                health_check: cluster.health_check.as_ref().map(|health_check| {
+                    DevSelftestHealthCheckSummary {
+                        cmd: health_check.cmd.clone(),
+                        timeout_seconds: health_check.timeout_seconds,
+                    }
+                }),
+                project_name_pattern: format!("devselftest_<runId>_{id}"),
+            })
+            .collect(),
         build_profile_details: dev_selftest_profiles::build_summaries(profiles),
         test_suite_details: dev_selftest_profiles::test_summaries(profiles),
     }

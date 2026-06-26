@@ -62,9 +62,10 @@ create extra tool runs. dev_selftest skills must read `logagent://dev_selftest/c
   stop, ask for explicit consent, call `logagent.dev_selftest.allowlist.update` with
   `confirmedUserConsent:true` only after consent, then reread the config resource before
   continuing.
-- Remote `build` is the first build authority. On build failure, the client reads MCP result
-  evidence, fixes locally, commits/pushes, calls `sync_workspace` again, and retries remote
-  `build`.
+- Remote `build` is the first build authority. On any remote step failure, the client reads
+  `logagent.runs.result` and calls `logagent.dev_selftest.diagnose` for the persistent
+  `devselftest_*` run before deciding whether to fix source, inspect Docker evidence, or ask for
+  cleanup. Source fixes are committed/pushed, followed by `sync_workspace` and retry.
 - The client carries the returned `devselftest_*` workspace id through `build`, `deploy`,
   `run_tests`, `report`, and the optional post-report `cleanup`.
 - Environment cleanup is explicit and optional: call `logagent.dev_selftest.cleanup` after

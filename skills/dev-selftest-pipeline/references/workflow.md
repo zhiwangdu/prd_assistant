@@ -36,6 +36,7 @@ Claude Code owns the workflow: edit locally, commit, push, then drive Server too
   - `logagent.dev_selftest.run_tests`
   - `logagent.dev_selftest.report`
   - `logagent.dev_selftest.cleanup`
+  - `logagent.dev_selftest.diagnose`
   - `logagent.runs.get`
   - `logagent.runs.result`
 - The MCP client can call `resources/read` for `logagent://dev_selftest/config`.
@@ -52,9 +53,9 @@ Before selecting any repo/ref/profile, read:
 ```
 
 Use the returned `gitRepos`, `defaultGitRepo`, `defaultGitRef`, `buildProfiles`,
-`dockerProfiles`, `testSuites`, `buildProfileDetails`, and `testSuiteDetails` as the source of
-truth. Do not infer values from a local checkout, SSH into the Server, or read Server config files
-directly.
+`dockerProfiles`, `testSuites`, `dockerProfileDetails`, `buildProfileDetails`, and
+`testSuiteDetails` as the source of truth. Do not infer values from a local checkout, SSH into the
+Server, or read Server config files directly.
 
 If the needed repo/ref is not present:
 
@@ -138,8 +139,8 @@ Use the MCP Server as the build/test authority:
 3. Read `logagent://dev_selftest/config` and confirm the pushed repo/ref is allowlisted.
 4. Call `logagent.dev_selftest.sync_workspace` for the pushed repo/ref.
 5. Call remote `logagent.dev_selftest.build`.
-6. If `build` fails, read `logagent.runs.result` and the referenced stdout/stderr evidence, then
-   fix locally.
+6. If `build` fails, read `logagent.runs.result`, call `logagent.dev_selftest.diagnose`, then fix
+   locally using the returned evidence/category.
 7. Commit and push the fix.
 8. Call `sync_workspace` again, passing the same `devselftest_*` in `runId` when continuing an
    existing workspace.
@@ -161,6 +162,7 @@ Run the steps in this order:
 | 4 | `logagent.dev_selftest.run_tests` | Run a configured test suite, usually through inline Docker. |
 | 5 | `logagent.dev_selftest.report` | Generate `report.md` and `report.json` from recorded step evidence. |
 | 6 | `logagent.dev_selftest.cleanup` | Optional after report: run `docker compose down` for the run's configured Docker project while preserving run evidence. |
+| Diagnose | `logagent.dev_selftest.diagnose` | Read bounded run evidence and allowlisted read-only Docker probes to classify failures before asking for cleanup or code changes. |
 
 Recommended flow:
 
@@ -168,8 +170,11 @@ Recommended flow:
 2. Use `runMode:"queued"` for slow `build`, `deploy`, or `run_tests` calls.
 3. Poll queued calls with `logagent.runs.get`.
 4. Read final queued output with `logagent.runs.result`.
-5. Continue passing the original `devselftest_*` id to subsequent dev_selftest tools.
-6. After `report`, call `cleanup` only when the user or workflow wants to release Docker compose resources. Failed runs should usually keep the environment for inspection unless the user asks to clean it up.
+5. If a step result has `status:"FAILED"`, call `logagent.dev_selftest.diagnose` with the original
+   `devselftest_*` id before deciding whether to fix source, inspect more evidence, or request
+   cleanup.
+6. Continue passing the original `devselftest_*` id to subsequent dev_selftest tools.
+7. After `report`, call `cleanup` only when the user or workflow wants to release Docker compose resources. Failed runs should usually keep the environment for inspection unless diagnose recommends cleanup and the user agrees.
 
 ## Queued Calls And IDs
 
@@ -302,6 +307,23 @@ If the run was not deployed yet, pass an explicit configured docker profile:
 }
 ```
 
+### diagnose
+
+Use after any failed step. Omit `step` to let the server select the first failed non-cleanup step.
+The tool reads only the run workspace evidence and fixed read-only Docker probes derived from the
+configured profile; it never cleans up or restarts containers.
+
+```json
+{
+  "name": "logagent.dev_selftest.diagnose",
+  "arguments": {
+    "runId": "devselftest_...",
+    "taskRunId": "task_...",
+    "includeDockerProbes": true
+  }
+}
+```
+
 ## Result Shapes
 
 ### progress.json
@@ -345,6 +367,32 @@ If the run was not deployed yet, pass an explicit configured docker profile:
 }
 ```
 
+### diagnose
+
+```json
+{
+  "runId": "devselftest_...",
+  "status": "OK",
+  "diagnosedStep": "deploy",
+  "category": "port_conflict",
+  "confidence": "high",
+  "summary": "deploy failed because Docker reports an exposed port is already allocated.",
+  "evidence": [
+    { "path": "logs/deploy.stderr.txt", "exists": true, "truncated": false, "text": "..." }
+  ],
+  "dockerProbes": [
+    { "name": "docker_ps_port", "status": "OK", "stdout": "..." }
+  ],
+  "recommendedActions": [
+    {
+      "kind": "cleanup",
+      "tool": "logagent.dev_selftest.cleanup",
+      "arguments": { "runId": "devselftest_...", "profile": "opengemini_cluster" }
+    }
+  ]
+}
+```
+
 ## Failure Handling
 
 - If local changes are not pushed, stop and push before remote self-test.
@@ -355,8 +403,9 @@ If the run was not deployed yet, pass an explicit configured docker profile:
 - If remote `build` fails, do not switch to local compile by default. Read the remote result and
   evidence, make a local source fix, commit/push it, call `sync_workspace` again, and retry
   remote `build`.
-- If a queued `task_*` fails, call `logagent.runs.result` for stdout/stderr artifact refs and the
-  structured error.
+- If a queued `task_*` returns a failed dev_selftest result, call `logagent.runs.result`, then call
+  `logagent.dev_selftest.diagnose` for the persistent `devselftest_*` run. Use the diagnosis before
+  asking the user to run cleanup or before changing code.
 - A failed dev_selftest step records evidence in `progress.json` and marks the dev_selftest run
   failed.
 - `report` remains callable after failures and should be used to summarize failed steps.

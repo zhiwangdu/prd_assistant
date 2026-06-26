@@ -55,6 +55,7 @@ pub const DEPLOY_ID: &str = "logagent.dev_selftest.deploy";
 pub const RUN_TESTS_ID: &str = "logagent.dev_selftest.run_tests";
 pub const REPORT_ID: &str = "logagent.dev_selftest.report";
 pub const CLEANUP_ID: &str = "logagent.dev_selftest.cleanup";
+pub const DIAGNOSE_ID: &str = "logagent.dev_selftest.diagnose";
 
 const PROGRESS_FILE: &str = "progress.json";
 
@@ -67,6 +68,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
         run_tests_descriptor(enabled),
         report_descriptor(enabled),
         cleanup_descriptor(enabled),
+        diagnose_descriptor(enabled),
     ]
 }
 
@@ -79,7 +81,13 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
 pub fn is_dev_selftest_tool(tool_id: &str) -> bool {
     matches!(
         tool_id,
-        SYNC_WORKSPACE_ID | BUILD_ID | DEPLOY_ID | RUN_TESTS_ID | REPORT_ID | CLEANUP_ID
+        SYNC_WORKSPACE_ID
+            | BUILD_ID
+            | DEPLOY_ID
+            | RUN_TESTS_ID
+            | REPORT_ID
+            | CLEANUP_ID
+            | DIAGNOSE_ID
     )
 }
 
@@ -168,6 +176,27 @@ pub fn validate_run_params_with_git_repos(
             }
             serde_json::to_value(params)
         }
+        DIAGNOSE_ID => {
+            let params: DiagnoseParams = parse_params(value)?;
+            validate_run_id(&params.run_id)?;
+            if let Some(task_run_id) = params
+                .task_run_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                validate_task_run_id(task_run_id)?;
+            }
+            if let Some(profile) = params
+                .profile
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                require_docker_profile(config, profile)?;
+            }
+            serde_json::to_value(params)
+        }
         _ => return Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
     .map_err(|err| AppError::internal(format!("failed to encode dev_selftest params: {err}")))?;
@@ -195,6 +224,7 @@ pub async fn run_dev_selftest_task(
         RUN_TESTS_ID => run_run_tests(state, task).await,
         REPORT_ID => run_report(state, task).await,
         CLEANUP_ID => run_cleanup(state, task).await,
+        DIAGNOSE_ID => run_diagnose(state, task).await,
         _ => Err(AppError::bad_request(format!("unknown toolId {tool_id}"))),
     }
 }
@@ -252,6 +282,26 @@ struct CleanupParams {
     run_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnoseParams {
+    run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    step: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile: Option<String>,
+    #[serde(default = "default_include_docker_probes")]
+    include_docker_probes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_evidence_bytes: Option<usize>,
+}
+
+fn default_include_docker_probes() -> bool {
+    true
 }
 
 fn parse_params<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, AppError> {
@@ -748,16 +798,15 @@ async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, Ap
                 .unwrap_or_else(|| format!("exit code {:?}", run.exit_code)),
         )
     };
+    let mut evidence_refs = vec![
+        "logs/build.stdout.txt".to_string(),
+        "logs/build.stderr.txt".to_string(),
+    ];
+    evidence_refs.extend(artifacts.iter().map(|a| format!("artifacts/{a}")));
     append_step(
         &state,
         &record.run_id,
-        new_step(
-            "build",
-            status,
-            duration,
-            error.clone(),
-            artifacts.iter().map(|a| format!("artifacts/{a}")).collect(),
-        ),
+        new_step("build", status, duration, error.clone(), evidence_refs),
     )?;
     if !run.ok {
         mark_failed(&state, &record.run_id).await;
@@ -780,6 +829,8 @@ async fn run_build(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, Ap
             })
         }),
         "artifacts": artifacts,
+        "stdoutPath": "logs/build.stdout.txt",
+        "stderrPath": "logs/build.stderr.txt",
         "error": error,
         "durationMs": duration,
         "createdAt": Utc::now(),
@@ -1101,6 +1152,8 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
         "status": status,
         "exitCode": run.exit_code,
         "deployTarget": target,
+        "stdoutPath": "logs/deploy.stdout.txt",
+        "stderrPath": "logs/deploy.stderr.txt",
         "error": error,
         "durationMs": duration,
         "createdAt": Utc::now(),
@@ -1219,6 +1272,680 @@ async fn run_cleanup(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, 
         &action_id,
         &result,
     )
+}
+
+async fn run_diagnose(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
+    let params: DiagnoseParams = parse_params(&task.tool_params)?;
+    validate_run_id(&params.run_id)?;
+    let record = state
+        .dev_selftest
+        .get(&params.run_id)
+        .await
+        .ok_or_else(|| AppError::bad_request(format!("unknown runId {}", params.run_id)))?;
+    let run_root = run_dir(&state, &record.run_id);
+    let progress = read_progress(&run_root);
+    let evidence_limit = diagnostic_limit(
+        params.max_evidence_bytes,
+        state.config.dev_selftest.max_output_bytes,
+    );
+    let selected_step = select_diagnostic_step(&progress.steps, params.step.as_deref())?;
+    let evidence_paths = selected_step
+        .as_ref()
+        .map(|step| evidence_paths_for_step(step))
+        .unwrap_or_default();
+    let evidence = read_evidence_set(&run_root, &evidence_paths, evidence_limit).await?;
+
+    let (docker_profile, docker_project, docker_probes) = if params.include_docker_probes {
+        match docker_probe_context(&state, &record, params.profile.as_deref())? {
+            Some((profile, project_name, cluster)) => {
+                let probes = run_docker_probes(
+                    &state,
+                    &run_root,
+                    &profile,
+                    &project_name,
+                    &cluster,
+                    evidence_limit,
+                )
+                .await?;
+                (Some(profile), Some(project_name), probes)
+            }
+            None => (None, None, Vec::new()),
+        }
+    } else {
+        (None, None, Vec::new())
+    };
+
+    let task_context = task_context(&state, params.task_run_id.as_deref()).await?;
+    let step_name = selected_step
+        .as_ref()
+        .map(|step| step.step.as_str())
+        .unwrap_or("unknown");
+    let corpus = diagnostic_corpus(
+        selected_step.as_ref(),
+        &evidence,
+        &docker_probes,
+        task_context.as_ref(),
+    );
+    let category = classify_diagnostic(step_name, &corpus, &docker_probes);
+    let confidence = diagnostic_confidence(&category, &evidence, &docker_probes);
+    let recommendations = diagnostic_recommendations(
+        &category,
+        &record.run_id,
+        docker_profile.as_deref(),
+        docker_project.as_deref(),
+    );
+    let summary = diagnostic_summary(&category, selected_step.as_ref(), docker_project.as_deref());
+
+    let action_id = task_action_id(DIAGNOSE_ID, &task.task_id);
+    let result = json!({
+        "schemaVersion": 1,
+        "toolId": DIAGNOSE_ID,
+        "actionId": action_id,
+        "runId": record.run_id,
+        "status": "OK",
+        "diagnosedStep": selected_step.as_ref().map(|step| step.step.clone()),
+        "category": category,
+        "confidence": confidence,
+        "summary": summary,
+        "profile": docker_profile,
+        "projectName": docker_project,
+        "taskRun": task_context,
+        "evidence": evidence,
+        "dockerProbes": docker_probes,
+        "recommendedActions": recommendations,
+        "maxEvidenceBytes": evidence_limit,
+        "createdAt": Utc::now(),
+    });
+    write_tool_result(
+        &state.config.storage.workspace_dir(&task.task_id),
+        &action_id,
+        &result,
+    )
+}
+
+fn diagnostic_limit(requested: Option<usize>, configured_max: usize) -> usize {
+    let cap = configured_max.clamp(1024, 64 * 1024);
+    requested.unwrap_or(16 * 1024).clamp(1024, cap)
+}
+
+fn select_diagnostic_step(
+    steps: &[DevSelftestStep],
+    requested: Option<&str>,
+) -> Result<Option<DevSelftestStep>, AppError> {
+    if let Some(step) = requested.map(str::trim).filter(|value| !value.is_empty()) {
+        return steps
+            .iter()
+            .find(|entry| entry.step == step)
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| {
+                AppError::bad_request(format!("step {step} is not present in run progress"))
+            });
+    }
+    if let Some(step) = steps
+        .iter()
+        .find(|entry| entry.status != "OK" && entry.step != "cleanup")
+        .cloned()
+    {
+        return Ok(Some(step));
+    }
+    if let Some(step) = steps.iter().find(|entry| entry.status != "OK").cloned() {
+        return Ok(Some(step));
+    }
+    Ok(steps.last().cloned())
+}
+
+fn evidence_paths_for_step(step: &DevSelftestStep) -> Vec<String> {
+    let mut paths = Vec::new();
+    for path in default_evidence_paths(&step.step) {
+        push_unique(&mut paths, path);
+    }
+    for path in &step.evidence_refs {
+        push_unique(&mut paths, path.clone());
+    }
+    push_unique(&mut paths, PROGRESS_FILE.to_string());
+    if matches!(
+        step.step.as_str(),
+        "report" | "deploy" | "run_tests" | "cleanup"
+    ) {
+        push_unique(&mut paths, "report.json".to_string());
+    }
+    paths
+}
+
+fn default_evidence_paths(step: &str) -> Vec<String> {
+    match step {
+        "build" => vec![
+            "logs/build.stdout.txt".to_string(),
+            "logs/build.stderr.txt".to_string(),
+        ],
+        "deploy" => vec![
+            "logs/deploy.stdout.txt".to_string(),
+            "logs/deploy.stderr.txt".to_string(),
+        ],
+        "run_tests" => vec![
+            "logs/tests.stdout.txt".to_string(),
+            "logs/tests.stderr.txt".to_string(),
+        ],
+        "cleanup" => vec![
+            "logs/cleanup.stdout.txt".to_string(),
+            "logs/cleanup.stderr.txt".to_string(),
+        ],
+        "report" => vec!["report.md".to_string(), "report.json".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn push_unique(items: &mut Vec<String>, value: String) {
+    if !items.contains(&value) {
+        items.push(value);
+    }
+}
+
+async fn read_evidence_set(
+    run_root: &Path,
+    paths: &[String],
+    limit: usize,
+) -> Result<Vec<Value>, AppError> {
+    let mut evidence = Vec::new();
+    for logical_path in paths {
+        evidence.push(read_evidence(run_root, logical_path, limit).await?);
+    }
+    Ok(evidence)
+}
+
+async fn read_evidence(
+    run_root: &Path,
+    logical_path: &str,
+    limit: usize,
+) -> Result<Value, AppError> {
+    let resolved = safe_join(run_root, &PathBuf::from(logical_path)).map_err(|err| {
+        AppError::bad_request(format!("unsafe evidence path {logical_path}: {err}"))
+    })?;
+    let metadata = match tokio::fs::metadata(&resolved).await {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({
+                "path": logical_path,
+                "exists": false,
+                "bytes": 0,
+                "truncated": false,
+                "text": ""
+            }));
+        }
+        Err(err) => {
+            return Err(AppError::internal(format!(
+                "failed to inspect evidence {logical_path}: {err}"
+            )));
+        }
+    };
+    if !metadata.is_file() {
+        return Ok(json!({
+            "path": logical_path,
+            "exists": false,
+            "bytes": metadata.len(),
+            "truncated": false,
+            "text": ""
+        }));
+    }
+    let bytes = tokio::fs::read(&resolved).await.map_err(|err| {
+        AppError::internal(format!("failed to read evidence {logical_path}: {err}"))
+    })?;
+    let (text, truncated) = bounded_tail_text(&bytes, limit);
+    Ok(json!({
+        "path": logical_path,
+        "exists": true,
+        "bytes": bytes.len() as u64,
+        "truncated": truncated,
+        "text": redact_secrets(&text)
+    }))
+}
+
+fn bounded_tail_text(bytes: &[u8], limit: usize) -> (String, bool) {
+    if bytes.len() <= limit {
+        return (String::from_utf8_lossy(bytes).into_owned(), false);
+    }
+    let start = bytes.len().saturating_sub(limit);
+    (String::from_utf8_lossy(&bytes[start..]).into_owned(), true)
+}
+
+fn redact_secrets(text: &str) -> String {
+    text.lines()
+        .map(redact_secret_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_secret_line(line: &str) -> String {
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("authorization:") {
+        return redact_after_delimiter(line, ':');
+    }
+    if lower.contains("bearer ") {
+        return "<redacted bearer token>".to_string();
+    }
+    for key in ["password", "passwd", "token", "secret", "api_key", "apikey"] {
+        if lower.contains(key) {
+            if line.contains('=') {
+                return redact_after_delimiter(line, '=');
+            }
+            if line.contains(':') {
+                return redact_after_delimiter(line, ':');
+            }
+            return "<redacted secret>".to_string();
+        }
+    }
+    line.to_string()
+}
+
+fn redact_after_delimiter(line: &str, delimiter: char) -> String {
+    match line.split_once(delimiter) {
+        Some((prefix, _)) => format!("{prefix}{delimiter} <redacted>"),
+        None => "<redacted secret>".to_string(),
+    }
+}
+
+fn docker_probe_context(
+    state: &AppState,
+    record: &DevSelftestRunRecord,
+    requested_profile: Option<&str>,
+) -> Result<
+    Option<(
+        String,
+        String,
+        crate::support::config::DevSelftestDockerCluster,
+    )>,
+    AppError,
+> {
+    let profile = requested_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| match &record.deploy_target {
+            Some(DevSelftestDeployTarget::Docker { cluster, .. }) => Some(cluster.clone()),
+            _ => None,
+        });
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    let cluster = state
+        .config
+        .dev_selftest
+        .docker
+        .clusters
+        .get(&profile)
+        .ok_or_else(|| AppError::bad_request(format!("unknown docker cluster {profile}")))?
+        .clone();
+    let project_name = compose_project_name(&record.run_id, &profile)?;
+    Ok(Some((profile, project_name, cluster)))
+}
+
+async fn run_docker_probes(
+    state: &AppState,
+    run_root: &Path,
+    profile: &str,
+    project_name: &str,
+    cluster: &crate::support::config::DevSelftestDockerCluster,
+    limit: usize,
+) -> Result<Vec<Value>, AppError> {
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
+    let env = deploy_env(run_root, &source_dir, &artifacts_dir, project_name);
+    let mut probes = Vec::new();
+    probes.push(
+        run_docker_probe(
+            state,
+            run_root,
+            &env,
+            "compose_ps",
+            vec![
+                "compose".to_string(),
+                "-p".to_string(),
+                project_name.to_string(),
+                "-f".to_string(),
+                cluster.compose_file.to_string_lossy().to_string(),
+                "ps".to_string(),
+                "--all".to_string(),
+            ],
+            limit,
+        )
+        .await,
+    );
+    probes.push(
+        run_docker_probe(
+            state,
+            run_root,
+            &env,
+            "compose_logs_tail",
+            vec![
+                "compose".to_string(),
+                "-p".to_string(),
+                project_name.to_string(),
+                "-f".to_string(),
+                cluster.compose_file.to_string_lossy().to_string(),
+                "logs".to_string(),
+                "--no-color".to_string(),
+                "--tail".to_string(),
+                "80".to_string(),
+            ],
+            limit,
+        )
+        .await,
+    );
+    probes.push(
+        run_docker_probe(
+            state,
+            run_root,
+            &env,
+            "docker_ps_project",
+            vec![
+                "ps".to_string(),
+                "-a".to_string(),
+                "--filter".to_string(),
+                format!("label=com.docker.compose.project={project_name}"),
+                "--format".to_string(),
+                "{{.Names}}\t{{.Status}}\t{{.Ports}}".to_string(),
+            ],
+            limit,
+        )
+        .await,
+    );
+    if let Some(port) = cluster.exposed_port {
+        probes.push(
+            run_docker_probe(
+                state,
+                run_root,
+                &env,
+                "docker_ps_port",
+                vec![
+                    "ps".to_string(),
+                    "--filter".to_string(),
+                    format!("publish={port}"),
+                    "--format".to_string(),
+                    "{{.Names}}\t{{.Status}}\t{{.Ports}}".to_string(),
+                ],
+                limit,
+            )
+            .await,
+        );
+    }
+    for probe in &mut probes {
+        if let Some(object) = probe.as_object_mut() {
+            object.insert("profile".to_string(), json!(profile));
+        }
+    }
+    Ok(probes)
+}
+
+async fn run_docker_probe(
+    state: &AppState,
+    run_root: &Path,
+    env: &BTreeMap<String, String>,
+    name: &str,
+    argv: Vec<String>,
+    limit: usize,
+) -> Value {
+    let timeout_seconds = state.config.dev_selftest.build_timeout_seconds.clamp(1, 10);
+    let run = run_bounded_command(
+        &state.config.dev_selftest.docker.binary,
+        &argv,
+        run_root,
+        env,
+        timeout_seconds,
+        limit,
+    )
+    .await;
+    let stdout = redact_secrets(&String::from_utf8_lossy(&run.stdout));
+    let stderr = redact_secrets(&String::from_utf8_lossy(&run.stderr));
+    json!({
+        "name": name,
+        "argv": argv,
+        "status": if run.ok { "OK" } else { "FAILED" },
+        "exitCode": run.exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "error": run.error,
+        "durationMs": run.duration_ms
+    })
+}
+
+async fn task_context(
+    state: &AppState,
+    task_run_id: Option<&str>,
+) -> Result<Option<Value>, AppError> {
+    let Some(task_run_id) = task_run_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    validate_task_run_id(task_run_id)?;
+    let Some(task) = state.tasks.get(task_run_id).await else {
+        return Ok(Some(json!({
+            "runId": task_run_id,
+            "exists": false
+        })));
+    };
+    Ok(Some(json!({
+        "runId": task.task_id,
+        "exists": true,
+        "toolId": task.tool_id,
+        "status": task.status,
+        "phase": task.phase,
+        "error": task.error,
+        "resultAvailable": task.tool_result_path.is_some() || task.remote_result_path.is_some()
+    })))
+}
+
+fn diagnostic_corpus(
+    step: Option<&DevSelftestStep>,
+    evidence: &[Value],
+    probes: &[Value],
+    task_context: Option<&Value>,
+) -> String {
+    let mut corpus = String::new();
+    if let Some(step) = step {
+        corpus.push_str(&step.step);
+        corpus.push('\n');
+        corpus.push_str(&step.status);
+        corpus.push('\n');
+        if let Some(error) = &step.error {
+            corpus.push_str(error);
+            corpus.push('\n');
+        }
+    }
+    for item in evidence {
+        if let Some(text) = item.get("text").and_then(|value| value.as_str()) {
+            corpus.push_str(text);
+            corpus.push('\n');
+        }
+    }
+    for item in probes {
+        for field in ["stdout", "stderr", "error"] {
+            if let Some(text) = item.get(field).and_then(|value| value.as_str()) {
+                corpus.push_str(text);
+                corpus.push('\n');
+            }
+        }
+    }
+    if let Some(task_context) = task_context {
+        corpus.push_str(&task_context.to_string());
+    }
+    corpus.to_ascii_lowercase()
+}
+
+fn classify_diagnostic(step: &str, corpus: &str, probes: &[Value]) -> String {
+    if step == "build" {
+        return "build_failed".to_string();
+    }
+    if step == "run_tests" {
+        return "test_failed".to_string();
+    }
+    if step == "cleanup" {
+        return "cleanup_failed".to_string();
+    }
+    if step != "deploy" {
+        return "insufficient_evidence".to_string();
+    }
+
+    let current_project_containers = probe_stdout_nonempty(probes, "compose_ps")
+        || probe_stdout_nonempty(probes, "docker_ps_project");
+    let port_conflict = contains_any(
+        corpus,
+        &[
+            "port is already allocated",
+            "ports are not available",
+            "address already in use",
+            "bind for 0.0.0.0",
+            "listen tcp",
+        ],
+    ) || probe_stdout_nonempty(probes, "docker_ps_port");
+    if current_project_containers
+        && (port_conflict
+            || contains_any(
+                corpus,
+                &["already exists", "is already in use by container"],
+            ))
+    {
+        return "stale_compose_project".to_string();
+    }
+    if port_conflict {
+        return "port_conflict".to_string();
+    }
+    if contains_any(
+        corpus,
+        &["health check failed", "healthcheck", "health check"],
+    ) {
+        return "health_check_failed".to_string();
+    }
+    if contains_any(
+        corpus,
+        &["exited", "restarting", "unhealthy", "panic", "fatal"],
+    ) {
+        return "container_crash".to_string();
+    }
+    if corpus.trim().is_empty() {
+        "insufficient_evidence".to_string()
+    } else {
+        "compose_up_failed".to_string()
+    }
+}
+
+fn contains_any(value: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| value.contains(needle))
+}
+
+fn probe_stdout_nonempty(probes: &[Value], name: &str) -> bool {
+    probes.iter().any(|probe| {
+        probe.get("name").and_then(|value| value.as_str()) == Some(name)
+            && probe
+                .get("stdout")
+                .and_then(|value| value.as_str())
+                .map(|text| {
+                    !text.trim().is_empty() && !text.to_ascii_lowercase().contains("no containers")
+                })
+                .unwrap_or(false)
+    })
+}
+
+fn diagnostic_confidence(category: &str, evidence: &[Value], probes: &[Value]) -> &'static str {
+    match category {
+        "port_conflict" | "stale_compose_project" if !probes.is_empty() => "high",
+        "port_conflict" | "stale_compose_project" => "medium",
+        "health_check_failed" | "container_crash" if !probes.is_empty() => "medium",
+        "build_failed" | "test_failed" | "cleanup_failed" if !evidence.is_empty() => "medium",
+        "insufficient_evidence" => "low",
+        _ => "medium",
+    }
+}
+
+fn diagnostic_summary(
+    category: &str,
+    step: Option<&DevSelftestStep>,
+    project_name: Option<&str>,
+) -> String {
+    let step_name = step.map(|step| step.step.as_str()).unwrap_or("unknown");
+    match category {
+        "port_conflict" => format!(
+            "{step_name} failed because Docker reports an exposed port is already allocated."
+        ),
+        "stale_compose_project" => format!(
+            "{step_name} failed and the derived compose project {} still has containers.",
+            project_name.unwrap_or("<unknown>")
+        ),
+        "health_check_failed" => format!(
+            "{step_name} reached docker compose but the configured health check did not pass."
+        ),
+        "container_crash" => format!(
+            "{step_name} reached docker compose and one or more containers appear unhealthy or exited."
+        ),
+        "build_failed" => "Remote build failed; inspect build stdout/stderr and fix source or build profile before retrying.".to_string(),
+        "test_failed" => "Remote test suite failed; inspect test stdout/stderr and keep the environment until the failure is understood.".to_string(),
+        "cleanup_failed" => "Cleanup failed; inspect cleanup stdout/stderr and retry cleanup if the compose project still exists.".to_string(),
+        "compose_up_failed" => format!("{step_name} failed during docker compose up."),
+        _ => "The run does not contain enough evidence for a specific diagnosis.".to_string(),
+    }
+}
+
+fn diagnostic_recommendations(
+    category: &str,
+    run_id: &str,
+    profile: Option<&str>,
+    project_name: Option<&str>,
+) -> Vec<Value> {
+    let mut recommendations = Vec::new();
+    match category {
+        "port_conflict" => {
+            recommendations.push(json!({
+                "kind": "inspect_port_owner",
+                "message": "Review docker_ps_port evidence to identify which container owns the exposed port."
+            }));
+            if let Some(profile) = profile {
+                recommendations.push(cleanup_recommendation(run_id, profile, project_name));
+            }
+        }
+        "stale_compose_project" => {
+            if let Some(profile) = profile {
+                recommendations.push(cleanup_recommendation(run_id, profile, project_name));
+            }
+        }
+        "health_check_failed" | "container_crash" => {
+            recommendations.push(json!({
+                "kind": "inspect_compose_logs",
+                "message": "Inspect compose logs and service status before cleanup; the environment is preserved for debugging."
+            }));
+            if let Some(profile) = profile {
+                recommendations.push(cleanup_recommendation(run_id, profile, project_name));
+            }
+        }
+        "build_failed" => recommendations.push(json!({
+            "kind": "fix_and_resync",
+            "message": "Fix the source or build profile, commit and push, rerun sync_workspace with the same devselftest runId, then rerun build."
+        })),
+        "test_failed" => recommendations.push(json!({
+            "kind": "inspect_test_output",
+            "message": "Use the test stdout/stderr evidence to decide whether to fix source, test suite, or deploy profile."
+        })),
+        "cleanup_failed" => recommendations.push(json!({
+            "kind": "retry_cleanup",
+            "message": "Retry logagent.dev_selftest.cleanup with the same runId/profile after inspecting cleanup evidence."
+        })),
+        _ => recommendations.push(json!({
+            "kind": "collect_report",
+            "message": "Run logagent.dev_selftest.report, then rerun diagnose with a specific failed step if needed."
+        })),
+    }
+    recommendations
+}
+
+fn cleanup_recommendation(run_id: &str, profile: &str, project_name: Option<&str>) -> Value {
+    json!({
+        "kind": "cleanup",
+        "message": "If this run's compose environment can be released, call cleanup; it runs docker compose down without deleting evidence.",
+        "tool": CLEANUP_ID,
+        "arguments": {
+            "runId": run_id,
+            "profile": profile
+        },
+        "projectName": project_name
+    })
 }
 
 async fn run_health_check(
@@ -1644,6 +2371,18 @@ fn validate_run_id(run_id: &str) -> Result<(), AppError> {
     }
 }
 
+fn validate_task_run_id(run_id: &str) -> Result<(), AppError> {
+    let valid = run_id.starts_with("task_")
+        && run_id
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::bad_request("invalid taskRunId"))
+    }
+}
+
 // ---------- descriptors ----------
 
 fn common_tags() -> Vec<String> {
@@ -1798,6 +2537,52 @@ fn cleanup_descriptor(enabled: bool) -> ToolDescriptor {
     d
 }
 
+fn diagnose_descriptor(enabled: bool) -> ToolDescriptor {
+    let mut d = base_descriptor(
+        DIAGNOSE_ID,
+        "Dev self-test: diagnose",
+        "Read a dev_selftest run's bounded evidence and run allowlisted read-only Docker probes to classify build/deploy/test/cleanup failures.",
+        enabled,
+    );
+    d.read_only = true;
+    d.params_schema = json!({
+        "type": "object",
+        "properties": {
+            "runId": { "type": "string", "description": "Persistent devselftest_* run id." },
+            "taskRunId": { "type": "string", "description": "Optional queued task_* id to include in diagnostic context." },
+            "step": {
+                "type": "string",
+                "enum": ["sync_workspace", "build", "deploy", "run_tests", "report", "cleanup"],
+                "description": "Optional step to diagnose. Omit to use the first failed step."
+            },
+            "profile": {
+                "type": "string",
+                "description": "Optional dev_selftest.docker.clusters profile id for Docker probes. Omit to use the run's deployed docker target."
+            },
+            "includeDockerProbes": {
+                "type": "boolean",
+                "default": true,
+                "description": "When true, run allowlisted read-only docker compose/docker ps probes for Docker deploy targets."
+            },
+            "maxEvidenceBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "description": "Maximum bytes returned per evidence/probe text, capped by server dev_selftest limits."
+            }
+        },
+        "required": ["runId"]
+    });
+    d.params_template = json!({
+        "runId": "",
+        "taskRunId": "",
+        "step": "",
+        "profile": "",
+        "includeDockerProbes": true,
+        "maxEvidenceBytes": 16384
+    });
+    d
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1817,7 +2602,7 @@ mod tests {
     fn descriptors_gated_by_enabled() {
         let config = test_config(false);
         let ds = descriptors(&config);
-        assert_eq!(ds.len(), 6);
+        assert_eq!(ds.len(), 7);
         assert!(ds.iter().all(|d| !d.enabled && !d.runnable));
         assert!(ds.iter().all(|d| d.backend == "dev_selftest"));
         let config = test_config(true);
@@ -1825,6 +2610,7 @@ mod tests {
         assert!(ds.iter().all(|d| d.enabled && d.runnable));
         assert!(get_descriptor(&config, BUILD_ID).is_some());
         assert!(get_descriptor(&config, CLEANUP_ID).is_some());
+        assert!(get_descriptor(&config, DIAGNOSE_ID).is_some());
     }
 
     #[test]
@@ -1895,6 +2681,24 @@ mod tests {
             &config,
             CLEANUP_ID,
             &json!({"runId":"devselftest_x","profile":"missing"})
+        )
+        .is_err());
+        assert!(validate_run_params(
+            &config,
+            DIAGNOSE_ID,
+            &json!({"runId":"devselftest_x","profile":"local","taskRunId":"task_1"})
+        )
+        .is_ok());
+        assert!(validate_run_params(
+            &config,
+            DIAGNOSE_ID,
+            &json!({"runId":"devselftest_x","profile":"missing"})
+        )
+        .is_err());
+        assert!(validate_run_params(
+            &config,
+            DIAGNOSE_ID,
+            &json!({"runId":"devselftest_x","taskRunId":"devselftest_wrong"})
         )
         .is_err());
     }
@@ -2396,6 +3200,79 @@ exit 0
             .unwrap()
             .iter()
             .any(|step| step["step"] == "cleanup" && step["status"] == "FAILED"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn diagnose_classifies_deploy_port_conflict_and_redacts_evidence() {
+        use std::os::unix::fs::PermissionsExt;
+        let (state, root) = test_state_with_docker_suite("dev-selftest-diagnose-port");
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("diagnose-port")).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+
+        let fake_docker = state.config.dev_selftest.docker.binary.clone();
+        std::fs::write(
+            &fake_docker,
+            r#"#!/usr/bin/env bash
+if [ "${1:-}" = "compose" ]; then
+  case "$*" in
+    *" up -d"*)
+      echo "Error response from daemon: Bind for 0.0.0.0:8086 failed: port is already allocated" >&2
+      echo "password=super-secret" >&2
+      exit 1
+      ;;
+    *" ps --all"*)
+      exit 0
+      ;;
+    *" logs "*)
+      echo "no containers"
+      exit 0
+      ;;
+  esac
+fi
+if [ "${1:-}" = "ps" ]; then
+  if [[ "$*" == *"publish=8086"* ]]; then
+    printf 'old_container\tUp 2 hours\t0.0.0.0:8086->8086/tcp\n'
+  fi
+  exit 0
+fi
+exit 0
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_docker).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_docker, perms).unwrap();
+
+        let deploy = run_tool(&state, DEPLOY_ID, json!({"runId":run_id,"profile":"local"})).await;
+        assert_eq!(deploy.status, "FAILED");
+        assert_eq!(deploy.value["stdoutPath"], "logs/deploy.stdout.txt");
+        assert_eq!(deploy.value["stderrPath"], "logs/deploy.stderr.txt");
+
+        let diagnose = run_tool(
+            &state,
+            DIAGNOSE_ID,
+            json!({"runId":run_id,"maxEvidenceBytes":4096}),
+        )
+        .await;
+        assert_eq!(diagnose.status, "OK");
+        assert_eq!(diagnose.value["category"], "port_conflict");
+        assert_eq!(diagnose.value["confidence"], "high");
+        assert!(diagnose
+            .value
+            .to_string()
+            .contains("port is already allocated"));
+        assert!(diagnose.value.to_string().contains("old_container"));
+        assert!(!diagnose.value.to_string().contains("super-secret"));
+        assert!(diagnose.value["recommendedActions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["tool"] == CLEANUP_ID));
 
         let _ = std::fs::remove_dir_all(root);
     }

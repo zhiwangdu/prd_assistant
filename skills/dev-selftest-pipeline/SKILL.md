@@ -1,6 +1,6 @@
 ---
 name: dev-selftest-pipeline
-description: Use when Claude Code needs to run LocalToolHub dev_selftest through MCP: commit and push local code, sync an allowlisted git repo/ref, build, deploy a Docker cluster, run tests, poll queued runs, generate a report, and optionally clean up the Docker environment.
+description: Use when Claude Code needs to run LocalToolHub dev_selftest through MCP: commit and push local code, sync an allowlisted git repo/ref, build, deploy a Docker cluster, run tests, poll queued runs, diagnose failures from run evidence, generate a report, and optionally clean up the Docker environment.
 ---
 
 # Dev Self-Test Pipeline
@@ -28,8 +28,9 @@ Before calling the remote self-test tools:
    `logagent.dev_selftest.profiles.upsert` with `confirmedUserConsent:true`, then reread the
    config resource.
 7. Immediately call `sync_workspace`, then rely on remote `build`/`deploy`/`run_tests` results for
-   feedback. If remote `build` fails, read its evidence, fix locally, commit/push again, and call
-   `sync_workspace` again before retrying `build`.
+   feedback. If a remote step fails, read `logagent.runs.result`, call
+   `logagent.dev_selftest.diagnose` for the failed `devselftest_*` run, then use the returned
+   evidence/category before changing code or asking to clean up.
 8. Confirm MCP connectivity with `initialize` and `tools/list`.
 
 Then run the MCP workflow in `references/workflow.md`. Read that file before executing the

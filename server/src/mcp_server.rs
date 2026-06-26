@@ -602,6 +602,9 @@ async fn resources_read(state: &Arc<AppState>, uri: &str) -> anyhow::Result<Valu
                         "status": task.status,
                         "toolId": task.tool_id,
                         "createdAt": task.created_at,
+                        "updatedAt": task.updated_at,
+                        "error": task.error,
+                        "resultAvailable": result_path_for(&task).is_some(),
                     })
                 })
                 .collect();
@@ -958,6 +961,7 @@ mod tests {
             .collect();
         assert!(names.contains(&"logagent.dev_selftest.sync_workspace"));
         assert!(names.contains(&"logagent.dev_selftest.cleanup"));
+        assert!(names.contains(&"logagent.dev_selftest.diagnose"));
         assert!(names.contains(&"logagent.dev_selftest.allowlist.update"));
         assert!(names.contains(&"logagent.dev_selftest.profiles.upsert"));
 
@@ -1034,6 +1038,7 @@ mod tests {
         let config_value: Value = serde_json::from_str(config_text).unwrap();
         assert_eq!(config_value["defaultGitRepo"], TEST_GIT_REPO);
         assert_eq!(config_value["defaultGitRef"], TEST_GIT_REF);
+        assert!(config_value["dockerProfileDetails"].is_array());
         assert!(config_value["buildProfileDetails"].is_array());
         assert!(config_value["testSuiteDetails"].is_array());
 

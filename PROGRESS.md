@@ -12,6 +12,27 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-26 dev_selftest MCP 失败诊断
+
+- Server 新增 `logagent.dev_selftest.diagnose` runnable/read-only tool，进入 Tool Catalog / MCP `tools/list`，
+  支持 sync 和 `runMode:"queued"`。参数为 `runId`，可选 `taskRunId`、`step`、`profile`、
+  `includeDockerProbes`、`maxEvidenceBytes`。
+- diagnose 读取本次 `devselftest_*` 工作区内的 `progress.json`、`report.json` 和 step evidence，返回 bounded
+  tail 并做 secret 脱敏；Docker probe 只从配置化 cluster profile 派生固定只读命令（`docker compose ps/logs`、
+  按 compose project label 或 exposed port 的 `docker ps`），不执行 cleanup/restart/rm/任意 shell。
+- 诊断结果返回原因分类、置信度、证据片段、probe 输出和下一步建议，覆盖 port conflict、残留 compose project、
+  compose up 失败、health check 失败、容器异常、build/test/cleanup 失败等场景；cleanup 仅作为建议的 MCP
+  调用参数返回，仍需显式调用 `logagent.dev_selftest.cleanup`。
+- `logagent://dev_selftest/config` 新增 `dockerProfileDetails`，暴露 Docker cluster profile 的脱敏摘要
+  （compose file、exposed port、health check、project name pattern），让 Claude Code 无需 SSH/读 server config
+  即可定位 deploy 配置。
+- `build`/`deploy` step result 现在与 run_tests/cleanup 一样返回 `stdoutPath`/`stderrPath`；`build` progress
+  evidence 也记录 build stdout/stderr。`logagent://runs/recent` 增加 `updatedAt`、`error` 和
+  `resultAvailable`。
+- 文档同步：根 README/SPEC、server README/SPEC、skills README/SPEC、dev_selftest skill workflow、
+  dev_selftest 模块用法、Tool Runner 和 Security 模块文档。
+- 验证：已通过 targeted `cargo test -p logagent-server diagnose`；完整验证见本次提交前命令。
+
 ## 2026-06-26 dev_selftest 环境清理 MCP step
 
 - Server 新增 `logagent.dev_selftest.cleanup` runnable tool，进入 Tool Catalog / MCP `tools/list`，支持 sync 和

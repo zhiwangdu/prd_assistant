@@ -15,7 +15,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 LocalToolHub 开箱即用地提供：
 
-- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` MCP step tools，以及显式可选的 `cleanup` 环境清理 step。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 追加 repo/ref，或用 `logagent.dev_selftest.profiles.upsert` / WebUI Settings 新增和更新 Docker-backed build/test profile，并写回配置文件。`cleanup` 只对本次 run 的配置化 compose project 执行 `docker compose down`，保留源码、日志、artifact 和报告证据。
+- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` MCP step tools，以及显式可选的 `cleanup` 环境清理 step 和只读 `diagnose` 诊断 step。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要（含 Docker cluster profile 明细）；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 追加 repo/ref，或用 `logagent.dev_selftest.profiles.upsert` / WebUI Settings 新增和更新 Docker-backed build/test profile，并写回配置文件。`cleanup` 只对本次 run 的配置化 compose project 执行 `docker compose down`，保留源码、日志、artifact 和报告证据；`diagnose` 只读取 bounded evidence 和执行 allowlisted Docker 只读探测，不做恢复动作。
 - **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
 - **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端；dev_selftest config resource 用于客户端发现 allowlisted repo/ref 和 profile ids。
 - **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。
@@ -28,7 +28,7 @@ Browser WebUI / External MCP Client
   -> Rust local server (Axum)
     -> Auth (Bearer)
     -> Tool catalog + Tool runner（日志分析 analyzers + 内置工具）
-    -> dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report/cleanup + docker runner）
+    -> dev_selftest MCP step tools（sync_workspace/build/deploy/run_tests/report/cleanup/diagnose + docker runner）
     -> Uploads + Run history + Artifact store
     -> MCP resources/tools
   -> Local data dir + tools dir

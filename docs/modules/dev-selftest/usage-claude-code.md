@@ -43,8 +43,8 @@ Authorization: Bearer <your-key>
 ```
 
 返回内容包含 `gitRepos`、`defaultGitRepo`、`defaultGitRef`、`buildProfiles`、`dockerProfiles`、`testSuites`
-以及 `buildProfileDetails` / `testSuiteDetails`（host/docker、image、timeout）。
-客户端只能使用这些值调用 `sync_workspace` / `build` / `deploy` / `run_tests` / `cleanup`。
+以及 `dockerProfileDetails`、`buildProfileDetails` / `testSuiteDetails`（host/docker、image、timeout）。
+客户端只能使用这些值调用 `sync_workspace` / `build` / `deploy` / `run_tests` / `cleanup` / `diagnose`。
 
 如果用户需要的新分支不在 allowlist 中，先停止 workflow 并询问用户是否允许更新。用户明确同意后再调用：
 
@@ -96,6 +96,7 @@ Server 会校验 URL/ref、执行 `git ls-remote`、写回 `--config` YAML，再
 | 4 | `logagent.dev_selftest.run_tests` | 使用 test suite 的 inline Docker target 执行测试；无 docker target 时走本地桩。 |
 | 5 | `logagent.dev_selftest.report` | 聚合 `progress.json`、日志和结果，生成报告。 |
 | 6 | `logagent.dev_selftest.cleanup` | 可选：report 后对本次 run 的配置化 compose project 执行 `docker compose down`，保留 run 证据。 |
+| 诊断 | `logagent.dev_selftest.diagnose` | 失败后读取 bounded evidence，并执行配置化 Docker 只读 probe，返回原因分类和下一步建议。 |
 | 查询 | `logagent.runs.get` / `logagent.runs.result` | 轮询 queued run，不创建新的 ToolRun。 |
 
 后续步骤都必须携带 `sync_workspace` 返回的同一个 `runId`。
@@ -140,7 +141,27 @@ Server 会校验 URL/ref、执行 `git ls-remote`、写回 `--config` YAML，再
 
 `logagent.runs.get/result` 是 platform 工具，只读 `TaskStore`，不会污染 run history。
 
-## 5. 环境清理
+## 5. 失败诊断
+
+任一远端 step 返回 `status:"FAILED"` 后，先调用 `diagnose`，不要 SSH 到 Server 上 cat 日志：
+
+```json
+{
+  "name": "logagent.dev_selftest.diagnose",
+  "arguments": {
+    "runId": "devselftest_...",
+    "taskRunId": "task_...",
+    "includeDockerProbes": true
+  }
+}
+```
+
+该工具只读取本 run 的 `progress.json`、`report.json` 和 `logs/*.txt`，并基于配置化 Docker profile 执行
+`docker compose ps/logs`、`docker ps` 等只读 probe。输出包含 `category`（如 `port_conflict`、
+`stale_compose_project`、`health_check_failed`、`container_crash`、`build_failed`、`test_failed`）、
+bounded 脱敏证据和建议。它不会执行 cleanup、restart、rm 或任意 shell。
+
+## 6. 环境清理
 
 `cleanup` 是显式可选步骤，推荐在 `report` 后调用；失败环境默认保留，便于排查。
 
@@ -162,7 +183,7 @@ docker compose -p devselftest_<runId>_<profile> -f <configured-compose-file> dow
 该步骤不加 `--volumes`，不删除 `source/`、`artifacts/`、`logs/`、`progress.json` 或 `report.*`。
 如果 run 尚未 deploy，可显式传 `profile`。
 
-## 6. Inline Docker 测试
+## 7. Inline Docker 测试
 
 当前收敛后的测试派发只保留 inline Docker target：
 
@@ -196,7 +217,7 @@ docker run --rm --network host -v <tests>:/tests:ro \
 
 系统 env（`DEVSELFTEST_HOST`、`DEVSELFTEST_PORT`、run 目录变量）最终优先，用户配置的 env 不能覆盖测试目标。
 
-## 7. Run 工作区
+## 8. Run 工作区
 
 ```text
 data/dev_selftest/runs/{runId}/
@@ -212,14 +233,15 @@ data/dev_selftest/runs/{runId}/
 每个步骤写入结构化 `result.json`，原始 stdout/stderr 写入 `logs/`。artifact 对外只暴露逻辑 ID，
 不暴露任意本地路径。
 
-## 8. 失败处理
+## 9. 失败处理
 
 - 核心步骤失败会把 dev_selftest run 标记为 `FAILED`，并在 `progress.json` 记录错误和 evidence。
 - 后续仍可调用 `report`，报告会列出 `failedSteps`。
+- 失败后优先调用 `logagent.dev_selftest.diagnose` 获取分类、证据片段和建议，再决定修代码、保留现场或 cleanup。
 - `docker_cluster` health check 失败不会执行自动回滚；失败环境默认保留用于排查。
 - 需要释放环境时，在 `report` 后调用 `logagent.dev_selftest.cleanup`。cleanup 失败只记录清理步骤 evidence，不改变 report 的核心自测结论。
 
-## 9. 已移除路径
+## 10. 已移除路径
 
 当前用法不包含 SSH/SCP executor、托管 executor record、`suite.executor`、Huawei package sync、
 GeminiDB create instance、Server 托管 skills 或 Server 侧 workflow API。需要更复杂的自动化时，应放在外部 MCP client/skill 中，

@@ -1,7 +1,7 @@
 # Dev Self-Test Tools
 
 开发自测模块让外部 MCP 客户端驱动 Linux LocalToolHub 完成
-`sync_workspace -> build -> deploy -> run_tests -> report -> cleanup(optional)`。完整 workflow 不在 Server 内编排，
+`sync_workspace -> build -> deploy -> run_tests -> report -> cleanup(optional)`；失败后可调用只读 `diagnose`。完整 workflow 不在 Server 内编排，
 而是由客户端本地 skill（如 `skills/dev-selftest-pipeline/`）串联。Server 负责受控 MCP tools、
 持久工作区、artifact、run history 和安全边界。
 
@@ -12,7 +12,7 @@
 
 - 维护 dev_selftest run 工作区和 `DevSelftestRunRecord` 索引。
 - 同步源码：只允许 allowlisted git repo/ref。Windows 端先 commit/push，ToolHub 负责 clone 或 pull。
-- 暴露配置发现：`logagent://dev_selftest/config` 返回当前 allowlisted repo/ref、默认 repo/ref、build/docker/test profile ids 和 build/test profile 明细，供客户端 skill 选择参数。
+- 暴露配置发现：`logagent://dev_selftest/config` 返回当前 allowlisted repo/ref、默认 repo/ref、build/docker/test profile ids、Docker cluster profile 明细和 build/test profile 明细，供客户端 skill 选择参数和定位 deploy 问题。
 - 热更新 git allowlist：用户明确同意后，MCP `logagent.dev_selftest.allowlist.update` 或 WebUI Settings 可追加 repo/ref、设为默认、写回 Server 配置，并即时影响后续 `sync_workspace`。
 - 热更新 Docker-backed build/test profile：用户明确同意后，MCP `logagent.dev_selftest.profiles.upsert` 或 WebUI Settings 可新增/更新 Docker profile、写回 Server 配置，并即时影响后续 `build` / `run_tests` 参数校验。
 - 执行配置式 build：旧 host command profile 继续可用；Docker build profile 在镜像内执行 `argv`，把匹配的产物收集到 run `artifacts/`。
@@ -20,6 +20,7 @@
 - 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。
 - 生成 `report.md` / `report.json`，聚合每步状态和证据。
 - 显式可选环境清理：`cleanup` 对本次 run 的配置化 compose project 执行 `docker compose down`，释放容器/网络，保留源码、日志、artifact、progress 和报告。
+- 只读失败诊断：`diagnose` 读取 run 证据、执行 allowlisted Docker 只读 probe，返回失败原因分类、证据片段和下一步建议，不做恢复动作。
 - 复用 `TaskExecutor` + `TaskStore` 的 `runMode:"queued"` / `logagent.runs.get/result` 模型；queued 返回的 `task_*` 只用于轮询，`sync_workspace` 返回的 `devselftest_*` 才是后续 step 的工作区 id。
 
 ## 边界
@@ -35,7 +36,7 @@
 
 ## 文件
 
-- `server/src/services/dev_selftest.rs` — 工具组 descriptors/validate/run 与各 step。
+- `server/src/services/dev_selftest.rs` — 工具组 descriptors/validate/run、各 step 和只读诊断分类。
 - `server/src/services/dev_selftest_allowlist.rs` — 运行时 git allowlist、配置摘要、热更新校验、YAML 写回。
 - `server/src/stores/dev_selftest_store.rs` — run 索引（JSON-per-run）。
 - `server/src/support/config.rs` — `DevSelftestSettings`、profile 配置和 resolver。
@@ -48,12 +49,12 @@
 
 ## 当前实现
 
-- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 和 `cleanup` 工具；`sync_workspace` 为 git-only，新 run clone，已有 run pull。
+- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report`、`cleanup` 和 `diagnose` 工具；`sync_workspace` 为 git-only，新 run clone，已有 run pull。
 - 已实现 Docker-backed build profile：默认挂载 `source/` 到 `/workspace/source:rw`、`artifacts/` 到 `/workspace/artifacts:rw`，默认 `workdir=/workspace/source`，复杂工具链和脚本推荐固化在镜像中。
 - 已实现 `docker_cluster` 部署，默认 demo 为 openGemini 3 meta + 3 (sql+store) 集群。
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
-- 已实现 `logagent://dev_selftest/config`、`logagent.dev_selftest.allowlist.update` 和 `logagent.dev_selftest.profiles.upsert`；WebUI Settings 使用同一服务读取/保存 allowlist 与 Docker profile。
+- 已实现 `logagent://dev_selftest/config`、`logagent.dev_selftest.allowlist.update` 和 `logagent.dev_selftest.profiles.upsert`；WebUI Settings 使用同一服务读取/保存 allowlist 与 Docker profile。config resource 额外暴露 Docker cluster profile 明细，`diagnose` 用同一 profile 派生只读 probe。
 - 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环；`cleanup` 可在 report 后释放 compose 资源。
 - 客户端 skill 默认不在本地编译或测试；每轮改动 commit/push 后直接 `sync_workspace`，以远端 MCP `build` 的错误证据驱动下一轮修改。
 - openGemini demo smoke 在写点后对 SELECT 做短轮询；写接口返回成功后，点可能需要很短时间才对查询可见。
