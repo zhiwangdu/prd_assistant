@@ -2,7 +2,7 @@
 
 A 3 meta + 3 (sql+store) openGemini cluster brought up by the `logagent.dev_selftest.deploy`
 tool's `docker_cluster` profile. This is the validated default demo for the dev_selftest
-Docker path (sync → build → deploy → run_tests → report, all SUCCEEDED).
+Docker path (sync → build → deploy → run_tests → report, all SUCCEEDED; cleanup optional).
 
 The cluster artifacts live here in the repo. The openGemini **source** and **binaries**
 are NOT here: the pipeline syncs the source from an allowlisted git repo/ref
@@ -81,6 +81,8 @@ remote_execution:
 process must have docker access (be in the `docker` group, or start via `sg docker -c`).
 The development flow is: commit and push from the Windows-side client, then call
 `sync_workspace {gitRepo, gitRef}` so ToolHub clones or pulls the configured ref.
+After `report`, call `logagent.dev_selftest.cleanup` when you want to release the compose
+containers/network while keeping run evidence.
 
 ## Test execution (inline Docker)
 
@@ -103,6 +105,23 @@ needs no apt/network. Suites without a `docker` block keep the P1 local stub.
 There is no managed executor record path in the converged product; `/api/executors`,
 `/api/executor-runs`, `suite.executor`, SSH/SCP deployment, and cloud instance creation
 are intentionally absent.
+
+## Pipeline cleanup
+
+Use the MCP cleanup step after reporting when the demo cluster is no longer needed:
+
+```json
+{
+  "name": "logagent.dev_selftest.cleanup",
+  "arguments": {
+    "runId": "devselftest_..."
+  }
+}
+```
+
+The server derives `devselftest_<runId>_opengemini_cluster` from the run's deploy target and
+executes `docker compose down` with the configured compose file. It does not pass `--volumes`
+and does not delete the run workspace, logs, artifacts, or report files.
 
 ## Intranet / air-gapped overrides
 

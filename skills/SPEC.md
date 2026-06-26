@@ -66,7 +66,10 @@ create extra tool runs. dev_selftest skills must read `logagent://dev_selftest/c
   evidence, fixes locally, commits/pushes, calls `sync_workspace` again, and retries remote
   `build`.
 - The client carries the returned `devselftest_*` workspace id through `build`, `deploy`,
-  `run_tests`, and `report`.
+  `run_tests`, `report`, and the optional post-report `cleanup`.
+- Environment cleanup is explicit and optional: call `logagent.dev_selftest.cleanup` after
+  `report` only when the user or workflow wants to release the Docker compose resources. Cleanup
+  keeps source, logs, artifacts, progress, and reports for audit.
 - Queued execution returns `task_*` ids for polling only; a `task_*` id must not be passed as the
   dev_selftest workspace id.
 - The skill must not SSH to the Server to read config, scan a local `prd_assistant` checkout for

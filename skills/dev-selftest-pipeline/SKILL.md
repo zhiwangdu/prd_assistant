@@ -1,6 +1,6 @@
 ---
 name: dev-selftest-pipeline
-description: Use when Claude Code needs to run LocalToolHub dev_selftest through MCP: commit and push local code, sync an allowlisted git repo/ref, build, deploy a Docker cluster, run tests, poll queued runs, and generate a report.
+description: Use when Claude Code needs to run LocalToolHub dev_selftest through MCP: commit and push local code, sync an allowlisted git repo/ref, build, deploy a Docker cluster, run tests, poll queued runs, generate a report, and optionally clean up the Docker environment.
 ---
 
 # Dev Self-Test Pipeline
@@ -39,7 +39,8 @@ Important ID rule:
 
 - `devselftest_*` is the persistent dev_selftest workspace id returned by
   `logagent.dev_selftest.sync_workspace`. Pass it to `build`, `deploy`, `run_tests`, and
-  `report`.
+  `report`; pass it to `cleanup` only after reporting when the user or workflow explicitly wants
+  to release the Docker compose resources.
 - `task_*` is a queued Tool Runner id returned by `runMode:"queued"`. Use it only with
   `logagent.runs.get` and `logagent.runs.result`.
 

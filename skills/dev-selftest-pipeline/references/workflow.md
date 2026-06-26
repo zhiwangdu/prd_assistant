@@ -35,6 +35,7 @@ Claude Code owns the workflow: edit locally, commit, push, then drive Server too
   - `logagent.dev_selftest.deploy`
   - `logagent.dev_selftest.run_tests`
   - `logagent.dev_selftest.report`
+  - `logagent.dev_selftest.cleanup`
   - `logagent.runs.get`
   - `logagent.runs.result`
 - The MCP client can call `resources/read` for `logagent://dev_selftest/config`.
@@ -159,6 +160,7 @@ Run the steps in this order:
 | 3 | `logagent.dev_selftest.deploy` | Start the configured Docker cluster and run its health check. |
 | 4 | `logagent.dev_selftest.run_tests` | Run a configured test suite, usually through inline Docker. |
 | 5 | `logagent.dev_selftest.report` | Generate `report.md` and `report.json` from recorded step evidence. |
+| 6 | `logagent.dev_selftest.cleanup` | Optional after report: run `docker compose down` for the run's configured Docker project while preserving run evidence. |
 
 Recommended flow:
 
@@ -167,6 +169,7 @@ Recommended flow:
 3. Poll queued calls with `logagent.runs.get`.
 4. Read final queued output with `logagent.runs.result`.
 5. Continue passing the original `devselftest_*` id to subsequent dev_selftest tools.
+6. After `report`, call `cleanup` only when the user or workflow wants to release Docker compose resources. Failed runs should usually keep the environment for inspection unless the user asks to clean it up.
 
 ## Queued Calls And IDs
 
@@ -174,7 +177,7 @@ There are two different id families:
 
 | Prefix | Meaning | Where to use |
 |--------|---------|--------------|
-| `devselftest_*` | Persistent dev_selftest workspace/run id. | Pass to `build`, `deploy`, `run_tests`, and `report`. |
+| `devselftest_*` | Persistent dev_selftest workspace/run id. | Pass to `build`, `deploy`, `run_tests`, `report`, and optional `cleanup`. |
 | `task_*` | Queued Tool Runner execution id. | Poll with `logagent.runs.get` and read with `logagent.runs.result` only. |
 
 If `runMode:"queued"` returns:
@@ -272,6 +275,33 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
 }
 ```
 
+### cleanup
+
+Cleanup is optional and should normally run after `report`. It releases only the Docker compose
+resources for the run and keeps `source/`, `artifacts/`, `logs/`, `progress.json`, `report.md`,
+and `report.json` for audit.
+
+```json
+{
+  "name": "logagent.dev_selftest.cleanup",
+  "arguments": {
+    "runId": "devselftest_..."
+  }
+}
+```
+
+If the run was not deployed yet, pass an explicit configured docker profile:
+
+```json
+{
+  "name": "logagent.dev_selftest.cleanup",
+  "arguments": {
+    "runId": "devselftest_...",
+    "profile": "opengemini_cluster"
+  }
+}
+```
+
 ## Result Shapes
 
 ### progress.json
@@ -285,7 +315,8 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
     { "step": "build", "status": "OK", "durationMs": 345 },
     { "step": "deploy", "status": "OK" },
     { "step": "run_tests", "status": "OK" },
-    { "step": "report", "status": "OK" }
+    { "step": "report", "status": "OK" },
+    { "step": "cleanup", "status": "OK" }
   ]
 }
 ```
@@ -298,6 +329,19 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
   "status": "SUCCEEDED",
   "reportPath": "report.md",
   "failedSteps": []
+}
+```
+
+### cleanup
+
+```json
+{
+  "runId": "devselftest_...",
+  "profile": "opengemini_cluster",
+  "projectName": "devselftest_<runId>_opengemini_cluster",
+  "status": "OK",
+  "stdoutPath": "logs/cleanup.stdout.txt",
+  "stderrPath": "logs/cleanup.stderr.txt"
 }
 ```
 
@@ -316,12 +360,11 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
 - A failed dev_selftest step records evidence in `progress.json` and marks the dev_selftest run
   failed.
 - `report` remains callable after failures and should be used to summarize failed steps.
-- Docker health check failures do not trigger automatic rollback. Clean up the compose project
-  manually when needed:
-
-```bash
-docker compose -p devselftest_<runId>_<profile> down
-```
+- Docker health check failures do not trigger automatic rollback. Keep the environment for
+  inspection by default; after `report`, call `logagent.dev_selftest.cleanup` when cleanup is
+  explicitly desired.
+- Cleanup failures are recorded as cleanup evidence, but they do not change the report's core
+  self-test verdict. Retry cleanup with the same `devselftest_*` id if needed.
 
 ## Removed Paths
 

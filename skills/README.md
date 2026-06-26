@@ -34,7 +34,7 @@ manifests; those belonged to the removed server-side skill registry.
 
 | Skill | Purpose |
 |-------|---------|
-| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: discover the allowlist from MCP, commit/push local code, skip local builds by default, sync the allowlisted git ref, request user consent before allowlist updates, use remote build/deploy/tests, poll queued runs, and generate a report. |
+| `dev-selftest-pipeline/` | Claude Code orchestration for `logagent.dev_selftest.*`: discover the allowlist from MCP, commit/push local code, skip local builds by default, sync the allowlisted git ref, request user consent before allowlist updates, use remote build/deploy/tests, poll queued runs, generate a report, and optionally call cleanup after reporting. |
 
 ## Maintenance
 

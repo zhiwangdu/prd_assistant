@@ -1,6 +1,7 @@
 # LocalToolHub server config for the dev self-test pipeline (docker closed loop).
 # Drive from a remote MCP client (e.g. Claude Code on Windows over an SSH tunnel):
-#   sync_workspace -> build -> deploy (docker_cluster) -> run_tests -> runs.get -> report.
+#   sync_workspace -> build -> deploy (docker_cluster) -> run_tests -> runs.get -> report
+#   -> cleanup (optional docker compose down).
 #
 # All commands/binaries/compose paths must be absolute and are allowlisted here. Tool params
 # only select profile ids, carry a runId, and choose an allowlisted git repo+ref.

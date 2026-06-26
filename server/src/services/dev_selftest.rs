@@ -8,10 +8,10 @@
 //! `/api/tools`, MCP `tools/list`, and the WebUI catalog.
 //!
 //! Implements git-only source sync, configured build, `docker_cluster` deploy,
-//! inline Docker tests (or a local stub when no Docker target is configured), and
-//! a rule-based report. All commands/binaries/paths/compose files come from the
-//! `dev_selftest` config allowlist; tool params only select profile ids and carry
-//! a `runId`.
+//! inline Docker tests (or a local stub when no Docker target is configured), an
+//! optional Docker compose cleanup step, and a rule-based report. All
+//! commands/binaries/paths/compose files come from the `dev_selftest` config
+//! allowlist; tool params only select profile ids and carry a `runId`.
 
 use std::{
     collections::BTreeMap,
@@ -54,6 +54,7 @@ pub const BUILD_ID: &str = "logagent.dev_selftest.build";
 pub const DEPLOY_ID: &str = "logagent.dev_selftest.deploy";
 pub const RUN_TESTS_ID: &str = "logagent.dev_selftest.run_tests";
 pub const REPORT_ID: &str = "logagent.dev_selftest.report";
+pub const CLEANUP_ID: &str = "logagent.dev_selftest.cleanup";
 
 const PROGRESS_FILE: &str = "progress.json";
 
@@ -65,6 +66,7 @@ pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
         deploy_descriptor(enabled),
         run_tests_descriptor(enabled),
         report_descriptor(enabled),
+        cleanup_descriptor(enabled),
     ]
 }
 
@@ -77,7 +79,7 @@ pub fn get_descriptor(config: &AppConfig, tool_id: &str) -> Option<ToolDescripto
 pub fn is_dev_selftest_tool(tool_id: &str) -> bool {
     matches!(
         tool_id,
-        SYNC_WORKSPACE_ID | BUILD_ID | DEPLOY_ID | RUN_TESTS_ID | REPORT_ID
+        SYNC_WORKSPACE_ID | BUILD_ID | DEPLOY_ID | RUN_TESTS_ID | REPORT_ID | CLEANUP_ID
     )
 }
 
@@ -153,6 +155,19 @@ pub fn validate_run_params_with_git_repos(
             let params: ReportParams = parse_params(value)?;
             serde_json::to_value(params)
         }
+        CLEANUP_ID => {
+            let params: CleanupParams = parse_params(value)?;
+            validate_run_id(&params.run_id)?;
+            if let Some(profile) = params
+                .profile
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                require_docker_profile(config, profile)?;
+            }
+            serde_json::to_value(params)
+        }
         _ => return Err(AppError::not_found(format!("unknown toolId {tool_id}"))),
     }
     .map_err(|err| AppError::internal(format!("failed to encode dev_selftest params: {err}")))?;
@@ -179,6 +194,7 @@ pub async fn run_dev_selftest_task(
         DEPLOY_ID => run_deploy(state, task).await,
         RUN_TESTS_ID => run_run_tests(state, task).await,
         REPORT_ID => run_report(state, task).await,
+        CLEANUP_ID => run_cleanup(state, task).await,
         _ => Err(AppError::bad_request(format!("unknown toolId {tool_id}"))),
     }
 }
@@ -228,6 +244,14 @@ struct RunTestsParams {
 #[serde(rename_all = "camelCase")]
 struct ReportParams {
     run_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CleanupParams {
+    run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile: Option<String>,
 }
 
 fn parse_params<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, AppError> {
@@ -952,6 +976,14 @@ fn deploy_env(
     env
 }
 
+fn compose_project_name(run_id: &str, profile: &str) -> Result<String, AppError> {
+    Ok(format!(
+        "devselftest_{}_{}",
+        sanitize_filename(run_id)?,
+        sanitize_filename(profile)?
+    ))
+}
+
 async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
     let params: DeployParams = parse_params(&task.tool_params)?;
     validate_run_id(&params.run_id)?;
@@ -972,11 +1004,7 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
     let run_root = run_dir(&state, &record.run_id);
     let source_dir = run_root.join("source");
     let artifacts_dir = run_root.join("artifacts");
-    let project_name = format!(
-        "devselftest_{}_{}",
-        sanitize_filename(&record.run_id)?,
-        sanitize_filename(&params.profile)?
-    );
+    let project_name = compose_project_name(&record.run_id, &params.profile)?;
     let env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
     let started = Instant::now();
     let run = run_bounded_command(
@@ -1073,6 +1101,115 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
         "status": status,
         "exitCode": run.exit_code,
         "deployTarget": target,
+        "error": error,
+        "durationMs": duration,
+        "createdAt": Utc::now(),
+    });
+    write_tool_result(
+        &state.config.storage.workspace_dir(&task.task_id),
+        &action_id,
+        &result,
+    )
+}
+
+async fn run_cleanup(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
+    let params: CleanupParams = parse_params(&task.tool_params)?;
+    validate_run_id(&params.run_id)?;
+    let record = state
+        .dev_selftest
+        .get(&params.run_id)
+        .await
+        .ok_or_else(|| AppError::bad_request(format!("unknown runId {}", params.run_id)))?;
+    let profile = params
+        .profile
+        .clone()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| match &record.deploy_target {
+            Some(DevSelftestDeployTarget::Docker { cluster, .. }) => Some(cluster.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            AppError::bad_request(
+                "cleanup profile is required when the run has no docker deploy target",
+            )
+        })?;
+    let cluster = state
+        .config
+        .dev_selftest
+        .docker
+        .clusters
+        .get(&profile)
+        .ok_or_else(|| AppError::bad_request(format!("unknown docker cluster {profile}")))?
+        .clone();
+
+    let run_root = run_dir(&state, &record.run_id);
+    let source_dir = run_root.join("source");
+    let artifacts_dir = run_root.join("artifacts");
+    let project_name = compose_project_name(&record.run_id, &profile)?;
+    let env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
+    let started = Instant::now();
+    let run = run_bounded_command(
+        &state.config.dev_selftest.docker.binary,
+        &[
+            "compose".to_string(),
+            "-p".to_string(),
+            project_name.clone(),
+            "-f".to_string(),
+            cluster.compose_file.to_string_lossy().to_string(),
+            "down".to_string(),
+        ],
+        &run_root,
+        &env,
+        state.config.dev_selftest.build_timeout_seconds,
+        state.config.dev_selftest.max_output_bytes,
+    )
+    .await;
+    let duration = started.elapsed().as_millis();
+
+    let logs_dir = run_root.join("logs");
+    fs::create_dir_all(&logs_dir)
+        .map_err(|err| AppError::internal(format!("failed to create logs dir: {err}")))?;
+    write_bytes(&logs_dir.join("cleanup.stdout.txt"), &run.stdout)?;
+    write_bytes(&logs_dir.join("cleanup.stderr.txt"), &run.stderr)?;
+
+    let status = if run.ok { "OK" } else { "FAILED" };
+    let error = if run.ok {
+        None
+    } else {
+        Some(
+            run.error
+                .clone()
+                .unwrap_or_else(|| format!("exit code {:?}", run.exit_code)),
+        )
+    };
+    append_step(
+        &state,
+        &record.run_id,
+        new_step(
+            "cleanup",
+            status,
+            duration,
+            error.clone(),
+            vec![
+                "logs/cleanup.stdout.txt".to_string(),
+                "logs/cleanup.stderr.txt".to_string(),
+            ],
+        ),
+    )?;
+
+    let action_id = task_action_id(CLEANUP_ID, &task.task_id);
+    let result = json!({
+        "schemaVersion": 1,
+        "toolId": CLEANUP_ID,
+        "actionId": action_id,
+        "runId": record.run_id,
+        "profile": profile,
+        "projectName": project_name,
+        "status": status,
+        "exitCode": run.exit_code,
+        "stdoutPath": "logs/cleanup.stdout.txt",
+        "stderrPath": "logs/cleanup.stderr.txt",
         "error": error,
         "durationMs": duration,
         "createdAt": Utc::now(),
@@ -1383,7 +1520,7 @@ async fn run_report(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
     let failed_steps: Vec<&str> = progress
         .steps
         .iter()
-        .filter(|step| step.status != "OK")
+        .filter(|step| step.status != "OK" && step.step != "cleanup")
         .map(|step| step.step.as_str())
         .collect();
     let overall = if failed_steps.is_empty() {
@@ -1600,7 +1737,7 @@ fn deploy_descriptor(enabled: bool) -> ToolDescriptor {
         },
         "required": ["runId", "profile"]
     });
-    d.params_template = json!({ "runId": "", "profile": "" });
+    d.params_template = json!({ "runId": "" });
     d
 }
 
@@ -1639,6 +1776,28 @@ fn report_descriptor(enabled: bool) -> ToolDescriptor {
     d
 }
 
+fn cleanup_descriptor(enabled: bool) -> ToolDescriptor {
+    let mut d = base_descriptor(
+        CLEANUP_ID,
+        "Dev self-test: cleanup",
+        "Optionally clean up the run's Docker compose environment with the configured compose profile. This runs docker compose down for the derived project name and keeps source, logs, artifacts, progress, and reports for audit.",
+        enabled,
+    );
+    d.params_schema = json!({
+        "type": "object",
+        "properties": {
+            "runId": { "type": "string" },
+            "profile": {
+                "type": "string",
+                "description": "Optional dev_selftest.docker.clusters profile id. Omit to use the run's deployed docker target."
+            }
+        },
+        "required": ["runId"]
+    });
+    d.params_template = json!({ "runId": "", "profile": "" });
+    d
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1658,13 +1817,14 @@ mod tests {
     fn descriptors_gated_by_enabled() {
         let config = test_config(false);
         let ds = descriptors(&config);
-        assert_eq!(ds.len(), 5);
+        assert_eq!(ds.len(), 6);
         assert!(ds.iter().all(|d| !d.enabled && !d.runnable));
         assert!(ds.iter().all(|d| d.backend == "dev_selftest"));
         let config = test_config(true);
         let ds = descriptors(&config);
         assert!(ds.iter().all(|d| d.enabled && d.runnable));
         assert!(get_descriptor(&config, BUILD_ID).is_some());
+        assert!(get_descriptor(&config, CLEANUP_ID).is_some());
     }
 
     #[test]
@@ -1722,6 +1882,21 @@ mod tests {
             &json!({"runId":"devselftest_x","testSuite":"stub"})
         )
         .is_ok());
+        assert!(
+            validate_run_params(&config, CLEANUP_ID, &json!({"runId":"devselftest_x"})).is_ok()
+        );
+        assert!(validate_run_params(
+            &config,
+            CLEANUP_ID,
+            &json!({"runId":"devselftest_x","profile":"local"})
+        )
+        .is_ok());
+        assert!(validate_run_params(
+            &config,
+            CLEANUP_ID,
+            &json!({"runId":"devselftest_x","profile":"missing"})
+        )
+        .is_err());
     }
 
     #[test]
@@ -1913,6 +2088,7 @@ exit 0
     struct ToolOut {
         status: String,
         run_id: String,
+        value: Value,
     }
 
     #[cfg(all(test, unix))]
@@ -1927,6 +2103,7 @@ exit 0
         ToolOut {
             status: value["status"].as_str().unwrap_or("").to_string(),
             run_id: value["runId"].as_str().unwrap_or("").to_string(),
+            value,
         }
     }
 
@@ -2137,6 +2314,88 @@ exit 0
 
         let report = run_tool(&state, REPORT_ID, json!({"runId":run_id})).await;
         assert_eq!(report.status, "SUCCEEDED");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn cleanup_downs_deployed_compose_project_and_keeps_evidence() {
+        let (state, root) = test_state_with_docker_suite("dev-selftest-cleanup");
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("cleanup")).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+        let deploy = run_tool(&state, DEPLOY_ID, json!({"runId":run_id,"profile":"local"})).await;
+        assert_eq!(deploy.status, "OK");
+        let report = run_tool(&state, REPORT_ID, json!({"runId":run_id})).await;
+        assert_eq!(report.status, "SUCCEEDED");
+
+        let cleanup = run_tool(&state, CLEANUP_ID, json!({"runId":run_id})).await;
+        assert_eq!(cleanup.status, "OK");
+        assert_eq!(cleanup.value["profile"], "local");
+        assert_eq!(
+            cleanup.value["projectName"].as_str().unwrap(),
+            format!("devselftest_{run_id}_local")
+        );
+
+        let run_dir = state.config.storage.dev_selftest_run_dir(&run_id);
+        let stdout = std::fs::read_to_string(run_dir.join("logs/cleanup.stdout.txt")).unwrap();
+        assert!(
+            stdout.contains(&format!(
+                "compose -p devselftest_{run_id}_local -f /opt/dev_selftest/docker-compose.yml down"
+            )),
+            "stdout: {stdout}"
+        );
+        assert!(!stdout.contains("--volumes"), "stdout: {stdout}");
+        assert!(run_dir.join("source/SYNCED.txt").is_file());
+        assert!(run_dir.join("report.md").is_file());
+
+        let progress: Progress =
+            serde_json::from_str(&std::fs::read_to_string(run_dir.join(PROGRESS_FILE)).unwrap())
+                .unwrap();
+        assert!(progress.steps.iter().any(|step| step.step == "cleanup"
+            && step.evidence_refs
+                == vec![
+                    "logs/cleanup.stdout.txt".to_string(),
+                    "logs/cleanup.stderr.txt".to_string()
+                ]));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[cfg(all(test, unix))]
+    async fn cleanup_failure_does_not_change_report_verdict() {
+        use std::os::unix::fs::PermissionsExt;
+        let (state, root) = test_state_with_docker_suite("dev-selftest-cleanup-fail");
+
+        let sync = run_tool(&state, SYNC_WORKSPACE_ID, sync_params("cleanup-fail")).await;
+        assert_eq!(sync.status, "OK");
+        let run_id = sync.run_id;
+        let deploy = run_tool(&state, DEPLOY_ID, json!({"runId":run_id,"profile":"local"})).await;
+        assert_eq!(deploy.status, "OK");
+
+        let fake_docker = state.config.dev_selftest.docker.binary.clone();
+        std::fs::write(
+            &fake_docker,
+            "#!/usr/bin/env bash\nprintf 'ARGS:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; echo\nexit 7\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_docker).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_docker, perms).unwrap();
+
+        let cleanup = run_tool(&state, CLEANUP_ID, json!({"runId":run_id})).await;
+        assert_eq!(cleanup.status, "FAILED");
+        let report = run_tool(&state, REPORT_ID, json!({"runId":run_id})).await;
+        assert_eq!(report.status, "SUCCEEDED");
+        assert_eq!(report.value["failedSteps"], json!([]));
+        assert!(report.value["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|step| step["step"] == "cleanup" && step["status"] == "FAILED"));
 
         let _ = std::fs::remove_dir_all(root);
     }

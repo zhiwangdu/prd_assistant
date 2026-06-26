@@ -957,6 +957,7 @@ mod tests {
             .map(|tool| tool["name"].as_str().unwrap())
             .collect();
         assert!(names.contains(&"logagent.dev_selftest.sync_workspace"));
+        assert!(names.contains(&"logagent.dev_selftest.cleanup"));
         assert!(names.contains(&"logagent.dev_selftest.allowlist.update"));
         assert!(names.contains(&"logagent.dev_selftest.profiles.upsert"));
 

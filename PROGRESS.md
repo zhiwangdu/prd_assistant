@@ -12,6 +12,21 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-26 dev_selftest 环境清理 MCP step
+
+- Server 新增 `logagent.dev_selftest.cleanup` runnable tool，进入 Tool Catalog / MCP `tools/list`，支持 sync 和
+  `runMode:"queued"`。参数为 `runId` 和可选 `profile`；省略 profile 时从 run 的 Docker deploy target 推导。
+- cleanup 复用配置化 Docker cluster allowlist，按 `devselftest_<runId>_<profile>` 派生 compose project，只执行
+  `docker compose -p ... -f <configured compose_file> down`；不接受任意 shell、compose path、project name、`--volumes`
+  或本地路径删除参数。
+- cleanup 写入 `logs/cleanup.stdout.txt`、`logs/cleanup.stderr.txt`、`progress.json` 和 tool result，保留
+  `source/`、`artifacts/`、`report.*` 等审计证据；cleanup 失败只记录清理步骤失败，不改变 report 的核心自测 verdict。
+- 客户端 workflow 文档更新为 `sync_workspace -> build -> deploy -> run_tests -> report -> cleanup(optional)`；失败环境默认保留，
+  需要释放 compose 资源时在 report 后显式调用 cleanup。
+- 文档同步：根 README/SPEC、server README/SPEC、skills README/SPEC、dev-selftest skill workflow、dev_selftest 模块文档、
+  Tool Runner 模块文档、openGemini demo 和 dev_selftest 示例配置注释。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server`（85 passed）、`git diff --check`。
+
 ## 2026-06-26 dev_selftest Docker profile 热更新与 Docker build
 
 - Server 新增运行时 dev_selftest profile registry：启动时从 `dev_selftest.builds` / `dev_selftest.test_suites`

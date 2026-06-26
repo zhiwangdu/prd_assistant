@@ -1,7 +1,7 @@
 # Dev Self-Test Tools
 
 开发自测模块让外部 MCP 客户端驱动 Linux LocalToolHub 完成
-`sync_workspace -> build -> deploy -> run_tests -> report`。完整 workflow 不在 Server 内编排，
+`sync_workspace -> build -> deploy -> run_tests -> report -> cleanup(optional)`。完整 workflow 不在 Server 内编排，
 而是由客户端本地 skill（如 `skills/dev-selftest-pipeline/`）串联。Server 负责受控 MCP tools、
 持久工作区、artifact、run history 和安全边界。
 
@@ -19,12 +19,13 @@
 - 执行 `docker_cluster` 部署：`docker compose up -d` + 声明式 health check。
 - 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。
 - 生成 `report.md` / `report.json`，聚合每步状态和证据。
+- 显式可选环境清理：`cleanup` 对本次 run 的配置化 compose project 执行 `docker compose down`，释放容器/网络，保留源码、日志、artifact、progress 和报告。
 - 复用 `TaskExecutor` + `TaskStore` 的 `runMode:"queued"` / `logagent.runs.get/result` 模型；queued 返回的 `task_*` 只用于轮询，`sync_workspace` 返回的 `devselftest_*` 才是后续 step 的工作区 id。
 
 ## 边界
 
 - 所有命令、二进制、路径、compose 文件、repo/ref 都来自 `dev_selftest` 配置/运行时 allowlist。
-- tool 参数只能选择 profile id、携带 `runId`，并在 `sync_workspace` 里选择 allowlisted `gitRepo/gitRef`；不得传自由 shell 或上传源码包。
+- tool 参数只能选择 profile id、携带 `runId`，并在 `sync_workspace` 里选择 allowlisted `gitRepo/gitRef`；不得传自由 shell、任意 compose path、任意 project name 或上传源码包。
 - git allowlist 热更新只允许追加/设默认：必须 `confirmedUserConsent=true`，必须通过 URL/ref 校验和 `git ls-remote` 可达性检查；写回配置成功后才更新内存状态。
 - Docker profile upsert 只允许 build/test profile：必须 `confirmedUserConsent=true`，必须通过 profile id、非空 argv 和 Docker target 校验；写回配置成功后才更新内存 registry。已排队的 build/run_tests task 携带 profile snapshot，不被后续 upsert 改写。
 - `remote_execution.commands` 只作为 test suite 的 argv/timeout 模板，不再表示可纳管远程 executor。
@@ -47,13 +48,13 @@
 
 ## 当前实现
 
-- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 五个工具；`sync_workspace` 为 git-only，新 run clone，已有 run pull。
+- 已实现 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` 和 `cleanup` 工具；`sync_workspace` 为 git-only，新 run clone，已有 run pull。
 - 已实现 Docker-backed build profile：默认挂载 `source/` 到 `/workspace/source:rw`、`artifacts/` 到 `/workspace/artifacts:rw`，默认 `workdir=/workspace/source`，复杂工具链和脚本推荐固化在镜像中。
 - 已实现 `docker_cluster` 部署，默认 demo 为 openGemini 3 meta + 3 (sql+store) 集群。
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
 - 已实现 `logagent://dev_selftest/config`、`logagent.dev_selftest.allowlist.update` 和 `logagent.dev_selftest.profiles.upsert`；WebUI Settings 使用同一服务读取/保存 allowlist 与 Docker profile。
-- 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环。
+- 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环；`cleanup` 可在 report 后释放 compose 资源。
 - 客户端 skill 默认不在本地编译或测试；每轮改动 commit/push 后直接 `sync_workspace`，以远端 MCP `build` 的错误证据驱动下一轮修改。
 - openGemini demo smoke 在写点后对 SELECT 做短轮询；写接口返回成功后，点可能需要很短时间才对查询可见。
 
