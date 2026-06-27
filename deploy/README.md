@@ -46,6 +46,11 @@ $LOGAGENT_APP_DIR/
 - `LOGAGENT_SUBMODULE_FLUX_URL`
 - `LOGAGENT_SUBMODULE_OPENGEMINI_URL`
 - `LOGAGENT_SUBMODULE_INFLUXDB_URL`
+- `LOGAGENT_INFLUXDB_REPO_URL`
+- `LOGAGENT_INFLUXDB_REF`
+- `INFLUXDB_BUILDER_IMAGE`
+- `INFLUXDB_BASE_IMAGE`
+- `INFLUXDB_PORT`
 
 LLM/Agent/Fetch/Executor/Metadata/Case/Skills 相关变量不再是默认部署项。
 
@@ -97,6 +102,28 @@ docker build -t localtoolhub/opengemini-selftest:dev \
 本地验证可在 `examples/server-dev-selftest.yaml` 中使用该 image。内网部署时只需要把
 `dev_selftest.test_suites.cloud_opengemini_case.docker.image` 替换成内部 registry 的镜像；
 云实例创建、凭据获取和内部 SDK 逻辑留在内部 skill 或内部镜像中。
+
+## InfluxDB dev_selftest 配置生成
+
+InfluxDB OSS 只支持单机版；本仓库提供单节点 `influxd` Docker demo：
+
+```bash
+deploy/probe-influxdb-config.sh --print
+```
+
+该脚本会探测 `LOGAGENT_APP_DIR`、`LOGAGENT_SRC_DIR`、`git`、`docker`、`curl`、
+Docker daemon/compose、InfluxDB demo 文件、`8086` 端口和 allowlisted git repo/ref，然后生成：
+
+```text
+$LOGAGENT_APP_DIR/deploy/server-influxdb.yaml
+```
+
+默认 repo/ref 为 `ssh://git@github.com/zhiwangdu/influxdb.git` + `master-1.x`。生成配置使用
+Docker-backed build profile，在 `golang:1.26-bookworm` 中构建 Linux `build/influxd`；构建脚本会在
+缺少 `pkg-config/curl` 时对 Debian/Ubuntu builder 执行一次 `apt-get install`，并通过 rustup 安装
+Rust 1.83（Flux `libflux` 需要）。随后由 `ubuntu:24.04` 单容器 compose 启动并通过 `alpine:3.20`
+smoke 容器验证 v1 HTTP API。内网可用
+`--builder-image` / `--base-image` / `--test-image` / `--db-port` 或对应环境变量覆盖。
 
 ## 启停
 

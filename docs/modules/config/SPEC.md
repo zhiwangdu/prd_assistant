@@ -38,4 +38,5 @@ mcp.allowed_origins
 - 配置样例不包含密钥原文。
 - `dev_selftest.enabled=false` 时，未填写的 docker binary / compose path 不阻断启动。
 - `dev_selftest.enabled=true` 时，build/docker/test 路径必须绝对且来自 allowlist；`sync_workspace` 只接受 allowlisted git repo/ref。
+- Docker-backed build profile 可用于跨 OS 生成 Linux 产物；InfluxDB demo 默认用该模式构建 `master-1.x` 的 `build/influxd`。
 - `remote_execution.commands` 只作为 dev_selftest `test_suites.*.command` 的 argv/timeout 模板。

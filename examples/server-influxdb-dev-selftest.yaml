@@ -1,0 +1,89 @@
+# LocalToolHub server config for the InfluxDB OSS single-node dev_selftest demo.
+# Drive from a local or remote MCP client:
+#   sync_workspace -> build -> deploy -> run_tests -> report -> cleanup(optional)
+#
+# Prefer generating a machine-local config with:
+#   deploy/probe-influxdb-config.sh --print
+
+server:
+  bind: "127.0.0.1:50995"
+  public_base_url: "http://127.0.0.1:50995"
+  max_concurrent_tasks: 2
+  max_input_chars: 60000
+
+auth:
+  api_keys:
+    - name: "native-agent"
+      value_env: "LOGAGENT_NATIVE_API_KEY"
+
+storage:
+  data_dir: "./data/logagent-influxdb"
+  max_upload_bytes: 2147483648
+  max_chunk_bytes: 524288
+
+log_analyzer:
+  max_matches: 200
+  keywords: ["error", "exception", "timeout", "fail", "failed", "panic", "fatal"]
+
+remote_execution:
+  commands:
+    influxdb_smoke:
+      display_name: "InfluxDB smoke (in-container)"
+      description: "Run the InfluxDB v1 HTTP smoke shell script inside the docker test container."
+      enabled: true
+      argv: ["sh", "/tests/smoke.sh"]
+      timeout_seconds: 180
+
+# Disabled by default so the example loads without Docker or external git access.
+# To run:
+#   1. set enabled: true
+#   2. replace /path/to/repo with this repo's absolute path
+#   3. start the server with Docker access and LOGAGENT_NATIVE_API_KEY set
+dev_selftest:
+  enabled: false
+  build_timeout_seconds: 2400
+  max_output_bytes: 8388608
+  git:
+    enabled: true
+    binary: "/usr/bin/git"
+    repos:
+      - url: "ssh://git@github.com/zhiwangdu/influxdb.git"
+        refs: ["master-1.x"]
+  builds:
+    influxdb:
+      display_name: "InfluxDB single-node server"
+      argv: ["bash", "/scripts/build-influxdb.sh"]
+      working_dir: ""
+      artifact_globs: ["build/influxd"]
+      timeout_seconds: 2400
+      docker:
+        image: "golang:1.26-bookworm"
+        network: "host"
+        workdir: "/workspace/source"
+        volumes:
+          - "/path/to/repo/deploy/devselftest/influxdb:/scripts:ro"
+        env:
+          GOPROXY: "https://goproxy.cn,direct"
+  docker:
+    binary: "/usr/bin/docker"
+    clusters:
+      influxdb_single:
+        compose_file: "/path/to/repo/deploy/devselftest/influxdb/docker-compose.yml"
+        exposed_port: 8086
+        health_check:
+          cmd: ["/usr/bin/curl", "-sf", "http://127.0.0.1:8086/query?q=SHOW+DATABASES"]
+          timeout_seconds: 180
+  test_suites:
+    influxdb_smoke:
+      command: influxdb_smoke
+      timeout_seconds: 180
+      env: {}
+      docker:
+        image: "alpine:3.20"
+        network: "host"
+        volumes:
+          - "/path/to/repo/deploy/devselftest/influxdb/tests:/tests:ro"
+
+mcp:
+  enabled: true
+  transport: "stdio"

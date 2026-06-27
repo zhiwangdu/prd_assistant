@@ -12,6 +12,36 @@ Historical main-branch progress was archived to
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
 
+## 2026-06-28 InfluxDB dev_selftest 单机支持
+
+- 新增 `deploy/devselftest/influxdb/`：包含 Docker-backed `build-influxdb.sh`、单容器
+  `docker-compose.yml`、最小 `influxdb.conf`、entrypoint 和 v1 HTTP smoke 脚本；默认只构建
+  OSS InfluxDB v1 `master-1.x` 的单机 `build/influxd`，不引入集群/企业能力；脚本会在
+  Debian/Ubuntu builder 缺少基础工具时安装 `pkg-config/curl`，并用 rustup 安装 Flux
+  `libflux` 所需 Rust 1.83 toolchain。
+- `deploy` 环境注入新增通用 `DEVSELFTEST_PORT`（来自 Docker cluster `exposed_port`），InfluxDB
+  compose 用它映射 host 端口，保证 `--db-port`、health check 和 test suite 目标一致。
+- 新增 `deploy/probe-influxdb-config.sh`：探测本机 `LOGAGENT_APP_DIR`/`LOGAGENT_SRC_DIR`、
+  git/docker/curl、Docker compose、镜像、端口和 `ssh://git@github.com/zhiwangdu/influxdb.git`
+  + `master-1.x` 可达性，生成 `$LOGAGENT_APP_DIR/deploy/server-influxdb.yaml`。
+- 新增 `examples/server-influxdb-dev-selftest.yaml`，示例 profile 为 `influxdb` build、
+  `influxdb_single` deploy 和 `influxdb_smoke` test suite；默认 disabled，推荐用 probe
+  生成绝对路径配置。
+- 文档同步：根 README/SPEC、server README/SPEC、deploy README、docs/modules config/deployment/dev-selftest，
+  以及新增 InfluxDB README/SPEC。
+- 验证：`bash -n deploy/probe-influxdb-config.sh`、`bash -n deploy/devselftest/influxdb/build-influxdb.sh`、
+  `bash -n deploy/devselftest/influxdb/entrypoint.sh`、`sh -n deploy/devselftest/influxdb/tests/smoke.sh`；
+  `cargo fmt --check`、`cargo check`、`cargo test -p logagent-server dev_selftest`、
+  `cargo test -p logagent-server`（88 passed）、`git diff --check`；使用
+  `golang:1.26-bookworm` 手动 Docker 构建 `master-1.x` 单机 `build/influxd`，再通过
+  `docker compose` + `alpine:3.20` smoke 脚本验证 v1 HTTP 读写成功。
+- 端到端验证：在 `/tmp/localtoolhub-influxdb-e2e2.zDVmhn` 生成临时 server 配置并启动本地
+  `target/debug/logagent-server`，用 Claude Code `.mcp.json` 只连接该 MCP server 跑通
+  `sync_workspace -> build -> deploy -> run_tests -> report -> cleanup`。run id
+  `devselftest_1782583948199_2`，build/deploy/run_tests queued task 分别为
+  `task_1782583961974_3`、`task_1782584102442_4`、`task_1782584114220_5`，report
+  `SUCCEEDED`，cleanup `OK`，deploy 使用宿主端口 `18086`。
+
 ## 2026-06-28 dev_selftest 动态测试参数与 Docker Python runner
 
 - `logagent.dev_selftest.run_tests` 新增受限 `testParams` string map：校验 key/value 数量和大小、拒绝

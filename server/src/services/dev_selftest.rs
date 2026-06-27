@@ -1207,6 +1207,12 @@ fn deploy_env(
     env
 }
 
+fn add_deploy_port(env: &mut BTreeMap<String, String>, exposed_port: Option<u16>) {
+    if let Some(port) = exposed_port {
+        env.insert("DEVSELFTEST_PORT".to_string(), port.to_string());
+    }
+}
+
 fn compose_project_name(run_id: &str, profile: &str) -> Result<String, AppError> {
     Ok(format!(
         "devselftest_{}_{}",
@@ -1236,7 +1242,8 @@ async fn run_deploy(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, A
     let source_dir = run_root.join("source");
     let artifacts_dir = run_root.join("artifacts");
     let project_name = compose_project_name(&record.run_id, &params.profile)?;
-    let env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
+    let mut env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
+    add_deploy_port(&mut env, cluster.exposed_port);
     let started = Instant::now();
     let run = run_bounded_command(
         &state.config.dev_selftest.docker.binary,
@@ -1380,7 +1387,8 @@ async fn run_cleanup(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, 
     let source_dir = run_root.join("source");
     let artifacts_dir = run_root.join("artifacts");
     let project_name = compose_project_name(&record.run_id, &profile)?;
-    let env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
+    let mut env = deploy_env(&run_root, &source_dir, &artifacts_dir, &project_name);
+    add_deploy_port(&mut env, cluster.exposed_port);
     let started = Instant::now();
     let run = run_bounded_command(
         &state.config.dev_selftest.docker.binary,
@@ -1770,7 +1778,8 @@ async fn run_docker_probes(
 ) -> Result<Vec<Value>, AppError> {
     let source_dir = run_root.join("source");
     let artifacts_dir = run_root.join("artifacts");
-    let env = deploy_env(run_root, &source_dir, &artifacts_dir, project_name);
+    let mut env = deploy_env(run_root, &source_dir, &artifacts_dir, project_name);
+    add_deploy_port(&mut env, cluster.exposed_port);
     let mut probes = Vec::new();
     probes.push(
         run_docker_probe(
@@ -2980,6 +2989,9 @@ mod tests {
             "devselftest_1_local"
         );
         assert_eq!(env.len(), 4);
+        let mut with_port = env.clone();
+        add_deploy_port(&mut with_port, Some(18086));
+        assert_eq!(with_port.get("DEVSELFTEST_PORT").unwrap(), "18086");
     }
 
     #[test]

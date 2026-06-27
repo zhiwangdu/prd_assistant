@@ -6,7 +6,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 这两个模块对应 server 唯二**不可被纯本地执行替代**的场景：
 
-- **dev_selftest** —— 刚需 Linux 环境（docker / go 构建工具链 / DB 集群），而 IDE 与部分内部 MCP 只能在 Windows 端跑。这条是「Windows Claude Code 本地 skill 编排 → Linux server 受控执行 + run history」；skill 负责 workflow，Server 负责 MCP tools/resources 与执行边界。
+- **dev_selftest** —— 刚需 Linux 环境（docker / go 构建工具链 / DB 集群），而 IDE 与部分内部 MCP 只能在 Windows 端跑。这条是「Windows Claude Code 本地 skill 编排 → Linux server 受控执行 + run history」；skill 负责 workflow，Server 负责 MCP tools/resources 与执行边界。仓库内提供 openGemini 集群和 InfluxDB OSS 单机两个 Docker demo。
 - **日志分析** —— 一组编译好的 Linux analyzer 二进制（influxql / flux / openGemini / influxdb / pprof）+ 预处理。MCP 连上后上传日志即用，产出结构化 findings + run history。日志包大、analyzer 是 Linux 二进制、要历史回看 —— 也 genuinely 需要一个 server。
 
 其余「通用本地工具」面（fetch / executor / metadata / cases / skills 等）已收敛移除 —— 它们要么不被两模块依赖，要么在纯本地场景被本地 skill 秒杀。
@@ -15,7 +15,7 @@ LocalToolHub 是个人本地部署的**两模块工具工作台**：dev_selftest
 
 LocalToolHub 开箱即用地提供：
 
-- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` MCP step tools，以及显式可选的 `cleanup` 环境清理 step 和只读 `diagnose` 诊断 step。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。`run_tests` 可接收受限 `testParams` string map，把非敏感运行参数注入 Docker 测试容器的 `DEVSELFTEST_PARAM_*` 环境变量；云实例创建等生命周期仍由外部/internal skill 负责，ToolHub 只执行 Docker 化测试框架。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要（含 Docker cluster profile 明细）；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 追加 repo/ref，或用 `logagent.dev_selftest.profiles.upsert` / WebUI Settings 新增和更新 Docker-backed build/test profile，并写回配置文件。`cleanup` 只对本次 run 的配置化 compose project 执行 `docker compose down`，保留源码、日志、artifact 和报告证据；`diagnose` 只读取 bounded evidence 和执行 allowlisted Docker 只读探测，不做恢复动作。
+- **dev_selftest**：提供 `sync_workspace`、`build`、`deploy`、`run_tests`、`report` MCP step tools，以及显式可选的 `cleanup` 环境清理 step 和只读 `diagnose` 诊断 step。Windows 端 Claude Code 完成 commit/push 后，由本地 skill 经 MCP 编排这些 step；Linux ToolHub 只从 allowlisted git repo/ref clone 或 pull，并维护持久工作区 + progress + report + run history。`run_tests` 可接收受限 `testParams` string map，把非敏感运行参数注入 Docker 测试容器的 `DEVSELFTEST_PARAM_*` 环境变量；云实例创建等生命周期仍由外部/internal skill 负责，ToolHub 只执行 Docker 化测试框架。MCP 通过 `logagent://dev_selftest/config` 暴露当前 repo/ref/profile 摘要（含 Docker cluster profile 明细）；用户明确同意后可用 `logagent.dev_selftest.allowlist.update` 追加 repo/ref，或用 `logagent.dev_selftest.profiles.upsert` / WebUI Settings 新增和更新 Docker-backed build/test profile，并写回配置文件。默认示例包含 openGemini 3 meta + 3(sql+store) 集群和 InfluxDB OSS v1 单机 server。`cleanup` 只对本次 run 的配置化 compose project 执行 `docker compose down`，保留源码、日志、artifact 和报告证据；`diagnose` 只读取 bounded evidence 和执行 allowlisted Docker 只读探测，不做恢复动作。
 - **日志分析**：上传日志包 → 预处理（解包/manifest/grep/tool-input 索引）→ 跑配置好的 analyzer → 结构化 findings + artifact。
 - **MCP Server**：同一套 tools/resources 经 `POST /api/mcp`（streamable-http）或 `logagent-server mcp-serve`（stdio）暴露给外部客户端；dev_selftest config resource 用于客户端发现 allowlisted repo/ref 和 profile ids。
 - **Run History + Artifact Store**：每次工具运行都落 input/stdout/stderr/result/artifacts，统一 `QUEUED→RUNNING→SUCCEEDED/FAILED` 状态，逻辑路径下载。

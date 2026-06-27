@@ -46,8 +46,10 @@
 - `server/src/domain/models.rs` — dev_selftest run/deploy/step/status 模型。
 - `skills/dev-selftest-pipeline/` — 本地 Claude Code skill，负责编排 MCP step tools。
 - `deploy/devselftest/opengemini/` — 默认 openGemini Docker demo artifact。
+- `deploy/devselftest/influxdb/` — InfluxDB OSS v1 单机 Docker demo artifact，使用 Docker build profile 构建 Linux `influxd`。
 - `deploy/devselftest/opengemini-cloud-runner/` — Dockerized Python 示例测试框架，演示 `run_tests.testParams` 驱动 openGemini 读写用例；内网部署替换镜像即可。
 - `deploy/probe-opengemini-config.sh` — 探测 Linux 机器环境并生成 openGemini dev_selftest Server 配置。
+- `deploy/probe-influxdb-config.sh` — 探测本机环境并生成 InfluxDB `master-1.x` 单机 dev_selftest Server 配置。
 
 ## 当前实现
 
@@ -59,6 +61,7 @@
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
 - 已实现 `logagent://dev_selftest/config`、`logagent.dev_selftest.allowlist.update` 和 `logagent.dev_selftest.profiles.upsert`；WebUI Settings 使用同一服务读取/保存 allowlist 与 Docker profile。config resource 额外暴露 Docker cluster profile 明细，`diagnose` 用同一 profile 派生只读 probe。
 - 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环；`cleanup` 可在 report 后释放 compose 资源。
+- InfluxDB demo 默认从 `ssh://git@github.com/zhiwangdu/influxdb.git` 的 `master-1.x` 分支同步源码，只构建单机 `influxd`，通过单容器 compose 暴露 v1 HTTP API 并运行 `SHOW DATABASES` / write / SELECT smoke；compose 端口由 profile `exposed_port` 注入为 `DEVSELFTEST_PORT`。
 - 客户端 skill 默认不在本地编译或测试；每轮改动 commit/push 后直接 `sync_workspace`，以远端 MCP `build` 的错误证据驱动下一轮修改。
 - openGemini demo smoke 在写点后对 SELECT 做短轮询；写接口返回成功后，点可能需要很短时间才对查询可见。
 
@@ -70,6 +73,14 @@
 - build 脚本对 openGemini go.mod 做 Go 版本和 `bytedance/sonic` 兼容处理后编译
   `ts-meta`、`ts-store`、`ts-sql`。
 - 内网可通过 server 进程 env 覆盖 `OG_BASE_IMAGE`、`GOPROXY`、`GOSUMDB` 和 git mirror。
+
+## InfluxDB Demo 约束
+
+- InfluxDB OSS demo 不做集群；deploy profile 只有一个 `influxdb` service。
+- 构建 profile 默认使用 `golang:1.26-bookworm` Docker builder，避免 macOS/Windows host 直接产出不可在 Linux 容器运行的二进制；脚本会在缺少基础工具时补 `pkg-config/curl`，并通过 rustup 安装 Flux `libflux` 所需 Rust 1.83 toolchain。
+- 运行容器默认使用 `ubuntu:24.04`，挂载本次 run 的 `source/build/influxd`。
+- 默认 smoke 使用 `alpine:3.20` 内置 `wget` 访问 v1 HTTP API。
+- 内网可通过 `INFLUXDB_BUILDER_IMAGE`、`INFLUXDB_BASE_IMAGE`、`DEVSELFTEST_TEST_IMAGE`、`GOPROXY`、`GOSUMDB` 和 git mirror 覆盖。
 
 ## 已移除
 

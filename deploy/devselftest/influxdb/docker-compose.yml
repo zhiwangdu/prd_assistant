@@ -1,0 +1,18 @@
+# InfluxDB OSS v1 single-node dev_selftest target.
+#
+# Configurable for intranet via environment variables inherited by the
+# dev_selftest deploy tool's `docker compose` child:
+#   INFLUXDB_BASE_IMAGE  runtime image (default ubuntu:24.04)
+#   DEVSELFTEST_PORT     injected by dev_selftest deploy from profile.exposed_port
+#                         and mapped to container 8086 (default 8086)
+#   DEVSELFTEST_SOURCE_DIR  injected by deploy; build/influxd lives there.
+services:
+  influxdb:
+    image: ${INFLUXDB_BASE_IMAGE:-ubuntu:24.04}
+    command: ["/bin/bash", "/opt/entrypoint.sh"]
+    volumes:
+      - ${DEVSELFTEST_SOURCE_DIR}/build:/opt/influxdb/build:ro
+      - ./config/influxdb.conf:/etc/influxdb/influxdb.conf:ro
+      - ./entrypoint.sh:/opt/entrypoint.sh:ro
+    ports:
+      - "${DEVSELFTEST_PORT:-8086}:8086"
