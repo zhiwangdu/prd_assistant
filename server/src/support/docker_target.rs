@@ -113,7 +113,7 @@ fn is_safe_container_path(value: &str) -> bool {
     value.starts_with('/') && !value.contains("..")
 }
 
-fn is_safe_env_name(key: &str) -> bool {
+pub fn is_safe_env_name(key: &str) -> bool {
     let mut bytes = key.bytes();
     matches!(bytes.next(), Some(b) if b == b'_' || b.is_ascii_uppercase())
         && bytes.all(|b| b == b'_' || b.is_ascii_uppercase() || b.is_ascii_digit())

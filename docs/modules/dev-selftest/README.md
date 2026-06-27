@@ -17,7 +17,7 @@
 - 热更新 Docker-backed build/test profile：用户明确同意后，MCP `logagent.dev_selftest.profiles.upsert` 或 WebUI Settings 可新增/更新 Docker profile、写回 Server 配置，并即时影响后续 `build` / `run_tests` 参数校验。
 - 执行配置式 build：旧 host command profile 继续可用；Docker build profile 在镜像内执行 `argv`，把匹配的产物收集到 run `artifacts/`。
 - 执行 `docker_cluster` 部署：`docker compose up -d` + 声明式 health check。
-- 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。
+- 执行测试：优先使用 test suite 的 inline `docker` target；无 docker target 时走本地桩。`run_tests` 可接收有界 `testParams` string map，并注入为 `DEVSELFTEST_PARAM_*`，用于外部/internal skill 创建云实例后传入 case、instance、endpoint 等非敏感运行参数。
 - 生成 `report.md` / `report.json`，聚合每步状态和证据。
 - 显式可选环境清理：`cleanup` 对本次 run 的配置化 compose project 执行 `docker compose down`，释放容器/网络，保留源码、日志、artifact、progress 和报告。
 - 只读失败诊断：`diagnose` 读取 run 证据、执行 allowlisted Docker 只读 probe，返回失败原因分类、证据片段和下一步建议，不做恢复动作。
@@ -31,6 +31,7 @@
 - Docker profile upsert 只允许 build/test profile：必须 `confirmedUserConsent=true`，必须通过 profile id、非空 argv 和 Docker target 校验；写回配置成功后才更新内存 registry。已排队的 build/run_tests task 携带 profile snapshot，不被后续 upsert 改写。
 - `remote_execution.commands` 只作为 test suite 的 argv/timeout 模板，不再表示可纳管远程 executor。
 - inline Docker target 只允许受校验的 image/network/workdir/volume/env。
+- `testParams` 只允许非凭据字符串，拒绝 secret-like key 和 env 名碰撞；值通过 Docker `--env KEY=VALUE` 明文出现在宿主机 argv，因此不得传 password/token/secret/auth 等敏感信息。
 - 密钥只来自 env；report/artifact 只记录 env 名、状态码和脱敏摘要。
 - `dev_selftest.enabled=false` 时整组工具禁用，且占位 docker/build 配置不阻断 Server 启动。
 
@@ -45,6 +46,7 @@
 - `server/src/domain/models.rs` — dev_selftest run/deploy/step/status 模型。
 - `skills/dev-selftest-pipeline/` — 本地 Claude Code skill，负责编排 MCP step tools。
 - `deploy/devselftest/opengemini/` — 默认 openGemini Docker demo artifact。
+- `deploy/devselftest/opengemini-cloud-runner/` — Dockerized Python 示例测试框架，演示 `run_tests.testParams` 驱动 openGemini 读写用例；内网部署替换镜像即可。
 - `deploy/probe-opengemini-config.sh` — 探测 Linux 机器环境并生成 openGemini dev_selftest Server 配置。
 
 ## 当前实现
@@ -53,6 +55,7 @@
 - 已实现 Docker-backed build profile：默认挂载 `source/` 到 `/workspace/source:rw`、`artifacts/` 到 `/workspace/artifacts:rw`，默认 `workdir=/workspace/source`，复杂工具链和脚本推荐固化在镜像中。
 - 已实现 `docker_cluster` 部署，默认 demo 为 openGemini 3 meta + 3 (sql+store) 集群。
 - 已实现 inline Docker 测试派发：`docker run --rm --network host ... <image> <argv>`。
+- 已实现 `run_tests.testParams`：可把受限非敏感运行参数注入 Docker/host 测试环境为 `DEVSELFTEST_PARAM_*`；result JSON 只返回 `testParamsSummary`，report schema 不变。云 DB 生命周期由外部/internal skill 负责，ToolHub 不复用 `DevSelftestDeployTarget::Instance`。
 - 已实现 queued 长任务轮询：`logagent.runs.get` / `logagent.runs.result` 不创建新 run。
 - 已实现 `logagent://dev_selftest/config`、`logagent.dev_selftest.allowlist.update` 和 `logagent.dev_selftest.profiles.upsert`；WebUI Settings 使用同一服务读取/保存 allowlist 与 Docker profile。config resource 额外暴露 Docker cluster profile 明细，`diagnose` 用同一 profile 派生只读 probe。
 - 已验证 openGemini demo 的 `sync_workspace -> build -> deploy -> run_tests -> report` 闭环；`cleanup` 可在 report 后释放 compose 资源。

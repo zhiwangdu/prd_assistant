@@ -31,6 +31,9 @@ Before calling the remote self-test tools:
    feedback. If a remote step fails, read `logagent.runs.result`, call
    `logagent.dev_selftest.diagnose` for the failed `devselftest_*` run, then use the returned
    evidence/category before changing code or asking to clean up.
+   For externally-created cloud DB instances, skip `deploy` and pass only non-secret
+   `testParams` such as `caseName`, `instanceId`, and `endpoint` to `run_tests`; ToolHub injects
+   them as Docker env vars and does not own cloud instance lifecycle.
 8. Confirm MCP connectivity with `initialize` and `tools/list`.
 
 Then run the MCP workflow in `references/workflow.md`. Read that file before executing the

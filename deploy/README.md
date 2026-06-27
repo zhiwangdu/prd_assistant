@@ -83,6 +83,21 @@ $LOGAGENT_APP_DIR/deploy/server-opengemini.yaml
 `ssh://git@github.com/zhiwangdu/openGemini.git` +
 `devselftest/go126-sonic-latest-20260625-233438`，可用 `--repo-url` / `--git-ref` 覆盖。
 
+## openGemini cloud runner image
+
+`deploy/devselftest/opengemini-cloud-runner/` 提供一个最小 Python 测试框架镜像，
+用于 `run_tests.testParams` 场景：外部/internal skill 创建云 openGemini/influxdb 实例，
+ToolHub 只在 Docker 中运行测试用例。
+
+```bash
+docker build -t localtoolhub/opengemini-selftest:dev \
+  deploy/devselftest/opengemini-cloud-runner
+```
+
+本地验证可在 `examples/server-dev-selftest.yaml` 中使用该 image。内网部署时只需要把
+`dev_selftest.test_suites.cloud_opengemini_case.docker.image` 替换成内部 registry 的镜像；
+云实例创建、凭据获取和内部 SDK 逻辑留在内部 skill 或内部镜像中。
+
 ## 启停
 
 ```bash

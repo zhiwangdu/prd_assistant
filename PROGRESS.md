@@ -1,6 +1,6 @@
 # Development Progress
 
-Last updated: 2026-06-26
+Last updated: 2026-06-28
 
 Historical main-branch progress was archived to
 `docs/archive/PROGRESS-history-main-2026-06-22.md`.
@@ -11,6 +11,27 @@ Historical main-branch progress was archived to
 - Base: `origin/main`
 - Product direction: 收敛为两模块 —— dev_selftest（Linux 跨机自测）+ 日志分析（上传日志即分析）
 - Runtime target: Rust single binary + WebUI static files + local tools dir + local data dir
+
+## 2026-06-28 dev_selftest 动态测试参数与 Docker Python runner
+
+- `logagent.dev_selftest.run_tests` 新增受限 `testParams` string map：校验 key/value 数量和大小、拒绝
+  secret-like key、检测 key 归一化后的 env 名碰撞，并把参数注入测试进程为 `DEVSELFTEST_PARAM_*`。
+- Docker runner 仍只执行配置化 image + argv；`testParams` 通过 `docker run --env KEY=VALUE` 明文传入，
+  因此只允许 case name、instance id、endpoint 等非凭据。`run_tests` result 增加 `testParamsSummary`，
+  `report.json`/`report.md` schema 不变。
+- 新增 `deploy/devselftest/opengemini-cloud-runner/` 示例 Python 测试框架与 Dockerfile，内置
+  `opengemini_rw_smoke` 读写用例，写出 `test-env.json` 和 `test-result.json`；内网部署只需替换
+  `dev_selftest.test_suites.cloud_opengemini_case.docker.image`。
+- `examples/server-dev-selftest.yaml` 增加 `cloud_opengemini_case` command/test suite 示例；外部/internal skill
+  负责云 openGemini/influxdb 实例生命周期，ToolHub 跳过 deploy 并只运行 Docker 化测试框架。
+- 文档同步：根 README/SPEC、server README/SPEC、dev_selftest 模块文档、Tool Runner、deploy、testing 和
+  dev_selftest skill workflow。
+- 验证：`cargo fmt --check`、`cargo check`、`cargo test -p logagent-server dev_selftest`、
+  `cargo test -p logagent-server`（88 passed）、`python3 -m compileall deploy/devselftest/opengemini-cloud-runner`、
+  `docker build -t localtoolhub/opengemini-selftest:dev deploy/devselftest/opengemini-cloud-runner`、`git diff --check`。
+  另用临时 `git://` 仓库、临时 ToolHub server 和 openGemini/InfluxDB v1 HTTP API 兼容 stub 跑通
+  `sync_workspace -> run_tests(testParams) -> report`；runner 写出 `test-env.json` / `test-result.json`，report
+  `SUCCEEDED`。
 
 ## 2026-06-26 dev_selftest MCP 失败诊断
 

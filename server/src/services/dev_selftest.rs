@@ -43,6 +43,7 @@ use crate::{
             AppConfig, DevSelftestBuildProfile, DevSelftestGitRepo, DevSelftestSettings,
             DevSelftestTestDocker, DevSelftestTestSuite,
         },
+        docker_target::is_safe_env_name,
         error::AppError,
         fs_utils::{relative_string, safe_join, sanitize_filename},
         id::next_id,
@@ -58,6 +59,9 @@ pub const CLEANUP_ID: &str = "logagent.dev_selftest.cleanup";
 pub const DIAGNOSE_ID: &str = "logagent.dev_selftest.diagnose";
 
 const PROGRESS_FILE: &str = "progress.json";
+const TEST_PARAMS_MAX_KEYS: usize = 16;
+const TEST_PARAMS_MAX_VALUE_BYTES: usize = 2048;
+const TEST_PARAMS_MAX_TOTAL_BYTES: usize = 8192;
 
 pub fn descriptors(config: &AppConfig) -> Vec<ToolDescriptor> {
     let enabled = config.dev_selftest.enabled;
@@ -156,6 +160,7 @@ pub fn validate_run_params_with_git_repos(
         RUN_TESTS_ID => {
             let mut params: RunTestsParams = parse_params(value)?;
             let suite = require_test_suite(profiles, &params.test_suite)?;
+            validate_test_params(&params.test_params)?;
             params.profile_snapshot = Some(suite.clone());
             serde_json::to_value(params)
         }
@@ -266,6 +271,8 @@ struct DeployParams {
 struct RunTestsParams {
     run_id: String,
     test_suite: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    test_params: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile_snapshot: Option<DevSelftestTestSuite>,
 }
@@ -307,6 +314,179 @@ fn default_include_docker_probes() -> bool {
 fn parse_params<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T, AppError> {
     serde_json::from_value(value.clone())
         .map_err(|err| AppError::bad_request(format!("invalid dev_selftest params: {err}")))
+}
+
+fn validate_test_params(params: &BTreeMap<String, String>) -> Result<(), AppError> {
+    test_param_env(params).map(|_| ())
+}
+
+fn test_param_env(params: &BTreeMap<String, String>) -> Result<BTreeMap<String, String>, AppError> {
+    if params.len() > TEST_PARAMS_MAX_KEYS {
+        return Err(AppError::bad_request(format!(
+            "testParams supports at most {TEST_PARAMS_MAX_KEYS} keys"
+        )));
+    }
+
+    let mut total_bytes = 0usize;
+    let mut env = BTreeMap::new();
+    let mut normalized_to_key = BTreeMap::<String, String>::new();
+    for (key, value) in params {
+        validate_test_param_key(key)?;
+        validate_test_param_value(key, value, &mut total_bytes)?;
+        let normalized = normalize_test_param_key(key)?;
+        if let Some(existing) = normalized_to_key.insert(normalized.clone(), key.clone()) {
+            return Err(AppError::bad_request(format!(
+                "testParams keys '{existing}' and '{key}' both map to {normalized}"
+            )));
+        }
+        let env_name = format!("DEVSELFTEST_PARAM_{normalized}");
+        if !is_safe_env_name(&env_name) {
+            return Err(AppError::bad_request(format!(
+                "testParams key '{key}' maps to invalid env name {env_name}"
+            )));
+        }
+        env.insert(env_name, value.clone());
+    }
+    Ok(env)
+}
+
+fn validate_test_param_key(key: &str) -> Result<(), AppError> {
+    if key.is_empty() || key.len() > 64 {
+        return Err(AppError::bad_request(
+            "testParams keys must be 1-64 ASCII characters",
+        ));
+    }
+    let mut bytes = key.bytes();
+    let first = bytes.next().unwrap_or_default();
+    if !first.is_ascii_alphabetic() {
+        return Err(AppError::bad_request(format!(
+            "testParams key '{key}' must start with an ASCII letter"
+        )));
+    }
+    if !bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+        return Err(AppError::bad_request(format!(
+            "testParams key '{key}' may only contain ASCII letters, digits, '_' and '-'"
+        )));
+    }
+    let compact = key
+        .bytes()
+        .filter(|b| *b != b'_' && *b != b'-')
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect::<String>();
+    for forbidden in [
+        "password",
+        "passwd",
+        "token",
+        "secret",
+        "apikey",
+        "credential",
+        "auth",
+    ] {
+        if compact.contains(forbidden) {
+            return Err(AppError::bad_request(format!(
+                "testParams key '{key}' looks secret-like and is not allowed"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_test_param_value(
+    key: &str,
+    value: &str,
+    total_bytes: &mut usize,
+) -> Result<(), AppError> {
+    let len = value.len();
+    if len == 0 {
+        return Err(AppError::bad_request(format!(
+            "testParams value for '{key}' must not be empty"
+        )));
+    }
+    if len > TEST_PARAMS_MAX_VALUE_BYTES {
+        return Err(AppError::bad_request(format!(
+            "testParams value for '{key}' exceeds {TEST_PARAMS_MAX_VALUE_BYTES} bytes"
+        )));
+    }
+    *total_bytes = total_bytes.saturating_add(len);
+    if *total_bytes > TEST_PARAMS_MAX_TOTAL_BYTES {
+        return Err(AppError::bad_request(format!(
+            "testParams total value size exceeds {TEST_PARAMS_MAX_TOTAL_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn normalize_test_param_key(key: &str) -> Result<String, AppError> {
+    let mut normalized = String::new();
+    let mut prev_was_separator = false;
+    let mut prev_was_lower_or_digit = false;
+    for b in key.bytes() {
+        match b {
+            b'_' | b'-' => {
+                if !normalized.is_empty() && !prev_was_separator {
+                    normalized.push('_');
+                    prev_was_separator = true;
+                }
+                prev_was_lower_or_digit = false;
+            }
+            b'A'..=b'Z' => {
+                if prev_was_lower_or_digit && !prev_was_separator && !normalized.is_empty() {
+                    normalized.push('_');
+                }
+                normalized.push(b as char);
+                prev_was_separator = false;
+                prev_was_lower_or_digit = false;
+            }
+            b'a'..=b'z' => {
+                normalized.push(b.to_ascii_uppercase() as char);
+                prev_was_separator = false;
+                prev_was_lower_or_digit = true;
+            }
+            b'0'..=b'9' => {
+                normalized.push(b as char);
+                prev_was_separator = false;
+                prev_was_lower_or_digit = true;
+            }
+            _ => {
+                return Err(AppError::bad_request(format!(
+                    "testParams key '{key}' contains invalid characters"
+                )));
+            }
+        }
+    }
+    while normalized.ends_with('_') {
+        normalized.pop();
+    }
+    if normalized.is_empty() {
+        return Err(AppError::bad_request(format!(
+            "testParams key '{key}' maps to an empty env suffix"
+        )));
+    }
+    Ok(normalized)
+}
+
+fn test_params_summary(params: &BTreeMap<String, String>) -> Result<Value, AppError> {
+    let env = test_param_env(params)?;
+    let mut case_name = None::<String>;
+    let entries = params
+        .iter()
+        .map(|(key, value)| {
+            let normalized = normalize_test_param_key(key)?;
+            if normalized == "CASE_NAME" {
+                case_name = Some(value.clone());
+            }
+            Ok(json!({
+                "key": key,
+                "envName": format!("DEVSELFTEST_PARAM_{normalized}"),
+                "valueBytes": value.len(),
+            }))
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+    Ok(json!({
+        "count": env.len(),
+        "caseName": case_name,
+        "params": entries,
+    }))
 }
 
 fn require_docker_profile(config: &AppConfig, id: &str) -> Result<(), AppError> {
@@ -2010,9 +2190,17 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
     // Dispatch priority: an inline docker target (`suite.docker`) > local stub argv.
     // Both produce a BoundedRun so the log/step/result handling below is shared.
     let run = if let Some(docker) = &suite.docker {
-        run_docker_test(&state, &record, &suite, docker, &run_root).await?
+        run_docker_test(
+            &state,
+            &record,
+            &suite,
+            docker,
+            &run_root,
+            &params.test_params,
+        )
+        .await?
     } else {
-        let env = target_env(&record, &suite);
+        let env = target_env(&record, &suite, &params.test_params)?;
         let (binary, argv) = split_command(&suite.argv)?;
         run_bounded_command(
             &binary,
@@ -2079,6 +2267,7 @@ async fn run_run_tests(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf
         "status": status,
         "exitCode": run.exit_code,
         "executor": executor_info,
+        "testParamsSummary": test_params_summary(&params.test_params)?,
         "stdoutPath": "logs/tests.stdout.txt",
         "stderrPath": "logs/tests.stderr.txt",
         "error": error,
@@ -2103,6 +2292,7 @@ async fn run_docker_test(
     suite: &DevSelftestTestSuite,
     docker: &DevSelftestTestDocker,
     run_root: &Path,
+    test_params: &BTreeMap<String, String>,
 ) -> Result<BoundedRun, AppError> {
     let (argv, timeout_seconds) = match suite.command.as_deref() {
         Some(command_id) => {
@@ -2158,6 +2348,9 @@ async fn run_docker_test(
     {
         extra_env.insert("DEVSELFTEST_PORT".to_string(), port.to_string());
     }
+    for (key, value) in test_param_env(test_params)? {
+        extra_env.insert(key, value);
+    }
 
     let target = ExecutorTarget::Docker {
         image: docker.image.clone(),
@@ -2206,7 +2399,8 @@ fn interpolate_volume(
 fn target_env(
     record: &DevSelftestRunRecord,
     suite: &DevSelftestTestSuite,
-) -> BTreeMap<String, String> {
+    test_params: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, AppError> {
     let mut env = suite.env.clone();
     if let Some(DevSelftestDeployTarget::Docker {
         exposed_port: Some(port),
@@ -2217,7 +2411,10 @@ fn target_env(
             .or_insert_with(|| "127.0.0.1".to_string());
         env.insert("DEVSELFTEST_PORT".to_string(), port.to_string());
     }
-    env
+    for (key, value) in test_param_env(test_params)? {
+        env.insert(key, value);
+    }
+    Ok(env)
 }
 
 async fn run_report(state: Arc<AppState>, task: TaskRecord) -> Result<PathBuf, AppError> {
@@ -2491,11 +2688,17 @@ fn run_tests_descriptor(enabled: bool) -> ToolDescriptor {
         "type": "object",
         "properties": {
             "runId": { "type": "string" },
-            "testSuite": { "type": "string", "description": "A configured dev_selftest.test_suites profile id." }
+            "testSuite": { "type": "string", "description": "A configured dev_selftest.test_suites profile id." },
+            "testParams": {
+                "type": "object",
+                "description": "Optional non-secret runtime parameters passed to the test process as DEVSELFTEST_PARAM_* env vars. Values are visible in docker argv; never pass credentials.",
+                "additionalProperties": { "type": "string" },
+                "maxProperties": TEST_PARAMS_MAX_KEYS
+            }
         },
         "required": ["runId", "testSuite"]
     });
-    d.params_template = json!({ "runId": "", "testSuite": "" });
+    d.params_template = json!({ "runId": "", "testSuite": "", "testParams": {} });
     d
 }
 
@@ -2708,6 +2911,51 @@ mod tests {
         assert!(validate_run_id("devselftest_abc-1").is_ok());
         assert!(validate_run_id("task_x").is_err());
         assert!(validate_run_id("devselftest_bad/id").is_err());
+    }
+
+    #[test]
+    fn validates_and_summarizes_test_params() {
+        let params = BTreeMap::from([
+            ("caseName".to_string(), "opengemini_rw_smoke".to_string()),
+            ("instance-id".to_string(), "inst-1".to_string()),
+        ]);
+        let env = test_param_env(&params).unwrap();
+        assert_eq!(
+            env.get("DEVSELFTEST_PARAM_CASE_NAME").unwrap(),
+            "opengemini_rw_smoke"
+        );
+        assert_eq!(env.get("DEVSELFTEST_PARAM_INSTANCE_ID").unwrap(), "inst-1");
+        let summary = test_params_summary(&params).unwrap();
+        assert_eq!(summary["count"], 2);
+        assert_eq!(summary["caseName"], "opengemini_rw_smoke");
+        assert_eq!(summary["params"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn rejects_bad_test_params() {
+        assert!(
+            test_param_env(&BTreeMap::from([("apiToken".to_string(), "x".to_string())])).is_err()
+        );
+        assert!(
+            test_param_env(&BTreeMap::from([("caseName".to_string(), String::new())])).is_err()
+        );
+        assert!(test_param_env(&BTreeMap::from([
+            ("caseName".to_string(), "a".to_string()),
+            ("case-name".to_string(), "b".to_string()),
+        ]))
+        .is_err());
+
+        let config = test_config(true);
+        assert!(validate_run_params(
+            &config,
+            RUN_TESTS_ID,
+            &json!({
+                "runId": "devselftest_x",
+                "testSuite": "stub",
+                "testParams": { "caseName": 1 }
+            })
+        )
+        .is_err());
     }
 
     #[test]
@@ -3096,10 +3344,21 @@ exit 0
         let tests = run_tool(
             &state,
             RUN_TESTS_ID,
-            json!({"runId":run_id,"testSuite":"smoke"}),
+            json!({
+                "runId": run_id,
+                "testSuite": "smoke",
+                "testParams": {
+                    "caseName": "opengemini_rw_smoke",
+                    "instanceId": "inst-1"
+                }
+            }),
         )
         .await;
         assert_eq!(tests.status, "OK");
+        assert_eq!(
+            tests.value["testParamsSummary"]["caseName"],
+            "opengemini_rw_smoke"
+        );
 
         let run_dir = state.config.storage.dev_selftest_run_dir(&run_id);
         let stdout = std::fs::read_to_string(run_dir.join("logs/tests.stdout.txt")).unwrap();
@@ -3113,6 +3372,14 @@ exit 0
         );
         assert!(
             stdout.contains("--env DEVSELFTEST_HOST=127.0.0.1"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--env DEVSELFTEST_PARAM_CASE_NAME=opengemini_rw_smoke"),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("--env DEVSELFTEST_PARAM_INSTANCE_ID=inst-1"),
             "stdout: {stdout}"
         );
 

@@ -12,7 +12,7 @@
 - Artifact 逻辑路径、防路径逃逸和鉴权下载。
 - Upload 解压和输入文件校验。
 - Log analyzer preprocess / batch analysis / configured analyzer smoke。
-- dev_selftest 配置校验、inline Docker target 校验、fake docker 闭环。
+- dev_selftest 配置校验、inline Docker target 校验、`run_tests.testParams` 安全校验和 fake docker 闭环。
 - MCP resources/tools 基础 JSON-RPC。
 
 ## 不进入自动测试的内容

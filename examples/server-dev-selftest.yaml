@@ -37,6 +37,12 @@ remote_execution:
       enabled: true
       argv: ["sh", "/tests/smoke.sh"]
       timeout_seconds: 180
+    cloud_opengemini_case:
+      display_name: "openGemini cloud case runner"
+      description: "Run the Dockerized Python case runner with run_tests.testParams."
+      enabled: true
+      argv: ["python", "/opt/selftest/runner.py"]
+      timeout_seconds: 300
 
 # Dev self-test pipeline — openGemini docker demo (the validated default).
 # Disabled by default so this example loads without docker. To run:
@@ -85,6 +91,20 @@ dev_selftest:
         network: "host"               # reaches the host-exposed ts-sql port 127.0.0.1:8086
         volumes:
           - "/path/to/repo/deploy/devselftest/opengemini/tests:/tests:ro"
+    cloud_opengemini_case:
+      # For cloud DB instances created by an external/internal skill. ToolHub only runs
+      # this Dockerized Linux test runner; pass caseName/instanceId/endpoint via
+      # run_tests.testParams. Intranet deployments replace only the image below.
+      command: cloud_opengemini_case
+      timeout_seconds: 300
+      env: {}
+      docker:
+        image: "localtoolhub/opengemini-selftest:dev"
+        network: "host"
+        workdir: "/workspace/source"
+        volumes:
+          - "${DEVSELFTEST_SOURCE_DIR}:/workspace/source:ro"
+          - "${DEVSELFTEST_ARTIFACTS_DIR}:/workspace/artifacts:rw"
 
 mcp:
   enabled: true

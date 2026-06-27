@@ -66,6 +66,10 @@ create extra tool runs. dev_selftest skills must read `logagent://dev_selftest/c
   `logagent.runs.result` and calls `logagent.dev_selftest.diagnose` for the persistent
   `devselftest_*` run before deciding whether to fix source, inspect Docker evidence, or ask for
   cleanup. Source fixes are committed/pushed, followed by `sync_workspace` and retry.
+- For cloud DB instances created by an external/internal skill, the client skips `deploy` and calls
+  `run_tests` with non-secret `testParams` such as `caseName`, `instanceId`, and `endpoint`. The
+  skill must never put credentials in `testParams` because ToolHub passes them to Docker with
+  host-visible `--env KEY=VALUE`.
 - The client carries the returned `devselftest_*` workspace id through `build`, `deploy`,
   `run_tests`, `report`, and the optional post-report `cleanup`.
 - Environment cleanup is explicit and optional: call `logagent.dev_selftest.cleanup` after

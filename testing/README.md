@@ -13,6 +13,7 @@ dev_selftest、日志分析、MCP、run/artifact 和安全边界。
 - Artifact path 安全和下载鉴权。
 - Upload 解压路径安全。
 - dev_selftest 禁止自由 shell，inline Docker target 必须通过 allowlist 校验。
+- `run_tests.testParams` 必须覆盖合法参数、secret-like key 拒绝、env 名碰撞、超限输入和 Docker `DEVSELFTEST_PARAM_*` 注入。
 - WebUI Tools-first 页面构建和类型正确。
 
 ## Fixture

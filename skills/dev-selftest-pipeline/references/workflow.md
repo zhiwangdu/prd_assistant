@@ -159,7 +159,7 @@ Run the steps in this order:
 | 1 | `logagent.dev_selftest.sync_workspace` | Create or update the persistent dev_selftest workspace from an allowlisted git repo/ref. |
 | 2 | `logagent.dev_selftest.build` | Run a configured host or Docker build profile and collect declared artifacts. |
 | 3 | `logagent.dev_selftest.deploy` | Start the configured Docker cluster and run its health check. |
-| 4 | `logagent.dev_selftest.run_tests` | Run a configured test suite, usually through inline Docker. |
+| 4 | `logagent.dev_selftest.run_tests` | Run a configured test suite, usually through inline Docker; cloud-instance flows may skip deploy and pass non-secret `testParams`. |
 | 5 | `logagent.dev_selftest.report` | Generate `report.md` and `report.json` from recorded step evidence. |
 | 6 | `logagent.dev_selftest.cleanup` | Optional after report: run `docker compose down` for the run's configured Docker project while preserving run evidence. |
 | Diagnose | `logagent.dev_selftest.diagnose` | Read bounded run evidence and allowlisted read-only Docker probes to classify failures before asking for cleanup or code changes. |
@@ -268,6 +268,31 @@ To pull a newer pushed commit into the same workspace, call `sync_workspace` aga
   }
 }
 ```
+
+For a cloud DB instance created by an external/internal skill, skip `deploy` and pass only
+non-secret runtime identifiers through `testParams`. ToolHub injects them into the Docker test
+runner as `DEVSELFTEST_PARAM_*`; values are visible in the host-side `docker run --env` argv, so
+never pass credentials here.
+
+```json
+{
+  "name": "logagent.dev_selftest.run_tests",
+  "arguments": {
+    "runId": "devselftest_...",
+    "testSuite": "cloud_opengemini_case",
+    "testParams": {
+      "caseName": "opengemini_rw_smoke",
+      "instanceId": "local-demo",
+      "endpoint": "http://127.0.0.1:8086"
+    },
+    "runMode": "queued"
+  }
+}
+```
+
+Do not use `DevSelftestDeployTarget::Instance` for this path. The external/internal skill owns
+cloud instance lifecycle and cleanup; ToolHub only runs the Dockerized test framework and records
+evidence.
 
 ### report
 

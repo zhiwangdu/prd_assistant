@@ -27,7 +27,7 @@ Server 提供 Web 管理页、工具目录、工具运行、artifact/run history
 | Artifact Store | 每次运行都有逻辑路径、下载、预览和审计元数据。 |
 | Run History | 工具运行、dev_selftest 运行都进入统一历史。 |
 | Log Analyzer | 预处理日志包，生成 manifest、grep/search 和工具输入索引；驱动配置的 analyzer。 |
-| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools + optional cleanup + read-only diagnose；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支；git repo/ref allowlist 可通过受控热更新追加并设默认；Docker-backed build/test profile 可在用户确认后受控 upsert；cleanup 只执行配置化 compose project 的 `docker compose down` 并保留 run 证据；diagnose 只读取 bounded evidence 并执行 allowlisted Docker 只读探测。 |
+| Dev Self-Test | git-only sync_workspace/build/deploy(docker)/run_tests/report MCP step tools + optional cleanup + read-only diagnose；完整 workflow 由客户端 skill 编排，docker runner 复用 remote_execution 的 docker 分支；`run_tests` 支持受限 `testParams` string map 注入 Docker 测试容器，供外部 skill 创建云实例后传入 instance/case/endpoint 等非敏感运行参数；git repo/ref allowlist 可通过受控热更新追加并设默认；Docker-backed build/test profile 可在用户确认后受控 upsert；cleanup 只执行配置化 compose project 的 `docker compose down` 并保留 run 证据；diagnose 只读取 bounded evidence 并执行 allowlisted Docker 只读探测。 |
 | MCP Server | 暴露 resources/list/read、tools/list/call 给外部客户端；`logagent://dev_selftest/config` 让客户端发现当前 repo/ref/profile。 |
 | WebUI | Tools-first 管理页面（Tools / Runs History / MCP / Settings）。 |
 
@@ -147,5 +147,6 @@ dev_selftest:
 - dev_selftest 默认关闭或受 allowlist 控制。
 - dev_selftest git allowlist 热更新要求显式确认、URL/ref 校验和 `git ls-remote` 可达性检查；写回配置后才更新内存状态，旧 allowlist 保留，新 repo/ref 可设为默认。
 - dev_selftest Docker-backed build/test profile 热更新要求显式确认、profile id 与 Docker target 校验、原子写回配置后才更新内存状态；执行工具仍只接收 profile id，不接收任意 shell。
+- `run_tests.testParams` 只接收有界非凭据字符串 map，拒绝 secret-like key 和归一化 env 名碰撞；参数通过 Docker `--env` 明文传递，不得携带凭据。
 - 日志、artifact、导出包不包含密钥原文。
 - README/SPEC/PROGRESS 随行为变化同步更新。
